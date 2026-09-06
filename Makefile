@@ -9,11 +9,8 @@ moss: src/moss.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 check: moss
-	mkdir -p build
-	./moss --check examples/counter.moss
-	./moss examples/counter.moss -o build/counter.rs
-	rustc build/counter.rs -o build/counter
-	./build/counter
+	sh tests/run.sh ./moss build/tests
 
 clean:
-	rm -f moss build/counter build/counter.rs
+	rm -f moss build/counter build/counter.rs build/checkout build/checkout.rs
+	rm -rf build/tests

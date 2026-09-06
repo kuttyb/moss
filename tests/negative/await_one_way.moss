@@ -1,0 +1,7 @@
+domain Worker
+  on Notify()
+    echo "notified"
+
+proc main()
+  let worker = spawn Worker()
+  let result = await worker.Notify()

@@ -1,0 +1,8 @@
+domain Worker
+  on Fire() -> bool
+    echo "ignored reply completed"
+    reply true
+
+proc main()
+  let worker = spawn Worker()
+  worker.Fire()

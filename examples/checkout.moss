@@ -1,0 +1,36 @@
+domain Inventory
+  var available: int = 10
+
+  on Reserve(quantity: int) -> bool
+    if available >= quantity:
+      available = available - quantity
+      reply true
+    reply false
+
+domain Payments
+  var collected: int = 0
+
+  on Charge(amount: int) -> bool
+    collected = collected + amount
+    echo "charged:", amount
+    reply true
+
+domain Checkout
+  on PlaceOrder(inventory: Inventory, payments: Payments, quantity: int, price: int)
+    let reserved = await inventory.Reserve(quantity)
+    if not reserved:
+      echo "order rejected: insufficient inventory"
+      return
+
+    let paid = await payments.Charge(quantity * price)
+    if paid:
+      echo "order completed"
+    else:
+      echo "payment failed"
+
+proc main()
+  let inventory = spawn Inventory()
+  let payments = spawn Payments()
+  let checkout = spawn Checkout()
+  checkout.PlaceOrder(inventory, payments, 3, 25)
+  checkout.PlaceOrder(inventory, payments, 8, 25)

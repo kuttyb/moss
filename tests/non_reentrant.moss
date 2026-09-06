@@ -1,0 +1,19 @@
+domain Dependency
+  on Finish() -> bool
+    reply true
+
+domain Waiting
+  on First(dependency: Dependency)
+    echo "start"
+    let finished = await dependency.Finish()
+    if finished:
+      echo "finish"
+
+  on Second()
+    echo "second"
+
+proc main()
+  let dependency = spawn Dependency()
+  let waiting = spawn Waiting()
+  waiting.First(dependency)
+  waiting.Second()

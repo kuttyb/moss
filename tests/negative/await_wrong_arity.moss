@@ -1,0 +1,7 @@
+domain Worker
+  on Work(value: int) -> bool
+    reply true
+
+proc main()
+  let worker = spawn Worker()
+  let result = await worker.Work()

@@ -1,0 +1,10 @@
+domain Worker
+  on Maybe(should_reply: bool) -> bool
+    if should_reply:
+      reply true
+    echo "falling through"
+
+proc main()
+  let worker = spawn Worker()
+  let result = await worker.Maybe(false)
+  echo result

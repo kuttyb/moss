@@ -1,0 +1,7 @@
+domain Worker
+  on Notify()
+    reply true
+
+proc main()
+  let worker = spawn Worker()
+  worker.Notify()

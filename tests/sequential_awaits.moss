@@ -1,0 +1,17 @@
+domain Worker
+  on First() -> int
+    reply 1
+
+  on Second(value: int) -> bool
+    reply value == 1
+
+domain Client
+  on Run(worker: Worker)
+    let first = await worker.First()
+    let second = await worker.Second(first)
+    echo "sequential:", second
+
+proc main()
+  let worker = spawn Worker()
+  let client = spawn Client()
+  client.Run(worker)

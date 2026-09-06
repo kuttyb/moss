@@ -1,0 +1,8 @@
+domain Worker
+  on Ready() -> bool
+    reply true
+
+proc main()
+  let worker = spawn Worker()
+  var ready = await worker.Ready()
+  echo "main:", ready

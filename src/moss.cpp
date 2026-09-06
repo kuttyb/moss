@@ -86,17 +86,19 @@ struct Field { string name, type, init; int line = 0; };
 struct Param { string name, type; };
 
 struct Stmt {
-  enum class Kind { Raw, Send, Echo, If, Else, While, Let, Var, Return } kind = Kind::Raw;
+  enum class Kind { Raw, Send, Echo, If, Else, While, Let, Var, AwaitLet, Reply, Return } kind = Kind::Raw;
   int line = 0;
   int indent = 0; // relative logical indent inside handler/main
   string text;
-  string a, b; // generic payloads
+  string a, b, c; // generic payloads
   vector<string> args;
+  bool is_mutable = false;
 };
 
 struct Handler {
   string name;
   vector<Param> params;
+  std::optional<string> reply_type;
   vector<Stmt> body;
   int line = 0;
 };
@@ -151,6 +153,48 @@ class Parser {
   size_t i_ = 0;
 
   [[noreturn]] void fail(const Line& L, const string& msg) { throw CompileError(L.no, msg); }
+
+  static bool identifier(const string& s) {
+    if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+    return std::all_of(s.begin() + 1, s.end(), [](char c) {
+      return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    });
+  }
+
+  static bool parse_message_call(const string& text, string& receiver, string& handler,
+                                 vector<string>& args) {
+    auto dot = text.find('.');
+    auto lp = text.find('(', dot == string::npos ? 0 : dot);
+    auto rp = text.rfind(')');
+    if (dot == string::npos || lp == string::npos || rp != text.size() - 1 || dot >= lp) return false;
+    receiver = trim(text.substr(0, dot));
+    handler = trim(text.substr(dot + 1, lp - dot - 1));
+    if (!identifier(receiver) || !identifier(handler)) return false;
+    string inside = text.substr(lp + 1, rp - lp - 1);
+    args.clear();
+    if (!trim(inside).empty()) args = split_top_level(inside, ',');
+    return true;
+  }
+
+  static bool contains_word_outside_string(const string& text, const string& word) {
+    bool in_str = false, esc = false;
+    for (size_t i = 0; i + word.size() <= text.size(); ++i) {
+      char ch = text[i];
+      if (in_str) {
+        if (esc) esc = false;
+        else if (ch == '\\') esc = true;
+        else if (ch == '"') in_str = false;
+        continue;
+      }
+      if (ch == '"') { in_str = true; continue; }
+      if (text.compare(i, word.size(), word) != 0) continue;
+      bool left = i == 0 || !(std::isalnum(static_cast<unsigned char>(text[i - 1])) || text[i - 1] == '_');
+      size_t after = i + word.size();
+      bool right = after == text.size() || !(std::isalnum(static_cast<unsigned char>(text[after])) || text[after] == '_');
+      if (left && right) return true;
+    }
+    return false;
+  }
 
   static vector<Param> parse_params(const Line& L, const string& inside) {
     vector<Param> ps;
@@ -233,11 +277,20 @@ class Parser {
     Line head = lines_[i_++];
     string sig = trim(head.text.substr(3));
     auto lp = sig.find('('), rp = sig.rfind(')');
-    if (lp == string::npos || rp == string::npos || rp < lp || rp != sig.size() - 1)
-      fail(head, "handler must be 'on Name(args...)'");
+    if (lp == string::npos || rp == string::npos || rp < lp)
+      fail(head, "handler must be 'on Name(args...)' or 'on Name(args...) -> Type'");
     Handler h;
     h.name = trim(sig.substr(0, lp));
+    if (!identifier(h.name)) fail(head, "invalid handler name '" + h.name + "'");
     h.params = parse_params(head, sig.substr(lp + 1, rp - lp - 1));
+    string suffix = trim(sig.substr(rp + 1));
+    if (!suffix.empty()) {
+      if (!starts_with(suffix, "->"))
+        fail(head, "handler must be 'on Name(args...)' or 'on Name(args...) -> Type'");
+      string type = trim(suffix.substr(2));
+      if (type.empty()) fail(head, "reply type is required after '->'");
+      h.reply_type = std::move(type);
+    }
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + 2);
     if (h.body.empty()) fail(head, "handler body may not be empty");
@@ -274,7 +327,7 @@ class Parser {
     s.indent = (L.indent - base_indent) / 2;
     s.text = L.text;
 
-    static const vector<string> forbidden = {"await ", "async ", "yield ", "lock ", "shared ", "thread "};
+    static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
     for (const auto& k : forbidden) if (starts_with(L.text, k)) fail(L, "'" + trim(k) + "' is not part of Moss's concurrency model");
 
     if (starts_with(L.text, "echo ")) {
@@ -295,44 +348,42 @@ class Parser {
       if (ends_with(s.a, ":")) s.a = trim(s.a.substr(0, s.a.size() - 1));
       return s;
     }
-    if (starts_with(L.text, "let ")) {
-      s.kind = Stmt::Kind::Let;
+    if (starts_with(L.text, "let ") || starts_with(L.text, "var ")) {
+      bool is_var = starts_with(L.text, "var ");
+      s.kind = is_var ? Stmt::Kind::Var : Stmt::Kind::Let;
       string rest = trim(L.text.substr(4));
       auto eq = rest.find('=');
-      if (eq == string::npos) fail(L, "let requires an initializer");
+      if (eq == string::npos) fail(L, is_var ? "local var requires an initializer in v0.2" : "let requires an initializer");
       s.a = trim(rest.substr(0, eq));
       s.b = trim(rest.substr(eq + 1));
+      if (starts_with(s.b, "await ")) {
+        s.kind = Stmt::Kind::AwaitLet;
+        s.is_mutable = is_var;
+        string call = trim(s.b.substr(6));
+        if (!parse_message_call(call, s.b, s.c, s.args))
+          fail(L, "await requires a message call 'receiver.Handler(args)'");
+      } else if (contains_word_outside_string(s.b, "await")) {
+        fail(L, "await is only supported as the complete initializer of let or local var");
+      }
       return s;
     }
-    if (starts_with(L.text, "var ")) {
-      s.kind = Stmt::Kind::Var;
-      string rest = trim(L.text.substr(4));
-      auto eq = rest.find('=');
-      if (eq == string::npos) fail(L, "local var requires an initializer in v0.1");
-      s.a = trim(rest.substr(0, eq));
-      s.b = trim(rest.substr(eq + 1));
+    if (L.text == "reply") fail(L, "reply requires a value");
+    if (starts_with(L.text, "reply ")) {
+      s.kind = Stmt::Kind::Reply;
+      s.a = trim(L.text.substr(6));
+      if (s.a.empty()) fail(L, "reply requires a value");
       return s;
     }
     if (L.text == "return") { s.kind = Stmt::Kind::Return; return s; }
-    if (starts_with(L.text, "return ")) fail(L, "message handlers cannot return values; send a response message instead");
+    if (starts_with(L.text, "return ")) fail(L, "message handlers cannot return values; use 'reply value' in a handler declaring '-> Type'");
+
+    if (contains_word_outside_string(L.text, "await"))
+      fail(L, "await is only supported as the complete initializer of let or local var");
 
     // Message send candidate: receiver.Message(args), as a standalone statement.
-    auto dot = L.text.find('.');
-    auto lp = L.text.find('(', dot == string::npos ? 0 : dot);
-    auto rp = L.text.rfind(')');
-    if (dot != string::npos && lp != string::npos && rp == L.text.size() - 1 && dot < lp) {
-      string recv = trim(L.text.substr(0, dot));
-      string meth = trim(L.text.substr(dot + 1, lp - dot - 1));
-      bool simple_recv = !recv.empty() && std::all_of(recv.begin(), recv.end(), [](char c){ return std::isalnum((unsigned char)c) || c == '_'; });
-      bool simple_meth = !meth.empty() && std::all_of(meth.begin(), meth.end(), [](char c){ return std::isalnum((unsigned char)c) || c == '_'; });
-      if (simple_recv && simple_meth) {
-        s.kind = Stmt::Kind::Send;
-        s.a = recv;
-        s.b = meth;
-        string inside = L.text.substr(lp + 1, rp - lp - 1);
-        if (!trim(inside).empty()) s.args = split_top_level(inside, ',');
-        return s;
-      }
+    if (parse_message_call(L.text, s.a, s.b, s.args)) {
+      s.kind = Stmt::Kind::Send;
+      return s;
     }
 
     s.kind = Stmt::Kind::Raw;
@@ -425,6 +476,11 @@ class Checker {
     }
     for (const auto& h : d.handlers) {
       if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
+      if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
+      if (h.reply_type && std::none_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
+            return s.kind == Stmt::Kind::Reply;
+          }))
+        err(h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
       std::unordered_map<string,string> env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
@@ -433,13 +489,13 @@ class Checker {
         env[p.name] = p.type;
       }
       for (const auto& f : d.state) env[f.name] = f.type;
-      check_stmts(h.body, env, &d);
+      check_stmts(h.body, env, &d, &h);
     }
   }
 
   void check_main(const MainProc& m) {
     std::unordered_map<string,string> env;
-    check_stmts(m.body, env, nullptr);
+    check_stmts(m.body, env, nullptr, nullptr);
   }
 
   static std::optional<string> spawn_domain(const string& expr) {
@@ -450,7 +506,44 @@ class Checker {
     return name;
   }
 
-  void check_stmts(const vector<Stmt>& ss, std::unordered_map<string,string> env, const Domain* current) {
+  const Handler* check_call(int line, const string& receiver, const string& message,
+                            const vector<string>& args,
+                            const std::unordered_map<string,string>& env) const {
+    auto it = env.find(receiver);
+    if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
+    auto dit = domains_.find(it->second);
+    if (dit == domains_.end())
+      err(line, "'" + receiver + "' is not an actor/domain reference; dotted standalone calls are reserved for message sends in v0.2");
+    const Handler* h = find_handler(*dit->second, message);
+    if (!h) err(line, "domain " + dit->second->name + " has no message handler '" + message + "'");
+    if (h->params.size() != args.size())
+      err(line, "message " + dit->second->name + "." + message + " expects " +
+          std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
+    return h;
+  }
+
+  static std::optional<string> obvious_expr_type(const string& expression,
+                                                  const std::unordered_map<string,string>& env) {
+    string e = trim(expression);
+    if (e == "true" || e == "false") return "bool";
+    if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
+    auto local = env.find(e);
+    if (local != env.end() && local->second != "_value") return local->second;
+    size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
+    if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
+          return std::isdigit(static_cast<unsigned char>(c));
+        })) return "int";
+    bool dot = false, digit = start < e.size();
+    for (size_t i = start; digit && i < e.size(); ++i) {
+      if (e[i] == '.' && !dot) dot = true;
+      else if (!std::isdigit(static_cast<unsigned char>(e[i]))) digit = false;
+    }
+    if (digit && dot) return "float";
+    return std::nullopt;
+  }
+
+  void check_stmts(const vector<Stmt>& ss, std::unordered_map<string,string> env,
+                   const Domain* current, const Handler* current_handler) {
     int prev_indent = 0;
     for (size_t i = 0; i < ss.size(); ++i) {
       const auto& s = ss[i];
@@ -460,7 +553,7 @@ class Checker {
       if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
         if (auto sd = spawn_domain(s.b)) {
           if (!domains_.count(*sd)) err(s.line, "unknown domain in spawn: " + *sd);
-          if (current) err(s.line, "spawning domains inside handlers is not supported in v0.1; create them in main and pass ActorRefs in messages");
+          if (current) err(s.line, "spawning domains inside handlers is not supported in v0.2; create them in main and pass ActorRefs in messages");
           env[s.a] = *sd;
         } else {
           env[s.a] = "_value";
@@ -470,27 +563,32 @@ class Checker {
             string recv = trim(s.b.substr(0, dot));
             auto it = env.find(recv);
             if (it != env.end() && domains_.count(it->second))
-              err(s.line, "cross-domain messages have no return value; responses must be new messages");
+              err(s.line, "cross-domain messages have no direct return value; use await with a reply handler");
           }
         }
       }
 
       if (s.kind == Stmt::Kind::Send) {
-        auto it = env.find(s.a);
-        if (it == env.end()) {
-          // It may be a state field in current domain; state fields are already in env.
-          err(s.line, "unknown message receiver '" + s.a + "'");
+        check_call(s.line, s.a, s.b, s.args, env);
+      }
+
+      if (s.kind == Stmt::Kind::AwaitLet) {
+        if (current && s.b == "self")
+          err(s.line, "a domain cannot await itself because handlers are non-reentrant");
+        const Handler* h = check_call(s.line, s.b, s.c, s.args, env);
+        if (!h->reply_type) {
+          auto dit = domains_.find(env.at(s.b));
+          err(s.line, "cannot await one-way handler '" + dit->second->name + "." + s.c + "'");
         }
-        auto dit = domains_.find(it->second);
-        if (dit == domains_.end()) {
-          // A field access call like object.method() was parsed as Send. In v0.1 we only
-          // permit message syntax on actor references. Use free/local expressions otherwise.
-          err(s.line, "'" + s.a + "' is not an actor/domain reference; dotted standalone calls are reserved for message sends in v0.1");
-        }
-        const Handler* h = find_handler(*dit->second, s.b);
-        if (!h) err(s.line, "domain " + dit->second->name + " has no message handler '" + s.b + "'");
-        if (h->params.size() != s.args.size())
-          err(s.line, "message " + dit->second->name + "." + s.b + " expects " + std::to_string(h->params.size()) + " arguments, got " + std::to_string(s.args.size()));
+        env[s.a] = *h->reply_type;
+      }
+
+      if (s.kind == Stmt::Kind::Reply) {
+        if (!current || !current_handler || !current_handler->reply_type)
+          err(s.line, "reply is only valid in a handler declaring '-> Type'");
+        if (auto actual = obvious_expr_type(s.a, env); actual && *actual != *current_handler->reply_type)
+          err(s.line, "reply type mismatch: handler expects '" + *current_handler->reply_type +
+              "', expression has type '" + *actual + "'");
       }
     }
   }
@@ -501,19 +599,13 @@ class Generator {
   explicit Generator(const Program& p) : p_(p) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
-    if (p.main) {
-      for (const auto& s : p.main->body) {
-        if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
-          if (auto sd = CheckerSpawn(s.b)) main_types_[s.a] = *sd;
-        }
-      }
-    }
   }
 
   string generate() {
     std::ostringstream o;
-    o << "// Generated by Moss v0.1. Do not edit by hand.\n";
-    o << "#![allow(non_snake_case)]\n#![allow(dead_code)]\n\n";
+    o << "// Generated by Moss v0.2. Do not edit by hand.\n";
+    o << "#![allow(non_snake_case)]\n#![allow(dead_code)]\n";
+    o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
     o << "use std::collections::HashMap;\n";
     o << "use std::sync::mpsc::{self, Sender, Receiver};\n";
     o << "use std::sync::{Arc, Condvar, Mutex};\n";
@@ -533,7 +625,7 @@ class Generator {
   const Program& p_;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
-  std::unordered_map<string, string> main_types_;
+  size_t reply_temp_ = 0;
 
   string rust_type(const string& t) const {
     string x = trim(t);
@@ -657,7 +749,7 @@ class Generator {
     string r = expr(e, d, locals);
     string t = trim(type);
     if (t == "int" || t == "float" || t == "bool" || t == "_") return r;
-    // Moss messages have value semantics. v0.1 conservatively clones non-Copy payloads;
+    // Moss messages have value semantics. v0.2 conservatively clones non-Copy payloads;
     // a later ownership/dataflow pass can elide the clone and lower it to a Rust move.
     return "(" + r + ").clone()";
   }
@@ -682,6 +774,26 @@ class Generator {
     o << "#[derive(Clone)]\nstruct " << d.name << "Ref {\n    tx: Sender<" << d.name << "Msg>,\n    tracker: Arc<MossTracker>,\n}\n\n";
   }
 
+  static string reply_binding(const Domain& d, const Handler& h) {
+    std::set<string> used;
+    for (const auto& f : d.state) used.insert(f.name);
+    for (const auto& p : h.params) used.insert(p.name);
+    for (const auto& s : h.body) {
+      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var || s.kind == Stmt::Kind::AwaitLet)
+        used.insert(s.a);
+    }
+    string name = "__moss_reply";
+    for (size_t suffix = 0; used.count(name); ++suffix)
+      name = "__moss_reply_" + std::to_string(suffix);
+    return name;
+  }
+
+  static bool handler_needs_label(const Handler& h) {
+    return std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
+      return s.kind == Stmt::Kind::Return || s.kind == Stmt::Kind::Reply;
+    });
+  }
+
   void gen_domain(std::ostringstream& o, const Domain& d) {
     o << "struct " << d.name << "State {\n";
     for (const auto& f : d.state) o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
@@ -690,11 +802,16 @@ class Generator {
     o << "enum " << d.name << "Msg {\n";
     for (const auto& h : d.handlers) {
       o << "    " << h.name;
-      if (!h.params.empty()) {
+      if (!h.params.empty() || h.reply_type) {
         o << "(";
-        for (size_t i = 0; i < h.params.size(); ++i) {
-          if (i) o << ", ";
+        size_t count = 0;
+        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
+          if (count) o << ", ";
           o << rust_type(h.params[i].type);
+        }
+        if (h.reply_type) {
+          if (count) o << ", ";
+          o << "Sender<" << rust_type(*h.reply_type) << ">";
         }
         o << ")";
       }
@@ -704,12 +821,22 @@ class Generator {
 
     o << "impl " << d.name << "Ref {\n";
     for (const auto& h : d.handlers) {
+      string reply_name = reply_binding(d, h);
       o << "    fn " << h.name << "(&self";
       for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      if (h.reply_type) o << ", " << reply_name << ": Sender<" << rust_type(*h.reply_type) << ">";
       o << ") {\n        self.tracker.begin();\n        if self.tx.send(" << d.name << "Msg::" << h.name;
-      if (!h.params.empty()) {
+      if (!h.params.empty() || h.reply_type) {
         o << "(";
-        for (size_t i = 0; i < h.params.size(); ++i) { if (i) o << ", "; o << h.params[i].name; }
+        size_t count = 0;
+        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
+          if (count) o << ", ";
+          o << h.params[i].name;
+        }
+        if (h.reply_type) {
+          if (count) o << ", ";
+          o << reply_name;
+        }
         o << ")";
       }
       o << ").is_err() { self.tracker.end(); }\n    }\n";
@@ -731,18 +858,34 @@ class Generator {
     o << "        while let Ok(msg) = rx.recv() {\n";
     o << "            match msg {\n";
     for (const auto& h : d.handlers) {
+      string reply_name = reply_binding(d, h);
       o << "                " << d.name << "Msg::" << h.name;
-      if (!h.params.empty()) {
+      if (!h.params.empty() || h.reply_type) {
         o << "(";
-        for (size_t i = 0; i < h.params.size(); ++i) { if (i) o << ", "; o << h.params[i].name; }
+        size_t count = 0;
+        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
+          if (count) o << ", ";
+          o << h.params[i].name;
+        }
+        if (h.reply_type) {
+          if (count) o << ", ";
+          o << reply_name;
+        }
         o << ")";
       }
       o << " => {\n";
-      o << "                    'handler: {\n";
+      o << "                    ";
+      if (handler_needs_label(h)) o << "'handler: ";
+      o << "{\n";
       std::set<string> locals;
+      std::unordered_map<string,string> types;
+      types["self"] = d.name;
+      for (const auto& f : d.state) types[f.name] = f.type;
       for (const auto& p : h.params) locals.insert(p.name);
+      for (const auto& p : h.params) types[p.name] = p.type;
       locals.insert("self_ref");
-      gen_stmts(o, h.body, &d, locals, 6, true);
+      if (h.reply_type) locals.insert(reply_name);
+      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 6, true);
       o << "                    }\n";
       o << "                }\n";
     }
@@ -756,20 +899,25 @@ class Generator {
     o << "fn main() {\n";
     o << "    let __tracker = Arc::new(MossTracker::new());\n";
     std::set<string> locals;
-    gen_stmts(o, m.body, nullptr, locals, 1, false);
+    std::unordered_map<string,string> types;
+    gen_stmts(o, m.body, nullptr, nullptr, "", locals, types, 1, false);
     o << "    __tracker.wait_zero();\n";
     o << "}\n";
   }
 
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
-                 std::set<string>& locals, int base, bool in_handler) {
+                 const Handler* current_handler, const string& reply_sender,
+                 std::set<string>& locals, std::unordered_map<string,string>& types,
+                 int base, bool in_handler) {
     size_t i = 0;
-    gen_block(o, ss, i, 0, d, locals, base, in_handler);
+    gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base, in_handler);
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
   void gen_block(std::ostringstream& o, const vector<Stmt>& ss, size_t& i, int level,
-                 const Domain* d, std::set<string>& locals, int base, bool in_handler) {
+                 const Domain* d, const Handler* current_handler, const string& reply_sender,
+                 std::set<string>& locals, std::unordered_map<string,string>& types,
+                 int base, bool in_handler) {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -782,13 +930,17 @@ class Generator {
           o << indent(level) << "if " << expr(s.a, d, locals) << " {\n";
           ++i;
           auto child_locals = locals;
-          gen_block(o, ss, i, level + 1, d, child_locals, base, in_handler);
+          auto child_types = types;
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                    child_locals, child_types, base, in_handler);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
             ++i;
             auto else_locals = locals;
-            gen_block(o, ss, i, level + 1, d, else_locals, base, in_handler);
+            auto else_types = types;
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                      else_locals, else_types, base, in_handler);
             o << indent(level) << "}\n";
           } else {
             o << "\n";
@@ -799,7 +951,9 @@ class Generator {
           o << indent(level) << "while " << expr(s.a, d, locals) << " {\n";
           ++i;
           auto child_locals = locals;
-          gen_block(o, ss, i, level + 1, d, child_locals, base, in_handler);
+          auto child_types = types;
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                    child_locals, child_types, base, in_handler);
           o << indent(level) << "}\n";
           break;
         }
@@ -822,9 +976,11 @@ class Generator {
           if (sd) {
             o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
               << s.a << " = spawn_" << snake_case(*sd) << "(__tracker.clone());\n";
+            types[s.a] = *sd;
           } else {
             o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
               << s.a << " = " << expr(s.b, d, locals) << ";\n";
+            types[s.a] = "_value";
           }
           locals.insert(s.a);
           ++i;
@@ -832,24 +988,74 @@ class Generator {
         }
         case Stmt::Kind::Send: {
           const Domain* target = nullptr;
-          string recvType;
           if (s.a == "self" && d) target = d;
           else {
-            recvType = infer_receiver_type(s.a, d);
-            if (!recvType.empty() && domains_.count(recvType)) target = domains_.at(recvType);
+            auto type = types.find(s.a);
+            if (type != types.end() && domains_.count(type->second)) target = domains_.at(type->second);
           }
           string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals);
-          o << indent(level) << recv << "." << s.b << "(";
           const Handler* h = target ? find_handler(*target, s.b) : nullptr;
+          string reply_tx, reply_rx;
+          if (h && h->reply_type) {
+            size_t id = reply_temp_++;
+            reply_tx = "__moss_reply_tx_" + std::to_string(id);
+            reply_rx = "__moss_reply_rx_" + std::to_string(id);
+            o << indent(level) << "let (" << reply_tx << ", " << reply_rx
+              << ") = mpsc::channel::<" << rust_type(*h->reply_type) << ">();\n";
+          }
+          o << indent(level) << recv << "." << s.b << "(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";
             string typ = h && k < h->params.size() ? h->params[k].type : "_";
             o << message_arg(s.args[k], typ, d, locals);
           }
+          if (!reply_tx.empty()) {
+            if (!s.args.empty()) o << ", ";
+            o << reply_tx;
+          }
           o << ");\n";
+          if (!reply_rx.empty()) o << indent(level) << "drop(" << reply_rx << ");\n";
           ++i;
           break;
         }
+        case Stmt::Kind::AwaitLet: {
+          auto type = types.find(s.b);
+          const Domain* target = type != types.end() && domains_.count(type->second)
+              ? domains_.at(type->second) : nullptr;
+          const Handler* h = target ? find_handler(*target, s.c) : nullptr;
+          if (!target || !h || !h->reply_type)
+            throw std::runtime_error("internal error: unchecked await reached code generation");
+          size_t id = reply_temp_++;
+          string reply_tx = "__moss_reply_tx_" + std::to_string(id);
+          string reply_rx = "__moss_reply_rx_" + std::to_string(id);
+          o << indent(level) << "let (" << reply_tx << ", " << reply_rx
+            << ") = mpsc::channel::<" << rust_type(*h->reply_type) << ">();\n";
+          string recv = expr(s.b, d, locals);
+          o << indent(level) << recv << "." << s.c << "(";
+          for (size_t k = 0; k < s.args.size(); ++k) {
+            if (k) o << ", ";
+            o << message_arg(s.args[k], h->params[k].type, d, locals);
+          }
+          if (!s.args.empty()) o << ", ";
+          o << reply_tx << ");\n";
+          o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a
+            << " = " << reply_rx << ".recv().unwrap_or_else(|_| {\n";
+          o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+            << h->name << " completed without a reply\")\n";
+          o << indent(level) << "});\n";
+          locals.insert(s.a);
+          types[s.a] = *h->reply_type;
+          ++i;
+          break;
+        }
+        case Stmt::Kind::Reply:
+          if (!current_handler || !current_handler->reply_type || reply_sender.empty())
+            throw std::runtime_error("internal error: unchecked reply reached code generation");
+          o << indent(level) << "let _ = " << reply_sender << ".send("
+            << message_arg(s.a, *current_handler->reply_type, d, locals) << ");\n";
+          o << indent(level) << "break 'handler;\n";
+          ++i;
+          break;
         case Stmt::Kind::Return:
           o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
           ++i;
@@ -875,28 +1081,19 @@ class Generator {
     return nullptr;
   }
 
-  string infer_receiver_type(const string& recv, const Domain* d) const {
-    if (d) {
-      for (const auto& f : d->state) if (f.name == recv && domains_.count(f.type)) return f.type;
-      for (const auto& h : d->handlers) {
-        // v0.1 uses parameter names to recover actor-ref types during lowering.
-        for (const auto& p : h.params) if (p.name == recv && domains_.count(p.type)) return p.type;
-      }
-    } else {
-      auto it = main_types_.find(recv);
-      if (it != main_types_.end()) return it->second;
-    }
-    return "";
-  }
 };
 
 } // namespace moss
 
 static void usage() {
-  std::cerr << "Moss v0.1 - actor/domain DSL to Rust\n\n"
+  std::cerr << "Moss v0.2 - actor/domain DSL to Rust with await/reply\n\n"
             << "Usage:\n"
             << "  moss <input.moss> [-o output.rs]\n"
-            << "  moss --check <input.moss>\n";
+            << "  moss --check <input.moss>\n\n"
+            << "Request/reply:\n"
+            << "  on Message(args...) -> Type\n"
+            << "  reply value\n"
+            << "  let value = await domain.Message(args...)\n";
 }
 
 int main(int argc, char** argv) {
