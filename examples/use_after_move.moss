@@ -1,5 +1,5 @@
-# This is an intentional negative example. Moss infers that assigning `original`
-# to `moved` transfers ownership, then rejects the later use of `original`.
+# This is an intentional negative example for a provisional compiler behavior.
+# Moss assignment semantics are not settled; see .codex/MOSS_DESIGN.md.
 
 type Payload = object
   text: string
