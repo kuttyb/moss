@@ -1,0 +1,11 @@
+domain Counter
+  var value: int = 0
+
+  on Add(amount: int)
+    value = value + amount
+    echo "counter:", value
+
+proc main()
+  let counter = spawn Counter()
+  counter.Add(41)
+  counter.Add(1)
