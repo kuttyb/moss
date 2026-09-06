@@ -1,0 +1,12 @@
+type Dataset = object
+  size: int
+
+domain Worker
+  on Process(dataset: Dataset)
+    echo dataset.size
+
+domain Store
+  var dataset: Dataset
+
+  on Send(worker: Worker)
+    worker.Process(dataset)

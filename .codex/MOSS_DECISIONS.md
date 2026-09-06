@@ -58,13 +58,21 @@ This is an append-only decision history. New decisions and revisions are added a
 
 **Supersedes:** No earlier decision; this entry confirms and defers the open question recorded below.
 
+## 2026-09-05 - Explicit ownership transfer and deferred duplication/sharing
+
+**Question:** How should Moss assign nontrivial values, pass detached values in messages, and expose duplication, procedure parameters, and sharing?
+
+**Final decision:** Assignment of a nontrivial uniquely owned local transfers ownership. A later source use is a compile-time error. Moss must not silently deep-copy or use copy-on-write; independent duplication is the explicit future `deepCopy()` operation. A detached local may transfer through a message, but domain state and aliases into domain state may never transfer. Domain references remain usable after being passed. Future ordinary procedures read parameters temporarily by default and use `var` parameters for temporary caller-visible mutation without transfer. Immutable sharing, arenas, `ref object` identity, and persistent versions or `revise` are deferred.
+
+**Reason:** Moss prioritizes predictable performance and must not hide potentially large copies. Transfer keeps ownership costs visible and prevents aliases into mutable domain state. Sharing and retention-heavy facilities need a reclamation and memory-leak model first.
+
+**Alternatives considered and rejected:** Implicit deep copies, copy-on-write, Rust-style borrow syntax, reference-counted source semantics, arena handles, and implementing persistent structural sharing or `revise` before retention behavior is understood.
+
+**Programmer-facing consequences:** Diagnostics say “transferred value” rather than Rust “moved value.” `worker.Process(payload)` makes a detached nontrivial `payload` unavailable afterward; `worker.Process(dataset)` is an error when `dataset` is domain state. `worker.Process(dataset.deepCopy())` is the intended future explicit duplication form, but `deepCopy()` is not implemented in v0.2. A normal future procedure call will not consume a read-only argument, and `var` will request temporary mutation without transfer.
+
+**Supersedes:** The 2026-09-05 deferral of nontrivial assignment semantics. It does not supersede the earlier serialized-domain or await/reply decisions.
+
 ## Open questions and experiments - not decisions
-
-### Nontrivial local assignment
-
-Commit `f440856ff59f8ea208d06bae4d11738ccfe880fc` added a provisional checker that interprets direct assignment of a known nontrivial local as ownership transfer and rejects later use of the source. Kutty has explicitly stated that this is not settled Moss semantics.
-
-The decision still required is whether assignment means move, copy, alias, or value assignment with compiler-selected copy-on-write or an observationally equivalent strategy. No option is authoritative yet.
 
 ### Ordinary intra-domain procedures
 

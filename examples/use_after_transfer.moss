@@ -1,0 +1,16 @@
+# This is an intentional negative example for the approved transfer rule.
+# A direct assignment transfers the owned value; the later source use is invalid.
+
+type Payload = object
+  text: string
+
+domain OwnershipDemo
+  on Trigger()
+    let original = Payload(text: "owned value")
+    let destination = original
+    echo "destination:", destination.text
+    echo "original:", original.text
+
+proc main()
+  let demo = spawn OwnershipDemo()
+  demo.Trigger()

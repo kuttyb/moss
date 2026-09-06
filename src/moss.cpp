@@ -606,6 +606,10 @@ class Checker {
     return false;
   }
 
+  bool transfer_type(const string& type) const {
+    return !copy_type(type) && !domains_.count(trim(type));
+  }
+
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     if (auto type = obvious_expr_type(expression, env)) return type;
@@ -621,9 +625,9 @@ class Checker {
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
     for (const auto& entry : env.moved) {
       if (expression_uses(expression, entry.first)) {
-        err(line, "use of moved value '" + entry.first + "'; assignment to '" +
-            entry.second.destination + "' transferred ownership at line " +
-            std::to_string(entry.second.line));
+        err(line, "value '" + entry.first + "' was transferred to '" +
+            entry.second.destination + "' at line " + std::to_string(entry.second.line) +
+            ". Create an explicit deep copy if both values must remain independently usable.");
       }
     }
   }
@@ -676,8 +680,8 @@ class Checker {
           bool transfers = simple_identifier(source) && env.types.count(source) &&
                            !copy_type(env.types.at(source));
           if (transfers && env.state_fields.count(source))
-            err(s.line, "cannot move domain state field '" + source + "' into local '" + s.a +
-                "'; the field must remain initialized for later messages");
+            err(s.line, "domain state '" + source + "' cannot be transferred into local '" + s.a +
+                "'; the field must remain available for later messages");
 
           env.types[s.a] = type.value_or("_value");
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
@@ -698,11 +702,28 @@ class Checker {
           env.moved.erase(s.a);
           ++index;
           break;
-        case Stmt::Kind::Send:
+        case Stmt::Kind::Send: {
           require_available(s.line, s.a, env);
-          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
+          const auto receiver = env.types.find(s.a);
+          const Domain* target = receiver != env.types.end() && domains_.count(receiver->second)
+              ? domains_.at(receiver->second) : nullptr;
+          for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+            const auto& arg = s.args[arg_index];
+            require_available(s.line, arg, env);
+            string source = trim(arg);
+            if (!simple_identifier(source) || !env.types.count(source)) continue;
+            string source_type = env.types.at(source);
+            if (arg_index < handler->params.size() && transfer_type(source_type)) {
+              if (env.state_fields.count(source))
+                err(s.line, "domain state '" + source + "' cannot be transferred by message");
+              string destination = target ? target->name + "." + handler->name : handler->name;
+              env.moved[source] = MoveInfo{s.line, destination};
+            }
+          }
           ++index;
           break;
+        }
         case Stmt::Kind::Echo:
           for (const auto& arg : s.args) require_available(s.line, arg, env);
           ++index;
@@ -842,6 +863,14 @@ class Generator {
     return "Default::default()";
   }
 
+  bool copy_type(const string& type) const {
+    string t = trim(type);
+    if (t == "int" || t == "float" || t == "bool") return true;
+    if (starts_with(t, "option[") && ends_with(t, "]"))
+      return copy_type(trim(t.substr(7, t.size() - 8)));
+    return false;
+  }
+
   string expr(string e, const Domain* d, const std::set<string>& locals) const {
     e = trim(e);
     // Minimal surface rewrites.
@@ -932,10 +961,10 @@ class Generator {
   string message_arg(const string& e, const string& type, const Domain* d, const std::set<string>& locals) const {
     string r = expr(e, d, locals);
     string t = trim(type);
-    if (t == "int" || t == "float" || t == "bool" || t == "_") return r;
-    // Moss messages have value semantics. v0.2 conservatively clones non-Copy payloads;
-    // a later ownership/dataflow pass can elide the clone and lower it to a Rust move.
-    return "(" + r + ").clone()";
+    if (copy_type(t) || domains_.count(t) || t == "_") return domains_.count(t) ? "(" + r + ").clone()" : r;
+    // Detached non-copy values transfer ownership through a message. The checker
+    // diagnoses subsequent source uses; no hidden deep copy is inserted here.
+    return r;
   }
 
   void gen_tracker(std::ostringstream& o) {

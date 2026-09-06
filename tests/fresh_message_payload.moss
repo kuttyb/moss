@@ -1,0 +1,10 @@
+type Payload = object
+  value: int
+
+domain Worker
+  on Process(payload: Payload)
+    echo "fresh:", payload.value
+
+proc main()
+  let worker = spawn Worker()
+  worker.Process(Payload(value: 7))

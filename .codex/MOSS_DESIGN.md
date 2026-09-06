@@ -2,7 +2,7 @@
 
 This document is the authoritative record of approved Moss source-language semantics. Backend details are recorded separately so implementation choices do not accidentally become language rules.
 
-Only rules under **Source-level semantics** are programmer-facing language decisions. Items under **Unresolved semantics** are deliberately not authoritative.
+Rules under **Source-level semantics** are programmer-facing language decisions. Deferred future work is explicitly non-authoritative and must not be inferred as current syntax or behavior.
 
 ## Source-level semantics
 
@@ -44,7 +44,16 @@ Approved message semantics are:
 - Messages already queued for a domain are not processed reentrantly during the current handler.
 - Messages from one sender to one receiving domain preserve FIFO order.
 - Message payloads have value semantics. A receiver cannot use a payload to mutate the sender's local value.
-- A domain reference is a capability to send that domain messages; it does not expose the domain's state.
+- Sending a detached, uniquely owned nontrivial local transfers it to the receiving domain. The sender cannot use that local afterward:
+
+```moss
+let payload = buildPayload()
+worker.Process(payload)
+echo payload       # compile-time error: payload was transferred
+```
+
+- Domain state and aliases into domain state cannot be transferred by message. A state field must be copied explicitly in a future `deepCopy()` operation or converted into a purpose-specific snapshot.
+- Primitive values and domain references remain usable by the sender after a message send. A domain reference is a capability, not the domain's mutable state.
 
 `self.Message(...)` is a queued message send to the current domain. It is not an ordinary synchronous procedure call:
 
@@ -101,7 +110,7 @@ Cross-domain await cycles can deadlock. For example, A awaiting B while B awaits
 - Domain state and mutable object fields can be updated by the currently executing handler.
 - Primitive expressions and conditions use the currently implemented Nim-style words `and`, `or`, `not`, `true`, and `false`.
 
-The semantics of assigning a nontrivial local value to another local are unresolved; see **Unresolved semantics**. No backend ownership behavior is authoritative for Moss until this is decided.
+Direct assignment of a uniquely owned nontrivial local transfers ownership. The source is unavailable after transfer, and a later use is a compile-time error. This is a Moss rule, not an inference from Rust's borrow checker.
 
 ## Rust lowering
 
@@ -114,29 +123,38 @@ This section describes the current v0.2 backend. It is not a source-language con
 - Every spawned domain currently uses one OS thread and one `std::sync::mpsc` queue.
 - Each handler lowers to a message-enum variant and a `DomainRef` send method.
 - The generated tracker counts enqueued messages so `main` can wait for quiescence.
-- Non-copy message payloads are currently cloned before enqueueing. Cloning is a backend strategy used to implement Moss message value semantics, not a requirement that Moss programmers request clones.
+- A detached nontrivial local passed as a message argument is lowered as an ownership transfer. No hidden deep copy is inserted.
+- Domain-reference arguments are cloned as backend handles so the sender retains its capability; this is not immutable shared-value source semantics.
 - A reply-capable message carries a one-shot `std::sync::mpsc::Sender<ReplyType>`.
 - An await creates a one-shot channel, sends its sender with the request, and blocks on the receiver. Blocking an OS thread is the current implementation of logical non-reentrancy, not a requirement for future runtimes.
 - An ignored reply creates the same one-shot channel and immediately drops its receiver.
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 
-The current compiler lowers a direct nontrivial local assignment using Rust assignment and contains a provisional checker that treats this as an ownership transfer. That behavior is an implementation experiment, not approved Moss semantics.
+The current compiler enforces the approved direct-assignment and detached-message transfer cases with a lightweight ownership pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
 
-## Unresolved semantics
+## Explicit deep copy
 
-### Nontrivial local assignment
-
-No authoritative meaning has been chosen for:
+`deepCopy()` is the approved future Moss operation for independently duplicating a nontrivial value:
 
 ```moss
-let moved = original
+let duplicate = original.deepCopy()
 ```
 
-The open choices are move, copy, alias, or value assignment with compiler-selected copy-on-write or equivalent representation. The chosen rule must be based on observable Moss behavior rather than what is easiest to emit in Rust.
-
-Until Kutty decides, the ownership-transfer diagnostic currently emitted by the compiler is provisional and must not be used as evidence of the language rule.
+It is not implemented in v0.2. The compiler must not silently insert it. A future implementation should classify copies containing strings, sequences, tables, or transitively dynamic objects as potentially unbounded and warn accordingly.
 
 ### Ordinary intra-domain procedures
 
-Moss does not yet have an approved declaration or call model for ordinary synchronous functions owned by a domain. In particular, `self.Message(...)` must not be documented or implemented as a substitute for a synchronous procedure call.
+The approved future parameter model is:
 
+```moss
+proc inspect(value: Order)
+proc prepare(value: var Order)
+```
+
+Read-only parameters do not consume the caller's value; `var` parameters permit temporary caller-visible mutation without transferring ownership. The syntax and implementation are not yet available. In particular, `self.Message(...)` must not be documented or implemented as a substitute for a synchronous procedure call.
+
+## Deferred future work
+
+- General immutable cross-domain sharing (`share`, `freeze`, or source-level reference counting) is deferred because of memory retention and leak concerns.
+- Arena handles and `ref object` identity semantics are deferred because unreachable graphs, cycles, and small handles retaining large graphs need a clear reclamation model.
+- Persistent versions and `revise` with structural sharing are deferred for memory-retention evaluation. This is distinct from copy-on-write and is not implemented.

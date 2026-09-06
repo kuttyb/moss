@@ -45,6 +45,9 @@ reject_source() {
     sed -n '1,20p' "$stderr" >&2
     exit 1
   }
+  if grep -Eiq 'rust|borrow|lifetime|moved' "$stderr"; then
+    fail "$name Moss diagnostic leaked backend ownership terminology"
+  fi
 }
 
 reject_case() {
@@ -66,9 +69,15 @@ archive: widget 2 true'
 run_case await_main tests/await_main.moss 'main: true'
 run_case sequential_awaits tests/sequential_awaits.moss 'sequential: true'
 run_case ignored_reply tests/ignored_reply.moss 'ignored reply completed'
+run_case primitive_assignment tests/primitive_assignment.moss 'primitive: 1 1'
+run_case domain_ref_message tests/domain_ref_message.moss 'ping
+ping'
+run_case fresh_message_payload tests/fresh_message_payload.moss 'fresh: 7'
 
-reject_source use_after_move examples/use_after_move.moss \
-  "use of moved value 'original'; assignment to 'moved' transferred ownership at line 10"
+reject_source use_after_transfer examples/use_after_transfer.moss \
+  "value 'original' was transferred to 'destination' at line 10"
+reject_case message_transfer "value 'payload' was transferred to 'Worker.Process' at line 11"
+reject_case domain_state_transfer "domain state 'dataset' cannot be transferred by message"
 
 compile_case non_reentrant tests/non_reentrant.moss
 iteration=1

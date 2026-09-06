@@ -40,21 +40,21 @@ Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
 - `examples/object_pipeline.moss` creates and mutates an object inside a domain, passes it through read-only and mutating handlers, and finally sends it to another domain.
-- `examples/use_after_move.moss` demonstrates the compiler's provisional ownership-transfer experiment. The source semantics of nontrivial local assignment are still an open design question.
+- `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
 To inspect the ownership failure:
 
 ```sh
-./moss --check examples/use_after_move.moss
+./moss --check examples/use_after_transfer.moss
 ```
 
 Moss reports the later use and the line where ownership transferred:
 
 ```text
-moss:12: error: use of moved value 'original'; assignment to 'moved' transferred ownership at line 10
+moss:12: error: value 'original' was transferred to 'destination' at line 10. Create an explicit deep copy if both values must remain independently usable.
 ```
 
-This diagnostic reflects the current compiler implementation, not settled Moss semantics. Moss will not require Rust-style ownership declarations merely because its current backend is Rust; the authoritative status and open alternatives are recorded in `.codex/MOSS_DESIGN.md` and `.codex/CURRENT_STATUS.md`.
+This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy. The approved `deepCopy()` operation is not implemented yet; see `.codex/MOSS_DESIGN.md` for the current contract and deferred work.
 
 ## Implemented language slice
 
@@ -98,7 +98,7 @@ Two or more domains can still deadlock if they form a cross-domain await cycle, 
 
 This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. In particular, it does not yet implement later failure and cancellation semantics, blocking FFI rules, arenas, generics/traits, Domain Clustering, or message-elimination optimizations.
 
-Non-primitive message and reply payloads are conservatively cloned. Treat the syntax and generated runtime as experimental.
+Detached nontrivial locals passed in messages are transferred and unavailable to the sender afterward. Domain state cannot be transferred by message, while domain-reference arguments remain usable by the sender. Hidden deep copies and copy-on-write are not part of Moss; explicit `deepCopy()` remains future work.
 
 ## Platforms
 

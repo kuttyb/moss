@@ -1,0 +1,9 @@
+domain Demo
+  on Run()
+    let first = 1
+    let second = first
+    echo "primitive:", first, second
+
+proc main()
+  let demo = spawn Demo()
+  demo.Run()

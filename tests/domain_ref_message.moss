@@ -1,0 +1,16 @@
+domain Worker
+  on Ping()
+    echo "ping"
+
+domain Relay
+  on Run(worker: Worker, sink: Relay)
+    sink.Accept(worker)
+    worker.Ping()
+
+  on Accept(worker: Worker)
+    worker.Ping()
+
+proc main()
+  let worker = spawn Worker()
+  let relay = spawn Relay()
+  relay.Run(worker, relay)
