@@ -30,10 +30,10 @@ run_case() {
   fi
 }
 
-reject_case() {
+reject_source() {
   name=$1
-  expected=$2
-  source="tests/negative/$name.moss"
+  source=$2
+  expected=$3
   stdout="$test_build/$name.stdout"
   stderr="$test_build/$name.stderr"
   if "$compiler" --check "$source" >"$stdout" 2>"$stderr"; then
@@ -47,14 +47,28 @@ reject_case() {
   }
 }
 
+reject_case() {
+  name=$1
+  expected=$2
+  reject_source "$name" "tests/negative/$name.moss" "$expected"
+}
+
 run_case counter examples/counter.moss 'counter: 41
 counter: 42'
 run_case checkout examples/checkout.moss 'charged: 75
 order completed
 order rejected: insufficient inventory'
+run_case object_pipeline examples/object_pipeline.moss 'created: widget 1 false
+observed: widget 1 false
+revised: widget 2 true
+verified: widget 2 true
+archive: widget 2 true'
 run_case await_main tests/await_main.moss 'main: true'
 run_case sequential_awaits tests/sequential_awaits.moss 'sequential: true'
 run_case ignored_reply tests/ignored_reply.moss 'ignored reply completed'
+
+reject_source use_after_move examples/use_after_move.moss \
+  "use of moved value 'original'; assignment to 'moved' transferred ownership at line 10"
 
 compile_case non_reentrant tests/non_reentrant.moss
 iteration=1

@@ -36,6 +36,26 @@ order rejected: insufficient inventory
 
 Run the complete smoke test with `make check`.
 
+Additional examples:
+
+- `examples/counter.moss` demonstrates serialized state updates.
+- `examples/object_pipeline.moss` creates and mutates an object inside a domain, passes it through read-only and mutating handlers, and finally sends it to another domain.
+- `examples/use_after_move.moss` is an intentional negative example: Moss infers an ownership transfer from assignment and rejects a later use of the moved object.
+
+To inspect the ownership failure:
+
+```sh
+./moss --check examples/use_after_move.moss
+```
+
+Moss reports the later use and the line where ownership transferred:
+
+```text
+moss:12: error: use of moved value 'original'; assignment to 'moved' transferred ownership at line 10
+```
+
+No `move`, borrow, lifetime, or clone declaration is required. Primitive scalar assignments remain copyable; for direct local-to-local assignments of known owned values, Moss infers transfer and reports a static error only if the source is used afterward. This prevents the example from reaching Rust's borrow checker or becoming an executable use-after-free.
+
 ## Implemented language slice
 
 - Domain-owned mutable state

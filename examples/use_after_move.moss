@@ -1,0 +1,16 @@
+# This is an intentional negative example. Moss infers that assigning `original`
+# to `moved` transfers ownership, then rejects the later use of `original`.
+
+type Payload = object
+  text: string
+
+domain OwnershipDemo
+  on Trigger()
+    let original = Payload(text: "owned value")
+    let moved = original
+    echo "moved:", moved.text
+    echo "original:", original.text
+
+proc main()
+  let demo = spawn OwnershipDemo()
+  demo.Trigger()

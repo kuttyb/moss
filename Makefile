@@ -13,4 +13,6 @@ check: moss
 
 clean:
 	rm -f moss build/counter build/counter.rs build/checkout build/checkout.rs
+	rm -f build/object_pipeline build/object_pipeline.rs
+	rm -f build/use_after_move build/use_after_move.rs
 	rm -rf build/tests

@@ -490,12 +490,19 @@ class Checker {
       }
       for (const auto& f : d.state) env[f.name] = f.type;
       check_stmts(h.body, env, &d, &h);
+      OwnershipEnv ownership;
+      ownership.types = env;
+      for (const auto& f : d.state) ownership.state_fields.insert(f.name);
+      check_ownership(h.body, std::move(ownership));
     }
   }
 
   void check_main(const MainProc& m) {
     std::unordered_map<string,string> env;
     check_stmts(m.body, env, nullptr, nullptr);
+    OwnershipEnv ownership;
+    ownership.types = std::move(env);
+    check_ownership(m.body, std::move(ownership));
   }
 
   static std::optional<string> spawn_domain(const string& expr) {
@@ -540,6 +547,183 @@ class Checker {
     }
     if (digit && dot) return "float";
     return std::nullopt;
+  }
+
+  struct MoveInfo {
+    int line = 0;
+    string destination;
+  };
+
+  struct OwnershipEnv {
+    std::unordered_map<string,string> types;
+    std::set<string> state_fields;
+    std::map<string,MoveInfo> moved;
+  };
+
+  static bool simple_identifier(const string& value) {
+    string s = trim(value);
+    if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+    return std::all_of(s.begin() + 1, s.end(), [](char c) {
+      return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    });
+  }
+
+  static bool expression_uses(const string& expression, const string& name) {
+    bool in_string = false, escaped = false;
+    for (size_t i = 0; i < expression.size();) {
+      char c = expression[i];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (c == '\\') escaped = true;
+        else if (c == '"') in_string = false;
+        ++i;
+        continue;
+      }
+      if (c == '"') { in_string = true; ++i; continue; }
+      if (!(std::isalpha(static_cast<unsigned char>(c)) || c == '_')) { ++i; continue; }
+      size_t end = i + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
+      if (expression.compare(i, end - i, name) == 0) {
+        size_t before = i;
+        while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+        bool member_name = before > 0 && expression[before - 1] == '.';
+        size_t after = end;
+        while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+        bool named_field = after < expression.size() && expression[after] == ':';
+        if (!member_name && !named_field) return true;
+      }
+      i = end;
+    }
+    return false;
+  }
+
+  bool copy_type(const string& type) const {
+    string t = trim(type);
+    if (t == "int" || t == "float" || t == "bool") return true;
+    if (starts_with(t, "option[") && ends_with(t, "]"))
+      return copy_type(trim(t.substr(7, t.size() - 8)));
+    return false;
+  }
+
+  std::optional<string> inferred_expr_type(const string& expression,
+                                           const std::unordered_map<string,string>& env) const {
+    if (auto type = obvious_expr_type(expression, env)) return type;
+    string e = trim(expression);
+    auto lp = e.find('(');
+    if (lp != string::npos && ends_with(e, ")")) {
+      string constructor = trim(e.substr(0, lp));
+      if (objects_.count(constructor)) return constructor;
+    }
+    return std::nullopt;
+  }
+
+  void require_available(int line, const string& expression, const OwnershipEnv& env) const {
+    for (const auto& entry : env.moved) {
+      if (expression_uses(expression, entry.first)) {
+        err(line, "use of moved value '" + entry.first + "'; assignment to '" +
+            entry.second.destination + "' transferred ownership at line " +
+            std::to_string(entry.second.line));
+      }
+    }
+  }
+
+  static void merge_moved(OwnershipEnv& destination, const OwnershipEnv& branch) {
+    for (const auto& entry : branch.moved) {
+      if (destination.types.count(entry.first)) destination.moved.emplace(entry.first, entry.second);
+    }
+  }
+
+  void check_ownership(const vector<Stmt>& statements, OwnershipEnv env) const {
+    size_t index = 0;
+    check_ownership_block(statements, index, 0, env);
+  }
+
+  void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
+                             OwnershipEnv& env) const {
+    while (index < statements.size()) {
+      const Stmt& s = statements[index];
+      if (s.indent < level) return;
+      if (s.indent > level) return;
+      if (s.kind == Stmt::Kind::Else) return;
+
+      if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
+        require_available(s.line, s.a, env);
+        bool is_if = s.kind == Stmt::Kind::If;
+        ++index;
+        OwnershipEnv body = env;
+        check_ownership_block(statements, index, level + 1, body);
+        if (is_if && index < statements.size() && statements[index].indent == level &&
+            statements[index].kind == Stmt::Kind::Else) {
+          ++index;
+          OwnershipEnv alternative = env;
+          check_ownership_block(statements, index, level + 1, alternative);
+          merge_moved(env, alternative);
+        }
+        merge_moved(env, body);
+        continue;
+      }
+
+      switch (s.kind) {
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var: {
+          require_available(s.line, s.b, env);
+          std::optional<string> type;
+          if (auto spawned = spawn_domain(s.b)) type = *spawned;
+          else type = inferred_expr_type(s.b, env.types);
+
+          string source = trim(s.b);
+          bool transfers = simple_identifier(source) && env.types.count(source) &&
+                           !copy_type(env.types.at(source));
+          if (transfers && env.state_fields.count(source))
+            err(s.line, "cannot move domain state field '" + source + "' into local '" + s.a +
+                "'; the field must remain initialized for later messages");
+
+          env.types[s.a] = type.value_or("_value");
+          env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
+          if (transfers && source != s.a) env.moved[source] = MoveInfo{s.line, s.a};
+          ++index;
+          break;
+        }
+        case Stmt::Kind::AwaitLet:
+          require_available(s.line, s.b, env);
+          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          if (auto receiver = env.types.find(s.b); receiver != env.types.end()) {
+            if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
+              if (const Handler* handler = find_handler(*domain->second, s.c); handler && handler->reply_type)
+                env.types[s.a] = *handler->reply_type;
+            }
+          }
+          if (!env.types.count(s.a)) env.types[s.a] = "_value";
+          env.moved.erase(s.a);
+          ++index;
+          break;
+        case Stmt::Kind::Send:
+          require_available(s.line, s.a, env);
+          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          ++index;
+          break;
+        case Stmt::Kind::Echo:
+          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          ++index;
+          break;
+        case Stmt::Kind::Reply:
+          require_available(s.line, s.a, env);
+          ++index;
+          break;
+        case Stmt::Kind::Raw:
+          require_available(s.line, s.text, env);
+          ++index;
+          break;
+        case Stmt::Kind::Return:
+          ++index;
+          break;
+        case Stmt::Kind::If:
+        case Stmt::Kind::Else:
+        case Stmt::Kind::While:
+          return;
+      }
+    }
   }
 
   void check_stmts(const vector<Stmt>& ss, std::unordered_map<string,string> env,
