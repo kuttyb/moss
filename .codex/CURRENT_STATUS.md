@@ -5,9 +5,10 @@ Updated: 2026-09-05
 ## Version and commits
 
 - Compiler version: Moss v0.2
-- Repository HEAD reviewed in this session: `c75e861892fac6813821a0de9831d851d4164ed7`
+- Latest relevant repository commit reviewed in this session: `5920878f0b2e95a29304ea1b94ecc52e1003b6c4`
 - Latest compiler-behavior commit: `f440856ff59f8ea208d06bae4d11738ccfe880fc`
 - Await/reply implementation commit: `4ee1de7e0f33564782e800e84500b945b45268b7`
+- Design-record commit: `5920878f0b2e95a29304ea1b94ecc52e1003b6c4`
 
 ## Implemented features
 
@@ -134,4 +135,4 @@ Should domains support synchronous local procedures distinct from message handle
 
 ### Exact commit hash containing the work
 
-The current compiler experiment is in `f440856ff59f8ea208d06bae4d11738ccfe880fc`; the latest reviewed repository commit is `c75e861892fac6813821a0de9831d851d4164ed7`. The documentation created in this session records the explicit deferral; no implementation reconciliation was performed.
+The compiler experiment is in `f440856ff59f8ea208d06bae4d11738ccfe880fc`. The documentation and explicit deferral are in commit `5920878f0b2e95a29304ea1b94ecc52e1003b6c4`; no implementation reconciliation was performed.
