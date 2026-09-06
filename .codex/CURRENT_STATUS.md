@@ -6,7 +6,7 @@ Updated: 2026-09-05
 
 - Compiler version: Moss v0.2
 - Repository was synchronized with `origin/main` before this session; it was already up to date.
-- Latest relevant implementation commit: pending final commit for this session (recorded below).
+- Latest relevant implementation commit: `0adac33`.
 
 ## Approved semantics
 
@@ -93,4 +93,4 @@ Updated: 2026-09-05
 
 ### Exact commit hash containing the work
 
-To be filled with the implementation commit hash before handoff.
+`0adac33` — Implement approved Moss transfer semantics.
