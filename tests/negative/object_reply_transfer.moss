@@ -1,0 +1,12 @@
+type Payload = object
+  value: int
+
+domain Worker
+  on Build() -> Payload
+    let payload = Payload(value: 7)
+    reply payload
+
+proc main()
+  let worker = spawn Worker()
+  let payload = await worker.Build()
+  echo payload.value

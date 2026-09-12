@@ -1,0 +1,18 @@
+type Payload = object
+  value: int
+
+type Envelope = object
+  payload: Payload
+
+domain Worker
+  on Process(payload: Payload)
+    echo payload.value
+
+domain Sender
+  on Start(worker: Worker, envelope: Envelope)
+    worker.Process(envelope.payload)
+
+proc main()
+  let worker = spawn Worker()
+  let sender = spawn Sender()
+  sender.Start(worker, Envelope(payload: Payload(value: 7)))

@@ -493,7 +493,7 @@ class Checker {
       OwnershipEnv ownership;
       ownership.types = env;
       for (const auto& f : d.state) ownership.state_fields.insert(f.name);
-      check_ownership(h.body, std::move(ownership));
+      check_ownership(h.body, std::move(ownership), &d, &h);
     }
   }
 
@@ -502,7 +502,7 @@ class Checker {
     check_stmts(m.body, env, nullptr, nullptr);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
-    check_ownership(m.body, std::move(ownership));
+    check_ownership(m.body, std::move(ownership), nullptr, nullptr);
   }
 
   static std::optional<string> spawn_domain(const string& expr) {
@@ -638,13 +638,54 @@ class Checker {
     }
   }
 
-  void check_ownership(const vector<Stmt>& statements, OwnershipEnv env) const {
+  void require_cross_domain_value(int line, const string& expression,
+                                  const string& expected_type,
+                                  const OwnershipEnv& env,
+                                  const string& action) const {
+    if (!transfer_type(expected_type)) return;
+    string value = trim(expression);
+
+    auto object = objects_.find(trim(expected_type));
+    auto lp = value.find('(');
+    if (object != objects_.end() && lp != string::npos && ends_with(value, ")") &&
+        trim(value.substr(0, lp)) == object->first) {
+      auto parts = split_top_level(value.substr(lp + 1, value.size() - lp - 2), ',');
+      std::unordered_map<string, string> fields;
+      if (parts.size() == 1 && parts.front().empty()) parts.clear();
+      for (const auto& part : parts) {
+        auto colon = part.find(':');
+        if (colon != string::npos)
+          fields[trim(part.substr(0, colon))] = trim(part.substr(colon + 1));
+      }
+      for (const auto& field : object->second->fields) {
+        auto supplied = fields.find(field.name);
+        if (supplied != fields.end())
+          require_cross_domain_value(line, supplied->second, field.type, env, action);
+      }
+      return;
+    }
+
+    for (const auto& binding : env.types) {
+      if (!transfer_type(binding.second) || !expression_uses(value, binding.first)) continue;
+      if (env.state_fields.count(binding.first))
+        err(line, "domain state '" + binding.first + "' cannot be transferred" +
+            (action.empty() ? " by message" : action));
+      err(line, "owned non-primitive value '" + binding.first +
+          "' cannot cross a domain boundary" + action +
+          "; construct a fresh message value instead");
+    }
+  }
+
+  void check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
+                       const Domain* current_domain,
+                       const Handler* current_handler) const {
     size_t index = 0;
-    check_ownership_block(statements, index, 0, env);
+    check_ownership_block(statements, index, 0, env, current_domain, current_handler);
   }
 
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
-                             OwnershipEnv& env) const {
+                             OwnershipEnv& env, const Domain* current_domain,
+                             const Handler* current_handler) const {
     while (index < statements.size()) {
       const Stmt& s = statements[index];
       if (s.indent < level) return;
@@ -656,12 +697,13 @@ class Checker {
         bool is_if = s.kind == Stmt::Kind::If;
         ++index;
         OwnershipEnv body = env;
-        check_ownership_block(statements, index, level + 1, body);
+        check_ownership_block(statements, index, level + 1, body, current_domain, current_handler);
         if (is_if && index < statements.size() && statements[index].indent == level &&
             statements[index].kind == Stmt::Kind::Else) {
           ++index;
           OwnershipEnv alternative = env;
-          check_ownership_block(statements, index, level + 1, alternative);
+          check_ownership_block(statements, index, level + 1, alternative,
+                                current_domain, current_handler);
           merge_moved(env, alternative);
         }
         merge_moved(env, body);
@@ -678,7 +720,7 @@ class Checker {
 
           string source = trim(s.b);
           bool transfers = simple_identifier(source) && env.types.count(source) &&
-                           !copy_type(env.types.at(source));
+                           transfer_type(env.types.at(source));
           if (transfers && env.state_fields.count(source))
             err(s.line, "domain state '" + source + "' cannot be transferred into local '" + s.a +
                 "'; the field must remain available for later messages");
@@ -689,9 +731,15 @@ class Checker {
           ++index;
           break;
         }
-        case Stmt::Kind::AwaitLet:
+        case Stmt::Kind::AwaitLet: {
           require_available(s.line, s.b, env);
-          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          const Handler* awaited = check_call(s.line, s.b, s.c, s.args, env.types);
+          for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
+            const auto& arg = s.args[arg_index];
+            require_available(s.line, arg, env);
+            require_cross_domain_value(s.line, arg, awaited->params[arg_index].type,
+                                       env, "");
+          }
           if (auto receiver = env.types.find(s.b); receiver != env.types.end()) {
             if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
               if (const Handler* handler = find_handler(*domain->second, s.c); handler && handler->reply_type)
@@ -702,6 +750,7 @@ class Checker {
           env.moved.erase(s.a);
           ++index;
           break;
+        }
         case Stmt::Kind::Send: {
           require_available(s.line, s.a, env);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
@@ -711,12 +760,19 @@ class Checker {
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
             require_available(s.line, arg, env);
+            bool stays_in_domain = current_domain && s.a == "self";
+            if (!stays_in_domain)
+              require_cross_domain_value(s.line, arg, handler->params[arg_index].type,
+                                         env, "");
             string source = trim(arg);
             if (!simple_identifier(source) || !env.types.count(source)) continue;
             string source_type = env.types.at(source);
             if (arg_index < handler->params.size() && transfer_type(source_type)) {
               if (env.state_fields.count(source))
                 err(s.line, "domain state '" + source + "' cannot be transferred by message");
+              if (!stays_in_domain)
+                err(s.line, "owned non-primitive value '" + source +
+                    "' cannot cross a domain boundary; construct a fresh message value instead");
               string destination = target ? target->name + "." + handler->name : handler->name;
               env.moved[source] = MoveInfo{s.line, destination};
             }
@@ -728,10 +784,14 @@ class Checker {
           for (const auto& arg : s.args) require_available(s.line, arg, env);
           ++index;
           break;
-        case Stmt::Kind::Reply:
+        case Stmt::Kind::Reply: {
           require_available(s.line, s.a, env);
+          if (current_handler && current_handler->reply_type)
+            require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
+                                       env, " in a reply");
           ++index;
           break;
+        }
         case Stmt::Kind::Raw:
           require_available(s.line, s.text, env);
           ++index;
@@ -761,7 +821,9 @@ class Checker {
           if (current) err(s.line, "spawning domains inside handlers is not supported in v0.2; create them in main and pass ActorRefs in messages");
           env[s.a] = *sd;
         } else {
-          env[s.a] = "_value";
+          auto source = env.find(trim(s.b));
+          env[s.a] = source != env.end() && domains_.count(source->second)
+              ? source->second : "_value";
           // Synchronous-looking cross-domain calls in expressions are forbidden.
           auto dot = s.b.find('.'), lp = s.b.find('(');
           if (dot != string::npos && lp != string::npos && dot < lp) {
@@ -799,9 +861,293 @@ class Checker {
   }
 };
 
+enum class MessageTransport { SharedMailbox, DirectSharedMemory };
+
+struct OptimizationPlan {
+  std::set<string> direct_shared_memory_domains;
+  vector<vector<string>> domain_clusters;
+
+  std::optional<size_t> cluster_for(const string& domain) const {
+    for (size_t index = 0; index < domain_clusters.size(); ++index) {
+      const auto& members = domain_clusters[index];
+      if (std::find(members.begin(), members.end(), domain) != members.end()) return index;
+    }
+    return std::nullopt;
+  }
+
+  bool same_cluster(const string& left, const string& right) const {
+    auto a = cluster_for(left), b = cluster_for(right);
+    return a && b && *a == *b;
+  }
+
+  MessageTransport transport_for(const Domain& domain) const {
+    return direct_shared_memory_domains.count(domain.name) ? MessageTransport::DirectSharedMemory
+                                                            : MessageTransport::SharedMailbox;
+  }
+
+};
+
+// Finds domains whose request messages can be eliminated in favor of locked state.
+// This is deliberately a backend analysis: it does not add a Moss type, expression,
+// or concurrency rule. A domain is promoted only when all of its handlers reply and
+// every whole-program call to it uses await, so no asynchronous send can be made
+// synchronous by the lowering. Rust verifies the selected state is Send when a
+// reference to it crosses a caller-domain thread boundary.
+class MessageTransportOptimizer {
+ public:
+  explicit MessageTransportOptimizer(const Program& program) : program_(program) {
+    for (const auto& object : program_.objects) objects_[object.name] = &object;
+    for (const auto& domain : program_.domains) domains_[domain.name] = &domain;
+  }
+
+  OptimizationPlan run(bool enabled, const vector<vector<string>>& requested_clusters = {}) const {
+    OptimizationPlan plan;
+    plan.domain_clusters = requested_clusters;
+    validate_clusters(plan);
+
+    std::set<string> asynchronously_called;
+    bool call_graph_complete = true;
+    for (const auto& domain : program_.domains) {
+      for (const auto& handler : domain.handlers) {
+        std::unordered_map<string, string> types;
+        types["self"] = domain.name;
+        for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& param : handler.params) types[param.name] = param.type;
+        scan_calls(handler.body, types, asynchronously_called, call_graph_complete);
+      }
+    }
+    if (program_.main) {
+      std::unordered_map<string, string> types;
+      scan_calls(program_.main->body, types, asynchronously_called, call_graph_complete);
+    }
+
+    for (const auto& domain : program_.domains) {
+      if (enabled && !plan.cluster_for(domain.name) && call_graph_complete &&
+          !asynchronously_called.count(domain.name) &&
+          domain_is_direct_candidate(domain))
+        plan.direct_shared_memory_domains.insert(domain.name);
+    }
+    return plan;
+  }
+
+ private:
+  const Program& program_;
+  std::unordered_map<string, const ObjectType*> objects_;
+  std::unordered_map<string, const Domain*> domains_;
+
+  void validate_clusters(const OptimizationPlan& plan) const {
+    std::set<string> seen;
+    for (size_t index = 0; index < plan.domain_clusters.size(); ++index) {
+      const auto& cluster = plan.domain_clusters[index];
+      if (cluster.size() < 2)
+        throw std::runtime_error("domain cluster " + std::to_string(index + 1) +
+                                 " must contain at least two domain types");
+      for (const auto& name : cluster) {
+        if (!domains_.count(name))
+          throw std::runtime_error("unknown domain in cluster: " + name);
+        if (!seen.insert(name).second)
+          throw std::runtime_error("domain appears in more than one cluster: " + name);
+      }
+    }
+
+    if (plan.domain_clusters.empty()) return;
+    std::unordered_map<string, size_t> spawn_counts;
+    std::set<string> nested_spawns;
+    if (program_.main) {
+      for (const auto& statement : program_.main->body) {
+        if (statement.kind != Stmt::Kind::Let && statement.kind != Stmt::Kind::Var) continue;
+        if (auto spawned = spawned_domain(statement.b)) {
+          ++spawn_counts[*spawned];
+          if (statement.indent != 0) nested_spawns.insert(*spawned);
+        }
+      }
+    }
+    for (const auto& cluster : plan.domain_clusters) {
+      for (const auto& name : cluster) {
+        if (spawn_counts[name] != 1)
+          throw std::runtime_error("clustered domain type '" + name +
+              "' must be spawned exactly once in main (found " +
+              std::to_string(spawn_counts[name]) + ")");
+        if (nested_spawns.count(name))
+          throw std::runtime_error("clustered domain type '" + name +
+                                   "' must be spawned unconditionally at main scope");
+      }
+    }
+
+    for (const auto& cluster : plan.domain_clusters) {
+      std::unordered_map<string, size_t> position;
+      for (size_t index = 0; index < cluster.size(); ++index) position[cluster[index]] = index;
+      vector<vector<bool>> awaits(cluster.size(), vector<bool>(cluster.size(), false));
+      for (const auto& source_name : cluster) {
+        const Domain& source = *domains_.at(source_name);
+        for (const auto& handler : source.handlers) {
+          std::unordered_map<string, string> types;
+          types["self"] = source.name;
+          for (const auto& field : source.state) types[field.name] = field.type;
+          for (const auto& param : handler.params) types[param.name] = param.type;
+          for (const auto& statement : handler.body) {
+            if (statement.kind == Stmt::Kind::AwaitLet) {
+              auto receiver = types.find(statement.b);
+              if (receiver != types.end() && position.count(receiver->second)) {
+                awaits[position.at(source.name)][position.at(receiver->second)] = true;
+              }
+              if (receiver != types.end() && domains_.count(receiver->second)) {
+                const Handler* target = find_handler(*domains_.at(receiver->second), statement.c);
+                if (target && target->reply_type) types[statement.a] = *target->reply_type;
+              }
+            } else if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var) {
+              auto source_type = types.find(trim(statement.b));
+              types[statement.a] = source_type != types.end() && domains_.count(source_type->second)
+                  ? source_type->second : "_value";
+            }
+          }
+        }
+      }
+      for (size_t via = 0; via < cluster.size(); ++via)
+        for (size_t from = 0; from < cluster.size(); ++from)
+          for (size_t to = 0; to < cluster.size(); ++to)
+            awaits[from][to] = awaits[from][to] || (awaits[from][via] && awaits[via][to]);
+      for (size_t index = 0; index < cluster.size(); ++index) {
+        if (awaits[index][index])
+          throw std::runtime_error("clustered await cycle involving '" + cluster[index] +
+              "' cannot use direct same-thread dispatch");
+      }
+    }
+
+  }
+
+  bool sendable_type(const string& type, std::set<string>& visiting) const {
+    string t = trim(type);
+    if (t == "int" || t == "float" || t == "bool" || t == "string") return true;
+
+    // Domain references are thread-safe capabilities in both backend transports.
+    if (domains_.count(t)) return true;
+
+    auto object = objects_.find(t);
+    if (object != objects_.end()) {
+      // Recursive value objects are not representable without indirection in the
+      // current Rust backend, so keep this optimization conservative around them.
+      if (!visiting.insert(t).second) return false;
+      bool sendable = std::all_of(object->second->fields.begin(), object->second->fields.end(),
+          [&](const Field& field) { return sendable_type(field.type, visiting); });
+      visiting.erase(t);
+      return sendable;
+    }
+
+    if ((starts_with(t, "seq[") || starts_with(t, "option[")) && ends_with(t, "]"))
+      return sendable_type(trim(t.substr(t.find('[') + 1, t.size() - t.find('[') - 2)), visiting);
+    if (starts_with(t, "table[") && ends_with(t, "]")) {
+      auto parts = split_top_level(t.substr(6, t.size() - 7), ',');
+      return parts.size() == 2 && sendable_type(parts[0], visiting) &&
+             sendable_type(parts[1], visiting);
+    }
+    return false;
+  }
+
+  bool domain_is_direct_candidate(const Domain& domain) const {
+    if (domain.handlers.empty()) return false;
+    for (const auto& field : domain.state) {
+      std::set<string> visiting;
+      if (!sendable_type(field.type, visiting)) return false;
+    }
+    for (const auto& handler : domain.handlers) {
+      if (!handler.reply_type) return false;
+      for (const auto& param : handler.params) {
+        std::set<string> visiting;
+        if (!sendable_type(param.type, visiting)) return false;
+      }
+      std::set<string> visiting;
+      if (!sendable_type(*handler.reply_type, visiting)) return false;
+    }
+    return true;
+  }
+
+  static std::optional<string> spawned_domain(const string& expression) {
+    string value = trim(expression);
+    if (!starts_with(value, "spawn ") || !ends_with(value, "()")) return std::nullopt;
+    string name = trim(value.substr(6, value.size() - 8));
+    return name.empty() ? std::nullopt : std::optional<string>(name);
+  }
+
+  const Handler* find_handler(const Domain& domain, const string& name) const {
+    for (const auto& handler : domain.handlers)
+      if (handler.name == name) return &handler;
+    return nullptr;
+  }
+
+  void scan_calls(const vector<Stmt>& statements, std::unordered_map<string, string>& types,
+                  std::set<string>& asynchronously_called, bool& complete) const {
+    size_t index = 0;
+    scan_call_block(statements, index, 0, types, asynchronously_called, complete);
+    if (index != statements.size()) complete = false;
+  }
+
+  void scan_call_block(const vector<Stmt>& statements, size_t& index, int level,
+                       std::unordered_map<string, string>& types,
+                       std::set<string>& asynchronously_called, bool& complete) const {
+    while (index < statements.size()) {
+      const Stmt& statement = statements[index];
+      if (statement.indent < level) return;
+      if (statement.indent > level) {
+        complete = false;
+        return;
+      }
+      if (statement.kind == Stmt::Kind::Else) return;
+
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+        bool is_if = statement.kind == Stmt::Kind::If;
+        ++index;
+        auto child_types = types;
+        scan_call_block(statements, index, level + 1, child_types,
+                        asynchronously_called, complete);
+        if (is_if && index < statements.size() && statements[index].indent == level &&
+            statements[index].kind == Stmt::Kind::Else) {
+          ++index;
+          auto alternative_types = types;
+          scan_call_block(statements, index, level + 1, alternative_types,
+                          asynchronously_called, complete);
+        }
+        continue;
+      }
+
+      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var) {
+        if (auto spawned = spawned_domain(statement.b)) {
+          types[statement.a] = *spawned;
+        } else {
+          auto source = types.find(trim(statement.b));
+          types[statement.a] = source == types.end() ? "_value" : source->second;
+        }
+        ++index;
+        continue;
+      }
+
+      if (statement.kind != Stmt::Kind::Send && statement.kind != Stmt::Kind::AwaitLet) {
+        ++index;
+        continue;
+      }
+
+      const string& receiver = statement.kind == Stmt::Kind::Send ? statement.a : statement.b;
+      auto receiver_type = types.find(receiver);
+      if (receiver_type == types.end() || !domains_.count(receiver_type->second)) {
+        complete = false;
+        ++index;
+        continue;
+      }
+      const Domain& target = *domains_.at(receiver_type->second);
+      if (statement.kind == Stmt::Kind::Send) {
+        asynchronously_called.insert(target.name);
+      } else {
+        const Handler* handler = find_handler(target, statement.c);
+        types[statement.a] = handler && handler->reply_type ? *handler->reply_type : "_value";
+      }
+      ++index;
+    }
+  }
+};
+
 class Generator {
  public:
-  explicit Generator(const Program& p) : p_(p) {
+  Generator(const Program& p, const OptimizationPlan& plan) : p_(p), plan_(plan) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
   }
@@ -809,18 +1155,43 @@ class Generator {
   string generate() {
     std::ostringstream o;
     o << "// Generated by Moss v0.2. Do not edit by hand.\n";
-    o << "#![allow(non_snake_case)]\n#![allow(dead_code)]\n";
+    o << "// Message transport: lock-backed shared-memory mailboxes.\n";
+    if (!plan_.direct_shared_memory_domains.empty()) {
+      o << "// Message optimization: direct shared-memory dispatch for ";
+      bool first = true;
+      for (const auto& name : plan_.direct_shared_memory_domains) {
+        if (!first) o << ", ";
+        first = false;
+        o << name;
+      }
+      o << ".\n";
+    }
+    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index) {
+      o << "// Domain cluster " << index << ": static same-thread dispatch for ";
+      for (size_t member = 0; member < plan_.domain_clusters[index].size(); ++member) {
+        if (member) o << ", ";
+        o << plan_.domain_clusters[index][member];
+      }
+      o << ".\n";
+    }
+    o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
-    o << "use std::collections::HashMap;\n";
-    o << "use std::sync::mpsc::{self, Sender, Receiver};\n";
+    o << "use std::collections::{HashMap, VecDeque};\n";
+    o << "use std::cell::RefCell;\n";
+    o << "use std::rc::Rc;\n";
+    o << "use std::panic::{catch_unwind, AssertUnwindSafe};\n";
     o << "use std::sync::{Arc, Condvar, Mutex};\n";
     o << "use std::thread;\n\n";
+    o << "fn __moss_require_send<T: Send>() {}\n\n";
+    gen_shared_channel(o);
     gen_tracker(o);
 
     for (const auto& t : p_.objects) gen_object(o, t);
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
     for (const auto& d : p_.domains) gen_domain(o, d);
+    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
+      gen_cluster(o, index, plan_.domain_clusters[index]);
     if (p_.main) gen_main(o, *p_.main);
     else o << "fn main() {}\n";
     return o.str();
@@ -828,9 +1199,25 @@ class Generator {
 
  private:
   const Program& p_;
+  const OptimizationPlan& plan_;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
   size_t reply_temp_ = 0;
+
+  bool direct_shared_memory(const Domain& domain) const {
+    return plan_.transport_for(domain) == MessageTransport::DirectSharedMemory;
+  }
+
+  std::optional<size_t> cluster_for(const Domain& domain) const {
+    return plan_.cluster_for(domain.name);
+  }
+
+  bool local_cluster_call(const Domain* source, const Domain* target,
+                          const std::optional<size_t>& cluster_context) const {
+    return source && target && cluster_context &&
+           plan_.same_cluster(source->name, target->name) &&
+           plan_.cluster_for(source->name) == cluster_context;
+  }
 
   string rust_type(const string& t) const {
     string x = trim(t);
@@ -849,6 +1236,17 @@ class Generator {
       return "HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     return x;
+  }
+
+  string local_rust_type(const string& type, size_t cluster) const {
+    string value = trim(type);
+    auto domain = domains_.find(value);
+    if (domain != domains_.end()) {
+      if (plan_.cluster_for(value) == std::optional<size_t>(cluster))
+        return value + "LocalRef";
+      return "Rc<" + value + "Ref>";
+    }
+    return rust_type(value);
   }
 
   string default_value(const string& type) const {
@@ -967,13 +1365,98 @@ class Generator {
     return r;
   }
 
+  string cluster_call_arg(const string& expression, const string& type,
+                          const Domain* source, const std::set<string>& locals,
+                          size_t cluster, bool crosses_thread) const {
+    string value_type = trim(type);
+    if (domains_.count(value_type)) {
+      if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster)) {
+        if (crosses_thread)
+          return "self." + snake_case(value_type) + "_ref.clone()";
+        return value_type + "LocalRef";
+      }
+      string value = expr(expression, source, locals);
+      if (crosses_thread) return "(" + value + ").as_ref().clone()";
+      return "(" + value + ").clone()";
+    }
+    return message_arg(expression, type, source, locals);
+  }
+
   void gen_tracker(std::ostringstream& o) {
-    o << "struct MossTracker { pending: Mutex<usize>, cv: Condvar }\n";
+    o << "struct MossTrackerState { pending: usize, failed: bool }\n";
+    o << "struct MossTracker { state: Mutex<MossTrackerState>, cv: Condvar }\n";
     o << "impl MossTracker {\n";
-    o << "    fn new() -> Self { Self { pending: Mutex::new(0), cv: Condvar::new() } }\n";
-    o << "    fn begin(&self) { let mut n = self.pending.lock().unwrap(); *n += 1; }\n";
-    o << "    fn end(&self) { let mut n = self.pending.lock().unwrap(); *n -= 1; if *n == 0 { self.cv.notify_all(); } }\n";
-    o << "    fn wait_zero(&self) { let mut n = self.pending.lock().unwrap(); while *n != 0 { n = self.cv.wait(n).unwrap(); } }\n";
+    o << "    fn new() -> Self { Self { state: Mutex::new(MossTrackerState { pending: 0, failed: false }), cv: Condvar::new() } }\n";
+    o << "    fn begin(&self) { let mut state = self.state.lock().unwrap(); state.pending += 1; }\n";
+    o << "    fn end(&self) { let mut state = self.state.lock().unwrap(); state.pending -= 1; if state.pending == 0 { self.cv.notify_all(); } }\n";
+    o << "    fn fail(&self) { let mut state = self.state.lock().unwrap(); state.failed = true; self.cv.notify_all(); }\n";
+    o << "    fn wait_zero(&self) -> bool {\n";
+    o << "        let mut state = self.state.lock().unwrap();\n";
+    o << "        while state.pending != 0 && !state.failed { state = self.cv.wait(state).unwrap(); }\n";
+    o << "        !state.failed\n";
+    o << "    }\n";
+    o << "}\n\n";
+  }
+
+  void gen_shared_channel(std::ostringstream& o) {
+    o << "struct MossChannelState<T> { queue: VecDeque<T>, senders: usize, receiver_open: bool }\n";
+    o << "struct MossChannel<T> { state: Mutex<MossChannelState<T>>, ready: Condvar }\n";
+    o << "struct MossSender<T> { channel: Arc<MossChannel<T>> }\n";
+    o << "struct MossReceiver<T> { channel: Arc<MossChannel<T>> }\n\n";
+    o << "fn moss_channel<T>() -> (MossSender<T>, MossReceiver<T>) {\n";
+    o << "    let channel = Arc::new(MossChannel {\n";
+    o << "        state: Mutex::new(MossChannelState { queue: VecDeque::new(), senders: 1, receiver_open: true }),\n";
+    o << "        ready: Condvar::new(),\n";
+    o << "    });\n";
+    o << "    (MossSender { channel: channel.clone() }, MossReceiver { channel })\n";
+    o << "}\n\n";
+    o << "impl<T> Clone for MossSender<T> {\n";
+    o << "    fn clone(&self) -> Self {\n";
+    o << "        let mut state = self.channel.state.lock().unwrap();\n";
+    o << "        state.senders += 1;\n";
+    o << "        drop(state);\n";
+    o << "        Self { channel: self.channel.clone() }\n";
+    o << "    }\n";
+    o << "}\n\n";
+    o << "impl<T> MossSender<T> {\n";
+    o << "    fn send(&self, value: T) -> Result<(), T> {\n";
+    o << "        let mut state = self.channel.state.lock().unwrap();\n";
+    o << "        if !state.receiver_open { return Err(value); }\n";
+    o << "        state.queue.push_back(value);\n";
+    o << "        drop(state);\n";
+    o << "        self.channel.ready.notify_one();\n";
+    o << "        Ok(())\n";
+    o << "    }\n";
+    o << "}\n\n";
+    o << "impl<T> Drop for MossSender<T> {\n";
+    o << "    fn drop(&mut self) {\n";
+    o << "        let mut state = self.channel.state.lock().unwrap();\n";
+    o << "        state.senders -= 1;\n";
+    o << "        let closed = state.senders == 0;\n";
+    o << "        drop(state);\n";
+    o << "        if closed { self.channel.ready.notify_all(); }\n";
+    o << "    }\n";
+    o << "}\n\n";
+    o << "impl<T> MossReceiver<T> {\n";
+    o << "    fn recv(&self) -> Result<T, ()> {\n";
+    o << "        let mut state = self.channel.state.lock().unwrap();\n";
+    o << "        loop {\n";
+    o << "            if let Some(value) = state.queue.pop_front() { return Ok(value); }\n";
+    o << "            if state.senders == 0 { return Err(()); }\n";
+    o << "            state = self.channel.ready.wait(state).unwrap();\n";
+    o << "        }\n";
+    o << "    }\n";
+    o << "}\n\n";
+    o << "impl<T> Drop for MossReceiver<T> {\n";
+    o << "    fn drop(&mut self) {\n";
+    o << "        let abandoned = {\n";
+    o << "            let mut state = self.channel.state.lock().unwrap();\n";
+    o << "            state.receiver_open = false;\n";
+    o << "            std::mem::take(&mut state.queue)\n";
+    o << "        };\n";
+    o << "        self.channel.ready.notify_all();\n";
+    o << "        drop(abandoned);\n";
+    o << "    }\n";
     o << "}\n\n";
   }
 
@@ -984,7 +1467,17 @@ class Generator {
   }
 
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
-    o << "#[derive(Clone)]\nstruct " << d.name << "Ref {\n    tx: Sender<" << d.name << "Msg>,\n    tracker: Arc<MossTracker>,\n}\n\n";
+    o << "#[derive(Clone)]\nstruct " << d.name << "Ref {\n";
+    if (auto cluster = cluster_for(d)) {
+      o << "    tx: MossSender<MossCluster" << *cluster << "SharedMsg>,\n";
+      o << "    tracker: Arc<MossTracker>,\n";
+    } else if (direct_shared_memory(d)) {
+      o << "    state: Arc<Mutex<" << d.name << "State>>,\n";
+    } else {
+      o << "    tx: MossSender<" << d.name << "Msg>,\n";
+      o << "    tracker: Arc<MossTracker>,\n";
+    }
+    o << "}\n\n";
   }
 
   static string reply_binding(const Domain& d, const Handler& h) {
@@ -1007,10 +1500,67 @@ class Generator {
     });
   }
 
+  void gen_direct_domain(std::ostringstream& o, const Domain& d) {
+    o << "impl " << d.name << "Ref {\n";
+    for (const auto& h : d.handlers) {
+      if (!h.reply_type)
+        throw std::runtime_error("internal error: one-way handler reached direct shared-memory generation");
+      string result_name = reply_binding(d, h);
+      o << "    fn " << h.name << "_shared(&self";
+      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
+      o << "        let mut state = self.state.lock().unwrap();\n";
+      o << "        let self_ref = self.clone();\n";
+      o << "        let mut " << result_name << ": Option<" << rust_type(*h.reply_type)
+        << "> = None;\n";
+      o << "        'handler: {\n";
+      std::set<string> locals;
+      std::unordered_map<string,string> types;
+      types["self"] = d.name;
+      for (const auto& f : d.state) types[f.name] = f.type;
+      for (const auto& p : h.params) {
+        locals.insert(p.name);
+        types[p.name] = p.type;
+      }
+      locals.insert("self_ref");
+      locals.insert(result_name);
+      gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true);
+      o << "        }\n";
+      o << "        " << result_name << "\n";
+      o << "    }\n";
+    }
+    o << "}\n\n";
+
+    o << "fn spawn_" << snake_case(d.name) << "(_tracker: Arc<MossTracker>) -> "
+      << d.name << "Ref {\n";
+    o << "    __moss_require_send::<" << d.name << "State>();\n";
+    for (const auto& h : d.handlers) {
+      for (const auto& p : h.params)
+        o << "    __moss_require_send::<" << rust_type(p.type) << ">();\n";
+      o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
+    }
+    o << "    let state = " << d.name << "State {\n";
+    for (const auto& f : d.state) {
+      string init = f.init.empty() ? default_value(f.type) : expr(f.init, nullptr, {});
+      if (f.type == "string" && !init.empty() && init.front() == '"' && init.back() == '"') init += ".to_string()";
+      o << "        " << f.name << ": " << init << ",\n";
+    }
+    o << "    };\n";
+    o << "    " << d.name << "Ref { state: Arc::new(Mutex::new(state)) }\n";
+    o << "}\n\n";
+  }
+
   void gen_domain(std::ostringstream& o, const Domain& d) {
     o << "struct " << d.name << "State {\n";
     for (const auto& f : d.state) o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     o << "}\n\n";
+
+    if (cluster_for(d)) return;
+
+    if (direct_shared_memory(d)) {
+      gen_direct_domain(o, d);
+      return;
+    }
 
     o << "enum " << d.name << "Msg {\n";
     for (const auto& h : d.handlers) {
@@ -1024,7 +1574,7 @@ class Generator {
         }
         if (h.reply_type) {
           if (count) o << ", ";
-          o << "Sender<" << rust_type(*h.reply_type) << ">";
+          o << "MossSender<" << rust_type(*h.reply_type) << ">";
         }
         o << ")";
       }
@@ -1035,9 +1585,9 @@ class Generator {
     o << "impl " << d.name << "Ref {\n";
     for (const auto& h : d.handlers) {
       string reply_name = reply_binding(d, h);
-      o << "    fn " << h.name << "(&self";
+      o << "    fn " << h.name << "_shared(&self";
       for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
-      if (h.reply_type) o << ", " << reply_name << ": Sender<" << rust_type(*h.reply_type) << ">";
+      if (h.reply_type) o << ", " << reply_name << ": MossSender<" << rust_type(*h.reply_type) << ">";
       o << ") {\n        self.tracker.begin();\n        if self.tx.send(" << d.name << "Msg::" << h.name;
       if (!h.params.empty() || h.reply_type) {
         o << "(";
@@ -1057,7 +1607,9 @@ class Generator {
     o << "}\n\n";
 
     o << "fn spawn_" << snake_case(d.name) << "(tracker: Arc<MossTracker>) -> " << d.name << "Ref {\n";
-    o << "    let (tx, rx): (Sender<" << d.name << "Msg>, Receiver<" << d.name << "Msg>) = mpsc::channel();\n";
+    o << "    __moss_require_send::<" << d.name << "Msg>();\n";
+    o << "    let (tx, rx): (MossSender<" << d.name << "Msg>, MossReceiver<" << d.name
+      << "Msg>) = moss_channel();\n";
     o << "    let actor = " << d.name << "Ref { tx: tx.clone(), tracker: tracker.clone() };\n";
     o << "    let self_ref = actor.clone();\n";
     o << "    thread::spawn(move || {\n";
@@ -1108,9 +1660,304 @@ class Generator {
     o << "    actor\n}\n\n";
   }
 
+  void gen_cluster(std::ostringstream& o, size_t cluster_index,
+                   const vector<string>& member_names) {
+    vector<const Domain*> members;
+    for (const auto& name : member_names) members.push_back(domains_.at(name));
+    const string prefix = "MossCluster" + std::to_string(cluster_index);
+
+    o << "enum " << prefix << "SharedMsg {\n";
+    for (const Domain* domain : members) {
+      for (const auto& handler : domain->handlers) {
+        o << "    " << domain->name << "_" << handler.name;
+        if (!handler.params.empty() || handler.reply_type) {
+          o << "(";
+          size_t count = 0;
+          for (const auto& param : handler.params) {
+            if (count++) o << ", ";
+            o << rust_type(param.type);
+          }
+          if (handler.reply_type) {
+            if (count) o << ", ";
+            o << "MossSender<" << rust_type(*handler.reply_type) << ">";
+          }
+          o << ")";
+        }
+        o << ",\n";
+      }
+    }
+    o << "}\n\n";
+
+    for (const Domain* domain : members)
+      o << "#[derive(Clone, Copy)]\nstruct " << domain->name << "LocalRef;\n\n";
+
+    o << "enum " << prefix << "LocalMsg {\n";
+    for (const Domain* domain : members) {
+      for (const auto& handler : domain->handlers) {
+        o << "    " << domain->name << "_" << handler.name;
+        if (!handler.params.empty()) {
+          o << "(";
+          for (size_t index = 0; index < handler.params.size(); ++index) {
+            if (index) o << ", ";
+            o << local_rust_type(handler.params[index].type, cluster_index);
+          }
+          o << ")";
+        }
+        o << ",\n";
+      }
+    }
+    o << "}\n\n";
+
+    for (const Domain* domain : members) {
+      o << "impl " << domain->name << "Ref {\n";
+      for (const auto& handler : domain->handlers) {
+        string reply_name = reply_binding(*domain, handler);
+        o << "    fn " << handler.name << "_shared(&self";
+        for (const auto& param : handler.params)
+          o << ", " << param.name << ": " << rust_type(param.type);
+        if (handler.reply_type)
+          o << ", " << reply_name << ": MossSender<" << rust_type(*handler.reply_type) << ">";
+        o << ") {\n";
+        o << "        self.tracker.begin();\n";
+        o << "        if self.tx.send(" << prefix << "SharedMsg::" << domain->name
+          << "_" << handler.name;
+        if (!handler.params.empty() || handler.reply_type) {
+          o << "(";
+          size_t count = 0;
+          for (const auto& param : handler.params) {
+            if (count++) o << ", ";
+            o << param.name;
+          }
+          if (handler.reply_type) {
+            if (count) o << ", ";
+            o << reply_name;
+          }
+          o << ")";
+        }
+        o << ").is_err() { self.tracker.end(); }\n";
+        o << "    }\n";
+      }
+      o << "}\n\n";
+    }
+
+    o << "struct " << prefix << "Runtime {\n";
+    for (const Domain* domain : members) {
+      string stem = snake_case(domain->name);
+      o << "    " << stem << "_state: RefCell<" << domain->name << "State>,\n";
+      o << "    " << stem << "_ref: " << domain->name << "Ref,\n";
+    }
+    o << "    local_queue: RefCell<VecDeque<" << prefix << "LocalMsg>>,\n";
+    o << "}\n\n";
+
+    o << "impl " << prefix << "Runtime {\n";
+    for (const Domain* domain : members) {
+      for (const auto& handler : domain->handlers) {
+        string result_name = reply_binding(*domain, handler);
+        o << "    fn " << domain->name << "_" << handler.name << "_local(&self";
+        for (const auto& param : handler.params)
+          o << ", " << param.name << ": " << local_rust_type(param.type, cluster_index);
+        if (handler.reply_type)
+          o << ") -> Option<" << local_rust_type(*handler.reply_type, cluster_index) << "> {\n";
+        else
+          o << ") {\n";
+        o << "        let mut state = self." << snake_case(domain->name)
+          << "_state.borrow_mut();\n";
+        o << "        let self_ref = " << domain->name << "LocalRef;\n";
+        if (handler.reply_type)
+          o << "        let mut " << result_name << ": Option<"
+            << local_rust_type(*handler.reply_type, cluster_index) << "> = None;\n";
+        o << "        ";
+        if (handler_needs_label(handler)) o << "'handler: ";
+        o << "{\n";
+        std::set<string> locals;
+        std::unordered_map<string, string> types;
+        types["self"] = domain->name;
+        for (const auto& field : domain->state) types[field.name] = field.type;
+        for (const auto& param : handler.params) {
+          locals.insert(param.name);
+          types[param.name] = param.type;
+        }
+        locals.insert("self_ref");
+        if (handler.reply_type) locals.insert(result_name);
+        gen_stmts(o, handler.body, domain, &handler, result_name, locals, types,
+                  3, true, true, cluster_index);
+        o << "        }\n";
+        if (handler.reply_type) o << "        " << result_name << "\n";
+        o << "    }\n";
+      }
+    }
+
+    o << "    fn __moss_enqueue_local(&self, message: " << prefix << "LocalMsg) {\n";
+    o << "        self.local_queue.borrow_mut().push_back(message);\n";
+    o << "    }\n";
+    o << "    fn __moss_dispatch_local(&self, message: " << prefix << "LocalMsg) {\n";
+    o << "        match message {\n";
+    for (const Domain* domain : members) {
+      for (const auto& handler : domain->handlers) {
+        o << "            " << prefix << "LocalMsg::" << domain->name << "_"
+          << handler.name;
+        if (!handler.params.empty()) {
+          o << "(";
+          for (size_t index = 0; index < handler.params.size(); ++index) {
+            if (index) o << ", ";
+            o << handler.params[index].name;
+          }
+          o << ")";
+        }
+        o << " => { ";
+        if (handler.reply_type) o << "let _ = ";
+        o << "self." << domain->name << "_" << handler.name << "_local(";
+        for (size_t index = 0; index < handler.params.size(); ++index) {
+          if (index) o << ", ";
+          o << handler.params[index].name;
+        }
+        o << "); },\n";
+      }
+    }
+    o << "        }\n";
+    o << "    }\n";
+    o << "    fn __moss_drain_local(&self) {\n";
+    o << "        loop {\n";
+    o << "            let message = { self.local_queue.borrow_mut().pop_front() };\n";
+    o << "            let Some(message) = message else { break; };\n";
+    o << "            self.__moss_dispatch_local(message);\n";
+    o << "        }\n";
+    o << "    }\n";
+    for (const Domain* domain : members) {
+      if (domain->handlers.empty()) continue;
+      o << "    fn __moss_flush_" << domain->name << "_local(&self) {\n";
+      o << "        loop {\n";
+      o << "            let message = {\n";
+      o << "                let mut queue = self.local_queue.borrow_mut();\n";
+      o << "                let position = queue.iter().position(|message| matches!(message, ";
+      for (size_t index = 0; index < domain->handlers.size(); ++index) {
+        if (index) o << " | ";
+        const auto& handler = domain->handlers[index];
+        o << prefix << "LocalMsg::" << domain->name << "_" << handler.name;
+        if (!handler.params.empty()) o << "(..)";
+      }
+      o << "));\n";
+      o << "                position.and_then(|position| queue.remove(position))\n";
+      o << "            };\n";
+      o << "            let Some(message) = message else { break; };\n";
+      o << "            self.__moss_dispatch_local(message);\n";
+      o << "        }\n";
+      o << "    }\n";
+    }
+    o << "}\n\n";
+
+    o << "fn spawn_moss_cluster_" << cluster_index << "(tracker: Arc<MossTracker>) -> (";
+    for (size_t index = 0; index < members.size(); ++index) {
+      if (index) o << ", ";
+      o << members[index]->name << "Ref";
+    }
+    o << ") {\n";
+    o << "    __moss_require_send::<" << prefix << "SharedMsg>();\n";
+    o << "    let (tx, rx): (MossSender<" << prefix << "SharedMsg>, MossReceiver<"
+      << prefix << "SharedMsg>) = moss_channel();\n";
+    for (const Domain* domain : members) {
+      string stem = snake_case(domain->name);
+      o << "    let " << stem << "_ref = " << domain->name
+        << "Ref { tx: tx.clone(), tracker: tracker.clone() };\n";
+      o << "    let " << stem << "_runtime_ref = " << stem << "_ref.clone();\n";
+    }
+    o << "    thread::spawn(move || {\n";
+    o << "        let runtime = " << prefix << "Runtime {\n";
+    for (const Domain* domain : members) {
+      string stem = snake_case(domain->name);
+      o << "            " << stem << "_state: RefCell::new(" << domain->name << "State {\n";
+      for (const auto& field : domain->state) {
+        string init = field.init.empty() ? default_value(field.type) : expr(field.init, nullptr, {});
+        if (field.type == "string" && !init.empty() && init.front() == '"' && init.back() == '"')
+          init += ".to_string()";
+        o << "                " << field.name << ": " << init << ",\n";
+      }
+      o << "            }),\n";
+      o << "            " << stem << "_ref: " << stem << "_runtime_ref,\n";
+    }
+    o << "            local_queue: RefCell::new(VecDeque::new()),\n";
+    o << "        };\n";
+    o << "        while let Ok(message) = rx.recv() {\n";
+    o << "            match message {\n";
+    for (const Domain* domain : members) {
+      for (const auto& handler : domain->handlers) {
+        string reply_name = reply_binding(*domain, handler);
+        o << "                " << prefix << "SharedMsg::" << domain->name << "_"
+          << handler.name;
+        if (!handler.params.empty() || handler.reply_type) {
+          o << "(";
+          size_t count = 0;
+          for (const auto& param : handler.params) {
+            if (count++) o << ", ";
+            o << param.name;
+          }
+          if (handler.reply_type) {
+            if (count) o << ", ";
+            o << reply_name;
+          }
+          o << ")";
+        }
+        o << " => {\n";
+        if (handler.reply_type) {
+          o << "                    if let Some(value) = runtime." << domain->name << "_"
+            << handler.name << "_local(";
+        } else {
+          o << "                    runtime." << domain->name << "_" << handler.name
+            << "_local(";
+        }
+        for (size_t index = 0; index < handler.params.size(); ++index) {
+          if (index) o << ", ";
+          const auto& param = handler.params[index];
+          if (domains_.count(trim(param.type)) &&
+              plan_.cluster_for(trim(param.type)) == std::optional<size_t>(cluster_index))
+            o << trim(param.type) << "LocalRef";
+          else if (domains_.count(trim(param.type)))
+            o << "Rc::new(" << param.name << ")";
+          else
+            o << param.name;
+        }
+        if (handler.reply_type) {
+          o << ") { let _ = " << reply_name << ".send(";
+          string reply_type = trim(*handler.reply_type);
+          if (domains_.count(reply_type) &&
+              plan_.cluster_for(reply_type) == std::optional<size_t>(cluster_index))
+            o << "runtime." << snake_case(reply_type) << "_ref.clone()";
+          else if (domains_.count(reply_type))
+            o << "value.as_ref().clone()";
+          else
+            o << "value";
+          o << "); }\n";
+        } else {
+          o << ");\n";
+        }
+        o << "                }\n";
+      }
+    }
+    o << "            }\n";
+    o << "            runtime.__moss_drain_local();\n";
+    o << "            tracker.end();\n";
+    o << "        }\n";
+    o << "    });\n";
+    o << "    (";
+    for (size_t index = 0; index < members.size(); ++index) {
+      if (index) o << ", ";
+      o << snake_case(members[index]->name) << "_ref";
+    }
+    o << ")\n";
+    o << "}\n\n";
+  }
+
   void gen_main(std::ostringstream& o, const MainProc& m) {
     o << "fn main() {\n";
     o << "    let __tracker = Arc::new(MossTracker::new());\n";
+    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index) {
+      o << "    let (";
+      for (size_t member = 0; member < plan_.domain_clusters[index].size(); ++member) {
+        if (member) o << ", ";
+        o << cluster_spawn_binding(index, plan_.domain_clusters[index][member]);
+      }
+      o << ") = spawn_moss_cluster_" << index << "(__tracker.clone());\n";
+    }
     std::set<string> locals;
     std::unordered_map<string,string> types;
     gen_stmts(o, m.body, nullptr, nullptr, "", locals, types, 1, false);
@@ -1121,16 +1968,19 @@ class Generator {
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
                  const Handler* current_handler, const string& reply_sender,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
-                 int base, bool in_handler) {
+                 int base, bool in_handler, bool direct_reply = false,
+                 std::optional<size_t> cluster_context = std::nullopt) {
     size_t i = 0;
-    gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base, in_handler);
+    gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base,
+              in_handler, direct_reply, cluster_context);
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
   void gen_block(std::ostringstream& o, const vector<Stmt>& ss, size_t& i, int level,
                  const Domain* d, const Handler* current_handler, const string& reply_sender,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
-                 int base, bool in_handler) {
+                 int base, bool in_handler, bool direct_reply,
+                 std::optional<size_t> cluster_context) {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -1145,7 +1995,7 @@ class Generator {
           auto child_locals = locals;
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler);
+                    child_locals, child_types, base, in_handler, direct_reply, cluster_context);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
@@ -1153,7 +2003,7 @@ class Generator {
             auto else_locals = locals;
             auto else_types = types;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                      else_locals, else_types, base, in_handler);
+                      else_locals, else_types, base, in_handler, direct_reply, cluster_context);
             o << indent(level) << "}\n";
           } else {
             o << "\n";
@@ -1166,7 +2016,7 @@ class Generator {
           auto child_locals = locals;
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler);
+                    child_locals, child_types, base, in_handler, direct_reply, cluster_context);
           o << indent(level) << "}\n";
           break;
         }
@@ -1188,12 +2038,20 @@ class Generator {
           auto sd = CheckerSpawn(s.b);
           if (sd) {
             o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
-              << s.a << " = spawn_" << snake_case(*sd) << "(__tracker.clone());\n";
+              << s.a << " = ";
+            if (auto cluster = plan_.cluster_for(*sd))
+              o << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
+            else
+              o << "spawn_" << snake_case(*sd) << "(__tracker.clone());\n";
             types[s.a] = *sd;
           } else {
+            auto source = types.find(trim(s.b));
+            bool domain_capability = source != types.end() && domains_.count(source->second);
             o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
-              << s.a << " = " << expr(s.b, d, locals) << ";\n";
-            types[s.a] = "_value";
+              << s.a << " = " << expr(s.b, d, locals);
+            if (domain_capability) o << ".clone()";
+            o << ";\n";
+            types[s.a] = domain_capability ? source->second : "_value";
           }
           locals.insert(s.a);
           ++i;
@@ -1208,19 +2066,40 @@ class Generator {
           }
           string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals);
           const Handler* h = target ? find_handler(*target, s.b) : nullptr;
+          if (local_cluster_call(d, target, cluster_context)) {
+            o << indent(level) << "self.__moss_enqueue_local(MossCluster" << *cluster_context
+              << "LocalMsg::" << target->name << "_" << s.b;
+            if (!s.args.empty()) {
+              o << "(";
+              for (size_t k = 0; k < s.args.size(); ++k) {
+                if (k) o << ", ";
+                string typ = h && k < h->params.size() ? h->params[k].type : "_";
+                o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context, false);
+              }
+              o << ")";
+            }
+            o << ");\n";
+            ++i;
+            break;
+          }
+          if (target && direct_shared_memory(*target))
+            throw std::runtime_error("internal error: asynchronous send reached direct shared-memory generation");
           string reply_tx, reply_rx;
           if (h && h->reply_type) {
             size_t id = reply_temp_++;
             reply_tx = "__moss_reply_tx_" + std::to_string(id);
             reply_rx = "__moss_reply_rx_" + std::to_string(id);
             o << indent(level) << "let (" << reply_tx << ", " << reply_rx
-              << ") = mpsc::channel::<" << rust_type(*h->reply_type) << ">();\n";
+              << ") = moss_channel::<" << rust_type(*h->reply_type) << ">();\n";
           }
-          o << indent(level) << recv << "." << s.b << "(";
+          o << indent(level) << recv << "." << s.b << "_shared(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";
             string typ = h && k < h->params.size() ? h->params[k].type : "_";
-            o << message_arg(s.args[k], typ, d, locals);
+            if (cluster_context)
+              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context, true);
+            else
+              o << message_arg(s.args[k], typ, d, locals);
           }
           if (!reply_tx.empty()) {
             if (!s.args.empty()) o << ", ";
@@ -1238,24 +2117,93 @@ class Generator {
           const Handler* h = target ? find_handler(*target, s.c) : nullptr;
           if (!target || !h || !h->reply_type)
             throw std::runtime_error("internal error: unchecked await reached code generation");
+          string recv = expr(s.b, d, locals);
+          if (local_cluster_call(d, target, cluster_context)) {
+            o << indent(level) << "self.__moss_flush_" << target->name << "_local();\n";
+            o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a
+              << " = self." << target->name << "_" << s.c << "_local(";
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              if (k) o << ", ";
+              o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
+                                    *cluster_context, false);
+            }
+            o << ").unwrap_or_else(|| {\n";
+            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+              << h->name << " completed without a reply\")\n";
+            o << indent(level) << "});\n";
+            locals.insert(s.a);
+            types[s.a] = *h->reply_type;
+            ++i;
+            break;
+          }
+          if (direct_shared_memory(*target)) {
+            bool localize_domain_reply = cluster_context &&
+                domains_.count(trim(*h->reply_type));
+            string result = s.a;
+            if (localize_domain_reply)
+              result = "__moss_reply_value_" + std::to_string(reply_temp_++);
+            o << indent(level) << "let "
+              << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
+              << " = " << recv << "." << s.c << "_shared(";
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              if (k) o << ", ";
+              if (cluster_context)
+                o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
+                                      *cluster_context, true);
+              else
+                o << message_arg(s.args[k], h->params[k].type, d, locals);
+            }
+            o << ").unwrap_or_else(|| {\n";
+            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+              << h->name << " completed without a reply\")\n";
+            o << indent(level) << "});\n";
+            if (localize_domain_reply) {
+              string reply_type = trim(*h->reply_type);
+              o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
+              if (plan_.cluster_for(reply_type) == cluster_context)
+                o << "{ drop(" << result << "); " << reply_type << "LocalRef };\n";
+              else
+                o << "Rc::new(" << result << ");\n";
+            }
+            locals.insert(s.a);
+            types[s.a] = *h->reply_type;
+            ++i;
+            break;
+          }
           size_t id = reply_temp_++;
           string reply_tx = "__moss_reply_tx_" + std::to_string(id);
           string reply_rx = "__moss_reply_rx_" + std::to_string(id);
+          bool localize_domain_reply = cluster_context &&
+              domains_.count(trim(*h->reply_type));
+          string result = localize_domain_reply
+              ? "__moss_reply_value_" + std::to_string(id) : s.a;
           o << indent(level) << "let (" << reply_tx << ", " << reply_rx
-            << ") = mpsc::channel::<" << rust_type(*h->reply_type) << ">();\n";
-          string recv = expr(s.b, d, locals);
-          o << indent(level) << recv << "." << s.c << "(";
+            << ") = moss_channel::<" << rust_type(*h->reply_type) << ">();\n";
+          o << indent(level) << recv << "." << s.c << "_shared(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";
-            o << message_arg(s.args[k], h->params[k].type, d, locals);
+            if (cluster_context)
+              o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
+                                    *cluster_context, true);
+            else
+              o << message_arg(s.args[k], h->params[k].type, d, locals);
           }
           if (!s.args.empty()) o << ", ";
           o << reply_tx << ");\n";
-          o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a
+          o << indent(level) << "let "
+            << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
             << " = " << reply_rx << ".recv().unwrap_or_else(|_| {\n";
           o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
             << h->name << " completed without a reply\")\n";
           o << indent(level) << "});\n";
+          if (localize_domain_reply) {
+            string reply_type = trim(*h->reply_type);
+            o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
+            if (plan_.cluster_for(reply_type) == cluster_context)
+              o << "{ drop(" << result << "); " << reply_type << "LocalRef };\n";
+            else
+              o << "Rc::new(" << result << ");\n";
+          }
           locals.insert(s.a);
           types[s.a] = *h->reply_type;
           ++i;
@@ -1264,8 +2212,16 @@ class Generator {
         case Stmt::Kind::Reply:
           if (!current_handler || !current_handler->reply_type || reply_sender.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
-          o << indent(level) << "let _ = " << reply_sender << ".send("
-            << message_arg(s.a, *current_handler->reply_type, d, locals) << ");\n";
+          if (direct_reply)
+            o << indent(level) << reply_sender << " = Some("
+              << (cluster_context
+                    ? cluster_call_arg(s.a, *current_handler->reply_type, d, locals,
+                                       *cluster_context, false)
+                    : message_arg(s.a, *current_handler->reply_type, d, locals))
+              << ");\n";
+          else
+            o << indent(level) << "let _ = " << reply_sender << ".send("
+              << message_arg(s.a, *current_handler->reply_type, d, locals) << ");\n";
           o << indent(level) << "break 'handler;\n";
           ++i;
           break;
@@ -1289,6 +2245,10 @@ class Generator {
     return trim(e.substr(6, e.size()-8));
   }
 
+  static string cluster_spawn_binding(size_t cluster, const string& domain) {
+    return "__moss_cluster_" + std::to_string(cluster) + "_" + snake_case(domain) + "_ref";
+  }
+
   const Handler* find_handler(const Domain& d, const string& name) const {
     for (const auto& h : d.handlers) if (h.name == name) return &h;
     return nullptr;
@@ -1301,8 +2261,12 @@ class Generator {
 static void usage() {
   std::cerr << "Moss v0.2 - actor/domain DSL to Rust with await/reply\n\n"
             << "Usage:\n"
-            << "  moss <input.moss> [-o output.rs]\n"
+            << "  moss <input.moss> [-Oshared-memory] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
+            << "Backend optimization:\n"
+            << "  -O, -Oshared-memory    eliminate eligible awaited messages with lock-backed state\n"
+            << "  -O0                    retain lock-backed mailbox dispatch for every domain\n\n"
+            << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
             << "  on Message(args...) -> Type\n"
             << "  reply value\n"
@@ -1313,10 +2277,32 @@ int main(int argc, char** argv) {
   try {
     if (argc < 2) { usage(); return 2; }
     bool check_only = false;
+    bool optimize_shared_memory = false;
     string input, output;
+    vector<vector<string>> requested_clusters;
     for (int i = 1; i < argc; ++i) {
       string a = argv[i];
       if (a == "--check") check_only = true;
+      else if (a == "-O" || a == "-Oshared-memory" || a == "--optimize-shared-memory")
+        optimize_shared_memory = true;
+      else if (a == "-O0") optimize_shared_memory = false;
+      else if (a == "--cluster" || moss::starts_with(a, "--cluster=")) {
+        string value;
+        if (a == "--cluster") {
+          if (++i >= argc) { usage(); return 2; }
+          value = argv[i];
+        } else {
+          value = a.substr(string("--cluster=").size());
+        }
+        auto members = moss::split_top_level(value, ',');
+        if (members.empty() || std::any_of(members.begin(), members.end(), [](const string& name) {
+              return name.empty();
+            })) {
+          std::cerr << "moss: invalid empty domain name in --cluster\n";
+          return 2;
+        }
+        requested_clusters.push_back(std::move(members));
+      }
       else if (a == "-o") {
         if (++i >= argc) { usage(); return 2; }
         output = argv[i];
@@ -1334,12 +2320,15 @@ int main(int argc, char** argv) {
     moss::Checker checker(program);
     checker.run();
 
+    auto plan = moss::MessageTransportOptimizer(program).run(
+        optimize_shared_memory, requested_clusters);
+
     if (check_only) {
       std::cout << input << ": ok\n";
       return 0;
     }
 
-    moss::Generator gen(program);
+    moss::Generator gen(program, plan);
     string rust = gen.generate();
     if (output.empty()) {
       auto pos = input.find_last_of('.');

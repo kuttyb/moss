@@ -1,5 +1,7 @@
 # Moss `await` implementation handover
 
+> Historical implementation brief. Its `std::sync::mpsc` backend instructions were superseded on 2026-09-11 by the lock-backed shared-memory runtime and static domain clustering recorded in `MOSS_DESIGN.md` and `MOSS_DECISIONS.md`. The source-level await/reply requirements remain relevant.
+
 Repository: https://github.com/kuttyb/moss
 
 ## Goal

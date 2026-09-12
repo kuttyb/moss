@@ -1,0 +1,17 @@
+domain Worker
+  on Ping()
+    echo "external ref: ping"
+
+domain Relay
+  on Pass(worker: Worker)
+    worker.Ping()
+
+domain Driver
+  on Run(relay: Relay, worker: Worker)
+    relay.Pass(worker)
+
+proc main()
+  let worker = spawn Worker()
+  let relay = spawn Relay()
+  let driver = spawn Driver()
+  driver.Run(relay, worker)

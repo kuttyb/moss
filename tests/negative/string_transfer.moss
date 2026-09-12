@@ -1,0 +1,12 @@
+domain Worker
+  on Notify(text: string)
+    echo text
+
+domain Sender
+  on Start(worker: Worker, text: string)
+    worker.Notify(text)
+
+proc main()
+  let worker = spawn Worker()
+  let sender = spawn Sender()
+  sender.Start(worker, "fresh")

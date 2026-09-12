@@ -44,16 +44,17 @@ Approved message semantics are:
 - Messages already queued for a domain are not processed reentrantly during the current handler.
 - Messages from one sender to one receiving domain preserve FIFO order.
 - Message payloads have value semantics. A receiver cannot use a payload to mutate the sender's local value.
-- Sending a detached, uniquely owned nontrivial local transfers it to the receiving domain. The sender cannot use that local afterward:
+- A nontrivial value already owned by a domain or by `main` cannot be transferred to another domain. This includes state, handler parameters, locals, and nontrivial fields reached through them:
 
 ```moss
 let payload = buildPayload()
-worker.Process(payload)
-echo payload       # compile-time error: payload was transferred
+worker.Process(payload) # compile-time error: payload cannot cross a domain boundary
 ```
 
-- Domain state and aliases into domain state cannot be transferred by message. A state field must be copied explicitly in a future `deepCopy()` operation or converted into a purpose-specific snapshot.
+- A value constructed directly as a message or reply payload is owned by that message and may cross the boundary. Primitive field projections can be used to construct a purpose-specific snapshot.
+- Domain state and aliases into domain state cannot be transferred by message or reply. A nontrivial value that must exist independently on both sides requires the future explicit `deepCopy()` operation.
 - Primitive values and domain references remain usable by the sender after a message send. A domain reference is a capability, not the domain's mutable state.
+- For ownership checks, `int`, `float`, and `bool` are copy primitives; `option[T]` is copyable only when `T` is. Dynamically stored `string`, `seq`, `table`, and value-object data are non-primitive. Domain references follow the separate capability rule.
 
 `self.Message(...)` is a queued message send to the current domain. It is not an ordinary synchronous procedure call:
 
@@ -61,7 +62,7 @@ echo payload       # compile-time error: payload was transferred
 self.Continue(item)
 ```
 
-The current handler completes before `Continue` can be dequeued. Moss does not yet define ordinary intra-domain procedure declarations or calls.
+The current handler completes before `Continue` can be dequeued. Because a self-message does not cross a domain boundary, it may transfer an owned local within the same domain. Moss does not yet define ordinary intra-domain procedure declarations or calls.
 
 ### Request/reply handlers
 
@@ -120,17 +121,26 @@ This section describes the current v0.2 backend. It is not a source-language con
 - `int`, `float`, `bool`, and `string` lower to `i64`, `f64`, `bool`, and `String`.
 - `seq`, `option`, and `table` lower to `Vec`, `Option`, and `HashMap`.
 - Value-object types lower to Rust structs currently deriving `Clone` and `Debug`.
-- Every spawned domain currently uses one OS thread and one `std::sync::mpsc` queue.
-- Each handler lowers to a message-enum variant and a `DomainRef` send method.
+- Cross-thread message and reply transport always lowers to generated shared memory: `Arc<Mutex<VecDeque<T>>>`-style storage with a `Condvar`. Generated Rust does not use `std::sync::mpsc`.
+- Every value that enters a worker thread is checked at a generated Rust `Send` boundary.
+- An unclustered queued domain owns one worker thread. Its reference writes to the lock-backed mailbox, and its worker drains the shared queue serially.
+- With `-Oshared-memory` (or `-O`), a backend-only whole-program pass may eliminate awaited request/reply transport for a domain when all of its handlers reply, every call to it is awaited, and its state and message types satisfy the supported `Send` analysis.
+- An eligible domain lowers to `Arc<Mutex<DomainState>>`. The awaiting caller locks that state, executes the handler to completion on its physical thread, and receives the result directly. Generated Rust assertions retain the `Send` boundary.
+- Domains with any asynchronous call retain the lock-backed queue-and-thread lowering. The optimization does not expose domain state, change any Moss call from asynchronous to synchronous, relax payload restrictions, alter FIFO guarantees, or make handlers reentrant.
+- Each unpromoted handler lowers to a message-enum variant and a `DomainRef` send method. A promoted reply handler lowers to a lock-taking `DomainRef` method returning `Option<ReplyType>`, where `None` preserves the existing missing-reply failure.
+- `--cluster=A,B` is a backend configuration, not Moss syntax. Each configured domain type must have exactly one unconditional spawn in `main`. The generated `spawn_moss_cluster_N` runtime call constructs one worker and one shared ingress mailbox for all members.
+- Calls from outside a cluster use generated `_shared` methods and the lock-backed ingress mailbox. Calls between members are statically emitted as `_local` calls; there is no runtime cluster test. Cluster-member capabilities use zero-sized local reference types and convert to shared references only when they leave the cluster. Awaited local messages call the target handler directly. One-way local messages use a plain single-threaded `VecDeque` and are invoked after the current handler, preserving non-reentrancy.
+- Before a direct local await, the generated runtime drains older local messages for that target. This prevents the direct call from overtaking an earlier message while allowing unrelated domains' local work to remain queued.
+- A cluster configuration with a statically visible await cycle among its members is rejected; direct same-thread execution cannot represent the original blocked cycle without re-entering an active domain.
+- Cluster state and the local queue use `RefCell` because only the cluster worker accesses them. Member-to-member dispatch contains no mutex, condition variable, atomic, or thread-safe channel operation; a handler that communicates outside its cluster still uses the shared path for that outbound call.
 - The generated tracker counts enqueued messages so `main` can wait for quiescence.
-- A detached nontrivial local passed as a message argument is lowered as an ownership transfer. No hidden deep copy is inserted.
+- Existing owned nontrivial bindings are rejected at a cross-domain send or reply. Fresh message construction does not trigger a hidden copy of a domain-owned value.
 - Domain-reference arguments are cloned as backend handles so the sender retains its capability; this is not immutable shared-value source semantics.
-- A reply-capable message carries a one-shot `std::sync::mpsc::Sender<ReplyType>`.
-- An await creates a one-shot channel, sends its sender with the request, and blocks on the receiver. Blocking an OS thread is the current implementation of logical non-reentrancy, not a requirement for future runtimes.
-- An ignored reply creates the same one-shot channel and immediately drops its receiver.
+- A cross-thread await creates a one-shot lock-backed shared-memory cell, sends its handle with the request, and blocks on its condition variable. Blocking an OS thread is the current implementation of logical non-reentrancy, not a requirement for future runtimes.
+- An ignored reply creates the same one-shot cell and immediately drops its receiver.
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 
-The current compiler enforces the approved direct-assignment and detached-message transfer cases with a lightweight ownership pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
+The current compiler enforces direct-assignment transfer, direct and nested owned payload boundaries, and state/reply restrictions with a lightweight ownership pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
 
 ## Explicit deep copy
 

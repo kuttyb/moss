@@ -1,0 +1,32 @@
+domain Counter
+  var value: int = 0
+
+  on Add(amount: int) -> bool
+    value = value + amount
+    reply true
+
+  on Value() -> int
+    reply value
+
+domain Producer
+  on Fill(counter: Counter, count: int)
+    var sent = 0
+    while sent < count:
+      let accepted = await counter.Add(1)
+      if not accepted:
+        return
+      sent = sent + 1
+
+  on Barrier() -> bool
+    reply true
+
+proc main()
+  let counter = spawn Counter()
+  let left = spawn Producer()
+  let right = spawn Producer()
+  left.Fill(counter, 1000)
+  right.Fill(counter, 1000)
+  let left_done = await left.Barrier()
+  let right_done = await right.Barrier()
+  let total = await counter.Value()
+  echo "shared total:", total, left_done, right_done

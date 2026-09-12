@@ -1,0 +1,17 @@
+type Payload = object
+  value: int
+
+domain Worker
+  on Inspect(payload: Payload) -> int
+    reply payload.value
+
+domain Sender
+  on Start(worker: Worker)
+    let payload = Payload(value: 7)
+    let result = await worker.Inspect(payload)
+    echo result
+
+proc main()
+  let worker = spawn Worker()
+  let sender = spawn Sender()
+  sender.Start(worker)

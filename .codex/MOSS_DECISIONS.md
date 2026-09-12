@@ -72,6 +72,46 @@ This is an append-only decision history. New decisions and revisions are added a
 
 **Supersedes:** The 2026-09-05 deferral of nontrivial assignment semantics. It does not supersede the earlier serialized-domain or await/reply decisions.
 
+## 2026-09-11 - Shared-memory transport is a backend optimization
+
+**Question:** May the Rust backend convert messages between domains on different threads into shared-memory communication using locks and Rust's `Send` boundary without changing Moss?
+
+**Final decision:** Yes. An optional whole-program backend pass may eliminate an awaited request/reply message when it can prove the target domain has only reply-capable handlers and no asynchronous call sites. An eligible domain may lower to `Arc<Mutex<DomainState>>`; an awaiting caller locks the target state, runs its handler to completion, and receives the result directly. State, parameter, and reply types must pass a conservative sendability analysis, with generated Rust assertions retaining the `Send` boundary. This adds no Moss syntax and changes no source-level semantics.
+
+**Reason:** Moss programmers should retain the domain/message model while the compiler remains free to eliminate transport that has no observable effect. An awaited caller is already blocked, and a target with no asynchronous calls has no queued work that direct dispatch could overtake. The target mutex preserves exclusive, run-to-completion state access across callers on different threads.
+
+**Alternatives considered and rejected:** Exposing locks or shared state in Moss; allowing arbitrary sender access to target state; directly dispatching one-way or ignored-reply calls; and replacing MPSC with a generic `Mutex<VecDeque>` mailbox. Direct asynchronous dispatch would change blocking and ordering, while the generic locked mailbox preserved semantics but was slower than the existing standard-library channel in the initial contention smoke test.
+
+**Programmer-facing consequences:** None. One-way sends and ignored replies remain asynchronous and queued. Promoted awaited handlers remain serialized and run-to-completion, message payload and transfer rules are unchanged, per-sender FIFO remains guaranteed, and await remains logically blocking and non-reentrant. Physical thread identity is a backend detail; promoted target state may be accessed by different caller threads, but only while its mutex is held.
+
+**Supersedes:** Only the prior backend description that every spawned domain necessarily owns an OS thread and `std::sync::mpsc` queue. It does not supersede any source-level domain, ordering, transfer, or await decision.
+
+## 2026-09-11 - Cross-domain ownership transfer is prohibited
+
+**Question:** May a domain transfer an already-owned non-primitive value to another domain through a message or reply?
+
+**Final decision:** No. Domain-private non-primitive state, parameters, locals, and non-primitive projections cannot cross a domain ownership boundary. The same restriction applies when `main` would transfer an existing owned value into a domain and when a handler would return one in a reply. A fresh value constructed directly as the payload is message-owned and may cross, and a queued self-message may still transfer a local because it stays inside one domain. Primitive snapshots and domain-reference capabilities may cross normally. Clustering does not relax this rule.
+
+**Reason:** A backend optimization must never turn domain isolation into implicit Rust ownership movement. Fresh message values have no prior domain owner, while primitive snapshots preserve isolation without hidden copying of an owned object graph.
+
+**Programmer-facing consequences:** `worker.Process(payload)` is rejected when `payload` is an existing non-primitive binding, even if it is never used again. Constructing `worker.Process(Payload(value: 7))` remains valid. Non-primitive replies must likewise be freshly constructed. `self.Continue(payload)` remains a queued same-domain transfer.
+
+**Supersedes:** The 2026-09-05 allowance for detached nontrivial locals to transfer through cross-domain messages. It leaves direct local-assignment transfer and the prohibition on hidden deep copies unchanged.
+
+## 2026-09-11 - Rust transport is shared memory and clusters use static local calls
+
+**Question:** How should Rust lower ordinary cross-thread messages and calls among domains explicitly grouped into a cluster?
+
+**Final decision:** Generated Rust uses no standard message-passing channel. Cross-thread requests and replies use generated lock-backed shared-memory queues and one-shot cells, with Rust `Send` assertions at thread boundaries. A backend cluster configuration groups domain types into one generated worker thread and one shared ingress queue. Calls from outside use `_shared` methods. Calls between cluster members are selected statically and use `_local` handler calls plus zero-sized local capability types; one-way messages wait in a plain local `VecDeque` until the active handler completes. Member-to-member dispatch contains no mutexes, atomics, condition variables, shared-handle clones, or runtime cluster checks. Outbound communication to a nonmember uses the shared path.
+
+For the initial implementation, `--cluster=A,B` supplies the backend configuration without adding Moss syntax. Each clustered type must have exactly one unconditional spawn in `main`. A generated `spawn_moss_cluster_N` runtime call creates the group. Before a direct local await, older local messages for its target are drained so the direct call cannot violate per-sender FIFO. A statically visible await cycle within the proposed group is rejected because direct execution would otherwise re-enter an active domain.
+
+**Reason:** Moss retains one clean message model while the compiler chooses the cheapest correct Rust mechanism from static placement. A cluster has one executor, so synchronization among its members is redundant, but queued one-way behavior is still required for run-to-completion and non-reentrancy.
+
+**Programmer-facing consequences:** Moss source is unchanged. Domain isolation, asynchronous one-way calls, await, FIFO, ignored replies, and non-reentrancy retain their language meaning. Cluster membership changes physical placement and generated implementation only. Cross-domain ownership restrictions apply equally inside and outside a cluster.
+
+**Supersedes:** The remaining MPSC fallback in the earlier 2026-09-11 transport decision and its rejection of a generic lock-backed mailbox. It extends that decision with static domain clustering; the eligible `Arc<Mutex<DomainState>>` awaited-only optimization remains available for unclustered domains.
+
 ## Open questions and experiments - not decisions
 
 ### Ordinary intra-domain procedures

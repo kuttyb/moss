@@ -1,0 +1,20 @@
+domain Worker
+  on Ping()
+    echo "cluster ref: ping"
+
+domain Registry
+  on Get(worker: Worker) -> Worker
+    reply worker
+
+domain Driver
+  on Run(registry: Registry, worker: Worker)
+    let selected = await registry.Get(worker)
+    let alias = selected
+    alias.Ping()
+    selected.Ping()
+
+proc main()
+  let worker = spawn Worker()
+  let registry = spawn Registry()
+  let driver = spawn Driver()
+  driver.Run(registry, worker)

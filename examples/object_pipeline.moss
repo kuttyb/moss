@@ -4,8 +4,8 @@ type WorkItem = object
   approved: bool
 
 domain Archive
-  on Store(item: WorkItem)
-    echo "archive:", item.name, item.revisions, item.approved
+  on Store(revisions: int, approved: bool)
+    echo "archive: widget", revisions, approved
 
 domain Workshop
   on Start(archive: Archive)
@@ -27,7 +27,7 @@ domain Workshop
 
   on Verify(item: WorkItem, archive: Archive)
     echo "verified:", item.name, item.revisions, item.approved
-    archive.Store(item)
+    archive.Store(item.revisions, item.approved)
 
 proc main()
   let archive = spawn Archive()

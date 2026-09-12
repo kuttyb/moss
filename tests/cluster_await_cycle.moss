@@ -1,0 +1,14 @@
+domain Left
+  on Ask(right: Right) -> int
+    let answer = await right.Ask(self)
+    reply answer
+
+domain Right
+  on Ask(left: Left) -> int
+    let answer = await left.Ask(self)
+    reply answer
+
+proc main()
+  let left = spawn Left()
+  let right = spawn Right()
+  left.Ask(right)
