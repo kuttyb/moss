@@ -846,6 +846,53 @@ class Checker {
     return out;
   }
 
+  bool has_structural_requirement(const Function& f, const string& subject, ConstraintKind kind, const string& detail) const {
+    return std::any_of(f.constraints.begin(), f.constraints.end(), [&](const Constraint& c) {
+      return c.subject == subject && c.kind == kind && c.detail == detail;
+    });
+  }
+
+  bool type_has_field(const string& type, const string& field) const {
+    auto it = objects_.find(type);
+    if (it == objects_.end()) return false;
+    return std::any_of(it->second->fields.begin(), it->second->fields.end(), [&](const Field& f) { return f.name == field; });
+  }
+
+  void derive_expression_constraints(Function& function, const string& expression) {
+    string e = normalize_pipeline(trim(expression));
+    for (const auto& parameter : function.params) {
+      if (!parameter.type.empty()) continue;
+      string receiver, method; vector<string> args;
+      if (parse_member_call(e, receiver, method, args) && trim(receiver) == parameter.name) {
+        if (!has_structural_requirement(function, parameter.name, ConstraintKind::Method, method))
+          function.constraints.push_back({ConstraintKind::Method, parameter.name, method, ""});
+      }
+      auto dot = e.find('.');
+      if (dot != string::npos && trim(e.substr(0, dot)) == parameter.name && e.find('(', dot) == string::npos) {
+        string field = trim(e.substr(dot + 1));
+        if (!field.empty() && !has_structural_requirement(function, parameter.name, ConstraintKind::Field, field))
+          function.constraints.push_back({ConstraintKind::Field, parameter.name, field, ""});
+        function.generic_results["field:" + parameter.name + ":" + field] = parameter.name;
+      }
+    }
+    string ib, ii;
+    if (parse_index(e, ib, ii)) {
+      for (const auto& p : function.params) if (trim(ib) == p.name && p.type.empty()) {
+        if (!has_structural_requirement(function, p.name, ConstraintKind::Indexable, "index"))
+          function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", ""});
+        function.generic = true;
+      }
+      derive_expression_constraints(function, ii);
+    }
+    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/"}})
+      if (auto binary = split_binary(e, ops)) {
+        derive_expression_constraints(function, binary->first);
+        derive_expression_constraints(function, binary->second);
+      }
+    string callee; vector<string> call_args;
+    if (parse_simple_call(e, callee, call_args)) for (const auto& arg : call_args) derive_expression_constraints(function, arg);
+  }
+
   static bool numeric_type(const string& t) { return t == "int" || t == "float"; }
   bool trait_conforms(const string& type, const string& trait) const {
     auto it = traits_.find(trait);
@@ -1172,6 +1219,29 @@ class Checker {
           auto it = env.find(relation->second);
           if (it != env.end() && starts_with(it->second, "vector[") && ends_with(it->second, "]"))
             return trim(it->second.substr(7, it->second.size()-8));
+        }
+        if (starts_with(r, "_field:")) {
+          auto key = r.substr(7); auto pos = key.find(':');
+          if (pos != string::npos) pos = key.find(':', pos + 1);
+          string source = pos == string::npos ? key : key.substr(0, pos);
+          for (size_t ai = 0; ai < args.size() && ai < function->second->params.size(); ++ai)
+            if (function->second->params[ai].name == source) {
+              auto at = inferred_expr_type(args[ai], env);
+              if (at) {
+                auto object = objects_.find(*at);
+                if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
+                  if (f.name == key.substr(pos + 1)) return f.type;
+              }
+            }
+          auto relation = function->second->generic_results.find(key);
+          if (relation != function->second->generic_results.end()) {
+            auto base = env.find(relation->second);
+            if (base != env.end()) {
+              auto object = objects_.find(base->second);
+              if (object != objects_.end() && pos != string::npos) for (const auto& f : object->second->fields)
+                if (f.name == key.substr(pos + 1)) return f.type;
+            }
+          }
         }
         return r;
       }
@@ -1526,14 +1596,21 @@ class Checker {
         if (function.result_expression) mark(*function.result_expression);
         for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
       }
-      for (const auto& kv : function.generic_results)
-        function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : "_generic:" + kv.first;
+      if (function.result_expression) derive_expression_constraints(function, *function.result_expression);
+      for (const auto& s : function.body)
+        if (s.kind == Stmt::Kind::Return && !s.a.empty()) derive_expression_constraints(function, s.a);
+      if (!function.return_type || starts_with(*function.return_type, "_"))
+        for (const auto& kv : function.generic_results)
+          function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first;
     }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
         infer_statement_expressions(function.body, env);
+        if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
+          if (auto resolved = inferred_expr_type(*function.result_expression, env)) function.return_type = *resolved;
+        }
         if (function.result_expression) {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (auto result = inferred_expr_type(*function.result_expression, env)) {
@@ -1570,6 +1647,8 @@ class Checker {
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
+      if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
+        function.generic = false;
       if (!function.generic && function.result_expression) {
         auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/"});
         if (binary) for (const auto& p : function.params)
@@ -1840,6 +1919,12 @@ class Checker {
           if (op == "[]" && !(starts_with(*actual, "vector[") || starts_with(*actual, "map[") || starts_with(*actual, "queue[")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
         }
+        for (const auto& c : function->second->constraints) if (c.subject == param.name) {
+          if (c.kind == ConstraintKind::Field && !type_has_field(*actual, c.detail))
+            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + *actual + "' missing required field '" + c.detail + "'");
+          if (c.kind == ConstraintKind::Method)
+            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + *actual + "' missing required method '" + c.detail + "'");
+        }
       }
     }
   }
@@ -1859,6 +1944,14 @@ class Checker {
         if (handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
         if (handler == "pop" && args.empty() && (starts_with(it->second, "queue[") || starts_with(it->second, "vector["))) return;
         err(line, "invalid collection operation '" + handler + "'");
+      }
+      if (it != env.end() && traits_.count(it->second)) {
+        const Trait* trait = traits_.at(it->second);
+        auto method = std::find_if(trait->methods.begin(), trait->methods.end(), [&](const TraitMethod& m) { return m.name == handler; });
+        if (method == trait->methods.end()) err(line, "trait '" + it->second + "' has no method '" + handler + "'");
+        if (method->params.size() != args.size()) err(line, "trait method '" + handler + "' expects " + std::to_string(method->params.size()) + " arguments");
+        for (const auto& arg : args) check_expression(line, arg, env);
+        return;
       }
       check_expression(line, receiver, env);
       for (const auto& arg : args) check_expression(line, arg, env);
