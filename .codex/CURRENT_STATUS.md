@@ -27,6 +27,8 @@ Updated: 2026-09-11
   `src/diagnostics.hpp` modules. `moss.cpp` still contains the parser, checker,
   ownership, optimizer, and Rust generator; the extraction is an incremental
   architectural checkpoint rather than a completed module split.
+- Untyped-function operation metadata now flows through structured `Constraint`
+  records; the former `generic_ops` field has been removed.
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
@@ -55,9 +57,10 @@ Updated: 2026-09-11
 
 ## Known bugs and limitations
 
-- Structural constraints are represented explicitly in `constraints.hpp`, but
-  legacy `generic_ops` compatibility data is still present in the checker and
-  must be removed in a follow-up refactor.
+- Trait declarations are parsed and checked structurally for currently
+  representable primitive operation contracts. User-defined object methods are
+  not yet represented in object declarations, so positive structural object
+  conformance remains an open implementation task.
 
 - Rust type/ownership errors may still surface when Moss inference lacks enough source information.
 - General await expressions, spawning from handlers, cancellation, timeouts, failure propagation, and cycle detection are not implemented.

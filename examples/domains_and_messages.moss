@@ -1,0 +1,15 @@
+domain Worker:
+  total = 0
+
+  fn Run(value: Int):
+    total = total + value
+    echo "worker:", total
+
+  fn Get():
+    reply total
+
+fn main():
+  worker = spawn Worker()
+  message worker.Run(10)
+  current = await worker.Get()
+  echo "current:", current

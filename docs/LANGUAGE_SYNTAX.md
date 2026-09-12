@@ -23,6 +23,11 @@ here.
 
 ## Static typing and inference
 
+Parameters are either untyped or typed. Untyped means statically duck typed.
+Typed means a concrete type or a trait. There is no dynamic typing and no
+source-level generic `T`; all required type and operation relationships are
+resolved and verified at compile time.
+
 An annotation constrains and documents an inferred type:
 
 ```moss

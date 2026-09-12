@@ -1,0 +1,7 @@
+# One statically inferred operation, specialized at both call sites.
+fn twice(x):
+  return x + x
+
+fn main():
+  echo twice(10)
+  echo twice(2.5)

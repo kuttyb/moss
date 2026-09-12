@@ -27,8 +27,7 @@ struct MainProc { vector<Stmt> body; int line = 0; string header; };
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
-  bool generic = false; std::unordered_map<string,string> generic_results;
-  std::unordered_map<string,std::set<string>> generic_ops; int line = 0;
+  bool generic = false; std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
 };
 struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };

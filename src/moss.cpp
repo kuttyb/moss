@@ -836,9 +836,27 @@ class Checker {
     return false;
   }
 
+  bool has_constraint(const Function& f, const string& subject) const {
+    return std::any_of(f.constraints.begin(), f.constraints.end(), [&](const Constraint& c) { return c.subject == subject; });
+  }
+  std::set<string> constraint_details(const Function& f, const string& subject) const {
+    std::set<string> out;
+    for (const auto& c : f.constraints) if (c.subject == subject && c.kind == ConstraintKind::Operator) out.insert(c.detail);
+    for (const auto& c : f.constraints) if (c.subject == subject && c.kind == ConstraintKind::Indexable) out.insert("[]");
+    return out;
+  }
+
   static bool numeric_type(const string& t) { return t == "int" || t == "float"; }
   bool trait_conforms(const string& type, const string& trait) const {
-    return trait == "Numeric" && numeric_type(type);
+    auto it = traits_.find(trait);
+    if (it == traits_.end()) return false;
+    for (const auto& method : it->second->methods) {
+      // Primitive operation capabilities are structural compiler facts. Other
+      // types must eventually expose declared methods in the semantic model.
+      if ((method.name == "add" || method.name == "sub" || method.name == "mul" || method.name == "div") && numeric_type(type)) continue;
+      return false;
+    }
+    return true;
   }
 
   const Handler* find_handler(const Domain& d, const string& name) const {
@@ -913,7 +931,7 @@ class Checker {
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
       err(f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
-      if (param.type.empty() && !f.generic_ops.count(param.name))
+      if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
       if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.line, "unknown parameter type '" + param.type + "'");
@@ -1478,7 +1496,6 @@ class Checker {
                 function.generic = true;
                 string e = trim(expression);
                 string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/";
-                function.generic_ops[p.name].insert(op);
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
               }
@@ -1488,7 +1505,6 @@ class Checker {
           if (parse_index(expression, base, idx)) {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
-              function.generic_ops[p.name].insert("[]");
               function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
               function.generic_results["element:" + p.name] = p.name;
             }
@@ -1548,7 +1564,6 @@ class Checker {
             function.generic = true;
             string be = trim(*function.result_expression);
             string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/";
-            function.generic_ops[p.name].insert(op);
             function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
             function.generic_results[p.name] = p.name;
             function.return_type = "_generic:" + p.name;
@@ -1804,8 +1819,8 @@ class Checker {
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + *actual + "', expected '" +
             param.type + "'");
-      if (actual && function->second->generic_ops.count(param.name)) {
-        for (const auto& op : function->second->generic_ops.at(param.name)) {
+      if (actual && has_constraint(*function->second, param.name)) {
+        for (const auto& op : constraint_details(*function->second, param.name)) {
           if ((op == "+" || op == "-" || op == "*" || op == "/") && !numeric_type(*actual) && !(op == "+" && *actual == "string"))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
           if (op == "[]" && !(starts_with(*actual, "vector[") || starts_with(*actual, "map[") || starts_with(*actual, "queue[")))
@@ -2449,6 +2464,15 @@ class Generator {
     return x;
   }
 
+  std::set<string> constraint_ops(const Function& f, const string& subject) const {
+    std::set<string> out;
+    for (const auto& c : f.constraints) if (c.subject == subject) {
+      if (c.kind == ConstraintKind::Operator) out.insert(c.detail);
+      if (c.kind == ConstraintKind::Indexable) out.insert("[]");
+    }
+    return out;
+  }
+
   string local_rust_type(const string& type, size_t cluster) const {
     string value = trim(type);
     auto domain = domains_.find(value);
@@ -2711,15 +2735,16 @@ class Generator {
     o << "fn " << f.name;
     if (f.generic) {
       o << "<";
-      size_t gi = 0; for (const auto& kv : f.generic_ops) { if (gi++) o << ", "; o << "T_" << kv.first; }
+      size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size()) { if (gi++) o << ", "; o << "T_" << p.name; }
       o << ">";
     }
     o << "(";
     for (size_t index = 0; index < f.params.size(); ++index) {
       if (index) o << ", ";
       string pt = f.params[index].type;
-      if (pt.empty() && f.generic_ops.count(f.params[index].name)) {
-        if (f.generic_ops.at(f.params[index].name).count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
+      auto ops = constraint_ops(f, f.params[index].name);
+      if (pt.empty() && !ops.empty()) {
+        if (ops.count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
         else o << f.params[index].name << ": T_" << f.params[index].name;
       } else o << f.params[index].name << ": " << rust_type(pt);
     }
@@ -2732,12 +2757,12 @@ class Generator {
       o << ") -> " << (rr == return_type ? rust_type(rr) : rr);
       if (f.generic) {
         o << " where "; size_t bi=0;
-        for (const auto& kv : f.generic_ops) { if (bi++) o << ", "; o << "T_" << kv.first << ": ";
-          bool idx = kv.second.count("[]");
+        for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty()) continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
+          bool idx = ops.count("[]");
           if (idx) o << "Clone";
           else {
-            string op = kv.second.count("+") ? "Add" : kv.second.count("*") ? "Mul" : kv.second.count("-") ? "Sub" : "Div";
-            o << "std::ops::" << op << "<Output = T_" << kv.first << "> + Copy";
+            string op = ops.count("+") ? "Add" : ops.count("*") ? "Mul" : ops.count("-") ? "Sub" : "Div";
+            o << "std::ops::" << op << "<Output = T_" << p.name << "> + Copy";
           }
         }
       }
