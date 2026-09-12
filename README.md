@@ -36,6 +36,8 @@ order rejected: insufficient inventory
 
 Run the complete smoke test with `make check`.
 
+Compile every valid example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped.
+
 Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
