@@ -140,6 +140,12 @@ reject_cluster() {
 
 run_case counter examples/counter.moss 'counter: 41
 counter: 42'
+run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
+grep -F '// Moss line 21: client.Run(counter)' "$test_build/shared_memory_example.rs" >/dev/null ||
+  fail "shared-memory example omitted its Moss source-line annotation"
+grep -F '// Moss backend: MESSAGE/MAILBOX version: enqueue the Moss send in a lock-backed shared-memory queue' \
+  "$test_build/shared_memory_example.rs" >/dev/null ||
+  fail "shared-memory example omitted its mailbox lowering annotation"
 run_case checkout examples/checkout.moss 'charged: 75
 order completed
 order rejected: insufficient inventory'
@@ -171,6 +177,18 @@ grep -F 'state: Arc<Mutex<InventoryState>>' "$test_build/shared_memory_checkout.
   fail "checkout did not promote its awaited Inventory domain"
 grep -F 'tx: MossSender<CheckoutMsg>' "$test_build/shared_memory_checkout.rs" >/dev/null ||
   fail "checkout incorrectly promoted an asynchronously called domain"
+run_shared_memory_case shared_memory_example_optimized examples/shared_memory.moss \
+  'shared total: 10 42'
+grep -F 'state: Arc<Mutex<CounterState>>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory example did not lower Counter state to a lock"
+grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory example did not retain the asynchronous Client mailbox"
+grep -F '// Moss line 14: let first = await counter.Add(10)' \
+  "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory optimization omitted its Moss await annotation"
+grep -F '// Moss backend: SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message' \
+  "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory optimization omitted its direct lowering annotation"
 run_optimized_case shared_memory_object_pipeline examples/object_pipeline.moss \
   'created: widget 1 false
 observed: widget 1 false
@@ -226,6 +244,9 @@ grep -F 'self.Inventory_Reserve_local(quantity)' "$test_build/clustered_checkout
   fail "clustered await did not select the local call version"
 grep -F 'self.Payments_Charge_local(quantity * price)' "$test_build/clustered_checkout.rs" >/dev/null ||
   fail "second clustered await did not select the local call version"
+grep -F '// Moss backend: CLUSTER-LOCAL version: flush older local messages, then call the handler directly' \
+  "$test_build/clustered_checkout.rs" >/dev/null ||
+  fail "clustered checkout omitted its local lowering annotation"
 [ "$(grep -c 'thread::spawn(move || {' "$test_build/clustered_checkout.rs")" -eq 1 ] ||
   fail "clustered domains did not share exactly one worker thread"
 sed -n '/^impl MossCluster0Runtime {/,/^fn spawn_moss_cluster_0/p' \

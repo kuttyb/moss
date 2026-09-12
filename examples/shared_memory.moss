@@ -1,0 +1,21 @@
+# Moss stays message based. The Rust backend represents the messages with
+# lock-backed shared-memory queues; -Oshared-memory can remove the request
+# queue for the awaited-only Counter domain.
+
+domain Counter
+  var total: int = 0
+
+  on Add(amount: int) -> int
+    total = total + amount
+    reply total
+
+domain Client
+  on Run(counter: Counter)
+    let first = await counter.Add(10)
+    let second = await counter.Add(32)
+    echo "shared total:", first, second
+
+proc main()
+  let counter = spawn Counter()
+  let client = spawn Client()
+  client.Run(counter)

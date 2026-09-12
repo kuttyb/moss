@@ -39,6 +39,7 @@ Run the complete smoke test with `make check`.
 Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
+- `examples/shared_memory.moss` shows ordinary Moss messages and awaits lowering to a lock-backed shared-memory mailbox, with an optional direct `Arc<Mutex<_>>` optimization.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
@@ -103,6 +104,8 @@ By default, each spawned domain owns one OS thread and a generated lock-backed s
 The pass promotes a domain only when all of its handlers reply, every call to that domain is awaited, and its state, parameters, and replies are safe at Rust's `Send` boundary. Its generated reference then owns `Arc<Mutex<DomainState>>`. An await locks that state, runs the handler to completion, and returns the reply directly. Calls from different domain threads may contend on the state lock, but no two handlers can access the state concurrently.
 
 This remains only a Rust lowering choice. Moss continues to treat the operation as a message and retains the same payload, ordering, run-to-completion, and non-reentrancy rules. A domain with any one-way handler, ignored reply, unresolved call, or other asynchronous send keeps its lock-backed shared-memory mailbox and dedicated thread. `-O0` disables direct dispatch while retaining that shared-memory transport.
+
+Generated Rust is annotated for inspection: `Moss line N` identifies the source line for a directly corresponding declaration or statement, while `Moss backend` comments identify the selected message/mailbox, shared-memory direct, or cluster-local lowering.
 
 The promoted handler runs on the awaiting caller's physical thread; physical thread identity is not part of Moss's approved semantics. Because the caller was already required to block and the target has no asynchronous callers, this does not turn an asynchronous source operation into a synchronous one. A local contention smoke benchmark is included in the tests, but production transport choices should still be based on representative workloads.
 
