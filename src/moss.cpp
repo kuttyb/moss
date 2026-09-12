@@ -1631,8 +1631,19 @@ class Checker {
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
+      if (!function.generic && function.result_expression) {
+        auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/"});
+        if (binary) for (const auto& p : function.params)
+          if (p.type.empty() && trim(binary->first) == p.name && trim(binary->second) == p.name) {
+            function.generic = true;
+            string be = trim(*function.result_expression);
+            function.generic_ops[p.name].insert(be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/");
+            function.generic_results[p.name] = p.name;
+            function.return_type = "_generic:" + p.name;
+          }
+      }
       for (const auto& parameter : function.params) {
-        if (parameter.type.empty())
+        if (parameter.type.empty() && !function.generic)
           err(function.line, "cannot infer type for parameter '" + parameter.name +
               "' in function '" + function.name + "'");
       }
@@ -2811,7 +2822,11 @@ class Generator {
         o << " where "; size_t bi=0;
         for (const auto& kv : f.generic_ops) { if (bi++) o << ", "; o << "T_" << kv.first << ": ";
           bool idx = kv.second.count("[]");
-          if (idx) o << "Clone"; else o << "std::ops::Add<Output = T_" << kv.first << "> + Copy";
+          if (idx) o << "Clone";
+          else {
+            string op = kv.second.count("+") ? "Add" : kv.second.count("*") ? "Mul" : kv.second.count("-") ? "Sub" : "Div";
+            o << "std::ops::" << op << "<Output = T_" << kv.first << "> + Copy";
+          }
         }
       }
       o << " {\n";
