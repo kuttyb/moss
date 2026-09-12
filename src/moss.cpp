@@ -70,7 +70,27 @@ static string canonical_type_name(string type) {
   if (type == "Float") return "float";
   if (type == "Bool") return "bool";
   if (type == "String") return "string";
+  if (type == "Vector") return "vector";
+  if (type == "Map") return "map";
+  if (type == "Queue") return "queue";
   return type;
+}
+
+static bool parse_index(const string& text, string& base, string& index) {
+  string value = trim(text);
+  if (value.empty() || value.back() != ']') return false;
+  int depth = 0; bool in_str = false;
+  for (size_t i = value.size(); i-- > 0;) {
+    char c = value[i];
+    if (in_str) { if (c == '"' && (i == 0 || value[i-1] != '\\')) in_str = false; continue; }
+    if (c == '"') { in_str = true; continue; }
+    if (c == ']') ++depth;
+    else if (c == '[' && --depth == 0) {
+      base = trim(value.substr(0, i)); index = trim(value.substr(i + 1, value.size() - i - 2));
+      return !base.empty() && !index.empty();
+    }
+  }
+  return false;
 }
 
 static bool parse_simple_call(const string& text, string& callee, vector<string>& args) {
@@ -328,11 +348,18 @@ struct Function {
   std::optional<string> result_expression;
   int result_line = 0;
   bool expression_body = false;
+  bool generic = false;
+  std::unordered_map<string,string> generic_results;
+  std::unordered_map<string,std::set<string>> generic_ops;
   int line = 0;
 };
 
+struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
+struct Trait { string name; string header; vector<TraitMethod> methods; int line = 0; };
+
 struct Program {
   vector<Function> functions;
+  vector<Trait> traits;
   vector<ObjectType> objects;
   vector<Domain> domains;
   std::optional<MainProc> main;
@@ -356,6 +383,7 @@ class Parser {
       if (L.indent != 0) fail(L, "top-level declaration must start at indentation 0");
       if (starts_with(L.text, "domain ")) p.domains.push_back(parse_domain());
       else if (starts_with(L.text, "type ")) p.objects.push_back(parse_object());
+      else if (starts_with(L.text, "trait ")) p.traits.push_back(parse_trait());
       else if (L.text == "proc main()" || L.text == "proc main():") {
         if (p.main) fail(L, "duplicate proc main()");
         p.main = parse_main();
@@ -490,6 +518,35 @@ class Parser {
       o.fields.push_back(std::move(f));
     }
     return o;
+  }
+
+  Trait parse_trait() {
+    Line head = lines_[i_++];
+    string rest = trim(head.text.substr(6));
+    if (ends_with(rest, ":")) rest.pop_back();
+    Trait t; t.name = trim(rest); t.header = head.text; t.line = head.no;
+    if (!identifier(t.name)) fail(head, "invalid trait name '" + t.name + "'");
+    while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
+      Line L = lines_[i_++];
+      if (L.indent != head.indent + indent_unit_ || !starts_with(L.text, "fn "))
+        fail(L, "trait members must be method declarations at one indentation level");
+      string sig = trim(L.text.substr(3));
+      auto lp = sig.find('('), rp = matching_paren(sig, lp);
+      if (lp == string::npos || rp == string::npos) fail(L, "trait method requires a signature");
+      TraitMethod m; m.name = trim(sig.substr(0, lp)); m.line = L.no;
+      if (!identifier(m.name)) fail(L, "invalid trait method name '" + m.name + "'");
+      m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1));
+      string suffix = trim(sig.substr(rp + 1));
+      if (ends_with(suffix, ":")) suffix.pop_back();
+      suffix = trim(suffix);
+      if (!suffix.empty()) {
+        if (!starts_with(suffix, "->")) fail(L, "trait method return type must follow '->'");
+        m.return_type = canonical_type_name(trim(suffix.substr(2)));
+      }
+      t.methods.push_back(std::move(m));
+    }
+    if (t.methods.empty()) fail(head, "trait must declare at least one method");
+    return t;
   }
 
   Domain parse_domain() {
@@ -816,9 +873,14 @@ class Checker {
     for (auto& o : p_.objects) {
       if (!objects_.emplace(o.name, &o).second) err(o.line, "duplicate object type: " + o.name);
     }
+    for (auto& t : p_.traits) {
+      if (!traits_.emplace(t.name, &t).second) err(t.line, "duplicate trait: " + t.name);
+    }
   }
 
   void run() {
+    // Seed internal structural/generic parameter relations before cross-reference inference.
+    infer_function_signatures(false);
     infer_object_fields();
     // Function results and handler replies can constrain each other through an
     // await or a local call. Run a few non-final inference rounds before the
@@ -842,6 +904,7 @@ class Checker {
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
+  std::unordered_map<string, Trait*> traits_;
 
   [[noreturn]] void err(int line, const string& msg) const { throw CompileError(line, msg); }
 
@@ -849,6 +912,13 @@ class Checker {
     string type = canonical_type_name(t);
     if (type == "int" || type == "float" || type == "bool" || type == "string") return true;
     if (domains_.count(type) || objects_.count(type)) return true;
+    if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
+    if (starts_with(type, "vector[") && ends_with(type, "]")) return valid_type(trim(type.substr(7, type.size()-8)));
+    if (starts_with(type, "queue[") && ends_with(type, "]")) return valid_type(trim(type.substr(6, type.size()-7)));
+    if (starts_with(type, "map[") && ends_with(type, "]")) {
+      auto ps = split_top_level(type.substr(4, type.size()-5), ',');
+      return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
+    }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
       return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
     if (starts_with(type, "table[") && ends_with(type, "]")) {
@@ -857,6 +927,11 @@ class Checker {
       return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
     }
     return false;
+  }
+
+  static bool numeric_type(const string& t) { return t == "int" || t == "float"; }
+  bool trait_conforms(const string& type, const string& trait) const {
+    return trait == "Numeric" && numeric_type(type);
   }
 
   const Handler* find_handler(const Domain& d, const string& name) const {
@@ -928,15 +1003,15 @@ class Checker {
   void check_function(const Function& f) {
     std::unordered_map<string,string> env;
     std::set<string> names;
-    if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type))
+    if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
       err(f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
-      if (param.type.empty())
+      if (param.type.empty() && !f.generic_ops.count(param.name))
         err(f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!valid_type(param.type)) err(f.line, "unknown parameter type '" + param.type + "'");
+      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.line, "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.line, "duplicate parameter: " + param.name);
-      env[param.name] = param.type;
+      env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
     infer_statement_expressions(f.body, env);
     check_stmts(f.body, env, nullptr, nullptr, &f);
@@ -1117,6 +1192,33 @@ class Checker {
       e = trim(e.substr(1, e.size() - 2));
     }
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
+    if (e == "Map()") return string("map");
+    if (e == "Queue()") return string("queue");
+    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
+      auto parts = split_top_level(e.substr(1, e.size() - 2), ',');
+      if (parts.size() == 1 && trim(parts[0]).empty()) return std::nullopt;
+      string element;
+      for (const auto& part : parts) {
+        auto t = inferred_expr_type(part, env);
+        if (!t) return std::nullopt;
+        if (element.empty()) element = *t;
+        else if (canonical_type_name(element) != canonical_type_name(*t)) return std::nullopt;
+      }
+      return "vector[" + element + "]";
+    }
+    string index_base, index_expr;
+    if (parse_index(e, index_base, index_expr)) {
+      auto bt = inferred_expr_type(index_base, env);
+      if (!bt) return std::nullopt;
+      if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
+      if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
+      if (starts_with(*bt, "queue[") && ends_with(*bt, "]")) return trim(bt->substr(6, bt->size()-7));
+      if (starts_with(*bt, "map[") && ends_with(*bt, "]")) {
+        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
+        if (ps.size() == 2) return trim(ps[1]);
+      }
+      return std::nullopt;
+    }
     auto object_call = [&]() -> std::optional<string> {
       string callee;
       vector<string> args;
@@ -1130,8 +1232,19 @@ class Checker {
         return argument_type;
       }
       auto function = functions_.find(callee);
-      if (function != functions_.end() && function->second->return_type)
-        return canonical_type_name(*function->second->return_type);
+      if (function != functions_.end() && function->second->return_type) {
+        string r = canonical_type_name(*function->second->return_type);
+        if (starts_with(r, "_generic:")) {
+          auto it = env.find(function->second->generic_results.at(r.substr(9)));
+          if (it != env.end()) return it->second;
+        }
+        if (starts_with(r, "_element:")) {
+          auto it = env.find(function->second->generic_results.at(r.substr(9)));
+          if (it != env.end() && starts_with(it->second, "vector[") && ends_with(it->second, "]"))
+            return trim(it->second.substr(7, it->second.size()-8));
+        }
+        return r;
+      }
       return std::nullopt;
     }();
     if (object_call) return object_call;
@@ -1156,6 +1269,7 @@ class Checker {
       auto left = inferred_expr_type(arithmetic->first, env);
       auto right = inferred_expr_type(arithmetic->second, env);
       if (left && right) {
+        if (left == right && starts_with(*left, "_generic:")) return *left;
         if (*left == "string" && *right == "string" && e.find('+') != string::npos)
           return string("string");
         if ((*left == "int" || *left == "float") &&
@@ -1194,8 +1308,8 @@ class Checker {
         if (function != functions_.end() && index < function->second->params.size()) {
           if (auto actual = inferred_expr_type(args[index], env)) {
             auto& parameter = function->second->params[index];
-            if (parameter.type.empty()) parameter.type = *actual;
-            else if (!same_type(parameter.type, *actual))
+            if (parameter.type.empty() && !function->second->generic) parameter.type = *actual;
+            else if (!function->second->generic && !same_type(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
                   parameter.type + "'");
@@ -1289,8 +1403,8 @@ class Checker {
                 auto actual = inferred_expr_type(statement.args[i], env);
                 if (!actual) continue;
                 auto& parameter = function->second->params[i];
-                if (parameter.type.empty()) parameter.type = *actual;
-                else if (!same_type(parameter.type, *actual))
+                if (parameter.type.empty() && !function->second->generic) parameter.type = *actual;
+                else if (!function->second->generic && !same_type(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
                       "', expected '" + parameter.type + "'");
@@ -1442,6 +1556,36 @@ class Checker {
   }
 
   void infer_function_signatures(bool finalize) {
+    for (auto& function : p_.functions) {
+      for (const auto& parameter : function.params) {
+        if (!parameter.type.empty()) continue;
+        auto mark = [&](const string& expression) {
+          auto binary = split_binary(trim(expression), {"+", "-", "*", "/"});
+          if (binary) {
+            for (const auto& p : function.params) {
+              if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
+                function.generic = true;
+                string e = trim(expression);
+                function.generic_ops[p.name].insert(e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/");
+                function.generic_results[p.name] = p.name;
+              }
+            }
+          }
+          string base, idx;
+          if (parse_index(expression, base, idx)) {
+            for (const auto& p : function.params) if (trim(base) == p.name) {
+              function.generic = true;
+              function.generic_ops[p.name].insert("[]");
+              function.generic_results["element:" + p.name] = p.name;
+            }
+          }
+        };
+        if (function.result_expression) mark(*function.result_expression);
+        for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
+      }
+      for (const auto& kv : function.generic_results)
+        function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : "_generic:" + kv.first;
+    }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
         std::unordered_map<string,string> env;
@@ -1725,10 +1869,22 @@ class Checker {
           std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
       auto actual = inferred_expr_type(args[index], env);
-      if (actual && !same_type(function->second->params[index].type, *actual))
+      const auto& param = function->second->params[index];
+      if (actual && traits_.count(param.type) && !trait_conforms(*actual, param.type))
+        err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
+            "' has type '" + *actual + "' which does not satisfy trait '" + param.type + "'");
+      if (actual && !function->second->generic && !param.type.empty() && !starts_with(param.type, "_") && !traits_.count(param.type) && !same_type(param.type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + *actual + "', expected '" +
-            function->second->params[index].type + "'");
+            param.type + "'");
+      if (actual && function->second->generic_ops.count(param.name)) {
+        for (const auto& op : function->second->generic_ops.at(param.name)) {
+          if ((op == "+" || op == "-" || op == "*" || op == "/") && !numeric_type(*actual) && !(op == "+" && *actual == "string"))
+            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
+          if (op == "[]" && !(starts_with(*actual, "vector[") || starts_with(*actual, "map[") || starts_with(*actual, "queue[")))
+            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
+        }
+      }
     }
   }
 
@@ -1744,6 +1900,20 @@ class Checker {
             "' requires 'message' or 'await'");
       check_expression(line, receiver, env);
       for (const auto& arg : args) check_expression(line, arg, env);
+      return;
+    }
+    string ib, ii;
+    if (parse_index(value, ib, ii)) {
+      auto bt = inferred_expr_type(ib, env);
+      if (!bt) err(line, "cannot infer indexed container type");
+      if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[")) {
+        auto it = inferred_expr_type(ii, env);
+        if (!it || *it != "int") err(line, "vector and queue indices must be Int");
+      } else if (starts_with(*bt, "map[")) {
+        auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
+        auto it = inferred_expr_type(ii, env);
+        if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
+      } else err(line, "value is not an indexable container");
       return;
     }
     string callee;
@@ -1791,8 +1961,24 @@ class Checker {
             continue;
           }
           check_expression(s.line, s.b, env);
-          if (simple_identifier(s.a) && !env.count(s.a))
-            env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
+          if (simple_identifier(s.a) && !env.count(s.a)) {
+            auto inferred = inferred_expr_type(s.b, env);
+            if (!inferred && trim(s.b).find('[') == 0) err(s.line, "heterogeneous or unresolved collection element type");
+            env[s.a] = inferred.value_or("_value");
+          } else {
+            string base, idx;
+            if (parse_index(s.a, base, idx)) {
+              auto bt = env.find(base);
+              auto rt = inferred_expr_type(s.b, env);
+              if (bt != env.end() && rt && bt->second == "map") {
+                auto kt = inferred_expr_type(idx, env);
+                if (!kt) err(s.line, "cannot infer map key type");
+                bt->second = "map[" + *kt + "," + *rt + "]";
+              } else if (bt != env.end() && rt && (bt->second == "queue" || bt->second == "vector")) {
+                bt->second += "[" + *rt + "]";
+              }
+            }
+          }
           continue;
         }
         if (auto sd = spawn_domain(s.b)) {
@@ -2313,11 +2499,20 @@ class Generator {
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "string") return "String";
+    if (x == "vector") return "Vec<T>";
+    if (x == "map") return "HashMap<K, V>";
+    if (x == "queue") return "VecDeque<T>";
     if (x == "unit") return "()";
     if (domains_.count(x)) return x + "Ref";
     if (objects_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
+    if (starts_with(x, "vector[") && ends_with(x, "]")) return "Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
+    if (starts_with(x, "queue[") && ends_with(x, "]")) return "VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+    if (starts_with(x, "map[") && ends_with(x, "]")) {
+      auto ps = split_top_level(x.substr(4, x.size()-5), ',');
+      return "HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
+    }
     if (starts_with(x, "option[") && ends_with(x, "]"))
       return "Option<" + rust_type(x.substr(7, x.size()-8)) + ">";
     if (starts_with(x, "table[") && ends_with(x, "]")) {
@@ -2363,6 +2558,16 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
+    if (e == "Map()") return "HashMap::new()";
+    if (e == "Queue()") return "VecDeque::new()";
+    if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
+      auto parts = split_top_level(e.substr(1, e.size()-2), ',');
+      std::ostringstream r; r << "vec![";
+      for (size_t i=0;i<parts.size();++i) { if (i) r << ", "; r << expr(parts[i], d, locals); }
+      r << "]"; return r.str();
+    }
+    string ib, ii;
+    if (parse_index(e, ib, ii)) return "(" + expr(ib, d, locals) + "[" + expr(ii, d, locals) + "]).clone()";
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
     // compatibility spelling for existing sources.
@@ -2576,13 +2781,37 @@ class Generator {
   void gen_function(std::ostringstream& o, const Function& f) {
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
     backend_comment(o, 0, "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
-    o << "fn " << f.name << "(";
+    o << "fn " << f.name;
+    if (f.generic) {
+      o << "<";
+      size_t gi = 0; for (const auto& kv : f.generic_ops) { if (gi++) o << ", "; o << "T_" << kv.first; }
+      o << ">";
+    }
+    o << "(";
     for (size_t index = 0; index < f.params.size(); ++index) {
       if (index) o << ", ";
-      o << f.params[index].name << ": " << rust_type(f.params[index].type);
+      string pt = f.params[index].type;
+      if (pt.empty() && f.generic_ops.count(f.params[index].name)) {
+        if (f.generic_ops.at(f.params[index].name).count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
+        else o << f.params[index].name << ": T_" << f.params[index].name;
+      } else o << f.params[index].name << ": " << rust_type(pt);
     }
     string return_type = f.return_type.value_or("unit");
-    if (return_type != "unit") o << ") -> " << rust_type(return_type) << " {\n";
+    if (return_type != "unit") {
+      string rr = return_type;
+      if (starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
+      else if (starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
+      else if (starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
+      o << ") -> " << (rr == return_type ? rust_type(rr) : rr);
+      if (f.generic) {
+        o << " where "; size_t bi=0;
+        for (const auto& kv : f.generic_ops) { if (bi++) o << ", "; o << "T_" << kv.first << ": ";
+          bool idx = kv.second.count("[]");
+          if (idx) o << "Clone"; else o << "std::ops::Add<Output = T_" << kv.first << "> + Copy";
+        }
+      }
+      o << " {\n";
+    }
     else o << ") {\n";
     std::set<string> locals;
     std::unordered_map<string,string> types;
