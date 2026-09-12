@@ -1,22 +1,22 @@
-domain Inventory
+domain Inventory:
   var available: int = 10
 
-  on Reserve(quantity: int) -> bool
+  fn Reserve(quantity: int) -> bool:
     if available >= quantity:
       available = available - quantity
       reply true
     reply false
 
-domain Payments
+domain Payments:
   var collected: int = 0
 
-  on Charge(amount: int) -> bool
+  fn Charge(amount: int) -> bool:
     collected = collected + amount
     echo "charged:", amount
     reply true
 
-domain Checkout
-  on PlaceOrder(inventory: Inventory, payments: Payments, quantity: int, price: int)
+domain Checkout:
+  fn PlaceOrder(inventory: Inventory, payments: Payments, quantity: int, price: int):
     let reserved = await inventory.Reserve(quantity)
     if not reserved:
       echo "order rejected: insufficient inventory"
@@ -28,7 +28,7 @@ domain Checkout
     else:
       echo "payment failed"
 
-proc main()
+fn main():
   let inventory = spawn Inventory()
   let payments = spawn Payments()
   let checkout = spawn Checkout()

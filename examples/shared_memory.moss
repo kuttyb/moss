@@ -2,15 +2,15 @@
 # lock-backed shared-memory queues; -Oshared-memory can remove the request
 # queue for the awaited-only Counter domain.
 
-domain Counter
+domain Counter:
   var total: int = 0
 
-  on Add(amount: int) -> int
+  fn Add(amount: int) -> int:
     total = total + amount
     reply total
 
-domain Client
-  on Run(counter: Counter)
+domain Client:
+  fn Run(counter: Counter):
     first = await counter.Add(10)
     second = await counter.Add(32)
     echo "shared total:", first, second

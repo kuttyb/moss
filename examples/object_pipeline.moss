@@ -1,35 +1,35 @@
-type WorkItem = object
+type WorkItem:
   name: string
   revisions: int
   approved: bool
 
-domain Archive
-  on Store(revisions: int, approved: bool)
+domain Archive:
+  fn Store(revisions: int, approved: bool):
     echo "archive: widget", revisions, approved
 
-domain Workshop
-  on Start(archive: Archive)
+domain Workshop:
+  fn Start(archive: Archive):
     var item = WorkItem(name: "widget", revisions: 0, approved: false)
     item.revisions = item.revisions + 1
     echo "created:", item.name, item.revisions, item.approved
     message self.Observe(item, archive)
 
-  on Observe(item: WorkItem, archive: Archive)
+  fn Observe(item: WorkItem, archive: Archive):
     echo "observed:", item.name, item.revisions, item.approved
     message self.Revise(item, archive)
 
-  on Revise(item: WorkItem, archive: Archive)
+  fn Revise(item: WorkItem, archive: Archive):
     var revised = item
     revised.revisions = revised.revisions + 1
     revised.approved = true
     echo "revised:", revised.name, revised.revisions, revised.approved
     message self.Verify(revised, archive)
 
-  on Verify(item: WorkItem, archive: Archive)
+  fn Verify(item: WorkItem, archive: Archive):
     echo "verified:", item.name, item.revisions, item.approved
     message archive.Store(item.revisions, item.approved)
 
-proc main()
+fn main():
   let archive = spawn Archive()
   let workshop = spawn Workshop()
   message workshop.Start(archive)

@@ -1,11 +1,11 @@
-domain Counter
+domain Counter:
   var value: int = 0
 
-  on Add(amount: int)
+  fn Add(amount: int):
     value = value + amount
     echo "counter:", value
 
-proc main()
+fn main():
   let counter = spawn Counter()
   message counter.Add(41)
   message counter.Add(1)

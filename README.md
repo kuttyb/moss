@@ -82,7 +82,7 @@ This is a Moss source rule: assigning a nontrivial uniquely owned local transfer
 A handler without `-> Type` is one-way. A handler that declares a reply type must contain at least one `reply` statement:
 
 ```moss
-on Reserve(quantity: int) -> bool
+fn Reserve(quantity: int) -> bool:
   if available >= quantity:
     available = available - quantity
     reply true
