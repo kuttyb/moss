@@ -402,5 +402,6 @@ reject_case await_unknown_receiver "unknown message receiver 'missing'"
 reject_case await_unknown_handler "domain Worker has no message handler 'Missing'"
 reject_case await_wrong_arity 'message Worker.Work expects 1 arguments, got 0'
 reject_case self_await 'a domain cannot await itself because handlers are non-reentrant'
+reject_case trait_missing_method "expected 'Drawable'"
 
 echo 'all Moss v0.2 tests passed'

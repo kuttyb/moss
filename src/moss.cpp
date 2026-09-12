@@ -2537,7 +2537,7 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
-    if (e == "Map()") return "HashMap::<String, f64>::new()";
+    if (e == "Map()") return "HashMap::new()";
     if (e == "Queue()") return "VecDeque::new()";
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
@@ -2582,6 +2582,12 @@ class Generator {
         }
         r << " }";
         return r.str();
+      }
+      vector<string> call_args;
+      if (parse_simple_call(e, head, call_args)) {
+        std::ostringstream r; r << head << "(";
+        for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals); }
+        r << ")"; return r.str();
       }
     }
 
@@ -3474,7 +3480,20 @@ class Generator {
           if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
-            o << indent(level) << "let mut " << s.a << " = " << expr(s.b, d, locals) << ";\n";
+            string annotation;
+            if (s.b == "Map()") {
+              for (size_t look = i + 1; look < ss.size(); ++look) {
+                string lb, li;
+                if (parse_index(ss[look].a, lb, li) && lb == s.a && ss[look].kind == Stmt::Kind::Assign) {
+                  string kt = (li.size() >= 2 && li.front() == '"' && li.back() == '"') ? "String" : (ss[look].b.find('.') != string::npos ? "f64" : "i64");
+                  string vt = ss[look].b.find('.') != string::npos ? "f64" : "i64";
+                  annotation = "HashMap<" + kt + ", " + vt + ">"; break;
+                }
+              }
+            }
+            o << indent(level) << "let mut " << s.a;
+            if (!annotation.empty()) o << ": " << annotation;
+            o << " = " << expr(s.b, d, locals) << ";\n";
             locals.insert(s.a);
             types[s.a] = s.b == "Map()" ? "map" : s.b == "Queue()" ? "queue" : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
           } else {

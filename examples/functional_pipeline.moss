@@ -1,0 +1,5 @@
+fn square(x: Int) = x * x
+
+fn main():
+  value = 3 |> square |> square
+  echo value

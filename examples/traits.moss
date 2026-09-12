@@ -1,0 +1,15 @@
+# Trait declarations are compile-time contracts. Concrete implementation
+# syntax is intentionally kept small while structural method checking evolves.
+trait Drawable:
+  fn area()
+  fn describe()
+
+type Circle:
+  radius: Int
+
+fn circle_area(c: Circle):
+  return c.radius * c.radius
+
+fn main():
+  circle = Circle(radius = 3)
+  echo circle_area(circle)

@@ -1,0 +1,11 @@
+trait Drawable:
+  fn draw(canvas)
+
+type Circle:
+  radius: Int
+
+fn render(x: Drawable):
+  return x
+
+fn main():
+  render(Circle(radius = 1))

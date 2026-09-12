@@ -1,0 +1,27 @@
+type Job:
+  id: Int
+  score: Float
+
+fn score(job: Job):
+  return job.score
+
+domain Scheduler:
+  completed = 0
+
+  fn Submit(job: Job):
+    completed = completed + 1
+    reply completed
+
+  fn Count():
+    reply completed
+
+fn main():
+  jobs = [Job(id = 1, score = 10.5), Job(id = 2, score = 20.0)]
+  scores = [score(jobs[0]), score(jobs[1])]
+  scheduler = spawn Scheduler()
+  accepted = await scheduler.Submit(jobs[0])
+  message scheduler.Submit(jobs[1])
+  total = await scheduler.Count()
+  echo scores[0]
+  echo accepted
+  echo total
