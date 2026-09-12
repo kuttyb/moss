@@ -1,0 +1,26 @@
+# Untyped parameters are statically inferred from their operations.
+fn twice(x):
+  return x
+
+# This parameter has an explicit concrete Moss type.
+fn add_fee(amount: Int):
+  return amount + 2
+
+domain Ledger:
+  total = 0
+
+  fn Credit(amount: Int):
+    fee = add_fee(amount)
+    total = total + fee
+    echo "total:", total
+
+  fn DoubleCredit(amount: Int):
+    doubled = twice(amount)
+    total = total + doubled
+    echo "total:", total
+
+fn main():
+  ledger = spawn Ledger()
+  seed = twice(5)
+  message ledger.Credit(seed)
+  message ledger.DoubleCredit(seed)

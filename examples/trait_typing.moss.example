@@ -1,0 +1,20 @@
+# Illustrative trait-typed domain example. The trait syntax is source-level Moss;
+# trait lowering is the next backend milestone and this file is intentionally not
+# included in the executable examples Make target yet.
+
+trait Numeric:
+  fn add(other)
+
+fn normalize(x: Numeric):
+  return x + x
+
+domain Metrics:
+  value = 0
+
+  fn Record(sample: Numeric):
+    value = value + normalize(sample)
+    echo "metric:", value
+
+fn main():
+  metrics = spawn Metrics()
+  message metrics.Record(3)
