@@ -112,6 +112,18 @@ For the initial implementation, `--cluster=A,B` supplies the backend configurati
 
 **Supersedes:** The remaining MPSC fallback in the earlier 2026-09-11 transport decision and its rejection of a generic lock-backed mailbox. It extends that decision with static domain clustering; the eligible `Arc<Mutex<DomainState>>` awaited-only optimization remains available for unclustered domains.
 
+## 2026-09-11 - Optional supervision-owned await extraction
+
+**Question:** Should generated Rust place a per-await panic and cleanup closure around every reply extraction?
+
+**Final decision:** Keep the checked `unwrap_or_else` path by default. Add `--no-await-error-handling` as an explicit backend opt-in that emits unchecked `Option`/`Result` extraction instead, leaving reply failure ownership to a future supervision-tree runtime.
+
+**Reason:** Moss source remains message-based, while failure policy belongs in the runtime supervision layer. The opt-in removes repeated diagnostic closures and their failure checks from generated await sites without adding supervision semantics to Moss prematurely.
+
+**Programmer-facing consequences:** The flag assumes every awaited operation delivers a reply and every reply channel remains valid. Violating that assumption makes generated Rust's unchecked extraction invalid; current programs should keep the default checks until supervision trees provide the corresponding guarantee. The flag changes generated Rust only and adds no Moss syntax.
+
+**Supersedes:** No earlier decision; this adds an explicitly unsafe backend mode alongside the checked default.
+
 ## Open questions and experiments - not decisions
 
 ### Ordinary intra-domain procedures

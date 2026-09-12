@@ -1147,7 +1147,9 @@ class MessageTransportOptimizer {
 
 class Generator {
  public:
-  Generator(const Program& p, const OptimizationPlan& plan) : p_(p), plan_(plan) {
+  Generator(const Program& p, const OptimizationPlan& plan,
+            bool await_error_handling = true)
+      : p_(p), plan_(plan), await_error_handling_(await_error_handling) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
   }
@@ -1158,6 +1160,9 @@ class Generator {
     o << "// Message transport: lock-backed shared-memory mailboxes.\n";
     o << "// Backend labels below distinguish MESSAGE/MAILBOX, SHARED-MEMORY DIRECT, and CLUSTER-LOCAL code.\n";
     o << "// Moss source remains message-based; these comments identify its Rust lowering.\n";
+    if (!await_error_handling_) {
+      o << "// Await error handling disabled: generated awaits use unchecked extraction; supervision owns failure handling.\n";
+    }
     if (!plan_.direct_shared_memory_domains.empty()) {
       o << "// Message optimization: direct shared-memory dispatch for ";
       bool first = true;
@@ -1202,6 +1207,7 @@ class Generator {
  private:
   const Program& p_;
   const OptimizationPlan& plan_;
+  bool await_error_handling_ = true;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
   size_t reply_temp_ = 0;
@@ -2247,16 +2253,22 @@ class Generator {
                             "CLUSTER-LOCAL version: flush older local messages, then call the handler directly");
             o << indent(level) << "self.__moss_flush_" << target->name << "_local();\n";
             o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a
-              << " = self." << target->name << "_" << s.c << "_local(";
+              << " = ";
+            if (!await_error_handling_) o << "unsafe { ";
+            o << "self." << target->name << "_" << s.c << "_local(";
             for (size_t k = 0; k < s.args.size(); ++k) {
               if (k) o << ", ";
               o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
                                     *cluster_context, false);
             }
-            o << ").unwrap_or_else(|| {\n";
-            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-              << h->name << " completed without a reply\")\n";
-            o << indent(level) << "});\n";
+            if (await_error_handling_) {
+              o << ").unwrap_or_else(|| {\n";
+              o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+                << h->name << " completed without a reply\")\n";
+              o << indent(level) << "});\n";
+            } else {
+              o << ").unwrap_unchecked() };\n";
+            }
             locals.insert(s.a);
             types[s.a] = *h->reply_type;
             ++i;
@@ -2272,7 +2284,9 @@ class Generator {
               result = "__moss_reply_value_" + std::to_string(reply_temp_++);
             o << indent(level) << "let "
               << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-              << " = " << recv << "." << s.c << "_shared(";
+              << " = ";
+            if (!await_error_handling_) o << "unsafe { ";
+            o << recv << "." << s.c << "_shared(";
             for (size_t k = 0; k < s.args.size(); ++k) {
               if (k) o << ", ";
               if (cluster_context)
@@ -2281,10 +2295,14 @@ class Generator {
               else
                 o << message_arg(s.args[k], h->params[k].type, d, locals);
             }
-            o << ").unwrap_or_else(|| {\n";
-            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-              << h->name << " completed without a reply\")\n";
-            o << indent(level) << "});\n";
+            if (await_error_handling_) {
+              o << ").unwrap_or_else(|| {\n";
+              o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+                << h->name << " completed without a reply\")\n";
+              o << indent(level) << "});\n";
+            } else {
+              o << ").unwrap_unchecked() };\n";
+            }
             if (localize_domain_reply) {
               string reply_type = trim(*h->reply_type);
               o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
@@ -2322,10 +2340,17 @@ class Generator {
           o << reply_tx << ");\n";
           o << indent(level) << "let "
             << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-            << " = " << reply_rx << ".recv().unwrap_or_else(|_| {\n";
-          o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-            << h->name << " completed without a reply\")\n";
-          o << indent(level) << "});\n";
+            << " = ";
+          if (!await_error_handling_) o << "unsafe { ";
+          o << reply_rx << ".recv()";
+          if (await_error_handling_) {
+            o << ".unwrap_or_else(|_| {\n";
+            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
+              << h->name << " completed without a reply\")\n";
+            o << indent(level) << "});\n";
+          } else {
+            o << ".unwrap_unchecked() };\n";
+          }
           if (localize_domain_reply) {
             string reply_type = trim(*h->reply_type);
             o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
@@ -2398,11 +2423,12 @@ class Generator {
 static void usage() {
   std::cerr << "Moss v0.2 - actor/domain DSL to Rust with await/reply\n\n"
             << "Usage:\n"
-            << "  moss <input.moss> [-Oshared-memory] [--cluster=A,B] [-o output.rs]\n"
+            << "  moss <input.moss> [-Oshared-memory] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    eliminate eligible awaited messages with lock-backed state\n"
             << "  -O0                    retain lock-backed mailbox dispatch for every domain\n\n"
+            << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
             << "  on Message(args...) -> Type\n"
@@ -2415,6 +2441,7 @@ int main(int argc, char** argv) {
     if (argc < 2) { usage(); return 2; }
     bool check_only = false;
     bool optimize_shared_memory = false;
+    bool await_error_handling = true;
     string input, output;
     vector<vector<string>> requested_clusters;
     for (int i = 1; i < argc; ++i) {
@@ -2423,6 +2450,7 @@ int main(int argc, char** argv) {
       else if (a == "-O" || a == "-Oshared-memory" || a == "--optimize-shared-memory")
         optimize_shared_memory = true;
       else if (a == "-O0") optimize_shared_memory = false;
+      else if (a == "--no-await-error-handling") await_error_handling = false;
       else if (a == "--cluster" || moss::starts_with(a, "--cluster=")) {
         string value;
         if (a == "--cluster") {
@@ -2465,7 +2493,7 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    moss::Generator gen(program, plan);
+    moss::Generator gen(program, plan, await_error_handling);
     string rust = gen.generate();
     if (output.empty()) {
       auto pos = input.find_last_of('.');

@@ -59,6 +59,22 @@ compile_shared_memory_case() {
     fail "$name did not emit the Rust Send boundary check"
 }
 
+compile_unchecked_await_case() {
+  name=$1
+  source=$2
+  "$compiler" --check "$source"
+  "$compiler" -Oshared-memory --no-await-error-handling "$source" \
+    -o "$test_build/$name.rs"
+  if grep -F 'unwrap_or_else' "$test_build/$name.rs" >/dev/null; then
+    fail "$name retained per-await error handling"
+  fi
+  grep -F 'unwrap_unchecked' "$test_build/$name.rs" >/dev/null ||
+    fail "$name did not emit unchecked await extraction"
+  grep -F 'Await error handling disabled' "$test_build/$name.rs" >/dev/null ||
+    fail "$name did not record its unchecked-await mode"
+  rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
+}
+
 run_case() {
   name=$1
   source=$2
@@ -189,6 +205,9 @@ grep -F '// Moss line 14: let first = await counter.Add(10)' \
 grep -F '// Moss backend: SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory optimization omitted its direct lowering annotation"
+compile_unchecked_await_case unchecked_awaits examples/shared_memory.moss
+[ "$("$test_build/unchecked_awaits")" = 'shared total: 10 42' ] ||
+  fail "unchecked-await mode changed successful execution"
 run_optimized_case shared_memory_object_pipeline examples/object_pipeline.moss \
   'created: widget 1 false
 observed: widget 1 false

@@ -93,6 +93,8 @@ let reserved = await inventory.Reserve(quantity)
 
 Reply handlers may also be called without `await`; the message is sent normally and its reply is ignored. If an awaited handler reaches its end without executing `reply`, the awaiting code fails with a clear runtime error.
 
+`--no-await-error-handling` omits the generated per-await `unwrap_or_else` diagnostic path and uses unchecked reply extraction instead. This is intended for a future supervision-tree runtime that owns failures; until those guarantees exist, the default await checks should remain enabled.
+
 By default, each spawned domain owns one OS thread and a generated lock-backed shared-memory mailbox. An await blocks that domain's thread. The domain remains logically occupied and does not dequeue another message until the awaited reply arrives, so handlers are non-reentrant and queued messages retain serialized order. `await self.Message(...)` is rejected because it would necessarily deadlock.
 
 ## Shared-memory message transport

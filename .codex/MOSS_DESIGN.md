@@ -139,6 +139,7 @@ This section describes the current v0.2 backend. It is not a source-language con
 - A cross-thread await creates a one-shot lock-backed shared-memory cell, sends its handle with the request, and blocks on its condition variable. Blocking an OS thread is the current implementation of logical non-reentrancy, not a requirement for future runtimes.
 - An ignored reply creates the same one-shot cell and immediately drops its receiver.
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
+- By default, generated await sites use a lazy `unwrap_or_else` failure path that reports a missing reply. `--no-await-error-handling` is an explicit backend opt-in that replaces those checks with unchecked extraction for a future supervision-tree runtime; it is unsafe if a reply is absent or its channel closes.
 
 The current compiler enforces direct-assignment transfer, direct and nested owned payload boundaries, and state/reply restrictions with a lightweight ownership pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
 
