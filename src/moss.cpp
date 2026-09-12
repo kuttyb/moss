@@ -1136,6 +1136,7 @@ class Checker {
       auto bt = inferred_expr_type(index_base, env);
       if (!bt) return std::nullopt;
       if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
+      if (*bt == "vector" || *bt == "queue") return string("_element:element:" + index_base);
       if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
       if (starts_with(*bt, "queue[") && ends_with(*bt, "]")) return trim(bt->substr(6, bt->size()-7));
       if (starts_with(*bt, "map[") && ends_with(*bt, "]")) {
@@ -1189,6 +1190,18 @@ class Checker {
             if (candidate.name == field && !candidate.type.empty())
               return canonical_type_name(candidate.type);
         }
+      }
+    }
+
+    string mr, mh; vector<string> ma;
+    if (parse_member_call(e, mr, mh, ma)) {
+      auto bt = env.find(mr);
+      if (bt != env.end()) {
+        string t = bt->second;
+        if (mh == "pop" && ma.empty() && starts_with(t, "queue[") && ends_with(t, "]"))
+          return trim(t.substr(6, t.size()-7));
+        if (mh == "pop" && ma.empty() && starts_with(t, "vector[") && ends_with(t, "]"))
+          return trim(t.substr(7, t.size()-8));
       }
     }
 
@@ -1487,7 +1500,7 @@ class Checker {
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
       for (const auto& parameter : function.params) {
-        if (!parameter.type.empty()) continue;
+        if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
           auto binary = split_binary(trim(expression), {"+", "-", "*", "/"});
           if (binary) {
@@ -1815,7 +1828,8 @@ class Checker {
       if (actual && traits_.count(param.type) && !trait_conforms(*actual, param.type))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + *actual + "' which does not satisfy trait '" + param.type + "'");
-      if (actual && !function->second->generic && !param.type.empty() && !starts_with(param.type, "_") && !traits_.count(param.type) && !same_type(param.type, *actual))
+      bool container_match = (param.type == "vector" && starts_with(*actual, "vector[")) || (param.type == "map" && starts_with(*actual, "map[")) || (param.type == "queue" && starts_with(*actual, "queue["));
+      if (actual && !function->second->generic && !param.type.empty() && !starts_with(param.type, "_") && !traits_.count(param.type) && !container_match && !same_type(param.type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + *actual + "', expected '" +
             param.type + "'");
@@ -1840,6 +1854,12 @@ class Checker {
       if (it != env.end() && domains_.count(it->second))
         err(line, "naked cross-domain call '" + receiver + "." + handler +
             "' requires 'message' or 'await'");
+      if (it != env.end() && (it->second == "vector" || it->second == "queue" || it->second == "map" ||
+          starts_with(it->second, "vector[") || starts_with(it->second, "queue[") || starts_with(it->second, "map["))) {
+        if (handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
+        if (handler == "pop" && args.empty() && (starts_with(it->second, "queue[") || starts_with(it->second, "vector["))) return;
+        err(line, "invalid collection operation '" + handler + "'");
+      }
       check_expression(line, receiver, env);
       for (const auto& arg : args) check_expression(line, arg, env);
       return;
@@ -1848,7 +1868,7 @@ class Checker {
     if (parse_index(value, ib, ii)) {
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
-      if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[")) {
+      if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
         auto it = inferred_expr_type(ii, env);
         if (!it || *it != "int") err(line, "vector and queue indices must be Int");
       } else if (starts_with(*bt, "map[")) {
@@ -1860,7 +1880,7 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
-      if (objects_.count(callee)) {
+      if (objects_.count(callee) || callee == "Map" || callee == "Queue") {
         for (const auto& arg : args) {
           string field_name, field_value;
           if (!parse_named_argument(arg, field_name, field_value))
@@ -1968,9 +1988,14 @@ class Checker {
           if (receiver != env.end() && domains_.count(receiver->second))
             err(s.line, "naked cross-domain call '" + s.a + "." + s.b +
                 "' requires 'message' or 'await'");
-          err(s.line, "local member calls are not implemented; use a top-level function");
+          auto collection = receiver != env.end() && (receiver->second == "vector" || receiver->second == "queue" || receiver->second == "map" || starts_with(receiver->second, "vector[") || starts_with(receiver->second, "queue[") || starts_with(receiver->second, "map["));
+          if (!collection) err(s.line, "local member calls are not implemented; use a top-level function");
         } else {
           check_function_call(s.line, s.a, s.args, env);
+        }
+        if (!s.b.empty() && s.b == "push" && s.args.size() == 1) {
+          auto it = env.find(s.a); auto at = inferred_expr_type(s.args[0], env);
+          if (it != env.end() && at && (it->second == "vector" || it->second == "queue")) it->second += "[" + *at + "]";
         }
       }
 
@@ -2506,10 +2531,13 @@ class Generator {
 
   string expr(string e, const Domain* d, const std::set<string>& locals) const {
     e = normalize_pipeline(trim(e));
+    if (e.size() >= 6 && e.find(".pop()") != string::npos) {
+      auto pos = e.find(".pop()"); e.replace(pos, 6, ".pop_front()");
+    }
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
-    if (e == "Map()") return "HashMap::new()";
+    if (e == "Map()") return "HashMap::<String, f64>::new()";
     if (e == "Queue()") return "VecDeque::new()";
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
@@ -2518,7 +2546,10 @@ class Generator {
       r << "]"; return r.str();
     }
     string ib, ii;
-    if (parse_index(e, ib, ii)) return "(" + expr(ib, d, locals) + "[" + expr(ii, d, locals) + "]).clone()";
+    if (parse_index(e, ib, ii)) {
+      string ir = (ii.size() >= 2 && ii.front() == '"' && ii.back() == '"') ? ii : expr(ii, d, locals);
+      return "(" + expr(ib, d, locals) + "[" + ir + "]).clone()";
+    }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
     // compatibility spelling for existing sources.
@@ -2730,12 +2761,13 @@ class Generator {
   }
 
   void gen_function(std::ostringstream& o, const Function& f) {
+    bool container_generic = std::any_of(f.params.begin(), f.params.end(), [](const Param& p) { return p.type == "vector" || p.type == "queue" || p.type == "map"; });
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
     backend_comment(o, 0, "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
     o << "fn " << f.name;
-    if (f.generic) {
+    if (f.generic || container_generic) {
       o << "<";
-      size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size()) { if (gi++) o << ", "; o << "T_" << p.name; }
+      size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") { if (gi++) o << ", "; o << "T_" << p.name; }
       o << ">";
     }
     o << "(";
@@ -2746,7 +2778,9 @@ class Generator {
       if (pt.empty() && !ops.empty()) {
         if (ops.count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
         else o << f.params[index].name << ": T_" << f.params[index].name;
-      } else o << f.params[index].name << ": " << rust_type(pt);
+      } else if (pt == "vector") o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
+      else if (pt == "queue") o << f.params[index].name << ": VecDeque<T_" << f.params[index].name << ">";
+      else o << f.params[index].name << ": " << rust_type(pt);
     }
     string return_type = f.return_type.value_or("unit");
     if (return_type != "unit") {
@@ -2755,9 +2789,9 @@ class Generator {
       else if (starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
       else if (starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
       o << ") -> " << (rr == return_type ? rust_type(rr) : rr);
-      if (f.generic) {
+      if (f.generic || container_generic) {
         o << " where "; size_t bi=0;
-        for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty()) continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
+        for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty() && p.type != "vector" && p.type != "queue") continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
           bool idx = ops.count("[]");
           if (idx) o << "Clone";
           else {
@@ -3428,7 +3462,13 @@ class Generator {
             ++i;
             break;
           }
-          string lhs = expr(s.a, d, locals);
+          string lhs;
+          string lhs_base, lhs_index;
+          if (parse_index(s.a, lhs_base, lhs_index)) {
+            string ir = (lhs_index.size() >= 2 && lhs_index.front() == '"' && lhs_index.back() == '"') ? lhs_index : expr(lhs_index, d, locals);
+            lhs = expr(lhs_base, d, locals) + "[" + ir + "]";
+          }
+          else lhs = expr(s.a, d, locals);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
           if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
@@ -3436,16 +3476,24 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             o << indent(level) << "let mut " << s.a << " = " << expr(s.b, d, locals) << ";\n";
             locals.insert(s.a);
-            types[s.a] = "_value";
+            types[s.a] = s.b == "Map()" ? "map" : s.b == "Queue()" ? "queue" : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
           } else {
-            o << indent(level) << lhs << " = " << expr(s.b, d, locals) << ";\n";
+            string mb, mi;
+            if (parse_index(s.a, mb, mi) && types.count(mb) && types.at(mb) == "map")
+              o << indent(level) << expr(mb, d, locals) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals)) << ", " << expr(s.b, d, locals) << ");\n";
+            else o << indent(level) << lhs << " = " << expr(s.b, d, locals) << ";\n";
           }
           ++i;
           break;
         }
         case Stmt::Kind::Call: {
           o << indent(level) << expr(s.a, d, locals);
-          if (!s.b.empty()) o << "." << s.b;
+          if (!s.b.empty()) {
+            string method = s.b;
+            auto it = types.find(s.a);
+            if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
+            o << "." << method;
+          }
           o << "(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";

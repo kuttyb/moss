@@ -1,0 +1,14 @@
+fn first(xs: Vector):
+  return xs[0]
+
+fn main():
+  numbers = [1, 2, 3]
+  numbers.push(4)
+  prices = Map()
+  prices["NVDA"] = 180.5
+  price = prices["NVDA"]
+  jobs = Queue()
+  jobs.push(7)
+  job = jobs.pop()
+  echo first(numbers)
+  echo price
