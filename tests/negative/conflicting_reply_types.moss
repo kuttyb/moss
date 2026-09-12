@@ -1,0 +1,11 @@
+domain Worker:
+  fn Maybe(flag: Bool):
+    if flag:
+      reply 1
+    else:
+      reply "wrong type"
+
+fn main():
+  worker = spawn Worker()
+  result = await worker.Maybe(true)
+  echo result

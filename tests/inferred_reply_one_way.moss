@@ -1,0 +1,8 @@
+domain Worker:
+  fn Notify():
+    reply true
+
+fn main():
+  worker = spawn Worker()
+  message worker.Notify()
+  echo "done"

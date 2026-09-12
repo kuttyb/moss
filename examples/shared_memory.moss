@@ -3,7 +3,7 @@
 # queue for the awaited-only Counter domain.
 
 domain Counter:
-  var total: int = 0
+  total = 0
 
   fn Add(amount: int) -> int:
     total = total + amount

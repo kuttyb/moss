@@ -163,6 +163,18 @@ grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null |
   fail "frontend syntax example did not infer its function signature"
 grep -F 'square(quote.size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
+run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
+grep -F 'fn Latest_shared(&self, __moss_reply: MossSender<Quote>)' \
+  "$test_build/inferred_frontend.rs" >/dev/null ||
+  fail "inferred reply handler did not lower with its inferred reply type"
+grep -F '// Moss line 6: value = 0' "$test_build/inferred_frontend.rs" >/dev/null ||
+  fail "inferred domain state did not retain its source declaration"
+grep -F '// Moss line 13: value: Int = 3' "$test_build/inferred_frontend.rs" >/dev/null ||
+  fail "optional domain-state annotation was not retained"
+grep -F '// Moss line 20: reply Quote(symbol = "MOSS", price = 12.5)' \
+  "$test_build/inferred_frontend.rs" >/dev/null ||
+  fail "named constructor did not retain its '=' source syntax"
+run_case inferred_reply_one_way tests/inferred_reply_one_way.moss 'done'
 run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
 grep -F '// Moss line 21: message client.Run(counter)' "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its Moss source-line annotation"
@@ -248,6 +260,9 @@ reject_source use_after_transfer examples/use_after_transfer.moss \
 reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message' or 'await'"
 reject_case invalid_await "await requires an assignment target"
 reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
+reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
+reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
+reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
 reject_case main_return_value "main cannot return a value"
 reject_case message_transfer "owned non-primitive value 'payload' cannot cross a domain boundary"
 reject_case domain_state_transfer "domain state 'dataset' cannot be transferred by message"
@@ -382,7 +397,6 @@ grep -F 'Moss await failed: Worker.Maybe completed without a reply' "$shared_fal
   fail "shared-memory fallthrough did not report a clear await failure"
 
 reject_case await_one_way "cannot await one-way handler 'Worker.Notify'"
-reject_case reply_one_way "reply is only valid in a handler declaring '-> Type'"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
 reject_case await_unknown_receiver "unknown message receiver 'missing'"
 reject_case await_unknown_handler "domain Worker has no message handler 'Missing'"

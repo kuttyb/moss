@@ -1,0 +1,9 @@
+domain Counter:
+  value: Int = 0.5
+
+  fn Ping():
+    echo "ping"
+
+fn main():
+  counter = spawn Counter()
+  message counter.Ping()

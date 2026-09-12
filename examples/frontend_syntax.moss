@@ -1,5 +1,5 @@
-# Modern frontend forms: inferred functions, colon-style value types, pipelines,
-# explicit messages, and assignment-await syntax.
+# Modern frontend forms: inferred functions, colon-style value types, inferred domain
+# state/replies, `=` constructors, pipelines, explicit messages, and assignment-await.
 
 type Quote:
   symbol
@@ -14,8 +14,11 @@ fn score(quote):
   return value
 
 domain Quotes:
-  fn Latest() -> Quote:
-    reply Quote(symbol: "MOSS", price: 12.5, size: 2, ts: 100)
+  seen = 0
+
+  fn Latest():
+    seen = seen + 1
+    reply Quote(symbol = "MOSS", price = 12.5, size = 2, ts = 100)
 
   fn Note(value: int):
     echo "note:", value

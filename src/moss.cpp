@@ -158,6 +158,43 @@ static size_t top_level_assignment(const string& text) {
   return string::npos;
 }
 
+static size_t top_level_colon(const string& text) {
+  int par = 0, br = 0, sq = 0;
+  bool in_str = false, esc = false;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char c = text[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '(') ++par;
+    else if (c == ')') --par;
+    else if (c == '{') ++br;
+    else if (c == '}') --br;
+    else if (c == '[') ++sq;
+    else if (c == ']') --sq;
+    else if (c == ':' && par == 0 && br == 0 && sq == 0) return i;
+  }
+  return string::npos;
+}
+
+// Named object constructor arguments use '=' in the preferred surface syntax.
+// The ':' spelling remains a compatibility form while the frontend migrates.
+static bool parse_named_argument(const string& text, string& name, string& value) {
+  size_t equal = top_level_assignment(text);
+  size_t colon = top_level_colon(text);
+  size_t delimiter = string::npos;
+  if (equal != string::npos && (colon == string::npos || equal < colon)) delimiter = equal;
+  else if (colon != string::npos) delimiter = colon;
+  if (delimiter == string::npos) return false;
+  name = trim(text.substr(0, delimiter));
+  value = trim(text.substr(delimiter + 1));
+  return plain_identifier(name) && !value.empty();
+}
+
 static string normalize_pipeline(string expression) {
   expression = trim(std::move(expression));
   vector<string> stages;
@@ -224,7 +261,7 @@ struct Line {
   string text;
 };
 
-struct Field { string name, type, init; int line = 0; };
+struct Field { string name, type, init, header; int line = 0; };
 struct Param { string name, type; };
 
 struct Stmt {
@@ -441,6 +478,7 @@ class Parser {
         fail(L, "object fields must use one indentation level");
       auto c = L.text.find(':');
       Field f;
+      f.header = L.text;
       if (c == string::npos) {
         f.name = trim(L.text);
       } else {
@@ -474,7 +512,9 @@ class Parser {
       } else if (starts_with(L.text, "fn ")) {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "fn"));
       } else {
-        fail(L, "domain member must be 'var', 'on', or 'fn'");
+        // Julia-like state declarations omit both the var keyword and, when
+        // inferable, the type annotation: `value = 0`.
+        d.state.push_back(parse_state_field());
       }
     }
     return d;
@@ -482,20 +522,36 @@ class Parser {
 
   Field parse_state_field() {
     Line L = lines_[i_++];
-    string rest = trim(L.text.substr(4));
-    auto c = rest.find(':');
-    if (c == string::npos) fail(L, "state declaration must be 'var name: type = value'");
+    string rest = trim(L.text);
+    if (starts_with(rest, "var ")) rest = trim(rest.substr(4));
+    if (rest.empty()) fail(L, "state declaration requires a field name");
     Field f;
-    f.name = trim(rest.substr(0, c));
-    string rhs = trim(rest.substr(c + 1));
-    auto eq = rhs.find('=');
-    if (eq == string::npos) {
-      f.type = canonical_type_name(trim(rhs));
-    } else {
-      f.type = canonical_type_name(trim(rhs.substr(0, eq)));
-      f.init = trim(rhs.substr(eq + 1));
-    }
+    f.header = L.text;
     f.line = L.no;
+    auto eq = top_level_assignment(rest);
+    auto colon = top_level_colon(rest);
+    if (colon != string::npos && (eq == string::npos || colon < eq)) {
+      f.name = trim(rest.substr(0, colon));
+      string rhs = trim(rest.substr(colon + 1));
+      if (eq != string::npos) {
+        // `eq` is relative to rest and follows the annotation colon.
+        f.type = canonical_type_name(trim(rest.substr(colon + 1, eq - colon - 1)));
+        f.init = trim(rest.substr(eq + 1));
+      } else {
+        f.type = canonical_type_name(rhs);
+      }
+    } else if (eq != string::npos) {
+      f.name = trim(rest.substr(0, eq));
+      f.init = trim(rest.substr(eq + 1));
+    } else {
+      // Accept a bare field as an inference request; the checker will reject
+      // it if no initializer or other static constraint determines its type.
+      f.name = trim(rest);
+    }
+    if (!plain_identifier(f.name))
+      fail(L, "state declaration must be 'name = value' or 'name: type = value'");
+    if ((colon != string::npos && f.type.empty()) || (eq != string::npos && f.init.empty()))
+      fail(L, "state declaration requires a non-empty type or initializer");
     return f;
   }
 
@@ -764,7 +820,17 @@ class Checker {
 
   void run() {
     infer_object_fields();
-    infer_function_signatures();
+    // Function results and handler replies can constrain each other through an
+    // await or a local call. Run a few non-final inference rounds before the
+    // final unresolved-type diagnostics.
+    for (size_t round = 0; round < 3; ++round) {
+      infer_domain_state_fields(false);
+      infer_function_signatures(false);
+      infer_handler_reply_types(false);
+    }
+    infer_domain_state_fields(true);
+    infer_handler_reply_types(true);
+    infer_function_signatures(true);
     check_objects();
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
@@ -824,9 +890,13 @@ class Checker {
     for (const auto& h : d.handlers) {
       if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
-      if (h.reply_type && std::none_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
-            return s.kind == Stmt::Kind::Reply;
-          }))
+      bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
+        return s.kind == Stmt::Kind::Reply;
+      });
+      if (has_reply && !h.reply_type)
+        err(h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
+            "'; add an annotation or use a statically typed reply expression");
+      if (h.reply_type && !has_reply)
         err(h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
       std::unordered_map<string,string> env;
       env["self"] = d.name;
@@ -986,6 +1056,9 @@ class Checker {
         size_t after = end;
         while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
         bool named_field = after < expression.size() && expression[after] == ':';
+        if (!named_field && after < expression.size() && expression[after] == '=') {
+          named_field = after + 1 == expression.size() || expression[after + 1] != '=';
+        }
         if (!member_name && !named_field) return true;
       }
       i = end;
@@ -1133,10 +1206,11 @@ class Checker {
     }
     std::unordered_map<string,string> supplied;
     for (const auto& arg : args) {
-      auto colon = arg.find(':');
-      if (colon == string::npos)
+      string field_name, field_value;
+      if (!parse_named_argument(arg, field_name, field_value))
         err(line, "object constructor fields must be named for '" + constructor + "'");
-      supplied[trim(arg.substr(0, colon))] = trim(arg.substr(colon + 1));
+      if (!supplied.emplace(field_name, field_value).second)
+        err(line, "duplicate field '" + field_name + "' in " + constructor + " constructor");
     }
     for (const auto& field_arg : supplied) {
       auto field = std::find_if(object->second->fields.begin(), object->second->fields.end(),
@@ -1251,6 +1325,10 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
       }
       for (auto& domain : p_.domains) {
+        for (const auto& field : domain.state) {
+          if (!field.init.empty())
+            constrain_constructor_fields(field.line, field.init, {});
+        }
         for (auto& handler : domain.handlers) {
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
@@ -1273,7 +1351,97 @@ class Checker {
     }
   }
 
-  void infer_function_signatures() {
+  void infer_domain_state_fields(bool finalize) {
+    for (size_t round = 0;
+         round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
+      for (auto& domain : p_.domains) {
+        std::unordered_map<string,string> initializer_env;
+        initializer_env["self"] = domain.name;
+        for (const auto& field : domain.state) {
+          if (!field.type.empty()) initializer_env[field.name] = field.type;
+        }
+        for (auto& field : domain.state) {
+          if (!field.init.empty()) {
+            constrain_constructor_fields(field.line, field.init, initializer_env);
+            if (auto actual = inferred_expr_type(field.init, initializer_env)) {
+              if (field.type.empty()) field.type = *actual;
+              else if (!same_type(field.type, *actual))
+                err(field.line, "state field '" + domain.name + "." + field.name +
+                    "' is annotated '" + field.type + "' but its initializer has type '" +
+                    *actual + "'");
+            }
+          }
+          if (!field.type.empty()) initializer_env[field.name] = field.type;
+        }
+
+        for (auto& handler : domain.handlers) {
+          std::unordered_map<string,string> env;
+          env["self"] = domain.name;
+          for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
+          for (const auto& field : domain.state) env[field.name] = field.type;
+          infer_statement_expressions(handler.body, env);
+          for (auto& field : domain.state) {
+            auto inferred = env.find(field.name);
+            if (inferred == env.end() || inferred->second.empty() || inferred->second == "_value") continue;
+            if (field.type.empty()) field.type = inferred->second;
+            else if (!same_type(field.type, inferred->second))
+              err(field.line, "state field '" + domain.name + "." + field.name +
+                  "' has conflicting inferred types '" + field.type + "' and '" +
+                  inferred->second + "'");
+          }
+        }
+      }
+    }
+    if (!finalize) return;
+    for (const auto& domain : p_.domains) {
+      for (const auto& field : domain.state) {
+        if (field.type.empty())
+          err(field.line, "cannot infer type for state field '" + domain.name + "." +
+              field.name + "'; add an annotation or initializer");
+      }
+    }
+  }
+
+  void infer_handler_reply_types(bool finalize) {
+    for (size_t round = 0;
+         round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
+      for (auto& domain : p_.domains) {
+        for (auto& handler : domain.handlers) {
+          std::unordered_map<string,string> env;
+          env["self"] = domain.name;
+          for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
+          for (const auto& field : domain.state) env[field.name] = field.type;
+          infer_statement_expressions(handler.body, env);
+          for (const auto& statement : handler.body) {
+            if (statement.kind != Stmt::Kind::Reply) continue;
+            auto actual = inferred_expr_type(statement.a, env);
+            if (!actual) continue;
+            if (!handler.reply_type) {
+              handler.reply_type = *actual;
+            } else if (!same_type(*handler.reply_type, *actual)) {
+              err(statement.line, "conflicting reply types in handler '" + domain.name +
+                  "." + handler.name + "': expected '" + *handler.reply_type +
+                  "' but this reply has type '" + *actual + "'");
+            }
+          }
+        }
+      }
+    }
+    if (!finalize) return;
+    for (const auto& domain : p_.domains) {
+      for (const auto& handler : domain.handlers) {
+        bool has_reply = std::any_of(handler.body.begin(), handler.body.end(),
+                                     [](const Stmt& statement) {
+                                       return statement.kind == Stmt::Kind::Reply;
+                                     });
+        if (has_reply && !handler.reply_type)
+          err(handler.line, "cannot infer reply type for handler '" + domain.name +
+              "." + handler.name + "'; add an annotation or use a statically typed reply expression");
+      }
+    }
+  }
+
+  void infer_function_signatures(bool finalize) {
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
         std::unordered_map<string,string> env;
@@ -1313,6 +1481,7 @@ class Checker {
         infer_statement_expressions(p_.main->body, env);
       }
     }
+    if (!finalize) return;
     for (auto& function : p_.functions) {
       for (const auto& parameter : function.params) {
         if (parameter.type.empty())
@@ -1362,9 +1531,9 @@ class Checker {
       std::unordered_map<string, string> fields;
       if (parts.size() == 1 && parts.front().empty()) parts.clear();
       for (const auto& part : parts) {
-        auto colon = part.find(':');
-        if (colon != string::npos)
-          fields[trim(part.substr(0, colon))] = trim(part.substr(colon + 1));
+        string field_name, field_value;
+        if (parse_named_argument(part, field_name, field_value))
+          fields[field_name] = field_value;
       }
       for (const auto& field : object->second->fields) {
         auto supplied = fields.find(field.name);
@@ -1581,8 +1750,10 @@ class Checker {
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       if (objects_.count(callee)) {
         for (const auto& arg : args) {
-          auto colon = arg.find(':');
-          check_expression(line, colon == string::npos ? arg : arg.substr(colon + 1), env);
+          string field_name, field_value;
+          if (!parse_named_argument(arg, field_name, field_value))
+            err(line, "object constructor fields must be named for '" + callee + "'");
+          check_expression(line, field_value, env);
         }
       } else {
         check_function_call(line, callee, args, env);
@@ -2103,6 +2274,7 @@ class Generator {
   }
 
   static string state_field_signature(const Field& f) {
+    if (!f.header.empty()) return f.header;
     string out = "var " + f.name + ": " + f.type;
     if (!f.init.empty()) out += " = " + f.init;
     return out;
@@ -2192,7 +2364,8 @@ class Generator {
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
 
-    // Nim-like value-object construction: User(name: "a", score: 1)
+    // Named value-object construction. Moss prefers `=` here; `:` remains a
+    // compatibility spelling for existing sources.
     auto lp0 = e.find('(');
     if (lp0 != string::npos && ends_with(e, ")")) {
       string head = trim(e.substr(0, lp0));
@@ -2202,9 +2375,10 @@ class Generator {
         std::unordered_map<string,string> values;
         if (parts.size() == 1 && parts[0].empty()) parts.clear();
         for (const auto& part : parts) {
-          auto c = part.find(':');
-          if (c == string::npos) throw std::runtime_error("object constructor fields must be named");
-          values[trim(part.substr(0, c))] = trim(part.substr(c + 1));
+          string field_name, field_value;
+          if (!parse_named_argument(part, field_name, field_value))
+            throw std::runtime_error("object constructor fields must be named");
+          values[field_name] = field_value;
         }
         std::ostringstream r;
         r << head << " { ";
@@ -2393,7 +2567,7 @@ class Generator {
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
     o << "#[derive(Clone, Debug)]\nstruct " << t.name << " {\n";
     for (const auto& f : t.fields) {
-      source_comment(o, 4, f.line, f.name + ": " + f.type);
+      source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
       o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
@@ -3396,7 +3570,7 @@ static void usage() {
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
             << "  message domain.Message(args...)\n"
-            << "  on Message(args...) -> Type\n"
+            << "  fn Message(args...) [-> Type]\n"
             << "  reply value\n"
             << "  value = await domain.Message(args...)\n"
             << "  fn square(x) = x * x\n"

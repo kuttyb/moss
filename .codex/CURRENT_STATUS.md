@@ -5,9 +5,12 @@ Updated: 2026-09-11
 ## Version and commits
 
 - Compiler version: Moss v0.2
-- Repository was synchronized with `origin/main`; the syntax-direction checkpoint is `c130ff2` until the frontend checkpoint is committed.
+- Repository was synchronized with `origin/main`; the previous frontend checkpoint is
+  `d2cf9aa` before inferred state/reply syntax work is committed.
 - Previous known compiler checkpoint/base: `acebe2c1adad1d04d9d3f0e1ac506084417af741` (with the subsequent shared-memory and clustering implementation on `cd65d8c` in the prior handoff).
-- The current working tree adds the incremental Julia-like frontend migration on top of the shared-memory, ownership, and clustering implementation.
+- The current working tree adds inferred domain state, inferred handler replies, and
+  `=`-named constructors on top of the shared-memory, ownership, clustering, and prior
+  Julia-like frontend implementation.
 
 ## Approved semantics
 
@@ -22,6 +25,8 @@ Updated: 2026-09-11
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
+- Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
+  constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
 - Domain spawning from `main`; one OS thread and serialized lock-backed shared-memory mailbox per unclustered queued domain in generated Rust.
 - Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
@@ -51,12 +56,23 @@ Updated: 2026-09-11
 
 ## Tests run and results
 
-`make check` passed after the frontend migration. The suite compiles ordinary, direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated `std::sync::mpsc` use; checks local implementations for the expected synchronization boundary; compares behavior for checkout, object isolation, ignored replies, local and shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster layouts, cycles, naked domain calls, invalid awaits, unresolved fields, and value-returning `main`; verifies source/backend annotations; verifies `--no-await-error-handling`; and repeatedly exercises both the lock-backed mailbox and direct state-lock paths under contention.
+`make check` passed after the inferred state/reply migration. The suite compiles ordinary,
+direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated
+`std::sync::mpsc` use; checks local implementations for the expected synchronization
+boundary; compares behavior for checkout, object isolation, ignored replies, local and
+shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster
+layouts, cycles, naked domain calls, invalid awaits, unresolved fields/state, conflicting
+reply types, state annotation mismatches, and value-returning `main`; verifies source/
+backend annotations; verifies `--no-await-error-handling`; and repeatedly exercises both
+the lock-backed mailbox and direct state-lock paths under contention. Dedicated positive
+cases cover inferred state, optional state annotations, inferred replies, and `=`
+constructors; the former one-way-reply negative fixture is now a positive compatibility
+case because reply presence infers request/reply capability.
 
 `make examples` passed, compiling every valid example (including `frontend_syntax.moss`)
 with `-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was
 skipped. A strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n
-tests/run.sh` also passed.
+tests/run.sh` also passed after the migration.
 
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 
@@ -73,6 +89,8 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 - Syntax and domain-state interaction for ordinary synchronous procedures.
 - Future retention-safe designs for immutable sharing, arenas, and persistent versions.
 - How future automatic cluster selection should balance locality, blocking awaits, and load distribution.
+- Supervision, failure propagation, transactional rollback, and restart semantics remain
+  unresolved and were deliberately not changed by this frontend migration.
 
 ## Previous 2026-09-11 shared-memory and clustering handoff
 

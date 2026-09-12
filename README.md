@@ -66,7 +66,8 @@ This is a Moss source rule: assigning a nontrivial uniquely owned local transfer
 - Serialized, run-to-completion domain handlers
 - Cross-domain asynchronous message sends
 - Explicit `message domain.Handler(...)` syntax for asynchronous sends
-- Typed request/reply handlers declared with `on Name(...) -> Type`
+- Request/reply handlers with inferred or optional `-> Type` reply annotations
+- Domain state with inferred `name = initializer` bindings and optional `name: Type` constraints
 - `reply value`, which sends one response and terminates the current handler
 - `value = await domain.Message(...)`, plus compatible `let`/`var` await declarations
 - Inferred top-level `fn` functions, expression-bodied functions, and pipeline expressions
@@ -79,7 +80,9 @@ This is a Moss source rule: assigning a nontrivial uniquely owned local transfer
 
 ## Await and reply
 
-A handler without `-> Type` is one-way. A handler that declares a reply type must contain at least one `reply` statement:
+A handler without `-> Type` is inferred as one-way when it has no `reply`. If it contains
+typed `reply` expressions, Moss infers their common reply type. An explicit `-> Type`
+remains an optional constraint:
 
 ```moss
 fn Reserve(quantity: int) -> bool:
@@ -87,6 +90,19 @@ fn Reserve(quantity: int) -> bool:
     available = available - quantity
     reply true
   reply false
+```
+
+Domain state uses the same inference rule:
+
+```moss
+domain Counter:
+  value = 0
+```
+
+Named object constructors use `=` for value bindings:
+
+```moss
+Quote(symbol = "MOSS", price = 12.5)
 ```
 
 For v0.2, `await` is supported as the complete right-hand side of an assignment:

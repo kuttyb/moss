@@ -1,5 +1,5 @@
 domain Counter:
-  var value: int = 0
+  value = 0
 
   fn Add(amount: int):
     value = value + amount

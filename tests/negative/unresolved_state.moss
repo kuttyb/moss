@@ -1,0 +1,9 @@
+domain Worker:
+  value
+
+  fn Ping():
+    echo "ping"
+
+fn main():
+  worker = spawn Worker()
+  message worker.Ping()

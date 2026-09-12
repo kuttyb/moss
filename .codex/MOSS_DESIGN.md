@@ -25,6 +25,18 @@ The legacy `type WorkItem = object` spelling remains accepted. A field annotatio
 omitted when constructor and use constraints infer one concrete type; an unresolved field
 is a compile-time error.
 
+- Domain state uses value-binding syntax. An initializer normally supplies the static
+  type, while an annotation remains an optional constraint:
+
+```moss
+domain Counter:
+  value = 0
+  limit: Int = 10
+```
+
+An uninitialized or otherwise unconstrained state field is a compile-time error. The
+legacy `var value: int = 0` spelling remains accepted during migration.
+
 - A top-level `fn` is an ordinary local function. Expression-bodied functions use
   `fn square(x) = x * x`; block functions return their final expression. Parameter and
   result annotations are optional only when static inference resolves them.
@@ -39,12 +51,17 @@ is a compile-time error.
 
 ### Domains and messages
 
-A one-way handler omits a reply type:
+A handler with no explicit reply annotation is inferred as one-way when it has no
+`reply`. If it contains typed reply expressions, their common type becomes the handler's
+reply type; an explicit `-> Type` remains an optional constraint:
 
 ```moss
-on Notify(text: string)
-  echo text
+fn Latest():
+  reply Quote(symbol = "MOSS", price = 12.5)
 ```
+
+Named object constructors use `=` for value bindings. The older `field: value`
+constructor spelling remains accepted as a migration compatibility form.
 
 A domain handler must be called with an explicit communication form:
 
@@ -84,20 +101,21 @@ The current handler completes before `Continue` can be dequeued. Because a self-
 
 ### Request/reply handlers
 
-A handler may declare one reply type:
+A handler may declare one reply type or let the compiler infer it from its `reply`
+expressions:
 
 ```moss
-on Contains(key: string) -> bool
+fn Contains(key: string):
   reply true
 ```
 
 For v0.2:
 
-- The declared reply type must be a valid Moss type.
+- The declared or inferred reply type must be a valid Moss type.
 - A reply-capable handler must contain at least one syntactic `reply` statement. The compiler does not yet prove that every control-flow path replies.
-- `reply expression` is valid only in a reply-capable handler.
+- Every `reply` expression must have the declared or inferred handler reply type. Conflicting reply paths are compile-time errors.
 - `reply` sends one response and terminates the current handler.
-- Bare `reply`, `reply` in `main`, and `reply value` in a one-way handler are errors.
+- Bare `reply` and `reply` in `main` are errors. A handler with an inferred reply is no longer one-way.
 - `return` remains value-less in domain handlers. Local `fn` functions may return a value.
 - Reaching the end of an awaited handler without replying is a runtime failure reported to the awaiter.
 
@@ -113,7 +131,7 @@ let answer = await worker.Compute(42)
 The source-level rules are:
 
 - The receiver must resolve to a domain reference.
-- The handler must exist, accept the supplied number of arguments, and declare a reply type.
+- The handler must exist, accept the supplied number of arguments, and have a declared or inferred reply type.
 - The destination local's type is inferred from the handler's reply type.
 - The awaiting domain remains logically occupied. It cannot process another message until the reply arrives and the current handler resumes.
 - `await self.Message(...)` is rejected because a non-reentrant domain cannot service its own queued request while waiting.

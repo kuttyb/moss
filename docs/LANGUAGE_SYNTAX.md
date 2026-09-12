@@ -79,6 +79,34 @@ fields must fail compilation until an annotation or an unambiguous constraint is
 provided. The legacy `type Quote = object` spelling remains accepted during migration
 and has the same value-object semantics.
 
+Domain state uses the same value-binding convention. An initializer normally supplies
+the type:
+
+```moss
+domain Counter:
+    value = 0
+```
+
+An annotation remains an optional constraint:
+
+```moss
+domain Counter:
+    value: Int = 0
+```
+
+An uninitialized or otherwise unconstrained state field is a compile-time error. The
+compatibility spelling `var value: int = 0` remains accepted, but new source should use
+the binding form above.
+
+Named object construction uses `=` for value bindings:
+
+```moss
+Quote(symbol = "MOSS", price = 12.5)
+```
+
+The older `Quote(symbol: "MOSS", price: 12.5)` form remains accepted during migration.
+The colon continues to mark type constraints in declarations and parameters.
+
 ## Functions and expressions
 
 Top-level local functions use `fn` and can be written as an expression or an indented
@@ -104,7 +132,10 @@ still makes the domain boundary explicit. A top-level `fn` declares an ordinary 
 function. Domain and handler headers may carry a trailing `:` when using indentation
 oriented formatting. Handler parameter types, like local function parameters, may be
 inferred from whole-program message calls when one concrete message contract results;
-an unresolved handler parameter remains a compile-time error.
+an unresolved handler parameter remains a compile-time error. A handler with no `-> Type`
+annotation is inferred as one-way when it has no `reply`; when it contains typed reply
+expressions, their common type becomes the handler's reply type. Conflicting reply paths
+are compile-time errors, and an explicit `-> Type` remains an optional constraint.
 
 Pipelines are expressions:
 
@@ -133,7 +164,8 @@ position = await Portfolio.position(symbol) # Moss request and wait for its repl
 `message` is fire-and-forget. `await` is specifically the Moss domain request/reply
 operation; it is not general coroutine syntax. The compatibility form
 `let position = await Portfolio.position(symbol)` remains accepted while assignment
-syntax is migrated.
+syntax is migrated. The awaited destination's type is inferred from the handler's
+declared or inferred reply type.
 
 A naked dotted call whose receiver is a domain reference, such as
 `Portfolio.apply_fill(fill)`, is a compile-time error requiring `message` or `await`.
@@ -162,12 +194,13 @@ in Moss.
 
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain
 handlers, `proc main()`, `let`/`var` declarations, and dotted message calls. The
-migration adds the `fn`, `type Name:`, `message`, assignment-await, and pipeline forms
-incrementally. Existing examples and tests are migrated to explicit `message` sends;
-the old naked dotted spelling is now rejected when its receiver is a domain reference.
-Legacy declarations remain available where they do not make the communication boundary
-ambiguous. The current parser accepts top-level functions and function-like domain
-handlers, but does not yet support nested function declarations or general method
+migration adds the `fn`, `type Name:`, inferred state bindings, inferred handler replies,
+`message`, assignment-await, pipeline, and `=` constructor forms incrementally. Existing
+examples are written in the preferred syntax; compatibility tests retain older spellings
+where useful. The old naked dotted spelling is rejected when its receiver is a domain
+reference. Legacy declarations remain available where they do not make the communication
+boundary ambiguous. The current parser accepts top-level functions and function-like
+domain handlers, but does not yet support nested function declarations or general method
 values.
 
 The implementation must record any deviation from this document in the project

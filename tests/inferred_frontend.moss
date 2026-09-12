@@ -1,0 +1,29 @@
+type Quote:
+  symbol
+  price
+
+domain Counter:
+  value = 0
+
+  fn Add(amount: Int):
+    value = value + amount
+    reply value
+
+domain Annotated:
+  value: Int = 3
+
+  fn Get():
+    reply value
+
+domain Quotes:
+  fn Latest():
+    reply Quote(symbol = "MOSS", price = 12.5)
+
+fn main():
+  counter = spawn Counter()
+  annotated = spawn Annotated()
+  quotes = spawn Quotes()
+  first = await counter.Add(2)
+  second = await annotated.Get()
+  quote = await quotes.Latest()
+  echo first, second, quote.symbol, quote.price

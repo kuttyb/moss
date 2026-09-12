@@ -1,5 +1,5 @@
 domain Inventory:
-  var available: int = 10
+  available = 10
 
   fn Reserve(quantity: int) -> bool:
     if available >= quantity:
@@ -8,7 +8,7 @@ domain Inventory:
     reply false
 
 domain Payments:
-  var collected: int = 0
+  collected: Int = 0
 
   fn Charge(amount: int) -> bool:
     collected = collected + amount
