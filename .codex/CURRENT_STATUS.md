@@ -23,6 +23,11 @@ Updated: 2026-09-11
 
 ## Implemented features
 
+- The compiler now has extracted `src/ast.hpp`, `src/constraints.hpp`, and
+  `src/diagnostics.hpp` modules. `moss.cpp` still contains the parser, checker,
+  ownership, optimizer, and Rust generator; the extraction is an incremental
+  architectural checkpoint rather than a completed module split.
+
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
@@ -49,6 +54,10 @@ Updated: 2026-09-11
 - Statically visible await cycles among proposed cluster members are rejected; general cycle handling remains unimplemented.
 
 ## Known bugs and limitations
+
+- Structural constraints are represented explicitly in `constraints.hpp`, but
+  legacy `generic_ops` compatibility data is still present in the checker and
+  must be removed in a follow-up refactor.
 
 - Rust type/ownership errors may still surface when Moss inference lacks enough source information.
 - General await expressions, spawning from handlers, cancellation, timeouts, failure propagation, and cycle detection are not implemented.

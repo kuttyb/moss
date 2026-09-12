@@ -205,3 +205,19 @@ values.
 
 The implementation must record any deviation from this document in the project
 checkpoint and design records. Parser limitations are not new Moss semantics.
+# Typing and compiler architecture
+
+Moss variables and parameters are either untyped or typed. Untyped means
+statically duck typed. Typed means annotated with either a concrete type or a
+trait. Moss has no dynamic typing. All required type and operation relationships
+are resolved and verified at compile time.
+
+Generic and template variables may exist internally in the compiler, but they
+are not part of normal Moss source syntax. Collection element, key, and value
+types are inferred internally for `Vector`, `Map`, and `Queue`; source code does
+not write `Vector[T]` or `Map[K, V]`.
+
+The current implementation has begun separating semantic data (`src/ast.hpp`),
+inferred requirements (`src/constraints.hpp`), and diagnostics
+(`src/diagnostics.hpp`). The remaining parser, inference, ownership, domain,
+optimization, and Rust lowering code is still being extracted incrementally.

@@ -12,16 +12,13 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "ast.hpp"
+#include "diagnostics.hpp"
 
 using std::string;
 using std::vector;
 
 namespace moss {
-
-struct CompileError : std::runtime_error {
-  int line;
-  CompileError(int ln, const string& msg) : std::runtime_error(msg), line(ln) {}
-};
 
 static string ltrim(string s) {
   size_t i = 0;
@@ -274,96 +271,6 @@ static string snake_case(const string& s) {
   }
   return out;
 }
-
-struct Line {
-  int no = 0;
-  int indent = 0;
-  string text;
-};
-
-struct Field { string name, type, init, header; int line = 0; };
-struct Param { string name, type; };
-
-struct Stmt {
-  enum class Kind {
-    Raw,
-    Assign,
-    Call,
-    Message,
-    Echo,
-    If,
-    Else,
-    While,
-    Let,
-    Var,
-    AwaitMessage,
-    Reply,
-    Return
-  } kind = Kind::Raw;
-  int line = 0;
-  int indent = 0; // relative logical indent inside handler/main
-  string text;
-  string a, b, c; // generic payloads
-  vector<string> args;
-  bool is_mutable = false;
-  bool declaration = true;
-};
-
-struct Handler {
-  string name;
-  string header;
-  vector<Param> params;
-  std::optional<string> reply_type;
-  vector<Stmt> body;
-  int line = 0;
-};
-
-struct Domain {
-  string name;
-  string header;
-  vector<Field> state;
-  vector<Handler> handlers;
-  int line = 0;
-};
-
-struct ObjectType {
-  string name;
-  string header;
-  vector<Field> fields;
-  int line = 0;
-};
-
-struct MainProc {
-  vector<Stmt> body;
-  int line = 0;
-  string header;
-};
-
-struct Function {
-  string name;
-  string header;
-  vector<Param> params;
-  std::optional<string> return_type;
-  vector<Stmt> body;
-  std::optional<string> result_expression;
-  int result_line = 0;
-  bool expression_body = false;
-  bool generic = false;
-  std::unordered_map<string,string> generic_results;
-  std::unordered_map<string,std::set<string>> generic_ops;
-  int line = 0;
-};
-
-struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
-struct Trait { string name; string header; vector<TraitMethod> methods; int line = 0; };
-
-struct Program {
-  vector<Function> functions;
-  vector<Trait> traits;
-  vector<ObjectType> objects;
-  vector<Domain> domains;
-  std::optional<MainProc> main;
-};
 
 class Parser {
  public:
@@ -1570,7 +1477,9 @@ class Checker {
               if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
                 function.generic = true;
                 string e = trim(expression);
-                function.generic_ops[p.name].insert(e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/");
+                string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/";
+                function.generic_ops[p.name].insert(op);
+                function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
               }
             }
@@ -1580,6 +1489,7 @@ class Checker {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
               function.generic_ops[p.name].insert("[]");
+              function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
               function.generic_results["element:" + p.name] = p.name;
             }
           }
@@ -1637,7 +1547,9 @@ class Checker {
           if (p.type.empty() && trim(binary->first) == p.name && trim(binary->second) == p.name) {
             function.generic = true;
             string be = trim(*function.result_expression);
-            function.generic_ops[p.name].insert(be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/");
+            string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/";
+            function.generic_ops[p.name].insert(op);
+            function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
             function.generic_results[p.name] = p.name;
             function.return_type = "_generic:" + p.name;
           }
