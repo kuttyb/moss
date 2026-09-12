@@ -11,11 +11,11 @@ domain Counter
 
 domain Client
   on Run(counter: Counter)
-    let first = await counter.Add(10)
-    let second = await counter.Add(32)
+    first = await counter.Add(10)
+    second = await counter.Add(32)
     echo "shared total:", first, second
 
-proc main()
-  let counter = spawn Counter()
-  let client = spawn Client()
-  client.Run(counter)
+fn main():
+  counter = spawn Counter()
+  client = spawn Client()
+  message client.Run(counter)

@@ -42,6 +42,7 @@ Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
 - `examples/shared_memory.moss` shows ordinary Moss messages and awaits lowering to a lock-backed shared-memory mailbox, with an optional direct `Arc<Mutex<_>>` optimization.
+- `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, explicit messages, and assignment-await syntax.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
@@ -64,9 +65,12 @@ This is a Moss source rule: assigning a nontrivial uniquely owned local transfer
 - Domain-owned mutable state
 - Serialized, run-to-completion domain handlers
 - Cross-domain asynchronous message sends
+- Explicit `message domain.Handler(...)` syntax for asynchronous sends
 - Typed request/reply handlers declared with `on Name(...) -> Type`
 - `reply value`, which sends one response and terminates the current handler
-- `let value = await domain.Message(...)` and `var value = await domain.Message(...)`
+- `value = await domain.Message(...)`, plus compatible `let`/`var` await declarations
+- Inferred top-level `fn` functions, expression-bodied functions, and pipeline expressions
+- Colon-style `type Name:` declarations with statically inferred field types
 - `spawn` from `main`
 - Primitive and object value payloads
 - `let`, `var`, `if`/`else`, `while`, `echo`, and bare `return`
@@ -85,11 +89,27 @@ on Reserve(quantity: int) -> bool
   reply false
 ```
 
-For v0.2, `await` is supported only as the complete initializer of a `let` or local `var`:
+For v0.2, `await` is supported as the complete right-hand side of an assignment:
 
 ```moss
-let reserved = await inventory.Reserve(quantity)
+reserved = await inventory.Reserve(quantity)
 ```
+
+The `let reserved = await ...` and `var reserved = await ...` forms remain compatible.
+`await` is a Moss domain request/reply operation, not general coroutine syntax.
+
+Ordinary local functions use `fn` and can omit types when inference is unambiguous:
+
+```moss
+fn square(x) = x * x
+
+fn score(x):
+  x |> square
+```
+
+`message` and `await` are required at domain boundaries. A naked `domain.Handler(...)`
+call is rejected by the compiler; a call without a domain receiver remains an ordinary
+local function call.
 
 Reply handlers may also be called without `await`; the message is sent normally and its reply is ignored. If an awaited handler reaches its end without executing `reply`, the awaiting code fails with a clear runtime error.
 

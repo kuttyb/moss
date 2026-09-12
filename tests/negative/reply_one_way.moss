@@ -4,4 +4,4 @@ domain Worker
 
 proc main()
   let worker = spawn Worker()
-  worker.Notify()
+  message worker.Notify()

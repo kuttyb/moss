@@ -4,9 +4,9 @@ domain Worker
 
 domain Sender
   on Start(worker: Worker, text: string)
-    worker.Notify(text)
+    message worker.Notify(text)
 
 proc main()
   let worker = spawn Worker()
   let sender = spawn Sender()
-  sender.Start(worker, "fresh")
+  message sender.Start(worker, "fresh")

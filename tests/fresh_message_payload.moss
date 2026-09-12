@@ -7,4 +7,4 @@ domain Worker
 
 proc main()
   let worker = spawn Worker()
-  worker.Process(Payload(value: 7))
+  message worker.Process(Payload(value: 7))

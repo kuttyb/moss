@@ -12,24 +12,24 @@ domain Workshop
     var item = WorkItem(name: "widget", revisions: 0, approved: false)
     item.revisions = item.revisions + 1
     echo "created:", item.name, item.revisions, item.approved
-    self.Observe(item, archive)
+    message self.Observe(item, archive)
 
   on Observe(item: WorkItem, archive: Archive)
     echo "observed:", item.name, item.revisions, item.approved
-    self.Revise(item, archive)
+    message self.Revise(item, archive)
 
   on Revise(item: WorkItem, archive: Archive)
     var revised = item
     revised.revisions = revised.revisions + 1
     revised.approved = true
     echo "revised:", revised.name, revised.revisions, revised.approved
-    self.Verify(revised, archive)
+    message self.Verify(revised, archive)
 
   on Verify(item: WorkItem, archive: Archive)
     echo "verified:", item.name, item.revisions, item.approved
-    archive.Store(item.revisions, item.approved)
+    message archive.Store(item.revisions, item.approved)
 
 proc main()
   let archive = spawn Archive()
   let workshop = spawn Workshop()
-  workshop.Start(archive)
+  message workshop.Start(archive)

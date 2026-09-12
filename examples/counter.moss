@@ -7,5 +7,5 @@ domain Counter
 
 proc main()
   let counter = spawn Counter()
-  counter.Add(41)
-  counter.Add(1)
+  message counter.Add(41)
+  message counter.Add(1)

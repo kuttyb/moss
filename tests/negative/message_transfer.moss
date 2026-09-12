@@ -8,10 +8,10 @@ domain Worker
 domain Sender
   on Start(worker: Worker)
     var payload = Payload(text: "detached")
-    worker.Process(payload)
+    message worker.Process(payload)
     echo payload.text
 
 proc main()
   let worker = spawn Worker()
   let sender = spawn Sender()
-  sender.Start(worker)
+  message sender.Start(worker)

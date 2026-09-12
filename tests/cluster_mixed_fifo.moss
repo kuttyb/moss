@@ -8,11 +8,11 @@ domain Target
 
 domain Caller
   on Run(target: Target)
-    target.Add(1)
+    message target.Add(1)
     let value = await target.Add(2)
     echo "result:", value
 
 proc main()
   let target = spawn Target()
   let caller = spawn Caller()
-  caller.Run(target)
+  message caller.Run(target)

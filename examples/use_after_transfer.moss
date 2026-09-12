@@ -13,4 +13,4 @@ domain OwnershipDemo
 
 proc main()
   let demo = spawn OwnershipDemo()
-  demo.Trigger()
+  message demo.Trigger()

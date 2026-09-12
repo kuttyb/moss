@@ -11,4 +11,4 @@ domain Right
 proc main()
   let left = spawn Left()
   let right = spawn Right()
-  left.Ask(right)
+  message left.Ask(right)

@@ -9,16 +9,31 @@ Rules under **Source-level semantics** are programmer-facing language decisions.
 ### Program structure
 
 - Moss source uses two-space indentation. Tabs are rejected.
-- Top-level declarations currently consist of value-object types, domains, and `proc main()`.
+- Top-level declarations consist of value-object types, local `fn` functions, domains, and
+  either `fn main()` or the compatible `proc main()` entry point.
+- A trailing `:` is accepted on indentation-oriented domain and handler headers; it is
+  syntax sugar for the existing block structure.
 - A value-object type declares named fields:
 
 ```moss
-type WorkItem = object
+type WorkItem:
   name: string
   revisions: int
 ```
 
+The legacy `type WorkItem = object` spelling remains accepted. A field annotation may be
+omitted when constructor and use constraints infer one concrete type; an unresolved field
+is a compile-time error.
+
+- A top-level `fn` is an ordinary local function. Expression-bodied functions use
+  `fn square(x) = x * x`; block functions return their final expression. Parameter and
+  result annotations are optional only when static inference resolves them.
+- Pipelines using `|>` are source syntax for nested local calls. The current frontend
+  normalizes them before Rust lowering; optimization or fusion is a future backend choice.
+
 - A domain owns mutable state and declares message handlers. Domain state is only accessed while that domain is executing a handler.
+- Message handler parameter annotations may be omitted when whole-program calls infer one
+  concrete contract; an unresolved handler parameter is a compile-time error.
 - `main` may spawn domains. Spawning from a handler is not supported in v0.2.
 - The implemented source types are `int`, `float`, `bool`, `string`, domain references, value-object types, `seq[T]`, `option[T]`, and `table[K, V]`.
 
@@ -31,11 +46,14 @@ on Notify(text: string)
   echo text
 ```
 
-A standalone call to a domain handler is an asynchronous message send:
+A domain handler must be called with an explicit communication form:
 
 ```moss
-worker.Notify("ready")
+message worker.Notify("ready")
 ```
+
+A naked `worker.Notify(...)` call is rejected and must use `message` or `await`. A call
+such as `square(value)` targets a local function and has no domain scheduling meaning.
 
 Approved message semantics are:
 
@@ -48,7 +66,7 @@ Approved message semantics are:
 
 ```moss
 let payload = buildPayload()
-worker.Process(payload) # compile-time error: payload cannot cross a domain boundary
+message worker.Process(payload) # compile-time error: payload cannot cross a domain boundary
 ```
 
 - A value constructed directly as a message or reply payload is owned by that message and may cross the boundary. Primitive field projections can be used to construct a purpose-specific snapshot.
@@ -59,10 +77,10 @@ worker.Process(payload) # compile-time error: payload cannot cross a domain boun
 `self.Message(...)` is a queued message send to the current domain. It is not an ordinary synchronous procedure call:
 
 ```moss
-self.Continue(item)
+message self.Continue(item)
 ```
 
-The current handler completes before `Continue` can be dequeued. Because a self-message does not cross a domain boundary, it may transfer an owned local within the same domain. Moss does not yet define ordinary intra-domain procedure declarations or calls.
+The current handler completes before `Continue` can be dequeued. Because a self-message does not cross a domain boundary, it may transfer an owned local within the same domain. Top-level `fn` declarations and calls are now available for ordinary local computation; the future `proc` parameter model (including read-only and `var` parameters) remains deferred, and a self-message must not be used as a synchronous procedure substitute.
 
 ### Request/reply handlers
 
@@ -80,16 +98,16 @@ For v0.2:
 - `reply expression` is valid only in a reply-capable handler.
 - `reply` sends one response and terminates the current handler.
 - Bare `reply`, `reply` in `main`, and `reply value` in a one-way handler are errors.
-- `return` remains value-less. `return value` is an error.
+- `return` remains value-less in domain handlers. Local `fn` functions may return a value.
 - Reaching the end of an awaited handler without replying is a runtime failure reported to the awaiter.
 
 ### Await
 
-In v0.2, `await` is allowed only as the complete initializer of a local `let` or `var`:
+In v0.2, `await` is allowed only as the complete right-hand side of an assignment:
 
 ```moss
-let reserved = await inventory.Reserve(quantity)
-var answer = await worker.Compute(42)
+reserved = await inventory.Reserve(quantity)
+let answer = await worker.Compute(42)
 ```
 
 The source-level rules are:

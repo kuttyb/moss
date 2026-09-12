@@ -5,4 +5,4 @@ domain Worker
 
 proc main()
   let worker = spawn Worker()
-  worker.Fire()
+  message worker.Fire()

@@ -14,4 +14,4 @@ domain Client
 proc main()
   let worker = spawn Worker()
   let client = spawn Client()
-  client.Run(worker)
+  message client.Run(worker)

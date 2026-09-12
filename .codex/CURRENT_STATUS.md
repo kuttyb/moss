@@ -5,9 +5,9 @@ Updated: 2026-09-11
 ## Version and commits
 
 - Compiler version: Moss v0.2
-- Repository was synchronized with `origin/main`; `origin/main` currently points to `cd65d8c`.
-- Previous known checkpoint/base: `3d4c772`. The accumulated implementation is committed through `cd65d8c`.
-- The current working tree makes all Rust transport shared-memory based, prohibits cross-domain transfer of existing owned non-primitive values, and adds static domain clustering.
+- Repository was synchronized with `origin/main`; the syntax-direction checkpoint is `c130ff2` until the frontend checkpoint is committed.
+- Previous known compiler checkpoint/base: `acebe2c1adad1d04d9d3f0e1ac506084417af741` (with the subsequent shared-memory and clustering implementation on `cd65d8c` in the prior handoff).
+- The current working tree adds the incremental Julia-like frontend migration on top of the shared-memory, ownership, and clustering implementation.
 
 ## Approved semantics
 
@@ -20,14 +20,15 @@ Updated: 2026-09-11
 
 ## Implemented features
 
-- Two-space-indented parser for object types, domains, handlers, state, and `proc main()`.
+- Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
+- Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
 - Domain spawning from `main`; one OS thread and serialized lock-backed shared-memory mailbox per unclustered queued domain in generated Rust.
 - Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
 - `--cluster=A,B` static placement for single-instance domain types, with one shared worker and ingress mailbox per cluster.
 - Statically selected `_shared` cross-thread calls and `_local` same-cluster calls. Cluster-member capabilities use zero-sized local reference types; local awaits dispatch directly and local one-way calls use a single-threaded queue without synchronization.
 - Optional `-Oshared-memory` / `-O` whole-program planning that promotes awaited-only, reply-only domains to direct `Arc<Mutex<DomainState>>` dispatch while generated Rust assertions retain the `Send` boundary.
-- One-way asynchronous messages, typed reply handlers, `reply value`, and `await` as a complete local initializer.
+- One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
 - Generated Rust compilation with warnings denied in the test suite.
@@ -36,7 +37,7 @@ Updated: 2026-09-11
 
 - Ownership analysis remains lightweight around arbitrary raw expressions, indirect aliases, and complete control-flow dataflow.
 - `deepCopy()` and its cost warnings are approved but not implemented; no implicit copy is inserted.
-- Ordinary synchronous intra-domain procedures are not implemented; `self.Message(...)` remains queued communication.
+- The future ordinary `proc` parameter model is not implemented; top-level `fn` local functions are implemented. `self.Message(...)` remains queued communication.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
 - The additional awaited-only state-lock optimization is domain-wide and opt-in. It does not yet use profiles or a cost model.
 - Cluster configuration is type-wide and currently requires exactly one unconditional `main` spawn for every member.
@@ -50,7 +51,12 @@ Updated: 2026-09-11
 
 ## Tests run and results
 
-`make check` passed after the shared-memory, clustering, generated-comment, example-build, and unchecked-await changes. The suite compiles ordinary, direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated `std::sync::mpsc` use; checks that local implementations contain no concurrency primitive; compares behavior for checkout, object isolation, ignored replies, local and shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster layouts and cycles; verifies source/backend annotations; verifies `--no-await-error-handling`; and repeatedly exercises both the lock-backed mailbox and direct state-lock paths under contention.
+`make check` passed after the frontend migration. The suite compiles ordinary, direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated `std::sync::mpsc` use; checks local implementations for the expected synchronization boundary; compares behavior for checkout, object isolation, ignored replies, local and shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster layouts, cycles, naked domain calls, invalid awaits, unresolved fields, and value-returning `main`; verifies source/backend annotations; verifies `--no-await-error-handling`; and repeatedly exercises both the lock-backed mailbox and direct state-lock paths under contention.
+
+`make examples` passed, compiling every valid example (including `frontend_syntax.moss`)
+with `-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was
+skipped. A strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n
+tests/run.sh` also passed.
 
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 
@@ -68,7 +74,7 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 - Future retention-safe designs for immutable sharing, arenas, and persistent versions.
 - How future automatic cluster selection should balance locality, blocking awaits, and load distribution.
 
-## 2026-09-11 shared-memory and clustering handoff
+## Previous 2026-09-11 shared-memory and clustering handoff
 
 ### What changed in this session
 
@@ -98,9 +104,10 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 - `make check` — passed with baseline and shared-memory generated Rust compiled under `rustc -D warnings`.
 
-### Exact commit hash containing the work
+### Exact commit hash containing the backend work
 
-`cd65d8c` — Latest change before the checkpoint; this is the current `origin/main` tip before the checkpoint commit.
+`cd65d8c` — Backend predecessor before the frontend migration. The syntax-direction
+checkpoint is `c130ff2`; the completed frontend checkpoint is the commit that follows.
 
 ## 2026-09-05 transfer-semantics handoff (partly superseded)
 

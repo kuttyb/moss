@@ -15,5 +15,5 @@ domain Waiting
 proc main()
   let dependency = spawn Dependency()
   let waiting = spawn Waiting()
-  waiting.First(dependency)
-  waiting.Second()
+  message waiting.First(dependency)
+  message waiting.Second()

@@ -6,4 +6,4 @@ domain Demo
 
 proc main()
   let demo = spawn Demo()
-  demo.Run()
+  message demo.Run()

@@ -10,9 +10,9 @@ domain Worker
 
 domain Sender
   on Start(worker: Worker, envelope: Envelope)
-    worker.Process(envelope.payload)
+    message worker.Process(envelope.payload)
 
 proc main()
   let worker = spawn Worker()
   let sender = spawn Sender()
-  sender.Start(worker, Envelope(payload: Payload(value: 7)))
+  message sender.Start(worker, Envelope(payload: Payload(value: 7)))

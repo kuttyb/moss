@@ -14,4 +14,4 @@ domain Sender
 proc main()
   let worker = spawn Worker()
   let sender = spawn Sender()
-  sender.Start(worker)
+  message sender.Start(worker)

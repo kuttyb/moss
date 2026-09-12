@@ -98,8 +98,13 @@ intra-domain call. It has no mailbox, request/reply, or domain scheduling meanin
 
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
 a compatibility spelling while existing programs migrate. Domain message handlers keep
-their serialized handler semantics; the first migration retains the existing `on`
-handler spelling so a local function cannot be mistaken for a message endpoint.
+their serialized handler semantics. Both `on Handler(...)` and `fn Handler(...)` inside a
+`domain` declare message handlers; the `message` or `await` keyword at each call site
+still makes the domain boundary explicit. A top-level `fn` declares an ordinary local
+function. Domain and handler headers may carry a trailing `:` when using indentation
+oriented formatting. Handler parameter types, like local function parameters, may be
+inferred from whole-program message calls when one concrete message contract results;
+an unresolved handler parameter remains a compile-time error.
 
 Pipelines are expressions:
 
@@ -158,9 +163,12 @@ in Moss.
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain
 handlers, `proc main()`, `let`/`var` declarations, and dotted message calls. The
 migration adds the `fn`, `type Name:`, `message`, assignment-await, and pipeline forms
-incrementally. Existing examples and tests are migrated to explicit `message` sends so
-the naked cross-domain-call diagnostic can become authoritative. Legacy declarations
-remain available where they do not make the communication boundary ambiguous.
+incrementally. Existing examples and tests are migrated to explicit `message` sends;
+the old naked dotted spelling is now rejected when its receiver is a domain reference.
+Legacy declarations remain available where they do not make the communication boundary
+ambiguous. The current parser accepts top-level functions and function-like domain
+handlers, but does not yet support nested function declarations or general method
+values.
 
 The implementation must record any deviation from this document in the project
 checkpoint and design records. Parser limitations are not new Moss semantics.

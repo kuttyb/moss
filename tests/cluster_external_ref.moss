@@ -4,14 +4,14 @@ domain Worker
 
 domain Relay
   on Pass(worker: Worker)
-    worker.Ping()
+    message worker.Ping()
 
 domain Driver
   on Run(relay: Relay, worker: Worker)
-    relay.Pass(worker)
+    message relay.Pass(worker)
 
 proc main()
   let worker = spawn Worker()
   let relay = spawn Relay()
   let driver = spawn Driver()
-  driver.Run(relay, worker)
+  message driver.Run(relay, worker)

@@ -4,13 +4,13 @@ domain Worker
 
 domain Relay
   on Run(worker: Worker, sink: Relay)
-    sink.Accept(worker)
-    worker.Ping()
+    message sink.Accept(worker)
+    message worker.Ping()
 
   on Accept(worker: Worker)
-    worker.Ping()
+    message worker.Ping()
 
 proc main()
   let worker = spawn Worker()
   let relay = spawn Relay()
-  relay.Run(worker, relay)
+  message relay.Run(worker, relay)

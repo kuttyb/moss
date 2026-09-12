@@ -9,4 +9,4 @@ domain Store
   var dataset: Dataset
 
   on Send(worker: Worker)
-    worker.Process(dataset)
+    message worker.Process(dataset)

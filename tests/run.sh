@@ -156,8 +156,15 @@ reject_cluster() {
 
 run_case counter examples/counter.moss 'counter: 41
 counter: 42'
+run_case frontend_syntax examples/frontend_syntax.moss 'note: 4'
+grep -F '// Moss line 10: fn square(x) = x * x' "$test_build/frontend_syntax.rs" >/dev/null ||
+  fail "frontend syntax example omitted its function source annotation"
+grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null ||
+  fail "frontend syntax example did not infer its function signature"
+grep -F 'square(quote.size)' "$test_build/frontend_syntax.rs" >/dev/null ||
+  fail "frontend syntax example did not lower its pipeline"
 run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
-grep -F '// Moss line 21: client.Run(counter)' "$test_build/shared_memory_example.rs" >/dev/null ||
+grep -F '// Moss line 21: message client.Run(counter)' "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its Moss source-line annotation"
 grep -F '// Moss backend: MESSAGE/MAILBOX version: enqueue the Moss send in a lock-backed shared-memory queue' \
   "$test_build/shared_memory_example.rs" >/dev/null ||
@@ -199,7 +206,7 @@ grep -F 'state: Arc<Mutex<CounterState>>' "$test_build/shared_memory_example_opt
   fail "shared-memory example did not lower Counter state to a lock"
 grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory example did not retain the asynchronous Client mailbox"
-grep -F '// Moss line 14: let first = await counter.Add(10)' \
+grep -F '// Moss line 14: first = await counter.Add(10)' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory optimization omitted its Moss await annotation"
 grep -F '// Moss backend: SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message' \
@@ -238,6 +245,10 @@ done
 
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
+reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message' or 'await'"
+reject_case invalid_await "await requires an assignment target"
+reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
+reject_case main_return_value "main cannot return a value"
 reject_case message_transfer "owned non-primitive value 'payload' cannot cross a domain boundary"
 reject_case domain_state_transfer "domain state 'dataset' cannot be transferred by message"
 reject_case await_object_transfer "owned non-primitive value 'payload' cannot cross a domain boundary"

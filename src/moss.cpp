@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -63,6 +64,147 @@ static vector<string> split_top_level(const string& s, char delim) {
   return out;
 }
 
+static string canonical_type_name(string type) {
+  type = trim(std::move(type));
+  if (type == "Int") return "int";
+  if (type == "Float") return "float";
+  if (type == "Bool") return "bool";
+  if (type == "String") return "string";
+  return type;
+}
+
+static bool parse_simple_call(const string& text, string& callee, vector<string>& args) {
+  string value = trim(text);
+  auto lp = value.find('(');
+  auto rp = value.rfind(')');
+  if (lp == string::npos || rp != value.size() - 1 || lp == 0) return false;
+  callee = trim(value.substr(0, lp));
+  if (callee.empty()) return false;
+  string inside = value.substr(lp + 1, rp - lp - 1);
+  args.clear();
+  if (!trim(inside).empty()) args = split_top_level(inside, ',');
+  return true;
+}
+
+static bool plain_identifier(const string& value) {
+  string s = trim(value);
+  if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
+  return std::all_of(s.begin() + 1, s.end(), [](char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+  });
+}
+
+static bool parse_member_call(const string& text, string& receiver, string& handler,
+                              vector<string>& args) {
+  string value = trim(text);
+  auto dot = value.find('.');
+  auto lp = value.find('(', dot == string::npos ? 0 : dot);
+  auto rp = value.rfind(')');
+  if (dot == string::npos || lp == string::npos || rp != value.size() - 1 || dot >= lp)
+    return false;
+  receiver = trim(value.substr(0, dot));
+  handler = trim(value.substr(dot + 1, lp - dot - 1));
+  if (receiver.empty() || handler.empty()) return false;
+  string inside = value.substr(lp + 1, rp - lp - 1);
+  args.clear();
+  if (!trim(inside).empty()) args = split_top_level(inside, ',');
+  return true;
+}
+
+static size_t matching_paren(const string& text, size_t open) {
+  if (open >= text.size() || text[open] != '(') return string::npos;
+  int depth = 0;
+  bool in_str = false, esc = false;
+  for (size_t i = open; i < text.size(); ++i) {
+    char c = text[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '(') ++depth;
+    else if (c == ')' && --depth == 0) return i;
+  }
+  return string::npos;
+}
+
+static size_t top_level_assignment(const string& text) {
+  int par = 0, br = 0, sq = 0;
+  bool in_str = false, esc = false;
+  for (size_t i = 0; i < text.size(); ++i) {
+    char c = text[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '(') ++par;
+    else if (c == ')') --par;
+    else if (c == '{') ++br;
+    else if (c == '}') --br;
+    else if (c == '[') ++sq;
+    else if (c == ']') --sq;
+    else if (c == '=' && par == 0 && br == 0 && sq == 0) {
+      char before = i ? text[i - 1] : '\0';
+      char after = i + 1 < text.size() ? text[i + 1] : '\0';
+      if (before != '=' && before != '!' && before != '<' && before != '>' &&
+          after != '=') return i;
+    }
+  }
+  return string::npos;
+}
+
+static string normalize_pipeline(string expression) {
+  expression = trim(std::move(expression));
+  vector<string> stages;
+  int par = 0, br = 0, sq = 0;
+  bool in_str = false, esc = false;
+  size_t start = 0;
+  for (size_t i = 0; i + 1 < expression.size(); ++i) {
+    char c = expression[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '(') ++par;
+    else if (c == ')') --par;
+    else if (c == '{') ++br;
+    else if (c == '}') --br;
+    else if (c == '[') ++sq;
+    else if (c == ']') --sq;
+    if (c == '|' && expression[i + 1] == '>' && par == 0 && br == 0 && sq == 0) {
+      stages.push_back(trim(expression.substr(start, i - start)));
+      start = i + 2;
+      ++i;
+    }
+  }
+  if (stages.empty()) return expression;
+  stages.push_back(trim(expression.substr(start)));
+  string value = stages.front();
+  for (size_t i = 1; i < stages.size(); ++i) {
+    string stage = stages[i];
+    string callee;
+    vector<string> args;
+    if (parse_simple_call(stage, callee, args)) {
+      std::ostringstream call;
+      call << callee << "(" << value;
+      for (const auto& arg : args) call << ", " << arg;
+      call << ")";
+      value = call.str();
+    } else {
+      value = stage + "(" + value + ")";
+    }
+  }
+  return value;
+}
+
 
 static string snake_case(const string& s) {
   string out;
@@ -86,17 +228,33 @@ struct Field { string name, type, init; int line = 0; };
 struct Param { string name, type; };
 
 struct Stmt {
-  enum class Kind { Raw, Send, Echo, If, Else, While, Let, Var, AwaitLet, Reply, Return } kind = Kind::Raw;
+  enum class Kind {
+    Raw,
+    Assign,
+    Call,
+    Message,
+    Echo,
+    If,
+    Else,
+    While,
+    Let,
+    Var,
+    AwaitMessage,
+    Reply,
+    Return
+  } kind = Kind::Raw;
   int line = 0;
   int indent = 0; // relative logical indent inside handler/main
   string text;
   string a, b, c; // generic payloads
   vector<string> args;
   bool is_mutable = false;
+  bool declaration = true;
 };
 
 struct Handler {
   string name;
+  string header;
   vector<Param> params;
   std::optional<string> reply_type;
   vector<Stmt> body;
@@ -105,6 +263,7 @@ struct Handler {
 
 struct Domain {
   string name;
+  string header;
   vector<Field> state;
   vector<Handler> handlers;
   int line = 0;
@@ -112,6 +271,7 @@ struct Domain {
 
 struct ObjectType {
   string name;
+  string header;
   vector<Field> fields;
   int line = 0;
 };
@@ -119,9 +279,23 @@ struct ObjectType {
 struct MainProc {
   vector<Stmt> body;
   int line = 0;
+  string header;
+};
+
+struct Function {
+  string name;
+  string header;
+  vector<Param> params;
+  std::optional<string> return_type;
+  vector<Stmt> body;
+  std::optional<string> result_expression;
+  int result_line = 0;
+  bool expression_body = false;
+  int line = 0;
 };
 
 struct Program {
+  vector<Function> functions;
   vector<ObjectType> objects;
   vector<Domain> domains;
   std::optional<MainProc> main;
@@ -129,7 +303,14 @@ struct Program {
 
 class Parser {
  public:
-  explicit Parser(vector<Line> lines) : lines_(std::move(lines)) {}
+  explicit Parser(vector<Line> lines) : lines_(std::move(lines)) {
+    int unit = 0;
+    for (const auto& line : lines_) {
+      if (line.indent > 0) unit = unit == 0 ? line.indent : std::gcd(unit, line.indent);
+    }
+    indent_unit_ = unit > 0 ? unit : 2;
+    if (indent_unit_ < 2) indent_unit_ = 2;
+  }
 
   Program parse() {
     Program p;
@@ -138,11 +319,42 @@ class Parser {
       if (L.indent != 0) fail(L, "top-level declaration must start at indentation 0");
       if (starts_with(L.text, "domain ")) p.domains.push_back(parse_domain());
       else if (starts_with(L.text, "type ")) p.objects.push_back(parse_object());
-      else if (L.text == "proc main()") {
+      else if (L.text == "proc main()" || L.text == "proc main():") {
         if (p.main) fail(L, "duplicate proc main()");
         p.main = parse_main();
+      } else if (starts_with(L.text, "fn ")) {
+        auto function = parse_function();
+        if (function.name == "main") {
+          if (p.main) fail(L, "duplicate main function");
+          if (function.expression_body)
+            fail(L, "main must use an indented statement body");
+          if (function.result_expression) {
+            Stmt statement;
+            statement.line = function.result_line;
+            statement.indent = 0;
+            statement.text = *function.result_expression;
+            if (parse_message_call(statement.text, statement.a, statement.b, statement.args))
+              statement.kind = Stmt::Kind::Call;
+            else {
+              string callee;
+              if (parse_simple_call(statement.text, callee, statement.args)) {
+                statement.kind = Stmt::Kind::Call;
+                statement.a = callee;
+              } else {
+                statement.kind = Stmt::Kind::Raw;
+              }
+            }
+            function.body.push_back(std::move(statement));
+            function.result_expression.reset();
+          }
+          if (!function.body.size())
+            fail(L, "main must use an indented statement body");
+          p.main = MainProc{std::move(function.body), function.line, function.header};
+        } else {
+          p.functions.push_back(std::move(function));
+        }
       } else {
-        fail(L, "expected 'domain', 'type ... = object', or 'proc main()'");
+        fail(L, "expected 'domain', 'type Name:', 'fn', or 'proc main()'");
       }
     }
     return p;
@@ -151,6 +363,7 @@ class Parser {
  private:
   vector<Line> lines_;
   size_t i_ = 0;
+  int indent_unit_ = 2;
 
   [[noreturn]] void fail(const Line& L, const string& msg) { throw CompileError(L.no, msg); }
 
@@ -163,17 +376,8 @@ class Parser {
 
   static bool parse_message_call(const string& text, string& receiver, string& handler,
                                  vector<string>& args) {
-    auto dot = text.find('.');
-    auto lp = text.find('(', dot == string::npos ? 0 : dot);
-    auto rp = text.rfind(')');
-    if (dot == string::npos || lp == string::npos || rp != text.size() - 1 || dot >= lp) return false;
-    receiver = trim(text.substr(0, dot));
-    handler = trim(text.substr(dot + 1, lp - dot - 1));
-    if (!identifier(receiver) || !identifier(handler)) return false;
-    string inside = text.substr(lp + 1, rp - lp - 1);
-    args.clear();
-    if (!trim(inside).empty()) args = split_top_level(inside, ',');
-    return true;
+    if (!parse_member_call(text, receiver, handler, args)) return false;
+    return identifier(receiver) && identifier(handler);
   }
 
   static bool contains_word_outside_string(const string& text, const string& word) {
@@ -201,9 +405,14 @@ class Parser {
     if (trim(inside).empty()) return ps;
     for (auto part : split_top_level(inside, ',')) {
       auto c = part.find(':');
-      if (c == string::npos) throw CompileError(L.no, "parameter must be 'name: type': " + part);
-      Param p{trim(part.substr(0, c)), trim(part.substr(c + 1))};
-      if (p.name.empty() || p.type.empty()) throw CompileError(L.no, "invalid parameter: " + part);
+      Param p;
+      if (c == string::npos) {
+        p.name = trim(part);
+      } else {
+        p.name = trim(part.substr(0, c));
+        p.type = canonical_type_name(trim(part.substr(c + 1)));
+      }
+      if (p.name.empty() || !identifier(p.name)) throw CompileError(L.no, "invalid parameter: " + part);
       ps.push_back(std::move(p));
     }
     return ps;
@@ -211,22 +420,34 @@ class Parser {
 
   ObjectType parse_object() {
     Line head = lines_[i_++];
-    // type User = object
+    // Legacy: type User = object. Preferred: type User:
     string rest = trim(head.text.substr(5));
     auto eq = rest.find('=');
-    if (eq == string::npos || trim(rest.substr(eq + 1)) != "object")
-      fail(head, "object declaration must be: type Name = object");
+    bool legacy = eq != string::npos;
+    if (legacy) {
+      if (trim(rest.substr(eq + 1)) != "object")
+        fail(head, "object declaration must be 'type Name:' or 'type Name = object'");
+    } else if (!ends_with(rest, ":")) {
+      fail(head, "object declaration must be 'type Name:' or 'type Name = object'");
+    }
     ObjectType o;
-    o.name = trim(rest.substr(0, eq));
+    o.header = head.text;
+    o.name = legacy ? trim(rest.substr(0, eq)) : trim(rest.substr(0, rest.size() - 1));
+    if (!identifier(o.name)) fail(head, "invalid type name '" + o.name + "'");
     o.line = head.no;
     while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
       auto L = lines_[i_++];
-      if (L.indent != head.indent + 2) fail(L, "object fields must be indented by two spaces");
+      if (L.indent != head.indent + indent_unit_)
+        fail(L, "object fields must use one indentation level");
       auto c = L.text.find(':');
-      if (c == string::npos) fail(L, "object field must be 'name: type'");
       Field f;
-      f.name = trim(L.text.substr(0, c));
-      f.type = trim(L.text.substr(c + 1));
+      if (c == string::npos) {
+        f.name = trim(L.text);
+      } else {
+        f.name = trim(L.text.substr(0, c));
+        f.type = canonical_type_name(trim(L.text.substr(c + 1)));
+      }
+      if (!identifier(f.name)) fail(L, "object field must be 'name' or 'name: type'");
       f.line = L.no;
       o.fields.push_back(std::move(f));
     }
@@ -236,19 +457,24 @@ class Parser {
   Domain parse_domain() {
     Line head = lines_[i_++];
     Domain d;
+    d.header = head.text;
     d.name = trim(head.text.substr(7));
+    if (ends_with(d.name, ":")) d.name = trim(d.name.substr(0, d.name.size() - 1));
     d.line = head.no;
     if (d.name.empty()) fail(head, "domain name is required");
 
     while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
       const auto L = lines_[i_];
-      if (L.indent != head.indent + 2) fail(L, "domain members must be indented by two spaces");
+      if (L.indent != head.indent + indent_unit_)
+        fail(L, "domain members must use one indentation level");
       if (starts_with(L.text, "var ")) {
         d.state.push_back(parse_state_field());
       } else if (starts_with(L.text, "on ")) {
-        d.handlers.push_back(parse_handler(head.indent + 2));
+        d.handlers.push_back(parse_handler(head.indent + indent_unit_, "on"));
+      } else if (starts_with(L.text, "fn ")) {
+        d.handlers.push_back(parse_handler(head.indent + indent_unit_, "fn"));
       } else {
-        fail(L, "domain member must be 'var' or 'on'");
+        fail(L, "domain member must be 'var', 'on', or 'fn'");
       }
     }
     return d;
@@ -264,44 +490,94 @@ class Parser {
     string rhs = trim(rest.substr(c + 1));
     auto eq = rhs.find('=');
     if (eq == string::npos) {
-      f.type = trim(rhs);
+      f.type = canonical_type_name(trim(rhs));
     } else {
-      f.type = trim(rhs.substr(0, eq));
+      f.type = canonical_type_name(trim(rhs.substr(0, eq)));
       f.init = trim(rhs.substr(eq + 1));
     }
     f.line = L.no;
     return f;
   }
 
-  Handler parse_handler(int member_indent) {
+  Handler parse_handler(int member_indent, const string& keyword) {
     Line head = lines_[i_++];
-    string sig = trim(head.text.substr(3));
-    auto lp = sig.find('('), rp = sig.rfind(')');
+    string sig = trim(head.text.substr(keyword.size()));
+    auto lp = sig.find('('), rp = matching_paren(sig, lp);
     if (lp == string::npos || rp == string::npos || rp < lp)
-      fail(head, "handler must be 'on Name(args...)' or 'on Name(args...) -> Type'");
+      fail(head, "handler must be 'on Name(args...)' or 'fn Name(args...) -> Type'");
     Handler h;
+    h.header = head.text;
     h.name = trim(sig.substr(0, lp));
     if (!identifier(h.name)) fail(head, "invalid handler name '" + h.name + "'");
     h.params = parse_params(head, sig.substr(lp + 1, rp - lp - 1));
     string suffix = trim(sig.substr(rp + 1));
+    if (ends_with(suffix, ":")) suffix = trim(suffix.substr(0, suffix.size() - 1));
     if (!suffix.empty()) {
       if (!starts_with(suffix, "->"))
-        fail(head, "handler must be 'on Name(args...)' or 'on Name(args...) -> Type'");
+        fail(head, "handler must be 'on Name(args...)' or 'fn Name(args...) -> Type'");
       string type = trim(suffix.substr(2));
       if (type.empty()) fail(head, "reply type is required after '->'");
-      h.reply_type = std::move(type);
+      h.reply_type = canonical_type_name(std::move(type));
     }
     h.line = head.no;
-    h.body = parse_stmt_block(member_indent + 2);
+    h.body = parse_stmt_block(member_indent + indent_unit_);
     if (h.body.empty()) fail(head, "handler body may not be empty");
     return h;
+  }
+
+  Function parse_function() {
+    Line head = lines_[i_++];
+    string sig = trim(head.text.substr(3));
+    auto lp = sig.find('('), rp = matching_paren(sig, lp);
+    if (lp == string::npos || rp == string::npos || rp < lp)
+      fail(head, "function must be 'fn Name(args...)', optionally followed by '-> Type', ':' or '= expression'");
+    Function f;
+    f.name = trim(sig.substr(0, lp));
+    f.header = head.text;
+    if (!identifier(f.name)) fail(head, "invalid function name '" + f.name + "'");
+    f.params = parse_params(head, sig.substr(lp + 1, rp - lp - 1));
+    string suffix = trim(sig.substr(rp + 1));
+    if (starts_with(suffix, "->")) {
+      suffix = trim(suffix.substr(2));
+      auto colon = suffix.find(':');
+      auto equal = suffix.find('=');
+      size_t end = std::min(colon == string::npos ? suffix.size() : colon,
+                            equal == string::npos ? suffix.size() : equal);
+      string type = trim(suffix.substr(0, end));
+      if (type.empty()) fail(head, "function return type is required after '->'");
+      f.return_type = canonical_type_name(type);
+      suffix = trim(suffix.substr(end));
+    }
+    f.line = head.no;
+    if (starts_with(suffix, "=")) {
+      string expression = trim(suffix.substr(1));
+      if (expression.empty()) fail(head, "expression-bodied function requires an expression after '='");
+      f.expression_body = true;
+      f.result_expression = expression;
+      f.result_line = head.no;
+      return f;
+    }
+    if (!suffix.empty() && suffix != ":")
+      fail(head, "function header must end with ':', '= expression', or an optional '-> Type'");
+    f.body = parse_stmt_block(head.indent + indent_unit_);
+    if (f.body.empty()) fail(head, "function body may not be empty");
+    if (!f.body.empty() && f.body.back().indent == 0 &&
+        (f.body.back().kind == Stmt::Kind::Raw || f.body.back().kind == Stmt::Kind::Call)) {
+      f.result_expression = f.body.back().text;
+      f.result_line = f.body.back().line;
+      f.body.pop_back();
+    }
+    if (f.body.empty() && !f.result_expression)
+      fail(head, "function body may not be empty");
+    return f;
   }
 
   MainProc parse_main() {
     Line head = lines_[i_++];
     MainProc m;
     m.line = head.no;
-    m.body = parse_stmt_block(2);
+    m.header = head.text;
+    m.body = parse_stmt_block(indent_unit_);
     if (m.body.empty()) fail(head, "main body may not be empty");
     return m;
   }
@@ -311,7 +587,7 @@ class Parser {
     while (i_ < lines_.size()) {
       Line L = lines_[i_];
       if (L.indent < base_indent) break;
-      if (L.indent % 2 != 0) fail(L, "indentation must use multiples of two spaces");
+      if (L.indent % indent_unit_ != 0) fail(L, "indentation must use consistent spaces");
       if (L.indent < base_indent) break;
       // The statement parser preserves nested indentation. A block ends only when we return
       // to indentation less than the base indentation supplied by the parent construct.
@@ -324,7 +600,7 @@ class Parser {
   Stmt parse_stmt(const Line& L, int base_indent) {
     Stmt s;
     s.line = L.no;
-    s.indent = (L.indent - base_indent) / 2;
+    s.indent = (L.indent - base_indent) / indent_unit_;
     s.text = L.text;
 
     static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
@@ -348,22 +624,47 @@ class Parser {
       if (ends_with(s.a, ":")) s.a = trim(s.a.substr(0, s.a.size() - 1));
       return s;
     }
+    if (starts_with(L.text, "message ")) {
+      string call = trim(L.text.substr(8));
+      if (!parse_message_call(call, s.a, s.b, s.args))
+        fail(L, "message requires a domain call 'receiver.Handler(args)'");
+      s.kind = Stmt::Kind::Message;
+      return s;
+    }
     if (starts_with(L.text, "let ") || starts_with(L.text, "var ")) {
       bool is_var = starts_with(L.text, "var ");
       s.kind = is_var ? Stmt::Kind::Var : Stmt::Kind::Let;
       string rest = trim(L.text.substr(4));
-      auto eq = rest.find('=');
+      auto eq = top_level_assignment(rest);
       if (eq == string::npos) fail(L, is_var ? "local var requires an initializer in v0.2" : "let requires an initializer");
       s.a = trim(rest.substr(0, eq));
       s.b = trim(rest.substr(eq + 1));
       if (starts_with(s.b, "await ")) {
-        s.kind = Stmt::Kind::AwaitLet;
+        s.kind = Stmt::Kind::AwaitMessage;
         s.is_mutable = is_var;
         string call = trim(s.b.substr(6));
         if (!parse_message_call(call, s.b, s.c, s.args))
-          fail(L, "await requires a message call 'receiver.Handler(args)'");
+          fail(L, "await requires a domain call 'receiver.Handler(args)'");
       } else if (contains_word_outside_string(s.b, "await")) {
         fail(L, "await is only supported as the complete initializer of let or local var");
+      }
+      return s;
+    }
+    auto assignment = top_level_assignment(L.text);
+    if (assignment != string::npos) {
+      s.a = trim(L.text.substr(0, assignment));
+      s.b = trim(L.text.substr(assignment + 1));
+      if (s.a.empty() || s.b.empty()) fail(L, "assignment requires a target and an expression");
+      s.declaration = false;
+      if (starts_with(s.b, "await ")) {
+        s.kind = Stmt::Kind::AwaitMessage;
+        string call = trim(s.b.substr(6));
+        if (!parse_message_call(call, s.b, s.c, s.args))
+          fail(L, "await requires a domain call 'receiver.Handler(args)'");
+      } else if (contains_word_outside_string(s.b, "await")) {
+        fail(L, "await is only supported as the complete right-hand side of an assignment");
+      } else {
+        s.kind = Stmt::Kind::Assign;
       }
       return s;
     }
@@ -375,14 +676,29 @@ class Parser {
       return s;
     }
     if (L.text == "return") { s.kind = Stmt::Kind::Return; return s; }
-    if (starts_with(L.text, "return ")) fail(L, "message handlers cannot return values; use 'reply value' in a handler declaring '-> Type'");
+    if (starts_with(L.text, "return ")) {
+      s.kind = Stmt::Kind::Return;
+      s.a = trim(L.text.substr(7));
+      if (s.a.empty()) fail(L, "return requires a value");
+      return s;
+    }
+
+    if (starts_with(L.text, "await "))
+      fail(L, "await requires an assignment target, for example 'value = await receiver.Handler(...)'");
 
     if (contains_word_outside_string(L.text, "await"))
-      fail(L, "await is only supported as the complete initializer of let or local var");
+      fail(L, "await is only supported as a complete Moss request/reply assignment");
 
-    // Message send candidate: receiver.Message(args), as a standalone statement.
+    // A naked dotted call is kept distinct so the checker can reject it for a domain
+    // receiver while allowing future local member-call syntax.
     if (parse_message_call(L.text, s.a, s.b, s.args)) {
-      s.kind = Stmt::Kind::Send;
+      s.kind = Stmt::Kind::Call;
+      return s;
+    }
+    string callee;
+    if (parse_simple_call(L.text, callee, s.args)) {
+      s.kind = Stmt::Kind::Call;
+      s.a = callee;
       return s;
     }
 
@@ -401,7 +717,7 @@ static vector<Line> lex_lines(std::istream& in) {
     size_t first = raw.find_first_not_of(' ');
     if (first == string::npos) continue;
     if (raw[first] == '#') continue;
-    if (raw.find('\t') != string::npos) throw CompileError(no, "tabs are not allowed; use two-space indentation");
+    if (raw.find('\t') != string::npos) throw CompileError(no, "tabs are not allowed; use space indentation");
 
     // Strip comments outside strings.
     bool in_str = false, esc = false;
@@ -421,41 +737,56 @@ static vector<Line> lex_lines(std::istream& in) {
     if (trim(raw).empty()) continue;
     int indent = 0;
     while (indent < (int)raw.size() && raw[indent] == ' ') ++indent;
-    out.push_back(Line{no, indent, trim(raw.substr(indent))});
+    string text = trim(raw.substr(indent));
+    if (starts_with(text, "|>") && !out.empty()) {
+      out.back().text += " " + text;
+      continue;
+    }
+    out.push_back(Line{no, indent, std::move(text)});
   }
   return out;
 }
 
 class Checker {
  public:
-  explicit Checker(const Program& p) : p_(p) {
-    for (const auto& d : p_.domains) {
+  explicit Checker(Program& p) : p_(p) {
+    for (auto& f : p_.functions) {
+      if (!functions_.emplace(f.name, &f).second)
+        err(f.line, "duplicate function: " + f.name);
+    }
+    for (auto& d : p_.domains) {
       if (!domains_.emplace(d.name, &d).second) err(d.line, "duplicate domain: " + d.name);
     }
-    for (const auto& o : p_.objects) {
+    for (auto& o : p_.objects) {
       if (!objects_.emplace(o.name, &o).second) err(o.line, "duplicate object type: " + o.name);
     }
   }
 
   void run() {
+    infer_object_fields();
+    infer_function_signatures();
+    check_objects();
+    for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
   }
 
  private:
-  const Program& p_;
-  std::unordered_map<string, const Domain*> domains_;
-  std::unordered_map<string, const ObjectType*> objects_;
+  Program& p_;
+  std::unordered_map<string, Function*> functions_;
+  std::unordered_map<string, Domain*> domains_;
+  std::unordered_map<string, ObjectType*> objects_;
 
   [[noreturn]] void err(int line, const string& msg) const { throw CompileError(line, msg); }
 
   bool valid_type(const string& t) const {
-    if (t == "int" || t == "float" || t == "bool" || t == "string") return true;
-    if (domains_.count(t) || objects_.count(t)) return true;
-    if ((starts_with(t, "seq[") || starts_with(t, "option[")) && ends_with(t, "]"))
-      return valid_type(trim(t.substr(t.find('[')+1, t.size()-t.find('[')-2)));
-    if (starts_with(t, "table[") && ends_with(t, "]")) {
-      auto inside = t.substr(6, t.size()-7);
+    string type = canonical_type_name(t);
+    if (type == "int" || type == "float" || type == "bool" || type == "string") return true;
+    if (domains_.count(type) || objects_.count(type)) return true;
+    if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
+      return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
+    if (starts_with(type, "table[") && ends_with(type, "]")) {
+      auto inside = type.substr(6, type.size()-7);
       auto ps = split_top_level(inside, ',');
       return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
     }
@@ -465,6 +796,22 @@ class Checker {
   const Handler* find_handler(const Domain& d, const string& name) const {
     for (const auto& h : d.handlers) if (h.name == name) return &h;
     return nullptr;
+  }
+
+  Handler* find_handler(Domain& d, const string& name) {
+    for (auto& h : d.handlers) if (h.name == name) return &h;
+    return nullptr;
+  }
+
+  void check_objects() const {
+    for (const auto& object : p_.objects) {
+      std::set<string> field_names;
+      for (const auto& field : object.fields) {
+        if (!valid_type(field.type)) err(field.line, "unknown field type '" + field.type + "'");
+        if (!field_names.insert(field.name).second)
+          err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
+      }
+    }
   }
 
   void check_domain(const Domain& d) {
@@ -484,6 +831,9 @@ class Checker {
       std::unordered_map<string,string> env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
+        if (p.type.empty())
+          err(h.line, "cannot infer type for parameter '" + p.name +
+              "' in handler '" + d.name + "." + h.name + "'");
         if (!valid_type(p.type)) err(h.line, "unknown parameter type '" + p.type + "'");
         if (env.count(p.name)) err(h.line, "duplicate parameter '" + p.name + "'");
         env[p.name] = p.type;
@@ -505,6 +855,44 @@ class Checker {
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
   }
 
+  void check_function(const Function& f) {
+    std::unordered_map<string,string> env;
+    std::set<string> names;
+    if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type))
+      err(f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
+    for (const auto& param : f.params) {
+      if (param.type.empty())
+        err(f.line, "cannot infer type for parameter '" + param.name +
+            "' in function '" + f.name + "'");
+      if (!valid_type(param.type)) err(f.line, "unknown parameter type '" + param.type + "'");
+      if (!names.insert(param.name).second) err(f.line, "duplicate parameter: " + param.name);
+      env[param.name] = param.type;
+    }
+    infer_statement_expressions(f.body, env);
+    check_stmts(f.body, env, nullptr, nullptr, &f);
+    OwnershipEnv ownership;
+    ownership.types = env;
+    check_ownership(f.body, std::move(ownership), nullptr, nullptr);
+    if (f.result_expression) {
+      check_expression(f.result_line ? f.result_line : f.line, *f.result_expression, env);
+      auto actual = inferred_expr_type(*f.result_expression, env);
+      if (!actual)
+        err(f.result_line ? f.result_line : f.line,
+            "cannot infer the result type of function '" + f.name + "'");
+      if (!f.return_type) {
+        // The signature pass normally fills this in. Keep this assignment as a
+        // defensive fallback for a function whose result was inferred late.
+        const_cast<Function&>(f).return_type = *actual;
+      } else if (canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
+        err(f.result_line ? f.result_line : f.line,
+            "function '" + f.name + "' returns '" + *actual +
+            "' but is annotated '" + *f.return_type + "'");
+      }
+    } else if (!f.return_type) {
+      const_cast<Function&>(f).return_type = "unit";
+    }
+  }
+
   static std::optional<string> spawn_domain(const string& expr) {
     string e = trim(expr);
     if (!starts_with(e, "spawn ") || !ends_with(e, "()")) return std::nullopt;
@@ -520,12 +908,19 @@ class Checker {
     if (it == env.end()) err(line, "unknown message receiver '" + receiver + "'");
     auto dit = domains_.find(it->second);
     if (dit == domains_.end())
-      err(line, "'" + receiver + "' is not an actor/domain reference; dotted standalone calls are reserved for message sends in v0.2");
+      err(line, "'" + receiver + "' is not a domain reference; use a local function call or a domain reference");
     const Handler* h = find_handler(*dit->second, message);
     if (!h) err(line, "domain " + dit->second->name + " has no message handler '" + message + "'");
     if (h->params.size() != args.size())
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
+    for (size_t index = 0; index < args.size(); ++index) {
+      auto actual = inferred_expr_type(args[index], env);
+      if (actual && !same_type(h->params[index].type, *actual))
+        err(line, "argument " + std::to_string(index + 1) + " to message " +
+            dit->second->name + "." + message + " has type '" + *actual +
+            "', expected '" + h->params[index].type + "'");
+    }
     return h;
   }
 
@@ -535,7 +930,7 @@ class Checker {
     if (e == "true" || e == "false") return "bool";
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
     auto local = env.find(e);
-    if (local != env.end() && local->second != "_value") return local->second;
+    if (local != env.end() && !local->second.empty() && local->second != "_value") return local->second;
     size_t start = (!e.empty() && (e.front() == '+' || e.front() == '-')) ? 1 : 0;
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
           return std::isdigit(static_cast<unsigned char>(c));
@@ -599,7 +994,7 @@ class Checker {
   }
 
   bool copy_type(const string& type) const {
-    string t = trim(type);
+    string t = canonical_type_name(type);
     if (t == "int" || t == "float" || t == "bool") return true;
     if (starts_with(t, "option[") && ends_with(t, "]"))
       return copy_type(trim(t.substr(7, t.size() - 8)));
@@ -607,19 +1002,333 @@ class Checker {
   }
 
   bool transfer_type(const string& type) const {
-    return !copy_type(type) && !domains_.count(trim(type));
+    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+  }
+
+  static std::optional<std::pair<string,string>> split_binary(const string& expression,
+                                                               const vector<string>& operators) {
+    int par = 0, br = 0, sq = 0;
+    bool in_str = false;
+    for (size_t i = expression.size(); i-- > 0;) {
+      char c = expression[i];
+      if (in_str) {
+        if (c == '"' && (i == 0 || expression[i - 1] != '\\')) in_str = false;
+        continue;
+      }
+      if (c == '"') { in_str = true; continue; }
+      if (c == ')') ++par; else if (c == '(') --par;
+      else if (c == '}') ++br; else if (c == '{') --br;
+      else if (c == ']') ++sq; else if (c == '[') --sq;
+      if (par != 0 || br != 0 || sq != 0) continue;
+      for (const auto& op : operators) {
+        if (i + op.size() <= expression.size() &&
+            expression.compare(i, op.size(), op) == 0)
+          return std::make_pair(trim(expression.substr(0, i)),
+                                trim(expression.substr(i + op.size())));
+      }
+    }
+    return std::nullopt;
   }
 
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
-    if (auto type = obvious_expr_type(expression, env)) return type;
-    string e = trim(expression);
-    auto lp = e.find('(');
-    if (lp != string::npos && ends_with(e, ")")) {
-      string constructor = trim(e.substr(0, lp));
-      if (objects_.count(constructor)) return constructor;
+    string e = normalize_pipeline(trim(expression));
+    while (e.size() >= 2 && e.front() == '(' && e.back() == ')') {
+      int depth = 0;
+      bool wraps = true;
+      for (size_t i = 0; i < e.size(); ++i) {
+        if (e[i] == '(') ++depth;
+        else if (e[i] == ')' && --depth == 0 && i + 1 != e.size()) { wraps = false; break; }
+      }
+      if (!wraps) break;
+      e = trim(e.substr(1, e.size() - 2));
+    }
+    if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
+    auto object_call = [&]() -> std::optional<string> {
+      string callee;
+      vector<string> args;
+      if (!parse_simple_call(e, callee, args)) return std::nullopt;
+      if (objects_.count(callee)) return callee;
+      if (callee == "sqrt") return string("float");
+      if (callee == "sum" && args.size() == 1) {
+        auto argument_type = inferred_expr_type(args.front(), env);
+        if (argument_type && starts_with(*argument_type, "seq[") && ends_with(*argument_type, "]"))
+          return trim(argument_type->substr(4, argument_type->size() - 5));
+        return argument_type;
+      }
+      auto function = functions_.find(callee);
+      if (function != functions_.end() && function->second->return_type)
+        return canonical_type_name(*function->second->return_type);
+      return std::nullopt;
+    }();
+    if (object_call) return object_call;
+
+    auto dot = e.rfind('.');
+    if (dot != string::npos) {
+      auto base_type = inferred_expr_type(e.substr(0, dot), env);
+      string field = trim(e.substr(dot + 1));
+      if (base_type) {
+        auto object = objects_.find(canonical_type_name(*base_type));
+        if (object != objects_.end()) {
+          for (const auto& candidate : object->second->fields)
+            if (candidate.name == field && !candidate.type.empty())
+              return canonical_type_name(candidate.type);
+        }
+      }
+    }
+
+    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+      return string("bool");
+    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/"})) {
+      auto left = inferred_expr_type(arithmetic->first, env);
+      auto right = inferred_expr_type(arithmetic->second, env);
+      if (left && right) {
+        if (*left == "string" && *right == "string" && e.find('+') != string::npos)
+          return string("string");
+        if ((*left == "int" || *left == "float") &&
+            (*right == "int" || *right == "float"))
+          return (*left == "float" || *right == "float") ? "float" : "int";
+      }
     }
     return std::nullopt;
+  }
+
+  static bool same_type(const string& left, const string& right) {
+    return canonical_type_name(left) == canonical_type_name(right);
+  }
+
+  void constrain_constructor_fields(int line, const string& expression,
+                                    const std::unordered_map<string,string>& env) {
+    string normalized = normalize_pipeline(trim(expression));
+    string constructor;
+    vector<string> args;
+    if (!parse_simple_call(normalized, constructor, args)) {
+      for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                           {"+", "-", "*", "/"}}) {
+        if (auto binary = split_binary(normalized, operators)) {
+          constrain_constructor_fields(line, binary->first, env);
+          constrain_constructor_fields(line, binary->second, env);
+          return;
+        }
+      }
+      return;
+    }
+    auto object = objects_.find(constructor);
+    if (object == objects_.end()) {
+      for (size_t index = 0; index < args.size(); ++index) {
+        constrain_constructor_fields(line, args[index], env);
+        auto function = functions_.find(constructor);
+        if (function != functions_.end() && index < function->second->params.size()) {
+          if (auto actual = inferred_expr_type(args[index], env)) {
+            auto& parameter = function->second->params[index];
+            if (parameter.type.empty()) parameter.type = *actual;
+            else if (!same_type(parameter.type, *actual))
+              err(line, "argument " + std::to_string(index + 1) + " to function '" +
+                  constructor + "' has type '" + *actual + "', expected '" +
+                  parameter.type + "'");
+          }
+        }
+      }
+      return;
+    }
+    std::unordered_map<string,string> supplied;
+    for (const auto& arg : args) {
+      auto colon = arg.find(':');
+      if (colon == string::npos)
+        err(line, "object constructor fields must be named for '" + constructor + "'");
+      supplied[trim(arg.substr(0, colon))] = trim(arg.substr(colon + 1));
+    }
+    for (const auto& field_arg : supplied) {
+      auto field = std::find_if(object->second->fields.begin(), object->second->fields.end(),
+                                [&](const Field& candidate) { return candidate.name == field_arg.first; });
+      if (field == object->second->fields.end())
+        err(line, "unknown field '" + field_arg.first + "' in " + constructor + " constructor");
+      constrain_constructor_fields(line, field_arg.second, env);
+      auto actual = inferred_expr_type(field_arg.second, env);
+      if (!actual) continue;
+      string inferred = canonical_type_name(*actual);
+      if (field->type.empty()) field->type = inferred;
+      else if (!same_type(field->type, inferred))
+        err(line, "field '" + constructor + "." + field->name + "' has conflicting inferred types '" +
+            field->type + "' and '" + inferred + "'");
+    }
+  }
+
+  void infer_statement_expressions(const vector<Stmt>& statements,
+                                   std::unordered_map<string,string>& env) {
+    for (const auto& statement : statements) {
+      switch (statement.kind) {
+        case Stmt::Kind::If:
+        case Stmt::Kind::While:
+          constrain_constructor_fields(statement.line, statement.a, env);
+          break;
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var:
+        case Stmt::Kind::Assign:
+          constrain_constructor_fields(statement.line, statement.b, env);
+          if (statement.kind == Stmt::Kind::Assign && simple_identifier(statement.a)) {
+            if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
+            else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+          } else if (statement.kind != Stmt::Kind::Assign) {
+            if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
+            else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+          }
+          break;
+        case Stmt::Kind::Message:
+        case Stmt::Kind::AwaitMessage:
+        case Stmt::Kind::Call:
+          for (const auto& arg : statement.args) constrain_constructor_fields(statement.line, arg, env);
+          if (statement.kind == Stmt::Kind::Message || statement.kind == Stmt::Kind::AwaitMessage) {
+            const string& receiver_name = statement.kind == Stmt::Kind::Message
+                ? statement.a : statement.b;
+            const string& handler_name = statement.kind == Stmt::Kind::Message
+                ? statement.b : statement.c;
+            auto receiver = env.find(receiver_name);
+            if (receiver != env.end() && domains_.count(receiver->second)) {
+              auto* handler = find_handler(*domains_.at(receiver->second), handler_name);
+              if (handler) {
+                for (size_t index = 0;
+                     index < statement.args.size() && index < handler->params.size(); ++index) {
+                  auto actual = inferred_expr_type(statement.args[index], env);
+                  if (!actual) continue;
+                  auto& parameter = handler->params[index];
+                  if (parameter.type.empty()) parameter.type = *actual;
+                  else if (!same_type(parameter.type, *actual))
+                    err(statement.line, "argument " + std::to_string(index + 1) +
+                        " to message " + receiver->second + "." + handler_name +
+                        " has type '" + *actual + "', expected '" + parameter.type + "'");
+                }
+              }
+            }
+          }
+          if (statement.kind == Stmt::Kind::AwaitMessage) {
+            auto receiver = env.find(statement.b);
+            if (receiver != env.end() && domains_.count(receiver->second)) {
+              const Handler* handler = find_handler(*domains_.at(receiver->second), statement.c);
+              if (handler && handler->reply_type) env[statement.a] = *handler->reply_type;
+            }
+          }
+          if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
+            auto function = functions_.find(statement.a);
+            if (function != functions_.end()) {
+              for (size_t i = 0; i < statement.args.size() && i < function->second->params.size(); ++i) {
+                auto actual = inferred_expr_type(statement.args[i], env);
+                if (!actual) continue;
+                auto& parameter = function->second->params[i];
+                if (parameter.type.empty()) parameter.type = *actual;
+                else if (!same_type(parameter.type, *actual))
+                  err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
+                      function->second->name + "' has type '" + *actual +
+                      "', expected '" + parameter.type + "'");
+              }
+            }
+          }
+          break;
+        case Stmt::Kind::Echo:
+          for (const auto& arg : statement.args) constrain_constructor_fields(statement.line, arg, env);
+          break;
+        case Stmt::Kind::Reply:
+        case Stmt::Kind::Return:
+          if (!statement.a.empty()) constrain_constructor_fields(statement.line, statement.a, env);
+          break;
+        case Stmt::Kind::Raw:
+          constrain_constructor_fields(statement.line, statement.text, env);
+          break;
+        case Stmt::Kind::Else:
+          break;
+      }
+    }
+  }
+
+  void infer_object_fields() {
+    for (size_t round = 0;
+         round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
+      for (const auto& function : p_.functions) {
+        std::unordered_map<string,string> env;
+        for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
+        infer_statement_expressions(function.body, env);
+        if (function.result_expression)
+          constrain_constructor_fields(function.result_line, *function.result_expression, env);
+      }
+      for (auto& domain : p_.domains) {
+        for (auto& handler : domain.handlers) {
+          std::unordered_map<string,string> env;
+          env["self"] = domain.name;
+          for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
+          for (const auto& field : domain.state) env[field.name] = field.type;
+          infer_statement_expressions(handler.body, env);
+        }
+      }
+      if (p_.main) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(p_.main->body, env);
+      }
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& field : object.fields) {
+        if (field.type.empty())
+          err(field.line, "cannot infer type for field '" + object.name + "." + field.name +
+              "'; add an annotation or a constructor constraint");
+      }
+    }
+  }
+
+  void infer_function_signatures() {
+    for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
+      for (auto& function : p_.functions) {
+        std::unordered_map<string,string> env;
+        for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
+        infer_statement_expressions(function.body, env);
+        if (function.result_expression) {
+          constrain_constructor_fields(function.result_line, *function.result_expression, env);
+          if (auto result = inferred_expr_type(*function.result_expression, env)) {
+            if (!function.return_type) function.return_type = *result;
+            else if (!same_type(*function.return_type, *result))
+              err(function.result_line, "function '" + function.name + "' returns '" + *result +
+                  "' but is annotated '" + *function.return_type + "'");
+          }
+        } else if (!function.return_type) {
+          for (const auto& statement : function.body) {
+            if (statement.kind != Stmt::Kind::Return || statement.a.empty()) continue;
+            auto result = inferred_expr_type(statement.a, env);
+            if (!result) continue;
+            if (!function.return_type) function.return_type = *result;
+            else if (!same_type(*function.return_type, *result))
+              err(statement.line, "function '" + function.name + "' returns '" + *result +
+                  "' but another return path has type '" + *function.return_type + "'");
+          }
+        }
+      }
+      for (auto& domain : p_.domains) {
+        for (auto& handler : domain.handlers) {
+          std::unordered_map<string,string> env;
+          env["self"] = domain.name;
+          for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
+          for (const auto& field : domain.state) env[field.name] = field.type;
+          infer_statement_expressions(handler.body, env);
+        }
+      }
+      if (p_.main) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(p_.main->body, env);
+      }
+    }
+    for (auto& function : p_.functions) {
+      for (const auto& parameter : function.params) {
+        if (parameter.type.empty())
+          err(function.line, "cannot infer type for parameter '" + parameter.name +
+              "' in function '" + function.name + "'");
+      }
+      if (!function.return_type) {
+        bool has_value_return = std::any_of(function.body.begin(), function.body.end(),
+            [](const Stmt& statement) {
+              return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+            });
+        if (has_value_return)
+          err(function.line, "cannot infer return type for function '" + function.name + "'");
+        function.return_type = "unit";
+      }
+    }
   }
 
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
@@ -731,7 +1440,28 @@ class Checker {
           ++index;
           break;
         }
-        case Stmt::Kind::AwaitLet: {
+        case Stmt::Kind::Assign: {
+          require_available(s.line, s.b, env);
+          if (auto spawned = spawn_domain(s.b)) {
+            env.types[s.a] = *spawned;
+            ++index;
+            break;
+          }
+          if (simple_identifier(s.a) && env.types.count(s.a)) {
+            string source = trim(s.b);
+            bool transfers = simple_identifier(source) && env.types.count(source) &&
+                             transfer_type(env.types.at(source));
+            if (transfers && env.state_fields.count(source))
+              err(s.line, "domain state '" + source + "' cannot be transferred into '" + s.a + "'");
+            if (transfers && source != s.a) {
+              env.moved.erase(s.a);
+              env.moved[source] = MoveInfo{s.line, s.a};
+            }
+          }
+          ++index;
+          break;
+        }
+        case Stmt::Kind::AwaitMessage: {
           require_available(s.line, s.b, env);
           const Handler* awaited = check_call(s.line, s.b, s.c, s.args, env.types);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
@@ -751,7 +1481,7 @@ class Checker {
           ++index;
           break;
         }
-        case Stmt::Kind::Send: {
+        case Stmt::Kind::Message: {
           require_available(s.line, s.a, env);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
           const auto receiver = env.types.find(s.a);
@@ -784,6 +1514,11 @@ class Checker {
           for (const auto& arg : s.args) require_available(s.line, arg, env);
           ++index;
           break;
+        case Stmt::Kind::Call:
+          require_available(s.line, s.a, env);
+          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          ++index;
+          break;
         case Stmt::Kind::Reply: {
           require_available(s.line, s.a, env);
           if (current_handler && current_handler->reply_type)
@@ -797,6 +1532,7 @@ class Checker {
           ++index;
           break;
         case Stmt::Kind::Return:
+          if (!s.a.empty()) require_available(s.line, s.a, env);
           ++index;
           break;
         case Stmt::Kind::If:
@@ -807,55 +1543,166 @@ class Checker {
     }
   }
 
+  void check_function_call(int line, const string& name, const vector<string>& args,
+                           const std::unordered_map<string,string>& env) const {
+    auto function = functions_.find(name);
+    if (function == functions_.end()) {
+      if (name == "sqrt" || name == "sum") return;
+      err(line, "unknown local function '" + name + "'");
+    }
+    if (function->second->params.size() != args.size())
+      err(line, "function " + name + " expects " +
+          std::to_string(function->second->params.size()) + " arguments, got " +
+          std::to_string(args.size()));
+    for (size_t index = 0; index < args.size(); ++index) {
+      auto actual = inferred_expr_type(args[index], env);
+      if (actual && !same_type(function->second->params[index].type, *actual))
+        err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
+            "' has type '" + *actual + "', expected '" +
+            function->second->params[index].type + "'");
+    }
+  }
+
+  void check_expression(int line, const string& expression,
+                        const std::unordered_map<string,string>& env) const {
+    string value = normalize_pipeline(trim(expression));
+    string receiver, handler;
+    vector<string> args;
+    if (parse_member_call(value, receiver, handler, args)) {
+      auto it = env.find(receiver);
+      if (it != env.end() && domains_.count(it->second))
+        err(line, "naked cross-domain call '" + receiver + "." + handler +
+            "' requires 'message' or 'await'");
+      check_expression(line, receiver, env);
+      for (const auto& arg : args) check_expression(line, arg, env);
+      return;
+    }
+    string callee;
+    if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (objects_.count(callee)) {
+        for (const auto& arg : args) {
+          auto colon = arg.find(':');
+          check_expression(line, colon == string::npos ? arg : arg.substr(colon + 1), env);
+        }
+      } else {
+        check_function_call(line, callee, args, env);
+        for (const auto& arg : args) check_expression(line, arg, env);
+      }
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        return;
+      }
+    }
+  }
+
   void check_stmts(const vector<Stmt>& ss, std::unordered_map<string,string> env,
-                   const Domain* current, const Handler* current_handler) {
+                   const Domain* current, const Handler* current_handler,
+                   const Function* current_function = nullptr) {
     int prev_indent = 0;
     for (size_t i = 0; i < ss.size(); ++i) {
       const auto& s = ss[i];
       if (s.indent > prev_indent + 1) err(s.line, "indentation jumps more than one block level");
       prev_indent = s.indent;
 
-      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
+      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var ||
+          s.kind == Stmt::Kind::Assign) {
+        if (s.kind == Stmt::Kind::Assign) {
+          if (auto sd = spawn_domain(s.b)) {
+            if (!domains_.count(*sd)) err(s.line, "unknown domain in spawn: " + *sd);
+            if (current || current_function)
+              err(s.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
+            env[s.a] = *sd;
+            continue;
+          }
+          check_expression(s.line, s.b, env);
+          if (simple_identifier(s.a) && !env.count(s.a))
+            env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
+          continue;
+        }
         if (auto sd = spawn_domain(s.b)) {
           if (!domains_.count(*sd)) err(s.line, "unknown domain in spawn: " + *sd);
-          if (current) err(s.line, "spawning domains inside handlers is not supported in v0.2; create them in main and pass ActorRefs in messages");
+          if (current || current_function)
+            err(s.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
           env[s.a] = *sd;
         } else {
           auto source = env.find(trim(s.b));
-          env[s.a] = source != env.end() && domains_.count(source->second)
-              ? source->second : "_value";
-          // Synchronous-looking cross-domain calls in expressions are forbidden.
-          auto dot = s.b.find('.'), lp = s.b.find('(');
-          if (dot != string::npos && lp != string::npos && dot < lp) {
-            string recv = trim(s.b.substr(0, dot));
-            auto it = env.find(recv);
-            if (it != env.end() && domains_.count(it->second))
-              err(s.line, "cross-domain messages have no direct return value; use await with a reply handler");
-          }
+          if (source != env.end() && domains_.count(source->second))
+            env[s.a] = source->second;
+          else
+            env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
+          check_expression(s.line, s.b, env);
         }
       }
 
-      if (s.kind == Stmt::Kind::Send) {
+      if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While)
+        check_expression(s.line, s.a, env);
+
+      if (s.kind == Stmt::Kind::Message) {
         check_call(s.line, s.a, s.b, s.args, env);
+        for (const auto& arg : s.args) check_expression(s.line, arg, env);
       }
 
-      if (s.kind == Stmt::Kind::AwaitLet) {
+      if (s.kind == Stmt::Kind::AwaitMessage) {
         if (current && s.b == "self")
           err(s.line, "a domain cannot await itself because handlers are non-reentrant");
         const Handler* h = check_call(s.line, s.b, s.c, s.args, env);
+        for (const auto& arg : s.args) check_expression(s.line, arg, env);
         if (!h->reply_type) {
           auto dit = domains_.find(env.at(s.b));
           err(s.line, "cannot await one-way handler '" + dit->second->name + "." + s.c + "'");
         }
+        if (!s.declaration && env.count(s.a) &&
+            !same_type(env.at(s.a), *h->reply_type))
+          err(s.line, "await assignment to '" + s.a + "' has type '" + env.at(s.a) +
+              "', expected '" + *h->reply_type + "'");
         env[s.a] = *h->reply_type;
+      }
+
+      if (s.kind == Stmt::Kind::Call) {
+        if (!s.b.empty()) {
+          auto receiver = env.find(s.a);
+          if (receiver != env.end() && domains_.count(receiver->second))
+            err(s.line, "naked cross-domain call '" + s.a + "." + s.b +
+                "' requires 'message' or 'await'");
+          err(s.line, "local member calls are not implemented; use a top-level function");
+        } else {
+          check_function_call(s.line, s.a, s.args, env);
+        }
+      }
+
+      if (s.kind == Stmt::Kind::Echo) {
+        for (const auto& arg : s.args) check_expression(s.line, arg, env);
       }
 
       if (s.kind == Stmt::Kind::Reply) {
         if (!current || !current_handler || !current_handler->reply_type)
           err(s.line, "reply is only valid in a handler declaring '-> Type'");
-        if (auto actual = obvious_expr_type(s.a, env); actual && *actual != *current_handler->reply_type)
+        auto actual = inferred_expr_type(s.a, env);
+        if (!actual)
+          err(s.line, "cannot infer the type of this reply expression; add an annotation or use a statically typed value");
+        if (!same_type(*actual, *current_handler->reply_type))
           err(s.line, "reply type mismatch: handler expects '" + *current_handler->reply_type +
               "', expression has type '" + *actual + "'");
+        check_expression(s.line, s.a, env);
+      }
+
+      if (s.kind == Stmt::Kind::Return && current_handler && !s.a.empty())
+        err(s.line, "message handlers cannot return values; use 'reply value' in a handler declaring '-> Type'");
+      if (s.kind == Stmt::Kind::Return && !current_handler && !current_function && !s.a.empty())
+        err(s.line, "main cannot return a value");
+      if (s.kind == Stmt::Kind::Return && current_function && !s.a.empty()) {
+        auto actual = inferred_expr_type(s.a, env);
+        if (!actual)
+          err(s.line, "cannot infer the type of this return expression in function '" +
+              current_function->name + "'");
+        if (current_function->return_type && !same_type(*actual, *current_function->return_type))
+          err(s.line, "function '" + current_function->name + "' returns '" + *actual +
+              "' but is annotated '" + *current_function->return_type + "'");
       }
     }
   }
@@ -919,6 +1766,17 @@ class MessageTransportOptimizer {
     if (program_.main) {
       std::unordered_map<string, string> types;
       scan_calls(program_.main->body, types, asynchronously_called, call_graph_complete);
+    }
+    // Local functions can contain domain communication even though their calls are
+    // ordinary Moss calls. Scan their bodies as part of the whole-program plan so a
+    // message hidden behind a function cannot accidentally be promoted to direct
+    // shared-memory dispatch. A function call itself remains a conservative barrier
+    // because this pass does not yet build a typed interprocedural call graph.
+    for (const auto& function : program_.functions) {
+      std::unordered_map<string, string> types;
+      for (const auto& param : function.params) types[param.name] = param.type;
+      scan_calls(function.body, types, asynchronously_called, call_graph_complete);
+      if (function.result_expression) call_graph_complete = false;
     }
 
     for (const auto& domain : program_.domains) {
@@ -986,7 +1844,7 @@ class MessageTransportOptimizer {
           for (const auto& field : source.state) types[field.name] = field.type;
           for (const auto& param : handler.params) types[param.name] = param.type;
           for (const auto& statement : handler.body) {
-            if (statement.kind == Stmt::Kind::AwaitLet) {
+            if (statement.kind == Stmt::Kind::AwaitMessage) {
               auto receiver = types.find(statement.b);
               if (receiver != types.end() && position.count(receiver->second)) {
                 awaits[position.at(source.name)][position.at(receiver->second)] = true;
@@ -1110,7 +1968,8 @@ class MessageTransportOptimizer {
         continue;
       }
 
-      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var) {
+      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign) {
         if (auto spawned = spawned_domain(statement.b)) {
           types[statement.a] = *spawned;
         } else {
@@ -1121,12 +1980,13 @@ class MessageTransportOptimizer {
         continue;
       }
 
-      if (statement.kind != Stmt::Kind::Send && statement.kind != Stmt::Kind::AwaitLet) {
+      if (statement.kind != Stmt::Kind::Message && statement.kind != Stmt::Kind::AwaitMessage) {
+        if (statement.kind == Stmt::Kind::Call) complete = false;
         ++index;
         continue;
       }
 
-      const string& receiver = statement.kind == Stmt::Kind::Send ? statement.a : statement.b;
+      const string& receiver = statement.kind == Stmt::Kind::Message ? statement.a : statement.b;
       auto receiver_type = types.find(receiver);
       if (receiver_type == types.end() || !domains_.count(receiver_type->second)) {
         complete = false;
@@ -1134,7 +1994,7 @@ class MessageTransportOptimizer {
         continue;
       }
       const Domain& target = *domains_.at(receiver_type->second);
-      if (statement.kind == Stmt::Kind::Send) {
+      if (statement.kind == Stmt::Kind::Message) {
         asynchronously_called.insert(target.name);
       } else {
         const Handler* handler = find_handler(target, statement.c);
@@ -1194,6 +2054,7 @@ class Generator {
     gen_tracker(o);
 
     for (const auto& t : p_.objects) gen_object(o, t);
+    for (const auto& f : p_.functions) gen_function(o, f);
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
     for (const auto& d : p_.domains) gen_domain(o, d);
@@ -1229,6 +2090,7 @@ class Generator {
   }
 
   static string handler_signature(const Handler& h) {
+    if (!h.header.empty()) return h.header;
     std::ostringstream out;
     out << "on " << h.name << "(";
     for (size_t i = 0; i < h.params.size(); ++i) {
@@ -1274,11 +2136,12 @@ class Generator {
   }
 
   string rust_type(const string& t) const {
-    string x = trim(t);
+    string x = canonical_type_name(t);
     if (x == "int") return "i64";
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "string") return "String";
+    if (x == "unit") return "()";
     if (domains_.count(x)) return x + "Ref";
     if (objects_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
@@ -1304,7 +2167,7 @@ class Generator {
   }
 
   string default_value(const string& type) const {
-    string t = trim(type);
+    string t = canonical_type_name(type);
     if (t == "int") return "0";
     if (t == "float") return "0.0";
     if (t == "bool") return "false";
@@ -1316,7 +2179,7 @@ class Generator {
   }
 
   bool copy_type(const string& type) const {
-    string t = trim(type);
+    string t = canonical_type_name(type);
     if (t == "int" || t == "float" || t == "bool") return true;
     if (starts_with(t, "option[") && ends_with(t, "]"))
       return copy_type(trim(t.substr(7, t.size() - 8)));
@@ -1324,7 +2187,7 @@ class Generator {
   }
 
   string expr(string e, const Domain* d, const std::set<string>& locals) const {
-    e = trim(e);
+    e = normalize_pipeline(trim(e));
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
@@ -1359,6 +2222,15 @@ class Generator {
         r << " }";
         return r.str();
       }
+    }
+
+    string builtin;
+    vector<string> builtin_args;
+    if (parse_simple_call(e, builtin, builtin_args)) {
+      if (builtin == "sqrt" && builtin_args.size() == 1)
+        return "(" + expr(builtin_args.front(), d, locals) + ").sqrt()";
+      if (builtin == "sum" && builtin_args.size() == 1)
+        return expr(builtin_args.front(), d, locals) + ".iter().copied().sum()";
     }
 
     // Replace domain state identifiers with state.<name>, respecting basic identifier boundaries.
@@ -1517,7 +2389,7 @@ class Generator {
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
-    source_comment(o, 0, t.line, "type " + t.name + " = object");
+    source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
     o << "#[derive(Clone, Debug)]\nstruct " << t.name << " {\n";
     for (const auto& f : t.fields) {
@@ -1527,8 +2399,34 @@ class Generator {
     o << "}\n\n";
   }
 
+  void gen_function(std::ostringstream& o, const Function& f) {
+    source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
+    backend_comment(o, 0, "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
+    o << "fn " << f.name << "(";
+    for (size_t index = 0; index < f.params.size(); ++index) {
+      if (index) o << ", ";
+      o << f.params[index].name << ": " << rust_type(f.params[index].type);
+    }
+    string return_type = f.return_type.value_or("unit");
+    if (return_type != "unit") o << ") -> " << rust_type(return_type) << " {\n";
+    else o << ") {\n";
+    std::set<string> locals;
+    std::unordered_map<string,string> types;
+    for (const auto& parameter : f.params) {
+      locals.insert(parameter.name);
+      types[parameter.name] = parameter.type;
+    }
+    gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, false,
+              std::nullopt, true);
+    if (f.result_expression) {
+      source_comment(o, 4, f.result_line, *f.result_expression);
+      o << "    " << expr(*f.result_expression, nullptr, locals) << "\n";
+    }
+    o << "}\n\n";
+  }
+
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
-    source_comment(o, 0, d.line, "domain " + d.name);
+    source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
     if (cluster_for(d)) {
       backend_comment(o, 0, "CLUSTER ingress/message version of " + d.name + "Ref (shared-memory mailbox)");
     } else if (direct_shared_memory(d)) {
@@ -1554,7 +2452,7 @@ class Generator {
     for (const auto& f : d.state) used.insert(f.name);
     for (const auto& p : h.params) used.insert(p.name);
     for (const auto& s : h.body) {
-      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var || s.kind == Stmt::Kind::AwaitLet)
+      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var || s.kind == Stmt::Kind::AwaitMessage)
         used.insert(s.a);
     }
     string name = "__moss_reply";
@@ -1625,7 +2523,7 @@ class Generator {
   }
 
   void gen_domain(std::ostringstream& o, const Domain& d) {
-    source_comment(o, 0, d.line, "domain " + d.name);
+    source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
     if (cluster_for(d)) {
       backend_comment(o, 0, "CLUSTER-LOCAL state representation for domain " + d.name + " (RefCell on the cluster worker)");
     } else if (direct_shared_memory(d)) {
@@ -2059,7 +2957,7 @@ class Generator {
   }
 
   void gen_main(std::ostringstream& o, const MainProc& m) {
-    source_comment(o, 0, m.line, "proc main()");
+    source_comment(o, 0, m.line, m.header.empty() ? "proc main()" : m.header);
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
     o << "fn main() {\n";
     o << "    let __tracker = Arc::new(MossTracker::new());\n";
@@ -2082,10 +2980,11 @@ class Generator {
                  const Handler* current_handler, const string& reply_sender,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool direct_reply = false,
-                 std::optional<size_t> cluster_context = std::nullopt) {
+                 std::optional<size_t> cluster_context = std::nullopt,
+                 bool in_function = false) {
     size_t i = 0;
     gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base,
-              in_handler, direct_reply, cluster_context);
+              in_handler, direct_reply, cluster_context, in_function);
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
@@ -2093,7 +2992,7 @@ class Generator {
                  const Domain* d, const Handler* current_handler, const string& reply_sender,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool direct_reply,
-                 std::optional<size_t> cluster_context) {
+                 std::optional<size_t> cluster_context, bool in_function) {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -2110,7 +3009,8 @@ class Generator {
           auto child_locals = locals;
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler, direct_reply, cluster_context);
+                    child_locals, child_types, base, in_handler, direct_reply,
+                    cluster_context, in_function);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
@@ -2119,7 +3019,8 @@ class Generator {
             auto else_locals = locals;
             auto else_types = types;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                      else_locals, else_types, base, in_handler, direct_reply, cluster_context);
+                      else_locals, else_types, base, in_handler, direct_reply,
+                      cluster_context, in_function);
             o << indent(level) << "}\n";
           } else {
             o << "\n";
@@ -2132,7 +3033,8 @@ class Generator {
           auto child_locals = locals;
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler, direct_reply, cluster_context);
+                    child_locals, child_types, base, in_handler, direct_reply,
+                    cluster_context, in_function);
           o << indent(level) << "}\n";
           break;
         }
@@ -2146,6 +3048,51 @@ class Generator {
             for (const auto& a : s.args) o << ", " << expr(a, d, locals);
             o << ");\n";
           }
+          ++i;
+          break;
+        }
+        case Stmt::Kind::Assign: {
+          if (auto sd = CheckerSpawn(s.b)) {
+            if (auto cluster = plan_.cluster_for(*sd)) {
+              backend_comment(o, (base + level) * 4,
+                              "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
+              o << indent(level) << "let " << s.a << " = "
+                << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
+            } else {
+              backend_comment(o, (base + level) * 4,
+                              "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
+              o << indent(level) << "let " << s.a << " = spawn_" << snake_case(*sd)
+                << "(__tracker.clone());\n";
+            }
+            locals.insert(s.a);
+            types[s.a] = *sd;
+            ++i;
+            break;
+          }
+          string lhs = expr(s.a, d, locals);
+          bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
+                                              [&](const Field& field) { return field.name == s.a; });
+          if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
+            backend_comment(o, (base + level) * 4,
+                            "LOCAL assignment: introduce an inferred Moss binding");
+            o << indent(level) << "let mut " << s.a << " = " << expr(s.b, d, locals) << ";\n";
+            locals.insert(s.a);
+            types[s.a] = "_value";
+          } else {
+            o << indent(level) << lhs << " = " << expr(s.b, d, locals) << ";\n";
+          }
+          ++i;
+          break;
+        }
+        case Stmt::Kind::Call: {
+          o << indent(level) << expr(s.a, d, locals);
+          if (!s.b.empty()) o << "." << s.b;
+          o << "(";
+          for (size_t k = 0; k < s.args.size(); ++k) {
+            if (k) o << ", ";
+            o << expr(s.args[k], d, locals);
+          }
+          o << ");\n";
           ++i;
           break;
         }
@@ -2183,7 +3130,7 @@ class Generator {
           ++i;
           break;
         }
-        case Stmt::Kind::Send: {
+        case Stmt::Kind::Message: {
           const Domain* target = nullptr;
           if (s.a == "self" && d) target = d;
           else {
@@ -2240,7 +3187,7 @@ class Generator {
           ++i;
           break;
         }
-        case Stmt::Kind::AwaitLet: {
+        case Stmt::Kind::AwaitMessage: {
           auto type = types.find(s.b);
           const Domain* target = type != types.end() && domains_.count(type->second)
               ? domains_.at(type->second) : nullptr;
@@ -2252,8 +3199,11 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "CLUSTER-LOCAL version: flush older local messages, then call the handler directly");
             o << indent(level) << "self.__moss_flush_" << target->name << "_local();\n";
-            o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a
-              << " = ";
+            bool bind = !locals.count(s.a);
+            if (bind)
+              o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
+            else
+              o << indent(level) << s.a << " = ";
             if (!await_error_handling_) o << "unsafe { ";
             o << "self." << target->name << "_" << s.c << "_local(";
             for (size_t k = 0; k < s.args.size(); ++k) {
@@ -2282,9 +3232,13 @@ class Generator {
             string result = s.a;
             if (localize_domain_reply)
               result = "__moss_reply_value_" + std::to_string(reply_temp_++);
-            o << indent(level) << "let "
-              << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-              << " = ";
+            bool bind = !locals.count(s.a);
+            if (bind)
+              o << indent(level) << "let "
+                << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
+                << " = ";
+            else
+              o << indent(level) << result << " = ";
             if (!await_error_handling_) o << "unsafe { ";
             o << recv << "." << s.c << "_shared(";
             for (size_t k = 0; k < s.args.size(); ++k) {
@@ -2305,7 +3259,10 @@ class Generator {
             }
             if (localize_domain_reply) {
               string reply_type = trim(*h->reply_type);
-              o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
+              if (!locals.count(s.a))
+                o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
+              else
+                o << indent(level) << s.a << " = ";
               if (plan_.cluster_for(reply_type) == cluster_context)
                 o << "{ drop(" << result << "); " << reply_type << "LocalRef };\n";
               else
@@ -2338,9 +3295,13 @@ class Generator {
           }
           if (!s.args.empty()) o << ", ";
           o << reply_tx << ");\n";
-          o << indent(level) << "let "
-            << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-            << " = ";
+          bool bind = !locals.count(s.a);
+          if (bind)
+            o << indent(level) << "let "
+              << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
+              << " = ";
+          else
+            o << indent(level) << result << " = ";
           if (!await_error_handling_) o << "unsafe { ";
           o << reply_rx << ".recv()";
           if (await_error_handling_) {
@@ -2388,7 +3349,10 @@ class Generator {
           ++i;
           break;
         case Stmt::Kind::Return:
-          o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
+          if (in_function && !s.a.empty())
+            o << indent(level) << "return " << expr(s.a, d, locals) << ";\n";
+          else
+            o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
           ++i;
           break;
         case Stmt::Kind::Raw:
@@ -2431,9 +3395,12 @@ static void usage() {
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
+            << "  message domain.Message(args...)\n"
             << "  on Message(args...) -> Type\n"
             << "  reply value\n"
-            << "  let value = await domain.Message(args...)\n";
+            << "  value = await domain.Message(args...)\n"
+            << "  fn square(x) = x * x\n"
+            << "  type Quote:\n";
 }
 
 int main(int argc, char** argv) {
