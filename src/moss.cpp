@@ -1235,11 +1235,15 @@ class Checker {
       if (function != functions_.end() && function->second->return_type) {
         string r = canonical_type_name(*function->second->return_type);
         if (starts_with(r, "_generic:")) {
-          auto it = env.find(function->second->generic_results.at(r.substr(9)));
+          auto relation = function->second->generic_results.find(r.substr(9));
+          if (relation == function->second->generic_results.end()) return std::nullopt;
+          auto it = env.find(relation->second);
           if (it != env.end()) return it->second;
         }
         if (starts_with(r, "_element:")) {
-          auto it = env.find(function->second->generic_results.at(r.substr(9)));
+          auto relation = function->second->generic_results.find(r.substr(9));
+          if (relation == function->second->generic_results.end()) return std::nullopt;
+          auto it = env.find(relation->second);
           if (it != env.end() && starts_with(it->second, "vector[") && ends_with(it->second, "]"))
             return trim(it->second.substr(7, it->second.size()-8));
         }

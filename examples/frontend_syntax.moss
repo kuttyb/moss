@@ -7,7 +7,7 @@ type Quote:
   size
   ts
 
-fn square(x) = x * x
+fn square(x: Int) = x * x
 
 fn score(quote):
   value = quote.size |> square
