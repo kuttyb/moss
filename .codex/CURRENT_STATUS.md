@@ -5,8 +5,8 @@ Updated: 2026-09-11
 ## Version and commits
 
 - Compiler version: Moss v0.2
-- Repository was synchronized with `origin/main` before this session; it was already up to date.
-- Latest committed base: `3d4c772`.
+- Repository was synchronized with `origin/main`; `origin/main` currently points to `cd65d8c`.
+- Previous known checkpoint/base: `3d4c772`. The accumulated implementation is committed through `cd65d8c`.
 - The current working tree makes all Rust transport shared-memory based, prohibits cross-domain transfer of existing owned non-primitive values, and adds static domain clustering.
 
 ## Approved semantics
@@ -50,7 +50,7 @@ Updated: 2026-09-11
 
 ## Tests run and results
 
-`make check` passed during implementation after the shared-memory and cluster changes. The suite compiles ordinary, direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated `std::sync::mpsc` use; checks that local implementations contain no concurrency primitive; compares behavior for checkout, object isolation, ignored replies, local and shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster layouts and cycles; and repeatedly exercises both the lock-backed mailbox and direct state-lock paths under contention.
+`make check` passed after the shared-memory, clustering, generated-comment, example-build, and unchecked-await changes. The suite compiles ordinary, direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated `std::sync::mpsc` use; checks that local implementations contain no concurrency primitive; compares behavior for checkout, object isolation, ignored replies, local and shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster layouts and cycles; verifies source/backend annotations; verifies `--no-await-error-handling`; and repeatedly exercises both the lock-backed mailbox and direct state-lock paths under contention.
 
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 
@@ -100,7 +100,7 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ### Exact commit hash containing the work
 
-The work is currently uncommitted on top of `3d4c772`.
+`cd65d8c` — Latest change before the checkpoint; this is the current `origin/main` tip before the checkpoint commit.
 
 ## 2026-09-05 transfer-semantics handoff (partly superseded)
 
