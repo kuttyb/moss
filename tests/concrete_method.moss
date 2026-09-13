@@ -1,0 +1,8 @@
+type Circle:
+  radius: Float
+  fn area():
+    return radius * radius * 3.14159
+
+fn main():
+  c = Circle(radius = 2.0)
+  echo c.area()

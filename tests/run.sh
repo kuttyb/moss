@@ -157,6 +157,7 @@ reject_cluster() {
 run_case counter examples/counter.moss 'counter: 41
 counter: 42'
 run_case frontend_syntax examples/frontend_syntax.moss 'note: 4'
+run_case concrete_method tests/concrete_method.moss '12.56636'
 compile_case method_ast_ownership tests/method_ast_ownership.moss
 grep -F '// Moss line 10: fn square(x: Int) = x * x' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example omitted its function source annotation"

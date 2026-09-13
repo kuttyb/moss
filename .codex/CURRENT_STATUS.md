@@ -30,6 +30,10 @@ Updated: 2026-09-11
 - Type declarations now retain method bodies as children of their method nodes
   in the AST, including nested control-flow blocks. Method semantic checking and
   Rust lowering remain intentionally deferred to the next milestone.
+- Concrete method result inference and static Rust inherent-method lowering are
+  now implemented for field-based expression/return methods. Method arguments,
+  receiver-aware method bodies, and method-to-method resolution remain follow-up
+  work.
 - Untyped-function operation metadata now flows through structured `Constraint`
   records; the former `generic_ops` field has been removed.
 

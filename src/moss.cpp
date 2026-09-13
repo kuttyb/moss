@@ -804,6 +804,7 @@ class Checker {
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_objects();
     // Function results and handler replies can constrain each other through an
     // await or a local call. Run a few non-final inference rounds before the
     // final unresolved-type diagnostics.
@@ -948,13 +949,23 @@ class Checker {
     return nullptr;
   }
 
-  void check_objects() const {
+  void check_objects() {
     for (const auto& object : p_.objects) {
       std::set<string> field_names;
       for (const auto& field : object.fields) {
         if (!valid_type(field.type)) err(field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
           err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
+      }
+      for (auto& method : const_cast<ObjectType&>(object).methods) {
+        std::unordered_map<string,string> env;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& param : method.params) env[param.name] = param.type;
+        if (!method.return_type) {
+          if (method.result_expression) { if (auto result = inferred_expr_type(*method.result_expression, env)) method.return_type = *result; }
+          for (const auto& s : method.body) if (s.kind == Stmt::Kind::Return && !s.a.empty())
+            if (auto result = inferred_expr_type(s.a, env)) method.return_type = *result;
+        }
       }
     }
   }
@@ -1280,6 +1291,16 @@ class Checker {
       return std::nullopt;
     }();
     if (object_call) return object_call;
+    string method_receiver, method_name; vector<string> method_args;
+    if (parse_member_call(e, method_receiver, method_name, method_args)) {
+      auto base = inferred_expr_type(method_receiver, env);
+      if (base) {
+        auto object = objects_.find(*base);
+        if (object != objects_.end()) for (const auto& method : object->second->methods)
+          if (method.name == method_name && method.params.size() == method_args.size() && method.return_type)
+            return *method.return_type;
+      }
+    }
 
     auto dot = e.rfind('.');
     if (dot != string::npos) {
@@ -2908,6 +2929,19 @@ class Generator {
       o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
+    for (const auto& method : t.methods) {
+      o << "impl " << t.name << " {\n    fn " << method.name << "(&self";
+      for (const auto& p : method.params) o << ", " << p.name << ": " << rust_type(p.type.empty() ? "int" : p.type);
+      string value = method.result_expression.value_or("");
+      if (value.empty()) for (const auto& s : method.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) value = s.a;
+      for (const auto& f : t.fields) {
+        if (trim(value) == f.name) value = "self." + f.name;
+        else replace_word(value, f.name, "self." + f.name);
+      }
+      if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " { " << value << " }\n";
+      else o << ") { }\n";
+      o << "}\n\n";
+    }
   }
 
   void gen_function(std::ostringstream& o, const Function& f) {
