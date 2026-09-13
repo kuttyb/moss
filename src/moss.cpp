@@ -414,7 +414,7 @@ class Parser {
       if (starts_with(L.text, "fn ")) {
         string sig = trim(L.text.substr(3)); auto lp = sig.find('('), rp = matching_paren(sig, lp);
         if (lp == string::npos || rp == string::npos) fail(L, "object method requires a signature");
-        TraitMethod m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
+        Method m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
         m.owner = o.name;
         string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
         if (!suffix.empty() && starts_with(suffix, "->")) m.return_type = canonical_type_name(trim(suffix.substr(2)));
@@ -873,6 +873,20 @@ class Checker {
     return std::any_of(it->second->fields.begin(), it->second->fields.end(), [&](const Field& f) { return f.name == field; });
   }
 
+  const Method* resolve_method(const string& type, const string& name, const vector<string>& argument_types = {}) const {
+    auto object = objects_.find(type);
+    if (object == objects_.end()) return nullptr;
+    const Method* found = nullptr;
+    for (const auto& method : object->second->methods) if (method.name == name) {
+      if (method.params.size() != argument_types.size()) continue;
+      bool compatible = true;
+      for (size_t i = 0; i < argument_types.size(); ++i)
+        if (!method.params[i].type.empty() && !same_type(method.params[i].type, argument_types[i])) compatible = false;
+      if (compatible) { if (found) return nullptr; found = &method; }
+    }
+    return found;
+  }
+
   void derive_expression_constraints(Function& function, const string& expression) {
     string e = normalize_pipeline(trim(expression));
     for (const auto& parameter : function.params) {
@@ -914,8 +928,9 @@ class Checker {
     auto object = objects_.find(type);
     for (const auto& method : it->second->methods) {
       if (object == objects_.end()) return false;
-      auto found = std::find_if(object->second->methods.begin(), object->second->methods.end(), [&](const TraitMethod& m) { return m.name == method.name; });
-      if (found == object->second->methods.end() || found->params.size() != method.params.size()) return false;
+      vector<string> args(method.params.size(), "");
+      auto found = resolve_method(type, method.name, args);
+      if (!found) return false;
       for (size_t i = 0; i < method.params.size(); ++i)
         if (!method.params[i].type.empty() && !found->params[i].type.empty() && !same_type(method.params[i].type, found->params[i].type)) return false;
       if (method.return_type && found->return_type && !same_type(*method.return_type, *found->return_type)) return false;

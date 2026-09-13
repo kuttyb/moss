@@ -20,10 +20,11 @@ struct Stmt {
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
   bool is_mutable = false; bool declaration = true; string semantic_type;
 };
-struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; vector<Stmt> body; std::optional<string> result_expression; string owner; int line = 0; };
+struct Method { string owner, name; vector<Param> params; std::optional<string> return_type; vector<Stmt> body; std::optional<string> result_expression; int line = 0; };
+struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
 struct Handler { string name, header; vector<Param> params; std::optional<string> reply_type; vector<Stmt> body; int line = 0; };
 struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };
-struct ObjectType { string name, header; vector<Field> fields; vector<TraitMethod> methods; int line = 0; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; };
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
