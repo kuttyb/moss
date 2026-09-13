@@ -1,0 +1,11 @@
+domain Gauge:
+  value = 0.0
+
+  fn Add(delta: float) -> float:
+    value = value + delta
+    reply value
+
+fn main():
+  gauge = spawn Gauge()
+  value = await gauge.Add(1.5)
+  echo value

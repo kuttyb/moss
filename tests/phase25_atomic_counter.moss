@@ -1,0 +1,28 @@
+domain Counter:
+  value = 0
+
+  fn Increment():
+    value = value + 1
+
+  fn Add(delta: int) -> int:
+    value = value + delta
+    reply value
+
+  fn Subtract(delta: int) -> int:
+    value = value - delta
+    reply value
+
+  fn Next() -> int:
+    reply value + 1
+
+  fn Read() -> int:
+    reply value
+
+fn main():
+  counter = spawn Counter()
+  message counter.Increment()
+  after_add = await counter.Add(2)
+  after_subtract = await counter.Subtract(1)
+  predicted = await counter.Next()
+  observed = await counter.Read()
+  echo after_add, after_subtract, predicted, observed

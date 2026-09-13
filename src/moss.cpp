@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -3962,10 +3963,53 @@ class Checker {
   }
 };
 
-enum class MessageTransport { SharedMailbox, DirectSharedMemory };
+enum class DomainLowering {
+  Mailbox,
+  DirectMutex,
+  DirectRwLock,
+  DirectAtomic,
+  ClusterLocal
+};
+
+struct HandlerEffectSummary {
+  Effect state_effect = Effect::Read;
+  bool touches_state = false;
+  bool externally_observable = false;
+  std::set<string> read_fields;
+  std::set<string> written_fields;
+};
+
+enum class AtomicActionKind { Load, Store, FetchAdd, FetchSub, FetchXor, Swap };
+
+struct AtomicHandlerPlan {
+  AtomicActionKind action = AtomicActionKind::Load;
+  string field;
+  string operand;
+  string result_expression;
+};
+
+struct BatchedSendRegion {
+  int first_line = 0;
+  size_t count = 0;
+  string receiver;
+  string target_domain;
+};
+
+struct CoalescedLockRegion {
+  int first_line = 0;
+  size_t count = 0;
+  string receiver;
+  string target_domain;
+  bool shared_read = false;
+};
 
 struct OptimizationPlan {
-  std::set<string> direct_shared_memory_domains;
+  bool optimizations_enabled = false;
+  std::unordered_map<string, DomainLowering> domain_lowerings;
+  std::unordered_map<string, HandlerEffectSummary> handler_effects;
+  std::unordered_map<string, AtomicHandlerPlan> atomic_handlers;
+  vector<BatchedSendRegion> batched_send_regions;
+  vector<CoalescedLockRegion> coalesced_lock_regions;
   vector<vector<string>> domain_clusters;
 
   std::optional<size_t> cluster_for(const string& domain) const {
@@ -3981,30 +4025,73 @@ struct OptimizationPlan {
     return a && b && *a == *b;
   }
 
-  MessageTransport transport_for(const Domain& domain) const {
-    return direct_shared_memory_domains.count(domain.name) ? MessageTransport::DirectSharedMemory
-                                                            : MessageTransport::SharedMailbox;
+  DomainLowering lowering_for(const string& domain) const {
+    auto found = domain_lowerings.find(domain);
+    return found == domain_lowerings.end() ? DomainLowering::Mailbox : found->second;
+  }
+
+  DomainLowering lowering_for(const Domain& domain) const {
+    return lowering_for(domain.name);
+  }
+
+  const BatchedSendRegion* batch_at(int line) const {
+    auto found = std::find_if(batched_send_regions.begin(), batched_send_regions.end(),
+                              [&](const BatchedSendRegion& region) {
+                                return region.first_line == line;
+                              });
+    return found == batched_send_regions.end() ? nullptr : &*found;
+  }
+
+  const CoalescedLockRegion* coalesced_at(int line) const {
+    auto found = std::find_if(coalesced_lock_regions.begin(), coalesced_lock_regions.end(),
+                              [&](const CoalescedLockRegion& region) {
+                                return region.first_line == line;
+                              });
+    return found == coalesced_lock_regions.end() ? nullptr : &*found;
+  }
+
+  bool needs_mailbox_runtime() const {
+    if (!optimizations_enabled) return true;
+    if (!domain_clusters.empty()) return true;
+    return std::any_of(domain_lowerings.begin(), domain_lowerings.end(),
+                       [](const auto& entry) {
+                         return entry.second == DomainLowering::Mailbox;
+                       });
+  }
+
+  bool has_lowering(DomainLowering lowering) const {
+    return std::any_of(domain_lowerings.begin(), domain_lowerings.end(),
+                       [&](const auto& entry) { return entry.second == lowering; });
   }
 
 };
 
-// Finds domains whose request messages can be eliminated in favor of locked state.
-// This is deliberately a backend analysis: it does not add a Moss type, expression,
-// or concurrency rule. A domain is promoted only when all of its handlers reply and
-// every whole-program call to it uses await, so no asynchronous send can be made
-// synchronous by the lowering. Rust verifies the selected state is Send when a
-// reference to it crosses a caller-domain thread boundary.
-class MessageTransportOptimizer {
+// Builds an explicit backend plan without changing Moss's message semantics. The
+// order here is intentional: an explicit cluster wins first, then a complete
+// atomic domain, then direct lock-backed dispatch. RwLock is selected only when a
+// real state-reading handler can benefit; write-only and uncertain domains retain
+// Mutex. Separate region facts record conservative batching and lock coalescing,
+// leaving Rust generation to execute (rather than rediscover) these decisions.
+class BackendOptimizer {
  public:
-  explicit MessageTransportOptimizer(const Program& program) : program_(program) {
+  explicit BackendOptimizer(const Program& program) : program_(program) {
     for (const auto& object : program_.objects) objects_[object.name] = &object;
     for (const auto& domain : program_.domains) domains_[domain.name] = &domain;
   }
 
   OptimizationPlan run(bool enabled, const vector<vector<string>>& requested_clusters = {}) const {
     OptimizationPlan plan;
+    plan.optimizations_enabled = enabled;
     plan.domain_clusters = requested_clusters;
     validate_clusters(plan);
+
+    for (const auto& domain : program_.domains) {
+      plan.domain_lowerings[domain.name] = plan.cluster_for(domain.name)
+          ? DomainLowering::ClusterLocal : DomainLowering::Mailbox;
+      for (const auto& handler : domain.handlers)
+        plan.handler_effects[handler_key(domain, handler)] =
+            analyze_handler_effects(domain, handler);
+    }
 
     std::set<string> asynchronously_called;
     bool call_graph_complete = true;
@@ -4033,12 +4120,36 @@ class MessageTransportOptimizer {
       if (function.result_expression) call_graph_complete = false;
     }
 
+    if (!enabled) return plan;
+
     for (const auto& domain : program_.domains) {
-      if (enabled && !plan.cluster_for(domain.name) && call_graph_complete &&
-          !asynchronously_called.count(domain.name) &&
-          domain_is_direct_candidate(domain))
-        plan.direct_shared_memory_domains.insert(domain.name);
+      if (plan.cluster_for(domain.name)) continue;
+
+      std::unordered_map<string, AtomicHandlerPlan> atomic_handlers;
+      if (atomic_domain_plan(domain, atomic_handlers)) {
+        plan.domain_lowerings[domain.name] = DomainLowering::DirectAtomic;
+        plan.atomic_handlers.insert(atomic_handlers.begin(), atomic_handlers.end());
+        continue;
+      }
+
+      if (!call_graph_complete || asynchronously_called.count(domain.name) ||
+          !domain_is_direct_candidate(domain))
+        continue;
+
+      bool has_read_handler = false;
+      bool rwlock_safe = true;
+      for (const auto& handler : domain.handlers) {
+        const auto& effects = plan.handler_effects.at(handler_key(domain, handler));
+        has_read_handler = has_read_handler ||
+            (effects.state_effect == Effect::Read && effects.touches_state);
+        rwlock_safe = rwlock_safe && !effects.externally_observable;
+      }
+      plan.domain_lowerings[domain.name] = has_read_handler && rwlock_safe
+          ? DomainLowering::DirectRwLock : DomainLowering::DirectMutex;
     }
+
+    plan_batched_sends(plan);
+    plan_coalesced_locks(plan);
     return plan;
   }
 
@@ -4046,6 +4157,658 @@ class MessageTransportOptimizer {
   const Program& program_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Domain*> domains_;
+
+  static string handler_key(const Domain& domain, const Handler& handler) {
+    return domain.name + "." + handler.name;
+  }
+
+  static Effect combine_effect(Effect left, Effect right) {
+    if (left == Effect::Consume || right == Effect::Consume) return Effect::Consume;
+    if (left == Effect::Write || right == Effect::Write) return Effect::Write;
+    return Effect::Read;
+  }
+
+  static string root_name(const string& expression) {
+    string value = trim(expression);
+    if (starts_with(value, "self.")) value = trim(value.substr(5));
+    size_t end = 0;
+    while (end < value.size() &&
+           (std::isalnum(static_cast<unsigned char>(value[end])) || value[end] == '_'))
+      ++end;
+    return value.substr(0, end);
+  }
+
+  static bool expression_mentions(const string& expression, const string& name) {
+    for (size_t index = 0; index < expression.size();) {
+      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
+            expression[index] == '_')) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      if (expression.substr(index, end - index) == name) return true;
+      index = end;
+    }
+    return false;
+  }
+
+  static bool expression_mentions_unqualified(const string& expression,
+                                               const string& name) {
+    for (size_t index = 0; index < expression.size();) {
+      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
+            expression[index] == '_')) {
+        ++index;
+        continue;
+      }
+      size_t start = index;
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      size_t previous = start;
+      while (previous > 0 &&
+             std::isspace(static_cast<unsigned char>(expression[previous - 1])))
+        --previous;
+      if (expression.substr(start, end - start) == name &&
+          (previous == 0 || expression[previous - 1] != '.'))
+        return true;
+      index = end;
+    }
+    return false;
+  }
+
+  static bool expression_mentions_state(const string& expression,
+                                        const string& name) {
+    if (expression_mentions_unqualified(expression, name)) return true;
+    string compact;
+    compact.reserve(expression.size());
+    bool in_string = false;
+    for (char ch : expression) {
+      if (ch == '"') in_string = !in_string;
+      if (!in_string && std::isspace(static_cast<unsigned char>(ch))) continue;
+      compact.push_back(ch);
+    }
+    return expression_mentions(compact, "self") &&
+           compact.find("self." + name) != string::npos;
+  }
+
+  static bool expression_is_obviously_pure(const string& expression) {
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t index = 0; index < expression.size(); ++index) {
+      char ch = expression[index];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == '"') in_string = false;
+        continue;
+      }
+      if (ch == '"') {
+        in_string = true;
+        continue;
+      }
+      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) continue;
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      size_t next = end;
+      while (next < expression.size() &&
+             std::isspace(static_cast<unsigned char>(expression[next])))
+        ++next;
+      if (next < expression.size() && expression[next] == '(') return false;
+      index = end - 1;
+    }
+    return true;
+  }
+
+  static bool batch_payload_is_total(const string& expression) {
+    string value = trim(expression);
+    if (value == "true" || value == "false") return true;
+    if (plain_identifier(value)) return true;
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') return true;
+    char* end = nullptr;
+    (void)std::strtoll(value.c_str(), &end, 10);
+    if (end && *end == '\0' && end != value.c_str()) return true;
+    end = nullptr;
+    (void)std::strtod(value.c_str(), &end);
+    if (end && *end == '\0' && end != value.c_str()) return true;
+    // A chain of field projections cannot call user code or fail after the
+    // checker has established each concrete field.
+    bool expect_identifier = true;
+    for (size_t index = 0; index < value.size();) {
+      if (expect_identifier) {
+        if (!(std::isalpha(static_cast<unsigned char>(value[index])) ||
+              value[index] == '_'))
+          return false;
+        while (index < value.size() &&
+               (std::isalnum(static_cast<unsigned char>(value[index])) ||
+                value[index] == '_'))
+          ++index;
+        expect_identifier = false;
+      } else {
+        if (value[index] != '.') return false;
+        ++index;
+        expect_identifier = true;
+      }
+    }
+    return !expect_identifier;
+  }
+
+  static std::optional<std::pair<string, string>> split_binary(
+      const string& expression, const vector<string>& operators) {
+    int parens = 0, braces = 0, brackets = 0;
+    bool in_string = false;
+    for (size_t index = expression.size(); index-- > 0;) {
+      char ch = expression[index];
+      if (in_string) {
+        if (ch == '"' && (index == 0 || expression[index - 1] != '\\'))
+          in_string = false;
+        continue;
+      }
+      if (ch == '"') { in_string = true; continue; }
+      if (ch == ')') ++parens;
+      else if (ch == '(') --parens;
+      else if (ch == '}') ++braces;
+      else if (ch == '{') --braces;
+      else if (ch == ']') ++brackets;
+      else if (ch == '[') --brackets;
+      if (parens != 0 || braces != 0 || brackets != 0) continue;
+      for (const auto& op : operators) {
+        if (index + op.size() <= expression.size() &&
+            expression.compare(index, op.size(), op) == 0)
+          return std::make_pair(trim(expression.substr(0, index)),
+                                trim(expression.substr(index + op.size())));
+      }
+    }
+    return std::nullopt;
+  }
+
+  static void record_reads(const string& expression, const Domain& domain,
+                           HandlerEffectSummary& summary) {
+    for (const auto& field : domain.state) {
+      if (!expression_mentions_state(expression, field.name)) continue;
+      summary.touches_state = true;
+      summary.read_fields.insert(field.name);
+    }
+  }
+
+  HandlerEffectSummary analyze_handler_effects(const Domain& domain,
+                                               const Handler& handler) const {
+    HandlerEffectSummary summary;
+    for (const auto& statement : handler.body) {
+      switch (statement.kind) {
+        case Stmt::Kind::Assign: {
+          string root = root_name(statement.a);
+          auto state_field = std::find_if(domain.state.begin(), domain.state.end(),
+              [&](const Field& field) { return field.name == root; });
+          if (state_field != domain.state.end()) {
+            summary.touches_state = true;
+            summary.written_fields.insert(root);
+            summary.state_effect = combine_effect(summary.state_effect, Effect::Write);
+          } else {
+            record_reads(statement.a, domain, summary);
+          }
+          record_reads(statement.b, domain, summary);
+          if (!expression_is_obviously_pure(statement.b))
+            summary.externally_observable = true;
+          break;
+        }
+        case Stmt::Kind::If:
+        case Stmt::Kind::While:
+          record_reads(statement.a, domain, summary);
+          if (!expression_is_obviously_pure(statement.a))
+            summary.externally_observable = true;
+          break;
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var:
+          record_reads(statement.b, domain, summary);
+          if (!expression_is_obviously_pure(statement.b))
+            summary.externally_observable = true;
+          break;
+        case Stmt::Kind::Reply:
+        case Stmt::Kind::Return:
+        case Stmt::Kind::Raw:
+          record_reads(statement.a, domain, summary);
+          if (!statement.a.empty() && !expression_is_obviously_pure(statement.a))
+            summary.externally_observable = true;
+          break;
+        case Stmt::Kind::Call:
+        case Stmt::Kind::Message:
+        case Stmt::Kind::AwaitMessage:
+        case Stmt::Kind::Echo:
+          summary.externally_observable = true;
+          record_reads(statement.a, domain, summary);
+          record_reads(statement.b, domain, summary);
+          record_reads(statement.c, domain, summary);
+          for (const auto& argument : statement.args)
+            record_reads(argument, domain, summary);
+          break;
+        case Stmt::Kind::Else:
+          break;
+      }
+    }
+    return summary;
+  }
+
+  const Field* find_state_field(const Domain& domain, const string& name) const {
+    auto found = std::find_if(domain.state.begin(), domain.state.end(),
+                              [&](const Field& field) { return field.name == name; });
+    return found == domain.state.end() ? nullptr : &*found;
+  }
+
+  bool atomic_handler_plan(const Domain& domain, const Handler& handler,
+                           AtomicHandlerPlan& plan) const {
+    // This recognizer deliberately describes exactly one primitive state
+    // operation. It never introduces a CAS loop, so Moss expressions are
+    // evaluated once and multi-action/cross-field handlers fall through to a
+    // lock-backed whole-domain representation.
+    const Stmt* assignment = nullptr;
+    const Stmt* captured_previous = nullptr;
+    const Stmt* reply = nullptr;
+    size_t assignment_index = 0, capture_index = 0, reply_index = 0;
+    for (size_t index = 0; index < handler.body.size(); ++index) {
+      const auto& statement = handler.body[index];
+      if (statement.indent != 0) return false;
+      if (statement.kind == Stmt::Kind::Assign &&
+          find_state_field(domain, trim(statement.a))) {
+        if (assignment) return false;
+        assignment = &statement;
+        assignment_index = index;
+      } else if ((statement.kind == Stmt::Kind::Assign ||
+                  statement.kind == Stmt::Kind::Let ||
+                  statement.kind == Stmt::Kind::Var) &&
+                 !find_state_field(domain, trim(statement.a)) &&
+                 find_state_field(domain, trim(statement.b))) {
+        if (captured_previous) return false;
+        captured_previous = &statement;
+        capture_index = index;
+      } else if (statement.kind == Stmt::Kind::Reply) {
+        if (reply) return false;
+        reply = &statement;
+        reply_index = index;
+      } else {
+        return false;
+      }
+    }
+
+    if (handler.reply_type && !reply) return false;
+    if (!handler.reply_type && reply) return false;
+
+    if (!assignment) {
+      if (!reply) return false;
+      if (!expression_is_obviously_pure(reply->a) ||
+          expression_mentions(reply->a, "self")) return false;
+      const Field* field = nullptr;
+      for (const auto& candidate : domain.state) {
+        if (!expression_mentions_unqualified(reply->a, candidate.name)) continue;
+        if (field) return false;
+        field = &candidate;
+      }
+      if (!field) return false;
+      plan.action = AtomicActionKind::Load;
+      plan.field = field->name;
+      if (trim(reply->a) != field->name)
+        plan.result_expression = trim(reply->a);
+      return true;
+    }
+
+    const Field* field = find_state_field(domain, trim(assignment->a));
+    if (!field || !expression_is_obviously_pure(assignment->b) ||
+        expression_mentions(assignment->b, "self")) return false;
+    for (const auto& other : domain.state)
+      if (other.name != field->name &&
+          expression_mentions_unqualified(assignment->b, other.name))
+        return false;
+    if (captured_previous) {
+      if (!reply || capture_index >= assignment_index || assignment_index >= reply_index ||
+          trim(captured_previous->b) != field->name ||
+          trim(reply->a) != trim(captured_previous->a))
+        return false;
+      for (const auto& state_field : domain.state)
+        if (expression_mentions_unqualified(assignment->b, state_field.name)) return false;
+      plan.action = AtomicActionKind::Swap;
+      plan.field = field->name;
+      plan.operand = trim(assignment->b);
+      return true;
+    }
+    if (reply) {
+      if (!expression_is_obviously_pure(reply->a) ||
+          expression_mentions(reply->a, "self")) return false;
+      for (const auto& other : domain.state)
+        if (other.name != field->name &&
+            expression_mentions_unqualified(reply->a, other.name))
+          return false;
+      if (trim(reply->a) != field->name)
+        plan.result_expression = trim(reply->a);
+    }
+
+    string right = trim(assignment->b);
+    if (field->type == "bool" && right == "not " + field->name) {
+      plan.action = AtomicActionKind::FetchXor;
+      plan.operand = "true";
+    } else if (auto add = split_binary(right, {"+"})) {
+      if (field->type != "int") return false;
+      if (trim(add->first) == field->name &&
+          !expression_mentions_unqualified(add->second, field->name)) {
+        plan.action = AtomicActionKind::FetchAdd;
+        plan.operand = add->second;
+      } else if (trim(add->second) == field->name &&
+                 !expression_mentions_unqualified(add->first, field->name)) {
+        plan.action = AtomicActionKind::FetchAdd;
+        plan.operand = add->first;
+      } else {
+        return false;
+      }
+    } else if (auto subtract = split_binary(right, {"-"})) {
+      if (field->type != "int" || trim(subtract->first) != field->name ||
+          expression_mentions_unqualified(subtract->second, field->name))
+        return false;
+      plan.action = AtomicActionKind::FetchSub;
+      plan.operand = subtract->second;
+    } else {
+      if (expression_mentions_unqualified(right, field->name)) return false;
+      plan.action = AtomicActionKind::Store;
+      plan.operand = right;
+    }
+    plan.field = field->name;
+    return true;
+  }
+
+  bool atomic_domain_plan(
+      const Domain& domain,
+      std::unordered_map<string, AtomicHandlerPlan>& handlers) const {
+    if (domain.state.empty() || domain.handlers.empty()) return false;
+    for (const auto& field : domain.state)
+      if (field.type != "int" && field.type != "bool") return false;
+    for (const auto& handler : domain.handlers) {
+      for (const auto& param : handler.params)
+        if (find_state_field(domain, param.name)) return false;
+      for (const auto& param : handler.params) {
+        std::set<string> visiting;
+        if (!sendable_type(param.type, visiting)) return false;
+      }
+      if (handler.reply_type) {
+        std::set<string> visiting;
+        if (!sendable_type(*handler.reply_type, visiting)) return false;
+      }
+      AtomicHandlerPlan handler_plan;
+      if (!atomic_handler_plan(domain, handler, handler_plan)) return false;
+      handlers[handler_key(domain, handler)] = std::move(handler_plan);
+    }
+    return true;
+  }
+
+  const Domain* statement_target(
+      const Stmt& statement, const Domain* source,
+      const std::unordered_map<string, string>& types) const {
+    string receiver;
+    if (statement.kind == Stmt::Kind::Message) receiver = statement.a;
+    else if (statement.kind == Stmt::Kind::AwaitMessage) receiver = statement.b;
+    else return nullptr;
+    if (receiver == "self") return source;
+    auto found = types.find(receiver);
+    if (found == types.end()) return nullptr;
+    auto domain = domains_.find(canonical_type_name(found->second));
+    return domain == domains_.end() ? nullptr : domain->second;
+  }
+
+  void update_statement_types(const Stmt& statement, const Domain* source,
+                              std::unordered_map<string, string>& types) const {
+    if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+        statement.kind == Stmt::Kind::Assign) {
+      if (auto spawned = spawned_domain(statement.b)) {
+        types[statement.a] = *spawned;
+      } else {
+        auto alias = types.find(trim(statement.b));
+        if (alias != types.end()) types[statement.a] = alias->second;
+      }
+      return;
+    }
+    if (statement.kind != Stmt::Kind::AwaitMessage) return;
+    const Domain* target = statement_target(statement, source, types);
+    const Handler* handler = target ? find_handler(*target, statement.c) : nullptr;
+    if (handler && handler->reply_type) types[statement.a] = *handler->reply_type;
+  }
+
+  bool batchable_message(const Stmt& statement, const Domain* source,
+                         const std::unordered_map<string, string>& types,
+                         const Domain*& target) const {
+    if (statement.kind != Stmt::Kind::Message) return false;
+    target = statement_target(statement, source, types);
+    if (!target) return false;
+    const Handler* handler = find_handler(*target, statement.b);
+    if (!handler) return false;
+    for (const auto& argument : statement.args)
+      if (!batch_payload_is_total(argument)) return false;
+    return true;
+  }
+
+  void plan_batches_in(const vector<Stmt>& statements, const Domain* source,
+                       std::unordered_map<string, string> types,
+                       OptimizationPlan& plan) const {
+    for (size_t index = 0; index < statements.size();) {
+      const Stmt& statement = statements[index];
+      const Domain* target = nullptr;
+      bool eligible = batchable_message(statement, source, types, target) &&
+          plan.lowering_for(target->name) == DomainLowering::Mailbox;
+      if (eligible) {
+        size_t end = index + 1;
+        for (; end < statements.size(); ++end) {
+          const Stmt& candidate = statements[end];
+          const Domain* candidate_target = nullptr;
+          if (candidate.indent != statement.indent || candidate.a != statement.a ||
+              !batchable_message(candidate, source, types, candidate_target) ||
+              candidate_target != target)
+            break;
+        }
+        if (end - index >= 2) {
+          plan.batched_send_regions.push_back(
+              BatchedSendRegion{statement.line, end - index, statement.a, target->name});
+          index = end;
+          continue;
+        }
+      }
+      update_statement_types(statement, source, types);
+      ++index;
+    }
+  }
+
+  void plan_batched_sends(OptimizationPlan& plan) const {
+    for (const auto& domain : program_.domains) {
+      for (const auto& handler : domain.handlers) {
+        std::unordered_map<string, string> types;
+        types["self"] = domain.name;
+        for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& param : handler.params) types[param.name] = param.type;
+        plan_batches_in(handler.body, &domain, std::move(types), plan);
+      }
+    }
+    for (const auto& function : program_.functions) {
+      std::unordered_map<string, string> types;
+      for (const auto& param : function.params) types[param.name] = param.type;
+      plan_batches_in(function.body, nullptr, std::move(types), plan);
+    }
+    if (program_.main)
+      plan_batches_in(program_.main->body, nullptr, {}, plan);
+  }
+
+  void collect_domain_uses(
+      const vector<Stmt>& statements, const Domain* source, const string& context,
+      std::unordered_map<string, string> types,
+      std::unordered_map<string, std::set<string>>& callers,
+      std::set<string>& escaped) const {
+    for (const auto& statement : statements) {
+      if (statement.kind == Stmt::Kind::Message ||
+          statement.kind == Stmt::Kind::AwaitMessage) {
+        if (const Domain* target = statement_target(statement, source, types))
+          callers[target->name].insert(context);
+      }
+
+      for (const auto& binding : types) {
+        string domain_type = canonical_type_name(binding.second);
+        if (!domains_.count(domain_type)) continue;
+        bool used_outside_receiver = false;
+        if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+             statement.kind == Stmt::Kind::Assign) &&
+            !spawned_domain(statement.b) &&
+            expression_mentions(statement.b, binding.first))
+          used_outside_receiver = true;
+        if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+            statement.kind == Stmt::Kind::Reply || statement.kind == Stmt::Kind::Return ||
+            statement.kind == Stmt::Kind::Raw)
+          used_outside_receiver = expression_mentions(statement.a, binding.first);
+        if (statement.kind == Stmt::Kind::Call &&
+            (expression_mentions(statement.a, binding.first) ||
+             expression_mentions(statement.b, binding.first)))
+          used_outside_receiver = true;
+        for (const auto& argument : statement.args)
+          used_outside_receiver = used_outside_receiver ||
+              expression_mentions(argument, binding.first);
+        if (used_outside_receiver) escaped.insert(domain_type);
+      }
+
+      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign) {
+        auto alias = types.find(trim(statement.b));
+        if (alias != types.end() && domains_.count(canonical_type_name(alias->second)))
+          escaped.insert(canonical_type_name(alias->second));
+      }
+
+      if (statement.kind == Stmt::Kind::Call ||
+          statement.kind == Stmt::Kind::Message ||
+          statement.kind == Stmt::Kind::AwaitMessage) {
+        for (const auto& argument : statement.args) {
+          auto value = types.find(trim(argument));
+          if (value != types.end() && domains_.count(canonical_type_name(value->second)))
+            escaped.insert(canonical_type_name(value->second));
+        }
+      }
+      update_statement_types(statement, source, types);
+    }
+  }
+
+  bool coalescable_await(const Stmt& statement,
+                         const std::unordered_map<string, string>& types,
+                         const std::set<string>& exclusive_domains,
+                         const Domain*& target) const {
+    if (statement.kind != Stmt::Kind::AwaitMessage) return false;
+    target = statement_target(statement, nullptr, types);
+    if (!target || !exclusive_domains.count(target->name)) return false;
+    const Handler* handler = find_handler(*target, statement.c);
+    if (!handler || !handler->reply_type) return false;
+    for (const auto& argument : statement.args)
+      if (!expression_is_obviously_pure(argument)) return false;
+    return true;
+  }
+
+  void plan_coalesced_locks(OptimizationPlan& plan) const {
+    if (!program_.main) return;
+
+    // The initial exclusivity proof is intentionally narrow: one unconditional
+    // main spawn, no capability-shaped storage/parameter/result, no alias or
+    // expression escape, and no caller context other than main.
+    std::unordered_map<string, size_t> spawn_counts;
+    std::set<string> escaped;
+    auto escape_type = [&](const string& type) {
+      for (const auto& domain : program_.domains)
+        if (expression_mentions(type, domain.name)) escaped.insert(domain.name);
+    };
+    for (const auto& statement : program_.main->body) {
+      if (auto spawned = spawned_domain(statement.b)) {
+        ++spawn_counts[*spawned];
+        if (statement.indent != 0) escaped.insert(*spawned);
+      }
+    }
+    for (const auto& object : program_.objects)
+      for (const auto& field : object.fields) escape_type(field.type);
+    for (const auto& domain : program_.domains) {
+      for (const auto& field : domain.state) escape_type(field.type);
+      for (const auto& handler : domain.handlers) {
+        for (const auto& param : handler.params) escape_type(param.type);
+        if (handler.reply_type) escape_type(*handler.reply_type);
+        for (const auto& statement : handler.body)
+          if (auto spawned = spawned_domain(statement.b)) escaped.insert(*spawned);
+      }
+    }
+    for (const auto& function : program_.functions) {
+      for (const auto& param : function.params) escape_type(param.type);
+      if (function.return_type) escape_type(*function.return_type);
+      for (const auto& statement : function.body)
+        if (auto spawned = spawned_domain(statement.b)) escaped.insert(*spawned);
+    }
+
+    std::unordered_map<string, std::set<string>> callers;
+    for (const auto& domain : program_.domains) {
+      for (const auto& handler : domain.handlers) {
+        std::unordered_map<string, string> types;
+        types["self"] = domain.name;
+        for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& param : handler.params) types[param.name] = param.type;
+        collect_domain_uses(handler.body, &domain, "domain:" + domain.name,
+                            std::move(types), callers, escaped);
+      }
+    }
+    for (const auto& function : program_.functions) {
+      std::unordered_map<string, string> types;
+      for (const auto& param : function.params) types[param.name] = param.type;
+      collect_domain_uses(function.body, nullptr, "function:" + function.name,
+                          std::move(types), callers, escaped);
+    }
+    collect_domain_uses(program_.main->body, nullptr, "main", {}, callers, escaped);
+
+    std::set<string> exclusive_domains;
+    for (const auto& domain : program_.domains) {
+      DomainLowering lowering = plan.lowering_for(domain);
+      if ((lowering == DomainLowering::DirectMutex ||
+           lowering == DomainLowering::DirectRwLock) &&
+          spawn_counts[domain.name] == 1 && !escaped.count(domain.name) &&
+          callers[domain.name] == std::set<string>{"main"})
+        exclusive_domains.insert(domain.name);
+    }
+
+    std::unordered_map<string, string> types;
+    const auto& statements = program_.main->body;
+    for (size_t index = 0; index < statements.size();) {
+      const Stmt& statement = statements[index];
+      const Domain* target = nullptr;
+      if (coalescable_await(statement, types, exclusive_domains, target) &&
+          (plan.lowering_for(target->name) == DomainLowering::DirectMutex ||
+           plan.lowering_for(target->name) == DomainLowering::DirectRwLock)) {
+        size_t end = index + 1;
+        for (; end < statements.size(); ++end) {
+          const Stmt& candidate = statements[end];
+          const Domain* candidate_target = nullptr;
+          if (candidate.indent != statement.indent || candidate.b != statement.b ||
+              !coalescable_await(candidate, types, exclusive_domains, candidate_target) ||
+              candidate_target != target)
+            break;
+        }
+        if (end - index >= 2) {
+          bool shared_read = plan.lowering_for(target->name) == DomainLowering::DirectRwLock;
+          for (size_t item = index; item < end; ++item) {
+            const auto& effects = plan.handler_effects.at(
+                target->name + "." + statements[item].c);
+            shared_read = shared_read && effects.state_effect == Effect::Read;
+          }
+          plan.coalesced_lock_regions.push_back(CoalescedLockRegion{
+              statement.line, end - index, statement.b, target->name, shared_read});
+          for (size_t item = index; item < end; ++item)
+            update_statement_types(statements[item], nullptr, types);
+          index = end;
+          continue;
+        }
+      }
+      update_statement_types(statement, nullptr, types);
+      ++index;
+    }
+  }
 
   void validate_clusters(const OptimizationPlan& plan) const {
     std::set<string> seen;
@@ -4232,19 +4995,41 @@ class Generator {
   string generate() {
     std::ostringstream o;
     o << "// Generated by Moss v0.2. Do not edit by hand.\n";
-    o << "// Message transport: lock-backed shared-memory mailboxes.\n";
-    o << "// Backend labels below distinguish MESSAGE/MAILBOX, SHARED-MEMORY DIRECT, and CLUSTER-LOCAL code.\n";
+    if (plan_.needs_mailbox_runtime())
+      o << "// Message transport: lock-backed shared-memory mailboxes.\n";
+    else
+      o << "// Message transport: mailbox-free statically selected shared memory.\n";
+    o << "// Backend labels below record the lowering selected by the whole-program optimization plan.\n";
     o << "// Moss source remains message-based; these comments identify its Rust lowering.\n";
     if (!await_error_handling_) {
       o << "// Await error handling disabled: generated awaits use unchecked extraction; supervision owns failure handling.\n";
     }
-    if (!plan_.direct_shared_memory_domains.empty()) {
+    bool has_direct = plan_.has_lowering(DomainLowering::DirectMutex) ||
+        plan_.has_lowering(DomainLowering::DirectRwLock) ||
+        plan_.has_lowering(DomainLowering::DirectAtomic);
+    if (has_direct) {
       o << "// Message optimization: direct shared-memory dispatch for ";
       bool first = true;
-      for (const auto& name : plan_.direct_shared_memory_domains) {
+      for (const auto& domain : p_.domains) {
+        DomainLowering lowering = plan_.lowering_for(domain);
+        if (lowering != DomainLowering::DirectMutex &&
+            lowering != DomainLowering::DirectRwLock &&
+            lowering != DomainLowering::DirectAtomic)
+          continue;
         if (!first) o << ", ";
         first = false;
-        o << name;
+        o << domain.name;
+      }
+      o << ".\n";
+    }
+    for (const auto& domain : p_.domains) {
+      o << "// Moss backend plan: " << domain.name << " = ";
+      switch (plan_.lowering_for(domain)) {
+        case DomainLowering::Mailbox: o << "Mailbox"; break;
+        case DomainLowering::DirectMutex: o << "DirectMutex"; break;
+        case DomainLowering::DirectRwLock: o << "DirectRwLock"; break;
+        case DomainLowering::DirectAtomic: o << "DirectAtomic"; break;
+        case DomainLowering::ClusterLocal: o << "ClusterLocal"; break;
       }
       o << ".\n";
     }
@@ -4261,12 +5046,17 @@ class Generator {
     o << "use std::collections::{HashMap, VecDeque};\n";
     o << "use std::cell::RefCell;\n";
     o << "use std::rc::Rc;\n";
-    o << "use std::panic::{catch_unwind, AssertUnwindSafe};\n";
-    o << "use std::sync::{Arc, Condvar, Mutex};\n";
-    o << "use std::thread;\n\n";
+    o << "use std::sync::Arc;\n";
+    if (plan_.needs_mailbox_runtime()) o << "use std::sync::{Condvar, Mutex};\n";
+    else if (plan_.has_lowering(DomainLowering::DirectMutex)) o << "use std::sync::Mutex;\n";
+    if (plan_.has_lowering(DomainLowering::DirectRwLock)) o << "use std::sync::RwLock;\n";
+    if (plan_.has_lowering(DomainLowering::DirectAtomic))
+      o << "use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};\n";
+    if (plan_.needs_mailbox_runtime()) o << "use std::thread;\n";
+    o << "\n";
     o << "fn __moss_require_send<T: Send>() {}\n\n";
-    gen_shared_channel(o);
-    gen_tracker(o);
+    if (plan_.needs_mailbox_runtime()) gen_shared_channel(o);
+    gen_tracker(o, plan_.needs_mailbox_runtime());
 
     for (const auto& t : p_.objects) gen_object(o, t);
     for (const auto& f : p_.functions) gen_function(o, f);
@@ -4338,7 +5128,20 @@ class Generator {
   }
 
   bool direct_shared_memory(const Domain& domain) const {
-    return plan_.transport_for(domain) == MessageTransport::DirectSharedMemory;
+    DomainLowering lowering = plan_.lowering_for(domain);
+    return lowering == DomainLowering::DirectMutex ||
+           lowering == DomainLowering::DirectRwLock ||
+           lowering == DomainLowering::DirectAtomic;
+  }
+
+  bool direct_lock(const Domain& domain) const {
+    DomainLowering lowering = plan_.lowering_for(domain);
+    return lowering == DomainLowering::DirectMutex ||
+           lowering == DomainLowering::DirectRwLock;
+  }
+
+  bool direct_atomic(const Domain& domain) const {
+    return plan_.lowering_for(domain) == DomainLowering::DirectAtomic;
   }
 
   std::optional<size_t> cluster_for(const Domain& domain) const {
@@ -4828,6 +5631,43 @@ class Generator {
     s.swap(out);
   }
 
+  static string replace_unqualified_word(const string& expression,
+                                         const string& from, const string& to) {
+    string out;
+    for (size_t index = 0; index < expression.size();) {
+      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
+            expression[index] == '_')) {
+        out.push_back(expression[index++]);
+        continue;
+      }
+      size_t start = index;
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      size_t previous = start;
+      while (previous > 0 &&
+             std::isspace(static_cast<unsigned char>(expression[previous - 1])))
+        --previous;
+      if (expression.substr(start, end - start) == from &&
+          (previous == 0 || expression[previous - 1] != '.'))
+        out += to;
+      else
+        out.append(expression, start, end - start);
+      index = end;
+    }
+    return out;
+  }
+
+  static string fresh_generated_name(const string& base, std::set<string>& used) {
+    string candidate = base;
+    for (size_t suffix = 0; used.count(candidate); ++suffix)
+      candidate = base + "_" + std::to_string(suffix);
+    used.insert(candidate);
+    return candidate;
+  }
+
   string message_arg(const string& e, const string& type, const Domain* d,
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr) const {
@@ -4859,14 +5699,25 @@ class Generator {
     return message_arg(expression, type, source, locals, types);
   }
 
-  void gen_tracker(std::ostringstream& o) {
+  void gen_tracker(std::ostringstream& o, bool synchronized) {
+    if (!synchronized) {
+      backend_comment(o, 0, "mailbox-free completion tracker; direct operations finish before returning");
+      o << "struct MossTracker;\n";
+      o << "impl MossTracker {\n";
+      o << "    fn new() -> Self { Self }\n";
+      o << "    fn wait_zero(&self) -> bool { true }\n";
+      o << "}\n\n";
+      return;
+    }
     backend_comment(o, 0, "runtime completion tracking for generated domain work");
     o << "struct MossTrackerState { pending: usize, failed: bool }\n";
     o << "struct MossTracker { state: Mutex<MossTrackerState>, cv: Condvar }\n";
     o << "impl MossTracker {\n";
     o << "    fn new() -> Self { Self { state: Mutex::new(MossTrackerState { pending: 0, failed: false }), cv: Condvar::new() } }\n";
     o << "    fn begin(&self) { let mut state = self.state.lock().unwrap(); state.pending += 1; }\n";
+    o << "    fn begin_n(&self, count: usize) { let mut state = self.state.lock().unwrap(); state.pending += count; }\n";
     o << "    fn end(&self) { let mut state = self.state.lock().unwrap(); state.pending -= 1; if state.pending == 0 { self.cv.notify_all(); } }\n";
+    o << "    fn end_n(&self, count: usize) { let mut state = self.state.lock().unwrap(); state.pending -= count; if state.pending == 0 { self.cv.notify_all(); } }\n";
     o << "    fn fail(&self) { let mut state = self.state.lock().unwrap(); state.failed = true; self.cv.notify_all(); }\n";
     o << "    fn wait_zero(&self) -> bool {\n";
     o << "        let mut state = self.state.lock().unwrap();\n";
@@ -5088,7 +5939,11 @@ class Generator {
     source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
     if (cluster_for(d)) {
       backend_comment(o, 0, "CLUSTER ingress/message version of " + d.name + "Ref (shared-memory mailbox)");
-    } else if (direct_shared_memory(d)) {
+    } else if (direct_atomic(d)) {
+      backend_comment(o, 0, "ATOMIC DOMAIN reference (Arc<" + d.name + "State>; no mailbox or state lock)");
+    } else if (plan_.lowering_for(d) == DomainLowering::DirectRwLock) {
+      backend_comment(o, 0, "SHARED-MEMORY DIRECT version of " + d.name + "Ref (Arc<RwLock<" + d.name + "State>>)");
+    } else if (plan_.lowering_for(d) == DomainLowering::DirectMutex) {
       backend_comment(o, 0, "SHARED-MEMORY DIRECT version of " + d.name + "Ref (Arc<Mutex<" + d.name + "State>>)");
     } else {
       backend_comment(o, 0, "MESSAGE/MAILBOX version of " + d.name + "Ref (shared-memory lock-backed queue)");
@@ -5097,7 +5952,11 @@ class Generator {
     if (auto cluster = cluster_for(d)) {
       o << "    tx: MossSender<MossCluster" << *cluster << "SharedMsg>,\n";
       o << "    tracker: Arc<MossTracker>,\n";
-    } else if (direct_shared_memory(d)) {
+    } else if (direct_atomic(d)) {
+      o << "    state: Arc<" << d.name << "State>,\n";
+    } else if (plan_.lowering_for(d) == DomainLowering::DirectRwLock) {
+      o << "    state: Arc<RwLock<" << d.name << "State>>,\n";
+    } else if (plan_.lowering_for(d) == DomainLowering::DirectMutex) {
       o << "    state: Arc<Mutex<" << d.name << "State>>,\n";
     } else {
       o << "    tx: MossSender<" << d.name << "Msg>,\n";
@@ -5126,19 +5985,35 @@ class Generator {
     });
   }
 
+  const HandlerEffectSummary& handler_effects(const Domain& domain,
+                                              const Handler& handler) const {
+    return plan_.handler_effects.at(domain.name + "." + handler.name);
+  }
+
+  const AtomicHandlerPlan& atomic_handler(const Domain& domain,
+                                          const Handler& handler) const {
+    return plan_.atomic_handlers.at(domain.name + "." + handler.name);
+  }
+
   void gen_direct_domain(std::ostringstream& o, const Domain& d) {
-    backend_comment(o, 0, "SHARED-MEMORY DIRECT implementation for domain " + d.name + "; awaited Moss messages call through Arc<Mutex<State>>");
+    bool rwlock = plan_.lowering_for(d) == DomainLowering::DirectRwLock;
+    backend_comment(o, 0, "SHARED-MEMORY DIRECT implementation for domain " + d.name +
+        (rwlock ? "; handler effects select RwLock read/write guards"
+                : "; awaited Moss messages call through Arc<Mutex<State>>"));
     o << "impl " << d.name << "Ref {\n";
     for (const auto& h : d.handlers) {
       if (!h.reply_type)
         throw std::runtime_error("internal error: one-way handler reached direct shared-memory generation");
       string result_name = reply_binding(d, h);
+      bool read_only = rwlock && handler_effects(d, h).state_effect == Effect::Read;
       source_comment(o, 4, h.line, handler_signature(h));
-      backend_comment(o, 4, "SHARED-MEMORY DIRECT handler body; the request mailbox is elided");
-      o << "    fn " << h.name << "_shared(&self";
+      backend_comment(o, 4, read_only
+          ? "READ-SHARED RwLock handler body; locking is separated from implementation"
+          : "SHARED-MEMORY DIRECT handler body; locking is separated from implementation");
+      o << "    fn " << h.name << "_locked(&self, state: "
+        << (read_only ? "&" : "&mut ") << d.name << "State";
       for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
       o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
-      o << "        let mut state = self.state.lock().unwrap();\n";
       o << "        let self_ref = self.clone();\n";
       o << "        let mut " << result_name << ": Option<" << rust_type(*h.reply_type)
         << "> = None;\n";
@@ -5156,6 +6031,25 @@ class Generator {
       gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true);
       o << "        }\n";
       o << "        " << result_name << "\n";
+      o << "    }\n";
+
+      backend_comment(o, 4, read_only
+          ? "READ-SHARED RwLock handler wrapper"
+          : "exclusive direct handler wrapper");
+      o << "    fn " << h.name << "_shared(&self";
+      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
+      if (rwlock) {
+        o << "        let " << (read_only ? "" : "mut ")
+          << "state = self.state." << (read_only ? "read" : "write")
+          << "().unwrap();\n";
+      } else {
+        o << "        let mut state = self.state.lock().unwrap();\n";
+      }
+      o << "        self." << h.name << "_locked("
+        << (read_only ? "&state" : "&mut state");
+      for (const auto& p : h.params) o << ", " << p.name;
+      o << ")\n";
       o << "    }\n";
     }
     o << "}\n\n";
@@ -5177,7 +6071,109 @@ class Generator {
       o << "        " << f.name << ": " << init << ",\n";
     }
     o << "    };\n";
-    o << "    " << d.name << "Ref { state: Arc::new(Mutex::new(state)) }\n";
+    o << "    " << d.name << "Ref { state: Arc::new("
+      << (rwlock ? "RwLock" : "Mutex") << "::new(state)) }\n";
+    o << "}\n\n";
+  }
+
+  void gen_atomic_domain(std::ostringstream& o, const Domain& d) {
+    backend_comment(o, 0, "ATOMIC DOMAIN implementation for " + d.name +
+        "; every handler is one SeqCst linearizable state action");
+    o << "impl " << d.name << "Ref {\n";
+    for (const auto& h : d.handlers) {
+      const AtomicHandlerPlan& action = atomic_handler(d, h);
+      source_comment(o, 4, h.line, handler_signature(h));
+      backend_comment(o, 4, "ATOMIC DOMAIN handler; no worker, mailbox, or state lock");
+      o << "    fn " << h.name << "_shared(&self";
+      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      if (h.reply_type) o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
+      else o << ") {\n";
+
+      std::set<string> locals;
+      std::unordered_map<string, string> types;
+      for (const auto& p : h.params) {
+        locals.insert(p.name);
+        types[p.name] = p.type;
+      }
+      std::set<string> used_names = locals;
+      used_names.insert("self");
+      for (const auto& field : d.state) used_names.insert(field.name);
+      string value_name = fresh_generated_name("__moss_value", used_names);
+      string operand_name = fresh_generated_name("__moss_operand", used_names);
+      string previous_name = fresh_generated_name("__moss_previous", used_names);
+      string next_name = fresh_generated_name("__moss_next", used_names);
+      string operand = action.operand.empty()
+          ? string() : expr(action.operand, nullptr, locals, &types);
+      switch (action.action) {
+        case AtomicActionKind::Load:
+          o << "        let " << value_name << " = self.state." << action.field
+            << ".load(Ordering::SeqCst);\n";
+          break;
+        case AtomicActionKind::Store:
+          o << "        let " << value_name << " = " << operand << ";\n";
+          o << "        self.state." << action.field
+            << ".store(" << value_name << ", Ordering::SeqCst);\n";
+          break;
+        case AtomicActionKind::FetchAdd:
+          o << "        let " << operand_name << " = " << operand << ";\n";
+          o << "        let " << previous_name << " = self.state." << action.field
+            << ".fetch_add(" << operand_name << ", Ordering::SeqCst);\n";
+          o << "        let " << value_name << " = " << previous_name
+            << ".wrapping_add(" << operand_name << ");\n";
+          break;
+        case AtomicActionKind::FetchSub:
+          o << "        let " << operand_name << " = " << operand << ";\n";
+          o << "        let " << previous_name << " = self.state." << action.field
+            << ".fetch_sub(" << operand_name << ", Ordering::SeqCst);\n";
+          o << "        let " << value_name << " = " << previous_name
+            << ".wrapping_sub(" << operand_name << ");\n";
+          break;
+        case AtomicActionKind::FetchXor:
+          o << "        let " << previous_name << " = self.state." << action.field
+            << ".fetch_xor(true, Ordering::SeqCst);\n";
+          o << "        let " << value_name << " = !" << previous_name << ";\n";
+          break;
+        case AtomicActionKind::Swap:
+          o << "        let " << next_name << " = " << operand << ";\n";
+          o << "        let " << value_name << " = self.state." << action.field
+            << ".swap(" << next_name << ", Ordering::SeqCst);\n";
+          break;
+      }
+      if (h.reply_type) {
+        locals.insert(value_name);
+        auto field = std::find_if(d.state.begin(), d.state.end(),
+            [&](const Field& candidate) { return candidate.name == action.field; });
+        if (field != d.state.end()) types[value_name] = field->type;
+        string result_expression = action.result_expression.empty()
+            ? value_name
+            : replace_unqualified_word(action.result_expression, action.field,
+                                       value_name);
+        o << "        Some(" << message_arg(result_expression, *h.reply_type,
+                                              nullptr, locals, &types) << ")\n";
+      }
+      o << "    }\n";
+    }
+    o << "}\n\n";
+
+    o << "fn spawn_" << snake_case(d.name) << "(_tracker: Arc<MossTracker>) -> "
+      << d.name << "Ref {\n";
+    backend_comment(o, 4, "ATOMIC DOMAIN allocation; no dedicated thread or mailbox");
+    o << "    __moss_require_send::<" << d.name << "State>();\n";
+    for (const auto& h : d.handlers) {
+      for (const auto& p : h.params)
+        o << "    __moss_require_send::<" << rust_type(p.type) << ">();\n";
+      if (h.reply_type)
+        o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
+    }
+    o << "    " << d.name << "Ref { state: Arc::new(" << d.name << "State {\n";
+    for (const auto& f : d.state) {
+      string init = f.init.empty() ? default_value(f.type) : expr(f.init, nullptr, {});
+      source_comment(o, 8, f.line, state_field_signature(f));
+      o << "        " << f.name << ": "
+        << (f.type == "bool" ? "AtomicBool" : "AtomicI64")
+        << "::new(" << init << "),\n";
+    }
+    o << "    }) }\n";
     o << "}\n\n";
   }
 
@@ -5185,7 +6181,9 @@ class Generator {
     source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
     if (cluster_for(d)) {
       backend_comment(o, 0, "CLUSTER-LOCAL state representation for domain " + d.name + " (RefCell on the cluster worker)");
-    } else if (direct_shared_memory(d)) {
+    } else if (direct_atomic(d)) {
+      backend_comment(o, 0, "ATOMIC DOMAIN state representation for domain " + d.name + " (SeqCst linearization)");
+    } else if (direct_lock(d)) {
       backend_comment(o, 0, "SHARED-MEMORY DIRECT state representation for domain " + d.name);
     } else {
       backend_comment(o, 0, "MESSAGE/MAILBOX state representation for domain " + d.name + " (one worker drains a shared-memory queue)");
@@ -5193,13 +6191,21 @@ class Generator {
     o << "struct " << d.name << "State {\n";
     for (const auto& f : d.state) {
       source_comment(o, 4, f.line, state_field_signature(f));
-      o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
+      if (direct_atomic(d))
+        o << "    " << f.name << ": " << (f.type == "bool" ? "AtomicBool" : "AtomicI64") << ",\n";
+      else
+        o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
 
     if (cluster_for(d)) return;
 
-    if (direct_shared_memory(d)) {
+    if (direct_atomic(d)) {
+      gen_atomic_domain(o, d);
+      return;
+    }
+
+    if (direct_lock(d)) {
       gen_direct_domain(o, d);
       return;
     }
@@ -5251,6 +6257,14 @@ class Generator {
       }
       o << ").is_err() { self.tracker.end(); }\n    }\n";
     }
+    backend_comment(o, 4, "BATCHED MAILBOX SEND helper: one tracker update and one queue lock");
+    o << "    fn __moss_send_batch(&self, messages: Vec<" << d.name << "Msg>) {\n";
+    o << "        let count = messages.len();\n";
+    o << "        self.tracker.begin_n(count);\n";
+    o << "        if let Err(unsent) = self.tx.send_batch(messages) {\n";
+    o << "            self.tracker.end_n(unsent.len());\n";
+    o << "        }\n";
+    o << "    }\n";
     o << "}\n\n";
 
     backend_comment(o, 0, "MESSAGE/MAILBOX worker for domain " + d.name + "; each dequeued Moss message runs to completion");
@@ -5718,8 +6732,19 @@ class Generator {
               o << indent(level) << "let " << s.a << " = "
                 << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
             } else {
-              backend_comment(o, (base + level) * 4,
-                              "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
+              DomainLowering lowering = plan_.lowering_for(*sd);
+              if (lowering == DomainLowering::DirectAtomic)
+                backend_comment(o, (base + level) * 4,
+                                "ATOMIC DOMAIN handle; state actions use SeqCst atomics");
+              else if (lowering == DomainLowering::DirectRwLock)
+                backend_comment(o, (base + level) * 4,
+                                "SHARED-MEMORY DIRECT domain handle; state uses Arc<RwLock<_>>");
+              else if (lowering == DomainLowering::DirectMutex)
+                backend_comment(o, (base + level) * 4,
+                                "SHARED-MEMORY DIRECT domain handle; state uses Arc<Mutex<_>>");
+              else
+                backend_comment(o, (base + level) * 4,
+                                "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
               o << indent(level) << "let " << s.a << " = spawn_" << snake_case(*sd)
                 << "(__tracker.clone());\n";
             }
@@ -5814,9 +6839,15 @@ class Generator {
             if (auto cluster = plan_.cluster_for(*sd)) {
               backend_comment(o, (base + level) * 4,
                               "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
-            } else if (domains_.count(*sd) && direct_shared_memory(*domains_.at(*sd))) {
+            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectAtomic) {
               backend_comment(o, (base + level) * 4,
-                              "SHARED-MEMORY DIRECT domain handle; state is protected by Arc<Mutex<_>>");
+                              "ATOMIC DOMAIN handle; state actions use SeqCst atomics");
+            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectRwLock) {
+              backend_comment(o, (base + level) * 4,
+                              "SHARED-MEMORY DIRECT domain handle; state uses Arc<RwLock<_>>");
+            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectMutex) {
+              backend_comment(o, (base + level) * 4,
+                              "SHARED-MEMORY DIRECT domain handle; state uses Arc<Mutex<_>>");
             } else {
               backend_comment(o, (base + level) * 4,
                               "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
@@ -5853,6 +6884,69 @@ class Generator {
           }
           string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals, &types);
           const Handler* h = target ? find_handler(*target, s.b) : nullptr;
+          if (const BatchedSendRegion* region = plan_.batch_at(s.line)) {
+            if (!target || plan_.lowering_for(*target) != DomainLowering::Mailbox ||
+                region->target_domain != target->name || region->receiver != s.a ||
+                i + region->count > ss.size())
+              throw std::runtime_error("internal error: invalid batched-send optimization region");
+            size_t batch_id = reply_temp_++;
+            std::set<string> batch_names = locals;
+            string batch_variable = fresh_generated_name(
+                "__moss_batch_" + std::to_string(batch_id), batch_names);
+            backend_comment(o, (base + level) * 4,
+                            "BATCHED MAILBOX SEND (" + std::to_string(region->count) +
+                            " messages): payloads evaluate in source order before one enqueue");
+            vector<string> ignored_reply_senders(region->count);
+            vector<string> ignored_reply_receivers(region->count);
+            for (size_t item = 0; item < region->count; ++item) {
+              const Handler* batch_handler = find_handler(*target, ss[i + item].b);
+              if (!batch_handler || !batch_handler->reply_type) continue;
+              string suffix = std::to_string(batch_id) + "_" + std::to_string(item);
+              ignored_reply_senders[item] = fresh_generated_name(
+                  "__moss_batch_reply_tx_" + suffix, batch_names);
+              ignored_reply_receivers[item] = fresh_generated_name(
+                  "__moss_batch_reply_rx_" + suffix, batch_names);
+              o << indent(level) << "let (" << ignored_reply_senders[item] << ", "
+                << ignored_reply_receivers[item] << ") = moss_channel::<"
+                << rust_type(*batch_handler->reply_type) << ">();\n";
+            }
+            o << indent(level) << "let " << batch_variable << " = vec![\n";
+            for (size_t item = 0; item < region->count; ++item) {
+              const Stmt& message = ss[i + item];
+              const Handler* batch_handler = find_handler(*target, message.b);
+              if (!batch_handler ||
+                  message.kind != Stmt::Kind::Message || message.a != s.a)
+                throw std::runtime_error("internal error: stale batched-send optimization region");
+              if (item)
+                source_comment(o, (base + level + 1) * 4, message.line, message.text);
+              o << indent(level + 1) << target->name << "Msg::" << message.b;
+              if (!message.args.empty() || batch_handler->reply_type) {
+                o << "(";
+                for (size_t argument = 0; argument < message.args.size(); ++argument) {
+                  if (argument) o << ", ";
+                  string type = batch_handler->params[argument].type;
+                  if (cluster_context)
+                    o << cluster_call_arg(message.args[argument], type, d, locals,
+                                          *cluster_context, true, &types);
+                  else
+                    o << message_arg(message.args[argument], type, d, locals, &types);
+                }
+                if (batch_handler->reply_type) {
+                  if (!message.args.empty()) o << ", ";
+                  o << ignored_reply_senders[item];
+                }
+                o << ")";
+              }
+              o << ",\n";
+            }
+            o << indent(level) << "];\n";
+            o << indent(level) << recv << ".__moss_send_batch("
+              << batch_variable << ");\n";
+            for (const auto& receiver : ignored_reply_receivers)
+              if (!receiver.empty()) o << indent(level) << "drop(" << receiver << ");\n";
+            i += region->count;
+            break;
+          }
           if (local_cluster_call(d, target, cluster_context)) {
             backend_comment(o, (base + level) * 4,
                             "CLUSTER-LOCAL version: enqueue on the plain same-thread local queue");
@@ -5872,8 +6966,27 @@ class Generator {
             ++i;
             break;
           }
-          if (target && direct_shared_memory(*target))
+          if (target && direct_lock(*target))
             throw std::runtime_error("internal error: asynchronous send reached direct shared-memory generation");
+          if (target && direct_atomic(*target)) {
+            backend_comment(o, (base + level) * 4,
+                            "ATOMIC DOMAIN one-way execution; SeqCst preserves the domain total order");
+            o << indent(level);
+            if (h && h->reply_type) o << "let _ = ";
+            o << recv << "." << s.b << "_shared(";
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              if (k) o << ", ";
+              string typ = h && k < h->params.size() ? h->params[k].type : "_";
+              if (cluster_context)
+                o << cluster_call_arg(s.args[k], typ, d, locals,
+                                      *cluster_context, true, &types);
+              else
+                o << message_arg(s.args[k], typ, d, locals, &types);
+            }
+            o << ");\n";
+            ++i;
+            break;
+          }
           backend_comment(o, (base + level) * 4,
                           "MESSAGE/MAILBOX version: enqueue the Moss send in a lock-backed shared-memory queue");
           string reply_tx, reply_rx;
@@ -5911,6 +7024,61 @@ class Generator {
           if (!target || !h || !h->reply_type)
             throw std::runtime_error("internal error: unchecked await reached code generation");
           string recv = expr(s.b, d, locals, &types);
+          if (const CoalescedLockRegion* region = plan_.coalesced_at(s.line)) {
+            if (!direct_lock(*target) || region->target_domain != target->name ||
+                region->receiver != s.b || i + region->count > ss.size())
+              throw std::runtime_error("internal error: invalid coalesced-lock optimization region");
+            size_t lock_id = reply_temp_++;
+            std::set<string> lock_names = locals;
+            string guard = fresh_generated_name(
+                "__moss_guard_" + std::to_string(lock_id), lock_names);
+            bool rwlock = plan_.lowering_for(*target) == DomainLowering::DirectRwLock;
+            backend_comment(o, (base + level) * 4,
+                            "COALESCED LOCK REGION (" + std::to_string(region->count) +
+                            " operations): exclusive whole-program caller proof");
+            o << indent(level) << "let " << (region->shared_read ? "" : "mut ")
+              << guard << " = " << recv << ".state."
+              << (rwlock ? (region->shared_read ? "read" : "write") : "lock")
+              << "().unwrap();\n";
+            for (size_t item = 0; item < region->count; ++item) {
+              const Stmt& awaited = ss[i + item];
+              const Handler* locked_handler = find_handler(*target, awaited.c);
+              if (!locked_handler || !locked_handler->reply_type ||
+                  awaited.kind != Stmt::Kind::AwaitMessage || awaited.b != s.b)
+                throw std::runtime_error("internal error: stale coalesced-lock optimization region");
+              if (item)
+                source_comment(o, (base + level) * 4, awaited.line, awaited.text);
+              bool bind = !locals.count(awaited.a);
+              o << indent(level);
+              if (bind) o << "let " << (awaited.is_mutable ? "mut " : "") << awaited.a;
+              else o << awaited.a;
+              o << " = ";
+              if (!await_error_handling_) o << "unsafe { ";
+              o << recv << "." << awaited.c << "_locked(";
+              bool read_handler = rwlock &&
+                  handler_effects(*target, *locked_handler).state_effect == Effect::Read;
+              o << (read_handler ? "&" : "&mut ") << guard;
+              for (size_t argument = 0; argument < awaited.args.size(); ++argument) {
+                o << ", " << message_arg(awaited.args[argument],
+                                          locked_handler->params[argument].type,
+                                          d, locals, &types);
+              }
+              if (await_error_handling_) {
+                o << ").unwrap_or_else(|| {\n";
+                o << indent(level + 1) << "panic!(\"Moss await failed: "
+                  << target->name << "." << locked_handler->name
+                  << " completed without a reply\")\n";
+                o << indent(level) << "});\n";
+              } else {
+                o << ").unwrap_unchecked() };\n";
+              }
+              locals.insert(awaited.a);
+              types[awaited.a] = *locked_handler->reply_type;
+            }
+            o << indent(level) << "drop(" << guard << ");\n";
+            i += region->count;
+            break;
+          }
           if (local_cluster_call(d, target, cluster_context)) {
             backend_comment(o, (base + level) * 4,
                             "CLUSTER-LOCAL version: flush older local messages, then call the handler directly");
@@ -5942,7 +7110,9 @@ class Generator {
           }
           if (direct_shared_memory(*target)) {
             backend_comment(o, (base + level) * 4,
-                            "SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message");
+                            direct_atomic(*target)
+                                ? "ATOMIC DOMAIN await: execute one SeqCst state action directly"
+                                : "SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message");
             bool localize_domain_reply = cluster_context &&
                 domains_.count(trim(*h->reply_type));
             string result = s.a;
@@ -6106,7 +7276,7 @@ static void usage() {
             << "  moss <input.moss> [-Oshared-memory] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
-            << "  -O, -Oshared-memory    eliminate eligible awaited messages with lock-backed state\n"
+            << "  -O, -Oshared-memory    plan batching, direct locks, RwLock, and atomic domains\n"
             << "  -O0                    retain lock-backed mailbox dispatch for every domain\n\n"
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
@@ -6170,7 +7340,7 @@ int main(int argc, char** argv) {
     for (const auto& warning : checker.warnings())
       std::cerr << "moss:" << warning.line << ": warning: " << warning.message << "\n";
 
-    auto plan = moss::MessageTransportOptimizer(program).run(
+    auto plan = moss::BackendOptimizer(program).run(
         optimize_shared_memory, requested_clusters);
 
     if (check_only) {

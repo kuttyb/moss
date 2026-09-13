@@ -1,0 +1,15 @@
+type Token:
+  label: string
+
+domain Gate:
+  enabled = false
+
+  fn Remember(next: bool, token: Token) -> Token:
+    enabled = next
+    reply token
+
+fn main():
+  gate = spawn Gate()
+  token = Token(label = "original")
+  returned = await gate.Remember(true, token)
+  echo token.label, returned.label

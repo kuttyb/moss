@@ -53,8 +53,9 @@ compile_shared_memory_case() {
   grep -F 'Message optimization: direct shared-memory dispatch' \
     "$test_build/$name.rs" >/dev/null ||
     fail "$name did not select direct shared-memory dispatch"
-  grep -F 'state: Arc<Mutex<' "$test_build/$name.rs" >/dev/null ||
-    fail "$name did not emit lock-protected domain state"
+  grep -E 'Moss backend plan: .* = Direct(Mutex|RwLock|Atomic)' \
+    "$test_build/$name.rs" >/dev/null ||
+    fail "$name did not emit a planned direct domain lowering"
   grep -F 'fn __moss_require_send<T: Send>()' "$test_build/$name.rs" >/dev/null ||
     fail "$name did not emit the Rust Send boundary check"
 }
@@ -236,16 +237,19 @@ grep -F 'tx: MossSender<CheckoutMsg>' "$test_build/shared_memory_checkout.rs" >/
   fail "checkout incorrectly promoted an asynchronously called domain"
 run_shared_memory_case shared_memory_example_optimized examples/shared_memory.moss \
   'shared total: 10 42'
-grep -F 'state: Arc<Mutex<CounterState>>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
-  fail "shared-memory example did not lower Counter state to a lock"
+grep -F '// Moss backend plan: Counter = DirectAtomic.' \
+  "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory example did not select the atomic Counter lowering"
+grep -F 'total: AtomicI64' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
+  fail "shared-memory example did not lower Counter state to AtomicI64"
 grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory example did not retain the asynchronous Client mailbox"
 grep -F '// Moss line 14: first = await counter.Add(10)' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory optimization omitted its Moss await annotation"
-grep -F '// Moss backend: SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message' \
+grep -F '// Moss backend: ATOMIC DOMAIN await: execute one SeqCst state action directly' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
-  fail "shared-memory optimization omitted its direct lowering annotation"
+  fail "shared-memory optimization omitted its atomic lowering annotation"
 compile_unchecked_await_case unchecked_awaits examples/shared_memory.moss
 [ "$("$test_build/unchecked_awaits")" = 'shared total: 10 42' ] ||
   fail "unchecked-await mode changed successful execution"
@@ -265,8 +269,9 @@ run_optimized_case shared_memory_domain_ref tests/domain_ref_message.moss 'ping
 ping'
 run_shared_memory_case shared_memory_contention tests/shared_memory_contention.moss \
   'shared total: 2000 true true'
-grep -F 'state: Arc<Mutex<CounterState>>' "$test_build/shared_memory_contention.rs" >/dev/null ||
-  fail "contention case did not promote Counter state"
+grep -F '// Moss backend plan: Counter = DirectAtomic.' \
+  "$test_build/shared_memory_contention.rs" >/dev/null ||
+  fail "contention case did not promote its one-action Counter to atomics"
 grep -F 'tx: MossSender<ProducerMsg>' "$test_build/shared_memory_contention.rs" >/dev/null ||
   fail "contention case incorrectly promoted asynchronous Producer messages"
 iteration=1
@@ -275,6 +280,189 @@ while [ "$iteration" -le 20 ]; do
   [ "$actual" = 'shared total: 2000 true true' ] ||
     fail "shared-memory contention lost or reordered work on iteration $iteration"
   iteration=$((iteration + 1))
+done
+
+# Phase 2.5 backend planning: batching, lock regions, RwLock specialization,
+# and whole-domain atomics. Each generated case is compiled with denied Rust
+# warnings by compile_optimized_case/run_optimized_case.
+run_optimized_case phase25_batching tests/phase25_batching.moss \
+  "$(printf 'record: 1\nrecord: 2\nrecord: 3')"
+grep -F '// Moss backend: BATCHED MAILBOX SEND (3 messages)' \
+  "$test_build/phase25_batching.rs" >/dev/null ||
+  fail "three adjacent messages were not planned as one batch"
+[ "$(grep -c 'sink.__moss_send_batch' "$test_build/phase25_batching.rs")" -eq 1 ] ||
+  fail "batched message region did not use exactly one enqueue call"
+grep -F 'self.tracker.begin_n(count);' "$test_build/phase25_batching.rs" >/dev/null ||
+  fail "batched enqueue did not coalesce tracker accounting"
+grep -F 'self.tracker.end_n(unsent.len());' "$test_build/phase25_batching.rs" >/dev/null ||
+  fail "failed batched enqueue did not unwind all tracker entries"
+
+compile_optimized_case phase25_batch_targets tests/phase25_batch_targets.moss
+if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
+    "$test_build/phase25_batch_targets.rs" >/dev/null; then
+  fail "messages to different receiver instances were incorrectly batched"
+fi
+compile_optimized_case phase25_batch_break tests/phase25_batch_break.moss
+if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
+    "$test_build/phase25_batch_break.rs" >/dev/null; then
+  fail "an observable payload expression did not break message batching"
+fi
+
+run_optimized_case phase25_lock_coalesce tests/phase25_lock_coalesce.moss \
+  'first second third'
+grep -F '// Moss backend: COALESCED LOCK REGION (3 operations)' \
+  "$test_build/phase25_lock_coalesce.rs" >/dev/null ||
+  fail "exclusive adjacent awaits did not form a coalesced lock region"
+sed -n '/^fn main() {/,/^}/p' "$test_build/phase25_lock_coalesce.rs" \
+  >"$test_build/phase25_lock_coalesce.main.rs"
+[ "$(grep -c 'state.lock().unwrap()' "$test_build/phase25_lock_coalesce.main.rs")" -eq 1 ] ||
+  fail "coalesced direct operations did not acquire exactly one state lock"
+
+run_optimized_case phase25_lock_multi_caller tests/phase25_lock_multi_caller.moss \
+  "$(printf 'ready ready\nready ready')"
+if grep -F 'COALESCED LOCK REGION' "$test_build/phase25_lock_multi_caller.rs" >/dev/null; then
+  fail "a target with multiple callers received unsafe lock coalescing"
+fi
+
+run_optimized_case phase25_rwlock tests/phase25_rwlock.moss 'draft stable stable'
+grep -F '// Moss backend plan: Catalog = DirectRwLock.' \
+  "$test_build/phase25_rwlock.rs" >/dev/null ||
+  fail "read-heavy direct domain did not select RwLock"
+grep -F '// Moss backend: READ-SHARED RwLock handler wrapper' \
+  "$test_build/phase25_rwlock.rs" >/dev/null ||
+  fail "READ-only handler did not receive a shared-read wrapper"
+grep -F 'self.state.read().unwrap()' "$test_build/phase25_rwlock.rs" >/dev/null ||
+  fail "READ-only handler did not acquire an RwLock read guard"
+grep -F 'self.state.write().unwrap()' "$test_build/phase25_rwlock.rs" >/dev/null ||
+  fail "WRITE handler did not retain an exclusive RwLock guard"
+
+run_optimized_case phase25_rwlock_read_region \
+  tests/phase25_rwlock_read_region.moss 'stable stable'
+grep -F '// Moss backend: COALESCED LOCK REGION (2 operations)' \
+  "$test_build/phase25_rwlock_read_region.rs" >/dev/null ||
+  fail "exclusive sequence of read handlers did not form a shared lock region"
+sed -n '/^fn main() {/,/^}/p' "$test_build/phase25_rwlock_read_region.rs" \
+  >"$test_build/phase25_rwlock_read_region.main.rs"
+[ "$(grep -c 'state.read().unwrap()' "$test_build/phase25_rwlock_read_region.main.rs")" -eq 1 ] ||
+  fail "coalesced READ region did not acquire exactly one shared guard"
+
+compile_optimized_case phase25_rwlock_contention tests/phase25_rwlock_contention.moss
+grep -F 'state: Arc<RwLock<CatalogState>>' \
+  "$test_build/phase25_rwlock_contention.rs" >/dev/null ||
+  fail "read contention target did not use RwLock"
+iteration=1
+while [ "$iteration" -le 10 ]; do
+  actual=$("$test_build/phase25_rwlock_contention")
+  [ "$actual" = "$(printf 'consistent\nconsistent')" ] ||
+    fail "RwLock read contention changed observable results on iteration $iteration"
+  iteration=$((iteration + 1))
+done
+
+run_optimized_case phase25_atomic_counter tests/phase25_atomic_counter.moss '3 2 3 2'
+grep -F '// Moss backend plan: Counter = DirectAtomic.' \
+  "$test_build/phase25_atomic_counter.rs" >/dev/null ||
+  fail "simple integer counter did not select atomic lowering"
+grep -F '.fetch_add(__moss_operand, Ordering::SeqCst)' \
+  "$test_build/phase25_atomic_counter.rs" >/dev/null ||
+  fail "integer increment did not lower to SeqCst fetch_add"
+grep -F '.fetch_sub(__moss_operand, Ordering::SeqCst)' \
+  "$test_build/phase25_atomic_counter.rs" >/dev/null ||
+  fail "integer decrement did not lower to SeqCst fetch_sub"
+if grep -Eq 'MossChannel|Mutex|Condvar|thread::spawn' "$test_build/phase25_atomic_counter.rs"; then
+  fail "fully atomic domain retained a mailbox, condition variable, mutex, or worker thread"
+fi
+grep -F '// Moss backend: ATOMIC DOMAIN one-way execution' \
+  "$test_build/phase25_atomic_counter.rs" >/dev/null ||
+  fail "eligible one-way atomic handler was not executed directly"
+
+run_optimized_case phase25_atomic_bool tests/phase25_atomic_bool.moss 'true false'
+grep -F 'enabled: AtomicBool' "$test_build/phase25_atomic_bool.rs" >/dev/null ||
+  fail "boolean flag did not use AtomicBool"
+grep -F '.fetch_xor(true, Ordering::SeqCst)' \
+  "$test_build/phase25_atomic_bool.rs" >/dev/null ||
+  fail "boolean toggle did not use SeqCst fetch_xor"
+
+run_optimized_case phase25_atomic_swap tests/phase25_atomic_swap.moss '7'
+grep -F '.swap(__moss_next, Ordering::SeqCst)' \
+  "$test_build/phase25_atomic_swap.rs" >/dev/null ||
+  fail "scalar exchange did not lower to SeqCst swap"
+
+run_optimized_case phase25_atomic_copy_boundary \
+  tests/phase25_atomic_copy_boundary.moss 'original original'
+grep -F '// Moss backend plan: Gate = DirectAtomic.' \
+  "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null ||
+  fail "copy-boundary fixture did not select atomic lowering"
+[ "$(grep -c '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs")" -ge 2 ] ||
+  fail "atomic request/reply path did not retain both semantic copy boundaries"
+
+run_optimized_case phase25_atomic_multi_field tests/phase25_atomic_multi_field.moss \
+  '1 true'
+grep -F 'count: AtomicI64' "$test_build/phase25_atomic_multi_field.rs" >/dev/null ||
+  fail "first field in multi-field atomic domain was not atomic"
+grep -F 'enabled: AtomicBool' "$test_build/phase25_atomic_multi_field.rs" >/dev/null ||
+  fail "second field in multi-field atomic domain was not atomic"
+[ "$(grep -c 'Ordering::SeqCst' "$test_build/phase25_atomic_multi_field.rs")" -ge 2 ] ||
+  fail "multi-field atomic domain did not retain one SeqCst total order"
+
+run_optimized_case phase25_atomic_invariant_fallback \
+  tests/phase25_atomic_invariant_fallback.moss '1'
+grep -F '// Moss backend plan: Pair = DirectMutex.' \
+  "$test_build/phase25_atomic_invariant_fallback.rs" >/dev/null ||
+  fail "two-field invariant handler did not fall back to locking"
+run_optimized_case phase25_atomic_effect_fallback \
+  tests/phase25_atomic_effect_fallback.moss "$(printf 'incremented\n1')"
+grep -F '// Moss backend plan: Counter = DirectMutex.' \
+  "$test_build/phase25_atomic_effect_fallback.rs" >/dev/null ||
+  fail "handler with echo did not fall back to locking"
+compile_optimized_case phase25_atomic_external_fallback \
+  tests/phase25_atomic_external_fallback.moss
+grep -F '// Moss backend plan: Counter = DirectMutex.' \
+  "$test_build/phase25_atomic_external_fallback.rs" >/dev/null ||
+  fail "handler with message, await, and echo did not fall back to locking"
+run_optimized_case phase25_atomic_float_fallback \
+  tests/phase25_atomic_float_fallback.moss '1.5'
+grep -F '// Moss backend plan: Gauge = DirectMutex.' \
+  "$test_build/phase25_atomic_float_fallback.rs" >/dev/null ||
+  fail "floating-point state was incorrectly lowered to atomics"
+
+compile_optimized_case phase25_atomic_contention tests/phase25_atomic_contention.moss
+grep -F '// Moss backend plan: Counter = DirectAtomic.' \
+  "$test_build/phase25_atomic_contention.rs" >/dev/null ||
+  fail "contention counter did not select atomic lowering"
+iteration=1
+while [ "$iteration" -le 10 ]; do
+  actual=$("$test_build/phase25_atomic_contention")
+  [ "$actual" = '2000 true true' ] ||
+    fail "atomic counter lost work on contention iteration $iteration"
+  iteration=$((iteration + 1))
+done
+
+# -O0 remains the semantic reference. Compare representative optimized paths
+# with independently generated baseline mailbox executables.
+for phase25_name in phase25_batching phase25_lock_coalesce phase25_rwlock \
+                    phase25_atomic_counter phase25_atomic_bool phase25_atomic_multi_field; do
+  "$compiler" -O0 "tests/$phase25_name.moss" \
+    -o "$test_build/${phase25_name}_o0.rs"
+  grep -F 'struct MossChannel<T> { state: Mutex<' \
+    "$test_build/${phase25_name}_o0.rs" >/dev/null ||
+    fail "$phase25_name -O0 output did not retain the mailbox reference lowering"
+  if grep -E 'Moss backend plan: .* = Direct' \
+      "$test_build/${phase25_name}_o0.rs" >/dev/null; then
+    fail "$phase25_name -O0 output selected an optimized direct representation"
+  fi
+  rustc -D warnings "$test_build/${phase25_name}_o0.rs" \
+    -o "$test_build/${phase25_name}_o0"
+  baseline_output=$("$test_build/${phase25_name}_o0")
+  optimized_output=$("$test_build/$phase25_name")
+  [ "$baseline_output" = "$optimized_output" ] ||
+    fail "$phase25_name produced different observable output under -O0 and -O"
+done
+for phase25_rust in phase25_batching phase25_lock_coalesce phase25_rwlock \
+                    phase25_atomic_counter phase25_atomic_bool \
+                    phase25_atomic_multi_field; do
+  if grep -F 'unsafe {' "$test_build/$phase25_rust.rs" >/dev/null; then
+    fail "$phase25_rust used unsafe code for a backend optimization"
+  fi
 done
 
 reject_source use_after_transfer examples/use_after_transfer.moss \

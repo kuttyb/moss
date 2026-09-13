@@ -1,0 +1,16 @@
+domain Catalog:
+  title: string = "draft"
+
+  fn Read() -> string:
+    reply title
+
+  fn Publish(next: string) -> string:
+    title = next
+    reply title
+
+fn main():
+  catalog = spawn Catalog()
+  before = await catalog.Read()
+  published = await catalog.Publish("stable")
+  after = await catalog.Read()
+  echo before, published, after

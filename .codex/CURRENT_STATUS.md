@@ -1,6 +1,6 @@
 # Moss current status
 
-Updated: 2026-09-12
+Updated: 2026-09-13
 
 ## Version and commits
 
@@ -11,6 +11,10 @@ Updated: 2026-09-12
 - The showcase/documentation checkpoint is built on `eecac49` and demonstrates the
   stabilized static duck-typing, named-trait, collection, pipeline, and domain syntax.
   It adds no ownership, borrow, move, optimizer, or runtime-dispatch semantics.
+- Phase 2 ownership/effect safety is present in the current history (`c5396c6` and
+  `58772f3`). The current Phase 2.5 checkpoint adds backend-only batching, explicit
+  domain-lowering plans, direct lock regions, RwLock specialization, and whole-domain
+  atomics without changing Moss source semantics.
 
 ## Approved semantics
 
@@ -62,7 +66,24 @@ Updated: 2026-09-12
 - Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
 - `--cluster=A,B` static placement for single-instance domain types, with one shared worker and ingress mailbox per cluster.
 - Statically selected `_shared` cross-thread calls and `_local` same-cluster calls. Cluster-member capabilities use zero-sized local reference types; local awaits dispatch directly and local one-way calls use a single-threaded queue without synchronization.
-- Optional `-Oshared-memory` / `-O` whole-program planning that promotes awaited-only, reply-only domains to direct `Arc<Mutex<DomainState>>` dispatch while generated Rust assertions retain the `Send` boundary.
+- `-Oshared-memory` / `-O` builds an explicit whole-program plan with `Mailbox`,
+  `DirectMutex`, `DirectRwLock`, `DirectAtomic`, and `ClusterLocal` domain
+  classifications plus separate batched-send and coalesced-lock region facts.
+- Adjacent proven-total, side-effect-free asynchronous sends to the same receiver
+  lower to one `send_batch` queue acquisition. `MossTracker::begin_n/end_n`
+  coalesces completion accounting and restores the full count after an all-or-none
+  enqueue failure.
+- Direct lock-backed handlers have separate `_locked` implementations and `_shared`
+  wrappers. A single unconditional `main` spawn with no alias, escape, return, nested
+  capability, or alternate caller can form a one-guard consecutive-await region.
+- Direct domains with useful pure state readers use `Arc<RwLock<State>>`; READ handlers
+  use shared guards, while WRITE handlers use exclusive guards. External effects,
+  uncertain analysis, stateless handlers, and effectively write-only domains retain
+  `Mutex`.
+- Entirely compatible integer/boolean domains lower to `AtomicI64`/`AtomicBool` with
+  `Ordering::SeqCst`. Loads, stores, add/subtract, boolean toggle, and scalar swap are
+  supported. Both one-way and awaited calls execute directly, and a fully atomic
+  program emits no mailbox, condition variable, mutex, or worker thread.
 - One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
@@ -80,20 +101,23 @@ Updated: 2026-09-12
 - `deepCopy()` and its cost warnings are approved but not implemented; no implicit copy is inserted.
 - The future ordinary `proc` parameter model is not implemented; top-level `fn` local functions are implemented. `self.Message(...)` remains queued communication.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
-- The additional awaited-only state-lock optimization is domain-wide and opt-in. It does not yet use profiles or a cost model.
+- Backend choices use deliberately small whole-program heuristics rather than profiles
+  or a cost model. `-O0` remains the unoptimized lock-backed mailbox reference.
 - Cluster configuration is type-wide and currently requires exactly one unconditional `main` spawn for every member.
 - Await-cycle checking is global and placement-independent; cluster planning relies on the language-level result.
 
 ## Known bugs and limitations
 
-- The lock-coalescing milestone adds a generated `MossSender::send_batch` path
-  that appends a contiguous batch under one mutex guard. Current Moss statement
-  lowering still emits individual sends; grouping adjacent source messages is
-  the next backend step.
-- Atomic state-field lowering remains intentionally deferred. Primitive fields
-  can use atomics only when a complete operation is independent of Moss's
-  serialized handler ordering; compound or multi-field updates must retain the
-  mutex.
+- Batching currently accepts mailbox payload forms proven total without user calls.
+  Broader interprocedural purity proofs are future optimizer work; ignored replies use
+  their ordinary generated one-shot channels inside the batch.
+- Lock coalescing is intentionally limited to adjacent awaits in `main` and a strict
+  single-spawn/no-escape/no-other-caller proof. General region ownership and
+  interprocedural exclusivity are not implemented.
+- Atomic lowering intentionally excludes floats, CAS loops, arbitrary expressions,
+  multi-action handlers, and cross-field invariants. One incompatible handler falls
+  the entire domain back to a coherent lock/mailbox representation; there is no hybrid
+  atomic/mailbox domain.
 
 - Static specialization currently covers method-constrained and trait-typed local
   functions in the implemented expression/call slice. Associated types, trait
@@ -106,8 +130,9 @@ Updated: 2026-09-12
 
 ## Tests run and results
 
-`make check` passed for the showcase checkpoint. The suite compiles ordinary,
-direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated
+`make check` passes for the Phase 2.5 checkpoint. The suite compiles ordinary,
+Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
+`rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
 boundary; compares behavior for checkout, object isolation, ignored replies, local and
 shared domain-reference messages, FIFO, and non-reentrancy; rejects invalid cluster
@@ -128,6 +153,14 @@ also execute under the regression harness: static duck typing, named traits, inf
 collections and methods, the `map |> filter |> map |> sum` dataflow shape, and the
 domain-backed mini application.
 
+Phase 2.5 regressions additionally prove same-receiver batching and sender order,
+different-receiver/effect barriers, batched tracker accounting/rollback, exclusive
+one-guard regions, multi-caller rejection, shared READ versus exclusive WRITE guards,
+integer and boolean atomics, mixed awaited/one-way mailbox elimination, multi-field
+SeqCst use, atomic request/reply copy boundaries, locking fallbacks for invariants and
+external effects, fully atomic runtime removal, atomic and read-heavy contention, and
+representative `-O0`/`-O` output parity.
+
 `make examples` passed, compiling every valid example (including the executable static
 trait and dataflow showcases in `examples/traits.moss` and
 `examples/functional_dataflow.moss`) with `-Oshared-memory`; the intentional
@@ -139,8 +172,10 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-1. Extend cluster placement from one instance per domain type to a static per-spawn identity plan.
-2. Benchmark lock-backed mailboxes, direct state locking, and clusters on representative workloads.
+1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
+   representative workloads.
+2. Extend cluster placement from one instance per domain type to a static per-spawn
+   identity plan.
 3. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
 4. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
 

@@ -1,0 +1,12 @@
+domain Register:
+  value = 7
+
+  fn Swap(next: int) -> int:
+    previous = value
+    value = next
+    reply previous
+
+fn main():
+  register = spawn Register()
+  previous = await register.Swap(9)
+  echo previous

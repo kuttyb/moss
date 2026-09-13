@@ -1,0 +1,20 @@
+domain Catalog:
+  title: string = "stable"
+
+  fn Read() -> string:
+    reply title
+
+domain Reader:
+  fn Run(catalog: Catalog):
+    count = 0
+    while count < 1000:
+      observed = await catalog.Read()
+      count = count + 1
+    echo "consistent"
+
+fn main():
+  catalog = spawn Catalog()
+  left = spawn Reader()
+  right = spawn Reader()
+  message left.Run(catalog)
+  message right.Run(catalog)

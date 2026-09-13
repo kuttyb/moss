@@ -1,0 +1,13 @@
+domain Pair:
+  left = 0
+  right = 0
+
+  fn Advance() -> int:
+    left = left + 1
+    right = right + 1
+    reply left
+
+fn main():
+  pair = spawn Pair()
+  value = await pair.Advance()
+  echo value

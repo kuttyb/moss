@@ -1,0 +1,26 @@
+domain Helper:
+  value = 1
+
+  fn Read() -> int:
+    reply value
+
+domain Audit:
+  fn Note(value: int):
+    echo "audit:", value
+
+domain Counter:
+  value = 0
+
+  fn Work(helper: Helper, audit: Audit) -> int:
+    amount = await helper.Read()
+    value = value + amount
+    message audit.Note(value)
+    echo "counter:", value
+    reply value
+
+fn main():
+  helper = spawn Helper()
+  audit = spawn Audit()
+  counter = spawn Counter()
+  result = await counter.Work(helper, audit)
+  echo "result:", result

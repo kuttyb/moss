@@ -1,0 +1,12 @@
+domain Counter:
+  value = 0
+
+  fn Increment() -> int:
+    value = value + 1
+    echo "incremented"
+    reply value
+
+fn main():
+  counter = spawn Counter()
+  value = await counter.Increment()
+  echo value

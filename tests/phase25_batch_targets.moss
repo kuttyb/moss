@@ -1,0 +1,10 @@
+domain Sink:
+  fn Record(value: int):
+    echo "record:", value
+
+fn main():
+  left = spawn Sink()
+  right = spawn Sink()
+  message left.Record(1)
+  message right.Record(2)
+  message left.Record(3)

@@ -1,6 +1,6 @@
 # Moss stays message based. The Rust backend represents the messages with
-# lock-backed shared-memory queues; -Oshared-memory can remove the request
-# queue for the awaited-only Counter domain.
+# lock-backed shared-memory queues; -Oshared-memory recognizes the complete
+# Counter as atomic and removes its request queue, worker, and state mutex.
 
 domain Counter:
   total = 0

@@ -1,0 +1,16 @@
+domain Flag:
+  enabled = false
+
+  fn Enable(value: bool) -> bool:
+    enabled = value
+    reply enabled
+
+  fn Toggle() -> bool:
+    enabled = not enabled
+    reply enabled
+
+fn main():
+  flag = spawn Flag()
+  first = await flag.Enable(true)
+  second = await flag.Toggle()
+  echo first, second

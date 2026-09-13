@@ -1,0 +1,13 @@
+fn observe(value: int) -> int:
+  echo "evaluate:", value
+  return value
+
+domain Sink:
+  fn Record(value: int):
+    echo "record:", value
+
+fn main():
+  sink = spawn Sink()
+  message sink.Record(1)
+  message sink.Record(observe(2))
+  message sink.Record(3)

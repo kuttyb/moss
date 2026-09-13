@@ -195,6 +195,15 @@ lowering while the frontend evolves. Such normalization is an implementation pla
 must preserve the source meanings above and must not make backend mechanisms observable
 in Moss.
 
+With optimization enabled, the backend may implement the same domain as a mailbox, a
+direct `Mutex`/`RwLock` state object, a set of `SeqCst` atomics, or a configured local
+cluster. It may also batch adjacent sends or reuse a proven-exclusive lock guard. These
+choices add no source category: `message`, `await`, and `reply` remain copy boundaries;
+handlers retain one valid serialized total order; and sender FIFO and non-reentrancy
+remain language rules. `-O0` is the ordinary mailbox reference lowering. Generated
+comments expose the selected plan for testing, but Rust locks, atomics, queues, and
+threads are not Moss semantics.
+
 ## Migration status and compatibility
 
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain

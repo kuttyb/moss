@@ -1,0 +1,11 @@
+domain Catalog:
+  title: string = "stable"
+
+  fn Read() -> string:
+    reply title
+
+fn main():
+  catalog = spawn Catalog()
+  first = await catalog.Read()
+  second = await catalog.Read()
+  echo first, second
