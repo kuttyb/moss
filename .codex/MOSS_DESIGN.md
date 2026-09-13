@@ -138,7 +138,26 @@ The source-level rules are:
 - Calling a reply-capable handler without `await` is allowed and means send the request but ignore its reply.
 - General expression nesting such as `1 + await worker.Compute()` is not supported in v0.2.
 
-The compiler builds a conservative await-dependency graph across every domain and handler. Dependencies reached through ordinary local function calls participate; asynchronous `message` sends do not. Every possible cycle is a compile-time error even when a runtime branch might avoid it. An indirect await target is accepted only when its possible domain set is statically bounded; otherwise the target is rejected. Cancellation, timeouts, and failure propagation are not defined in v0.2.
+Static await-target validation applies to every handler, local function, object method,
+and `main`, whether or not a domain handler reaches that code. The type environment is
+control-flow aware: it forks for `if`/`else` and merges at the join. A local binding is
+available as a domain reference after the join only when it exists on every incoming
+path and every path agrees on one concrete domain type. Divergent `Alpha`/`Beta`
+bindings are rejected; v0.2 has no union or domain-sum reference type.
+
+After target validation, the compiler builds a conservative await-dependency graph
+across every domain and handler. Dependencies reached through ordinary local function
+calls participate; asynchronous `message` sends do not. Every possible cycle is a
+compile-time error even when a runtime branch appears unreachable, and diagnostics
+identify the Moss line for each await edge in the cycle witness. Local call cycles are
+rejected first, which keeps interprocedural await traversal finite; memoization avoids
+repeated work. Adding recursion would require an explicit redesign of await-effect
+propagation.
+
+The global await DAG is also a shared-memory backend soundness invariant. A direct
+handler may hold its domain state lock across a nested await that acquires another
+domain lock, so global acyclicity prevents cyclic nested lock acquisition and lock-order
+inversion. Cancellation, timeouts, and failure propagation are not defined in v0.2.
 
 ### Local bindings and mutation
 
@@ -170,6 +189,10 @@ This section describes the current v0.2 backend. It is not a source-language con
 - Calls from outside a cluster use generated `_shared` methods and the lock-backed ingress mailbox. Calls between members are statically emitted as `_local` calls; there is no runtime cluster test. Cluster-member capabilities use zero-sized local reference types and convert to shared references only when they leave the cluster. Awaited local messages call the target handler directly. One-way local messages use a plain single-threaded `VecDeque` and are invoked after the current handler, preserving non-reentrancy.
 - Before a direct local await, the generated runtime drains older local messages for that target. This prevents the direct call from overtaking an earlier message while allowing unrelated domains' local work to remain queued.
 - Await-cycle rejection is a placement-independent language check. A program containing a possible cycle is rejected before either clustered or unclustered lowering.
+- A direct-shared handler currently retains its source-domain state lock while a nested
+  await completes, including the full request/reply latency of a mailbox-backed target.
+  This physically enforces the source domain's logical non-reentrancy and is correct,
+  but the potentially long lock hold is a future performance optimization concern.
 - Cluster state and the local queue use `RefCell` because only the cluster worker accesses them. Member-to-member dispatch contains no mutex, condition variable, atomic, or thread-safe channel operation; a handler that communicates outside its cluster still uses the shared path for that outbound call.
 - The generated tracker counts enqueued messages so `main` can wait for quiescence.
 - Every non-copy payload is cloned at a `message`, `await`, or `reply` boundary, including an existing binding or a projection. This is the explicit Moss value-copy boundary, not a hidden local copy.

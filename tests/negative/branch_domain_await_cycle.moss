@@ -1,0 +1,26 @@
+domain Left:
+  fn Start(right: Right, bypass: Bypass, flag: bool) -> int:
+    if flag:
+      target = right
+    else:
+      target = bypass
+    value = await target.Ping(self)
+    reply value
+
+  fn Pong() -> int:
+    reply 1
+
+domain Right:
+  fn Ping(left: Left) -> int:
+    value = await left.Pong()
+    reply value
+
+domain Bypass:
+  fn Ping(left: Left) -> int:
+    reply 0
+
+fn main():
+  left = spawn Left()
+  right = spawn Right()
+  bypass = spawn Bypass()
+  message left.Start(right, bypass, true)

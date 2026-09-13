@@ -1,0 +1,18 @@
+domain Alpha:
+  fn Ping() -> int:
+    reply 1
+
+domain Beta:
+  fn Ping() -> int:
+    reply 2
+
+fn main():
+  alpha = spawn Alpha()
+  beta = spawn Beta()
+  flag = true
+  if flag:
+    target = alpha
+  else:
+    target = beta
+
+  echo 0

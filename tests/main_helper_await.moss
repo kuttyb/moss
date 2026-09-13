@@ -1,0 +1,12 @@
+fn wait_for(worker: Worker) -> int:
+  value = await worker.Ping()
+  return value
+
+domain Worker:
+  fn Ping() -> int:
+    reply 9
+
+fn main():
+  worker = spawn Worker()
+  value = wait_for(worker)
+  echo value

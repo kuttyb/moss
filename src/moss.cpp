@@ -879,6 +879,8 @@ class Checker {
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
+    // Await boundedness is an ordinary well-formedness rule checked for every
+    // executable body above. Graph construction below only records domain edges.
     check_global_await_cycles();
   }
 
@@ -892,6 +894,9 @@ class Checker {
   std::unordered_map<string, Trait*> traits_;
   const ObjectType* current_object_ = nullptr;
   vector<Warning> warnings_;
+
+  using TypeEnv = std::unordered_map<string,string>;
+  using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
   [[noreturn]] void err(int line, const string& msg) const { throw CompileError(line, msg); }
 
@@ -1193,10 +1198,12 @@ class Checker {
         if (method.return_type && !valid_type(*method.return_type))
           err(method.line, "unknown result type '" + *method.return_type +
               "' in method '" + object.name + "." + method.name + "'");
-        infer_statement_expressions(method.body, env);
+        TypeEnv entry_env = env;
+        TypeEnv inferred_env = env;
+        infer_statement_expressions(method.body, inferred_env);
         for (const auto& s : method.body) {
           if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
-            auto result = inferred_expr_type(s.a, env);
+            auto result = inferred_expr_type(s.a, inferred_env);
             if (result) {
               if (!method.return_type) method.return_type = *result;
               else if (!same_type(*method.return_type, *result))
@@ -1206,7 +1213,7 @@ class Checker {
           }
         }
         if (method.result_expression) {
-          auto result = inferred_expr_type(*method.result_expression, env);
+          auto result = inferred_expr_type(*method.result_expression, inferred_env);
           if (result) {
             if (!method.return_type) method.return_type = *result;
             else if (!same_type(*method.return_type, *result))
@@ -1220,8 +1227,10 @@ class Checker {
             });
         if (!method.return_type && !has_value_return) method.return_type = "unit";
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
-        check_stmts(method.body, env, nullptr, nullptr, &method_function);
-        if (method.result_expression) check_expression(method.line, *method.result_expression, env);
+        TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
+                                        nullptr, &method_function);
+        if (method.result_expression)
+          check_expression(method.line, *method.result_expression, final_env);
         if (!method.return_type && has_value_return)
           err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -1287,10 +1296,12 @@ class Checker {
       if (!names.insert(param.name).second) err(f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
-    infer_statement_expressions(f.body, env);
-    check_stmts(f.body, env, nullptr, nullptr, &f);
+    TypeEnv entry_env = env;
+    TypeEnv inferred_env = env;
+    infer_statement_expressions(f.body, inferred_env);
+    env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
     OwnershipEnv ownership;
-    ownership.types = env;
+    ownership.types = std::move(entry_env);
     OwnershipEnv final_ownership = check_ownership(
         f.body, std::move(ownership), nullptr, nullptr);
     if (f.result_expression) {
@@ -1784,42 +1795,217 @@ class Checker {
     }
   }
 
+  static bool concrete_environment_type(const string& type) {
+    return !type.empty() && !starts_with(type, "_");
+  }
+
+  // This is the common control-flow join for inference, ordinary checking,
+  // local-call discovery, ownership type state, and await-edge discovery. A
+  // later pass must not recover a branch type that this join discarded.
+  TypeEnv merge_type_environments(const vector<TypeEnv>& paths, int line,
+                                  bool reject_conflicts) const {
+    if (paths.empty()) return {};
+    TypeEnv merged;
+    for (const auto& entry : paths.front()) {
+      const string& binding = entry.first;
+      string agreed = entry.second;
+      bool present_everywhere = true;
+      bool disagrees = false;
+      for (size_t index = 1; index < paths.size(); ++index) {
+        auto found = paths[index].find(binding);
+        if (found == paths[index].end()) {
+          present_everywhere = false;
+          break;
+        }
+        if (!same_type(agreed, found->second)) {
+          if (reject_conflicts && concrete_environment_type(agreed) &&
+              concrete_environment_type(found->second)) {
+            string left = canonical_type_name(agreed);
+            string right = canonical_type_name(found->second);
+            if (domains_.count(left) && domains_.count(right))
+              err(line, "binding '" + binding +
+                  "' has conflicting domain types across control-flow paths: " +
+                  left + " and " + right);
+            err(line, "binding '" + binding +
+                "' has conflicting concrete types across control-flow paths: " +
+                left + " and " + right);
+          }
+          disagrees = true;
+        }
+      }
+      if (present_everywhere)
+        merged[binding] = disagrees ? "_value" : canonical_type_name(agreed);
+    }
+    return merged;
+  }
+
+  void advance_type_environment(const Stmt& statement, TypeEnv& env,
+                                const vector<Stmt>& statements,
+                                bool record_semantic_types) const {
+    if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+        statement.kind == Stmt::Kind::Assign) {
+      if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
+        auto existing = env.find(statement.a);
+        if (auto spawned = spawn_domain(statement.b)) {
+          env[statement.a] = *spawned;
+        } else if (auto inferred = inferred_expr_type(statement.b, env)) {
+          env[statement.a] = canonical_type_name(*inferred);
+        } else if (statement.kind != Stmt::Kind::Assign || existing == env.end()) {
+          env[statement.a] = "_value";
+        }
+        if (record_semantic_types)
+          const_cast<Stmt&>(statement).semantic_type = env[statement.a];
+      } else {
+        string base, index_expression;
+        if (parse_index(statement.a, base, index_expression)) {
+          auto container = env.find(base);
+          auto value_type = inferred_expr_type(statement.b, env);
+          if (container != env.end() && value_type && container->second == "map") {
+            auto key_type = inferred_expr_type(index_expression, env);
+            if (key_type) {
+              container->second = "map[" + *key_type + "," + *value_type + "]";
+              if (record_semantic_types) {
+                for (auto& prior : const_cast<vector<Stmt>&>(statements))
+                  if (prior.a == base && prior.b == "Map()")
+                    prior.semantic_type = container->second;
+              }
+            }
+          } else if (container != env.end() && value_type &&
+                     (container->second == "queue" || container->second == "vector")) {
+            container->second += "[" + *value_type + "]";
+          }
+        }
+      }
+      return;
+    }
+
+    if (statement.kind == Stmt::Kind::AwaitMessage) {
+      auto receiver = env.find(statement.b);
+      if (receiver != env.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* handler = find_handler(*domain->second, statement.c))
+            if (handler->reply_type) env[statement.a] = *handler->reply_type;
+      }
+      return;
+    }
+
+    if (statement.kind == Stmt::Kind::Call && !statement.b.empty() &&
+        statement.b == "push" && statement.args.size() == 1) {
+      auto container = env.find(statement.a);
+      auto argument = inferred_expr_type(statement.args.front(), env);
+      if (container != env.end() && argument &&
+          (container->second == "vector" || container->second == "queue"))
+        container->second += "[" + *argument + "]";
+    }
+  }
+
+  void walk_type_environment_block(const vector<Stmt>& statements, size_t& index,
+                                   int level, TypeEnv& env,
+                                   const TypeEnvVisitor& visitor,
+                                   bool reject_conflicts,
+                                   bool record_join_types,
+                                   bool record_semantic_types) const {
+    while (index < statements.size()) {
+      const Stmt& statement = statements[index];
+      if (statement.indent < level) return;
+      if (statement.indent > level)
+        err(statement.line, "indentation jumps more than one block level");
+      if (statement.kind == Stmt::Kind::Else) return;
+
+      if (statement.kind == Stmt::Kind::If) {
+        visitor(statement, env);
+        TypeEnv incoming = env;
+        ++index;
+        TypeEnv then_env = incoming;
+        walk_type_environment_block(statements, index, level + 1, then_env,
+                                    visitor, reject_conflicts, record_join_types,
+                                    record_semantic_types);
+
+        vector<TypeEnv> paths;
+        paths.push_back(std::move(then_env));
+        if (index < statements.size() && statements[index].indent == level &&
+            statements[index].kind == Stmt::Kind::Else) {
+          ++index;
+          TypeEnv else_env = incoming;
+          walk_type_environment_block(statements, index, level + 1, else_env,
+                                      visitor, reject_conflicts, record_join_types,
+                                      record_semantic_types);
+          paths.push_back(std::move(else_env));
+        } else {
+          paths.push_back(std::move(incoming));
+        }
+        env = merge_type_environments(paths, statement.line, reject_conflicts);
+        if (record_join_types)
+          const_cast<Stmt&>(statement).joined_types = env;
+        continue;
+      }
+
+      if (statement.kind == Stmt::Kind::While) {
+        visitor(statement, env);
+        TypeEnv incoming = env;
+        ++index;
+        TypeEnv body_env = incoming;
+        walk_type_environment_block(statements, index, level + 1, body_env,
+                                    visitor, reject_conflicts, record_join_types,
+                                    record_semantic_types);
+        env = merge_type_environments({incoming, body_env}, statement.line,
+                                      reject_conflicts);
+        if (record_join_types)
+          const_cast<Stmt&>(statement).joined_types = env;
+        continue;
+      }
+
+      visitor(statement, env);
+      advance_type_environment(statement, env, statements, record_semantic_types);
+      ++index;
+    }
+  }
+
+  TypeEnv walk_type_environment(const vector<Stmt>& statements, TypeEnv env,
+                                const TypeEnvVisitor& visitor,
+                                bool reject_conflicts,
+                                bool record_join_types = false,
+                                bool record_semantic_types = false) const {
+    size_t index = 0;
+    walk_type_environment_block(statements, index, 0, env, visitor,
+                                reject_conflicts, record_join_types,
+                                record_semantic_types);
+    if (index != statements.size())
+      err(statements[index].line, "unexpected 'else' without matching 'if'");
+    return env;
+  }
+
   void infer_statement_expressions(const vector<Stmt>& statements,
                                    std::unordered_map<string,string>& env) {
-    for (const auto& statement : statements) {
+    TypeEnvVisitor infer_statement = [&](const Stmt& statement, const TypeEnv& current_env) {
       switch (statement.kind) {
         case Stmt::Kind::If:
         case Stmt::Kind::While:
-          constrain_constructor_fields(statement.line, statement.a, env);
+          constrain_constructor_fields(statement.line, statement.a, current_env);
           break;
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
         case Stmt::Kind::Assign:
-          constrain_constructor_fields(statement.line, statement.b, env);
-          if (statement.kind == Stmt::Kind::Assign && simple_identifier(statement.a)) {
-            if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
-            else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
-          } else if (statement.kind != Stmt::Kind::Assign) {
-            if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
-            else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
-          }
+          constrain_constructor_fields(statement.line, statement.b, current_env);
           break;
         case Stmt::Kind::Message:
         case Stmt::Kind::AwaitMessage:
         case Stmt::Kind::Call:
-          for (const auto& arg : statement.args) constrain_constructor_fields(statement.line, arg, env);
+          for (const auto& arg : statement.args)
+            constrain_constructor_fields(statement.line, arg, current_env);
           if (statement.kind == Stmt::Kind::Message || statement.kind == Stmt::Kind::AwaitMessage) {
             const string& receiver_name = statement.kind == Stmt::Kind::Message
                 ? statement.a : statement.b;
             const string& handler_name = statement.kind == Stmt::Kind::Message
                 ? statement.b : statement.c;
-            auto receiver = env.find(receiver_name);
-            if (receiver != env.end() && domains_.count(receiver->second)) {
+            auto receiver = current_env.find(receiver_name);
+            if (receiver != current_env.end() && domains_.count(receiver->second)) {
               auto* handler = find_handler(*domains_.at(receiver->second), handler_name);
               if (handler) {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
-                  auto actual = inferred_expr_type(statement.args[index], env);
+                  auto actual = inferred_expr_type(statement.args[index], current_env);
                   if (!actual) continue;
                   auto& parameter = handler->params[index];
                   if (parameter.type.empty()) parameter.type = *actual;
@@ -1831,18 +2017,11 @@ class Checker {
               }
             }
           }
-          if (statement.kind == Stmt::Kind::AwaitMessage) {
-            auto receiver = env.find(statement.b);
-            if (receiver != env.end() && domains_.count(receiver->second)) {
-              const Handler* handler = find_handler(*domains_.at(receiver->second), statement.c);
-              if (handler && handler->reply_type) env[statement.a] = *handler->reply_type;
-            }
-          }
           if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
             auto function = functions_.find(statement.a);
             if (function != functions_.end()) {
               for (size_t i = 0; i < statement.args.size() && i < function->second->params.size(); ++i) {
-                auto actual = inferred_expr_type(statement.args[i], env);
+                auto actual = inferred_expr_type(statement.args[i], current_env);
                 if (!actual) continue;
                 auto& parameter = function->second->params[i];
                 if (parameter.type.empty() && !function->second->generic &&
@@ -1860,19 +2039,22 @@ class Checker {
           }
           break;
         case Stmt::Kind::Echo:
-          for (const auto& arg : statement.args) constrain_constructor_fields(statement.line, arg, env);
+          for (const auto& arg : statement.args)
+            constrain_constructor_fields(statement.line, arg, current_env);
           break;
         case Stmt::Kind::Reply:
         case Stmt::Kind::Return:
-          if (!statement.a.empty()) constrain_constructor_fields(statement.line, statement.a, env);
+          if (!statement.a.empty())
+            constrain_constructor_fields(statement.line, statement.a, current_env);
           break;
         case Stmt::Kind::Raw:
-          constrain_constructor_fields(statement.line, statement.text, env);
+          constrain_constructor_fields(statement.line, statement.text, current_env);
           break;
         case Stmt::Kind::Else:
           break;
       }
-    }
+    };
+    env = walk_type_environment(statements, env, infer_statement, false);
   }
 
   void infer_object_fields() {
@@ -2808,39 +2990,24 @@ class Checker {
     return expressions;
   }
 
-  void update_graph_env(const Stmt& statement,
-                        std::unordered_map<string,string>& env) const {
-    if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-        statement.kind == Stmt::Kind::Assign) {
-      if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
-      else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
-    } else if (statement.kind == Stmt::Kind::AwaitMessage) {
-      auto receiver = env.find(statement.b);
-      if (receiver != env.end()) {
-        auto domain = domains_.find(canonical_type_name(receiver->second));
-        if (domain != domains_.end())
-          if (const Handler* handler = find_handler(*domain->second, statement.c))
-            if (handler->reply_type) env[statement.a] = *handler->reply_type;
-      }
-    }
-  }
-
   void collect_callable_edges(
       const vector<Stmt>& body, const std::optional<string>& result_expression,
-      std::unordered_map<string,string> env, const ObjectType* implicit_owner,
+      TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines) const {
-    for (const auto& statement : body) {
+    TypeEnvVisitor collect_statement = [&](const Stmt& statement,
+                                            const TypeEnv& current_env) {
       for (const auto& expression : statement_expressions(statement)) {
         vector<LocalCallSite> calls;
-        collect_local_call_sites(statement.line, expression, env, implicit_owner, calls);
+        collect_local_call_sites(statement.line, expression, current_env,
+                                 implicit_owner, calls);
         for (const auto& call : calls) {
           graph[source].insert(call.target);
           edge_lines.emplace(source + "\n" + call.target, statement.line);
         }
       }
-      update_graph_env(statement, env);
-    }
+    };
+    env = walk_type_environment(body, std::move(env), collect_statement, false);
     if (result_expression) {
       vector<LocalCallSite> calls;
       collect_local_call_sites(implicit_owner ? implicit_owner->line : 1,
@@ -2857,7 +3024,8 @@ class Checker {
     std::map<string,std::set<string>> graph;
     std::map<string,int> edge_lines;
     for (const auto& function : p_.functions) {
-      std::unordered_map<string,string> env;
+      graph["fn:" + function.name];
+      TypeEnv env;
       for (const auto& parameter : function.params)
         env[parameter.name] = parameter.type.empty()
             ? "_generic:" + parameter.name : parameter.type;
@@ -2866,7 +3034,8 @@ class Checker {
     }
     for (const auto& object : p_.objects) {
       for (const auto& method : object.methods) {
-        std::unordered_map<string,string> env;
+        graph["method:" + object.name + "." + method.name];
+        TypeEnv env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
@@ -2881,34 +3050,43 @@ class Checker {
     std::function<void(const string&)> visit = [&](const string& node) {
       state[node] = 1;
       stack.push_back(node);
-      for (const auto& next : graph[node]) {
-        if (state[next] == 0) visit(next);
-        else if (state[next] == 1) {
-          auto begin = std::find(stack.begin(), stack.end(), next);
-          std::ostringstream cycle;
-          for (auto at = begin; at != stack.end(); ++at) {
-            if (at != begin) cycle << " -> ";
-            cycle << callable_label(*at);
+      auto edges = graph.find(node);
+      if (edges != graph.end()) {
+        for (const auto& next : edges->second) {
+          if (state[next] == 0) visit(next);
+          else if (state[next] == 1) {
+            auto begin = std::find(stack.begin(), stack.end(), next);
+            std::ostringstream cycle;
+            for (auto at = begin; at != stack.end(); ++at) {
+              if (at != begin) cycle << " -> ";
+              cycle << callable_label(*at);
+            }
+            cycle << " -> " << callable_label(next);
+            int line = edge_lines.count(node + "\n" + next)
+                ? edge_lines.at(node + "\n" + next) : 1;
+            err(line, "recursive local call cycle: " + cycle.str() +
+                "; recursion is not supported in Phase 2");
           }
-          cycle << " -> " << callable_label(next);
-          int line = edge_lines.count(node + "\n" + next)
-              ? edge_lines.at(node + "\n" + next) : 1;
-          err(line, "recursive local call cycle: " + cycle.str() +
-              "; recursion is not supported in Phase 2");
         }
       }
       stack.pop_back();
       state[node] = 2;
     };
-    for (const auto& entry : graph)
-      if (state[entry.first] == 0) visit(entry.first);
+    // Freeze the roots before DFS. Recursive lookup is deliberately read-only,
+    // so call-graph traversal no longer depends on std::map insertion semantics.
+    vector<string> graph_nodes;
+    for (const auto& entry : graph) graph_nodes.push_back(entry.first);
+    for (const auto& node : graph_nodes)
+      if (state[node] == 0) visit(node);
   }
 
   void check_global_await_cycles() const {
-    std::map<string,std::set<string>> graph;
-    std::map<string,int> edge_lines;
+    struct AwaitDependency {
+      string target;
+      int line = 0;
+    };
+    std::map<string,vector<AwaitDependency>> graph;
     std::set<string> visited;
-    using TypeEnv = std::unordered_map<string,string>;
     std::function<void(const vector<Stmt>&, const std::optional<string>&,
                        TypeEnv, const ObjectType*, const string&)> visit_body;
     std::function<void(int, const string&, const TypeEnv&,
@@ -2968,29 +3146,44 @@ class Checker {
                      const std::optional<string>& result_expression,
                      TypeEnv env, const ObjectType* implicit_owner,
                      const string& source_domain) {
-      for (const auto& statement : body) {
+      TypeEnvVisitor visit_statement = [&](const Stmt& statement,
+                                            const TypeEnv& current_env) {
         if (statement.kind == Stmt::Kind::AwaitMessage) {
-          auto receiver = env.find(statement.b);
-          if (receiver == env.end() || starts_with(receiver->second, "_") ||
-              !domains_.count(canonical_type_name(receiver->second)))
-            err(statement.line, "await target '" + statement.b +
-                "' cannot be conservatively bounded to a finite set of domains");
-          string target = canonical_type_name(receiver->second);
+          const Domain* target = bounded_await_target(statement.b, current_env);
+          if (!target)
+            throw std::runtime_error(
+                "internal error: unvalidated await target reached cycle construction");
           if (!source_domain.empty()) {
-            graph[source_domain].insert(target);
-            edge_lines.emplace(source_domain + "\n" + target, statement.line);
+            auto& dependencies = graph[source_domain];
+            bool duplicate = std::any_of(
+                dependencies.begin(), dependencies.end(),
+                [&](const AwaitDependency& dependency) {
+                  return dependency.target == target->name &&
+                         dependency.line == statement.line;
+                });
+            if (!duplicate)
+              dependencies.push_back({target->name, statement.line});
           }
         }
         for (const auto& expression : statement_expressions(statement))
-          visit_expression(statement.line, expression, env, implicit_owner,
+          visit_expression(statement.line, expression, current_env, implicit_owner,
                            source_domain);
-        update_graph_env(statement, env);
-      }
+      };
+      env = walk_type_environment(body, std::move(env), visit_statement, true);
       if (result_expression)
         visit_expression(implicit_owner ? implicit_owner->line : 1,
                          *result_expression, env, implicit_owner, source_domain);
     };
 
+    // Local-call cycles are rejected before this pass. That keeps transitive
+    // await discovery finite and simple; `visited` still memoizes repeated
+    // specializations. If Moss gains recursion, await-effect propagation must
+    // be revisited explicitly rather than relying on this traversal shape.
+    //
+    // The resulting global DAG serves two soundness obligations. It prevents
+    // logical deadlock for serialized, non-reentrant domains, and it prevents
+    // cyclic nested state-lock acquisition in the direct shared-memory backend,
+    // whose handler may retain one domain lock while awaiting another domain.
     for (const auto& domain : p_.domains) {
       graph[domain.name];
       for (const auto& handler : domain.handlers) {
@@ -3005,30 +3198,39 @@ class Checker {
 
     std::map<string,int> state;
     vector<string> stack;
-    std::function<void(const string&)> visit = [&](const string& domain) {
+    vector<int> incoming_lines;
+    std::function<void(const string&, int)> visit =
+        [&](const string& domain, int incoming_line) {
       state[domain] = 1;
       stack.push_back(domain);
-      for (const auto& target : graph[domain]) {
-        if (state[target] == 0) visit(target);
-        else if (state[target] == 1) {
-          auto begin = std::find(stack.begin(), stack.end(), target);
-          std::ostringstream cycle;
-          for (auto at = begin; at != stack.end(); ++at) {
-            if (at != begin) cycle << " -> ";
-            cycle << *at;
+      incoming_lines.push_back(incoming_line);
+      auto dependencies = graph.find(domain);
+      if (dependencies != graph.end()) {
+        for (const auto& dependency : dependencies->second) {
+          if (state[dependency.target] == 0) {
+            visit(dependency.target, dependency.line);
+          } else if (state[dependency.target] == 1) {
+            auto begin = std::find(stack.begin(), stack.end(), dependency.target);
+            size_t first = static_cast<size_t>(
+                std::distance(stack.begin(), begin));
+            std::ostringstream witness;
+            witness << "await cycle detected:";
+            for (size_t index = first; index + 1 < stack.size(); ++index) {
+              witness << "\n  " << stack[index] << " --await line "
+                      << incoming_lines[index + 1] << "--> " << stack[index + 1];
+            }
+            witness << "\n  " << domain << " --await line "
+                    << dependency.line << "--> " << dependency.target;
+            err(dependency.line, witness.str());
           }
-          cycle << " -> " << target;
-          int line = edge_lines.count(domain + "\n" + target)
-              ? edge_lines.at(domain + "\n" + target) : 1;
-          err(line, "await dependency cycle: " + cycle.str() +
-              "; every possible await cycle is rejected in Phase 2");
         }
       }
+      incoming_lines.pop_back();
       stack.pop_back();
       state[domain] = 2;
     };
     for (const auto& domain : p_.domains)
-      if (state[domain.name] == 0) visit(domain.name);
+      if (state[domain.name] == 0) visit(domain.name, 0);
   }
 
   void infer_effects() {
@@ -3384,16 +3586,24 @@ class Checker {
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         require_available(s.line, s.a, env);
         bool is_if = s.kind == Stmt::Kind::If;
+        OwnershipEnv incoming = env;
         ++index;
-        OwnershipEnv body = env;
+        OwnershipEnv body = incoming;
         check_ownership_block(statements, index, level + 1, body, current_domain, current_handler);
         if (is_if && index < statements.size() && statements[index].indent == level &&
             statements[index].kind == Stmt::Kind::Else) {
           ++index;
-          OwnershipEnv alternative = env;
+          OwnershipEnv alternative = incoming;
           check_ownership_block(statements, index, level + 1, alternative,
                                 current_domain, current_handler);
+          env = incoming;
+          env.types = merge_type_environments(
+              {body.types, alternative.types}, s.line, false);
           merge_moved(env, alternative);
+        } else {
+          env = incoming;
+          env.types = merge_type_environments(
+              {incoming.types, body.types}, s.line, false);
         }
         merge_moved(env, body);
         continue;
@@ -3454,9 +3664,11 @@ class Checker {
             ++index;
             break;
           }
-          if (simple_identifier(s.a) && env.types.count(s.a)) {
-            // Assignment reinitializes the target, including a binding that
-            // was consumed on an earlier path.
+          if (simple_identifier(s.a)) {
+            if (source_type) env.types[s.a] = *source_type;
+            else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+            // Assignment creates or reinitializes the target, including a
+            // binding that was consumed on an earlier path.
             env.moved.erase(s.a);
           }
           ++index;
@@ -3801,153 +4013,178 @@ class Checker {
     }
   }
 
-  void check_stmts(const vector<Stmt>& ss, std::unordered_map<string,string> env,
-                   const Domain* current, const Handler* current_handler,
-                   const Function* current_function = nullptr) {
-    int prev_indent = 0;
-    for (size_t i = 0; i < ss.size(); ++i) {
-      const auto& s = ss[i];
-      if (s.indent > prev_indent + 1) err(s.line, "indentation jumps more than one block level");
-      prev_indent = s.indent;
+  const Domain* bounded_await_target(const string& receiver,
+                                     const TypeEnv& env) const {
+    auto binding = env.find(receiver);
+    if (binding == env.end() || starts_with(binding->second, "_")) return nullptr;
+    auto domain = domains_.find(canonical_type_name(binding->second));
+    return domain == domains_.end() ? nullptr : domain->second;
+  }
 
-      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var ||
-          s.kind == Stmt::Kind::Assign) {
-        if (s.kind == Stmt::Kind::Assign) {
-          if (auto sd = spawn_domain(s.b)) {
-            if (!domains_.count(*sd)) err(s.line, "unknown domain in spawn: " + *sd);
-            if (current || current_function)
-              err(s.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
-            env[s.a] = *sd;
-            continue;
-          }
-          check_expression(s.line, s.b, env);
-          if (simple_identifier(s.a) && !env.count(s.a)) {
-            auto inferred = inferred_expr_type(s.b, env);
-            if (!inferred && trim(s.b).find('[') == 0) err(s.line, "heterogeneous or unresolved collection element type");
-            env[s.a] = inferred.value_or("_value");
-            const_cast<Stmt&>(s).semantic_type = env[s.a];
-          } else {
-            string base, idx;
-            if (parse_index(s.a, base, idx)) {
-              auto bt = env.find(base);
-              auto rt = inferred_expr_type(s.b, env);
-              if (bt != env.end() && rt && bt->second == "map") {
-                auto kt = inferred_expr_type(idx, env);
-                if (!kt) err(s.line, "cannot infer map key type");
-                bt->second = "map[" + *kt + "," + *rt + "]";
-                for (auto& prior : const_cast<vector<Stmt>&>(ss)) if (prior.a == base && prior.b == "Map()") prior.semantic_type = bt->second;
-              } else if (bt != env.end() && rt && (bt->second == "queue" || bt->second == "vector")) {
-                bt->second += "[" + *rt + "]";
-              }
-            }
-          }
-          continue;
-        }
-        if (auto sd = spawn_domain(s.b)) {
-          if (!domains_.count(*sd)) err(s.line, "unknown domain in spawn: " + *sd);
+  const Domain& require_bounded_await_target(int line, const string& receiver,
+                                             const TypeEnv& env) const {
+    const Domain* domain = bounded_await_target(receiver, env);
+    if (!domain)
+      err(line, "await target '" + receiver +
+          "' cannot be statically and conservatively bounded to one concrete domain");
+    return *domain;
+  }
+
+  TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
+                      const Domain* current, const Handler* current_handler,
+                      const Function* current_function = nullptr) {
+    TypeEnvVisitor check_statement = [&](const Stmt& statement,
+                                         const TypeEnv& current_env) {
+      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign) {
+        if (auto spawned = spawn_domain(statement.b)) {
+          if (!domains_.count(*spawned))
+            err(statement.line, "unknown domain in spawn: " + *spawned);
           if (current || current_function)
-            err(s.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
-          env[s.a] = *sd;
-        } else {
-          auto source = env.find(trim(s.b));
-          if (source != env.end() && domains_.count(source->second))
-            env[s.a] = source->second;
-          else
-          env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
-          const_cast<Stmt&>(s).semantic_type = env[s.a];
-          check_expression(s.line, s.b, env);
+            err(statement.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
+          return;
         }
-      }
-
-      if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While)
-        check_expression(s.line, s.a, env);
-
-      if (s.kind == Stmt::Kind::Message) {
-        check_call(s.line, s.a, s.b, s.args, env);
-        for (const auto& arg : s.args) check_expression(s.line, arg, env);
-      }
-
-      if (s.kind == Stmt::Kind::AwaitMessage) {
-        if (current && s.b == "self")
-          err(s.line, "a domain cannot await itself because handlers are non-reentrant");
-        const Handler* h = check_call(s.line, s.b, s.c, s.args, env);
-        for (const auto& arg : s.args) check_expression(s.line, arg, env);
-        if (!h->reply_type) {
-          auto dit = domains_.find(env.at(s.b));
-          err(s.line, "cannot await one-way handler '" + dit->second->name + "." + s.c + "'");
+        check_expression(statement.line, statement.b, current_env);
+        if (statement.kind == Stmt::Kind::Assign &&
+            simple_identifier(statement.a) && !current_env.count(statement.a)) {
+          auto inferred = inferred_expr_type(statement.b, current_env);
+          if (!inferred && starts_with(trim(statement.b), "["))
+            err(statement.line, "heterogeneous or unresolved collection element type");
         }
-        if (!s.declaration && env.count(s.a) &&
-            !same_type(env.at(s.a), *h->reply_type))
-          err(s.line, "await assignment to '" + s.a + "' has type '" + env.at(s.a) +
-              "', expected '" + *h->reply_type + "'");
-        env[s.a] = *h->reply_type;
+        if (statement.kind == Stmt::Kind::Assign) {
+          string base, index_expression;
+          if (parse_index(statement.a, base, index_expression)) {
+            auto container = current_env.find(base);
+            auto value_type = inferred_expr_type(statement.b, current_env);
+            if (container != current_env.end() && value_type &&
+                container->second == "map" &&
+                !inferred_expr_type(index_expression, current_env))
+              err(statement.line, "cannot infer map key type");
+          }
+        }
+        return;
       }
 
-      if (s.kind == Stmt::Kind::Call) {
-        if (!s.b.empty()) {
-          auto receiver = env.find(s.a);
-          if (receiver != env.end() && domains_.count(receiver->second))
-            err(s.line, "naked cross-domain call '" + s.a + "." + s.b +
-                "' requires 'message' or 'await'");
-          auto collection = receiver != env.end() && (receiver->second == "vector" || receiver->second == "queue" || receiver->second == "map" || starts_with(receiver->second, "vector[") || starts_with(receiver->second, "queue[") || starts_with(receiver->second, "map["));
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+        check_expression(statement.line, statement.a, current_env);
+        return;
+      }
+
+      if (statement.kind == Stmt::Kind::Message) {
+        check_call(statement.line, statement.a, statement.b, statement.args,
+                   current_env);
+        for (const auto& argument : statement.args)
+          check_expression(statement.line, argument, current_env);
+        return;
+      }
+
+      if (statement.kind == Stmt::Kind::AwaitMessage) {
+        if (current && statement.b == "self")
+          err(statement.line,
+              "a domain cannot await itself because handlers are non-reentrant");
+        const Domain& target = require_bounded_await_target(
+            statement.line, statement.b, current_env);
+        const Handler* handler = check_call(statement.line, statement.b,
+                                            statement.c, statement.args,
+                                            current_env);
+        for (const auto& argument : statement.args)
+          check_expression(statement.line, argument, current_env);
+        if (!handler->reply_type)
+          err(statement.line, "cannot await one-way handler '" + target.name + "." +
+              statement.c + "'");
+        if (!statement.declaration && current_env.count(statement.a) &&
+            !same_type(current_env.at(statement.a), *handler->reply_type))
+          err(statement.line, "await assignment to '" + statement.a +
+              "' has type '" + current_env.at(statement.a) + "', expected '" +
+              *handler->reply_type + "'");
+        return;
+      }
+
+      if (statement.kind == Stmt::Kind::Call) {
+        if (!statement.b.empty()) {
+          auto receiver = current_env.find(statement.a);
+          if (receiver != current_env.end() &&
+              domains_.count(canonical_type_name(receiver->second)))
+            err(statement.line, "naked cross-domain call '" + statement.a + "." +
+                statement.b + "' requires 'message' or 'await'");
+          bool collection = receiver != current_env.end() &&
+              (receiver->second == "vector" || receiver->second == "queue" ||
+               receiver->second == "map" || starts_with(receiver->second, "vector[") ||
+               starts_with(receiver->second, "queue[") ||
+               starts_with(receiver->second, "map["));
           if (!collection) {
-            if (receiver != env.end() && objects_.count(canonical_type_name(receiver->second))) {
+            if (receiver != current_env.end() &&
+                objects_.count(canonical_type_name(receiver->second))) {
               vector<string> argument_types;
-              for (const auto& arg : s.args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
-              if (!resolve_method(canonical_type_name(receiver->second), s.b, argument_types))
-                err(s.line, "no matching method '" + receiver->second + "." + s.b + "' for supplied arguments");
-            } else if (receiver != env.end() && current_function &&
+              for (const auto& argument : statement.args)
+                argument_types.push_back(
+                    inferred_expr_type(argument, current_env).value_or(""));
+              if (!resolve_method(canonical_type_name(receiver->second), statement.b,
+                                  argument_types))
+                err(statement.line, "no matching method '" + receiver->second + "." +
+                    statement.b + "' for supplied arguments");
+            } else if (receiver != current_env.end() && current_function &&
                        (starts_with(receiver->second, "_generic:") ||
                         traits_.count(receiver->second))) {
               bool constrained = std::any_of(
                   current_function->constraints.begin(),
                   current_function->constraints.end(), [&](const Constraint& constraint) {
                     return constraint.kind == ConstraintKind::Method &&
-                           constraint.subject == s.a && constraint.detail == s.b &&
-                           constraint.arity == s.args.size();
+                           constraint.subject == statement.a &&
+                           constraint.detail == statement.b &&
+                           constraint.arity == statement.args.size();
                   });
               if (!constrained)
-                err(s.line, "unresolved statically dispatched method '" + s.a + "." +
-                    s.b + "'");
+                err(statement.line, "unresolved statically dispatched method '" +
+                    statement.a + "." + statement.b + "'");
             } else {
-              err(s.line, "local member calls are not implemented; use a top-level function");
+              err(statement.line,
+                  "local member calls are not implemented; use a top-level function");
             }
           }
         } else {
-          check_function_call(s.line, s.a, s.args, env);
+          check_function_call(statement.line, statement.a, statement.args,
+                              current_env);
         }
-        if (!s.b.empty() && s.b == "push" && s.args.size() == 1) {
-          auto it = env.find(s.a); auto at = inferred_expr_type(s.args[0], env);
-          if (it != env.end() && at && (it->second == "vector" || it->second == "queue")) it->second += "[" + *at + "]";
-        }
-        if (!s.b.empty()) check_expression(s.line, s.text, env);
-        for (const auto& arg : s.args) check_expression(s.line, arg, env);
+        if (!statement.b.empty())
+          check_expression(statement.line, statement.text, current_env);
+        for (const auto& argument : statement.args)
+          check_expression(statement.line, argument, current_env);
+        return;
       }
 
-      if (s.kind == Stmt::Kind::Echo) {
-        for (const auto& arg : s.args) check_expression(s.line, arg, env);
+      if (statement.kind == Stmt::Kind::Echo) {
+        for (const auto& argument : statement.args)
+          check_expression(statement.line, argument, current_env);
+        return;
       }
 
-      if (s.kind == Stmt::Kind::Reply) {
+      if (statement.kind == Stmt::Kind::Reply) {
         if (!current || !current_handler || !current_handler->reply_type)
-          err(s.line, "reply is only valid in a handler declaring '-> Type'");
-        auto actual = inferred_expr_type(s.a, env);
+          err(statement.line,
+              "reply is only valid in a handler declaring '-> Type'");
+        auto actual = inferred_expr_type(statement.a, current_env);
         if (!actual)
-          err(s.line, "cannot infer the type of this reply expression; add an annotation or use a statically typed value");
+          err(statement.line, "cannot infer the type of this reply expression; add an annotation or use a statically typed value");
         if (!same_type(*actual, *current_handler->reply_type))
-          err(s.line, "reply type mismatch: handler expects '" + *current_handler->reply_type +
-              "', expression has type '" + *actual + "'");
-        check_expression(s.line, s.a, env);
+          err(statement.line, "reply type mismatch: handler expects '" +
+              *current_handler->reply_type + "', expression has type '" + *actual +
+              "'");
+        check_expression(statement.line, statement.a, current_env);
+        return;
       }
 
-      if (s.kind == Stmt::Kind::Return && current_handler && !s.a.empty())
-        err(s.line, "message handlers cannot return values; use 'reply value' in a handler declaring '-> Type'");
-      if (s.kind == Stmt::Kind::Return && !current_handler && !current_function && !s.a.empty())
-        err(s.line, "main cannot return a value");
-      if (s.kind == Stmt::Kind::Return && current_function && !s.a.empty()) {
-        auto actual = inferred_expr_type(s.a, env);
+      if (statement.kind == Stmt::Kind::Return && current_handler &&
+          !statement.a.empty())
+        err(statement.line, "message handlers cannot return values; use 'reply value' in a handler declaring '-> Type'");
+      if (statement.kind == Stmt::Kind::Return && !current_handler &&
+          !current_function && !statement.a.empty())
+        err(statement.line, "main cannot return a value");
+      if (statement.kind == Stmt::Kind::Return && current_function &&
+          !statement.a.empty()) {
+        auto actual = inferred_expr_type(statement.a, current_env);
         if (!actual)
-          err(s.line, "cannot infer the type of this return expression in function '" +
+          err(statement.line, "cannot infer the type of this return expression in function '" +
               current_function->name + "'");
         bool trait_result_match = current_function->return_type &&
             traits_.count(canonical_type_name(*current_function->return_type)) &&
@@ -3955,13 +4192,15 @@ class Checker {
             trait_conforms(*actual, *current_function->return_type);
         if (current_function->return_type &&
             !starts_with(*current_function->return_type, "_") &&
-            !starts_with(*actual, "_method_") &&
-            !trait_result_match &&
+            !starts_with(*actual, "_method_") && !trait_result_match &&
             !same_type(*actual, *current_function->return_type))
-          err(s.line, "function '" + current_function->name + "' returns '" + *actual +
-              "' but is annotated '" + *current_function->return_type + "'");
+          err(statement.line, "function '" + current_function->name + "' returns '" +
+              *actual + "' but is annotated '" + *current_function->return_type + "'");
       }
-    }
+    };
+
+    return walk_type_environment(statements, std::move(env), check_statement,
+                                 true, true, true);
   }
 };
 
@@ -6795,7 +7034,8 @@ class Generator {
                  const Domain* d, const Handler* current_handler, const string& reply_sender,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool direct_reply,
-                 std::optional<size_t> cluster_context, bool in_function) {
+                 std::optional<size_t> cluster_context, bool in_function,
+                 std::set<string> join_assignments = {}) {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -6807,13 +7047,31 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::If: {
+          vector<string> joined_bindings;
+          for (const auto& entry : s.joined_types)
+            if (!types.count(entry.first) && !starts_with(entry.second, "_"))
+              joined_bindings.push_back(entry.first);
+          std::sort(joined_bindings.begin(), joined_bindings.end());
+          for (const auto& binding : joined_bindings) {
+            const string& type = s.joined_types.at(binding);
+            backend_comment(o, (base + level) * 4,
+                            "CONTROL-FLOW JOIN: binding has one definite static type on every path");
+            o << indent(level) << "let mut " << binding << ": "
+              << (cluster_context ? local_rust_type(type, *cluster_context)
+                                  : rust_type(type))
+              << ";\n";
+            locals.insert(binding);
+            types[binding] = type;
+          }
           o << indent(level) << "if " << expr(s.a, d, locals, &types) << " {\n";
           ++i;
           auto child_locals = locals;
           auto child_types = types;
+          auto child_join_assignments = join_assignments;
+          child_join_assignments.insert(joined_bindings.begin(), joined_bindings.end());
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                     child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function);
+                    cluster_context, in_function, child_join_assignments);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
@@ -6823,10 +7081,14 @@ class Generator {
             auto else_types = types;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                       else_locals, else_types, base, in_handler, direct_reply,
-                      cluster_context, in_function);
+                      cluster_context, in_function, child_join_assignments);
             o << indent(level) << "}\n";
           } else {
             o << "\n";
+          }
+          for (const auto& entry : s.joined_types) {
+            if (starts_with(entry.second, "_")) continue;
+            types[entry.first] = entry.second;
           }
           break;
         }
@@ -6837,7 +7099,7 @@ class Generator {
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                     child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function);
+                    cluster_context, in_function, join_assignments);
           o << indent(level) << "}\n";
           break;
         }
@@ -6856,10 +7118,11 @@ class Generator {
         }
         case Stmt::Kind::Assign: {
           if (auto sd = CheckerSpawn(s.b)) {
+            bool existing_binding = locals.count(s.a);
             if (auto cluster = plan_.cluster_for(*sd)) {
               backend_comment(o, (base + level) * 4,
                               "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
-              o << indent(level) << "let " << s.a << " = "
+              o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = "
                 << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
             } else {
               DomainLowering lowering = plan_.lowering_for(*sd);
@@ -6875,7 +7138,8 @@ class Generator {
               else
                 backend_comment(o, (base + level) * 4,
                                 "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
-              o << indent(level) << "let " << s.a << " = spawn_" << snake_case(*sd)
+              o << indent(level) << (existing_binding ? "" : "let ") << s.a
+                << " = spawn_" << snake_case(*sd)
                 << "(__tracker.clone());\n";
             }
             locals.insert(s.a);
@@ -6971,6 +7235,7 @@ class Generator {
         }
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
+          bool joined_assignment = join_assignments.erase(s.a) != 0;
           auto sd = CheckerSpawn(s.b);
           if (sd) {
             if (auto cluster = plan_.cluster_for(*sd)) {
@@ -6989,8 +7254,10 @@ class Generator {
               backend_comment(o, (base + level) * 4,
                               "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
             }
-            o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
-              << s.a << " = ";
+            o << indent(level);
+            if (!joined_assignment)
+              o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
+            o << s.a << " = ";
             if (auto cluster = plan_.cluster_for(*sd))
               o << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
             else
@@ -6999,8 +7266,10 @@ class Generator {
           } else {
             auto source = types.find(trim(s.b));
             bool domain_capability = source != types.end() && domains_.count(source->second);
-            o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
-              << s.a << " = " << expr(s.b, d, locals, &types);
+            o << indent(level);
+            if (!joined_assignment)
+              o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
+            o << s.a << " = " << expr(s.b, d, locals, &types);
             if (domain_capability) o << ".clone()";
             o << ";\n";
             auto generated_type = generated_expr_type(s.b, &types);

@@ -213,6 +213,10 @@ revised: widget 2 true
 verified: widget 2 true
 archive: widget 2 true'
 run_case await_main tests/await_main.moss 'main: true'
+run_case main_helper_await tests/main_helper_await.moss '9'
+run_case branch_same_domain_type tests/branch_same_domain_type.moss '7'
+run_optimized_case branch_same_domain_type_optimized \
+  tests/branch_same_domain_type.moss '7'
 run_case sequential_awaits tests/sequential_awaits.moss 'sequential: true'
 run_case ignored_reply tests/ignored_reply.moss 'ignored reply completed'
 run_case primitive_assignment tests/primitive_assignment.moss 'primitive: 1 1'
@@ -569,9 +573,53 @@ warning_stderr="$test_build/large_payload_warning.stderr"
 grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
   "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
 
-reject_case direct_await_cycle "await dependency cycle: Left -> Right -> Left"
-reject_case transitive_await_cycle "await dependency cycle: First -> Second -> Third -> First"
-reject_case function_await_cycle "await dependency cycle: Left -> Right -> Left"
+reject_case branch_divergent_domain_types \
+  "binding 'target' has conflicting domain types across control-flow paths: Alpha and Beta"
+reject_case branch_domain_await_cycle \
+  "binding 'target' has conflicting domain types across control-flow paths: Right and Bypass"
+reject_case unbounded_await_handler \
+  "await target 'target' cannot be statically and conservatively bounded to one concrete domain"
+reject_case unbounded_await_main_helper \
+  "await target 'target' cannot be statically and conservatively bounded to one concrete domain"
+
+reject_case direct_await_cycle "await cycle detected:"
+grep -F 'Left --await line 3--> Right' \
+  "$test_build/direct_await_cycle.stderr" >/dev/null ||
+  fail "direct cycle witness omitted the Left await source site"
+grep -F 'Right --await line 11--> Left' \
+  "$test_build/direct_await_cycle.stderr" >/dev/null ||
+  fail "direct cycle witness omitted the Right await source site"
+
+reject_case transitive_await_cycle "await cycle detected:"
+grep -F 'First --await line 3--> Second' \
+  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
+  fail "transitive cycle witness omitted the First await source site"
+grep -F 'Second --await line 11--> Third' \
+  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
+  fail "transitive cycle witness omitted the Second await source site"
+grep -F 'Third --await line 16--> First' \
+  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
+  fail "transitive cycle witness omitted the Third await source site"
+
+reject_case function_await_cycle "await cycle detected:"
+grep -F 'Left --await line 2--> Right' \
+  "$test_build/function_await_cycle.stderr" >/dev/null ||
+  fail "helper-hidden cycle witness omitted the helper await source site"
+grep -F 'Right --await line 15--> Left' \
+  "$test_build/function_await_cycle.stderr" >/dev/null ||
+  fail "helper-hidden cycle witness omitted the returning await source site"
+
+reject_case repeated_await_cycle_edges "await cycle detected:"
+grep -F 'Left --await line 3--> Right' \
+  "$test_build/repeated_await_cycle_edges.stderr" >/dev/null ||
+  fail "repeated-edge cycle witness did not report the edge used by DFS"
+grep -F 'Right --await line 12--> Left' \
+  "$test_build/repeated_await_cycle_edges.stderr" >/dev/null ||
+  fail "repeated-edge cycle witness omitted its closing edge"
+if grep -F 'Left --await line 4--> Right' \
+    "$test_build/repeated_await_cycle_edges.stderr" >/dev/null; then
+  fail "repeated-edge cycle witness reported an unrelated duplicate await site"
+fi
 reject_case recursive_function "recursive local call cycle: recurse -> recurse"
 reject_case mutually_recursive_functions "recursive local call cycle: first -> second -> first"
 reject_case write_read_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
@@ -582,7 +630,13 @@ reject_case double_consume_alias "conflicting accesses to value 'item' in call t
 reject_case nontrivial_field_move "value 'packet' was transferred"
 reject_case branch_join_consume "value 'item' was transferred"
 reject_source example_await_cycle examples/errors/await_cycle.moss \
-  "await dependency cycle: Coordinator -> Worker -> Coordinator"
+  "await cycle detected:"
+grep -F 'Coordinator --await line 6--> Worker' \
+  "$test_build/example_await_cycle.stderr" >/dev/null ||
+  fail "unreachable-branch cycle witness omitted its helper await site"
+grep -F 'Worker --await line 21--> Coordinator' \
+  "$test_build/example_await_cycle.stderr" >/dev/null ||
+  fail "unreachable-branch cycle witness omitted its closing await site"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
@@ -593,7 +647,7 @@ reject_cluster cluster_duplicate_spawn tests/shared_memory_contention.moss 'Coun
 reject_cluster cluster_unknown_domain examples/counter.moss 'Counter,Missing' \
   'unknown domain in cluster: Missing'
 reject_cluster cluster_await_cycle tests/cluster_await_cycle.moss 'Left,Right' \
-  'await dependency cycle: Left -> Right -> Left'
+  'await cycle detected:'
 
 compile_cluster_case clustered_checkout examples/checkout.moss 'Checkout,Inventory,Payments'
 clustered_checkout_output=$("$test_build/clustered_checkout")
@@ -716,7 +770,8 @@ grep -F 'Moss await failed: Worker.Maybe completed without a reply' "$shared_fal
 
 reject_case await_one_way "cannot await one-way handler 'Worker.Notify'"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
-reject_case await_unknown_receiver "unknown message receiver 'missing'"
+reject_case await_unknown_receiver \
+  "await target 'missing' cannot be statically and conservatively bounded to one concrete domain"
 reject_case await_unknown_handler "domain Worker has no message handler 'Missing'"
 reject_case await_wrong_arity 'message Worker.Work expects 1 arguments, got 0'
 reject_case self_await 'a domain cannot await itself because handlers are non-reentrant'

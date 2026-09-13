@@ -19,6 +19,10 @@ struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
   bool is_mutable = false; bool declaration = true; string semantic_type;
+  // Types that remain definite after this control-flow statement. Concrete
+  // entries let the backend hoist bindings created on every incoming path.
+  // This is checker-to-backend metadata, never Moss source syntax.
+  std::unordered_map<string,string> joined_types;
 };
 struct Method {
   string owner, name;

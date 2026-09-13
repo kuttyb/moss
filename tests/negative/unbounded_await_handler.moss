@@ -1,0 +1,15 @@
+domain Worker:
+  fn Ping() -> int:
+    reply 1
+
+domain Caller:
+  fn Start(worker: Worker, flag: bool) -> int:
+    if flag:
+      target = worker
+    value = await target.Ping()
+    reply value
+
+fn main():
+  worker = spawn Worker()
+  caller = spawn Caller()
+  message caller.Start(worker, true)

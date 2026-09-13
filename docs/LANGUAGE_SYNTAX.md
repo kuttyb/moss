@@ -198,6 +198,14 @@ completion without re-entrancy, sender-to-receiver message order is preserved, r
 reply handlers require an explicit reply, ownership boundaries are checked statically,
 and await blocks the requesting domain according to the current runtime contract.
 
+Every awaited receiver must resolve to one concrete domain type during ordinary static
+checking, including awaits in helpers used only by `main`. Type environments fork at an
+`if`/`else` and merge afterward. A binding created on both paths remains available only
+when both paths assign the same concrete type; different domain types are rejected, and
+a binding created on only one path is not definite after the join. Moss does not infer a
+domain union from branch order. Await dependency discovery still visits every branch,
+including a syntactically false branch.
+
 ## Rust boundary
 
 Moss source does not expose lifetimes, borrow annotations, `Arc`, `Mutex`, `Send`,
@@ -219,6 +227,13 @@ handlers retain one valid serialized total order; and sender FIFO and non-reentr
 remain language rules. `-O0` is the ordinary mailbox reference lowering. Generated
 comments expose the selected plan for testing, but Rust locks, atomics, queues, and
 threads are not Moss semantics.
+
+The global await DAG is required by both the source concurrency model and direct
+shared-memory lowering. It prevents logical non-reentrant await deadlocks and cyclic
+nested acquisition of domain state locks. A direct-shared handler currently keeps its
+source state lock while awaiting a mailbox-backed domain, so the lock can remain held
+for the target's full request/reply latency. This is semantically correct and recorded
+as a future performance concern rather than changed by the current backend.
 
 ## Migration status and compatibility
 

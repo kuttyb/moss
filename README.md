@@ -225,7 +225,23 @@ for a directly corresponding declaration or statement. `Moss backend plan` recor
 each domain classification, while `Moss backend` marks atomic handlers, shared reads,
 coalesced guards, batched enqueues, and cluster-local calls.
 
-Moss builds a conservative whole-program await-dependency graph and rejects every possible domain cycle at compile time. Await dependencies propagate through ordinary local function calls; asynchronous `message` sends do not add dependency edges. An await target must resolve to a conservatively bounded domain set. Cancellation, timeouts, and failure propagation are not implemented.
+Moss validates every `await` target in handlers, local helpers, and `main`, including
+helpers reached only from `main`. A local domain-reference binding must have one
+concrete static domain type after every control-flow join: assigning `Alpha` on one
+branch and `Beta` on another is rejected rather than treated as a union or resolved by
+branch order. Await traversal remains conservative, so an await inside `if false` still
+contributes a dependency.
+
+The compiler then builds a whole-program domain await DAG and rejects every possible
+cycle. Dependencies propagate through ordinary non-recursive local function calls;
+asynchronous `message` sends do not add edges. Cycle diagnostics show the Moss source
+line for each await edge in the witness. Besides preventing logical deadlock under
+serialized, non-reentrant domain semantics, this global acyclicity prevents cyclic
+nested domain-lock acquisition in direct shared-memory lowering. A direct handler can
+currently retain domain A's state lock for the full request/reply latency while it
+awaits a mailbox-backed domain B. That is semantically correct—A remains occupied—but
+is a future lock-hold-latency optimization opportunity. Cancellation, timeouts, and
+failure propagation are not implemented.
 
 ## Domain clustering
 

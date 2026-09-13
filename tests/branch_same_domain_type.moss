@@ -1,0 +1,21 @@
+domain Worker:
+  fn Ping() -> int:
+    reply 7
+
+domain Router:
+  fn Route(first: Worker, second: Worker, flag: bool) -> int:
+    if flag:
+      target = first
+    else:
+      target = second
+
+    value = await target.Ping()
+    reply value
+
+fn main():
+  first = spawn Worker()
+  second = spawn Worker()
+  router = spawn Router()
+  flag = true
+  value = await router.Route(first, second, flag)
+  echo value

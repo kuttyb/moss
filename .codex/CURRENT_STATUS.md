@@ -17,6 +17,10 @@ Updated: 2026-09-13
   RwLock specialization, and whole-domain atomics without changing Moss source
   semantics. The freeze checkpoint closes the final `-O0`/atomic equivalence gap
   by defining and explicitly lowering wrapping `i64` arithmetic.
+- The post-Phase-2.5 await-DAG correctness checkpoint makes local type environments
+  branch-aware, rejects divergent concrete domain references at joins, validates
+  bounded await targets in all executable code, and reports per-edge source sites in
+  cycle witnesses. It does not change Moss concurrency semantics or begin Phase 4.
 
 ## Approved semantics
 
@@ -96,7 +100,19 @@ Updated: 2026-09-13
 - One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
-- Whole-program await-dependency checking rejects every possible cycle, including dependencies reached through ordinary local functions. Asynchronous sends do not create await edges.
+- One indentation-aware type-environment walker now serves ordinary statement checking,
+  domain-reference inference, local-call discovery, and await-target resolution. It
+  forks `if`/`else` environments, merges only types present on every relevant path, and
+  rejects conflicting concrete types. Definite same-type branch creation is carried to
+  Rust lowering through explicit join metadata.
+- Static bounded-target validation covers handlers, methods, all local functions, and
+  `main`, including helpers reached only from `main`. Whole-program await-dependency
+  checking separately constructs source-domain edges, visits every branch
+  conservatively, and rejects every possible cycle reached through ordinary local
+  functions. Asynchronous sends do not create await edges.
+- Await-cycle witnesses identify the source line used for every dependency edge;
+  repeated logical edges retain their actual source sites rather than relying on one
+  arbitrary map insertion.
 - Direct and mutual recursion are rejected. Compiler-internal READ/WRITE/CONSUME summaries drive local call lowering, and conflicting aliases at a call site are Moss compile-time errors.
 - Copyable field projections retain a read effect; moving a nontrivial field consumes its containing value. Consuming method receivers lower by value rather than as shared receiver references.
 - Generated Rust compilation with warnings denied in the test suite.
@@ -114,6 +130,9 @@ Updated: 2026-09-13
   or a cost model. `-O0` remains the unoptimized lock-backed mailbox reference.
 - Cluster configuration is type-wide and currently requires exactly one unconditional `main` spawn for every member.
 - Await-cycle checking is global and placement-independent; cluster planning relies on the language-level result.
+- The global await DAG also prevents cyclic nested domain-lock acquisition in direct
+  shared-memory lowering. A direct handler may hold its source state lock while its
+  nested await acquires a target lock.
 
 ## Known bugs and limitations
 
@@ -135,6 +154,10 @@ Updated: 2026-09-13
 
 - Rust type errors may still surface when Moss inference lacks enough source information; normal Phase 2 ownership and conflicting-call-access errors are diagnosed by Moss.
 - General await expressions, spawning from handlers, cancellation, timeouts, and failure propagation are not implemented.
+- A direct-shared domain that awaits a mailbox-backed domain currently retains its
+  state lock for the target's full request/reply latency. This preserves logical
+  occupation/non-reentrancy but can increase lock-hold latency; changing it requires a
+  future equivalence proof.
 - The compiler remains a single C++17 source file with a deliberately small type checker.
 
 ## Tests run and results
@@ -161,6 +184,13 @@ heterogeneous collections, and naked cross-domain calls. The five showcase progr
 also execute under the regression harness: static duck typing, named traits, inferred
 collections and methods, the `map |> filter |> map |> sum` dataflow shape, and the
 domain-backed mini application.
+
+Await regressions additionally accept same-concrete-domain branch joins, reject
+different-domain joins and one-branch-only targets, validate an await helper reached
+only from `main`, retain unreachable-branch dependencies, and cover direct, transitive,
+helper-hidden, and repeated-edge cycles. Cycle assertions require the correct Moss line
+for every witness edge. All of these cases run alongside the unchanged Phase 2
+ownership and Phase 2.5 backend suites.
 
 Phase 2.5 regressions additionally prove same-receiver batching and sender order,
 different-receiver/effect barriers, batched tracker accounting/rollback, exclusive
