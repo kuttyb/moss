@@ -1,0 +1,24 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+domain Sink:
+  stored = 0
+
+  fn Store(value: Int):
+    stored = value
+
+  fn Stored() -> Int:
+    reply stored
+
+domain Calculator:
+  fn Total(values: Vector) -> Int:
+    reply values |> map(double) |> sum
+
+proc main():
+  sink = spawn Sink()
+  calculator = spawn Calculator()
+  values = [1, 2, 3]
+  message sink.Store(values |> map(double) |> sum)
+  stored = await sink.Stored()
+  calculated = await calculator.Total(values)
+  echo stored, calculated

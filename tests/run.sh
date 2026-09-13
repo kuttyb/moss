@@ -190,19 +190,28 @@ run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
 run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
 run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
 run_phase4_differential phase4_functional tests/phase4_functional.moss \
-  "$(printf '6 -1 5 11 16\n12 36 6 2 true true\n60 10 -2\n0 0 false true 7\n-9223372036854775808')"
+  "$(printf '6 -1 5 11 16\n12 36 6 2 true true\ntrue false\n60 10 -2\n0 0 false true 7\n-9223372036854775808\n7')"
 run_phase4_differential phase4_fusion tests/phase4_fusion.moss '36'
 run_phase4_differential phase4_map_map tests/phase4_map_map.moss '3 7'
 run_phase4_differential phase4_object tests/phase4_object_smoke.moss '12'
-run_phase4_differential phase4_hof tests/phase4_hof_smoke.moss '6'
+run_phase4_differential phase4_bound_method tests/phase4_bound_method.moss '24'
+run_phase4_differential phase4_callable_specialization \
+  tests/phase4_callable_specialization.moss '6 8'
+run_phase4_differential phase4_hof tests/phase4_hof_smoke.moss '6 4'
 run_phase4_differential phase4_effect_order tests/phase4_effect_smoke.moss \
   "$(printf 'first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\ntotal 6')"
 run_phase4_differential phase4_failure_barrier \
   tests/phase4_failure_barrier.moss '5'
 run_phase4_differential phase4_domain_barrier \
   tests/phase4_domain_barrier.moss '12'
+run_phase4_differential phase4_message_barrier \
+  tests/phase4_message_barrier.moss '2 1 1'
+run_phase4_differential phase4_await_barrier \
+  tests/phase4_await_barrier.moss '6'
 run_phase4_differential phase4_materialized_message \
   tests/phase4_materialized_message.moss '12'
+run_phase4_differential phase4_terminal_boundary \
+  tests/phase4_terminal_boundary.moss '12 12'
 
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_fusion_o0.rs" >/dev/null ||
@@ -236,12 +245,31 @@ grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_domain_barrier_optimized.rs" >/dev/null ||
   fail 'domain-state observation did not stop fusion'
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_message_barrier_optimized.rs" >/dev/null ||
+  fail 'message callback did not stop fusion'
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_await_barrier_optimized.rs" >/dev/null ||
+  fail 'await callback did not stop fusion'
 grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
   "$test_build/phase4_hof_optimized.rs" >/dev/null ||
   fail 'static higher-order helper did not erase its compile-time callable parameter'
+[ "$(grep -c '^fn __moss_specialize_transform_' \
+    "$test_build/phase4_hof_optimized.rs")" -eq 2 ] ||
+  fail 'higher-order helper was not separately specialized for two callable identities'
 if grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)' "$test_build/phase4_hof_optimized.rs"; then
   fail 'static higher-order helper emitted runtime callable machinery'
 fi
+grep -F '.apply(__moss_value_0)' \
+  "$test_build/phase4_bound_method_optimized.rs" >/dev/null ||
+  fail 'bound method stage did not lower to a statically selected concrete call'
+if grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)' \
+    "$test_build/phase4_bound_method_optimized.rs"; then
+  fail 'bound method stage emitted runtime callable machinery'
+fi
+[ "$(grep -c '^fn __moss_specialize_double_' \
+    "$test_build/phase4_callable_specialization_optimized.rs")" -eq 2 ] ||
+  fail 'functional callable did not retain distinct Int and Float specializations'
 
 "$compiler" -O --dump-functional-ir --check tests/phase4_fusion.moss \
   >"$test_build/phase4_functional_ir.first"
@@ -256,6 +284,13 @@ grep -F 'Map vector[int] callable=normalize PURE span=10:1 materialization=elimi
 grep -F 'decision: fused stages 1-4; intermediates eliminated' \
   "$test_build/phase4_functional_ir.first" >/dev/null ||
   fail 'functional IR dump omitted its fusion decision'
+"$compiler" -O --dump-functional-ir --check tests/phase4_bound_method.moss \
+  >"$test_build/phase4_bound_method.ir"
+grep -F 'callable=scaler.apply PURE+CAPTURE_READ' \
+  "$test_build/phase4_bound_method.ir" >/dev/null ||
+  fail 'functional IR omitted the statically bound method capture/effect summary'
+grep -F 'captures=scaler' "$test_build/phase4_bound_method.ir" >/dev/null ||
+  fail 'functional IR omitted the bound receiver capture'
 "$compiler" -O --explain-fusion --check tests/phase4_effect_smoke.moss \
   >"$test_build/phase4_effect.explain"
 grep -F 'fusion stopped: external/I/O effect' \
@@ -271,6 +306,16 @@ grep -F 'fusion stopped: possible failure ordering' \
 grep -F 'fusion stopped: observable domain READ' \
   "$test_build/phase4_domain.explain" >/dev/null ||
   fail 'fusion explanation omitted the domain-state barrier'
+"$compiler" -O --explain-fusion --check tests/phase4_message_barrier.moss \
+  >"$test_build/phase4_message.explain"
+grep -F 'fusion stopped: message send' \
+  "$test_build/phase4_message.explain" >/dev/null ||
+  fail 'fusion explanation omitted the message barrier'
+"$compiler" -O --explain-fusion --check tests/phase4_await_barrier.moss \
+  >"$test_build/phase4_await.explain"
+grep -F 'fusion stopped: await' \
+  "$test_build/phase4_await.explain" >/dev/null ||
+  fail 'fusion explanation omitted the await barrier'
 run_case mini_application_showcase examples/mini_application.moss "$(printf 'queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73')"
 duck_specializations=$(grep -c '^fn __moss_specialize_describe_' \
   "$test_build/duck_typed_methods.rs")
@@ -895,10 +940,16 @@ reject_case functional_unresolved_callable \
   "unresolved functional callable 'not_declared'"
 reject_case functional_reduce_mismatch \
   "reduce callable returns 'bool'; expected accumulator type 'int'"
+reject_case functional_reduce_initial_reuse \
+  "value 'initial' was transferred"
 reject_case functional_consume_element \
   "functional callable 'take' requires CONSUME access to an element"
 reject_case functional_mutable_capture \
   "functional placeholder cannot mutate captured binding 'captured'"
+reject_case functional_mutating_bound_method \
+  "functional bound method 'accumulator.add' cannot mutate or consume captured binding 'accumulator'"
+reject_case functional_consume_capture \
+  "functional placeholder requires CONSUME access to captured binding 'captured'"
 reject_case functional_unbounded_callable \
   "callable identity 'candidate' is not statically bounded to one function"
 reject_case functional_unbounded_hof \
@@ -909,6 +960,8 @@ reject_case functional_recursion \
   "recursive local call cycle: recurse -> recurse"
 reject_case functional_hof_recursion \
   "recursive local call cycle: recurse -> recurse"
+reject_case functional_await_cycle \
+  "await cycle detected:"
 reject_case functional_callback_alias \
   "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
 

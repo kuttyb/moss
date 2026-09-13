@@ -40,8 +40,9 @@ legacy `var value: int = 0` spelling remains accepted during migration.
 - A top-level `fn` is an ordinary local function. Expression-bodied functions use
   `fn square(x) = x * x`; block functions return their final expression. Parameter and
   result annotations are optional only when static inference resolves them.
-- Pipelines using `|>` are source syntax for nested local calls. The current frontend
-  normalizes them before Rust lowering; optimization or fusion is a future backend choice.
+- Pipelines using `|>` are typed functional/dataflow expressions. They retain their
+  source stages in compiler IR until Moss either materializes a collection or lowers a
+  terminal computation. They are not runtime Rust iterator or callable objects.
 
 - A domain owns mutable state and declares message handlers. Domain state is only accessed while that domain is executing a handler.
 - Message handler parameter annotations may be omitted when whole-program calls infer one
@@ -170,6 +171,48 @@ Direct assignment of a uniquely owned nontrivial local transfers ownership. The 
 
 Local functions and object methods are non-recursive in Phase 2. READ, WRITE, and CONSUME effects are compiler-internal summaries used to lower temporary reads, mutations, and ownership transfers. At each local call, overlapping storage may be read more than once, but mutation or transfer may not overlap any other access. No effect or ownership annotation is part of Moss syntax.
 
+### Functional/dataflow expressions
+
+The implemented Phase 4 operations are:
+
+- `map(callable)` and `filter(callable)`, which logically produce new collections;
+- `sum`, `count`, `any`/`any(callable)`, and `all`/`all(callable)` terminals;
+- `reduce(initial, callable)`, whose explicit initial value also defines empty-input
+  behavior.
+
+Their reference semantics are eager and ordered. A complete transformation stage runs in
+source-element order and logically materializes before the next stage begins. `map` and
+`filter` READ their source by default and do not mutate or consume it. Empty `sum` and
+`count` yield zero, empty `any` yields false, empty `all` yields true, and empty `reduce`
+yields its initial accumulator. Integer accumulation follows Moss's wrapping `Int`
+semantics. A nontrivial bound `reduce` initializer transfers into the reduction and is
+unavailable afterward. This lets the empty-input result own the original accumulator
+without an implicit clone; primitive initializers retain ordinary copy behavior.
+
+Functional callables are closed statically. The implemented forms are named functions,
+bound READ-only instance methods such as `scaler.apply`, statically resolved
+placeholder-method calls such as `_.score()`, and `_` placeholder expressions that may
+read immutable local captures. An untyped higher-order parameter is
+valid only when each use specializes to a concrete callable identity at its call site.
+There is no boxed function value, `dyn Fn`, runtime method lookup, dynamic fallback, or
+new source-level generic category.
+
+Ordinary ownership rules remain authoritative inside a pipeline. The input collection is
+normally READ and remains usable afterward. A stage's parameter and captures retain their
+inferred READ/WRITE/CONSUME requirements; Moss rejects a consuming element operation or
+mutable capture when current container semantics cannot express it without an implicit
+copy or unsafe alias. A transformation pipeline cannot cross `message`, `await`, or
+`reply` directly; a programmer must first bind its materialized Moss collection. A
+terminal already produces a concrete scalar and may use the ordinary explicit copy
+boundary. No boundary transports a lazy or compiler-internal pipeline value.
+
+Observable callable effects are distinct from ownership effects. The compiler records
+local capture reads, local mutation, domain reads and writes, messages, awaits, external
+or I/O effects, unresolved effects, and possible failure. Fusion is allowed only when
+changing eager stage-at-a-time execution into element-at-a-time execution cannot make any
+of those effects or their failure order observable. Missing an optimization is valid;
+reordering without proof is not.
+
 ## Rust lowering
 
 This section describes the current v0.2 backend. It is not a source-language contract unless the same rule is stated above.
@@ -201,6 +244,19 @@ This section describes the current v0.2 backend. It is not a source-language con
 - An ignored reply creates the same one-shot cell and immediately drops its receiver.
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 - By default, generated await sites use a lazy `unwrap_or_else` failure path that reports a missing reply. `--no-await-error-handling` is an explicit backend opt-in that replaces those checks with unchecked extraction for a future supervision-tree runtime; it is unsafe if a reply is absent or its channel closes.
+- Before Rust emission, Phase 4 constructs typed functional/dataflow nodes for `Source`,
+  `Map`, `Filter`, `Reduce`, `Sum`, `Count`, `Any`, and `All`. Nodes retain a stable ID,
+  Moss source span, concrete input/output types, callable identity, ownership and
+  observable-effect summaries, logical materialization, and optimization provenance.
+- `-O0` lowers pipelines as explicit eager stage loops and materializations, preserving
+  the language reference execution. `-O` fuses a proven-safe chain into one simple loop
+  and eliminates only its otherwise logical intermediate collections. Moss performs this
+  transformation before Rust generation; it does not delegate the pipeline to a Rust
+  `.iter().map().filter()` chain.
+- A fused loop retains the IDs of every source stage it represents. The deterministic
+  `--dump-functional-ir` and `--explain-fusion` diagnostics expose types, spans, effects,
+  materialization decisions, provenance, and barriers for compiler development and
+  regression tests.
 
 The current compiler enforces direct-assignment and nontrivial-projection transfer, conflicting call-access rejection, branch/join consumption, and explicit communication-boundary copying with a Moss-level ownership/effect pass. It does not yet implement `deepCopy()` or general reference/alias facilities.
 
@@ -227,6 +283,12 @@ Read-only parameters do not consume the caller's value; `var` parameters permit 
 
 ## Deferred future work
 
+- Automatic SIMD, threading, and GPU/accelerator lowering are deferred. Phase 4 records
+  element independence, determinism, captures, reduction compatibility, and topology so
+  later planners can prove such choices without changing the functional source contract.
+- General lambdas, runtime function values, user-facing effect annotations, initializer-
+  free reduction, and a functional cost model are deferred. Phase 4 does not add a
+  dynamic callable runtime or exception/failure semantics.
 - General immutable cross-domain sharing (`share`, `freeze`, or source-level reference counting) is deferred because of memory retention and leak concerns.
 - Arena handles and `ref object` identity semantics are deferred because unreachable graphs, cycles, and small handles retaining large graphs need a clear reclamation model.
 - Persistent versions and `revise` with structural sharing are deferred for memory-retention evaluation. This is distinct from copy-on-write and is not implemented.

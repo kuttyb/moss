@@ -1,0 +1,21 @@
+domain Worker:
+  seen = 0
+
+  fn Record():
+    seen = seen + 1
+
+  fn Seen() -> Int:
+    reply seen
+
+fn notify(worker: Worker) -> Int:
+  message worker.Record()
+  return 1
+
+proc main():
+  first = spawn Worker()
+  second = spawn Worker()
+  workers = [first, second]
+  pipeline_total = workers |> map(notify) |> sum
+  first_seen = await first.Seen()
+  second_seen = await second.Seen()
+  echo pipeline_total, first_seen, second_seen

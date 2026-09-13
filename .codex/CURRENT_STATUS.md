@@ -20,7 +20,11 @@ Updated: 2026-09-13
 - The post-Phase-2.5 await-DAG correctness checkpoint makes local type environments
   branch-aware, rejects divergent concrete domain references at joins, validates
   bounded await targets in all executable code, and reports per-edge source sites in
-  cycle witnesses. It does not change Moss concurrency semantics or begin Phase 4.
+  cycle witnesses. It does not change Moss concurrency semantics.
+- Phase 4 functional/dataflow compilation is implemented at core checkpoint `829b1a9`.
+  Pipelines now have typed, provenance-carrying compiler IR; observable callable effects
+  are inferred separately from ownership; `-O0` preserves eager stage semantics; and
+  `-O` fuses proven-safe chains into explicit loops without a Rust iterator runtime.
 
 ## Approved semantics
 
@@ -36,10 +40,10 @@ Updated: 2026-09-13
 
 ## Implemented features
 
-- The compiler now has extracted `src/ast.hpp`, `src/constraints.hpp`, and
-  `src/diagnostics.hpp` modules. `moss.cpp` still contains the parser, checker,
-  ownership, optimizer, and Rust generator; the extraction is an incremental
-  architectural checkpoint rather than a completed module split.
+- The compiler now has extracted `src/ast.hpp`, `src/constraints.hpp`,
+  `src/diagnostics.hpp`, and `src/functional_ir.hpp` modules. `moss.cpp` still contains
+  most parser, checker, ownership, optimizer, and Rust-generator implementation; the
+  extraction is incremental rather than a completed module split.
 - Type declarations retain method bodies as children of their method nodes in the
   AST, including nested control-flow blocks.
 - Concrete methods are checked with receiver fields and typed parameters in scope;
@@ -67,7 +71,33 @@ Updated: 2026-09-13
   element types, including the concrete result annotation needed by strict Rust.
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
-- Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
+- Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn`
+  functions, typed functional pipeline expressions, explicit `message`, and
+  assignment-style `await`.
+- Phase 4 recognizes `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and
+  `all` as functional/dataflow operations rather than opaque nested calls. Static type
+  propagation verifies element, predicate, accumulator, and terminal result types before
+  Rust generation, including defined empty-input behavior. A nontrivial reduce initializer
+  transfers into the terminal result rather than being copied.
+- Functional stages accept named functions, bound READ-only instance methods,
+  `_` placeholder expressions with immutable captures, and statically resolved method
+  placeholders. Untyped higher-order callable
+  parameters are closed at each call site, recorded as specialization dependencies, and
+  erased from generated Rust; unbounded callable identity is rejected.
+- `ObservableEffects` independently records local capture reads/mutation, domain
+  reads/writes, message, await, I/O/external effects, unresolved effects, and possible
+  failure. Transitive summaries conservatively govern fusion without changing
+  READ/WRITE/CONSUME ownership inference.
+- The functional IR retains stable pipeline/node identities, source line and stage,
+  concrete input/output types, callable identity, captures, ownership/effect summaries,
+  logical materialization, and optimization provenance. It also records element
+  independence, determinism, and reduction compatibility for future planners.
+- `-O0` emits explicit eager stage loops and logical intermediate collections. `-O`
+  fuses safe map/map, map/filter/map, and terminal-reduction chains into one explicit
+  loop, preserving order and wrapping integer accumulation while eliminating intermediate
+  vectors. Effectful or possibly failing stages retain eager lowering.
+- Deterministic `--dump-functional-ir` and `--explain-fusion` output exposes stage types,
+  effects, spans, materialization decisions, retained provenance, and fusion barriers.
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
   constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
@@ -107,7 +137,8 @@ Updated: 2026-09-13
   Rust lowering through explicit join metadata.
 - Static bounded-target validation covers handlers, methods, all local functions, and
   `main`, including helpers reached only from `main`. Whole-program await-dependency
-  checking separately constructs source-domain edges, visits every branch
+  checking separately constructs source-domain edges, follows statically resolved
+  functional callbacks, visits every branch
   conservatively, and rejects every possible cycle reached through ordinary local
   functions. Asynchronous sends do not create await edges.
 - Await-cycle witnesses identify the source line used for every dependency edge;
@@ -117,8 +148,9 @@ Updated: 2026-09-13
 - Copyable field projections retain a read effect; moving a nontrivial field consumes its containing value. Consuming method receivers lower by value rather than as shared receiver references.
 - Generated Rust compilation with warnings denied in the test suite.
 - Executable showcases cover method-based duck typing, two concrete named-trait
-  implementations, inferred Vector/Map/Queue use, the future dataflow pipeline shape,
-  and a small static job-scheduler application with domains, messages, and awaits.
+  implementations, inferred Vector/Map/Queue use, an executable optimized functional
+  dataflow pipeline, and a small static job-scheduler application with domains, messages,
+  and awaits.
 
 ## Partially implemented or unimplemented
 
@@ -133,6 +165,14 @@ Updated: 2026-09-13
 - The global await DAG also prevents cyclic nested domain-lock acquisition in direct
   shared-memory lowering. A direct handler may hold its source state lock while its
   nested await acquires a target lock.
+- Functional collection ownership is intentionally conservative. A callback that would
+  WRITE or CONSUME a nontrivial element, a mutable capture, or a nontrivial `filter`
+  result that would require an implicit copy is rejected rather than cloned or made
+  unsafe.
+- Functional fusion uses correctness-first effect rules rather than profitability data.
+  Automatic SIMD, threading, GPU lowering, layout/storage reuse, general lambdas,
+  runtime callable values, user effect annotations, and initializer-free reduction are
+  not implemented.
 
 ## Known bugs and limitations
 
@@ -158,11 +198,12 @@ Updated: 2026-09-13
   state lock for the target's full request/reply latency. This preserves logical
   occupation/non-reentrancy but can increase lock-hold latency; changing it requires a
   future equivalence proof.
-- The compiler remains a single C++17 source file with a deliberately small type checker.
+- Most compiler implementation remains in one C++17 translation unit with a deliberately
+  compact semantic/type checker and extracted data headers.
 
 ## Tests run and results
 
-`make check` passes for the frozen Phase 2.5 checkpoint. The suite compiles ordinary,
+`make check` passes with Phase 4 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
 Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
 `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
@@ -207,6 +248,20 @@ Both generated programs are compiled with `rustc -C overflow-checks=yes -D warni
 and must match. It also checks ordinary wrapping multiplication and division,
 integer `sum`, and a concretely specialized duck-typed integer operation.
 
+Phase 4 regressions run representative functional programs through both `-O0` and `-O`,
+compile both generated Rust programs with `rustc -D warnings`, compare their exact output,
+and cover named, bound-method, and placeholder `map`, `filter`, map/map, map/filter/map,
+every terminal, immutable capture, statically specialized higher-order helpers, empty
+input, object-method placeholders, eager callback output order, and wrapping reduction.
+Generated-code checks require one explicit loop and no intermediate vector or Rust iterator chain for fusible
+pipelines. Separate I/O, possible-failure, domain-state, `message`, and `await` cases must
+retain eager lowering. Terminal scalars can use message/reply boundaries directly, while
+transformation collections must first materialize. Deterministic IR/explanation checks
+cover types, spans, materialization, provenance, and barrier reasons. Negative tests require Moss diagnostics for invalid
+predicates/callables/reductions, consuming elements, mutable capture, unbounded callable
+identity, pipeline domain-boundary escape, higher-order recursion, and callback alias
+violations.
+
 `make examples` passed, compiling every valid example (including the executable static
 trait and dataflow showcases in `examples/traits.moss` and
 `examples/functional_dataflow.moss`) with `-Oshared-memory`; the intentional
@@ -218,14 +273,17 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phase 2.5 is frozen; none of the following work belongs in this checkpoint.
+Phase 2, Phase 2.5, and the Phase 4 functional core are frozen at their respective
+checkpoints; none of the following is implicitly authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
    representative workloads.
-2. Extend cluster placement from one instance per domain type to a static per-spawn
+2. Evaluate Phase 4 profitability and later SIMD/thread/GPU plans using the preserved
+   independence, reduction, capture, and effect facts without changing eager semantics.
+3. Extend cluster placement from one instance per domain type to a static per-spawn
    identity plan.
-3. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
-4. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
+4. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
+5. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
 
 ## Open design questions requiring Kutty's decision
 

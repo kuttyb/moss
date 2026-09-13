@@ -1,0 +1,11 @@
+type Token:
+  value: Int
+
+fn attach(value: Int, token: Token) -> Token:
+  return token
+
+proc main():
+  captured = Token(value = 7)
+  values = [1, 2]
+  invalid = values |> map(attach(_, captured))
+  echo invalid[0].value

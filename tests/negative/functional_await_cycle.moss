@@ -1,0 +1,22 @@
+fn wait_for_alpha(alpha: Alpha) -> Int:
+  value = await alpha.Pong()
+  return value
+
+domain Alpha:
+  fn Start(beta: Beta):
+    value = await beta.Run(self)
+    echo value
+
+  fn Pong() -> Int:
+    reply 1
+
+domain Beta:
+  fn Run(alpha: Alpha) -> Int:
+    targets = [alpha]
+    total = targets |> map(wait_for_alpha) |> sum
+    reply total
+
+proc main():
+  alpha = spawn Alpha()
+  beta = spawn Beta()
+  message alpha.Start(beta)

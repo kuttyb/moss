@@ -131,6 +131,21 @@ static bool parse_member_call(const string& text, string& receiver, string& hand
   return true;
 }
 
+// A bare `receiver.method` is a callable only inside a functional stage.  It
+// remains statically bound to one concrete receiver type and never becomes a
+// general runtime method value.
+static bool parse_bound_method_callable(const string& text, string& receiver,
+                                        string& method) {
+  string value = trim(text);
+  if (value.find('(') != string::npos || value.find(')') != string::npos)
+    return false;
+  auto dot = value.rfind('.');
+  if (dot == string::npos) return false;
+  receiver = trim(value.substr(0, dot));
+  method = trim(value.substr(dot + 1));
+  return plain_identifier(receiver) && plain_identifier(method) && receiver != "_";
+}
+
 static size_t matching_paren(const string& text, size_t open) {
   if (open >= text.size() || text[open] != '(') return string::npos;
   int depth = 0;
@@ -292,6 +307,18 @@ static std::optional<ParsedFunctionalPipeline> parse_functional_pipeline(
     pipeline.stages.push_back(std::move(stage));
   }
   return pipeline;
+}
+
+static bool functional_terminal_kind(FunctionalNodeKind kind) {
+  return kind == FunctionalNodeKind::Reduce || kind == FunctionalNodeKind::Sum ||
+      kind == FunctionalNodeKind::Count || kind == FunctionalNodeKind::Any ||
+      kind == FunctionalNodeKind::All;
+}
+
+static bool functional_pipeline_requires_materialization(
+    const ParsedFunctionalPipeline& pipeline) {
+  return pipeline.stages.empty() ||
+      !functional_terminal_kind(pipeline.stages.back().kind);
 }
 
 static string normalize_pipeline(string expression) {
@@ -1473,10 +1500,10 @@ class Checker {
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
-      if (args[index].find("|>") != string::npos)
-        err(line,
-            "functional pipeline must be materialized in a local binding "
-            "before crossing a domain boundary");
+      if (auto pipeline = parse_functional_pipeline(args[index]);
+          pipeline && functional_pipeline_requires_materialization(*pipeline))
+        err(line, "functional pipeline must be materialized in a local binding "
+                  "before crossing a domain boundary");
       auto actual = inferred_expr_type(args[index], env);
       if (actual && !same_type(h->params[index].type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to message " +
@@ -1537,6 +1564,17 @@ class Checker {
       TypeEnv placeholder_env = env;
       placeholder_env["_"] = input_types.front();
       return inferred_expr_type(value, placeholder_env);
+    }
+
+    string bound_receiver, bound_method;
+    if (parse_bound_method_callable(value, bound_receiver, bound_method)) {
+      auto receiver_type = inferred_expr_type(bound_receiver, env);
+      if (!receiver_type) return std::nullopt;
+      const Method* method = resolve_method(
+          canonical_type_name(*receiver_type), bound_method, input_types,
+          false, nullptr);
+      if (!method || !method->return_type) return std::nullopt;
+      return canonical_type_name(*method->return_type);
     }
 
     auto local = env.find(value);
@@ -2297,7 +2335,10 @@ class Checker {
               if (handler) {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
-                  if (statement.args[index].find("|>") != string::npos)
+                  if (auto pipeline =
+                          parse_functional_pipeline(statement.args[index]);
+                      pipeline &&
+                          functional_pipeline_requires_materialization(*pipeline))
                     err(statement.line,
                         "functional pipeline must be materialized in a local binding "
                         "before crossing a domain boundary");
@@ -3203,11 +3244,25 @@ class Checker {
                                    implicit_owner, calls);
         } else {
           string identity = trim(callable);
-          auto local = env.find(identity);
-          if (local != env.end() && starts_with(local->second, "callable:"))
-            identity = local->second.substr(9);
-          if (functions_.count(identity))
-            calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
+          string bound_receiver, bound_method;
+          if (parse_bound_method_callable(identity, bound_receiver,
+                                          bound_method)) {
+            auto receiver_type = inferred_expr_type(bound_receiver, env);
+            if (receiver_type) {
+              string concrete = canonical_type_name(*receiver_type);
+              if (const Method* method = resolve_method(
+                      concrete, bound_method, argument_types, true, nullptr))
+                calls.push_back(LocalCallSite{
+                    "method:" + concrete + "." + method->name, {},
+                    argument_types});
+            }
+          } else {
+            auto local = env.find(identity);
+            if (local != env.end() && starts_with(local->second, "callable:"))
+              identity = local->second.substr(9);
+            if (functions_.count(identity))
+              calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
+          }
         }
         if (stage.kind == FunctionalNodeKind::Map) {
           auto result = functional_callable_result(callable, {element}, env);
@@ -3710,14 +3765,41 @@ class Checker {
               callable, placeholder_env, domain_fields, implicit_object));
         } else {
           string identity = trim(callable);
-          auto local = env.find(identity);
-          if (local != env.end() && starts_with(local->second, "callable:"))
-            identity = local->second.substr(9);
-          auto function = functions_.find(identity);
-          if (function != functions_.end())
-            effects.merge(function->second->observable_effects);
-          else
-            effects.unresolved = true;
+          string bound_receiver, bound_method;
+          if (parse_bound_method_callable(identity, bound_receiver,
+                                          bound_method)) {
+            auto receiver_type = inferred_expr_type(bound_receiver, env);
+            vector<string> input_types;
+            if (stage.kind == FunctionalNodeKind::Reduce &&
+                stage.arguments.size() == 2)
+              input_types = {
+                  inferred_expr_type(stage.arguments.front(), env).value_or(""),
+                  element};
+            else
+              input_types = {element};
+            const Method* method = receiver_type
+                ? resolve_method(canonical_type_name(*receiver_type), bound_method,
+                                 input_types, true, nullptr)
+                : nullptr;
+            if (method) {
+              effects.merge(method->observable_effects);
+              effects.local_capture_read = true;
+              if (domain_fields.count(bound_receiver)) effects.domain_read = true;
+              if (method->receiver_effect != Effect::Read)
+                effects.local_mutation = true;
+            } else {
+              effects.unresolved = true;
+            }
+          } else {
+            auto local = env.find(identity);
+            if (local != env.end() && starts_with(local->second, "callable:"))
+              identity = local->second.substr(9);
+            auto function = functions_.find(identity);
+            if (function != functions_.end())
+              effects.merge(function->second->observable_effects);
+            else
+              effects.unresolved = true;
+          }
         }
         if (stage.kind == FunctionalNodeKind::Map) {
           auto result = functional_callable_result(callable, {element}, env);
@@ -3961,7 +4043,7 @@ class Checker {
   }
 
   ObservableEffects functional_stage_effects(
-      const string& callable, const string& element_type,
+      const string& callable, const vector<string>& input_types,
       const TypeEnv& env, string& identity,
       vector<string>& captures,
       const std::set<string>& domain_fields,
@@ -3969,13 +4051,36 @@ class Checker {
     ObservableEffects effects = no_observable_effects();
     identity = trim(callable);
     if (expression_uses(identity, "_")) {
+      if (input_types.size() != 1) {
+        effects.unresolved = true;
+        return effects;
+      }
       TypeEnv placeholder_env = env;
-      placeholder_env["_"] = element_type;
+      placeholder_env["_"] = input_types.front();
       effects = observable_expression_effects(
           identity, placeholder_env, domain_fields, implicit_object);
       captures = functional_captures(identity, env);
       effects.local_capture_read = !captures.empty();
       identity = "placeholder:" + identity;
+      return effects;
+    }
+    string bound_receiver, bound_method;
+    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+      auto receiver_type = inferred_expr_type(bound_receiver, env);
+      const Method* method = receiver_type
+          ? resolve_method(canonical_type_name(*receiver_type), bound_method,
+                           input_types, true, nullptr)
+          : nullptr;
+      if (!method) {
+        effects.unresolved = true;
+        return effects;
+      }
+      effects = method->observable_effects;
+      effects.local_capture_read = true;
+      if (domain_fields.count(bound_receiver)) effects.domain_read = true;
+      if (method->receiver_effect != Effect::Read)
+        effects.local_mutation = true;
+      captures.push_back(bound_receiver);
       return effects;
     }
     auto local = env.find(identity);
@@ -4055,12 +4160,17 @@ class Checker {
         callable = parsed_stage.arguments[1];
       if (!callable.empty()) {
         node.callable_expression = callable;
+        vector<string> callback_input_types{current_element};
+        if (node.kind == FunctionalNodeKind::Reduce)
+          callback_input_types.insert(
+              callback_input_types.begin(),
+              inferred_expr_type(parsed_stage.arguments.front(), env).value_or(""));
         node.effects = functional_stage_effects(
-            callable, current_element, env, node.callable_identity,
+            callable, callback_input_types, env, node.callable_identity,
             node.captures, domain_fields, implicit_object);
         if (owning_function &&
             !starts_with(node.callable_identity, "placeholder:") &&
-            functions_.count(node.callable_identity) &&
+            !node.callable_identity.empty() &&
             std::find(owning_function->callable_dependencies.begin(),
                       owning_function->callable_dependencies.end(),
                       node.callable_identity) ==
@@ -4069,6 +4179,18 @@ class Checker {
         auto function = functions_.find(node.callable_identity);
         if (function != functions_.end() && !function->second->parameter_effects.empty())
           node.ownership = function->second->parameter_effects.front();
+        string bound_receiver, bound_method;
+        if (parse_bound_method_callable(node.callable_identity, bound_receiver,
+                                        bound_method)) {
+          auto receiver_type = inferred_expr_type(bound_receiver, env);
+          const Method* method = receiver_type
+              ? resolve_method(canonical_type_name(*receiver_type), bound_method,
+                               callback_input_types, true, nullptr)
+              : nullptr;
+          size_t element_parameter = node.kind == FunctionalNodeKind::Reduce ? 1 : 0;
+          if (method && element_parameter < method->parameter_effects.size())
+            node.ownership = method->parameter_effects[element_parameter];
+        }
       }
 
       switch (node.kind) {
@@ -4314,7 +4436,10 @@ class Checker {
       } else if (stage.kind == FunctionalNodeKind::Reduce &&
                  stage.arguments.size() == 2) {
         auto accumulator = inferred_expr_type(stage.arguments.front(), env.types);
-        check_ownership_expression(line, stage.arguments.front(), env, Effect::Read);
+        // The terminal result owns the initial accumulator on the empty path;
+        // a nontrivial bound initializer therefore transfers into the reduce.
+        check_ownership_expression(line, stage.arguments.front(), env,
+                                   Effect::Consume);
         callback_inputs = {accumulator.value_or("_value"), current_element};
         callable = stage.arguments[1];
       }
@@ -4323,31 +4448,87 @@ class Checker {
       if (expression_uses(callable, "_")) {
         OwnershipEnv placeholder_env = env;
         placeholder_env.types["_"] = current_element;
+        vector<string> captures = functional_captures(callable, env.types);
+        vector<Param> capture_parameters;
+        vector<Effect> capture_effects(captures.size(), Effect::Read);
+        for (const auto& capture : captures)
+          capture_parameters.push_back(
+              Param{capture, env.types.at(capture)});
+        Effect unused_receiver_effect = Effect::Read;
+        analyze_effect_expression(
+            callable, placeholder_env.types, capture_parameters,
+            capture_effects, unused_receiver_effect, {});
+        for (size_t index = 0; index < captures.size(); ++index) {
+          if (capture_effects[index] == Effect::Read) continue;
+          err(line, "functional placeholder requires " +
+              string(capture_effects[index] == Effect::Write
+                         ? "WRITE" : "CONSUME") +
+              " access to captured binding '" + captures[index] +
+              "'; captures must remain read-only");
+        }
         check_ownership_expression(line, callable, placeholder_env, Effect::Read);
       } else {
         string identity = trim(callable);
-        auto local = env.types.find(identity);
-        if (local != env.types.end() && starts_with(local->second, "callable:"))
-          identity = local->second.substr(9);
-        auto function = functions_.find(identity);
-        if (function != functions_.end()) {
-          for (size_t index = 0;
-               index < callback_inputs.size() && index < function->second->params.size();
-               ++index) {
-            Effect effect = function_parameter_effect(*function->second, index);
-            bool element_input = stage.kind != FunctionalNodeKind::Reduce || index == 1;
-            if (element_input && !copy_type(callback_inputs[index]) &&
-                effect != Effect::Read)
-              err(line, "functional callable '" + identity +
-                  "' requires " + string(effect == Effect::Write ? "WRITE" : "CONSUME") +
-                  " access to an element, but this pipeline only reads its source; "
-                  "no implicit copy is inserted");
-            if ((stage.kind == FunctionalNodeKind::Filter ||
-                 stage.kind == FunctionalNodeKind::Any ||
-                 stage.kind == FunctionalNodeKind::All) &&
-                effect != Effect::Read)
-              err(line, "functional predicate '" + identity +
-                  "' must not mutate or consume its element");
+        string bound_receiver, bound_method;
+        if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+          check_ownership_expression(line, bound_receiver, env, Effect::Read);
+          auto receiver_type = inferred_expr_type(bound_receiver, env.types);
+          const Method* method = receiver_type
+              ? resolve_method(canonical_type_name(*receiver_type), bound_method,
+                               callback_inputs, true, nullptr)
+              : nullptr;
+          if (method) {
+            if (method->receiver_effect != Effect::Read)
+              err(line, "functional bound method '" + identity +
+                  "' cannot mutate or consume captured binding '" +
+                  bound_receiver + "'");
+            for (size_t index = 0;
+                 index < callback_inputs.size() && index < method->params.size();
+                 ++index) {
+              Effect effect = method_parameter_effect(*method, index);
+              bool element_input = stage.kind != FunctionalNodeKind::Reduce || index == 1;
+              if (element_input && !copy_type(callback_inputs[index]) &&
+                  effect != Effect::Read)
+                err(line, "functional bound method '" + identity +
+                    "' requires " +
+                    string(effect == Effect::Write ? "WRITE" : "CONSUME") +
+                    " access to an element, but this pipeline only reads its source; "
+                    "no implicit copy is inserted");
+              if ((stage.kind == FunctionalNodeKind::Filter ||
+                   stage.kind == FunctionalNodeKind::Any ||
+                   stage.kind == FunctionalNodeKind::All) &&
+                  effect != Effect::Read)
+                err(line, "functional predicate '" + identity +
+                    "' must not mutate or consume its element");
+            }
+          }
+        } else {
+          auto local = env.types.find(identity);
+          if (local != env.types.end() && starts_with(local->second, "callable:"))
+            identity = local->second.substr(9);
+          auto function = functions_.find(identity);
+          if (function != functions_.end()) {
+            for (size_t index = 0;
+                 index < callback_inputs.size() &&
+                     index < function->second->params.size();
+                 ++index) {
+              Effect effect = function_parameter_effect(*function->second, index);
+              bool element_input =
+                  stage.kind != FunctionalNodeKind::Reduce || index == 1;
+              if (element_input && !copy_type(callback_inputs[index]) &&
+                  effect != Effect::Read)
+                err(line, "functional callable '" + identity +
+                    "' requires " +
+                    string(effect == Effect::Write ? "WRITE" : "CONSUME") +
+                    " access to an element, but this pipeline only reads its source; "
+                    "no implicit copy is inserted");
+              if ((stage.kind == FunctionalNodeKind::Filter ||
+                   stage.kind == FunctionalNodeKind::Any ||
+                   stage.kind == FunctionalNodeKind::All) &&
+                  effect != Effect::Read)
+                err(line, "functional predicate '" + identity +
+                    "' must not mutate or consume its element");
+            }
           }
         }
       }
@@ -4970,6 +5151,42 @@ class Checker {
       return result;
     }
 
+    string bound_receiver, bound_method;
+    if (parse_bound_method_callable(identity, bound_receiver, bound_method)) {
+      auto receiver_type = inferred_expr_type(bound_receiver, env);
+      if (!receiver_type)
+        err(line, "cannot statically resolve bound method receiver '" +
+            bound_receiver + "'");
+      string concrete = canonical_type_name(*receiver_type);
+      if (domains_.count(concrete))
+        err(line, "functional callable '" + identity +
+            "' cannot hide a domain crossing; use explicit message or await");
+      MethodResolutionFailure failure = MethodResolutionFailure::None;
+      const Method* method = resolve_method(concrete, bound_method, input_types,
+                                            false, &failure);
+      if (!method) {
+        string reason = failure == MethodResolutionFailure::MissingMethod
+            ? "has no method named '" + bound_method + "'"
+            : failure == MethodResolutionFailure::WrongArity
+                ? "has no compatible method arity"
+                : failure == MethodResolutionFailure::IncompatibleArguments
+                    ? "has an incompatible method parameter type"
+                    : failure == MethodResolutionFailure::Ambiguous
+                        ? "has an ambiguous method overload"
+                        : "is not a concrete object method receiver";
+        err(line, "functional bound method '" + identity + "' " + reason);
+      }
+      if (method->receiver_effect != Effect::Read)
+        err(line, "functional bound method '" + identity +
+            "' cannot mutate or consume captured binding '" +
+            bound_receiver + "'");
+      if (!method->return_type)
+        err(line, "functional bound method '" + identity +
+            "' does not return a value");
+      check_expression(line, bound_receiver, env);
+      return canonical_type_name(*method->return_type);
+    }
+
     auto local = env.find(identity);
     if (local != env.end()) {
       if (starts_with(local->second, "callable:")) {
@@ -5281,7 +5498,8 @@ class Checker {
           if (auto pipeline = parse_functional_pipeline(argument)) {
             auto source_type = inferred_expr_type(pipeline->source, current_env);
             if (source_type && functional_element_type(
-                                   *source_type, pipeline->source))
+                                   *source_type, pipeline->source) &&
+                functional_pipeline_requires_materialization(*pipeline))
               err(statement.line,
                   "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
@@ -5305,7 +5523,8 @@ class Checker {
           if (auto pipeline = parse_functional_pipeline(argument)) {
             auto source_type = inferred_expr_type(pipeline->source, current_env);
             if (source_type && functional_element_type(
-                                   *source_type, pipeline->source))
+                                   *source_type, pipeline->source) &&
+                functional_pipeline_requires_materialization(*pipeline))
               err(statement.line,
                   "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
@@ -5395,7 +5614,8 @@ class Checker {
         if (auto pipeline = parse_functional_pipeline(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
           if (source_type && functional_element_type(
-                                 *source_type, pipeline->source))
+                                 *source_type, pipeline->source) &&
+              functional_pipeline_requires_materialization(*pipeline))
             err(statement.line,
                 "functional pipeline must be materialized in a local binding "
                 "before crossing a domain boundary");
@@ -6977,6 +7197,17 @@ class Generator {
       placeholder_types["_"] = input_types.front();
       return generated_expr_type(callable, &placeholder_types);
     }
+    string bound_receiver, bound_method;
+    if (parse_bound_method_callable(callable, bound_receiver, bound_method)) {
+      auto receiver_type = generated_expr_type(bound_receiver, types);
+      const Method* method = receiver_type
+          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
+                                  bound_method, input_types, false, nullptr)
+          : nullptr;
+      if (method && method->return_type)
+        return canonical_type_name(*method->return_type);
+      return std::nullopt;
+    }
     string identity = resolved_callable_identity(callable, types);
     auto function = functions_.find(identity);
     if (function == functions_.end()) return std::nullopt;
@@ -7257,6 +7488,44 @@ class Generator {
       return expr(replaced, domain, callback_locals, &callback_types);
     }
 
+    string bound_receiver, bound_method;
+    if (parse_bound_method_callable(callable, bound_receiver, bound_method)) {
+      auto receiver_type = generated_expr_type(bound_receiver, types);
+      vector<string> argument_types;
+      for (const auto& argument : arguments)
+        argument_types.push_back(argument.type);
+      const Method* method = receiver_type
+          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
+                                  bound_method, argument_types, false, nullptr)
+          : nullptr;
+      if (!method)
+        throw std::runtime_error(
+            "missing statically resolved functional bound method '" +
+            trim(callable) + "'");
+      std::ostringstream rendered;
+      rendered << expr(bound_receiver, domain, locals, types) << "."
+               << bound_method << "(";
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index) rendered << ", ";
+        const auto& argument = arguments[index];
+        Effect effect = method_effect(*method, index);
+        bool borrow = effect != Effect::Consume &&
+            borrowable_type(argument.type);
+        if (domains_.count(canonical_type_name(argument.type))) {
+          if (argument.reference)
+            rendered << "(*" << argument.expression << ").clone()";
+          else
+            rendered << argument.expression;
+        } else if (borrow && !argument.reference)
+          rendered << (effect == Effect::Write ? "&mut (" : "&(")
+                   << argument.expression << ")";
+        else
+          rendered << argument.expression;
+      }
+      rendered << ")";
+      return rendered.str();
+    }
+
     string identity = resolved_callable_identity(callable, types);
     auto function = functions_.find(identity);
     if (function == functions_.end())
@@ -7284,7 +7553,12 @@ class Generator {
       const auto& argument = arguments[index];
       Effect effect = function_effect(*function->second, index);
       bool borrow = effect != Effect::Consume && borrowable_type(argument.type);
-      if (borrow && !argument.reference)
+      if (domains_.count(canonical_type_name(argument.type))) {
+        if (argument.reference)
+          rendered << "(*" << argument.expression << ").clone()";
+        else
+          rendered << argument.expression;
+      } else if (borrow && !argument.reference)
         rendered << (effect == Effect::Write ? "&mut (" : "&(")
                  << argument.expression << ")";
       else
@@ -7637,7 +7911,14 @@ class Generator {
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
       std::ostringstream r; r << "vec![";
-      for (size_t i=0;i<parts.size();++i) { if (i) r << ", "; r << expr(parts[i], d, locals, types); }
+      for (size_t i=0;i<parts.size();++i) {
+        if (i) r << ", ";
+        string value = expr(parts[i], d, locals, types);
+        auto value_type = generated_expr_type(parts[i], types);
+        if (value_type && domains_.count(canonical_type_name(*value_type)))
+          value = "(" + value + ").clone()";
+        r << value;
+      }
       r << "]"; return r.str();
     }
     string ib, ii;
@@ -9515,13 +9796,13 @@ class Generator {
 } // namespace moss
 
 static void usage() {
-  std::cerr << "Moss v0.2 - actor/domain DSL to Rust with await/reply\n\n"
+  std::cerr << "Moss v0.2 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
             << "  moss <input.moss> [-Oshared-memory] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
-            << "  -O, -Oshared-memory    plan batching, direct locks, RwLock, and atomic domains\n"
-            << "  -O0                    retain lock-backed mailbox dispatch for every domain\n\n"
+            << "  -O, -Oshared-memory    fuse safe functional pipelines and plan optimized domain lowering\n"
+            << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
             << "  --dump-functional-ir   print typed functional/dataflow nodes and optimization decisions\n"
             << "  --explain-fusion       print deterministic fusion decisions only\n\n"
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"

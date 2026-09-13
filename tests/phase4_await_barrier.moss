@@ -1,0 +1,14 @@
+domain Source:
+  fn Value() -> Int:
+    reply 3
+
+fn read_value(source: Source) -> Int:
+  value = await source.Value()
+  return value
+
+proc main():
+  first = spawn Source()
+  second = spawn Source()
+  sources = [first, second]
+  total = sources |> map(read_value) |> sum
+  echo total

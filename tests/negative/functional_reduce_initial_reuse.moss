@@ -1,0 +1,11 @@
+type Total:
+  value: Int
+
+fn retain(total: Total, value: Int) -> Total:
+  return total
+
+proc main():
+  initial = Total(value = 0)
+  result = [1, 2] |> reduce(initial, retain)
+  echo result.value
+  echo initial.value

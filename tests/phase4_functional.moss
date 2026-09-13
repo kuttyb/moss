@@ -21,6 +21,9 @@ proc main():
   counted = values |> filter(_ > 0) |> count
   has_large = values |> any(_ > 4)
   all_bounded = values |> all(_ > -3)
+  flags = [true, false]
+  has_true = flags |> any
+  all_true = flags |> all
 
   scale = 10
   captured = values |> map(_ * scale) |> sum
@@ -35,6 +38,9 @@ proc main():
 
   echo named[2], placeholder[0], filtered[1], map_map[3], map_filter_map[0]
   echo map_sum, fused_sum, reduced, counted, has_large, all_bounded
+  echo has_true, all_true
   echo captured, specialized[3], values[0]
   echo empty_count, empty_sum, empty_any, empty_all, empty_reduce
   echo wrapped
+  values.push(7)
+  echo values[4]

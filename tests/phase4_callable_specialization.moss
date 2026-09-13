@@ -1,0 +1,9 @@
+fn double(value):
+  return value + value
+
+proc main():
+  integers = [1, 2]
+  decimals = [1.5, 2.5]
+  integer_total = integers |> map(double) |> sum
+  decimal_total = decimals |> map(double) |> sum
+  echo integer_total, decimal_total

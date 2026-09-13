@@ -1,0 +1,11 @@
+type Scaler:
+  factor: Int
+
+  fn apply(value: Int) -> Int:
+    return value * factor
+
+proc main():
+  scaler = Scaler(factor = 4)
+  values = [1, 2, 3]
+  total = values |> map(scaler.apply) |> sum
+  echo total

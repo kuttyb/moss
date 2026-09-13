@@ -142,18 +142,50 @@ annotation is inferred as one-way when it has no `reply`; when it contains typed
 expressions, their common type becomes the handler's reply type. Conflicting reply paths
 are compile-time errors, and an explicit `-> Type` remains an optional constraint.
 
-Pipelines are expressions:
+### Functional pipelines
+
+Pipelines are typed expressions. The Phase 4 functional operations are `map`, `filter`,
+`reduce`, `sum`, `count`, `any`, and `all`:
 
 ```moss
-data
-    |> parse
-    |> normalize
-    |> score
+result = values
+    |> map(normalize)
+    |> filter(_ > 0)
+    |> map(_.score())
+    |> sum
+
+total = values |> reduce(0, add)
 ```
 
-The frontend initially normalizes a pipeline to ordinary nested local calls. The source
-form leaves room for future fusion, SIMD, and GPU planning without making those backend
-choices language semantics.
+`map` and `filter` are logically eager, ordered collection transformations. Each stage
+observes source elements in order and logically completes its result collection before
+the following stage begins. Both operations READ their input collection and produce a
+new value; neither operation implicitly mutates or consumes the source. The compiler may
+eliminate intermediate collections only when its callable/effect analysis proves that
+element-at-a-time execution is observably equivalent to this eager meaning.
+
+`sum`, `count`, `any`, `all`, and `reduce` are terminal operations. `reduce` requires an
+explicit initial accumulator. On empty input, `sum` and `count` return zero, `any` returns
+false, `all` returns true, and `reduce(initial, fn)` returns `initial`. Integer reductions
+use Moss wrapping arithmetic. A nontrivial bound `initial` transfers into the reduction
+and is unavailable afterward; the compiler never clones it to implement the empty path.
+
+A stage callable may be a named function, a statically bound instance method such as
+`scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
+`_.score()`. A bound method captures one concrete receiver and must only READ it;
+placeholder expressions may likewise read immutable surrounding locals. A higher-order
+helper can accept an untyped callable parameter, but every call site must close that
+parameter to one statically known function identity. Moss emits a
+concrete specialization rather than a function object, function pointer, vtable, or
+runtime lookup. General lambdas and dynamically escaping callable values are not part of
+this source surface.
+
+Pipeline values are compiler structure, not lazy runtime iterators. A transformation
+pipeline whose result is still a collection cannot cross `message`, `await`, or `reply`
+directly; bind its materialized result first. A terminal already produces a concrete
+scalar and may cross an explicit domain copy boundary normally. All ordinary ownership
+and alias checks also apply inside callbacks. A consuming callback is rejected when
+current collection semantics cannot provide ownership without an implicit copy.
 
 ### Integer arithmetic
 
@@ -282,8 +314,9 @@ method-based structural requirements; [`traits.moss`](../examples/traits.moss)
 demonstrates two concrete implementations of one named trait;
 [`collections_and_methods.moss`](../examples/collections_and_methods.moss) shows
 inferred Vector, Map, and Queue element types; and
-[`functional_dataflow.moss`](../examples/functional_dataflow.moss) records the
-`values |> map(...) |> filter(...) |> map(...) |> sum` source shape. The larger
+[`functional_dataflow.moss`](../examples/functional_dataflow.moss) executes a typed
+`values |> map(...) |> filter(...) |> map(...) |> sum` pipeline that `-O` fuses into
+one explicit loop when its effects are safe. The larger
 [`mini_application.moss`](../examples/mini_application.moss) combines those static
 features with domains, `message`, and `await`. These are ordinary source programs:
 Moss resolves calls before Rust generation and does not create runtime trait objects.

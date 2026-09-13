@@ -1,0 +1,12 @@
+type Accumulator:
+  total: Int
+
+  fn add(value: Int) -> Int:
+    total = total + value
+    return total
+
+proc main():
+  accumulator = Accumulator(total = 0)
+  values = [1, 2, 3]
+  invalid = values |> map(accumulator.add)
+  echo invalid[0]

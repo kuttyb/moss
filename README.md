@@ -6,6 +6,11 @@ Phase 2.5 is frozen and complete. Its mailbox, batching, direct-lock, RwLock,
 atomic, and cluster lowerings are backend choices beneath one Moss semantic
 model; later language or optimizer phases belong in separate checkpoints.
 
+Phase 4 functional/dataflow compilation is now implemented on top of that frozen
+foundation. Pipelines are typed Moss IR, callable effects are inferred separately
+from ownership effects, and `-O` can fuse proven-safe stages into explicit Rust loops.
+`-O0` remains the eager, stage-at-a-time semantic reference.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
@@ -26,6 +31,7 @@ This creates `./moss`.
 ./moss --check examples/checkout.moss
 mkdir -p build
 ./moss -Oshared-memory examples/checkout.moss -o build/checkout.rs
+./moss -O --dump-functional-ir examples/functional_dataflow.moss -o build/dataflow.rs
 rustc build/checkout.rs -o build/checkout
 ./build/checkout
 ```
@@ -46,18 +52,66 @@ Compile every valid top-level example with the shared-memory optimization using 
 
 Moss keeps types static while letting ordinary source stay compact: untyped functions
 can require methods structurally, named traits are resolved to concrete call sites,
-collections infer their contained types, and pipelines remain readable nested calls.
+collections infer their contained types, and functional pipelines remain visible to
+the compiler through typing, effect analysis, and optimization.
 The showcase programs are executable syntax guides:
 
 - [static duck typing](examples/static_duck_typing.moss) uses one method-based function with unrelated concrete types.
 - [named traits](examples/traits.moss) calls one trait-typed function for Circle and Rectangle.
 - [collections and methods](examples/collections_and_methods.moss) combines inferred Vector, Map, and Queue values with object methods.
-- [functional dataflow](examples/functional_dataflow.moss) records the `map |> filter |> map |> sum` source shape that future fusion can target.
+- [functional dataflow](examples/functional_dataflow.moss) executes a typed `map |> filter |> map |> sum` chain that `-O` fuses into one explicit loop.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
 - [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
 
 Every valid showcase compiles to standalone Rust with `make examples`; the generated
 programs contain concrete calls rather than runtime trait objects or vtables.
+
+## Functional pipelines
+
+The Phase 4 source surface includes `map`, `filter`, `reduce`, `sum`, `count`,
+`any`, and `all`:
+
+```moss
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+result = values
+  |> map(normalize)
+  |> filter(_ > 0)
+  |> map(_ + 10)
+  |> sum
+```
+
+The reference meaning is logically eager and source ordered: each complete `map` or
+`filter` produces its logical result before the next stage starts. Ordinary
+transformations READ their source and do not mutate it. `reduce` always takes an
+explicit initial accumulator, so its empty-input result is defined; a nontrivial bound
+initializer transfers into the reduction rather than being copied. Empty `sum` and
+`count` produce zero, `any` produces false, and `all` produces true.
+
+Named functions, statically bound instance methods such as `scaler.apply`, method
+placeholders such as `_.score()`, and placeholder expressions with immutable captures
+are supported. A higher-order helper
+may accept an untyped callable parameter, but every call must bind it to one concrete
+function identity; the compiler specializes the helper and erases that parameter
+before Rust generation. There are no boxed callables, function-object vtables, or
+runtime callable lookup.
+
+`-O` fuses a chain only when its inferred observable effects make element-at-a-time
+execution equivalent to the eager reference. I/O, local mutation, domain observation
+or mutation, `message`, `await`, unresolved effects, and possible failure ordering are
+barriers. A missed fusion is valid; a speculative reordering is not. Fused reductions
+use Moss's wrapping integer arithmetic and allocate no intermediate vector.
+
+Inspect the compiler-owned representation and decisions with:
+
+```sh
+./moss -O --dump-functional-ir examples/functional_dataflow.moss -o build/dataflow.rs
+./moss -O --explain-fusion tests/phase4_effect_smoke.moss --check
+```
+
+See [Functional/dataflow design and lowering](docs/FUNCTIONAL_DATAFLOW.md) for the
+semantic and compiler contract.
 
 Additional examples:
 
@@ -116,7 +170,11 @@ deriving a returned new value.
 - Domain state with inferred `name = initializer` bindings and optional `name: Type` constraints
 - `reply value`, which sends one response and terminates the current handler
 - `value = await domain.Message(...)`, plus compatible `let`/`var` await declarations
-- Inferred top-level `fn` functions, expression-bodied functions, and pipeline expressions
+- Inferred top-level `fn` functions, expression-bodied functions, and typed functional pipeline expressions
+- Eager ordered `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and `all`
+- Static named/placeholder callables, immutable captures, and specialized higher-order helpers
+- Effect-aware functional fusion and explicit-loop allocation elimination under `-O`
+- Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
 - `spawn` from `main`
 - Primitive and object value payloads
@@ -259,7 +317,7 @@ Await-cycle rejection is a language rule applied before backend placement, so th
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements the initial static duck-typed method and named-trait foundation by generating concrete call-site specializations, without runtime trait objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
+This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, plus Phase 4 typed functional/dataflow IR and conservative loop fusion, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 

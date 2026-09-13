@@ -1,10 +1,14 @@
 fn twice(x: Int) -> Int:
   return x * 2
 
+fn increment(x: Int) -> Int:
+  return x + 1
+
 fn transform(xs, f):
   return xs |> map(f)
 
 proc main():
   values = [1, 2, 3]
-  result = transform(values, twice)
-  echo result[2]
+  doubled = transform(values, twice)
+  incremented = transform(values, increment)
+  echo doubled[2], incremented[2]
