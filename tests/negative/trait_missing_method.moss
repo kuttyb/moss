@@ -1,11 +1,18 @@
 trait Drawable:
-  fn draw(canvas)
+  fn area() -> Int
+  fn draw(canvas: Canvas) -> Int
+
+type Canvas:
+  scale: Int
 
 type Circle:
   radius: Int
 
-fn render(x: Drawable):
-  return x
+  fn draw(canvas: Canvas):
+    return radius * canvas.scale
+
+fn render(x: Drawable, canvas: Canvas):
+  return x.draw(canvas)
 
 fn main():
-  render(Circle(radius = 1))
+  render(Circle(radius = 1), Canvas(scale = 1))

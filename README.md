@@ -167,7 +167,7 @@ The initial planner rejects clusters with a statically visible await cycle betwe
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. In particular, it does not yet implement later failure and cancellation semantics, blocking FFI rules, arenas, generics/traits, or a general multi-instance cluster planner.
+This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements the initial static duck-typed method and named-trait foundation by generating concrete call-site specializations, without runtime trait objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
 
 An existing non-primitive local, parameter, state value, or non-primitive projection cannot be transferred across a domain boundary, including between clustered domains. A fresh value constructed directly as a payload is message-owned, primitive snapshots may cross, and domain-reference arguments remain usable by the sender. Queued self-messages stay within one domain and may transfer a local. Hidden deep copies and copy-on-write are not part of Moss; explicit `deepCopy()` remains future work.
 

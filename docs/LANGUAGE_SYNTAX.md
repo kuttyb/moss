@@ -222,6 +222,13 @@ are not part of normal Moss source syntax. Collection element, key, and value
 types are inferred internally for `Vector`, `Map`, and `Queue`; source code does
 not write `Vector[T]` or `Map[K, V]`.
 
+Method requirements inferred from an untyped parameter retain the method name,
+arity, argument relationships, and relevant result relationship. Each concrete
+call site is verified with the ordinary concrete-method resolver. A named trait
+uses that same resolver for every declared method. Method-constrained and
+trait-typed local functions are emitted as concrete call-site specializations;
+there is no runtime method search, trait object, vtable, or implicit `Any`.
+
 The current implementation has begun separating semantic data (`src/ast.hpp`),
 inferred requirements (`src/constraints.hpp`), and diagnostics
 (`src/diagnostics.hpp`). The remaining parser, inference, ownership, domain,

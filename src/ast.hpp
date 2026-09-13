@@ -26,11 +26,18 @@ struct Handler { string name, header; vector<Param> params; std::optional<string
 struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; };
+struct FunctionSpecialization {
+  string generated_name;
+  vector<string> parameter_types;
+  string return_type;
+};
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
-  bool generic = false; std::unordered_map<string,string> generic_results; int line = 0;
+  bool generic = false; bool static_dispatch = false;
+  std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
+  vector<FunctionSpecialization> specializations;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
 struct Program { vector<Function> functions; vector<Trait> traits; vector<ObjectType> objects; vector<Domain> domains; std::optional<MainProc> main; };

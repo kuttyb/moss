@@ -1,0 +1,14 @@
+type Canvas:
+  scale: Int
+
+type Circle:
+  radius: Int
+
+  fn draw(canvas: Canvas):
+    return canvas.scale
+
+fn draw_on_text(value):
+  value.draw("screen")
+
+fn main():
+  echo draw_on_text(Circle(radius = 2))

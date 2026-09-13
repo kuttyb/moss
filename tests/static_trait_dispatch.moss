@@ -1,11 +1,9 @@
-# Named traits are compile-time contracts. Each call to render is resolved to a
-# concrete specialization; Moss does not create a runtime trait object.
 type Canvas:
   scale: Int
 
 trait Drawable:
-  fn area()
-  fn draw(canvas)
+  fn area() -> Int
+  fn draw(canvas: Canvas) -> Int
 
 type Circle:
   radius: Int

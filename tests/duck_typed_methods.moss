@@ -1,0 +1,19 @@
+type Circle:
+  radius: Int
+
+  fn describe():
+    return radius * 2
+
+type Rectangle:
+  width: Int
+  height: Int
+
+  fn describe():
+    return width + height
+
+fn describe(value):
+  value.describe()
+
+fn main():
+  echo describe(Circle(radius = 3))
+  echo describe(Rectangle(width = 4, height = 5))

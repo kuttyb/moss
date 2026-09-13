@@ -782,6 +782,58 @@ static vector<Line> lex_lines(std::istream& in) {
   return out;
 }
 
+enum class MethodResolutionFailure {
+  None,
+  UnknownReceiver,
+  MissingMethod,
+  WrongArity,
+  IncompatibleArguments,
+  Ambiguous
+};
+
+template <typename ObjectMap>
+static const Method* resolve_object_method(
+    const ObjectMap& objects, const string& type, const string& name,
+    const vector<string>& argument_types, bool unknown_argument_is_wildcard,
+    MethodResolutionFailure* failure) {
+  if (failure) *failure = MethodResolutionFailure::None;
+  auto object = objects.find(canonical_type_name(type));
+  if (object == objects.end()) {
+    if (failure) *failure = MethodResolutionFailure::UnknownReceiver;
+    return nullptr;
+  }
+  const Method* found = nullptr;
+  bool saw_name = false;
+  bool saw_arity = false;
+  for (const auto& method : object->second->methods) {
+    if (method.name != name) continue;
+    saw_name = true;
+    if (method.params.size() != argument_types.size()) continue;
+    saw_arity = true;
+    bool compatible = true;
+    for (size_t index = 0; index < argument_types.size(); ++index) {
+      if (argument_types[index].empty() && unknown_argument_is_wildcard) continue;
+      if (argument_types[index].empty() || method.params[index].type.empty() ||
+          canonical_type_name(method.params[index].type) !=
+              canonical_type_name(argument_types[index])) {
+        compatible = false;
+        break;
+      }
+    }
+    if (!compatible) continue;
+    if (found) {
+      if (failure) *failure = MethodResolutionFailure::Ambiguous;
+      return nullptr;
+    }
+    found = &method;
+  }
+  if (!found && failure)
+    *failure = !saw_name ? MethodResolutionFailure::MissingMethod
+                         : !saw_arity ? MethodResolutionFailure::WrongArity
+                                      : MethodResolutionFailure::IncompatibleArguments;
+  return found;
+}
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -804,6 +856,7 @@ class Checker {
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_traits();
     check_objects();
     // Function results and handler replies can constrain each other through an
     // await or a local call. Run a few non-final inference rounds before the
@@ -834,7 +887,8 @@ class Checker {
 
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
-    if (type == "int" || type == "float" || type == "bool" || type == "string") return true;
+    if (type == "int" || type == "float" || type == "bool" || type == "string" ||
+        type == "unit") return true;
     if (domains_.count(type) || objects_.count(type)) return true;
     if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
     if (starts_with(type, "vector[") && ends_with(type, "]")) return valid_type(trim(type.substr(7, type.size()-8)));
@@ -854,7 +908,14 @@ class Checker {
   }
 
   bool has_constraint(const Function& f, const string& subject) const {
-    return std::any_of(f.constraints.begin(), f.constraints.end(), [&](const Constraint& c) { return c.subject == subject; });
+    return std::any_of(f.constraints.begin(), f.constraints.end(), [&](const Constraint& c) {
+      if (c.subject == subject) return true;
+      return c.kind == ConstraintKind::Method &&
+          std::any_of(c.arguments.begin(), c.arguments.end(),
+                      [&](const string& argument) {
+                        return expression_uses(argument, subject);
+                      });
+    });
   }
   std::set<string> constraint_details(const Function& f, const string& subject) const {
     std::set<string> out;
@@ -875,31 +936,106 @@ class Checker {
     return std::any_of(it->second->fields.begin(), it->second->fields.end(), [&](const Field& f) { return f.name == field; });
   }
 
-  const Method* resolve_method(const string& type, const string& name, const vector<string>& argument_types = {}) const {
-    auto object = objects_.find(type);
-    if (object == objects_.end()) return nullptr;
-    const Method* found = nullptr;
-    for (const auto& method : object->second->methods) if (method.name == name) {
-      if (method.params.size() != argument_types.size()) continue;
-      bool compatible = true;
-      for (size_t i = 0; i < argument_types.size(); ++i) {
-        if (!method.params[i].type.empty() && argument_types[i].empty()) { compatible = false; break; }
-        if (!method.params[i].type.empty() && !same_type(method.params[i].type, argument_types[i])) { compatible = false; break; }
-      }
-      if (compatible) { if (found) return nullptr; found = &method; }
-    }
-    return found;
+  const Method* resolve_method(const string& type, const string& name,
+                               const vector<string>& argument_types = {},
+                               bool unknown_argument_is_wildcard = false,
+                               MethodResolutionFailure* failure = nullptr) const {
+    return resolve_object_method(objects_, type, name, argument_types,
+                                 unknown_argument_is_wildcard, failure);
   }
 
-  void derive_expression_constraints(Function& function, const string& expression) {
+  static string method_result_marker(size_t constraint_index) {
+    return "_method_result:" + std::to_string(constraint_index);
+  }
+
+  std::optional<string> constraint_expression_type(const Function& function,
+                                                   const string& expression) const {
+    std::unordered_map<string,string> env;
+    for (const auto& parameter : function.params)
+      if (!parameter.type.empty() && !traits_.count(parameter.type))
+        env[parameter.name] = parameter.type;
+    auto type = obvious_expr_type(expression, env);
+    if (!type || starts_with(*type, "_")) return std::nullopt;
+    return canonical_type_name(*type);
+  }
+
+  size_t add_method_requirement(Function& function, const string& subject,
+                                const string& method, const vector<string>& arguments,
+                                const string& expected_result) {
+    size_t index = 0;
+    for (; index < function.constraints.size(); ++index) {
+      const auto& candidate = function.constraints[index];
+      if (candidate.kind == ConstraintKind::Method && candidate.subject == subject &&
+          candidate.detail == method && candidate.arity == arguments.size() &&
+          candidate.arguments == arguments)
+        break;
+    }
+    if (index == function.constraints.size()) {
+      Constraint requirement{ConstraintKind::Method, subject, method, ""};
+      requirement.arity = arguments.size();
+      requirement.arguments = arguments;
+      function.constraints.push_back(std::move(requirement));
+    }
+
+    auto& requirement = function.constraints[index];
+    if (expected_result == "$function_result") {
+      requirement.result = method_result_marker(index);
+      if (!function.return_type || starts_with(*function.return_type, "_method_result:"))
+        function.return_type = requirement.result;
+    } else if (!expected_result.empty() && !starts_with(expected_result, "_")) {
+      string expected = canonical_type_name(expected_result);
+      if (!requirement.result_expectations.empty() &&
+          !same_type(requirement.result_expectations.front(), expected))
+        err(function.line, "conflicting result expectations for required method '" +
+            method + "': '" + requirement.result_expectations.front() +
+            "' and '" + expected + "'");
+      if (requirement.result_expectations.empty())
+        requirement.result_expectations.push_back(expected);
+    }
+    return index;
+  }
+
+  void derive_expression_constraints(Function& function, const string& expression,
+                                     const string& expected_result = "") {
     string e = normalize_pipeline(trim(expression));
+    if (e.empty()) return;
+    string receiver, method;
+    vector<string> member_args;
+    bool member_call = parse_member_call(e, receiver, method, member_args);
     for (const auto& parameter : function.params) {
-      if (!parameter.type.empty()) continue;
-      string receiver, method; vector<string> args;
-      if (parse_member_call(e, receiver, method, args) && trim(receiver) == parameter.name) {
-        if (!has_structural_requirement(function, parameter.name, ConstraintKind::Method, method))
-          function.constraints.push_back({ConstraintKind::Method, parameter.name, method, ""});
+      bool trait_receiver = !parameter.type.empty() && traits_.count(parameter.type);
+      if (member_call && trim(receiver) == parameter.name &&
+          (parameter.type.empty() || trait_receiver)) {
+        add_method_requirement(function, parameter.name, method, member_args,
+                               expected_result);
+        function.static_dispatch = true;
+        if (parameter.type.empty()) function.generic = true;
+        for (const auto& related_parameter : function.params)
+          if (related_parameter.type.empty() &&
+              std::any_of(member_args.begin(), member_args.end(),
+                          [&](const string& argument) {
+                            return expression_uses(argument, related_parameter.name);
+                          }))
+            function.generic = true;
+
+        const TraitMethod* trait_method = nullptr;
+        if (trait_receiver) {
+          const auto* trait = traits_.at(parameter.type);
+          auto found = std::find_if(trait->methods.begin(), trait->methods.end(),
+                                    [&](const TraitMethod& candidate) {
+                                      return candidate.name == method &&
+                                             candidate.params.size() == member_args.size();
+                                    });
+          if (found != trait->methods.end()) trait_method = &*found;
+        }
+        for (size_t index = 0; index < member_args.size(); ++index) {
+          string expected;
+          if (trait_method && !trait_method->params[index].type.empty())
+            expected = trait_method->params[index].type;
+          derive_expression_constraints(function, member_args[index], expected);
+        }
       }
+      if (!parameter.type.empty()) continue;
       auto dot = e.find('.');
       if (dot != string::npos && trim(e.substr(0, dot)) == parameter.name && e.find('(', dot) == string::npos) {
         string field = trim(e.substr(dot + 1));
@@ -918,26 +1054,70 @@ class Checker {
     }
     for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/"}})
       if (auto binary = split_binary(e, ops)) {
-        derive_expression_constraints(function, binary->first);
-        derive_expression_constraints(function, binary->second);
+        auto left_type = constraint_expression_type(function, binary->first);
+        auto right_type = constraint_expression_type(function, binary->second);
+        string left_expected = right_type.value_or("");
+        string right_expected = left_type.value_or("");
+        bool comparison = ops.front() == "==";
+        if (!comparison && !expected_result.empty() && expected_result != "$function_result") {
+          if (left_expected.empty()) left_expected = expected_result;
+          if (right_expected.empty()) right_expected = expected_result;
+        }
+        derive_expression_constraints(function, binary->first, left_expected);
+        derive_expression_constraints(function, binary->second, right_expected);
       }
     string callee; vector<string> call_args;
-    if (parse_simple_call(e, callee, call_args)) for (const auto& arg : call_args) derive_expression_constraints(function, arg);
+    if (parse_simple_call(e, callee, call_args) && !member_call) {
+      const Function* called = functions_.count(callee) ? functions_.at(callee) : nullptr;
+      for (size_t index = 0; index < call_args.size(); ++index) {
+        string expected;
+        if (called && index < called->params.size() &&
+            !called->params[index].type.empty() &&
+            !traits_.count(called->params[index].type))
+          expected = called->params[index].type;
+        derive_expression_constraints(function, call_args[index], expected);
+      }
+    }
   }
 
   static bool numeric_type(const string& t) { return t == "int" || t == "float"; }
-  bool trait_conforms(const string& type, const string& trait) const {
+  bool trait_conforms(const string& type, const string& trait,
+                      string* reason = nullptr) const {
     auto it = traits_.find(trait);
-    if (it == traits_.end()) return false;
+    if (it == traits_.end()) {
+      if (reason) *reason = "unknown trait";
+      return false;
+    }
     auto object = objects_.find(type);
+    if (object == objects_.end()) {
+      if (reason) *reason = "only concrete object types can satisfy method traits";
+      return false;
+    }
     for (const auto& method : it->second->methods) {
-      if (object == objects_.end()) return false;
-      vector<string> args(method.params.size(), "");
-      auto found = resolve_method(type, method.name, args);
-      if (!found) return false;
-      for (size_t i = 0; i < method.params.size(); ++i)
-        if (!method.params[i].type.empty() && !found->params[i].type.empty() && !same_type(method.params[i].type, found->params[i].type)) return false;
-      if (method.return_type && found->return_type && !same_type(*method.return_type, *found->return_type)) return false;
+      vector<string> args;
+      for (const auto& parameter : method.params)
+        args.push_back(canonical_type_name(parameter.type));
+      MethodResolutionFailure failure = MethodResolutionFailure::None;
+      auto found = resolve_method(type, method.name, args, true, &failure);
+      if (!found) {
+        if (reason) {
+          if (failure == MethodResolutionFailure::MissingMethod)
+            *reason = "missing required trait method '" + method.name + "'";
+          else if (failure == MethodResolutionFailure::WrongArity)
+            *reason = "trait method '" + method.name + "' has incompatible arity";
+          else if (failure == MethodResolutionFailure::IncompatibleArguments)
+            *reason = "trait method '" + method.name + "' has an incompatible parameter signature";
+          else
+            *reason = "trait method '" + method.name + "' is ambiguous";
+        }
+        return false;
+      }
+      if (method.return_type &&
+          (!found->return_type || !same_type(*method.return_type, *found->return_type))) {
+        if (reason)
+          *reason = "trait method '" + method.name + "' has incompatible result type";
+        return false;
+      }
     }
     return true;
   }
@@ -952,9 +1132,31 @@ class Checker {
     return nullptr;
   }
 
+  void check_traits() {
+    for (const auto& trait : p_.traits) {
+      std::set<string> signatures;
+      for (const auto& method : trait.methods) {
+        string signature = method.name + "/" + std::to_string(method.params.size());
+        for (const auto& parameter : method.params) {
+          if (!parameter.type.empty() && !valid_type(parameter.type))
+            err(method.line, "unknown parameter type '" + parameter.type +
+                "' in trait method '" + trait.name + "." + method.name + "'");
+          signature += ":" + canonical_type_name(parameter.type);
+        }
+        if (!signatures.insert(signature).second)
+          err(method.line, "duplicate trait method signature '" + trait.name + "." +
+              method.name + "'");
+        if (method.return_type && !valid_type(*method.return_type))
+          err(method.line, "unknown result type '" + *method.return_type +
+              "' in trait method '" + trait.name + "." + method.name + "'");
+      }
+    }
+  }
+
   void check_objects() {
     for (const auto& object : p_.objects) {
       std::set<string> field_names;
+      std::set<string> method_signatures;
       for (const auto& field : object.fields) {
         if (!valid_type(field.type)) err(field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
@@ -962,14 +1164,25 @@ class Checker {
       }
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
+        string signature = method.name + "/" + std::to_string(method.params.size());
         std::unordered_map<string,string> env;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
             err(method.line, "cannot infer type for parameter '" + param.name +
                 "' in method '" + object.name + "." + method.name + "'");
+          if (!valid_type(param.type))
+            err(method.line, "unknown parameter type '" + param.type +
+                "' in method '" + object.name + "." + method.name + "'");
+          signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
         }
+        if (!method_signatures.insert(signature).second)
+          err(method.line, "duplicate method signature '" + object.name + "." +
+              method.name + "'");
+        if (method.return_type && !valid_type(*method.return_type))
+          err(method.line, "unknown result type '" + *method.return_type +
+              "' in method '" + object.name + "." + method.name + "'");
         infer_statement_expressions(method.body, env);
         for (const auto& s : method.body) {
           if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
@@ -991,10 +1204,15 @@ class Checker {
                   "' but is annotated/inferred as '" + *method.return_type + "'");
           }
         }
+        bool has_value_return = method.result_expression.has_value() ||
+            std::any_of(method.body.begin(), method.body.end(), [](const Stmt& statement) {
+              return statement.kind == Stmt::Kind::Return && !statement.a.empty();
+            });
+        if (!method.return_type && !has_value_return) method.return_type = "unit";
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
         check_stmts(method.body, env, nullptr, nullptr, &method_function);
         if (method.result_expression) check_expression(method.line, *method.result_expression, env);
-        if (!method.return_type && (!method.body.empty() || method.result_expression))
+        if (!method.return_type && has_value_return)
           err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
       current_object_ = nullptr;
@@ -1074,7 +1292,9 @@ class Checker {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
         const_cast<Function&>(f).return_type = *actual;
-      } else if (canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
+      } else if (!starts_with(*f.return_type, "_method_result:") &&
+                 !starts_with(*actual, "_method_") &&
+                 canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
         err(f.result_line ? f.result_line : f.line,
             "function '" + f.name + "' returns '" + *actual +
             "' but is annotated '" + *f.return_type + "'");
@@ -1285,6 +1505,12 @@ class Checker {
       }
       if (function != functions_.end() && function->second->return_type) {
         string r = canonical_type_name(*function->second->return_type);
+        if (starts_with(r, "_method_result:")) {
+          vector<string> actual_types;
+          for (const auto& arg : args)
+            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          return specialized_function_return_type(*function->second, actual_types);
+        }
         if (starts_with(r, "_generic:")) {
           auto relation = function->second->generic_results.find(r.substr(9));
           if (relation == function->second->generic_results.end()) return std::nullopt;
@@ -1334,6 +1560,17 @@ class Checker {
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
           if (method->return_type) return *method->return_type;
+        if (starts_with(*base, "_generic:")) return string("_method_value");
+        auto trait = traits_.find(canonical_type_name(*base));
+        if (trait != traits_.end()) {
+          auto declared = std::find_if(trait->second->methods.begin(), trait->second->methods.end(),
+                                       [&](const TraitMethod& candidate) {
+                                         return candidate.name == method_name &&
+                                                candidate.params.size() == method_args.size();
+                                       });
+          if (declared != trait->second->methods.end())
+            return declared->return_type.value_or("_method_value");
+        }
       }
     }
 
@@ -1384,6 +1621,92 @@ class Checker {
     return canonical_type_name(left) == canonical_type_name(right);
   }
 
+  std::unordered_map<string,string> instantiated_function_env(
+      const Function& function, const vector<string>& parameter_types) const {
+    std::unordered_map<string,string> env;
+    for (size_t index = 0;
+         index < function.params.size() && index < parameter_types.size(); ++index)
+      env[function.params[index].name] = canonical_type_name(parameter_types[index]);
+    for (const auto& statement : function.body) {
+      if (statement.kind != Stmt::Kind::Assign && statement.kind != Stmt::Kind::Let &&
+          statement.kind != Stmt::Kind::Var)
+        continue;
+      if (auto type = inferred_expr_type(statement.b, env))
+        env[statement.a] = canonical_type_name(*type);
+    }
+    return env;
+  }
+
+  const Method* resolve_method_requirement(const Function& function,
+                                           const Constraint& requirement,
+                                           const vector<string>& parameter_types,
+                                           MethodResolutionFailure* failure = nullptr) const {
+    auto env = instantiated_function_env(function, parameter_types);
+    auto receiver = env.find(requirement.subject);
+    if (receiver == env.end()) {
+      if (failure) *failure = MethodResolutionFailure::UnknownReceiver;
+      return nullptr;
+    }
+    vector<string> argument_types;
+    for (const auto& argument : requirement.arguments)
+      argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    return resolve_method(canonical_type_name(receiver->second), requirement.detail,
+                          argument_types, false, failure);
+  }
+
+  std::optional<string> specialized_function_return_type(
+      const Function& function, const vector<string>& parameter_types) const {
+    if (!function.return_type) return std::nullopt;
+    string result = canonical_type_name(*function.return_type);
+    bool requires_concrete_result = starts_with(result, "_") || traits_.count(result);
+    if (requires_concrete_result) {
+      auto env = instantiated_function_env(function, parameter_types);
+      std::optional<string> inferred_result;
+      auto include_result = [&](const string& expression) {
+        auto actual = inferred_expr_type(expression, env);
+        if (!actual || starts_with(*actual, "_")) return true;
+        string concrete = canonical_type_name(*actual);
+        if (inferred_result && !same_type(*inferred_result, concrete)) return false;
+        inferred_result = concrete;
+        return true;
+      };
+      if (function.result_expression && !include_result(*function.result_expression))
+        return std::nullopt;
+      for (const auto& statement : function.body)
+        if (statement.kind == Stmt::Kind::Return && !statement.a.empty() &&
+            !include_result(statement.a))
+          return std::nullopt;
+      if (inferred_result) return inferred_result;
+    }
+    if (starts_with(result, "_generic:")) {
+      string parameter = result.substr(9);
+      for (size_t index = 0;
+           index < function.params.size() && index < parameter_types.size(); ++index)
+        if (function.params[index].name == parameter)
+          return canonical_type_name(parameter_types[index]);
+      return std::nullopt;
+    }
+    if (traits_.count(result)) {
+      for (size_t index = 0;
+           index < function.params.size() && index < parameter_types.size(); ++index)
+        if (canonical_type_name(function.params[index].type) == result)
+          return canonical_type_name(parameter_types[index]);
+      return std::nullopt;
+    }
+    if (!starts_with(result, "_method_result:")) return result;
+    string suffix = result.substr(15);
+    if (suffix.empty() || !std::all_of(suffix.begin(), suffix.end(), [](char ch) {
+          return std::isdigit(static_cast<unsigned char>(ch));
+        }))
+      return std::nullopt;
+    size_t index = static_cast<size_t>(std::stoull(suffix));
+    if (index >= function.constraints.size()) return std::nullopt;
+    auto method = resolve_method_requirement(function, function.constraints[index],
+                                             parameter_types);
+    if (!method || !method->return_type) return std::nullopt;
+    return canonical_type_name(*method->return_type);
+  }
+
   void constrain_constructor_fields(int line, const string& expression,
                                     const std::unordered_map<string,string>& env) {
     string normalized = normalize_pipeline(trim(expression));
@@ -1408,8 +1731,11 @@ class Checker {
         if (function != functions_.end() && index < function->second->params.size()) {
           if (auto actual = inferred_expr_type(args[index], env)) {
             auto& parameter = function->second->params[index];
-            if (parameter.type.empty() && !function->second->generic) parameter.type = *actual;
-            else if (!function->second->generic && !same_type(parameter.type, *actual))
+            if (parameter.type.empty() && !function->second->generic &&
+                !function->second->static_dispatch)
+              parameter.type = *actual;
+            else if (!function->second->generic && !function->second->static_dispatch &&
+                     !traits_.count(parameter.type) && !same_type(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
                   parameter.type + "'");
@@ -1503,8 +1829,13 @@ class Checker {
                 auto actual = inferred_expr_type(statement.args[i], env);
                 if (!actual) continue;
                 auto& parameter = function->second->params[i];
-                if (parameter.type.empty() && !function->second->generic) parameter.type = *actual;
-                else if (!function->second->generic && !same_type(parameter.type, *actual))
+                if (parameter.type.empty() && !function->second->generic &&
+                    !function->second->static_dispatch)
+                  parameter.type = *actual;
+                else if (!function->second->generic &&
+                         !function->second->static_dispatch &&
+                         !traits_.count(parameter.type) &&
+                         !same_type(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
                       "', expected '" + parameter.type + "'");
@@ -1657,6 +1988,9 @@ class Checker {
 
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
+      for (const auto& parameter : function.params)
+        if (!parameter.type.empty() && traits_.count(parameter.type))
+          function.static_dispatch = true;
       for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
@@ -1684,14 +2018,42 @@ class Checker {
         if (function.result_expression) mark(*function.result_expression);
         for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
       }
-      if (function.result_expression) derive_expression_constraints(function, *function.result_expression);
+      auto result_expectation = [&]() {
+        if (function.return_type && !starts_with(*function.return_type, "_"))
+          return *function.return_type;
+        return string("$function_result");
+      };
+      if (function.result_expression)
+        derive_expression_constraints(function, *function.result_expression,
+                                      result_expectation());
       for (const auto& s : function.body) {
         derive_expression_constraints(function, s.a);
         derive_expression_constraints(function, s.b);
         for (const auto& arg : s.args) derive_expression_constraints(function, arg);
         if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
           derive_expression_constraints(function, s.b);
-        if (s.kind == Stmt::Kind::Return && !s.a.empty()) derive_expression_constraints(function, s.a);
+        if (s.kind == Stmt::Kind::Return && !s.a.empty())
+          derive_expression_constraints(function, s.a, result_expectation());
+      }
+      std::unordered_map<string,string> local_sources;
+      for (const auto& statement : function.body) {
+        if ((statement.kind == Stmt::Kind::Assign ||
+             statement.kind == Stmt::Kind::Let ||
+             statement.kind == Stmt::Kind::Var) &&
+            plain_identifier(statement.a))
+          local_sources[statement.a] = statement.b;
+        if (statement.kind == Stmt::Kind::Return) {
+          auto source = local_sources.find(trim(statement.a));
+          if (source != local_sources.end())
+            derive_expression_constraints(function, source->second,
+                                          result_expectation());
+        }
+      }
+      if (function.result_expression) {
+        auto source = local_sources.find(trim(*function.result_expression));
+        if (source != local_sources.end())
+          derive_expression_constraints(function, source->second,
+                                        result_expectation());
       }
       if (!function.return_type || starts_with(*function.return_type, "_"))
         for (const auto& kv : function.generic_results)
@@ -1709,7 +2071,9 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (auto result = inferred_expr_type(*function.result_expression, env)) {
             if (!function.return_type) function.return_type = *result;
-            else if (!same_type(*function.return_type, *result))
+            else if (!starts_with(*function.return_type, "_method_result:") &&
+                     !starts_with(*result, "_method_") &&
+                     !same_type(*function.return_type, *result))
               err(function.result_line, "function '" + function.name + "' returns '" + *result +
                   "' but is annotated '" + *function.return_type + "'");
           }
@@ -1719,7 +2083,9 @@ class Checker {
             auto result = inferred_expr_type(statement.a, env);
             if (!result) continue;
             if (!function.return_type) function.return_type = *result;
-            else if (!same_type(*function.return_type, *result))
+            else if (!starts_with(*function.return_type, "_method_result:") &&
+                     !starts_with(*result, "_method_") &&
+                     !same_type(*function.return_type, *result))
               err(statement.line, "function '" + function.name + "' returns '" + *result +
                   "' but another return path has type '" + *function.return_type + "'");
           }
@@ -1984,8 +2350,111 @@ class Checker {
     }
   }
 
+  static bool concrete_specialization_type(const string& type) {
+    return !type.empty() && !starts_with(type, "_");
+  }
+
+  static string type_list(const vector<string>& types) {
+    std::ostringstream out;
+    for (size_t index = 0; index < types.size(); ++index) {
+      if (index) out << ", ";
+      out << (types[index].empty() ? "unresolved" : canonical_type_name(types[index]));
+    }
+    return out.str();
+  }
+
+  void validate_method_requirements(int line, const Function& function,
+                                    const vector<string>& parameter_types) const {
+    auto instantiated = instantiated_function_env(function, parameter_types);
+    std::optional<string> related_function_result;
+    for (const auto& requirement : function.constraints) {
+      if (requirement.kind != ConstraintKind::Method) continue;
+      auto receiver = instantiated.find(requirement.subject);
+      if (receiver == instantiated.end() ||
+          !concrete_specialization_type(receiver->second) ||
+          traits_.count(receiver->second))
+        continue;
+      vector<string> argument_types;
+      for (const auto& argument : requirement.arguments)
+        argument_types.push_back(inferred_expr_type(argument, instantiated).value_or(""));
+      MethodResolutionFailure failure = MethodResolutionFailure::None;
+      const Method* method = resolve_method(canonical_type_name(receiver->second),
+                                            requirement.detail, argument_types,
+                                            false, &failure);
+      if (!method) {
+        string prefix = "argument to function '" + function.name + "' has type '" +
+            canonical_type_name(receiver->second) + "'";
+        if (failure == MethodResolutionFailure::WrongArity)
+          err(line, prefix + " with wrong arity for required method '" +
+              requirement.detail + "' (requires " +
+              std::to_string(requirement.arity) + ")");
+        if (failure == MethodResolutionFailure::IncompatibleArguments)
+          err(line, prefix + " whose method '" + requirement.detail +
+              "' is incompatible with argument types (" + type_list(argument_types) + ")");
+        if (failure == MethodResolutionFailure::Ambiguous)
+          err(line, prefix + " with ambiguous required method '" +
+              requirement.detail + "'");
+        err(line, prefix + " missing required method '" + requirement.detail + "'");
+      }
+      string result = method->return_type.value_or("unit");
+      if (!requirement.result.empty()) {
+        if (related_function_result && !same_type(*related_function_result, result))
+          err(line, "conflicting method result expectations in function '" +
+              function.name + "': required methods resolve to both '" +
+              *related_function_result + "' and '" + result + "'");
+        related_function_result = result;
+      }
+      for (const auto& expected : requirement.result_expectations) {
+        if (!same_type(result, expected))
+          err(line, "required method '" + requirement.detail + "' on type '" +
+              canonical_type_name(receiver->second) + "' returns '" + result +
+              "', conflicting with expected result type '" + expected + "'");
+      }
+    }
+  }
+
+  void register_static_specialization(int line, Function& function,
+                                      const vector<string>& parameter_types) {
+    if (!function.static_dispatch) return;
+    if (parameter_types.size() != function.params.size() ||
+        !std::all_of(parameter_types.begin(), parameter_types.end(),
+                     [&](const string& type) {
+                       return concrete_specialization_type(type) &&
+                              !traits_.count(canonical_type_name(type));
+                     }))
+      return;
+    vector<string> canonical_types;
+    for (const auto& type : parameter_types)
+      canonical_types.push_back(canonical_type_name(type));
+    auto existing = std::find_if(function.specializations.begin(),
+                                 function.specializations.end(),
+                                 [&](const FunctionSpecialization& specialization) {
+                                   return specialization.parameter_types == canonical_types;
+                                 });
+    if (existing != function.specializations.end()) return;
+    auto result = specialized_function_return_type(function, canonical_types);
+    if (!result)
+      err(line, "cannot determine the concrete result type for static specialization of function '" +
+          function.name + "'");
+    FunctionSpecialization specialization;
+    specialization.generated_name = "__moss_specialize_" + function.name + "_" +
+        std::to_string(function.specializations.size());
+    specialization.parameter_types = canonical_types;
+    specialization.return_type = canonical_type_name(*result);
+    function.specializations.push_back(specialization);
+
+    std::unordered_map<string,string> specialized_env;
+    for (size_t index = 0; index < function.params.size(); ++index)
+      specialized_env[function.params[index].name] = canonical_types[index];
+    infer_statement_expressions(function.body, specialized_env);
+    check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
+    if (function.result_expression)
+      check_expression(function.result_line ? function.result_line : function.line,
+                       *function.result_expression, specialized_env);
+  }
+
   void check_function_call(int line, const string& name, const vector<string>& args,
-                           const std::unordered_map<string,string>& env) const {
+                           const std::unordered_map<string,string>& env) {
     auto function = functions_.find(name);
     if (function == functions_.end()) {
       if (name == "sqrt" || name == "sum") return;
@@ -2001,36 +2470,58 @@ class Checker {
       err(line, "function " + name + " expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
           std::to_string(args.size()));
+    vector<string> actual_types;
+    for (const auto& argument : args)
+      actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
     for (size_t index = 0; index < args.size(); ++index) {
-      auto actual = inferred_expr_type(args[index], env);
+      const auto& actual_type = actual_types[index];
       const auto& param = function->second->params[index];
-      if (actual && traits_.count(param.type) && !trait_conforms(*actual, param.type))
+      bool concrete_actual = concrete_specialization_type(actual_type) &&
+          !traits_.count(canonical_type_name(actual_type));
+      if (concrete_actual && traits_.count(param.type)) {
+        string reason;
+        if (!trait_conforms(actual_type, param.type, &reason))
+          err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
+              "' has type '" + actual_type + "' which does not satisfy trait '" +
+              param.type + "': " + reason);
+      }
+      bool container_match = !actual_type.empty() &&
+          ((param.type == "vector" && starts_with(actual_type, "vector[")) ||
+           (param.type == "map" && starts_with(actual_type, "map[")) ||
+           (param.type == "queue" && starts_with(actual_type, "queue[")));
+      if (!actual_type.empty() && !starts_with(actual_type, "_") &&
+          !function->second->generic && !param.type.empty() &&
+          !starts_with(param.type, "_") && !traits_.count(param.type) &&
+          !container_match && !same_type(param.type, actual_type))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
-            "' has type '" + *actual + "' which does not satisfy trait '" + param.type + "'");
-      bool container_match = (param.type == "vector" && starts_with(*actual, "vector[")) || (param.type == "map" && starts_with(*actual, "map[")) || (param.type == "queue" && starts_with(*actual, "queue["));
-      if (actual && !function->second->generic && !param.type.empty() && !starts_with(param.type, "_") && !traits_.count(param.type) && !container_match && !same_type(param.type, *actual))
-        err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
-            "' has type '" + *actual + "', expected '" +
+            "' has type '" + actual_type + "', expected '" +
             param.type + "'");
-      if (actual && has_constraint(*function->second, param.name)) {
+      if (concrete_actual && has_constraint(*function->second, param.name)) {
         for (const auto& op : constraint_details(*function->second, param.name)) {
-          if ((op == "+" || op == "-" || op == "*" || op == "/") && !numeric_type(*actual) && !(op == "+" && *actual == "string"))
+          if ((op == "+" || op == "-" || op == "*" || op == "/") && !numeric_type(actual_type) && !(op == "+" && actual_type == "string"))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
-          if (op == "[]" && !(starts_with(*actual, "vector[") || starts_with(*actual, "map[") || starts_with(*actual, "queue[")))
+          if (op == "[]" && !(starts_with(actual_type, "vector[") || starts_with(actual_type, "map[") || starts_with(actual_type, "queue[")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
         }
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
-          if (c.kind == ConstraintKind::Field && !type_has_field(*actual, c.detail))
-            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + *actual + "' missing required field '" + c.detail + "'");
-          if (c.kind == ConstraintKind::Method)
-            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + *actual + "' missing required method '" + c.detail + "'");
+          if (c.kind == ConstraintKind::Field && !type_has_field(actual_type, c.detail))
+            err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + actual_type + "' missing required field '" + c.detail + "'");
         }
       }
+    }
+    bool concrete_call = std::all_of(actual_types.begin(), actual_types.end(),
+                                     [&](const string& type) {
+                                       return concrete_specialization_type(type) &&
+                                              !traits_.count(canonical_type_name(type));
+                                     });
+    if (concrete_call) {
+      validate_method_requirements(line, *function->second, actual_types);
+      register_static_specialization(line, *function->second, actual_types);
     }
   }
 
   void check_expression(int line, const string& expression,
-                        const std::unordered_map<string,string>& env) const {
+                        const std::unordered_map<string,string>& env) {
     string value = normalize_pipeline(trim(expression));
     string receiver, handler;
     vector<string> args;
@@ -2047,11 +2538,39 @@ class Checker {
       }
       if (it != env.end() && traits_.count(it->second)) {
         const Trait* trait = traits_.at(it->second);
-        auto method = std::find_if(trait->methods.begin(), trait->methods.end(), [&](const TraitMethod& m) { return m.name == handler; });
-        if (method == trait->methods.end()) err(line, "trait '" + it->second + "' has no method '" + handler + "'");
-        if (method->params.size() != args.size()) err(line, "trait method '" + handler + "' expects " + std::to_string(method->params.size()) + " arguments");
-        for (const auto& arg : args) check_expression(line, arg, env);
+        auto named = std::find_if(trait->methods.begin(), trait->methods.end(),
+                                  [&](const TraitMethod& method) {
+                                    return method.name == handler;
+                                  });
+        if (named == trait->methods.end())
+          err(line, "trait '" + it->second + "' has no method '" + handler + "'");
+        auto method = std::find_if(trait->methods.begin(), trait->methods.end(),
+                                   [&](const TraitMethod& candidate) {
+                                     return candidate.name == handler &&
+                                            candidate.params.size() == args.size();
+                                   });
+        if (method == trait->methods.end())
+          err(line, "trait method '" + handler + "' expects " +
+              std::to_string(named->params.size()) + " arguments");
+        for (size_t index = 0; index < args.size(); ++index) {
+          auto actual = inferred_expr_type(args[index], env);
+          if (actual && !starts_with(*actual, "_") &&
+              !method->params[index].type.empty() &&
+              !same_type(*actual, method->params[index].type))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to trait method '" + handler + "' has type '" + *actual +
+                "', expected '" + method->params[index].type + "'");
+          check_expression(line, args[index], env);
+        }
         return;
+      }
+      if (it != env.end() && objects_.count(canonical_type_name(it->second))) {
+        vector<string> argument_types;
+        for (const auto& arg : args)
+          argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+        if (!resolve_method(canonical_type_name(it->second), handler, argument_types))
+          err(line, "no matching method '" + canonical_type_name(it->second) + "." +
+              handler + "' for supplied arguments");
       }
       check_expression(line, receiver, env);
       for (const auto& arg : args) check_expression(line, arg, env);
@@ -2191,6 +2710,19 @@ class Checker {
               for (const auto& arg : s.args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
               if (!resolve_method(canonical_type_name(receiver->second), s.b, argument_types))
                 err(s.line, "no matching method '" + receiver->second + "." + s.b + "' for supplied arguments");
+            } else if (receiver != env.end() && current_function &&
+                       (starts_with(receiver->second, "_generic:") ||
+                        traits_.count(receiver->second))) {
+              bool constrained = std::any_of(
+                  current_function->constraints.begin(),
+                  current_function->constraints.end(), [&](const Constraint& constraint) {
+                    return constraint.kind == ConstraintKind::Method &&
+                           constraint.subject == s.a && constraint.detail == s.b &&
+                           constraint.arity == s.args.size();
+                  });
+              if (!constrained)
+                err(s.line, "unresolved statically dispatched method '" + s.a + "." +
+                    s.b + "'");
             } else {
               err(s.line, "local member calls are not implemented; use a top-level function");
             }
@@ -2202,6 +2734,8 @@ class Checker {
           auto it = env.find(s.a); auto at = inferred_expr_type(s.args[0], env);
           if (it != env.end() && at && (it->second == "vector" || it->second == "queue")) it->second += "[" + *at + "]";
         }
+        if (!s.b.empty()) check_expression(s.line, s.text, env);
+        for (const auto& arg : s.args) check_expression(s.line, arg, env);
       }
 
       if (s.kind == Stmt::Kind::Echo) {
@@ -2229,7 +2763,15 @@ class Checker {
         if (!actual)
           err(s.line, "cannot infer the type of this return expression in function '" +
               current_function->name + "'");
-        if (current_function->return_type && !same_type(*actual, *current_function->return_type))
+        bool trait_result_match = current_function->return_type &&
+            traits_.count(canonical_type_name(*current_function->return_type)) &&
+            concrete_specialization_type(*actual) &&
+            trait_conforms(*actual, *current_function->return_type);
+        if (current_function->return_type &&
+            !starts_with(*current_function->return_type, "_method_result:") &&
+            !starts_with(*actual, "_method_") &&
+            !trait_result_match &&
+            !same_type(*actual, *current_function->return_type))
           err(s.line, "function '" + current_function->name + "' returns '" + *actual +
               "' but is annotated '" + *current_function->return_type + "'");
       }
@@ -2541,6 +3083,7 @@ class Generator {
       : p_(p), plan_(plan), await_error_handling_(await_error_handling) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
+    for (const auto& f : p.functions) functions_[f.name] = &f;
   }
 
   string generate() {
@@ -2600,6 +3143,7 @@ class Generator {
   bool await_error_handling_ = true;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
+  std::unordered_map<string, const Function*> functions_;
   size_t reply_temp_ = 0;
 
   static string comment_text(string text) {
@@ -2734,7 +3278,169 @@ class Generator {
     return false;
   }
 
-  string expr(string e, const Domain* d, const std::set<string>& locals) const {
+  static std::optional<std::pair<string,string>> generated_split_binary(
+      const string& expression, const vector<string>& operators) {
+    int parens = 0, braces = 0, brackets = 0;
+    bool in_string = false;
+    for (size_t index = expression.size(); index-- > 0;) {
+      char ch = expression[index];
+      if (in_string) {
+        if (ch == '"' && (index == 0 || expression[index - 1] != '\\'))
+          in_string = false;
+        continue;
+      }
+      if (ch == '"') { in_string = true; continue; }
+      if (ch == ')') ++parens;
+      else if (ch == '(') --parens;
+      else if (ch == '}') ++braces;
+      else if (ch == '{') --braces;
+      else if (ch == ']') ++brackets;
+      else if (ch == '[') --brackets;
+      if (parens != 0 || braces != 0 || brackets != 0) continue;
+      for (const auto& op : operators)
+        if (index + op.size() <= expression.size() &&
+            expression.compare(index, op.size(), op) == 0)
+          return std::make_pair(trim(expression.substr(0, index)),
+                                trim(expression.substr(index + op.size())));
+    }
+    return std::nullopt;
+  }
+
+  std::optional<string> generated_expr_type(
+      const string& expression,
+      const std::unordered_map<string,string>* types) const {
+    string value = normalize_pipeline(trim(expression));
+    if (value == "true" || value == "false") return string("bool");
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+      return string("string");
+    if (types) {
+      auto local = types->find(value);
+      if (local != types->end() && !local->second.empty() &&
+          !starts_with(local->second, "_"))
+        return canonical_type_name(local->second);
+    }
+    size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
+    if (start < value.size() &&
+        std::all_of(value.begin() + static_cast<std::ptrdiff_t>(start), value.end(),
+                    [](char ch) { return std::isdigit(static_cast<unsigned char>(ch)); }))
+      return string("int");
+    bool dot = false;
+    bool numeric = start < value.size();
+    for (size_t index = start; numeric && index < value.size(); ++index) {
+      if (value[index] == '.' && !dot) dot = true;
+      else if (!std::isdigit(static_cast<unsigned char>(value[index]))) numeric = false;
+    }
+    if (numeric && dot) return string("float");
+
+    string receiver, method_name;
+    vector<string> method_args;
+    if (parse_member_call(value, receiver, method_name, method_args)) {
+      auto receiver_type = generated_expr_type(receiver, types);
+      if (receiver_type) {
+        vector<string> argument_types;
+        for (const auto& argument : method_args)
+          argument_types.push_back(generated_expr_type(argument, types).value_or(""));
+        auto match = resolve_object_method(objects_, *receiver_type, method_name,
+                                           argument_types, false, nullptr);
+        if (match && match->return_type)
+          return canonical_type_name(*match->return_type);
+      }
+    }
+
+    string callee;
+    vector<string> call_args;
+    if (parse_simple_call(value, callee, call_args)) {
+      if (objects_.count(callee)) return callee;
+      auto function = functions_.find(callee);
+      if (function != functions_.end() && function->second->return_type) {
+        vector<string> argument_types;
+        for (const auto& argument : call_args)
+          argument_types.push_back(generated_expr_type(argument, types).value_or(""));
+        if (function->second->static_dispatch) {
+          auto specialization = std::find_if(
+              function->second->specializations.begin(),
+              function->second->specializations.end(),
+              [&](const FunctionSpecialization& candidate) {
+                return candidate.parameter_types == argument_types;
+              });
+          if (specialization != function->second->specializations.end())
+            return specialization->return_type;
+          return std::nullopt;
+        }
+        string result = canonical_type_name(*function->second->return_type);
+        if (starts_with(result, "_generic:")) {
+          string parameter = result.substr(9);
+          for (size_t index = 0; index < function->second->params.size(); ++index)
+            if (function->second->params[index].name == parameter &&
+                index < argument_types.size() && !argument_types[index].empty())
+              return argument_types[index];
+          return std::nullopt;
+        }
+        if (!starts_with(result, "_")) return result;
+      }
+    }
+
+    auto member = value.rfind('.');
+    if (member != string::npos && value.find('(', member) == string::npos) {
+      auto base = generated_expr_type(value.substr(0, member), types);
+      if (base) {
+        auto object = objects_.find(canonical_type_name(*base));
+        if (object != objects_.end())
+          for (const auto& field : object->second->fields)
+            if (field.name == trim(value.substr(member + 1)))
+              return canonical_type_name(field.type);
+      }
+    }
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = generated_split_binary(value, operators)) {
+        if (operators.front() == "==") return string("bool");
+        auto left = generated_expr_type(binary->first, types);
+        auto right = generated_expr_type(binary->second, types);
+        if (left && right) {
+          if (*left == "string" && *right == "string" && value.find('+') != string::npos)
+            return string("string");
+          if ((*left == "int" || *left == "float") &&
+              (*right == "int" || *right == "float"))
+            return (*left == "float" || *right == "float") ? "float" : "int";
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  static string generated_type_list(const vector<string>& types) {
+    std::ostringstream out;
+    for (size_t index = 0; index < types.size(); ++index) {
+      if (index) out << ", ";
+      out << (types[index].empty() ? "unresolved" : types[index]);
+    }
+    return out.str();
+  }
+
+  string emitted_function_name(
+      const string& name, const vector<string>& arguments,
+      const std::unordered_map<string,string>* types) const {
+    auto function = functions_.find(name);
+    if (function == functions_.end() || !function->second->static_dispatch)
+      return name;
+    vector<string> argument_types;
+    for (const auto& argument : arguments)
+      argument_types.push_back(generated_expr_type(argument, types).value_or(""));
+    auto specialization = std::find_if(
+        function->second->specializations.begin(),
+        function->second->specializations.end(),
+        [&](const FunctionSpecialization& candidate) {
+          return candidate.parameter_types == argument_types;
+        });
+    if (specialization == function->second->specializations.end())
+      throw std::runtime_error("missing static specialization for function '" + name +
+                               "' with argument types (" + generated_type_list(argument_types) + ")");
+    return specialization->generated_name;
+  }
+
+  string expr(string e, const Domain* d, const std::set<string>& locals,
+              const std::unordered_map<string,string>* types = nullptr) const {
     e = normalize_pipeline(trim(e));
     if (e.size() >= 6 && e.find(".pop()") != string::npos) {
       auto pos = e.find(".pop()"); e.replace(pos, 6, ".pop_front()");
@@ -2747,13 +3453,13 @@ class Generator {
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
       std::ostringstream r; r << "vec![";
-      for (size_t i=0;i<parts.size();++i) { if (i) r << ", "; r << expr(parts[i], d, locals); }
+      for (size_t i=0;i<parts.size();++i) { if (i) r << ", "; r << expr(parts[i], d, locals, types); }
       r << "]"; return r.str();
     }
     string ib, ii;
     if (parse_index(e, ib, ii)) {
-      string ir = (ii.size() >= 2 && ii.front() == '"' && ii.back() == '"') ? ii : expr(ii, d, locals);
-      return "(" + expr(ib, d, locals) + "[" + ir + "]).clone()";
+      string ir = (ii.size() >= 2 && ii.front() == '"' && ii.back() == '"') ? ii : expr(ii, d, locals, types);
+      return "(" + expr(ib, d, locals, types) + "[" + ir + "]).clone()";
     }
 
     // Named value-object construction. Moss prefers `=` here; `:` remains a
@@ -2778,7 +3484,7 @@ class Generator {
         for (const auto& f : oit->second->fields) {
           auto vit = values.find(f.name);
           if (vit == values.end()) throw std::runtime_error("missing object constructor field: " + head + "." + f.name);
-          string v = expr(vit->second, d, locals);
+          string v = expr(vit->second, d, locals, types);
           string ft = trim(f.type);
           if (!(ft == "int" || ft == "float" || ft == "bool")) v = "(" + v + ").clone()";
           if (!first) r << ", ";
@@ -2790,10 +3496,10 @@ class Generator {
       }
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
-        bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == head; });
+        bool known_function = functions_.count(head);
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
-        r << head << "(";
-        for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals); }
+        r << emitted_function_name(head, call_args, types) << "(";
+        for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals, types); }
         r << ")"; return r.str();
       }
     }
@@ -2802,13 +3508,13 @@ class Generator {
     vector<string> builtin_args;
     if (parse_simple_call(e, builtin, builtin_args)) {
       if (builtin == "sqrt" && builtin_args.size() == 1)
-        return "(" + expr(builtin_args.front(), d, locals) + ").sqrt()";
+        return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
       if (builtin == "sum" && builtin_args.size() == 1)
-        return expr(builtin_args.front(), d, locals) + ".iter().copied().sum()";
-      bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == builtin; });
+        return expr(builtin_args.front(), d, locals, types) + ".iter().copied().sum()";
+      bool known_function = functions_.count(builtin);
       if (d && objects_.count(d->name) && !known_function) {
         std::ostringstream r; r << "self." << builtin << "(";
-        for (size_t i = 0; i < builtin_args.size(); ++i) { if (i) r << ", "; r << expr(builtin_args[i], d, locals); }
+        for (size_t i = 0; i < builtin_args.size(); ++i) { if (i) r << ", "; r << expr(builtin_args[i], d, locals, types); }
         r << ")"; return r.str();
       }
     }
@@ -2872,8 +3578,10 @@ class Generator {
     s.swap(out);
   }
 
-  string message_arg(const string& e, const string& type, const Domain* d, const std::set<string>& locals) const {
-    string r = expr(e, d, locals);
+  string message_arg(const string& e, const string& type, const Domain* d,
+                     const std::set<string>& locals,
+                     const std::unordered_map<string,string>* types = nullptr) const {
+    string r = expr(e, d, locals, types);
     string t = trim(type);
     if (copy_type(t) || domains_.count(t) || t == "_") return domains_.count(t) ? "(" + r + ").clone()" : r;
     // Detached non-copy values transfer ownership through a message. The checker
@@ -2883,7 +3591,8 @@ class Generator {
 
   string cluster_call_arg(const string& expression, const string& type,
                           const Domain* source, const std::set<string>& locals,
-                          size_t cluster, bool crosses_thread) const {
+                          size_t cluster, bool crosses_thread,
+                          const std::unordered_map<string,string>* types = nullptr) const {
     string value_type = trim(type);
     if (domains_.count(value_type)) {
       if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster)) {
@@ -2891,11 +3600,11 @@ class Generator {
           return "self." + snake_case(value_type) + "_ref.clone()";
         return value_type + "LocalRef";
       }
-      string value = expr(expression, source, locals);
+      string value = expr(expression, source, locals, types);
       if (crosses_thread) return "(" + value + ").as_ref().clone()";
       return "(" + value + ").clone()";
     }
-    return message_arg(expression, type, source, locals);
+    return message_arg(expression, type, source, locals, types);
   }
 
   void gen_tracker(std::ostringstream& o) {
@@ -3010,22 +3719,29 @@ class Generator {
       receiver.state = t.fields;
       std::set<string> locals;
       std::unordered_map<string,string> types;
+      for (const auto& field : t.fields) types[field.name] = field.type;
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
       gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, false,
                 std::nullopt, true);
       if (method.result_expression)
-        o << "        " << expr(*method.result_expression, &receiver, locals) << "\n";
+        o << "        " << expr(*method.result_expression, &receiver, locals, &types) << "\n";
       o << "    }\n";
       o << "}\n\n";
     }
   }
 
-  void gen_function(std::ostringstream& o, const Function& f) {
-    bool container_generic = std::any_of(f.params.begin(), f.params.end(), [](const Param& p) { return p.type == "vector" || p.type == "queue" || p.type == "map"; });
+  void gen_function_instance(std::ostringstream& o, const Function& f,
+                             const FunctionSpecialization* specialization) {
+    bool container_generic = !specialization &&
+        std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
+          return p.type == "vector" || p.type == "queue" || p.type == "map";
+        });
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
-    backend_comment(o, 0, "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
-    o << "fn " << f.name;
-    if (f.generic || container_generic) {
+    backend_comment(o, 0, specialization
+        ? "STATIC specialization: concrete local function selected before Rust generation"
+        : "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
+    o << "fn " << (specialization ? specialization->generated_name : f.name);
+    if (!specialization && (f.generic || container_generic)) {
       o << "<";
       size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") { if (gi++) o << ", "; o << "T_" << p.name; }
       o << ">";
@@ -3033,23 +3749,25 @@ class Generator {
     o << "(";
     for (size_t index = 0; index < f.params.size(); ++index) {
       if (index) o << ", ";
-      string pt = f.params[index].type;
+      string pt = specialization ? specialization->parameter_types[index]
+                                 : f.params[index].type;
       auto ops = constraint_ops(f, f.params[index].name);
-      if (pt.empty() && !ops.empty()) {
+      if (!specialization && pt.empty() && !ops.empty()) {
         if (ops.count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
         else o << f.params[index].name << ": T_" << f.params[index].name;
-      } else if (pt == "vector") o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
-      else if (pt == "queue") o << f.params[index].name << ": VecDeque<T_" << f.params[index].name << ">";
+      } else if (!specialization && pt == "vector") o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
+      else if (!specialization && pt == "queue") o << f.params[index].name << ": VecDeque<T_" << f.params[index].name << ">";
       else o << f.params[index].name << ": " << rust_type(pt);
     }
-    string return_type = f.return_type.value_or("unit");
+    string return_type = specialization ? specialization->return_type
+                                        : f.return_type.value_or("unit");
     if (return_type != "unit") {
       string rr = return_type;
-      if (starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
-      else if (starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
-      else if (starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
+      if (!specialization && starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);
+      else if (!specialization && starts_with(rr, "_element:_element:")) rr = "T_" + rr.substr(17);
+      else if (!specialization && starts_with(rr, "_element:element:")) rr = "T_" + rr.substr(17);
       o << ") -> " << (rr == return_type ? rust_type(rr) : rr);
-      if (f.generic || container_generic) {
+      if (!specialization && (f.generic || container_generic)) {
         o << " where "; size_t bi=0;
         for (const auto& p : f.params) { auto ops = constraint_ops(f, p.name); if (ops.empty() && p.type != "vector" && p.type != "queue") continue; if (bi++) o << ", "; o << "T_" << p.name << ": ";
           bool idx = ops.count("[]");
@@ -3065,17 +3783,27 @@ class Generator {
     else o << ") {\n";
     std::set<string> locals;
     std::unordered_map<string,string> types;
-    for (const auto& parameter : f.params) {
-      locals.insert(parameter.name);
-      types[parameter.name] = parameter.type;
+    for (size_t index = 0; index < f.params.size(); ++index) {
+      locals.insert(f.params[index].name);
+      types[f.params[index].name] = specialization
+          ? specialization->parameter_types[index] : f.params[index].type;
     }
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, false,
               std::nullopt, true);
     if (f.result_expression) {
       source_comment(o, 4, f.result_line, *f.result_expression);
-      o << "    " << expr(*f.result_expression, nullptr, locals) << "\n";
+      o << "    " << expr(*f.result_expression, nullptr, locals, &types) << "\n";
     }
     o << "}\n\n";
+  }
+
+  void gen_function(std::ostringstream& o, const Function& f) {
+    if (f.static_dispatch) {
+      for (const auto& specialization : f.specializations)
+        gen_function_instance(o, f, &specialization);
+      return;
+    }
+    gen_function_instance(o, f, nullptr);
   }
 
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
@@ -3657,7 +4385,7 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::If: {
-          o << indent(level) << "if " << expr(s.a, d, locals) << " {\n";
+          o << indent(level) << "if " << expr(s.a, d, locals, &types) << " {\n";
           ++i;
           auto child_locals = locals;
           auto child_types = types;
@@ -3681,7 +4409,7 @@ class Generator {
           break;
         }
         case Stmt::Kind::While: {
-          o << indent(level) << "while " << expr(s.a, d, locals) << " {\n";
+          o << indent(level) << "while " << expr(s.a, d, locals, &types) << " {\n";
           ++i;
           auto child_locals = locals;
           auto child_types = types;
@@ -3698,7 +4426,7 @@ class Generator {
             o << "println!(\"";
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
-            for (const auto& a : s.args) o << ", " << expr(a, d, locals);
+            for (const auto& a : s.args) o << ", " << expr(a, d, locals, &types);
             o << ");\n";
           }
           ++i;
@@ -3725,10 +4453,10 @@ class Generator {
           string lhs;
           string lhs_base, lhs_index;
           if (parse_index(s.a, lhs_base, lhs_index)) {
-            string ir = (lhs_index.size() >= 2 && lhs_index.front() == '"' && lhs_index.back() == '"') ? lhs_index : expr(lhs_index, d, locals);
-            lhs = expr(lhs_base, d, locals) + "[" + ir + "]";
+            string ir = (lhs_index.size() >= 2 && lhs_index.front() == '"' && lhs_index.back() == '"') ? lhs_index : expr(lhs_index, d, locals, &types);
+            lhs = expr(lhs_base, d, locals, &types) + "[" + ir + "]";
           }
-          else lhs = expr(s.a, d, locals);
+          else lhs = expr(s.a, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
           if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
@@ -3738,23 +4466,32 @@ class Generator {
             if (starts_with(s.semantic_type, "map[") && ends_with(s.semantic_type, "]")) annotation = rust_type(s.semantic_type);
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
-            o << " = " << expr(s.b, d, locals) << ";\n";
+            o << " = " << expr(s.b, d, locals, &types) << ";\n";
             locals.insert(s.a);
-            types[s.a] = s.b == "Map()" ? "map" : s.b == "Queue()" ? "queue" : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
+            auto generated_type = generated_expr_type(s.b, &types);
+            types[s.a] = generated_type ? *generated_type
+                : !s.semantic_type.empty() ? s.semantic_type
+                : s.b == "Map()" ? "map"
+                : s.b == "Queue()" ? "queue"
+                : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
           } else {
             string mb, mi;
-            if (parse_index(s.a, mb, mi) && types.count(mb) && types.at(mb) == "map")
-              o << indent(level) << expr(mb, d, locals) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals)) << ", " << expr(s.b, d, locals) << ");\n";
-            else o << indent(level) << lhs << " = " << expr(s.b, d, locals) << ";\n";
+            if (parse_index(s.a, mb, mi) && types.count(mb) &&
+                (types.at(mb) == "map" || starts_with(types.at(mb), "map[")))
+              o << indent(level) << expr(mb, d, locals, &types) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types) << ");\n";
+            else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types) << ";\n";
           }
           ++i;
           break;
         }
         case Stmt::Kind::Call: {
-          bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == s.a; });
+          bool known_function = functions_.count(s.a);
           bool implicit_method = in_function && d && objects_.count(d->name) &&
               s.b.empty() && !known_function;
-          o << indent(level) << (implicit_method ? "self." : "") << expr(s.a, d, locals);
+          o << indent(level) << (implicit_method ? "self." : "")
+            << (s.b.empty() && known_function
+                    ? emitted_function_name(s.a, s.args, &types)
+                    : expr(s.a, d, locals, &types));
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
@@ -3764,7 +4501,7 @@ class Generator {
           o << "(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";
-            o << expr(s.args[k], d, locals);
+            o << expr(s.args[k], d, locals, &types);
           }
           o << ");\n";
           ++i;
@@ -3795,10 +4532,13 @@ class Generator {
             auto source = types.find(trim(s.b));
             bool domain_capability = source != types.end() && domains_.count(source->second);
             o << indent(level) << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "")
-              << s.a << " = " << expr(s.b, d, locals);
+              << s.a << " = " << expr(s.b, d, locals, &types);
             if (domain_capability) o << ".clone()";
             o << ";\n";
-            types[s.a] = domain_capability ? source->second : "_value";
+            auto generated_type = generated_expr_type(s.b, &types);
+            types[s.a] = domain_capability ? source->second
+                : generated_type ? *generated_type
+                : !s.semantic_type.empty() ? s.semantic_type : "_value";
           }
           locals.insert(s.a);
           ++i;
@@ -3811,7 +4551,7 @@ class Generator {
             auto type = types.find(s.a);
             if (type != types.end() && domains_.count(type->second)) target = domains_.at(type->second);
           }
-          string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals);
+          string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals, &types);
           const Handler* h = target ? find_handler(*target, s.b) : nullptr;
           if (local_cluster_call(d, target, cluster_context)) {
             backend_comment(o, (base + level) * 4,
@@ -3823,7 +4563,8 @@ class Generator {
               for (size_t k = 0; k < s.args.size(); ++k) {
                 if (k) o << ", ";
                 string typ = h && k < h->params.size() ? h->params[k].type : "_";
-                o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context, false);
+                o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
+                                      false, &types);
               }
               o << ")";
             }
@@ -3848,9 +4589,10 @@ class Generator {
             if (k) o << ", ";
             string typ = h && k < h->params.size() ? h->params[k].type : "_";
             if (cluster_context)
-              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context, true);
+              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
+                                    true, &types);
             else
-              o << message_arg(s.args[k], typ, d, locals);
+              o << message_arg(s.args[k], typ, d, locals, &types);
           }
           if (!reply_tx.empty()) {
             if (!s.args.empty()) o << ", ";
@@ -3868,7 +4610,7 @@ class Generator {
           const Handler* h = target ? find_handler(*target, s.c) : nullptr;
           if (!target || !h || !h->reply_type)
             throw std::runtime_error("internal error: unchecked await reached code generation");
-          string recv = expr(s.b, d, locals);
+          string recv = expr(s.b, d, locals, &types);
           if (local_cluster_call(d, target, cluster_context)) {
             backend_comment(o, (base + level) * 4,
                             "CLUSTER-LOCAL version: flush older local messages, then call the handler directly");
@@ -3883,7 +4625,7 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) {
               if (k) o << ", ";
               o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, false);
+                                    *cluster_context, false, &types);
             }
             if (await_error_handling_) {
               o << ").unwrap_or_else(|| {\n";
@@ -3919,9 +4661,9 @@ class Generator {
               if (k) o << ", ";
               if (cluster_context)
                 o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                      *cluster_context, true);
+                                      *cluster_context, true, &types);
               else
-                o << message_arg(s.args[k], h->params[k].type, d, locals);
+                o << message_arg(s.args[k], h->params[k].type, d, locals, &types);
             }
             if (await_error_handling_) {
               o << ").unwrap_or_else(|| {\n";
@@ -3963,9 +4705,9 @@ class Generator {
             if (k) o << ", ";
             if (cluster_context)
               o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, true);
+                                    *cluster_context, true, &types);
             else
-              o << message_arg(s.args[k], h->params[k].type, d, locals);
+              o << message_arg(s.args[k], h->params[k].type, d, locals, &types);
           }
           if (!s.args.empty()) o << ", ";
           o << reply_tx << ");\n";
@@ -4010,27 +4752,27 @@ class Generator {
             o << indent(level) << reply_sender << " = Some("
               << (cluster_context
                     ? cluster_call_arg(s.a, *current_handler->reply_type, d, locals,
-                                       *cluster_context, false)
-                    : message_arg(s.a, *current_handler->reply_type, d, locals))
+                                       *cluster_context, false, &types)
+                    : message_arg(s.a, *current_handler->reply_type, d, locals, &types))
               << ");\n";
           } else {
             backend_comment(o, (base + level) * 4,
                             "MESSAGE/MAILBOX version: send the reply through a lock-backed one-shot mailbox");
             o << indent(level) << "let _ = " << reply_sender << ".send("
-              << message_arg(s.a, *current_handler->reply_type, d, locals) << ");\n";
+              << message_arg(s.a, *current_handler->reply_type, d, locals, &types) << ");\n";
           }
           o << indent(level) << "break 'handler;\n";
           ++i;
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty())
-            o << indent(level) << "return " << expr(s.a, d, locals) << ";\n";
+            o << indent(level) << "return " << expr(s.a, d, locals, &types) << ";\n";
           else
             o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
           ++i;
           break;
         case Stmt::Kind::Raw:
-          o << indent(level) << expr(s.text, d, locals) << ";\n";
+          o << indent(level) << expr(s.text, d, locals, &types) << ";\n";
           ++i;
           break;
         case Stmt::Kind::Else:

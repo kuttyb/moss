@@ -1,16 +1,13 @@
 # Moss current status
 
-Updated: 2026-09-11
+Updated: 2026-09-12
 
 ## Version and commits
 
 - Compiler version: Moss v0.2
-- Repository was synchronized with `origin/main`; the previous frontend checkpoint is
-  `d2cf9aa` before inferred state/reply syntax work is committed.
-- Previous known compiler checkpoint/base: `acebe2c1adad1d04d9d3f0e1ac506084417af741` (with the subsequent shared-memory and clustering implementation on `cd65d8c` in the prior handoff).
-- The current working tree adds inferred domain state, inferred handler replies, and
-  `=`-named constructors on top of the shared-memory, ownership, clustering, and prior
-  Julia-like frontend implementation.
+- Static duck-typed methods and named-trait specialization are complete on top of
+  `df73771` (`Complete concrete method semantics`). This checkpoint closes the initial
+  static method/trait foundation without adding runtime dispatch.
 
 ## Approved semantics
 
@@ -37,6 +34,19 @@ Updated: 2026-09-11
   are compile errors rather than defaulting to an integer backend type.
 - Untyped-function operation metadata now flows through structured `Constraint`
   records; the former `generic_ops` field has been removed.
+- `ConstraintKind::Method` records the receiver relationship, method name, arity,
+  argument relationships, and method-result relationships. Every concrete
+  duck-typed call site is checked by the same resolver used for direct concrete method
+  calls, including distinct diagnostics for missing methods, arity mismatches,
+  incompatible arguments, ambiguity, and incompatible results.
+- Named traits are structural compile-time contracts. Conformance resolves every
+  declared method against the concrete type's inherent methods and checks annotated
+  parameter and result types; there is no separate trait dispatch path.
+- Functions with duck-typed method requirements or trait-typed parameters are
+  specialized into concrete function instances discovered during checking. Generated
+  calls target those instances directly, so multiple conforming object types execute
+  through ordinary inherent calls without `dyn Trait`, vtables, runtime method search,
+  implicit `Any`, or source-level generic type parameters.
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
@@ -74,9 +84,10 @@ Updated: 2026-09-11
   serialized handler ordering; compound or multi-field updates must retain the
   mutex.
 
-- Trait declarations and duck-typed method constraints still need to be wired to
-  the concrete method resolver; runtime dispatch and dynamic fallback remain
-  forbidden.
+- Static specialization currently covers method-constrained and trait-typed local
+  functions in the implemented expression/call slice. Associated types, trait
+  inheritance, default trait methods, runtime trait objects, and source-level generic
+  declarations remain intentionally unsupported.
 
 - Rust type/ownership errors may still surface when Moss inference lacks enough source information.
 - General await expressions, spawning from handlers, cancellation, timeouts, failure propagation, and cycle detection are not implemented.
@@ -84,7 +95,7 @@ Updated: 2026-09-11
 
 ## Tests run and results
 
-`make check` passed after the inferred state/reply migration. The suite compiles ordinary,
+`make check` passed after the static method/trait milestone. The suite compiles ordinary,
 direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
 boundary; compares behavior for checkout, object isolation, ignored replies, local and
@@ -95,12 +106,18 @@ backend annotations; verifies `--no-await-error-handling`; and repeatedly exerci
 the lock-backed mailbox and direct state-lock paths under contention. Dedicated positive
 cases cover inferred state, optional state annotations, inferred replies, and `=`
 constructors; the former one-way-reply negative fixture is now a positive compatibility
-case because reply presence infers request/reply capability.
+case because reply presence infers request/reply capability. Dedicated method/trait
+cases execute one duck-typed function and one trait-typed function with two distinct
+user-defined types, assert that two concrete specializations are emitted, and reject
+runtime Rust trait machinery. Negative coverage includes missing methods, wrong arity,
+incompatible method arguments, missing trait methods, incompatible trait signatures,
+and conflicting method-result expectations.
 
-`make examples` passed, compiling every valid example (including `frontend_syntax.moss`)
-with `-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was
-skipped. A strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n
-tests/run.sh` also passed after the migration.
+`make examples` passed, compiling every valid example (including the executable static
+trait example in `examples/traits.moss`) with `-Oshared-memory`; the intentional
+`use_after_transfer.moss` negative example was skipped. A strict
+`g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n tests/run.sh` also
+passed after the milestone.
 
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 

@@ -1,0 +1,11 @@
+type Circle:
+  radius: Int
+
+  fn describe(prefix: String):
+    return prefix
+
+fn describe(value):
+  value.describe()
+
+fn main():
+  echo describe(Circle(radius = 2))

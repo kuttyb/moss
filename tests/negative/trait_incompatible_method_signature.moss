@@ -1,0 +1,17 @@
+type Canvas:
+  scale: Int
+
+trait Drawable:
+  fn draw(canvas: Canvas) -> Int
+
+type Circle:
+  radius: Int
+
+  fn draw(canvas: String):
+    return radius
+
+fn render(value: Drawable, canvas: Canvas):
+  value.draw(canvas)
+
+fn main():
+  echo render(Circle(radius = 2), Canvas(scale = 1))

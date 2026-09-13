@@ -1,0 +1,13 @@
+type Counter:
+  value: Int
+
+  fn current():
+    return value
+
+fn conflicting(value):
+  number = value.current() + 1
+  text = value.current() + "!"
+  return number
+
+fn main():
+  echo conflicting(Counter(value = 2))

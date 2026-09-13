@@ -159,6 +159,20 @@ counter: 42'
 run_case frontend_syntax examples/frontend_syntax.moss 'note: 4'
 run_case concrete_method tests/concrete_method.moss '12.56636'
 run_case concrete_method_body tests/concrete_method_body.moss "$(printf '12.566368\n0')"
+run_case duck_typed_methods tests/duck_typed_methods.moss "$(printf '6\n9')"
+run_case static_trait_dispatch tests/static_trait_dispatch.moss "$(printf '18\n60')"
+duck_specializations=$(grep -c '^fn __moss_specialize_describe_' \
+  "$test_build/duck_typed_methods.rs")
+[ "$duck_specializations" -eq 2 ] ||
+  fail "duck-typed function did not emit two concrete specializations"
+trait_specializations=$(grep -c '^fn __moss_specialize_render_' \
+  "$test_build/static_trait_dispatch.rs")
+[ "$trait_specializations" -eq 2 ] ||
+  fail "trait-typed function did not emit two concrete specializations"
+if grep -Eq '(^trait[[:space:]]|dyn[[:space:]]|vtable)' \
+    "$test_build/static_trait_dispatch.rs"; then
+  fail "static trait dispatch emitted runtime trait machinery"
+fi
 compile_case method_ast_ownership tests/method_ast_ownership.moss
 grep -F '// Moss line 10: fn square(x: Int) = x * x' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example omitted its function source annotation"
@@ -405,6 +419,11 @@ reject_case await_unknown_receiver "unknown message receiver 'missing'"
 reject_case await_unknown_handler "domain Worker has no message handler 'Missing'"
 reject_case await_wrong_arity 'message Worker.Work expects 1 arguments, got 0'
 reject_case self_await 'a domain cannot await itself because handlers are non-reentrant'
-reject_case trait_missing_method "expected 'Drawable'"
+reject_case duck_missing_method "missing required method 'describe'"
+reject_case duck_wrong_method_arity "wrong arity for required method 'describe'"
+reject_case duck_incompatible_method_argument "method 'draw' is incompatible with argument types (string)"
+reject_case trait_missing_method "missing required trait method 'area'"
+reject_case trait_incompatible_method_signature "trait method 'draw' has an incompatible parameter signature"
+reject_case conflicting_method_results "conflicting result expectations for required method 'current'"
 
 echo 'all Moss v0.2 tests passed'
