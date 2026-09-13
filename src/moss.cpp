@@ -411,6 +411,16 @@ class Parser {
       auto L = lines_[i_++];
       if (L.indent != head.indent + indent_unit_)
         fail(L, "object fields must use one indentation level");
+      if (starts_with(L.text, "fn ")) {
+        string sig = trim(L.text.substr(3)); auto lp = sig.find('('), rp = matching_paren(sig, lp);
+        if (lp == string::npos || rp == string::npos) fail(L, "object method requires a signature");
+        TraitMethod m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
+        string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
+        if (!suffix.empty() && starts_with(suffix, "->")) m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        o.methods.push_back(std::move(m));
+        while (i_ < lines_.size() && lines_[i_].indent > L.indent) ++i_;
+        continue;
+      }
       auto c = L.text.find(':');
       Field f;
       f.header = L.text;
@@ -872,7 +882,6 @@ class Checker {
         string field = trim(e.substr(dot + 1));
         if (!field.empty() && !has_structural_requirement(function, parameter.name, ConstraintKind::Field, field))
           function.constraints.push_back({ConstraintKind::Field, parameter.name, field, ""});
-        function.generic_results["field:" + parameter.name + ":" + field] = parameter.name;
       }
     }
     string ib, ii;
@@ -897,11 +906,14 @@ class Checker {
   bool trait_conforms(const string& type, const string& trait) const {
     auto it = traits_.find(trait);
     if (it == traits_.end()) return false;
+    auto object = objects_.find(type);
     for (const auto& method : it->second->methods) {
-      // Primitive operation capabilities are structural compiler facts. Other
-      // types must eventually expose declared methods in the semantic model.
-      if ((method.name == "add" || method.name == "sub" || method.name == "mul" || method.name == "div") && numeric_type(type)) continue;
-      return false;
+      if (object == objects_.end()) return false;
+      auto found = std::find_if(object->second->methods.begin(), object->second->methods.end(), [&](const TraitMethod& m) { return m.name == method.name; });
+      if (found == object->second->methods.end() || found->params.size() != method.params.size()) return false;
+      for (size_t i = 0; i < method.params.size(); ++i)
+        if (!method.params[i].type.empty() && !found->params[i].type.empty() && !same_type(method.params[i].type, found->params[i].type)) return false;
+      if (method.return_type && found->return_type && !same_type(*method.return_type, *found->return_type)) return false;
     }
     return true;
   }
@@ -1597,8 +1609,11 @@ class Checker {
         for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
       }
       if (function.result_expression) derive_expression_constraints(function, *function.result_expression);
-      for (const auto& s : function.body)
+      for (const auto& s : function.body) {
+        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
+          derive_expression_constraints(function, s.b);
         if (s.kind == Stmt::Kind::Return && !s.a.empty()) derive_expression_constraints(function, s.a);
+      }
       if (!function.return_type || starts_with(*function.return_type, "_"))
         for (const auto& kv : function.generic_results)
           function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first;
