@@ -1,0 +1,18 @@
+fn local_total() -> Int:
+  values = [1, 2, 3]
+  factor = 2
+  values |> map(_ * factor) |> sum
+
+domain Analyzer:
+  values = [1, 2, 3]
+  factor = 3
+
+  fn Total() -> Int:
+    total = values |> map(_ * factor) |> sum
+    reply total
+
+proc main():
+  local = local_total()
+  analyzer = spawn Analyzer()
+  remote = await analyzer.Total()
+  echo local, remote

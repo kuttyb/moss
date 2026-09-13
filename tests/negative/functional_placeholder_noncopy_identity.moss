@@ -1,0 +1,7 @@
+type Payload:
+  label: String
+
+proc main():
+  objects = [Payload(label = "first")]
+  invalid = objects |> map(_)
+  echo invalid

@@ -1,0 +1,10 @@
+type Payload:
+  label: String
+
+type Envelope:
+  payload: Payload
+
+proc main():
+  objects = [Envelope(payload = Payload(label = "first"))]
+  invalid = objects |> map(_.payload)
+  echo invalid

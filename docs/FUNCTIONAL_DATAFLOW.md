@@ -50,6 +50,10 @@ secretly destructive, and the source remains usable. On empty input:
 Integer terminals use the language's signed 64-bit wrapping arithmetic. For a nontrivial
 bound accumulator, `reduce` transfers `initial` into its result. The old binding is
 unavailable afterward, including when the input is empty; no copy is inserted.
+The initializer is evaluated once at the ordered start of the reduction stage. Its
+transitively inferred observable effects are merged into the `Reduce` IR node. An
+effectful or possibly failing initializer therefore blocks stage fusion, preserving the
+eager evaluation order under both `-O0` and `-O`.
 
 ## Static callables and typing
 
@@ -94,6 +98,13 @@ retain their inferred effects and alias checks. Moss does not clone elements to 
 CONSUME requirement. If current container ownership cannot make such an operation safe,
 the program is rejected.
 
+That rule also applies to placeholder results. `objects |> map(_)` and a projection such
+as `objects |> map(_.payload)` cannot move non-Copy storage out of a source collection
+that `map` only READs. Moss rejects the operation instead of synthesizing a copy or
+leaving the failure to generated Rust. Capture effects are interprocedural: mutation
+hidden behind one or more ordinary helper calls is treated exactly like direct captured
+mutation.
+
 A pipeline is internal compiler structure until it becomes a materialized Moss
 collection or terminal result. A transformation pipeline cannot directly cross a
 `message`, `await`, or `reply` copy boundary; materialize it in a local binding first.
@@ -133,7 +144,9 @@ Both paths implement the same source contract.
 `src/functional_ir.hpp` defines focused `Source`, `Map`, `Filter`, `Reduce`, `Sum`,
 `Count`, `Any`, and `All` nodes. Each node retains:
 
-- stable pipeline and node identity;
+- a dense numeric ID used only as a compilation-local plan handle;
+- a separate semantic identity derived from the owning function/method/handler context
+  and real Moss source occurrence;
 - Moss line and stage span;
 - concrete input and output types;
 - callable identity, expression, and captures;
@@ -141,9 +154,15 @@ Both paths implement the same source contract.
 - logical materialization and whether it was eliminated;
 - source-node provenance.
 
+The checked AST carries the exact compilation-local `functional_pipeline_id` for every
+emitted expression and static specialization. Rust generation consumes that ID directly;
+it never rediscovers a plan by comparing expression text, inferred types, or callable
+names. This matters when identical source text has different effects in two contexts.
+
 The optimizer also records element independence, determinism, and reduction
-compatibility. A fused loop carries all source node IDs, preserving enough origin data
-for later source mapping and semantic dependency work without implementing Phase 5 or 6.
+compatibility. A fused loop carries all source semantic identities, preserving enough
+origin data for later source mapping and semantic dependency work without implementing
+Phase 5 or 6.
 
 Use deterministic development output to inspect the representation:
 

@@ -1,0 +1,12 @@
+type Calculator:
+  base: Int
+
+  fn total() -> Int:
+    values = [base, base + 1]
+    values
+      |> map(_ * 2)
+      |> sum
+
+proc main():
+  calculator = Calculator(base = 2)
+  echo calculator.total()

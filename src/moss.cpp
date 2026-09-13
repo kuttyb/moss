@@ -506,6 +506,7 @@ class Parser {
         m.body = parse_stmt_block(L.indent + indent_unit_);
         if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
           m.result_expression = m.body.back().text;
+          m.result_line = m.body.back().line;
           m.result_continuation_lines = m.body.back().continuation_lines;
           m.body.pop_back();
         }
@@ -921,6 +922,30 @@ static const Method* resolve_object_method(
                          : !saw_arity ? MethodResolutionFailure::WrongArity
                                       : MethodResolutionFailure::IncompatibleArguments;
   return found;
+}
+
+static string functional_function_context(
+    const Function& function,
+    const FunctionSpecialization* specialization = nullptr) {
+  if (!specialization) return "fn:" + function.name;
+  std::ostringstream context;
+  context << "fn:" << function.name << "<";
+  for (size_t index = 0; index < specialization->parameter_types.size(); ++index) {
+    if (index) context << ",";
+    context << specialization->parameter_types[index];
+  }
+  context << ">";
+  return context.str();
+}
+
+static string functional_method_context(const ObjectType& object,
+                                        const Method& method) {
+  return "method:" + object.name + "." + method.name;
+}
+
+static string functional_handler_context(const Domain& domain,
+                                         const Handler& handler) {
+  return "handler:" + domain.name + "." + handler.name;
 }
 
 class Checker {
@@ -1366,7 +1391,8 @@ class Checker {
           if (result) {
             if (!method.return_type) method.return_type = *result;
             else if (!same_type(*method.return_type, *result))
-              err(method.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
+              err(method.result_line ? method.result_line : method.line,
+                  "method '" + object.name + "." + method.name + "' returns '" + *result +
                   "' but is annotated/inferred as '" + *method.return_type + "'");
           }
         }
@@ -1379,7 +1405,8 @@ class Checker {
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
         if (method.result_expression)
-          check_expression(method.line, *method.result_expression, final_env);
+          check_expression(method.result_line ? method.result_line : method.line,
+                           *method.result_expression, final_env);
         if (!method.return_type && has_value_return)
           err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -3407,9 +3434,44 @@ class Checker {
     return expressions;
   }
 
+  // These slots mirror the expressions that Rust emission evaluates directly.
+  // Keeping them separate from the broader call/effect walker lets semantic
+  // analysis attach one exact pipeline plan to each concrete codegen use.
+  vector<string> functional_statement_expressions(const Stmt& statement) const {
+    vector<string> expressions;
+    switch (statement.kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var:
+      case Stmt::Kind::Assign:
+        expressions.push_back(statement.b);
+        break;
+      case Stmt::Kind::Call:
+      case Stmt::Kind::Message:
+      case Stmt::Kind::AwaitMessage:
+      case Stmt::Kind::Echo:
+        expressions.insert(expressions.end(), statement.args.begin(),
+                           statement.args.end());
+        break;
+      case Stmt::Kind::If:
+      case Stmt::Kind::While:
+        expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Reply:
+      case Stmt::Kind::Return:
+        if (!statement.a.empty()) expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Raw:
+        expressions.push_back(statement.text);
+        break;
+      case Stmt::Kind::Else:
+        break;
+    }
+    return expressions;
+  }
+
   void collect_callable_edges(
       const vector<Stmt>& body, const std::optional<string>& result_expression,
-      TypeEnv env, const ObjectType* implicit_owner,
+      int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines) const {
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
@@ -3426,13 +3488,15 @@ class Checker {
     };
     env = walk_type_environment(body, std::move(env), collect_statement, false);
     if (result_expression) {
+      if (result_line <= 0)
+        throw std::runtime_error(
+            "internal error: callable result expression has no Moss source line");
       vector<LocalCallSite> calls;
-      collect_local_call_sites(implicit_owner ? implicit_owner->line : 1,
-                               *result_expression, env, implicit_owner, calls);
+      collect_local_call_sites(result_line, *result_expression, env,
+                               implicit_owner, calls);
       for (const auto& call : calls) {
         graph[source].insert(call.target);
-        edge_lines.emplace(source + "\n" + call.target,
-                           implicit_owner ? implicit_owner->line : 1);
+        edge_lines.emplace(source + "\n" + call.target, result_line);
       }
     }
   }
@@ -3446,8 +3510,9 @@ class Checker {
       for (const auto& parameter : function.params)
         env[parameter.name] = parameter.type.empty()
             ? "_generic:" + parameter.name : parameter.type;
-      collect_callable_edges(function.body, function.result_expression, std::move(env),
-                             nullptr, "fn:" + function.name, graph, edge_lines);
+      collect_callable_edges(function.body, function.result_expression,
+                             function.result_line, std::move(env), nullptr,
+                             "fn:" + function.name, graph, edge_lines);
     }
     for (const auto& object : p_.objects) {
       for (const auto& method : object.methods) {
@@ -3456,8 +3521,9 @@ class Checker {
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
-        collect_callable_edges(method.body, method.result_expression, std::move(env),
-                               &object, "method:" + object.name + "." + method.name,
+        collect_callable_edges(method.body, method.result_expression,
+                               method.result_line, std::move(env), &object,
+                               "method:" + object.name + "." + method.name,
                                graph, edge_lines);
       }
     }
@@ -3504,7 +3570,7 @@ class Checker {
     };
     std::map<string,vector<AwaitDependency>> graph;
     std::set<string> visited;
-    std::function<void(const vector<Stmt>&, const std::optional<string>&,
+    std::function<void(const vector<Stmt>&, const std::optional<string>&, int,
                        TypeEnv, const ObjectType*, const string&)> visit_body;
     std::function<void(int, const string&, const TypeEnv&,
                        const ObjectType*, const string&)> visit_expression;
@@ -3539,7 +3605,8 @@ class Checker {
                                        : parameter.type;
         }
         visit_body(function->second->body, function->second->result_expression,
-                   std::move(env), nullptr, source_domain);
+                   function->second->result_line, std::move(env), nullptr,
+                   source_domain);
         return;
       }
 
@@ -3555,13 +3622,14 @@ class Checker {
         env[method->params[index].name] = method->params[index].type.empty() &&
             !actual.empty() ? actual : method->params[index].type;
       }
-      visit_body(method->body, method->result_expression, std::move(env), owner,
-                 source_domain);
+      visit_body(method->body, method->result_expression, method->result_line,
+                 std::move(env), owner, source_domain);
     };
 
     visit_body = [&](const vector<Stmt>& body,
                      const std::optional<string>& result_expression,
-                     TypeEnv env, const ObjectType* implicit_owner,
+                     int result_line, TypeEnv env,
+                     const ObjectType* implicit_owner,
                      const string& source_domain) {
       TypeEnvVisitor visit_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
@@ -3587,9 +3655,13 @@ class Checker {
                            source_domain);
       };
       env = walk_type_environment(body, std::move(env), visit_statement, true);
-      if (result_expression)
-        visit_expression(implicit_owner ? implicit_owner->line : 1,
-                         *result_expression, env, implicit_owner, source_domain);
+      if (result_expression) {
+        if (result_line <= 0)
+          throw std::runtime_error(
+              "internal error: await-bearing result expression has no Moss source line");
+        visit_expression(result_line, *result_expression, env, implicit_owner,
+                         source_domain);
+      }
     };
 
     // Local-call cycles are rejected before this pass. That keeps transitive
@@ -3608,7 +3680,7 @@ class Checker {
         env["self"] = domain.name;
         for (const auto& field : domain.state) env[field.name] = field.type;
         for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
-        visit_body(handler.body, std::nullopt, std::move(env), nullptr,
+        visit_body(handler.body, std::nullopt, 0, std::move(env), nullptr,
                    domain.name);
       }
     }
@@ -4095,22 +4167,24 @@ class Checker {
     return effects;
   }
 
-  void add_functional_pipeline_ir(
+  std::optional<size_t> add_functional_pipeline_ir(
       int line, const string& expression, const string& context,
+      const string& semantic_identity,
       const TypeEnv& env, Function* owning_function,
       size_t& next_pipeline_id, size_t& next_node_id,
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr,
       const vector<int>& continuation_lines = {}) {
     auto parsed = parse_functional_pipeline(expression);
-    if (!parsed) return;
+    if (!parsed) return std::nullopt;
     auto source_type = inferred_expr_type(parsed->source, env);
-    if (!source_type) return;
+    if (!source_type) return std::nullopt;
     auto element = functional_element_type(*source_type, parsed->source);
-    if (!element || starts_with(*source_type, "_")) return;
+    if (!element || starts_with(*source_type, "_")) return std::nullopt;
 
     FunctionalPipeline pipeline;
-    pipeline.id = next_pipeline_id++;
+    pipeline.transient_id = next_pipeline_id++;
+    pipeline.semantic_identity = semantic_identity;
     pipeline.line = line;
     pipeline.context = context;
     pipeline.expression = trim(expression);
@@ -4121,7 +4195,8 @@ class Checker {
     pipeline.deterministic = true;
 
     FunctionalNode source;
-    source.id = next_node_id++;
+    source.transient_id = next_node_id++;
+    source.semantic_identity = semantic_identity + ":source";
     source.kind = FunctionalNodeKind::Source;
     source.span = {line, 0};
     source.source_text = parsed->source;
@@ -4130,7 +4205,7 @@ class Checker {
     source.effects = observable_expression_effects(
         parsed->source, env, domain_fields, implicit_object);
     source.effects.unresolved = false;
-    source.provenance.push_back(source.id);
+    source.provenance.push_back(source.semantic_identity);
     pipeline.nodes.push_back(std::move(source));
 
     string current_element = canonical_type_name(*element);
@@ -4138,7 +4213,9 @@ class Checker {
     for (size_t index = 0; index < parsed->stages.size(); ++index) {
       const auto& parsed_stage = parsed->stages[index];
       FunctionalNode node;
-      node.id = next_node_id++;
+      node.transient_id = next_node_id++;
+      node.semantic_identity = semantic_identity + ":stage:" +
+          std::to_string(index + 1);
       node.kind = parsed_stage.kind;
       int stage_line = index < continuation_lines.size()
           ? continuation_lines[index] : line;
@@ -4146,7 +4223,7 @@ class Checker {
       node.source_text = parsed_stage.raw;
       node.input_type = current_value_type;
       node.effects = no_observable_effects();
-      node.provenance.push_back(node.id);
+      node.provenance.push_back(node.semantic_identity);
 
       string callable;
       if ((node.kind == FunctionalNodeKind::Map ||
@@ -4192,12 +4269,17 @@ class Checker {
             node.ownership = method->parameter_effects[element_parameter];
         }
       }
+      if (node.kind == FunctionalNodeKind::Reduce &&
+          !parsed_stage.arguments.empty())
+        node.effects.merge(observable_expression_effects(
+            parsed_stage.arguments.front(), env, domain_fields,
+            implicit_object));
 
       switch (node.kind) {
         case FunctionalNodeKind::Map: {
           auto result = functional_callable_result(
               callable, {current_element}, env);
-          if (!result) return;
+          if (!result) return std::nullopt;
           current_element = canonical_type_name(*result);
           current_value_type = "vector[" + current_element + "]";
           node.output_type = current_value_type;
@@ -4231,7 +4313,7 @@ class Checker {
           pipeline.reduction_compatible = true;
           break;
         case FunctionalNodeKind::Source:
-          return;
+          return std::nullopt;
       }
       if (!node.effects.fusion_safe()) {
         pipeline.fusion_eligible = false;
@@ -4245,29 +4327,50 @@ class Checker {
     pipeline.output_type = current_value_type;
     if (pipeline.decision.empty())
       pipeline.decision = "fusion eligible: ordered element-independent stages";
+    size_t pipeline_id = pipeline.transient_id;
     p_.functional_pipelines.push_back(std::move(pipeline));
+    return pipeline_id;
   }
 
   void collect_functional_ir_from_body(
       const vector<Stmt>& body, const std::optional<string>& result,
+      int result_line, const vector<int>& result_continuation_lines,
+      std::unordered_map<string,size_t>* result_pipeline_ids,
       TypeEnv env, const string& context, Function* owning_function,
       size_t& next_pipeline_id, size_t& next_node_id,
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr) {
     TypeEnvVisitor visitor = [&](const Stmt& statement,
                                  const TypeEnv& current_env) {
-      for (const auto& expression : statement_expressions(statement))
-        add_functional_pipeline_ir(statement.line, expression, context,
-                                   current_env, owning_function,
-                                   next_pipeline_id, next_node_id,
-                                   domain_fields, implicit_object,
-                                   statement.continuation_lines);
+      auto expressions = functional_statement_expressions(statement);
+      auto& ids = statement.functional_pipeline_ids[context];
+      ids.clear();
+      for (size_t index = 0; index < expressions.size(); ++index) {
+        string identity = context + "@" + std::to_string(statement.line) +
+            ":expression:" + std::to_string(index);
+        auto id = add_functional_pipeline_ir(
+            statement.line, expressions[index], context, identity, current_env,
+            owning_function, next_pipeline_id, next_node_id, domain_fields,
+            implicit_object, statement.continuation_lines);
+        ids.push_back(id.value_or(0));
+      }
     };
     env = walk_type_environment(body, std::move(env), visitor, true);
-    if (result)
-      add_functional_pipeline_ir(1, *result, context, env, owning_function,
-                                 next_pipeline_id, next_node_id,
-                                 domain_fields, implicit_object);
+    if (result) {
+      if (result_line <= 0)
+        throw std::runtime_error(
+            "internal error: functional result expression has no Moss source line");
+      int line = result_line;
+      auto id = add_functional_pipeline_ir(
+          line, *result, context,
+          context + "@" + std::to_string(line) + ":result", env,
+          owning_function, next_pipeline_id, next_node_id, domain_fields,
+          implicit_object, result_continuation_lines);
+      if (result_pipeline_ids) {
+        result_pipeline_ids->erase(context);
+        if (id) (*result_pipeline_ids)[context] = *id;
+      }
+    }
   }
 
   void build_functional_ir() {
@@ -4276,20 +4379,19 @@ class Checker {
     size_t next_node_id = 1;
     for (auto& function : p_.functions) {
       function.callable_dependencies.clear();
+      function.result_functional_pipeline_ids.clear();
       if (function.static_dispatch && !function.specializations.empty()) {
         for (const auto& specialization : function.specializations) {
           TypeEnv env;
-          std::ostringstream context;
-          context << "fn:" << function.name << "<";
           for (size_t index = 0; index < function.params.size(); ++index) {
-            if (index) context << ",";
             env[function.params[index].name] = specialization.parameter_types[index];
-            context << specialization.parameter_types[index];
           }
-          context << ">";
+          string context = functional_function_context(function, &specialization);
           collect_functional_ir_from_body(
-              function.body, function.result_expression, std::move(env),
-              context.str(), &function, next_pipeline_id, next_node_id);
+              function.body, function.result_expression, function.result_line,
+              function.result_continuation_lines,
+              &function.result_functional_pipeline_ids, std::move(env), context,
+              &function, next_pipeline_id, next_node_id);
         }
       } else {
         TypeEnv env;
@@ -4297,21 +4399,26 @@ class Checker {
           env[parameter.name] = parameter.type.empty()
               ? "_generic:" + parameter.name : parameter.type;
         collect_functional_ir_from_body(
-            function.body, function.result_expression, std::move(env),
-            "fn:" + function.name, &function,
+            function.body, function.result_expression, function.result_line,
+            function.result_continuation_lines,
+            &function.result_functional_pipeline_ids, std::move(env),
+            functional_function_context(function), &function,
             next_pipeline_id, next_node_id);
       }
     }
-    for (const auto& object : p_.objects) {
-      for (const auto& method : object.methods) {
+    for (auto& object : p_.objects) {
+      for (auto& method : object.methods) {
+        method.result_functional_pipeline_ids.clear();
         TypeEnv env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& parameter : method.params)
           env[parameter.name] = parameter.type;
         collect_functional_ir_from_body(
-            method.body, method.result_expression, std::move(env),
-            "method:" + object.name + "." + method.name, nullptr,
+            method.body, method.result_expression, method.result_line,
+            method.result_continuation_lines,
+            &method.result_functional_pipeline_ids, std::move(env),
+            functional_method_context(object, method), nullptr,
             next_pipeline_id, next_node_id, {}, &object);
       }
     }
@@ -4325,14 +4432,14 @@ class Checker {
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
         collect_functional_ir_from_body(
-            handler.body, std::nullopt, std::move(env),
-            "handler:" + domain.name + "." + handler.name, nullptr,
+            handler.body, std::nullopt, 0, {}, nullptr, std::move(env),
+            functional_handler_context(domain, handler), nullptr,
             next_pipeline_id, next_node_id, domain_fields);
       }
     }
     if (p_.main)
       collect_functional_ir_from_body(
-          p_.main->body, std::nullopt, {}, "main", nullptr,
+          p_.main->body, std::nullopt, 0, {}, nullptr, {}, "main", nullptr,
           next_pipeline_id, next_node_id);
   }
 
@@ -4349,8 +4456,9 @@ class Checker {
         OwnershipEnv final_ownership = check_ownership(
             method.body, std::move(ownership), nullptr, nullptr);
         if (method.result_expression)
-          check_ownership_expression(method.line, *method.result_expression,
-                                     final_ownership, Effect::Consume);
+          check_ownership_expression(
+              method.result_line ? method.result_line : method.line,
+              *method.result_expression, final_ownership, Effect::Consume);
       }
       current_object_ = nullptr;
     }
@@ -4467,6 +4575,17 @@ class Checker {
               "'; captures must remain read-only");
         }
         check_ownership_expression(line, callable, placeholder_env, Effect::Read);
+        if (placeholder_env.moved.count("_") && transfer_type(current_element))
+          err(line, "functional placeholder requires CONSUME access to a "
+              "nontrivial source element; this pipeline only reads its source; "
+              "no implicit copy is inserted");
+        if (stage.kind == FunctionalNodeKind::Map) {
+          auto result = inferred_expr_type(callable, placeholder_env.types);
+          auto location = storage_location(callable, placeholder_env.types);
+          if (result && transfer_type(*result) && location && location->root == "_")
+            err(line, "functional map result aliases nontrivial source storage "
+                "through '_'; map reads its source and no implicit copy is inserted");
+        }
       } else {
         string identity = trim(callable);
         string bound_receiver, bound_method;
@@ -5716,18 +5835,20 @@ static string observable_effect_label(const ObservableEffects& effects) {
 static void dump_functional_ir(std::ostream& out, const Program& program,
                                bool decisions_only) {
   for (const auto& pipeline : program.functional_pipelines) {
-    out << "Pipeline #" << pipeline.id << " [" << pipeline.context << "]"
+    out << "Pipeline %" << pipeline.transient_id << " [" << pipeline.context
+        << "] semantic=" << pipeline.semantic_identity
         << " line " << pipeline.line << "\n";
     if (!decisions_only) {
       for (const auto& node : pipeline.nodes) {
-        out << "  #" << node.id << " " << functional_node_name(node.kind)
+        out << "  %" << node.transient_id << " " << functional_node_name(node.kind)
             << " " << node.input_type;
         if (!node.output_type.empty() && node.output_type != node.input_type)
           out << " -> " << node.output_type;
         if (!node.callable_identity.empty())
           out << " callable=" << node.callable_identity;
         out << " " << observable_effect_label(node.effects)
-            << " span=" << node.span.line << ":" << node.span.stage;
+            << " span=" << node.span.line << ":" << node.span.stage
+            << " origin=" << node.semantic_identity;
         if (!node.captures.empty()) {
           out << " captures=";
           for (size_t index = 0; index < node.captures.size(); ++index) {
@@ -7045,8 +7166,9 @@ class Generator {
   string function_call_argument(const Function& function, size_t index,
                                 const string& argument, const Domain* d,
                                 const std::set<string>& locals,
-                                const std::unordered_map<string,string>* types) const {
-    string rendered = expr(argument, d, locals, types);
+                                const std::unordered_map<string,string>* types,
+                                size_t functional_pipeline_id = 0) const {
+    string rendered = expr(argument, d, locals, types, functional_pipeline_id);
     if (index >= function.params.size()) return rendered;
     Effect effect = function_effect(function, index);
     string parameter_type = function.params[index].type;
@@ -7060,8 +7182,9 @@ class Generator {
   string method_call_argument(const Method& method, size_t index,
                               const string& argument, const Domain* d,
                               const std::set<string>& locals,
-                              const std::unordered_map<string,string>* types) const {
-    string rendered = expr(argument, d, locals, types);
+                              const std::unordered_map<string,string>* types,
+                              size_t functional_pipeline_id = 0) const {
+    string rendered = expr(argument, d, locals, types, functional_pipeline_id);
     if (index >= method.params.size()) return rendered;
     Effect effect = method_effect(method, index);
     string type = method.params[index].type;
@@ -7435,40 +7558,17 @@ class Generator {
   };
 
   const FunctionalPipeline* planned_functional_pipeline(
-      const string& expression, const ParsedFunctionalPipeline& pipeline,
-      const std::unordered_map<string,string>* types) const {
-    auto source_type = generated_expr_type(pipeline.source, types);
-    if (!source_type) return nullptr;
-    vector<string> callable_identities;
-    for (const auto& stage : pipeline.stages) {
-      string callable;
-      if ((stage.kind == FunctionalNodeKind::Map ||
-           stage.kind == FunctionalNodeKind::Filter ||
-           stage.kind == FunctionalNodeKind::Any ||
-           stage.kind == FunctionalNodeKind::All) &&
-          !stage.arguments.empty())
-        callable = stage.arguments.front();
-      else if (stage.kind == FunctionalNodeKind::Reduce &&
-               stage.arguments.size() == 2)
-        callable = stage.arguments[1];
-      if (callable.empty()) continue;
-      callable_identities.push_back(
-          generated_expression_uses(callable, "_")
-              ? "placeholder:" + trim(callable)
-              : resolved_callable_identity(callable, types));
-    }
-    for (const auto& candidate : p_.functional_pipelines) {
-      if (trim(candidate.expression) != trim(expression) ||
-          canonical_type_name(candidate.source_type) !=
-              canonical_type_name(*source_type))
-        continue;
-      vector<string> candidate_identities;
-      for (const auto& node : candidate.nodes)
-        if (!node.callable_identity.empty())
-          candidate_identities.push_back(node.callable_identity);
-      if (candidate_identities == callable_identities) return &candidate;
-    }
-    return nullptr;
+      size_t functional_pipeline_id) const {
+    if (functional_pipeline_id == 0) return nullptr;
+    auto planned = std::find_if(
+        p_.functional_pipelines.begin(), p_.functional_pipelines.end(),
+        [&](const FunctionalPipeline& candidate) {
+          return candidate.transient_id == functional_pipeline_id;
+        });
+    if (planned == p_.functional_pipelines.end())
+      throw std::runtime_error(
+          "internal error: checked functional_pipeline_id has no IR plan");
+    return &*planned;
   }
 
   string render_functional_callable(
@@ -7586,7 +7686,8 @@ class Generator {
     string current_collection = "__moss_pipeline_source";
     std::ostringstream out;
     out << "{\n        // Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics";
-    if (planned) out << " (Pipeline #" << planned->id << ")";
+    if (planned) out << " (plan %" << planned->transient_id
+                     << ", semantic " << planned->semantic_identity << ")";
     out << "\n"
         << "        let __moss_pipeline_source = &("
         << expr(pipeline.source, domain, locals, types) << ");\n";
@@ -7722,8 +7823,10 @@ class Generator {
     std::ostringstream out;
     out << "{\n        // Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated";
     if (planned) {
-      out << "; provenance";
-      for (auto node : planned->lowered_provenance) out << " #" << node;
+      out << "; plan %" << planned->transient_id << ", semantic "
+          << planned->semantic_identity << "; provenance";
+      for (const auto& origin : planned->lowered_provenance)
+        out << " " << origin;
     }
     out << "\n"
         << "        let __moss_pipeline_source = &("
@@ -7820,14 +7923,19 @@ class Generator {
   std::optional<string> functional_expr(
       const string& expression, const Domain* domain,
       const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      size_t functional_pipeline_id) const {
     auto pipeline = parse_functional_pipeline(expression);
     if (!pipeline) return std::nullopt;
     auto source_type = generated_expr_type(pipeline->source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       return std::nullopt;
-    const FunctionalPipeline* planned = planned_functional_pipeline(
-        expression, *pipeline, types);
+    const FunctionalPipeline* planned =
+        planned_functional_pipeline(functional_pipeline_id);
+    if (!planned)
+      throw std::runtime_error(
+          "internal error: typed functional pipeline reached Rust generation "
+          "without its exact functional_pipeline_id");
     if (planned && planned->fused)
       return gen_fused_functional_pipeline(*pipeline, domain, locals, types,
                                            planned);
@@ -7836,9 +7944,11 @@ class Generator {
   }
 
   string expr(string e, const Domain* d, const std::set<string>& locals,
-              const std::unordered_map<string,string>* types = nullptr) const {
+              const std::unordered_map<string,string>* types = nullptr,
+              size_t functional_pipeline_id = 0) const {
     e = trim(std::move(e));
-    if (auto functional = functional_expr(e, d, locals, types))
+    if (auto functional = functional_expr(
+            e, d, locals, types, functional_pipeline_id))
       return *functional;
     e = normalize_pipeline(std::move(e));
     if (e.size() >= 6 && e.find(".pop()") != string::npos) {
@@ -8149,8 +8259,9 @@ class Generator {
 
   string message_arg(const string& e, const string& type, const Domain* d,
                      const std::set<string>& locals,
-                     const std::unordered_map<string,string>* types = nullptr) const {
-    string r = expr(e, d, locals, types);
+                     const std::unordered_map<string,string>* types = nullptr,
+                     size_t functional_pipeline_id = 0) const {
+    string r = expr(e, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (copy_type(t) || t == "_") return r;
     // Messages are the explicit Moss semantic copy boundary.  A payload is
@@ -8163,7 +8274,8 @@ class Generator {
   string cluster_call_arg(const string& expression, const string& type,
                           const Domain* source, const std::set<string>& locals,
                           size_t cluster, bool crosses_thread,
-                          const std::unordered_map<string,string>* types = nullptr) const {
+                          const std::unordered_map<string,string>* types = nullptr,
+                          size_t functional_pipeline_id = 0) const {
     string value_type = trim(type);
     if (domains_.count(value_type)) {
       if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster)) {
@@ -8171,11 +8283,13 @@ class Generator {
           return "self." + snake_case(value_type) + "_ref.clone()";
         return value_type + "LocalRef";
       }
-      string value = expr(expression, source, locals, types);
+      string value = expr(expression, source, locals, types,
+                          functional_pipeline_id);
       if (crosses_thread) return "(" + value + ").as_ref().clone()";
       return "(" + value + ").clone()";
     }
-    return message_arg(expression, type, source, locals, types);
+    return message_arg(expression, type, source, locals, types,
+                       functional_pipeline_id);
   }
 
   void gen_tracker(std::ostringstream& o, bool synchronized) {
@@ -8315,9 +8429,19 @@ class Generator {
       for (const auto& field : t.fields) types[field.name] = field.type;
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
       gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, false,
-                std::nullopt, true);
-      if (method.result_expression)
-        o << "        " << expr(*method.result_expression, &receiver, locals, &types) << "\n";
+                std::nullopt, true, functional_method_context(t, method));
+      if (method.result_expression) {
+        string context = functional_method_context(t, method);
+        auto plan = method.result_functional_pipeline_ids.find(context);
+        source_comment(o, 8,
+                       method.result_line ? method.result_line : method.line,
+                       *method.result_expression);
+        o << "        "
+          << expr(*method.result_expression, &receiver, locals, &types,
+                  plan == method.result_functional_pipeline_ids.end()
+                      ? 0 : plan->second)
+          << "\n";
+      }
       o << "    }\n";
       o << "}\n\n";
     }
@@ -8400,11 +8524,16 @@ class Generator {
       types[f.params[index].name] = specialization
           ? specialization->parameter_types[index] : f.params[index].type;
     }
+    string functional_context = functional_function_context(f, specialization);
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, false,
-              std::nullopt, true);
+              std::nullopt, true, functional_context);
     if (f.result_expression) {
       source_comment(o, 4, f.result_line, *f.result_expression);
-      o << "    " << expr(*f.result_expression, nullptr, locals, &types) << "\n";
+      auto plan = f.result_functional_pipeline_ids.find(functional_context);
+      o << "    " << expr(*f.result_expression, nullptr, locals, &types,
+                            plan == f.result_functional_pipeline_ids.end()
+                                ? 0 : plan->second)
+        << "\n";
     }
     o << "}\n\n";
   }
@@ -8511,7 +8640,8 @@ class Generator {
       }
       locals.insert("self_ref");
       locals.insert(result_name);
-      gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true);
+      gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true,
+                std::nullopt, false, functional_handler_context(d, h));
       o << "        }\n";
       o << "        " << result_name << "\n";
       o << "    }\n";
@@ -8798,7 +8928,8 @@ class Generator {
       for (const auto& p : h.params) types[p.name] = p.type;
       locals.insert("self_ref");
       if (h.reply_type) locals.insert(reply_name);
-      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 6, true);
+      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 6, true, false,
+                std::nullopt, false, functional_handler_context(d, h));
       o << "                    }\n";
       o << "                }\n";
     }
@@ -8939,7 +9070,8 @@ class Generator {
         locals.insert("self_ref");
         if (handler.reply_type) locals.insert(result_name);
         gen_stmts(o, handler.body, domain, &handler, result_name, locals, types,
-                  3, true, true, cluster_index);
+                  3, true, true, cluster_index, false,
+                  functional_handler_context(*domain, handler));
         o << "        }\n";
         if (handler.reply_type) o << "        " << result_name << "\n";
         o << "    }\n";
@@ -9127,9 +9259,19 @@ class Generator {
     }
     std::set<string> locals;
     std::unordered_map<string,string> types;
-    gen_stmts(o, m.body, nullptr, nullptr, "", locals, types, 1, false);
+    gen_stmts(o, m.body, nullptr, nullptr, "", locals, types, 1, false, false,
+              std::nullopt, false, "main");
     o << "    __tracker.wait_zero();\n";
     o << "}\n";
+  }
+
+  static size_t statement_functional_pipeline_id(
+      const Stmt& statement, const string& context, size_t slot) {
+    auto plans = statement.functional_pipeline_ids.find(context);
+    if (plans == statement.functional_pipeline_ids.end() ||
+        slot >= plans->second.size())
+      return 0;
+    return plans->second[slot];
   }
 
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
@@ -9137,10 +9279,12 @@ class Generator {
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool direct_reply = false,
                  std::optional<size_t> cluster_context = std::nullopt,
-                 bool in_function = false) {
+                 bool in_function = false,
+                 const string& functional_context = "") {
     size_t i = 0;
     gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base,
-              in_handler, direct_reply, cluster_context, in_function);
+              in_handler, direct_reply, cluster_context, in_function, {},
+              functional_context);
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
@@ -9149,7 +9293,8 @@ class Generator {
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool direct_reply,
                  std::optional<size_t> cluster_context, bool in_function,
-                 std::set<string> join_assignments = {}) {
+                 std::set<string> join_assignments = {},
+                 const string& functional_context = "") {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -9177,7 +9322,11 @@ class Generator {
             locals.insert(binding);
             types[binding] = type;
           }
-          o << indent(level) << "if " << expr(s.a, d, locals, &types) << " {\n";
+          o << indent(level) << "if "
+            << expr(s.a, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, 0))
+            << " {\n";
           ++i;
           auto child_locals = locals;
           auto child_types = types;
@@ -9185,7 +9334,8 @@ class Generator {
           child_join_assignments.insert(joined_bindings.begin(), joined_bindings.end());
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                     child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function, child_join_assignments);
+                    cluster_context, in_function, child_join_assignments,
+                    functional_context);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
@@ -9195,7 +9345,8 @@ class Generator {
             auto else_types = types;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                       else_locals, else_types, base, in_handler, direct_reply,
-                      cluster_context, in_function, child_join_assignments);
+                      cluster_context, in_function, child_join_assignments,
+                      functional_context);
             o << indent(level) << "}\n";
           } else {
             o << "\n";
@@ -9207,13 +9358,18 @@ class Generator {
           break;
         }
         case Stmt::Kind::While: {
-          o << indent(level) << "while " << expr(s.a, d, locals, &types) << " {\n";
+          o << indent(level) << "while "
+            << expr(s.a, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, 0))
+            << " {\n";
           ++i;
           auto child_locals = locals;
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
                     child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function, join_assignments);
+                    cluster_context, in_function, join_assignments,
+                    functional_context);
           o << indent(level) << "}\n";
           break;
         }
@@ -9224,7 +9380,11 @@ class Generator {
             o << "println!(\"";
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
-            for (const auto& a : s.args) o << ", " << expr(a, d, locals, &types);
+            for (size_t argument = 0; argument < s.args.size(); ++argument)
+              o << ", "
+                << expr(s.args[argument], d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, argument));
             o << ");\n";
           }
           ++i;
@@ -9284,7 +9444,11 @@ class Generator {
             if (starts_with(s.semantic_type, "map[") && ends_with(s.semantic_type, "]")) annotation = rust_type(s.semantic_type);
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
-            o << " = " << expr(s.b, d, locals, &types) << ";\n";
+            o << " = "
+              << expr(s.b, d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0))
+              << ";\n";
             locals.insert(s.a);
             auto generated_type = generated_expr_type(s.b, &types);
             types[s.a] = generated_type ? *generated_type
@@ -9296,8 +9460,8 @@ class Generator {
             string mb, mi;
             if (parse_index(s.a, mb, mi) && types.count(mb) &&
                 (types.at(mb) == "map" || starts_with(types.at(mb), "map[")))
-              o << indent(level) << expr(mb, d, locals, &types) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types) << ");\n";
-            else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types) << ";\n";
+              o << indent(level) << expr(mb, d, locals, &types) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+            else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
           }
           ++i;
           break;
@@ -9326,7 +9490,9 @@ class Generator {
             if (emitted_arguments++) o << ", ";
             if (known_function) {
               o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
-                                          locals, &types);
+                                          locals, &types,
+                                          statement_functional_pipeline_id(
+                                              s, functional_context, k));
             } else if (!s.b.empty() || implicit_method) {
               auto receiver_type = implicit_method
                   ? std::optional<string>(d->name)
@@ -9341,11 +9507,18 @@ class Generator {
                                                  return result;
                                                }(), true, nullptr);
               if (method)
-                o << method_call_argument(*method, k, s.args[k], d, locals, &types);
+                o << method_call_argument(
+                    *method, k, s.args[k], d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, k));
               else
-                o << expr(s.args[k], d, locals, &types);
+                o << expr(s.args[k], d, locals, &types,
+                          statement_functional_pipeline_id(
+                              s, functional_context, k));
             } else {
-              o << expr(s.args[k], d, locals, &types);
+              o << expr(s.args[k], d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, k));
             }
           }
           o << ");\n";
@@ -9388,7 +9561,10 @@ class Generator {
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
-            o << s.a << " = " << expr(s.b, d, locals, &types);
+            o << s.a << " = "
+              << expr(s.b, d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0));
             if (domain_capability) o << ".clone()";
             o << ";\n";
             auto generated_type = generated_expr_type(s.b, &types);
@@ -9452,9 +9628,15 @@ class Generator {
                   string type = batch_handler->params[argument].type;
                   if (cluster_context)
                     o << cluster_call_arg(message.args[argument], type, d, locals,
-                                          *cluster_context, true, &types);
+                                          *cluster_context, true, &types,
+                                          statement_functional_pipeline_id(
+                                              message, functional_context,
+                                              argument));
                   else
-                    o << message_arg(message.args[argument], type, d, locals, &types);
+                    o << message_arg(
+                        message.args[argument], type, d, locals, &types,
+                        statement_functional_pipeline_id(
+                            message, functional_context, argument));
                 }
                 if (batch_handler->reply_type) {
                   if (!message.args.empty()) o << ", ";
@@ -9483,7 +9665,9 @@ class Generator {
                 if (k) o << ", ";
                 string typ = h && k < h->params.size() ? h->params[k].type : "_";
                 o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
-                                      false, &types);
+                                      false, &types,
+                                      statement_functional_pipeline_id(
+                                          s, functional_context, k));
               }
               o << ")";
             }
@@ -9504,9 +9688,14 @@ class Generator {
               string typ = h && k < h->params.size() ? h->params[k].type : "_";
               if (cluster_context)
                 o << cluster_call_arg(s.args[k], typ, d, locals,
-                                      *cluster_context, true, &types);
+                                      *cluster_context, true, &types,
+                                      statement_functional_pipeline_id(
+                                          s, functional_context, k));
               else
-                o << message_arg(s.args[k], typ, d, locals, &types);
+                o << message_arg(
+                    s.args[k], typ, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, k));
             }
             o << ");\n";
             ++i;
@@ -9528,9 +9717,14 @@ class Generator {
             string typ = h && k < h->params.size() ? h->params[k].type : "_";
             if (cluster_context)
               o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
-                                    true, &types);
+                                    true, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, k));
             else
-              o << message_arg(s.args[k], typ, d, locals, &types);
+              o << message_arg(
+                  s.args[k], typ, d, locals, &types,
+                  statement_functional_pipeline_id(
+                      s, functional_context, k));
           }
           if (!reply_tx.empty()) {
             if (!s.args.empty()) o << ", ";
@@ -9586,7 +9780,10 @@ class Generator {
               for (size_t argument = 0; argument < awaited.args.size(); ++argument) {
                 o << ", " << message_arg(awaited.args[argument],
                                           locked_handler->params[argument].type,
-                                          d, locals, &types);
+                                          d, locals, &types,
+                                          statement_functional_pipeline_id(
+                                              awaited, functional_context,
+                                              argument));
               }
               if (await_error_handling_) {
                 o << ").unwrap_or_else(|| {\n";
@@ -9618,7 +9815,9 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) {
               if (k) o << ", ";
               o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, false, &types);
+                                    *cluster_context, false, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, k));
             }
             if (await_error_handling_) {
               o << ").unwrap_or_else(|| {\n";
@@ -9656,9 +9855,14 @@ class Generator {
               if (k) o << ", ";
               if (cluster_context)
                 o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                      *cluster_context, true, &types);
+                                      *cluster_context, true, &types,
+                                      statement_functional_pipeline_id(
+                                          s, functional_context, k));
               else
-                o << message_arg(s.args[k], h->params[k].type, d, locals, &types);
+                o << message_arg(
+                    s.args[k], h->params[k].type, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, k));
             }
             if (await_error_handling_) {
               o << ").unwrap_or_else(|| {\n";
@@ -9700,9 +9904,14 @@ class Generator {
             if (k) o << ", ";
             if (cluster_context)
               o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, true, &types);
+                                    *cluster_context, true, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, k));
             else
-              o << message_arg(s.args[k], h->params[k].type, d, locals, &types);
+              o << message_arg(
+                  s.args[k], h->params[k].type, d, locals, &types,
+                  statement_functional_pipeline_id(
+                      s, functional_context, k));
           }
           if (!s.args.empty()) o << ", ";
           o << reply_tx << ");\n";
@@ -9747,27 +9956,44 @@ class Generator {
             o << indent(level) << reply_sender << " = Some("
               << (cluster_context
                     ? cluster_call_arg(s.a, *current_handler->reply_type, d, locals,
-                                       *cluster_context, false, &types)
-                    : message_arg(s.a, *current_handler->reply_type, d, locals, &types))
+                                       *cluster_context, false, &types,
+                                       statement_functional_pipeline_id(
+                                           s, functional_context, 0))
+                    : message_arg(
+                          s.a, *current_handler->reply_type, d, locals, &types,
+                          statement_functional_pipeline_id(
+                              s, functional_context, 0)))
               << ");\n";
           } else {
             backend_comment(o, (base + level) * 4,
                             "MESSAGE/MAILBOX version: send the reply through a lock-backed one-shot mailbox");
             o << indent(level) << "let _ = " << reply_sender << ".send("
-              << message_arg(s.a, *current_handler->reply_type, d, locals, &types) << ");\n";
+              << message_arg(
+                     s.a, *current_handler->reply_type, d, locals, &types,
+                     statement_functional_pipeline_id(
+                         s, functional_context, 0))
+              << ");\n";
           }
           o << indent(level) << "break 'handler;\n";
           ++i;
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty())
-            o << indent(level) << "return " << expr(s.a, d, locals, &types) << ";\n";
+            o << indent(level) << "return "
+              << expr(s.a, d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0))
+              << ";\n";
           else
             o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
           ++i;
           break;
         case Stmt::Kind::Raw:
-          o << indent(level) << expr(s.text, d, locals, &types) << ";\n";
+          o << indent(level)
+            << expr(s.text, d, locals, &types,
+                    statement_functional_pipeline_id(
+                        s, functional_context, 0))
+            << ";\n";
           ++i;
           break;
         case Stmt::Kind::Else:

@@ -1,0 +1,18 @@
+type Accumulator:
+  total: Int
+
+  fn add(value: Int) -> Int:
+    total = total + value
+    return total
+
+fn update(accumulator: Accumulator, value: Int) -> Int:
+  return accumulator.add(value)
+
+fn update_through_helper(accumulator: Accumulator, value: Int) -> Int:
+  return update(accumulator, value)
+
+proc main():
+  values = [1, 2, 3]
+  captured = Accumulator(total = 0)
+  invalid = values |> map(update_through_helper(captured, _))
+  echo invalid

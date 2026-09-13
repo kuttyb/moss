@@ -212,6 +212,12 @@ run_phase4_differential phase4_materialized_message \
   tests/phase4_materialized_message.moss '12'
 run_phase4_differential phase4_terminal_boundary \
   tests/phase4_terminal_boundary.moss '12 12'
+run_phase4_differential phase4_exact_pipeline_id \
+  tests/phase4_exact_pipeline_id.moss '12 18'
+run_phase4_differential phase4_reduce_initializer_effect \
+  tests/phase4_reduce_initializer_effect.moss "$(printf 'source\ninitial\ntotal 22')"
+run_phase4_differential phase4_result_provenance \
+  tests/phase4_result_provenance.moss '10'
 
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_fusion_o0.rs" >/dev/null ||
@@ -251,6 +257,24 @@ grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_await_barrier_optimized.rs" >/dev/null ||
   fail 'await callback did not stop fusion'
+[ "$(grep -c 'Moss backend: FUSED FUNCTIONAL PIPELINE' \
+    "$test_build/phase4_exact_pipeline_id_optimized.rs")" -eq 1 ] ||
+  fail 'exact pipeline plan did not fuse the pure identical-text context'
+[ "$(grep -c 'Moss backend: EAGER FUNCTIONAL PIPELINE' \
+    "$test_build/phase4_exact_pipeline_id_optimized.rs")" -eq 1 ] ||
+  fail 'exact pipeline plan did not preserve the effectful identical-text context'
+grep -F 'semantic fn:local_total@4:result' \
+  "$test_build/phase4_exact_pipeline_id_optimized.rs" >/dev/null ||
+  fail 'fused code did not consume the exact local pipeline plan'
+grep -F 'semantic handler:Analyzer.Total@11:expression:0' \
+  "$test_build/phase4_exact_pipeline_id_optimized.rs" >/dev/null ||
+  fail 'eager code did not consume the exact domain-effect pipeline plan'
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_reduce_initializer_effect_optimized.rs" >/dev/null ||
+  fail 'observable reduce initializer did not block fusion'
+grep -F '// Moss line 6: values |> map(_ * 2) |> sum' \
+  "$test_build/phase4_result_provenance_optimized.rs" >/dev/null ||
+  fail 'method result pipeline did not retain its real source line'
 grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
   "$test_build/phase4_hof_optimized.rs" >/dev/null ||
   fail 'static higher-order helper did not erase its compile-time callable parameter'
@@ -278,7 +302,7 @@ fi
 cmp "$test_build/phase4_functional_ir.first" \
     "$test_build/phase4_functional_ir.second" >/dev/null ||
   fail 'functional IR dump was not deterministic'
-grep -F 'Map vector[int] callable=normalize PURE span=10:1 materialization=eliminated' \
+grep -F 'Map vector[int] callable=normalize PURE span=10:1 origin=main@9:expression:0:stage:1 materialization=eliminated' \
   "$test_build/phase4_functional_ir.first" >/dev/null ||
   fail 'functional IR omitted typed callable, source span, or materialization provenance'
 grep -F 'decision: fused stages 1-4; intermediates eliminated' \
@@ -316,6 +340,34 @@ grep -F 'fusion stopped: message send' \
 grep -F 'fusion stopped: await' \
   "$test_build/phase4_await.explain" >/dev/null ||
   fail 'fusion explanation omitted the await barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase4_exact_pipeline_id.moss >"$test_build/phase4_exact_pipeline_id.ir"
+grep -E '^Pipeline %[0-9]+ \[fn:local_total\] semantic=fn:local_total@4:result' \
+  "$test_build/phase4_exact_pipeline_id.ir" >/dev/null ||
+  fail 'functional IR omitted the stable local semantic identity'
+grep -F 'decision: fused stages 1-2; intermediates eliminated' \
+  "$test_build/phase4_exact_pipeline_id.ir" >/dev/null ||
+  fail 'pure identical-text pipeline context was not fused'
+grep -E '^Pipeline %[0-9]+ \[handler:Analyzer.Total\] semantic=handler:Analyzer.Total@11:expression:0' \
+  "$test_build/phase4_exact_pipeline_id.ir" >/dev/null ||
+  fail 'functional IR omitted the distinct effectful semantic identity'
+grep -F 'decision: fusion stopped: observable domain READ' \
+  "$test_build/phase4_exact_pipeline_id.ir" >/dev/null ||
+  fail 'effectful identical-text pipeline context was incorrectly fused'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase4_reduce_initializer_effect.moss \
+  >"$test_build/phase4_reduce_initializer_effect.ir"
+grep -F 'Reduce vector[int] -> int callable=add IO' \
+  "$test_build/phase4_reduce_initializer_effect.ir" >/dev/null ||
+  fail 'reduce IR node omitted initializer effects'
+grep -F 'decision: fusion stopped: external/I/O effect' \
+  "$test_build/phase4_reduce_initializer_effect.ir" >/dev/null ||
+  fail 'reduce initializer effect did not govern fusion legality'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase4_result_provenance.moss >"$test_build/phase4_result_provenance.ir"
+grep -F 'semantic=method:Calculator.total@6:result line 6' \
+  "$test_build/phase4_result_provenance.ir" >/dev/null ||
+  fail 'method-result functional IR used an artificial source line'
 run_case mini_application_showcase examples/mini_application.moss "$(printf 'queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73')"
 duck_specializations=$(grep -c '^fn __moss_specialize_describe_' \
   "$test_build/duck_typed_methods.rs")
@@ -964,5 +1016,11 @@ reject_case functional_await_cycle \
   "await cycle detected:"
 reject_case functional_callback_alias \
   "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
+reject_case functional_placeholder_noncopy_identity \
+  "functional map result aliases nontrivial source storage through '_'"
+reject_case functional_placeholder_noncopy_field \
+  "functional map result aliases nontrivial source storage through '_'"
+reject_case functional_helper_mutable_capture \
+  "functional placeholder requires WRITE access to captured binding 'captured'"
 
 echo 'all Moss v0.2 tests passed'

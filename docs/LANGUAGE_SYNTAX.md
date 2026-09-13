@@ -169,6 +169,9 @@ explicit initial accumulator. On empty input, `sum` and `count` return zero, `an
 false, `all` returns true, and `reduce(initial, fn)` returns `initial`. Integer reductions
 use Moss wrapping arithmetic. A nontrivial bound `initial` transfers into the reduction
 and is unavailable afterward; the compiler never clones it to implement the empty path.
+The initializer is evaluated once when the ordered reduction stage begins. Its inferred
+effects participate in fusion legality, so an effectful or possibly failing initializer
+keeps the eager stage schedule.
 
 A stage callable may be a named function, a statically bound instance method such as
 `scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
@@ -186,6 +189,9 @@ directly; bind its materialized result first. A terminal already produces a conc
 scalar and may cross an explicit domain copy boundary normally. All ordinary ownership
 and alias checks also apply inside callbacks. A consuming callback is rejected when
 current collection semantics cannot provide ownership without an implicit copy.
+For the same reason, mapping `_` or a non-Copy projection such as `_.payload` out of a
+READ-only source is rejected rather than cloned implicitly. Capture mutation is rejected
+even when the WRITE/CONSUME requirement is propagated through an ordinary helper call.
 
 ### Integer arithmetic
 

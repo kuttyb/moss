@@ -88,6 +88,8 @@ transformations READ their source and do not mutate it. `reduce` always takes an
 explicit initial accumulator, so its empty-input result is defined; a nontrivial bound
 initializer transfers into the reduction rather than being copied. Empty `sum` and
 `count` produce zero, `any` produces false, and `all` produces true.
+Initializer effects are part of the `Reduce` node and conservatively stop fusion, so
+their eager evaluation order is identical under `-O0` and `-O`.
 
 Named functions, statically bound instance methods such as `scaler.apply`, method
 placeholders such as `_.score()`, and placeholder expressions with immutable captures
@@ -102,6 +104,14 @@ execution equivalent to the eager reference. I/O, local mutation, domain observa
 or mutation, `message`, `await`, unresolved effects, and possible failure ordering are
 barriers. A missed fusion is valid; a speculative reordering is not. Fused reductions
 use Moss's wrapping integer arithmetic and allocate no intermediate vector.
+
+Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
+code generation does not infer a plan again from matching source text. Numeric IR IDs are
+transient compilation handles, while source-derived semantic identities carry
+function/method context, real Moss lines, stage identity, and fusion provenance. Non-Copy
+placeholder identity/projection maps are rejected at Moss level when they would move out
+of the READ-only source, and capture mutation remains forbidden even when hidden behind
+ordinary helper calls.
 
 Inspect the compiler-owned representation and decisions with:
 

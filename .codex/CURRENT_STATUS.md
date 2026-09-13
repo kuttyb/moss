@@ -25,6 +25,11 @@ Updated: 2026-09-13
   Pipelines now have typed, provenance-carrying compiler IR; observable callable effects
   are inferred separately from ownership; `-O0` preserves eager stage semantics; and
   `-O` fuses proven-safe chains into explicit loops without a Rust iterator runtime.
+- The current Phase 4 hardening work carries exact pipeline plan IDs from checked AST
+  occurrences into Rust lowering, includes initializer effects in `Reduce`, rejects
+  non-Copy placeholder projections at Moss level, preserves real result-expression
+  lines with source-derived semantic identities, and propagates capture mutation through
+  ordinary helper calls.
 
 ## Approved semantics
 
@@ -88,9 +93,12 @@ Updated: 2026-09-13
   reads/writes, message, await, I/O/external effects, unresolved effects, and possible
   failure. Transitive summaries conservatively govern fusion without changing
   READ/WRITE/CONSUME ownership inference.
-- The functional IR retains stable pipeline/node identities, source line and stage,
+- The functional IR distinguishes dense compilation-local pipeline/node handles from
+  source-derived semantic identities. The checked AST carries the exact plan handle for
+  each expression and static specialization, so Rust emission never re-matches plans by
+  expression text/type/callable. Nodes retain real function/method result lines and stage,
   concrete input/output types, callable identity, captures, ownership/effect summaries,
-  logical materialization, and optimization provenance. It also records element
+  logical materialization, and stable semantic provenance. It also records element
   independence, determinism, and reduction compatibility for future planners.
 - `-O0` emits explicit eager stage loops and logical intermediate collections. `-O`
   fuses safe map/map, map/filter/map, and terminal-reduction chains into one explicit
@@ -261,6 +269,11 @@ cover types, spans, materialization, provenance, and barrier reasons. Negative t
 predicates/callables/reductions, consuming elements, mutable capture, unbounded callable
 identity, pipeline domain-boundary escape, higher-order recursion, and callback alias
 violations.
+They additionally distinguish identical pipeline text in pure-local and domain-effect
+contexts, prove that an I/O-producing `reduce` initializer is recorded on the `Reduce`
+node and preserves differential evaluation order, verify real method-result provenance,
+reject non-Copy `_`/field-projection maps before Rust generation, and reject captured
+mutation propagated through nested ordinary helpers.
 
 `make examples` passed, compiling every valid example (including the executable static
 trait and dataflow showcases in `examples/traits.moss` and

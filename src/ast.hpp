@@ -30,6 +30,11 @@ struct Stmt {
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.
   std::unordered_map<string,string> joined_types;
+  // Exact functional plans for the expression slots emitted by this
+  // statement, keyed by the concrete semantic context.  A function body can
+  // have several static specializations, so one AST statement can legitimately
+  // point at several distinct compilation-local pipeline IDs.
+  mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
 };
 struct Method {
   string owner, name;
@@ -37,7 +42,9 @@ struct Method {
   std::optional<string> return_type;
   vector<Stmt> body;
   std::optional<string> result_expression;
+  int result_line = 0;
   vector<int> result_continuation_lines;
+  std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
   // Inferred receiver/parameter effects used by ownership checking and Rust
   // lowering.  They are never written in Moss source.
   Effect receiver_effect = Effect::Read;
@@ -59,6 +66,7 @@ struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
   vector<int> result_continuation_lines;
+  std::unordered_map<string,std::size_t> result_functional_pipeline_ids;
   bool generic = false; bool static_dispatch = false;
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;

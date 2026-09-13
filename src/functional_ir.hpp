@@ -65,7 +65,13 @@ struct ObservableEffects {
 };
 
 struct FunctionalNode {
-  std::size_t id = 0;
+  // Numeric IDs are dense, compilation-local handles.  They are useful for
+  // exact semantic-analysis/codegen handoff, but deliberately are not source
+  // identities and may change when unrelated pipelines are added.
+  std::size_t transient_id = 0;
+  // This identity is derived from the owning semantic context and source
+  // occurrence, so provenance does not depend on traversal numbering.
+  std::string semantic_identity;
   FunctionalNodeKind kind = FunctionalNodeKind::Source;
   FunctionalSourceSpan span;
   std::string source_text;
@@ -78,11 +84,13 @@ struct FunctionalNode {
   ObservableEffects effects;
   bool logical_materialization = false;
   bool materialization_eliminated = false;
-  std::vector<std::size_t> provenance;
+  std::vector<std::string> provenance;
 };
 
 struct FunctionalPipeline {
-  std::size_t id = 0;
+  // Exact compilation-local plan handle carried by the checked AST.
+  std::size_t transient_id = 0;
+  std::string semantic_identity;
   int line = 0;
   std::string context;
   std::string expression;
@@ -95,7 +103,7 @@ struct FunctionalPipeline {
   bool deterministic = false;
   bool reduction_compatible = false;
   bool fused = false;
-  std::vector<std::size_t> lowered_provenance;
+  std::vector<std::string> lowered_provenance;
   std::string decision;
 };
 

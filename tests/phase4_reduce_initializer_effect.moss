@@ -1,0 +1,18 @@
+fn source_values():
+  echo "source"
+  values = [1, 2, 3]
+  return values
+
+fn initial_value() -> Int:
+  echo "initial"
+  return 10
+
+fn double(value: Int) -> Int:
+  return value * 2
+
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+proc main():
+  total = source_values() |> map(double) |> reduce(initial_value(), add)
+  echo "total", total
