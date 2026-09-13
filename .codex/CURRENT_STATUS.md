@@ -57,6 +57,15 @@ Updated: 2026-09-11
 
 ## Known bugs and limitations
 
+- The lock-coalescing milestone adds a generated `MossSender::send_batch` path
+  that appends a contiguous batch under one mutex guard. Current Moss statement
+  lowering still emits individual sends; grouping adjacent source messages is
+  the next backend step.
+- Atomic state-field lowering remains intentionally deferred. Primitive fields
+  can use atomics only when a complete operation is independent of Moss's
+  serialized handler ordering; compound or multi-field updates must retain the
+  mutex.
+
 - Trait declarations are parsed and checked structurally for currently
   representable primitive operation contracts. User-defined object methods are
   not yet represented in object declarations, so positive structural object

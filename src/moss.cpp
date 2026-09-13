@@ -2815,6 +2815,16 @@ class Generator {
     o << "        self.channel.ready.notify_one();\n";
     o << "        Ok(())\n";
     o << "    }\n";
+    o << "    // Lock-coalesced enqueue path: append a contiguous batch under one mutex guard.\n";
+    o << "    #[allow(dead_code)]\n";
+    o << "    fn send_batch(&self, values: Vec<T>) -> Result<(), Vec<T>> {\n";
+    o << "        let mut state = self.channel.state.lock().unwrap();\n";
+    o << "        if !state.receiver_open { return Err(values); }\n";
+    o << "        state.queue.extend(values);\n";
+    o << "        drop(state);\n";
+    o << "        self.channel.ready.notify_one();\n";
+    o << "        Ok(())\n";
+    o << "    }\n";
     o << "}\n\n";
     o << "impl<T> Drop for MossSender<T> {\n";
     o << "    fn drop(&mut self) {\n";
