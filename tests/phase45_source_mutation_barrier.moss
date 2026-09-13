@@ -1,0 +1,6 @@
+proc main():
+  values = [1, 2, 3]
+  before = values |> sum
+  values.push(4)
+  after = values |> count
+  echo before, after

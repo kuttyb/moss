@@ -5779,37 +5779,663 @@ class Checker {
   }
 };
 
-// This is a Moss-level optimization plan over typed functional/dataflow IR.
-// Rust generation consumes the decision and never relies on iterator-library
-// optimization to recover the source structure.
+// This is a Moss-level optimization plan over the authoritative typed
+// functional/dataflow IR. Phase 4.5 augments those semantic nodes with
+// terminal, liveness/materialization, cross-binding, and shared-source DAG
+// facts. Rust generation consumes exact plan IDs and never asks an iterator
+// library to recover the source structure.
 class FunctionalOptimizer {
  public:
   explicit FunctionalOptimizer(Program& program) : program_(program) {}
 
   void run(bool enabled) {
+    program_.functional_traversal_groups.clear();
     for (auto& pipeline : program_.functional_pipelines) {
+      pipeline.count_uses_exact_length = false;
+      pipeline.short_circuit_terminal = false;
+      pipeline.virtual_upstream_pipeline_id = 0;
+      pipeline.virtualized_into_pipeline_id = 0;
+      pipeline.traversal_group_id = 0;
+      pipeline.binding_name.clear();
+      pipeline.binding_immutable = false;
+      pipeline.binding_use_count = 0;
+      pipeline.binding_materialization_reason.clear();
+      pipeline.optimization_notes.clear();
       pipeline.fused = enabled && pipeline.fusion_eligible;
       pipeline.lowered_provenance.clear();
       for (auto& node : pipeline.nodes) {
-        pipeline.lowered_provenance.insert(
-            pipeline.lowered_provenance.end(), node.provenance.begin(),
-            node.provenance.end());
-        node.materialization_eliminated =
-            pipeline.fused && node.logical_materialization;
+        node.materialization_eliminated = false;
+        node.materialization = FunctionalMaterializationKind::NotApplicable;
+        node.escapes = false;
+        node.multiple_consumers = false;
+        node.barrier_required = false;
+        node.dead_stage_eliminated = false;
+        node.materialization_reason.clear();
       }
-      if (pipeline.fused) {
+      if (pipeline.fused)
         pipeline.decision = "fused stages 1-" +
             std::to_string(pipeline.nodes.size() - 1) +
             "; intermediates eliminated";
-      } else if (!enabled && pipeline.fusion_eligible) {
+      else if (!enabled && pipeline.fusion_eligible)
         pipeline.decision =
             "eager reference lowering (-O0); logical intermediates retained";
+
+      plan_terminal_lowering(pipeline, enabled);
+    }
+
+    if (enabled) {
+      for (auto& function : program_.functions) {
+        std::set<string> known;
+        for (const auto& parameter : function.params) known.insert(parameter.name);
+        if (function.static_dispatch && !function.specializations.empty()) {
+          for (const auto& specialization : function.specializations) {
+            string context = functional_function_context(function, &specialization);
+            plan_scope(function.body, context, known,
+                       result_pipeline_id(function.result_functional_pipeline_ids,
+                                          context),
+                       function.result_expression);
+          }
+        } else {
+          string context = functional_function_context(function);
+          plan_scope(function.body, context, known,
+                     result_pipeline_id(function.result_functional_pipeline_ids,
+                                        context),
+                     function.result_expression);
+        }
+      }
+      for (auto& object : program_.objects) {
+        for (auto& method : object.methods) {
+          std::set<string> known{"self"};
+          for (const auto& field : object.fields) known.insert(field.name);
+          for (const auto& parameter : method.params) known.insert(parameter.name);
+          string context = functional_method_context(object, method);
+          plan_scope(method.body, context, known,
+                     result_pipeline_id(method.result_functional_pipeline_ids,
+                                        context),
+                     method.result_expression);
+        }
+      }
+      for (auto& domain : program_.domains) {
+        for (auto& handler : domain.handlers) {
+          std::set<string> known{"self"};
+          for (const auto& field : domain.state) known.insert(field.name);
+          for (const auto& parameter : handler.params) known.insert(parameter.name);
+          plan_scope(handler.body, functional_handler_context(domain, handler),
+                     known, 0, std::nullopt);
+        }
+      }
+      if (program_.main)
+        plan_scope(program_.main->body, "main", {}, 0, std::nullopt);
+    }
+
+    rebuild_provenance();
+    plan_materializations(enabled);
+  }
+
+ private:
+  struct ScopeOccurrence {
+    size_t statement_index = 0;
+    size_t pipeline_id = 0;
+    Stmt* statement = nullptr;
+    bool result_expression = false;
+    bool new_binding = false;
+    bool explicitly_immutable = false;
+    string expression;
+    string result_binding;
+  };
+
+  Program& program_;
+
+  FunctionalPipeline* pipeline_by_id(size_t id) {
+    auto found = std::find_if(
+        program_.functional_pipelines.begin(),
+        program_.functional_pipelines.end(),
+        [&](const FunctionalPipeline& pipeline) {
+          return pipeline.transient_id == id;
+        });
+    return found == program_.functional_pipelines.end() ? nullptr : &*found;
+  }
+
+  static size_t result_pipeline_id(
+      const std::unordered_map<string,size_t>& ids, const string& context) {
+    auto found = ids.find(context);
+    return found == ids.end() ? 0 : found->second;
+  }
+
+  static size_t statement_pipeline_id(const Stmt& statement,
+                                      const string& context) {
+    auto found = statement.functional_pipeline_ids.find(context);
+    if (found == statement.functional_pipeline_ids.end() ||
+        found->second.empty())
+      return 0;
+    return found->second.front();
+  }
+
+  static size_t word_occurrences(const string& expression,
+                                 const string& name) {
+    size_t result = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t index = 0; index < expression.size();) {
+      char ch = expression[index];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == '"') in_string = false;
+        ++index;
+        continue;
+      }
+      if (ch == '"') {
+        in_string = true;
+        ++index;
+        continue;
+      }
+      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      if (expression.substr(index, end - index) == name) ++result;
+      index = end;
+    }
+    return result;
+  }
+
+  static bool terminal_pipeline(const FunctionalPipeline& pipeline) {
+    return pipeline.nodes.size() > 1 &&
+        functional_terminal_kind(pipeline.nodes.back().kind);
+  }
+
+  static bool transformation_pipeline(const FunctionalPipeline& pipeline) {
+    return pipeline.nodes.size() > 1 && !terminal_pipeline(pipeline);
+  }
+
+  static bool exact_count_candidate(const FunctionalPipeline& pipeline) {
+    if (pipeline.nodes.size() < 2 ||
+        pipeline.nodes.back().kind != FunctionalNodeKind::Count)
+      return false;
+    return std::all_of(
+        pipeline.nodes.begin() + 1, pipeline.nodes.end() - 1,
+        [](const FunctionalNode& node) {
+          return node.kind == FunctionalNodeKind::Map &&
+              node.effects.fusion_safe();
+        });
+  }
+
+  static string barrier_reason(const FunctionalPipeline& pipeline) {
+    for (const auto& node : pipeline.nodes) {
+      const auto& effects = node.effects;
+      if (effects.domain_write) return "observable domain WRITE";
+      if (effects.domain_read) return "observable domain READ";
+      if (effects.message) return "message send";
+      if (effects.await) return "await";
+      if (effects.external_io) return "observable callback effect";
+      if (effects.local_mutation) return "observable local mutation";
+      if (effects.may_fail) return "callback may fail";
+      if (effects.unresolved) return "unresolved callback effect";
+    }
+    return "eager semantics required";
+  }
+
+  static string terminal_name(const FunctionalPipeline& pipeline) {
+    if (pipeline.nodes.empty()) return "terminal";
+    string name = functional_node_name(pipeline.nodes.back().kind);
+    std::transform(name.begin(), name.end(), name.begin(),
+                   [](unsigned char ch) {
+                     return static_cast<char>(std::tolower(ch));
+                   });
+    return name;
+  }
+
+  static bool pipeline_requires_traversal(
+      const FunctionalPipeline& pipeline) {
+    return !pipeline.count_uses_exact_length;
+  }
+
+  void plan_terminal_lowering(FunctionalPipeline& pipeline, bool enabled) {
+    bool count_shape = pipeline.nodes.size() >= 2 &&
+        pipeline.nodes.back().kind == FunctionalNodeKind::Count &&
+        std::all_of(pipeline.nodes.begin() + 1, pipeline.nodes.end() - 1,
+                    [](const FunctionalNode& node) {
+                      return node.kind == FunctionalNodeKind::Map;
+                    });
+    if (enabled && pipeline.fusion_eligible &&
+        exact_count_candidate(pipeline)) {
+      pipeline.count_uses_exact_length = true;
+      for (auto& node : pipeline.nodes)
+        if (node.kind == FunctionalNodeKind::Map)
+          node.dead_stage_eliminated = true;
+      pipeline.optimization_notes.push_back(
+          "count -> len; reason: exact source cardinality known");
+      if (pipeline.nodes.size() > 2)
+        pipeline.optimization_notes.push_back(
+            "map stage eliminated; reason: output unused and callback is "
+            "pure/non-failing");
+    } else if (enabled && count_shape) {
+      pipeline.optimization_notes.push_back(
+          "count -> len disabled; reason: " + barrier_reason(pipeline));
+    }
+
+    if (pipeline.nodes.empty()) return;
+    FunctionalNodeKind terminal = pipeline.nodes.back().kind;
+    if (terminal != FunctionalNodeKind::Any &&
+        terminal != FunctionalNodeKind::All)
+      return;
+    string name = terminal == FunctionalNodeKind::Any ? "any" : "all";
+    if (enabled && pipeline.fusion_eligible) {
+      pipeline.short_circuit_terminal = true;
+      pipeline.optimization_notes.push_back(
+          "short-circuit " + name + " enabled");
+    } else {
+      pipeline.optimization_notes.push_back(
+          "short-circuit " + name + " disabled; reason: " +
+          (enabled ? barrier_reason(pipeline)
+                   : "eager -O0 reference traversal"));
+    }
+  }
+
+  static bool statement_defines(const Stmt& statement, const string& name) {
+    return (statement.kind == Stmt::Kind::Assign ||
+            statement.kind == Stmt::Kind::Let ||
+            statement.kind == Stmt::Kind::Var ||
+            statement.kind == Stmt::Kind::AwaitMessage) &&
+        trim(statement.a) == name;
+  }
+
+  static bool occurrence_is_terminal_assignment(
+      const ScopeOccurrence& occurrence, const FunctionalPipeline& pipeline) {
+    return occurrence.statement && occurrence.new_binding &&
+        !occurrence.result_binding.empty() && terminal_pipeline(pipeline) &&
+        (occurrence.statement->kind == Stmt::Kind::Let ||
+         occurrence.statement->kind == Stmt::Kind::Assign);
+  }
+
+  vector<ScopeOccurrence> collect_scope_occurrences(
+      vector<Stmt>& body, const string& context,
+      std::set<string> known_bindings, size_t result_id,
+      const std::optional<string>& result_expression) {
+    vector<ScopeOccurrence> occurrences;
+    for (size_t index = 0; index < body.size(); ++index) {
+      Stmt& statement = body[index];
+      if (statement.indent != 0) continue;
+      size_t id = statement_pipeline_id(statement, context);
+      bool binding_statement = statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var;
+      bool simple_binding = binding_statement && plain_identifier(statement.a);
+      bool is_new = simple_binding && !known_bindings.count(statement.a);
+      if (id) {
+        ScopeOccurrence occurrence;
+        occurrence.statement_index = index;
+        occurrence.pipeline_id = id;
+        occurrence.statement = &statement;
+        occurrence.new_binding = is_new;
+        occurrence.explicitly_immutable =
+            statement.kind == Stmt::Kind::Let;
+        occurrence.expression = statement.b;
+        if (simple_binding) occurrence.result_binding = statement.a;
+        occurrences.push_back(std::move(occurrence));
+      }
+      if (simple_binding || statement.kind == Stmt::Kind::AwaitMessage)
+        known_bindings.insert(statement.a);
+      if (statement.kind == Stmt::Kind::If)
+        for (const auto& joined : statement.joined_types)
+          known_bindings.insert(joined.first);
+    }
+    if (result_id && result_expression) {
+      ScopeOccurrence result;
+      result.statement_index = body.size();
+      result.pipeline_id = result_id;
+      result.result_expression = true;
+      result.expression = *result_expression;
+      occurrences.push_back(std::move(result));
+    }
+    return occurrences;
+  }
+
+  size_t later_binding_uses(const vector<Stmt>& body, size_t producer_index,
+                            const std::optional<string>& result_expression,
+                            const string& binding,
+                            bool& reassigned) const {
+    size_t uses = 0;
+    reassigned = false;
+    for (size_t index = producer_index + 1; index < body.size(); ++index) {
+      const Stmt& statement = body[index];
+      size_t count = word_occurrences(statement.text, binding);
+      if (statement_defines(statement, binding)) {
+        reassigned = true;
+        if (count) --count;
+      }
+      uses += count;
+    }
+    if (result_expression)
+      uses += word_occurrences(*result_expression, binding);
+    return uses;
+  }
+
+  void plan_cross_binding_fusion(
+      vector<Stmt>& body, vector<ScopeOccurrence>& occurrences,
+      const std::optional<string>& result_expression) {
+    for (size_t index = 0; index < occurrences.size(); ++index) {
+      ScopeOccurrence& producer_occurrence = occurrences[index];
+      if (!producer_occurrence.statement ||
+          producer_occurrence.result_binding.empty())
+        continue;
+      FunctionalPipeline* producer =
+          pipeline_by_id(producer_occurrence.pipeline_id);
+      if (!producer || !transformation_pipeline(*producer) ||
+          producer->virtual_upstream_pipeline_id)
+        continue;
+
+      const string& binding = producer_occurrence.result_binding;
+      bool reassigned = false;
+      size_t uses = later_binding_uses(
+          body, producer_occurrence.statement_index, result_expression,
+          binding, reassigned);
+      bool immutable = producer_occurrence.explicitly_immutable ||
+          (producer_occurrence.new_binding && !reassigned &&
+           producer_occurrence.statement->kind == Stmt::Kind::Assign);
+      producer->binding_name = binding;
+      producer->binding_immutable = immutable;
+      producer->binding_use_count = uses;
+
+      if (!immutable)
+        producer->binding_materialization_reason =
+            "binding is mutable or reassigned";
+      else if (uses > 1)
+        producer->binding_materialization_reason = "multiple consumers";
+      else if (uses == 0)
+        producer->binding_materialization_reason =
+            "escapes optimization scope";
+      else
+        producer->binding_materialization_reason =
+            "use is outside the adjacent functional region";
+
+      if (!immutable || uses != 1 || index + 1 >= occurrences.size())
+        continue;
+      ScopeOccurrence& consumer_occurrence = occurrences[index + 1];
+      bool adjacent = consumer_occurrence.result_expression
+          ? producer_occurrence.statement_index + 1 == body.size()
+          : consumer_occurrence.statement_index ==
+                producer_occurrence.statement_index + 1;
+      if (!adjacent) {
+        bool observable = false;
+        size_t end = consumer_occurrence.result_expression
+            ? body.size() : consumer_occurrence.statement_index;
+        for (size_t statement_index = producer_occurrence.statement_index + 1;
+             statement_index < end; ++statement_index) {
+          Stmt::Kind kind = body[statement_index].kind;
+          observable = observable || kind == Stmt::Kind::Echo ||
+              kind == Stmt::Kind::Message ||
+              kind == Stmt::Kind::AwaitMessage ||
+              kind == Stmt::Kind::Call || kind == Stmt::Kind::If ||
+              kind == Stmt::Kind::While;
+        }
+        producer->binding_materialization_reason = observable
+            ? "intervening observable effect"
+            : "intervening statement prevents one lexical region";
+        continue;
+      }
+      if (consumer_occurrence.statement &&
+          (consumer_occurrence.statement->kind == Stmt::Kind::Assign ||
+           consumer_occurrence.statement->kind == Stmt::Kind::Let ||
+           consumer_occurrence.statement->kind == Stmt::Kind::Var) &&
+          !consumer_occurrence.new_binding) {
+        producer->binding_materialization_reason =
+            "consumer assigns an existing binding";
+        continue;
+      }
+      FunctionalPipeline* consumer =
+          pipeline_by_id(consumer_occurrence.pipeline_id);
+      if (!consumer || trim(consumer->source_expression) != binding) {
+        producer->binding_materialization_reason =
+            "use is outside a compatible functional consumer";
+        continue;
+      }
+      if (!producer->fusion_eligible || !consumer->fusion_eligible) {
+        producer->binding_materialization_reason =
+            "functional barrier: " +
+            barrier_reason(!producer->fusion_eligible ? *producer : *consumer);
+        continue;
+      }
+      if (
+          producer->nodes.empty() || consumer->nodes.empty() ||
+          !producer->nodes.front().effects.fusion_safe() ||
+          !consumer->nodes.front().effects.fusion_safe() ||
+          consumer->virtual_upstream_pipeline_id) {
+        producer->binding_materialization_reason =
+            "source effect or existing dataflow link requires materialization";
+        continue;
+      }
+
+      producer->virtualized_into_pipeline_id = consumer->transient_id;
+      consumer->virtual_upstream_pipeline_id = producer->transient_id;
+      producer->fused = true;
+      producer->binding_materialization_reason.clear();
+      consumer->fused = true;
+      producer->optimization_notes.push_back(
+          "intermediate " + binding +
+          ": virtualized across immutable binding");
+      consumer->optimization_notes.push_back(
+          "cross-binding fusion source: " + binding);
+      consumer->decision = "fused across immutable binding '" + binding +
+          "'; intermediates eliminated";
+    }
+  }
+
+  static bool captures_any_result(
+      const FunctionalPipeline& pipeline,
+      const std::set<string>& result_bindings) {
+    for (const auto& node : pipeline.nodes)
+      for (const auto& capture : node.captures)
+        if (result_bindings.count(capture)) return true;
+    return false;
+  }
+
+  void plan_shared_traversals(vector<ScopeOccurrence>& occurrences,
+                              const string& context) {
+    for (size_t first = 0; first < occurrences.size();) {
+      ScopeOccurrence& initial = occurrences[first];
+      FunctionalPipeline* initial_pipeline = pipeline_by_id(initial.pipeline_id);
+      if (!initial_pipeline || initial.result_expression ||
+          !occurrence_is_terminal_assignment(initial, *initial_pipeline) ||
+          initial_pipeline->virtual_upstream_pipeline_id ||
+          !initial_pipeline->fusion_eligible ||
+          initial_pipeline->nodes.empty() ||
+          !initial_pipeline->nodes.front().effects.fusion_safe() ||
+          !plain_identifier(trim(initial_pipeline->source_expression))) {
+        ++first;
+        continue;
+      }
+
+      vector<size_t> members{first};
+      for (size_t next = first + 1; next < occurrences.size(); ++next) {
+        ScopeOccurrence& occurrence = occurrences[next];
+        FunctionalPipeline* pipeline = pipeline_by_id(occurrence.pipeline_id);
+        const ScopeOccurrence& previous = occurrences[members.back()];
+        if (!pipeline || occurrence.result_expression ||
+            occurrence.statement_index != previous.statement_index + 1 ||
+            !occurrence_is_terminal_assignment(occurrence, *pipeline) ||
+            pipeline->virtual_upstream_pipeline_id ||
+            !pipeline->fusion_eligible ||
+            pipeline->nodes.empty() ||
+            !pipeline->nodes.front().effects.fusion_safe() ||
+            trim(pipeline->source_expression) !=
+                trim(initial_pipeline->source_expression))
+          break;
+        members.push_back(next);
+      }
+      if (members.size() < 2) {
+        ++first;
+        continue;
+      }
+
+      std::set<string> result_bindings;
+      bool useful_traversal = false;
+      for (size_t member : members) {
+        ScopeOccurrence& occurrence = occurrences[member];
+        FunctionalPipeline* pipeline = pipeline_by_id(occurrence.pipeline_id);
+        result_bindings.insert(occurrence.result_binding);
+        useful_traversal = useful_traversal ||
+            pipeline_requires_traversal(*pipeline);
+      }
+      bool dependent = false;
+      for (size_t member : members) {
+        FunctionalPipeline* pipeline =
+            pipeline_by_id(occurrences[member].pipeline_id);
+        dependent = dependent || captures_any_result(*pipeline, result_bindings);
+        for (const auto& result_binding : result_bindings)
+          dependent = dependent ||
+              word_occurrences(pipeline->expression, result_binding) != 0;
+      }
+      if (!useful_traversal || dependent) {
+        first = members.back() + 1;
+        continue;
+      }
+
+      FunctionalTraversalGroup group;
+      group.transient_id = program_.functional_traversal_groups.size() + 1;
+      group.context = context;
+      group.line = initial.statement->line;
+      group.source_expression = trim(initial_pipeline->source_expression);
+      group.source_type = initial_pipeline->source_type;
+      group.semantic_identity = context + "@" + std::to_string(group.line) +
+          ":shared-source";
+      for (size_t member : members) {
+        ScopeOccurrence& occurrence = occurrences[member];
+        FunctionalPipeline* pipeline = pipeline_by_id(occurrence.pipeline_id);
+        pipeline->traversal_group_id = group.transient_id;
+        pipeline->optimization_notes.push_back(
+            "source traversal shared; group %" +
+            std::to_string(group.transient_id));
+        FunctionalTraversalConsumer consumer;
+        consumer.pipeline_id = pipeline->transient_id;
+        consumer.result_binding = occurrence.result_binding;
+        consumer.line = occurrence.statement->line;
+        consumer.mutable_binding =
+            occurrence.statement->kind == Stmt::Kind::Assign;
+        group.consumers.push_back(std::move(consumer));
+        group.provenance.insert(group.provenance.end(),
+                                pipeline->lowered_provenance.begin(),
+                                pipeline->lowered_provenance.end());
+      }
+      std::ostringstream decision;
+      decision << "source traversal shared; consumers:";
+      for (size_t member : members) {
+        FunctionalPipeline* pipeline = pipeline_by_id(
+            occurrences[member].pipeline_id);
+        decision << " " << terminal_name(*pipeline);
+      }
+      group.decision = decision.str();
+      program_.functional_traversal_groups.push_back(std::move(group));
+      first = members.back() + 1;
+    }
+  }
+
+  void plan_scope(vector<Stmt>& body, const string& context,
+                  const std::set<string>& known_bindings, size_t result_id,
+                  const std::optional<string>& result_expression) {
+    auto occurrences = collect_scope_occurrences(
+        body, context, known_bindings, result_id, result_expression);
+    plan_cross_binding_fusion(body, occurrences, result_expression);
+    plan_shared_traversals(occurrences, context);
+  }
+
+  void rebuild_provenance() {
+    for (auto& pipeline : program_.functional_pipelines) {
+      pipeline.lowered_provenance.clear();
+      if (pipeline.virtual_upstream_pipeline_id) {
+        FunctionalPipeline* upstream =
+            pipeline_by_id(pipeline.virtual_upstream_pipeline_id);
+        if (upstream)
+          for (const auto& node : upstream->nodes)
+            pipeline.lowered_provenance.insert(
+                pipeline.lowered_provenance.end(), node.provenance.begin(),
+                node.provenance.end());
+      }
+      for (const auto& node : pipeline.nodes)
+        pipeline.lowered_provenance.insert(
+            pipeline.lowered_provenance.end(), node.provenance.begin(),
+            node.provenance.end());
+    }
+    for (auto& group : program_.functional_traversal_groups) {
+      group.provenance.clear();
+      for (const auto& consumer : group.consumers) {
+        FunctionalPipeline* pipeline = pipeline_by_id(consumer.pipeline_id);
+        if (pipeline)
+          group.provenance.insert(group.provenance.end(),
+                                  pipeline->lowered_provenance.begin(),
+                                  pipeline->lowered_provenance.end());
       }
     }
   }
 
- private:
-  Program& program_;
+  void plan_materializations(bool enabled) {
+    for (auto& pipeline : program_.functional_pipelines) {
+      vector<size_t> logical_nodes;
+      for (size_t index = 0; index < pipeline.nodes.size(); ++index)
+        if (pipeline.nodes[index].logical_materialization)
+          logical_nodes.push_back(index);
+      for (size_t position = 0; position < logical_nodes.size(); ++position) {
+        FunctionalNode& node = pipeline.nodes[logical_nodes[position]];
+        bool last = position + 1 == logical_nodes.size();
+        if (node.dead_stage_eliminated) {
+          node.materialization = FunctionalMaterializationKind::Virtual;
+          node.materialization_reason =
+              "mapped output is dead before exact-length count";
+        } else if (pipeline.virtualized_into_pipeline_id) {
+          node.materialization = FunctionalMaterializationKind::Virtual;
+          node.materialization_reason =
+              "single immutable consumer in the same lexical scope";
+        } else if (!enabled || !pipeline.fused) {
+          node.materialization = FunctionalMaterializationKind::Materialize;
+          node.barrier_required = true;
+          node.materialization_reason = !enabled
+              ? "eager -O0 reference semantics"
+              : "observable or failure-order barrier requires eager completion";
+        } else if (terminal_pipeline(pipeline) || !last) {
+          node.materialization = FunctionalMaterializationKind::Virtual;
+          node.materialization_reason =
+              "single in-graph consumer shares the traversal";
+        } else {
+          node.materialization = FunctionalMaterializationKind::Materialize;
+          node.escapes = true;
+          node.materialization_reason = "escapes optimization scope";
+        }
+
+        if (last && !pipeline.binding_name.empty() &&
+            !pipeline.virtualized_into_pipeline_id) {
+          node.materialization = FunctionalMaterializationKind::Materialize;
+          node.materialization_eliminated = false;
+          node.escapes = true;
+          if (pipeline.binding_use_count > 1) {
+            node.multiple_consumers = true;
+            node.materialization_reason = "multiple consumers";
+          } else if (!pipeline.binding_materialization_reason.empty())
+            node.materialization_reason =
+                pipeline.binding_materialization_reason;
+          if (node.materialization_reason.find("effect") != string::npos ||
+              node.materialization_reason.find("barrier") != string::npos)
+            node.barrier_required = true;
+        }
+        node.materialization_eliminated =
+            node.materialization == FunctionalMaterializationKind::Virtual;
+      }
+
+      if (!pipeline.binding_name.empty() &&
+          !pipeline.virtualized_into_pipeline_id && !logical_nodes.empty()) {
+        const FunctionalNode& final = pipeline.nodes[logical_nodes.back()];
+        pipeline.optimization_notes.push_back(
+            "intermediate " + pipeline.binding_name + ": " +
+            functional_materialization_name(final.materialization) +
+            "; reason: " + final.materialization_reason);
+      }
+    }
+  }
 };
 
 static string observable_effect_label(const ObservableEffects& effects) {
@@ -5857,9 +6483,17 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
           }
         }
         if (node.materialization_eliminated)
-          out << " materialization=eliminated";
-        else if (node.logical_materialization)
-          out << " materialization=logical";
+          out << " materialization=eliminated plan=virtual";
+        else if (node.logical_materialization) {
+          out << " materialization=logical plan="
+              << functional_materialization_name(node.materialization);
+        }
+        if (node.dead_stage_eliminated) out << " dead-stage=eliminated";
+        if (node.escapes) out << " escapes=yes";
+        if (node.multiple_consumers) out << " multiple-consumers=yes";
+        if (node.barrier_required) out << " barrier-required=yes";
+        if (!node.materialization_reason.empty())
+          out << " reason=" << node.materialization_reason;
         out << "\n";
       }
       out << "  facts: element-independent="
@@ -5868,7 +6502,34 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
           << " reduction-compatible="
           << (pipeline.reduction_compatible ? "yes" : "no") << "\n";
     }
+    for (const auto& note : pipeline.optimization_notes)
+      out << "  note: " << note << "\n";
     out << "  decision: " << pipeline.decision << "\n\n";
+  }
+  for (const auto& group : program.functional_traversal_groups) {
+    out << "DataflowGroup %" << group.transient_id << " [" << group.context
+        << "] semantic=" << group.semantic_identity << " line " << group.line
+        << "\n  Source " << group.source_type << " expression="
+        << group.source_expression << "\n";
+    for (const auto& consumer : group.consumers) {
+      auto pipeline = std::find_if(
+          program.functional_pipelines.begin(),
+          program.functional_pipelines.end(),
+          [&](const FunctionalPipeline& candidate) {
+            return candidate.transient_id == consumer.pipeline_id;
+          });
+      out << "  -> Pipeline %" << consumer.pipeline_id << " binding="
+          << consumer.result_binding;
+      if (pipeline != program.functional_pipelines.end())
+        out << " terminal=" << functional_node_name(pipeline->nodes.back().kind);
+      out << " line " << consumer.line << "\n";
+    }
+    if (!decisions_only) {
+      out << "  provenance:";
+      for (const auto& origin : group.provenance) out << " " << origin;
+      out << "\n";
+    }
+    out << "  decision: " << group.decision << "\n\n";
   }
 }
 
@@ -7571,6 +8232,21 @@ class Generator {
     return &*planned;
   }
 
+  const FunctionalTraversalGroup* functional_traversal_group(
+      size_t group_id) const {
+    if (!group_id) return nullptr;
+    auto found = std::find_if(
+        p_.functional_traversal_groups.begin(),
+        p_.functional_traversal_groups.end(),
+        [&](const FunctionalTraversalGroup& group) {
+          return group.transient_id == group_id;
+        });
+    if (found == p_.functional_traversal_groups.end())
+      throw std::runtime_error(
+          "internal error: functional traversal group has no IR plan");
+    return &*found;
+  }
+
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
@@ -7670,6 +8346,254 @@ class Generator {
 
   static string functional_zero(const string& type) {
     return canonical_type_name(type) == "float" ? "0.0_f64" : "0_i64";
+  }
+
+  string functional_terminal_initializer(
+      const ParsedFunctionalStage& terminal, const string& element_type,
+      const Domain* domain, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    switch (terminal.kind) {
+      case FunctionalNodeKind::Reduce:
+        return expr(terminal.arguments.front(), domain, locals, types);
+      case FunctionalNodeKind::Sum:
+        return functional_zero(element_type);
+      case FunctionalNodeKind::Count:
+        return "0_i64";
+      case FunctionalNodeKind::Any:
+        return "false";
+      case FunctionalNodeKind::All:
+        return "true";
+      case FunctionalNodeKind::Source:
+      case FunctionalNodeKind::Map:
+      case FunctionalNodeKind::Filter:
+        break;
+    }
+    throw std::runtime_error(
+        "internal error: non-terminal functional traversal consumer");
+  }
+
+  void gen_shared_functional_traversal(
+      std::ostringstream& out, const FunctionalTraversalGroup& group,
+      const vector<Stmt>& statements, size_t statement_index,
+      const Domain* domain, std::set<string>& locals,
+      std::unordered_map<string,string>& types, int spaces,
+      const string& context) const {
+    if (group.consumers.size() < 2 ||
+        statement_index + group.consumers.size() > statements.size())
+      throw std::runtime_error(
+          "internal error: invalid shared functional traversal region");
+
+    vector<const FunctionalPipeline*> plans;
+    vector<ParsedFunctionalPipeline> pipelines;
+    vector<string> final_element_types;
+    plans.reserve(group.consumers.size());
+    pipelines.reserve(group.consumers.size());
+    final_element_types.reserve(group.consumers.size());
+    for (size_t index = 0; index < group.consumers.size(); ++index) {
+      const auto& consumer = group.consumers[index];
+      const Stmt& statement = statements[statement_index + index];
+      size_t exact_id = statement_functional_pipeline_id(statement, context, 0);
+      if (exact_id != consumer.pipeline_id || trim(statement.a) !=
+          consumer.result_binding)
+        throw std::runtime_error(
+            "internal error: stale shared functional traversal region");
+      const FunctionalPipeline* plan = planned_functional_pipeline(exact_id);
+      auto parsed = parse_functional_pipeline(statement.b);
+      if (!plan || !parsed || parsed->stages.empty() ||
+          !functional_terminal_kind(parsed->stages.back().kind))
+        throw std::runtime_error(
+            "internal error: invalid shared functional consumer");
+      string element_type = generated_functional_element_type(
+          group.source_type).value_or("");
+      if (element_type.empty())
+        throw std::runtime_error(
+            "internal error: untyped shared functional source");
+      for (const auto& stage : parsed->stages) {
+        if (stage.kind != FunctionalNodeKind::Map) continue;
+        auto result = generated_callable_result(
+            stage.arguments.front(), {element_type}, &types);
+        if (!result)
+          throw std::runtime_error(
+              "internal error: untyped shared functional map");
+        element_type = *result;
+      }
+      plans.push_back(plan);
+      pipelines.push_back(std::move(*parsed));
+      final_element_types.push_back(std::move(element_type));
+    }
+
+    for (size_t index = 1; index < group.consumers.size(); ++index)
+      source_comment(out, spaces, statements[statement_index + index].line,
+                     statements[statement_index + index].text);
+    backend_comment(
+        out, spaces,
+        "SHARED FUNCTIONAL SOURCE TRAVERSAL (" +
+            std::to_string(group.consumers.size()) +
+            " terminal consumers); one dataflow DAG loop");
+    out << string(spaces, ' ') << "let (";
+    for (size_t index = 0; index < group.consumers.size(); ++index) {
+      if (index) out << ", ";
+      if (group.consumers[index].mutable_binding) out << "mut ";
+      out << group.consumers[index].result_binding;
+    }
+    out << ") = {\n";
+    string inner(spaces + 4, ' ');
+    string deep(spaces + 8, ' ');
+    out << inner << "// Moss dataflow group %" << group.transient_id
+        << ", semantic " << group.semantic_identity << "; provenance";
+    for (const auto& origin : group.provenance) out << " " << origin;
+    out << "\n";
+    out << inner << "let __moss_shared_source_" << group.transient_id
+        << " = &(" << expr(group.source_expression, domain, locals, &types)
+        << ");\n";
+
+    for (size_t index = 0; index < group.consumers.size(); ++index) {
+      const auto& terminal = pipelines[index].stages.back();
+      out << inner << "let mut __moss_shared_result_" << group.transient_id
+          << "_" << index << " = ";
+      if (plans[index]->count_uses_exact_length)
+        out << "__moss_shared_source_" << group.transient_id
+            << ".len() as i64";
+      else
+        out << functional_terminal_initializer(
+            terminal, final_element_types[index], domain, locals, &types);
+      out << ";\n";
+    }
+
+    bool has_traversal = std::any_of(
+        plans.begin(), plans.end(), [](const FunctionalPipeline* plan) {
+          return !plan->count_uses_exact_length;
+        });
+    auto source_element = generated_functional_element_type(group.source_type);
+    if (!source_element)
+      throw std::runtime_error(
+          "internal error: untyped shared functional source element");
+    if (has_traversal) {
+      out << inner << "for __moss_shared_item_ref_" << group.transient_id
+          << " in __moss_shared_source_" << group.transient_id
+          << ".iter() {\n";
+      for (size_t consumer_index = 0;
+           consumer_index < group.consumers.size(); ++consumer_index) {
+        if (plans[consumer_index]->count_uses_exact_length) continue;
+        const auto& pipeline = pipelines[consumer_index];
+        const auto& terminal = pipeline.stages.back();
+        string result = "__moss_shared_result_" +
+            std::to_string(group.transient_id) + "_" +
+            std::to_string(consumer_index);
+        bool guarded_any = terminal.kind == FunctionalNodeKind::Any;
+        bool guarded_all = terminal.kind == FunctionalNodeKind::All;
+        if (guarded_any || guarded_all)
+          out << deep << "if " << (guarded_any ? "!" : "") << result
+              << " {\n";
+        string block_indent(spaces + (guarded_any || guarded_all ? 16 : 12),
+                            ' ');
+        string statement_indent(spaces +
+            (guarded_any || guarded_all ? 20 : 16), ' ');
+        string label = "'__moss_consumer_" +
+            std::to_string(group.transient_id) + "_" +
+            std::to_string(consumer_index);
+        out << block_indent << label << ": {\n";
+        string current_expression = "__moss_shared_value_" +
+            std::to_string(group.transient_id) + "_" +
+            std::to_string(consumer_index) + "_0";
+        bool source_copy = copy_type(*source_element);
+        out << statement_indent << "let " << current_expression << " = "
+            << (source_copy ? "*" : "") << "__moss_shared_item_ref_"
+            << group.transient_id << ";\n";
+        FunctionalValue current{current_expression, *source_element,
+                                !source_copy};
+        size_t map_number = 0;
+        for (const auto& stage : pipeline.stages) {
+          switch (stage.kind) {
+            case FunctionalNodeKind::Map: {
+              string next = "__moss_shared_value_" +
+                  std::to_string(group.transient_id) + "_" +
+                  std::to_string(consumer_index) + "_" +
+                  std::to_string(++map_number);
+              out << statement_indent << "let " << next << " = "
+                  << render_functional_callable(stage.arguments.front(),
+                                                {current}, domain, locals,
+                                                &types)
+                  << ";\n";
+              auto mapped_type = generated_callable_result(
+                  stage.arguments.front(), {current.type}, &types);
+              if (!mapped_type)
+                throw std::runtime_error(
+                    "internal error: untyped shared functional map result");
+              current = {next, *mapped_type, false};
+              break;
+            }
+            case FunctionalNodeKind::Filter:
+              out << statement_indent << "if !("
+                  << render_functional_callable(stage.arguments.front(),
+                                                {current}, domain, locals,
+                                                &types)
+                  << ") { break " << label << "; }\n";
+              break;
+            case FunctionalNodeKind::Reduce: {
+              auto accumulator_type = generated_expr_type(
+                  stage.arguments.front(), &types).value_or(current.type);
+              out << statement_indent << result << " = "
+                  << render_functional_callable(
+                         stage.arguments[1],
+                         {{result, accumulator_type, false}, current},
+                         domain, locals, &types)
+                  << ";\n";
+              break;
+            }
+            case FunctionalNodeKind::Sum:
+              if (canonical_type_name(current.type) == "int")
+                out << statement_indent << result << " = " << result
+                    << ".wrapping_add(" << current.expression << ");\n";
+              else
+                out << statement_indent << result << " += "
+                    << current.expression << ";\n";
+              break;
+            case FunctionalNodeKind::Count:
+              out << statement_indent << result << " = " << result
+                  << ".wrapping_add(1_i64);\n";
+              break;
+            case FunctionalNodeKind::Any: {
+              string predicate = stage.arguments.empty()
+                  ? current.expression
+                  : render_functional_callable(stage.arguments.front(),
+                                               {current}, domain, locals,
+                                               &types);
+              out << statement_indent << "if " << predicate << " { "
+                  << result << " = true; }\n";
+              break;
+            }
+            case FunctionalNodeKind::All: {
+              string predicate = stage.arguments.empty()
+                  ? current.expression
+                  : render_functional_callable(stage.arguments.front(),
+                                               {current}, domain, locals,
+                                               &types);
+              out << statement_indent << "if !(" << predicate << ") { "
+                  << result << " = false; }\n";
+              break;
+            }
+            case FunctionalNodeKind::Source:
+              break;
+          }
+        }
+        out << block_indent << "}\n";
+        if (guarded_any || guarded_all) out << deep << "}\n";
+      }
+      out << inner << "}\n";
+    }
+    out << inner << "(";
+    for (size_t index = 0; index < group.consumers.size(); ++index) {
+      if (index) out << ", ";
+      out << "__moss_shared_result_" << group.transient_id << "_" << index;
+    }
+    out << ")\n" << string(spaces, ' ') << "};\n";
+
+    for (size_t index = 0; index < group.consumers.size(); ++index) {
+      const auto& consumer = group.consumers[index];
+      locals.insert(consumer.result_binding);
+      types[consumer.result_binding] = plans[index]->output_type;
+    }
   }
 
   string gen_eager_functional_pipeline(
@@ -7785,10 +8709,10 @@ class Generator {
                                        domain, locals, types);
       if (terminal.kind == FunctionalNodeKind::Any)
         out << "            if " << predicate << " { " << accumulator
-            << " = true; break; }\n";
+            << " = true; }\n";
       else
         out << "            if !(" << predicate << ") { " << accumulator
-            << " = false; break; }\n";
+            << " = false; }\n";
     }
     out << "        }\n        " << accumulator << "\n    }";
     return out.str();
@@ -7898,7 +8822,9 @@ class Generator {
               : render_functional_callable(stage.arguments.front(), {current},
                                            domain, locals, types);
           out << "            if " << predicate
-              << " { __moss_result = true; break; }\n";
+              << " { __moss_result = true;";
+          if (planned && planned->short_circuit_terminal) out << " break;";
+          out << " }\n";
           break;
         }
         case FunctionalNodeKind::All: {
@@ -7907,7 +8833,9 @@ class Generator {
               : render_functional_callable(stage.arguments.front(), {current},
                                            domain, locals, types);
           out << "            if !(" << predicate
-              << ") { __moss_result = false; break; }\n";
+              << ") { __moss_result = false;";
+          if (planned && planned->short_circuit_terminal) out << " break;";
+          out << " }\n";
           break;
         }
         case FunctionalNodeKind::Source:
@@ -7936,10 +8864,35 @@ class Generator {
       throw std::runtime_error(
           "internal error: typed functional pipeline reached Rust generation "
           "without its exact functional_pipeline_id");
+    ParsedFunctionalPipeline lowered = *pipeline;
+    if (planned->virtual_upstream_pipeline_id) {
+      const FunctionalPipeline* upstream = planned_functional_pipeline(
+          planned->virtual_upstream_pipeline_id);
+      auto upstream_parsed = upstream
+          ? parse_functional_pipeline(upstream->expression) : std::nullopt;
+      if (!upstream_parsed || upstream_parsed->stages.empty() ||
+          functional_terminal_kind(upstream_parsed->stages.back().kind))
+        throw std::runtime_error(
+            "internal error: invalid virtual functional upstream plan");
+      vector<ParsedFunctionalStage> stages = upstream_parsed->stages;
+      stages.insert(stages.end(), lowered.stages.begin(), lowered.stages.end());
+      lowered.source = upstream_parsed->source;
+      lowered.stages = std::move(stages);
+    }
+    if (planned->count_uses_exact_length) {
+      std::ostringstream out;
+      out << "{\n        // Moss backend: COUNT -> EXACT LENGTH; mapped outputs are dead";
+      out << "; plan %" << planned->transient_id << ", semantic "
+          << planned->semantic_identity << "\n"
+          << "        let __moss_pipeline_source = &("
+          << expr(lowered.source, domain, locals, types) << ");\n"
+          << "        __moss_pipeline_source.len() as i64\n    }";
+      return out.str();
+    }
     if (planned && planned->fused)
-      return gen_fused_functional_pipeline(*pipeline, domain, locals, types,
+      return gen_fused_functional_pipeline(lowered, domain, locals, types,
                                            planned);
-    return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+    return gen_eager_functional_pipeline(lowered, domain, locals, types,
                                          planned);
   }
 
@@ -9304,6 +10257,45 @@ class Generator {
 
       source_comment(o, (base + level) * 4, s.line, s.text);
 
+      size_t direct_functional_id = statement_functional_pipeline_id(
+          s, functional_context, 0);
+      const FunctionalPipeline* direct_functional =
+          planned_functional_pipeline(direct_functional_id);
+      if (direct_functional &&
+          direct_functional->virtualized_into_pipeline_id &&
+          (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let)) {
+        backend_comment(
+            o, (base + level) * 4,
+            "FUNCTIONAL INTERMEDIATE '" + direct_functional->binding_name +
+                "' VIRTUALIZED across one immutable binding; no collection allocated");
+        locals.insert(s.a);
+        types[s.a] = direct_functional->output_type;
+        ++i;
+        continue;
+      }
+      if (direct_functional && direct_functional->traversal_group_id) {
+        const FunctionalTraversalGroup* group = functional_traversal_group(
+            direct_functional->traversal_group_id);
+        if (!group || group->consumers.empty() ||
+            group->consumers.front().pipeline_id != direct_functional_id)
+          throw std::runtime_error(
+              "internal error: shared functional traversal did not start at "
+              "its first consumer");
+        gen_shared_functional_traversal(
+            o, *group, ss, i, d, locals, types, (base + level) * 4,
+            functional_context);
+        i += group->consumers.size();
+        continue;
+      }
+      if (direct_functional && !direct_functional->binding_name.empty() &&
+          !direct_functional->virtualized_into_pipeline_id &&
+          !direct_functional->binding_materialization_reason.empty())
+        backend_comment(
+            o, (base + level) * 4,
+            "FUNCTIONAL INTERMEDIATE '" + direct_functional->binding_name +
+                "' MATERIALIZED; reason: " +
+                direct_functional->binding_materialization_reason);
+
       switch (s.kind) {
         case Stmt::Kind::If: {
           vector<string> joined_bindings;
@@ -10030,7 +11022,7 @@ static void usage() {
             << "  -O, -Oshared-memory    fuse safe functional pipelines and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
             << "  --dump-functional-ir   print typed functional/dataflow nodes and optimization decisions\n"
-            << "  --explain-fusion       print deterministic fusion decisions only\n\n"
+            << "  --explain-fusion       print deterministic functional optimization decisions\n\n"
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"

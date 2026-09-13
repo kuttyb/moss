@@ -1,0 +1,13 @@
+fn observe(value: Int) -> Bool:
+  echo "observe", value
+  return value > 0
+
+fn retain(value: Int) -> Int:
+  echo "retain", value
+  return value
+
+proc main():
+  values = [1, 2, 3]
+  matched = values |> any(observe)
+  counted = values |> map(retain) |> count
+  echo "results", matched, counted

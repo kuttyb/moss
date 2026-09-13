@@ -1,0 +1,8 @@
+proc main():
+  values = [1, 2, 3, 4]
+  first_match = values |> map(_ * 2) |> any(_ == 2)
+  echo first_match
+  late_failure = values |> all(_ < 4)
+  echo late_failure
+  filtered_match = values |> filter(_ > 0) |> any(_ == 1)
+  echo filtered_match

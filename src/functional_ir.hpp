@@ -23,6 +23,15 @@ enum class FunctionalNodeKind {
   All
 };
 
+// Fusion answers whether stages may share a traversal. Materialization is a
+// separate plan for the logical collection produced by a transformation.
+enum class FunctionalMaterializationKind {
+  NotApplicable,
+  Virtual,
+  Materialize,
+  ReusableStorageCandidate
+};
+
 struct FunctionalSourceSpan {
   int line = 0;
   std::size_t stage = 0;
@@ -84,6 +93,13 @@ struct FunctionalNode {
   ObservableEffects effects;
   bool logical_materialization = false;
   bool materialization_eliminated = false;
+  FunctionalMaterializationKind materialization =
+      FunctionalMaterializationKind::NotApplicable;
+  bool escapes = false;
+  bool multiple_consumers = false;
+  bool barrier_required = false;
+  bool dead_stage_eliminated = false;
+  std::string materialization_reason;
   std::vector<std::string> provenance;
 };
 
@@ -103,7 +119,41 @@ struct FunctionalPipeline {
   bool deterministic = false;
   bool reduction_compatible = false;
   bool fused = false;
+  bool count_uses_exact_length = false;
+  bool short_circuit_terminal = false;
+  // Scope-level dataflow links. A producer virtualized into one consumer is
+  // omitted physically, while the consumer lowers the combined pipeline.
+  std::size_t virtual_upstream_pipeline_id = 0;
+  std::size_t virtualized_into_pipeline_id = 0;
+  std::size_t traversal_group_id = 0;
+  std::string binding_name;
+  bool binding_immutable = false;
+  std::size_t binding_use_count = 0;
+  std::string binding_materialization_reason;
   std::vector<std::string> lowered_provenance;
+  std::vector<std::string> optimization_notes;
+  std::string decision;
+};
+
+struct FunctionalTraversalConsumer {
+  std::size_t pipeline_id = 0;
+  std::string result_binding;
+  int line = 0;
+  bool mutable_binding = false;
+};
+
+// A scope-level dataflow DAG with one stable source and two or more terminal
+// consumers. Each consumer keeps its original pipeline identity and
+// provenance; this node only records their shared physical traversal.
+struct FunctionalTraversalGroup {
+  std::size_t transient_id = 0;
+  std::string semantic_identity;
+  std::string context;
+  int line = 0;
+  std::string source_expression;
+  std::string source_type;
+  std::vector<FunctionalTraversalConsumer> consumers;
+  std::vector<std::string> provenance;
   std::string decision;
 };
 
@@ -119,6 +169,18 @@ inline const char* functional_node_name(FunctionalNodeKind kind) {
     case FunctionalNodeKind::All: return "All";
   }
   return "Unknown";
+}
+
+inline const char* functional_materialization_name(
+    FunctionalMaterializationKind kind) {
+  switch (kind) {
+    case FunctionalMaterializationKind::NotApplicable: return "not-applicable";
+    case FunctionalMaterializationKind::Virtual: return "virtual";
+    case FunctionalMaterializationKind::Materialize: return "materialized";
+    case FunctionalMaterializationKind::ReusableStorageCandidate:
+      return "reusable-storage-candidate";
+  }
+  return "unknown";
 }
 
 }  // namespace moss

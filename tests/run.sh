@@ -206,6 +206,15 @@ run_phase4_differential functional_objects_showcase \
   "$(printf 'accepted total: 20\nsensor ids: 101 103\nvalidity: true false true')"
 run_phase4_differential functional_domains_showcase \
   examples/functional_domains.moss 'domain-backed total: 14'
+run_phase4_differential functional_terminal_optimization_showcase \
+  examples/functional_terminal_optimization.moss \
+  'terminal plans: 4 4 true true'
+run_phase4_differential functional_scope_fusion_showcase \
+  examples/functional_scope_fusion.moss 'scope-fused total: 28'
+run_phase4_differential functional_shared_traversal_showcase \
+  examples/functional_shared_traversal.moss 'shared traversal: 6 4 3'
+run_phase4_differential functional_materialization_showcase \
+  examples/functional_materialization.moss 'materialized and shared: 12 3'
 run_phase4_differential phase4_functional tests/phase4_functional.moss \
   "$(printf '6 -1 5 11 16\n12 36 6 2 true true\ntrue false\n60 10 -2\n0 0 false true 7\n-9223372036854775808\n7')"
 run_phase4_differential phase4_fusion tests/phase4_fusion.moss '36'
@@ -235,6 +244,40 @@ run_phase4_differential phase4_reduce_initializer_effect \
   tests/phase4_reduce_initializer_effect.moss "$(printf 'source\ninitial\ntotal 22')"
 run_phase4_differential phase4_result_provenance \
   tests/phase4_result_provenance.moss '10'
+run_phase4_differential phase45_terminal_simplification \
+  tests/phase45_terminal_simplification.moss '4 4'
+run_phase4_differential phase45_short_circuit \
+  tests/phase45_short_circuit.moss \
+  "$(printf 'true true false true true\nfalse false true\nfalse true')"
+run_phase4_differential phase45_short_circuit_single \
+  tests/phase45_short_circuit_single.moss "$(printf 'true\nfalse\ntrue')"
+run_phase4_differential phase45_short_circuit_effect_barrier \
+  tests/phase45_short_circuit_effect_barrier.moss \
+  "$(printf 'observe 1\nobserve 2\nobserve 3\nretain 1\nretain 2\nretain 3\nresults true 3')"
+run_phase4_differential phase45_short_circuit_failure_barrier \
+  tests/phase45_short_circuit_failure_barrier.moss 'true'
+run_phase4_differential phase45_cross_let_fusion \
+  tests/phase45_cross_let_fusion.moss '28'
+run_phase4_differential phase45_cross_let_result \
+  tests/phase45_cross_let_result.moss '8'
+run_phase4_differential phase45_later_use_materializes \
+  tests/phase45_later_use_materializes.moss '2 12'
+run_phase4_differential phase45_multiple_consumers \
+  tests/phase45_multiple_consumers.moss '12 3'
+run_phase4_differential phase45_shared_traversal \
+  tests/phase45_shared_traversal.moss '6 4 3'
+run_phase4_differential phase45_source_mutation_barrier \
+  tests/phase45_source_mutation_barrier.moss '6 4'
+run_phase4_differential phase45_cross_let_effect_barrier \
+  tests/phase45_cross_let_effect_barrier.moss "$(printf 'between stages\n12')"
+run_phase4_differential phase45_mutable_binding_materializes \
+  tests/phase45_mutable_binding_materializes.moss '12'
+run_phase4_differential phase45_shared_any_all \
+  tests/phase45_shared_any_all.moss 'true false 3'
+run_phase4_differential phase45_shared_wrapping \
+  tests/phase45_shared_wrapping.moss '-9223372036854775808 2'
+run_phase4_differential phase45_shared_dependency_barrier \
+  tests/phase45_shared_dependency_barrier.moss '6 12'
 
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_fusion_o0.rs" >/dev/null ||
@@ -292,6 +335,171 @@ grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
 grep -F '// Moss line 6: values |> map(_ * 2) |> sum' \
   "$test_build/phase4_result_provenance_optimized.rs" >/dev/null ||
   fail 'method result pipeline did not retain its real source line'
+
+# Phase 4.5 terminal, materialization, cross-binding, and dataflow-DAG plans.
+[ "$(grep -c 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_terminal_simplification_optimized.rs")" -eq 2 ] ||
+  fail 'exact count and pure mapped-count did not both lower to length'
+if grep -F 'for __moss_item_ref' \
+    "$test_build/phase45_terminal_simplification_optimized.rs" >/dev/null; then
+  fail 'length-simplified count retained a source traversal'
+fi
+if grep -F 'double(__moss_' \
+    "$test_build/phase45_terminal_simplification_optimized.rs" >/dev/null; then
+  fail 'dead pure map callback remained in mapped-count lowering'
+fi
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_terminal_simplification_o0.rs" >/dev/null; then
+  fail '-O0 used the optimized count-to-length plan'
+fi
+
+[ "$(grep -c 'break;' \
+    "$test_build/phase45_short_circuit_single_optimized.rs")" -eq 3 ] ||
+  fail 'optimized standalone any/all did not short circuit'
+if grep -F 'break;' "$test_build/phase45_short_circuit_single_o0.rs" >/dev/null; then
+  fail '-O0 any/all did not retain complete eager traversal'
+fi
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase45_short_circuit_effect_barrier_optimized.rs" >/dev/null ||
+  fail 'observable any/map callbacks did not block skipping work'
+if grep -F 'break;' \
+    "$test_build/phase45_short_circuit_effect_barrier_optimized.rs" >/dev/null; then
+  fail 'effectful any callback was incorrectly short circuited'
+fi
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase45_short_circuit_failure_barrier_optimized.rs" >/dev/null ||
+  fail 'possibly failing any callback did not retain eager traversal'
+if grep -F 'break;' \
+    "$test_build/phase45_short_circuit_failure_barrier_optimized.rs" >/dev/null; then
+  fail 'possibly failing any callback was incorrectly short circuited'
+fi
+
+grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+  "$test_build/phase45_cross_let_fusion_optimized.rs" >/dev/null ||
+  fail 'single-use immutable functional binding was not virtualized'
+if grep -Eq '^[[:space:]]*let (mut )?normalized =' \
+    "$test_build/phase45_cross_let_fusion_optimized.rs"; then
+  fail 'cross-binding fusion retained the normalized collection'
+fi
+[ "$(grep -c 'for __moss_item_ref in' \
+    "$test_build/phase45_cross_let_fusion_optimized.rs")" -eq 1 ] ||
+  fail 'cross-binding map/filter/map/sum did not lower to one traversal'
+if grep -F 'Vec::new()' \
+    "$test_build/phase45_cross_let_fusion_optimized.rs" >/dev/null; then
+  fail 'cross-binding fusion allocated an intermediate vector'
+fi
+grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+  "$test_build/phase45_cross_let_result_optimized.rs" >/dev/null ||
+  fail 'function-result consumer did not virtualize its immutable producer'
+grep -Eq '^[[:space:]]*let normalized = \{' \
+  "$test_build/phase45_later_use_materializes_optimized.rs" ||
+  fail 'later independent use did not force collection materialization'
+if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+    "$test_build/phase45_cross_let_effect_barrier_optimized.rs" >/dev/null; then
+  fail 'an intervening observable effect was crossed by binding fusion'
+fi
+if grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
+    "$test_build/phase45_mutable_binding_materializes_optimized.rs" >/dev/null; then
+  fail 'a mutable functional binding was incorrectly virtualized'
+fi
+grep -Eq '^[[:space:]]*let (mut )?materialized = \{' \
+  "$test_build/phase4_materialized_message_optimized.rs" ||
+  fail 'message-bound functional collection did not remain materialized'
+if grep -F "FUNCTIONAL INTERMEDIATE 'materialized' VIRTUALIZED" \
+    "$test_build/phase4_materialized_message_optimized.rs" >/dev/null; then
+  fail 'scope optimization crossed a message ownership boundary'
+fi
+
+grep -F 'Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL (3 terminal consumers)' \
+  "$test_build/phase45_shared_traversal_optimized.rs" >/dev/null ||
+  fail 'three compatible terminal consumers did not share a traversal'
+[ "$(grep -c 'for __moss_shared_item_ref_' \
+    "$test_build/phase45_shared_traversal_optimized.rs")" -eq 1 ] ||
+  fail 'shared dataflow group did not emit exactly one source loop'
+grep -F 'Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL (2 terminal consumers)' \
+  "$test_build/phase45_multiple_consumers_optimized.rs" >/dev/null ||
+  fail 'materialized multi-consumer value did not share its terminal traversal'
+grep -F "FUNCTIONAL INTERMEDIATE 'normalized' MATERIALIZED; reason: multiple consumers" \
+  "$test_build/phase45_multiple_consumers_optimized.rs" >/dev/null ||
+  fail 'generated Rust did not explain required multi-consumer materialization'
+if grep -F 'Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL' \
+    "$test_build/phase45_source_mutation_barrier_optimized.rs" >/dev/null; then
+  fail 'source mutation barrier was crossed by traversal sharing'
+fi
+if grep -F 'Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL' \
+    "$test_build/phase45_shared_dependency_barrier_optimized.rs" >/dev/null; then
+  fail 'dependent terminal consumers were incorrectly combined'
+fi
+
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_terminal_simplification.moss \
+  >"$test_build/phase45_terminal_simplification.ir"
+grep -F 'count -> len; reason: exact source cardinality known' \
+  "$test_build/phase45_terminal_simplification.ir" >/dev/null ||
+  fail 'functional explanation omitted count-to-length reasoning'
+grep -F 'map stage eliminated; reason: output unused and callback is pure/non-failing' \
+  "$test_build/phase45_terminal_simplification.ir" >/dev/null ||
+  fail 'functional explanation omitted dead-map reasoning'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_short_circuit_effect_barrier.moss \
+  >"$test_build/phase45_short_circuit_effect_barrier.ir"
+grep -F 'short-circuit any disabled; reason: observable callback effect' \
+  "$test_build/phase45_short_circuit_effect_barrier.ir" >/dev/null ||
+  fail 'functional explanation omitted the observable short-circuit barrier'
+grep -F 'count -> len disabled; reason: observable callback effect' \
+  "$test_build/phase45_short_circuit_effect_barrier.ir" >/dev/null ||
+  fail 'functional explanation omitted the effectful mapped-count barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_short_circuit_single.moss \
+  >"$test_build/phase45_short_circuit_single.ir"
+grep -F 'short-circuit any enabled' \
+  "$test_build/phase45_short_circuit_single.ir" >/dev/null ||
+  fail 'functional explanation omitted legal any short-circuiting'
+grep -F 'short-circuit all enabled' \
+  "$test_build/phase45_short_circuit_single.ir" >/dev/null ||
+  fail 'functional explanation omitted legal all short-circuiting'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_short_circuit_failure_barrier.moss \
+  >"$test_build/phase45_short_circuit_failure_barrier.ir"
+grep -F 'short-circuit any disabled; reason: callback may fail' \
+  "$test_build/phase45_short_circuit_failure_barrier.ir" >/dev/null ||
+  fail 'functional explanation omitted the failure short-circuit barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_cross_let_fusion.moss \
+  >"$test_build/phase45_cross_let_fusion.ir"
+grep -F 'intermediate normalized: virtualized across immutable binding' \
+  "$test_build/phase45_cross_let_fusion.ir" >/dev/null ||
+  fail 'functional IR omitted the virtualized named intermediate'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_multiple_consumers.moss \
+  >"$test_build/phase45_multiple_consumers.ir"
+grep -F 'intermediate normalized: materialized; reason: multiple consumers' \
+  "$test_build/phase45_multiple_consumers.ir" >/dev/null ||
+  fail 'functional IR omitted the multiple-consumer materialization reason'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_cross_let_effect_barrier.moss \
+  >"$test_build/phase45_cross_let_effect_barrier.ir"
+grep -F 'intermediate normalized: materialized; reason: intervening observable effect' \
+  "$test_build/phase45_cross_let_effect_barrier.ir" >/dev/null ||
+  fail 'functional IR omitted the cross-binding observable barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_shared_traversal.moss \
+  >"$test_build/phase45_shared_traversal.first"
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_shared_traversal.moss \
+  >"$test_build/phase45_shared_traversal.second"
+cmp "$test_build/phase45_shared_traversal.first" \
+    "$test_build/phase45_shared_traversal.second" >/dev/null ||
+  fail 'scope-level dataflow IR dump was not deterministic'
+grep -F 'DataflowGroup %1 [main] semantic=main@3:shared-source' \
+  "$test_build/phase45_shared_traversal.first" >/dev/null ||
+  fail 'dataflow IR omitted its stable shared-source identity'
+grep -F 'decision: source traversal shared; consumers: sum count count' \
+  "$test_build/phase45_shared_traversal.first" >/dev/null ||
+  fail 'dataflow IR omitted its terminal consumer DAG decision'
+grep -F 'provenance: main@3:expression:0:source' \
+  "$test_build/phase45_shared_traversal.first" >/dev/null ||
+  fail 'shared traversal discarded source provenance'
 grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
   "$test_build/phase4_hof_optimized.rs" >/dev/null ||
   fail 'static higher-order helper did not erase its compile-time callable parameter'

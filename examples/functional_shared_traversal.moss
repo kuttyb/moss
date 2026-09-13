@@ -1,0 +1,8 @@
+# These independent terminals read the same stable source. Under -O, Moss
+# represents them as a source with three consumers and emits one shared loop.
+proc main():
+  values = [-2, 1, 3, 4]
+  total = values |> sum
+  item_count = values |> count
+  positive_count = values |> filter(_ > 0) |> count
+  echo "shared traversal:", total, item_count, positive_count

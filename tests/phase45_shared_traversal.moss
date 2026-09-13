@@ -1,0 +1,6 @@
+proc main():
+  values = [-2, 1, 3, 4]
+  total = values |> sum
+  item_count = values |> count
+  positive_count = values |> filter(_ > 0) |> count
+  echo total, item_count, positive_count

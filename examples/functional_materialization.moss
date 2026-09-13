@@ -1,0 +1,11 @@
+# A second semantic consumer prevents normalized from disappearing. Moss
+# materializes it once, then may share one traversal between its two terminals.
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [1, 2, 3]
+  let normalized = values |> map(normalize)
+  total = normalized |> sum
+  item_count = normalized |> count
+  echo "materialized and shared:", total, item_count

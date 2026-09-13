@@ -1,0 +1,13 @@
+# An immutable, single-use collection binding remains part of Moss source, but
+# -O can keep it virtual and fuse both statements into one source traversal.
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+fn score(value: Int) -> Int:
+  return value + 10
+
+proc main():
+  values = [-2, 1, 3]
+  let normalized = values |> map(normalize)
+  total = normalized |> filter(_ > 0) |> map(score) |> sum
+  echo "scope-fused total:", total

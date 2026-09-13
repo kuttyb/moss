@@ -1,0 +1,8 @@
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+proc main():
+  values = [1, 2, 3]
+  total = values |> sum
+  offset_total = values |> reduce(total, add)
+  echo total, offset_total

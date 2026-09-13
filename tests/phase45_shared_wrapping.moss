@@ -1,0 +1,5 @@
+proc main():
+  values = [9223372036854775807, 1]
+  total = values |> sum
+  item_count = values |> count
+  echo total, item_count

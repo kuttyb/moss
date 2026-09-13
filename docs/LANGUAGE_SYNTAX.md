@@ -173,6 +173,19 @@ The initializer is evaluated once when the ordered reduction stage begins. Its i
 effects participate in fusion legality, so an effectful or possibly failing initializer
 keeps the eager stage schedule.
 
+The eager reference meaning evaluates every `any`/`all` predicate in source order.
+Under `-O`, a pure and non-failing terminal may stop once its result is known. Exact
+`count` may lower to collection length, including through dead pure maps. These are
+compiler optimizations, not lazy source semantics; observable or possibly failing
+callbacks retain the complete eager traversal.
+
+An immutable, single-use functional binding may be physically virtual when its sole
+consumer is the immediately following pipeline in the same lexical block. Multiple
+uses, mutation, effects, ownership boundaries, and control flow require a concrete
+collection. Likewise, adjacent independent terminals over the same unchanged local
+source may share one traversal. Neither transformation changes source syntax or permits
+a compiler-internal pipeline value to escape.
+
 A stage callable may be a named function, a statically bound instance method such as
 `scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
 `_.score()`. A bound method captures one concrete receiver and must only READ it;
@@ -322,7 +335,13 @@ demonstrates two concrete implementations of one named trait;
 inferred Vector, Map, and Queue element types; and
 [`functional_dataflow.moss`](../examples/functional_dataflow.moss) executes a typed
 `values |> map(...) |> filter(...) |> map(...) |> sum` pipeline that `-O` fuses into
-one explicit loop when its effects are safe. The larger
+one explicit loop when its effects are safe. The Phase 4.5 examples
+[`functional_terminal_optimization.moss`](../examples/functional_terminal_optimization.moss),
+[`functional_scope_fusion.moss`](../examples/functional_scope_fusion.moss),
+[`functional_shared_traversal.moss`](../examples/functional_shared_traversal.moss), and
+[`functional_materialization.moss`](../examples/functional_materialization.moss) show
+terminal simplification, scope fusion, DAG traversal sharing, and explicit
+materialization. The larger
 [`mini_application.moss`](../examples/mini_application.moss) combines those static
 features with domains, `message`, and `await`. These are ordinary source programs:
 Moss resolves calls before Rust generation and does not create runtime trait objects.

@@ -86,6 +86,7 @@ struct Program {
   vector<Domain> domains;
   std::optional<MainProc> main;
   vector<FunctionalPipeline> functional_pipelines;
+  vector<FunctionalTraversalGroup> functional_traversal_groups;
 };
 
 } // namespace moss

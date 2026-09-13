@@ -175,6 +175,59 @@ The Rust emitter executes the completed plan. Fused output is deliberately simpl
 control flow, not an opaque iterator abstraction. Generated comments identify eager and
 fused pipelines and list their retained provenance.
 
+## Phase 4.5 scope-level optimization
+
+Phase 4.5 augments the checked Phase 4 nodes; it does not resolve callables, effects,
+ownership, or failure behavior again. The planner derives use counts, lexical liveness,
+escape facts, materialization requirements, consumer edges, and shared-traversal
+eligibility from the authoritative semantic plans.
+
+Materialization and traversal fusion are separate decisions. Every logical `map` or
+`filter` result receives a plan such as `Virtual` or `Materialize`, plus facts recording
+escape, multiple consumers, and eager barriers. A fused non-terminal pipeline still
+materializes its final returned collection, even though collections solely connecting
+internal stages are virtual. `--dump-functional-ir` prints both the decision and reason.
+
+For an exact-size vector source, optimized `count` reads `len` directly. A chain of
+pure, non-failing maps followed only by `count` also becomes the original source length;
+the unused mapped values and callback executions disappear. This is forbidden when a
+callback has an observable effect or may fail.
+
+The eager reference lowering evaluates every `any`/`all` predicate in source order.
+Optimized lowering may stop a terminal's computation at its first decisive element only
+when all skipped work is pure and non-failing. Inside a shared traversal, another
+terminal may still require the source loop to continue; the completed `any`/`all`
+consumer is then disabled for later elements.
+
+The first cross-binding rule is intentionally narrow:
+
+```moss
+let normalized = values |> map(normalize)
+total = normalized |> filter(valid) |> map(score) |> sum
+```
+
+When the binding is immutable, has exactly one use, is in the same lexical block, and
+the consumer is immediately adjacent with no effect, ownership, failure, or control-flow
+barrier, its physical collection is virtual. The source binding remains part of Moss's
+meaning and diagnostics. A later independent use, second consumer, `var`, reassignment,
+or intervening observable statement forces materialization.
+
+Compatible adjacent terminal pipelines over the exact same stable local source form a
+small explicit DAG:
+
+```text
+          Source
+         /  |  \
+      Sum Count Filter -> Count
+```
+
+The generated Rust initializes each terminal accumulator and updates them in one simple
+loop. The initial implementation requires pure, non-failing paths, new local result
+bindings, no result dependency, no intervening statement, and no source mutation. It
+does not reorder stages, push predicates, duplicate work, or apply a general
+profitability model. Each DAG retains the semantic identities and provenance of all
+consumer pipelines.
+
 ## Executable examples
 
 The examples directory separates the main ideas into small programs:
@@ -191,13 +244,20 @@ The examples directory separates the main ideas into small programs:
   projections to user-defined values without dynamic dispatch or hidden object copies.
 - `functional_domains.moss` demonstrates an awaited domain callback as a fusion barrier
   and then sends the concrete terminal result across a normal message boundary.
+- `functional_terminal_optimization.moss` demonstrates exact counts, dead pure maps,
+  and legal short-circuit terminals.
+- `functional_scope_fusion.moss` demonstrates a virtual single-use immutable binding.
+- `functional_shared_traversal.moss` demonstrates a shared-source terminal DAG.
+- `functional_materialization.moss` demonstrates a multiple-consumer materialization
+  followed by a legal shared terminal traversal.
 
 Each program is compiled and executed through both `-O0` and `-O` by the regression
 suite. Their observable output must agree.
 
 ## Deliberately deferred
 
-Phase 4 does not add automatic parallelism, SIMD, GPU code generation, a dynamic callable
-runtime, general lambda syntax, source effect annotations, initializer-free reduction,
-or new failure semantics. The IR preserves the topology, concrete element types,
-captures, reductions, and independence facts that later optimizers will need.
+Phase 4/4.5 do not add automatic parallelism, SIMD, GPU code generation, a dynamic
+callable runtime, general lambda syntax, source effect annotations, initializer-free
+reduction, generic stage reordering, predicate pushdown, or new failure semantics. The
+IR preserves the topology, concrete element types, captures, reductions, independence,
+materialization, and consumer-graph facts that later optimizers will need.

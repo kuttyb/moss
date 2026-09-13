@@ -213,6 +213,20 @@ changing eager stage-at-a-time execution into element-at-a-time execution cannot
 of those effects or their failure order observable. Missing an optimization is valid;
 reordering without proof is not.
 
+Phase 4.5 keeps these eager source semantics and adds no functional syntax. The `-O0`
+reference evaluates all `any`/`all` predicates in order. `-O` may short-circuit only
+pure, non-failing work, and may replace exact `count` (including through dead pure maps)
+with collection length. Materialization is planned separately from loop fusion. A
+single-use immutable intermediate can remain virtual across one adjacent consumer, while
+multiple consumers, escape, mutation, control flow, ownership requirements, or an
+observable/failure barrier force a concrete collection.
+
+Independent pure terminal consumers over the same unchanged local collection can form a
+shared-source DAG and execute in one traversal. This first rule is lexical and
+conservative: consumers are adjacent, results are new locals, paths cannot fail or have
+effects, and no terminal depends on another terminal's result. Phase 4.5 performs no
+generic stage reordering or predicate pushdown.
+
 ## Rust lowering
 
 This section describes the current v0.2 backend. It is not a source-language contract unless the same rule is stated above.
@@ -245,7 +259,8 @@ This section describes the current v0.2 backend. It is not a source-language con
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 - By default, generated await sites use a lazy `unwrap_or_else` failure path that reports a missing reply. `--no-await-error-handling` is an explicit backend opt-in that replaces those checks with unchecked extraction for a future supervision-tree runtime; it is unsafe if a reply is absent or its channel closes.
 - Before Rust emission, Phase 4 constructs typed functional/dataflow nodes for `Source`,
-  `Map`, `Filter`, `Reduce`, `Sum`, `Count`, `Any`, and `All`. Nodes retain a stable ID,
+  `Map`, `Filter`, `Reduce`, `Sum`, `Count`, `Any`, and `All`. Nodes use transient numeric
+  IR IDs for compiler lookup while separately retaining a stable semantic/source identity,
   Moss source span, concrete input/output types, callable identity, ownership and
   observable-effect summaries, logical materialization, and optimization provenance.
 - `-O0` lowers pipelines as explicit eager stage loops and materializations, preserving
@@ -253,10 +268,15 @@ This section describes the current v0.2 backend. It is not a source-language con
   and eliminates only its otherwise logical intermediate collections. Moss performs this
   transformation before Rust generation; it does not delegate the pipeline to a Rust
   `.iter().map().filter()` chain.
-- A fused loop retains the IDs of every source stage it represents. The deterministic
+- A fused loop retains the semantic identities of every source stage it represents. The deterministic
   `--dump-functional-ir` and `--explain-fusion` diagnostics expose types, spans, effects,
   materialization decisions, provenance, and barriers for compiler development and
   regression tests.
+- Phase 4.5 gives every logical transformation an explicit virtual/materialized plan and
+  reason. It can link one immutable producer binding to its sole consumer, or create a
+  `FunctionalTraversalGroup` whose one source has several terminal consumer edges.
+  Generated Rust executes these exact plan IDs as one ordinary loop and retains all
+  contributing semantic identities as provenance.
 
 The current compiler enforces direct-assignment and nontrivial-projection transfer, conflicting call-access rejection, branch/join consumption, and explicit communication-boundary copying with a Moss-level ownership/effect pass. It does not yet implement `deepCopy()` or general reference/alias facilities.
 
@@ -283,11 +303,12 @@ Read-only parameters do not consume the caller's value; `var` parameters permit 
 
 ## Deferred future work
 
-- Automatic SIMD, threading, and GPU/accelerator lowering are deferred. Phase 4 records
+- Automatic SIMD, threading, and GPU/accelerator lowering are deferred. Phase 4/4.5 record
   element independence, determinism, captures, reduction compatibility, and topology so
   later planners can prove such choices without changing the functional source contract.
 - General lambdas, runtime function values, user-facing effect annotations, initializer-
-  free reduction, and a functional cost model are deferred. Phase 4 does not add a
+  free reduction, generic stage reordering/predicate pushdown, and a functional cost
+  model are deferred. Phase 4/4.5 do not add a
   dynamic callable runtime or exception/failure semantics.
 - General immutable cross-domain sharing (`share`, `freeze`, or source-level reference counting) is deferred because of memory retention and leak concerns.
 - Arena handles and `ref object` identity semantics are deferred because unreachable graphs, cycles, and small handles retaining large graphs need a clear reclamation model.

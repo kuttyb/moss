@@ -1,0 +1,6 @@
+proc main():
+  flags = [true, false, true]
+  has_true = flags |> any
+  all_true = flags |> all
+  item_count = flags |> count
+  echo has_true, all_true, item_count

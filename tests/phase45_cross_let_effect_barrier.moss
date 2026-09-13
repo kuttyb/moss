@@ -1,0 +1,9 @@
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [1, 2, 3]
+  let normalized = values |> map(normalize)
+  echo "between stages"
+  total = normalized |> sum
+  echo total

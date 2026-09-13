@@ -1,0 +1,18 @@
+proc main():
+  values = [1, 2, 3, 4]
+  empty = values |> filter(_ > 100)
+
+  immediate_any = values |> any(_ == 1)
+  late_any = values |> any(_ == 4)
+  no_any = values |> any(_ > 10)
+  mapped_any = values |> map(_ * 2) |> any(_ == 2)
+  filtered_any = values |> filter(_ > 0) |> any(_ == 3)
+  immediate_all_failure = values |> all(_ > 1)
+  late_all_failure = values |> all(_ < 4)
+  all_match = values |> all(_ > 0)
+  empty_any = empty |> any(_ > 0)
+  empty_all = empty |> all(_ > 0)
+
+  echo immediate_any, late_any, no_any, mapped_any, filtered_any
+  echo immediate_all_failure, late_all_failure, all_match
+  echo empty_any, empty_all

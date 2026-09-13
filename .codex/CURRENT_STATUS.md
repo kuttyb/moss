@@ -30,6 +30,10 @@ Updated: 2026-09-13
   non-Copy placeholder projections at Moss level, preserves real result-expression
   lines with source-derived semantic identities, and propagates capture mutation through
   ordinary helper calls.
+- Phase 4.5 extends the authoritative Phase 4 IR with explicit materialization plans,
+  exact-count/dead-map simplification, effect-safe `any`/`all` short-circuit plans,
+  single-use immutable cross-binding fusion, and shared-source terminal DAGs. It adds no
+  source syntax and keeps `-O0` as the complete eager reference traversal.
 
 ## Approved semantics
 
@@ -104,6 +108,20 @@ Updated: 2026-09-13
   fuses safe map/map, map/filter/map, and terminal-reduction chains into one explicit
   loop, preserving order and wrapping integer accumulation while eliminating intermediate
   vectors. Effectful or possibly failing stages retain eager lowering.
+- Phase 4.5 separates traversal fusion from physical materialization. Transformation
+  nodes record virtual/materialized state plus escape, multiple-consumer, and barrier
+  reasons. Exact count uses collection length; preceding pure/non-failing maps are dead
+  when only cardinality is observed. Safe optimized `any`/`all` stop their consumer at a
+  decisive element, while eager/effectful/failing callbacks visit the full source.
+- A new local binding or `let` transformation with one adjacent immutable consumer can
+  remain virtual across statements. Mutable/reassigned bindings, later uses, multiple
+  consumers, intervening effects/statements, source effects, and control-flow ambiguity
+  retain a concrete collection.
+- `FunctionalTraversalGroup` represents one stable local source with multiple independent
+  terminal consumer edges. Adjacent pure/non-failing sums, counts, filters/reductions,
+  and `any`/`all` can share one explicit loop; dependent results and source mutation are
+  conservative barriers. Group plans and generated comments retain every consumer's
+  semantic provenance.
 - Deterministic `--dump-functional-ir` and `--explain-fusion` output exposes stage types,
   effects, spans, materialization decisions, retained provenance, and fusion barriers.
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
@@ -164,6 +182,8 @@ Updated: 2026-09-13
   bound methods and static higher-order specialization, observable eager effect order,
   wrapping reduction arithmetic, read-only pipelines over user-defined values, and an
   awaited domain callback that remains an eager fusion barrier.
+- Four Phase 4.5 showcases cover terminal simplification, a virtual cross-binding
+  intermediate, a shared terminal traversal, and multiple-consumer materialization.
 
 ## Partially implemented or unimplemented
 
@@ -183,9 +203,11 @@ Updated: 2026-09-13
   result that would require an implicit copy is rejected rather than cloned or made
   unsafe.
 - Functional fusion uses correctness-first effect rules rather than profitability data.
-  Automatic SIMD, threading, GPU lowering, layout/storage reuse, general lambdas,
-  runtime callable values, user effect annotations, and initializer-free reduction are
-  not implemented.
+  Phase 4.5 scope reconstruction is deliberately lexical and adjacent rather than a
+  general SSA optimizer. Automatic SIMD, threading, GPU lowering, generic stage
+  reordering/predicate pushdown, layout/storage reuse, general lambdas, runtime callable
+  values, user effect annotations, initializer-free reduction, and sophisticated
+  profitability modeling are not implemented.
 
 ## Known bugs and limitations
 
@@ -216,7 +238,7 @@ Updated: 2026-09-13
 
 ## Tests run and results
 
-`make check` passes with Phase 4 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
+`make check` passes with Phase 4.5 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
 Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
 `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
@@ -283,6 +305,16 @@ The focused functional examples are likewise differential tests: each is compile
 both `-O0` and `-O`, compiled by `rustc -D warnings`, executed, and compared against one
 expected output.
 
+Phase 4.5 differentials cover exact and mapped count, empty/immediate/late/no-match
+`any`/`all`, complete eager effect ordering, possible-failure barriers, bare and explicit
+immutable cross-binding fusion (including a function result), later-use/mutable/effect
+materialization barriers, multiple consumers, sum/count/filter-count and any/all/count
+shared DAGs, result-dependency and source-mutation barriers, and wrapping shared sums.
+Generated-Rust checks require eliminated callbacks/loops, optimized-only short-circuit
+control flow, absent virtual collections, present required collections, and one shared
+source loop. Deterministic IR checks assert materialization reasons, DAG edges, stable
+group identity, and combined provenance.
+
 `make examples` passed, compiling every valid example (including the executable static
 trait, dataflow, reduction, callable, effect-order, and object-pipeline showcases) with
 `-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was skipped. A strict
@@ -293,13 +325,14 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phase 2, Phase 2.5, and the Phase 4 functional core are frozen at their respective
-checkpoints; none of the following is implicitly authorized by this status record.
+Phase 2, Phase 2.5, Phase 4, and Phase 4.5 are frozen at their respective checkpoints;
+none of the following is implicitly authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
    representative workloads.
-2. Evaluate Phase 4 profitability and later SIMD/thread/GPU plans using the preserved
-   independence, reduction, capture, and effect facts without changing eager semantics.
+2. Evaluate later profitability, SIMD, threading, and GPU plans using the preserved
+   independence, reduction, capture, effect, materialization, and DAG facts without
+   changing eager semantics.
 3. Extend cluster placement from one instance per domain type to a static per-spawn
    identity plan.
 4. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.

@@ -11,6 +11,11 @@ foundation. Pipelines are typed Moss IR, callable effects are inferred separatel
 from ownership effects, and `-O` can fuse proven-safe stages into explicit Rust loops.
 `-O0` remains the eager, stage-at-a-time semantic reference.
 
+Phase 4.5 extends that same IR across a conservative lexical scope. It plans physical
+materialization explicitly, simplifies exact counts, short-circuits safe `any`/`all`,
+virtualizes single-use immutable pipeline bindings, and represents compatible terminal
+consumers as a shared-source dataflow DAG. This adds no Moss syntax or lazy runtime.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
@@ -66,6 +71,10 @@ The showcase programs are executable syntax guides:
 - [functional effect order](examples/functional_effect_order.moss) makes eager stage ordering and an effectful reduction initializer observable.
 - [functional objects](examples/functional_objects.moss) runs statically resolved read-only methods and trivial field projections over user-defined values.
 - [functional domains](examples/functional_domains.moss) shows an explicit `await` inside a callback acting as a fusion barrier, followed by a scalar message boundary.
+- [functional terminal optimization](examples/functional_terminal_optimization.moss) shows count-to-length, dead pure-map removal, and safe `any`/`all` short-circuiting.
+- [functional scope fusion](examples/functional_scope_fusion.moss) keeps a source-level immutable binding while removing its physical intermediate collection.
+- [functional shared traversal](examples/functional_shared_traversal.moss) gives three independent terminals one stable-source traversal.
+- [functional materialization](examples/functional_materialization.moss) shows a second consumer forcing a collection to exist before its terminal traversal is shared.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
 - [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
 
@@ -110,6 +119,16 @@ execution equivalent to the eager reference. I/O, local mutation, domain observa
 or mutation, `message`, `await`, unresolved effects, and possible failure ordering are
 barriers. A missed fusion is valid; a speculative reordering is not. Fused reductions
 use Moss's wrapping integer arithmetic and allocate no intermediate vector.
+
+Phase 4.5 applies the same proof facts to scope-level plans. Exact `count` becomes a
+length query; preceding pure, non-failing maps can be removed when only cardinality is
+used. Optimized `any` and `all` stop their own computation once known, while the `-O0`
+reference and effectful or possibly failing callbacks still visit every element. A
+single-use immutable functional binding may remain virtual across the immediately
+following consumer. Independent pure terminals over one unchanged local source may
+share one explicit loop. Multiple uses, mutable bindings, intervening effects, source
+mutation, dependencies between terminal results, and control flow conservatively keep
+the relevant materialization or traversal boundary.
 
 Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
 code generation does not infer a plan again from matching source text. Numeric IR IDs are
@@ -190,6 +209,8 @@ deriving a returned new value.
 - Eager ordered `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and `all`
 - Static named/placeholder callables, immutable captures, and specialized higher-order helpers
 - Effect-aware functional fusion and explicit-loop allocation elimination under `-O`
+- Explicit functional materialization plans, count/short-circuit simplification,
+  conservative cross-binding fusion, and shared-source terminal DAGs under `-O`
 - Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
 - `spawn` from `main`
@@ -333,7 +354,7 @@ Await-cycle rejection is a language rule applied before backend placement, so th
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, plus Phase 4 typed functional/dataflow IR and conservative loop fusion, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
+This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, and Phase 4.5 scope-level materialization and shared-traversal planning, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
