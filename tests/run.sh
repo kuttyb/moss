@@ -375,6 +375,77 @@ grep -F '// Moss backend: ATOMIC DOMAIN one-way execution' \
   "$test_build/phase25_atomic_counter.rs" >/dev/null ||
   fail "eligible one-way atomic handler was not executed directly"
 
+# Moss integers wrap at their concrete i64 width. Compile both the mailbox
+# reference and atomic lowering with Rust overflow checks explicitly enabled so
+# neither Rust profile nor the backend choice can affect observable results.
+overflow_expected=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
+  '-9223372036854775808' '9223372036854775807' \
+  '-9223372036854775808' '9223372036854775807' \
+  '-9223372036854775808' '-9223372036854775808' \
+  '-9223372036854775808' '3' \
+  '-9223372036854775808')
+"$compiler" --check tests/phase25_integer_overflow.moss
+"$compiler" -O0 tests/phase25_integer_overflow.moss \
+  -o "$test_build/phase25_integer_overflow_o0.rs"
+"$compiler" -Oshared-memory tests/phase25_integer_overflow.moss \
+  -o "$test_build/phase25_integer_overflow.rs"
+rustc -D warnings -C overflow-checks=yes \
+  "$test_build/phase25_integer_overflow_o0.rs" \
+  -o "$test_build/phase25_integer_overflow_o0"
+rustc -D warnings -C overflow-checks=yes \
+  "$test_build/phase25_integer_overflow.rs" \
+  -o "$test_build/phase25_integer_overflow"
+rustc -D warnings -C overflow-checks=no \
+  "$test_build/phase25_integer_overflow_o0.rs" \
+  -o "$test_build/phase25_integer_overflow_o0_no_checks"
+rustc -D warnings -C overflow-checks=no \
+  "$test_build/phase25_integer_overflow.rs" \
+  -o "$test_build/phase25_integer_overflow_no_checks"
+overflow_o0_output=$("$test_build/phase25_integer_overflow_o0")
+overflow_optimized_output=$("$test_build/phase25_integer_overflow")
+overflow_o0_no_checks_output=$("$test_build/phase25_integer_overflow_o0_no_checks")
+overflow_optimized_no_checks_output=$("$test_build/phase25_integer_overflow_no_checks")
+[ "$overflow_o0_output" = "$overflow_expected" ] ||
+  fail "-O0 integer overflow did not follow Moss wrapping semantics"
+[ "$overflow_optimized_output" = "$overflow_expected" ] ||
+  fail "optimized atomic integer overflow did not follow Moss wrapping semantics"
+[ "$overflow_o0_output" = "$overflow_optimized_output" ] ||
+  fail "integer overflow differed between -O0 and optimized execution"
+[ "$overflow_o0_output" = "$overflow_o0_no_checks_output" ] ||
+  fail "Rust overflow checks changed -O0 Moss integer results"
+[ "$overflow_optimized_output" = "$overflow_optimized_no_checks_output" ] ||
+  fail "Rust overflow checks changed optimized Moss integer results"
+[ "$(grep -c ' = DirectAtomic\.' \
+    "$test_build/phase25_integer_overflow.rs")" -eq 4 ] ||
+  fail "overflow boundary domains did not all select DirectAtomic"
+grep -F '.wrapping_add(' "$test_build/phase25_integer_overflow_o0.rs" >/dev/null ||
+  fail "-O0 integer addition did not use explicit wrapping arithmetic"
+grep -F '.wrapping_sub(' "$test_build/phase25_integer_overflow_o0.rs" >/dev/null ||
+  fail "-O0 integer subtraction did not use explicit wrapping arithmetic"
+grep -F '.wrapping_mul(' "$test_build/phase25_integer_overflow_o0.rs" >/dev/null ||
+  fail "ordinary integer multiplication did not use explicit wrapping arithmetic"
+grep -F '.wrapping_div(' "$test_build/phase25_integer_overflow_o0.rs" >/dev/null ||
+  fail "ordinary integer division overflow did not use explicit wrapping arithmetic"
+grep -F 'fn __moss_specialize_duck_add_0(value: i64) -> i64' \
+  "$test_build/phase25_integer_overflow_o0.rs" >/dev/null ||
+  fail "duck-typed integer arithmetic was not statically specialized before Rust generation"
+[ "$(grep -c '^fn __moss_specialize_duck_add_' \
+    "$test_build/phase25_integer_overflow_o0.rs")" -eq 2 ] ||
+  fail "duck-typed arithmetic did not retain both concrete call-site types"
+grep -F '.fetch_add(' "$test_build/phase25_integer_overflow.rs" >/dev/null ||
+  fail "optimized overflowing add did not use an atomic fetch_add"
+grep -F '.fetch_sub(' "$test_build/phase25_integer_overflow.rs" >/dev/null ||
+  fail "optimized overflowing subtract did not use an atomic fetch_sub"
+grep -F '__moss_previous.wrapping_add(__moss_operand)' \
+  "$test_build/phase25_integer_overflow.rs" >/dev/null ||
+  fail "atomic add reply did not reconstruct the new value with wrapping arithmetic"
+grep -F '__moss_previous.wrapping_sub(__moss_operand)' \
+  "$test_build/phase25_integer_overflow.rs" >/dev/null ||
+  fail "atomic subtract reply did not reconstruct the new value with wrapping arithmetic"
+if grep -F 'unsafe {' "$test_build/phase25_integer_overflow.rs" >/dev/null; then
+  fail "integer wrapping or atomic overflow lowering used unsafe code"
+fi
+
 run_optimized_case phase25_atomic_bool tests/phase25_atomic_bool.moss 'true false'
 grep -F 'enabled: AtomicBool' "$test_build/phase25_atomic_bool.rs" >/dev/null ||
   fail "boolean flag did not use AtomicBool"
@@ -533,7 +604,8 @@ grep -F 'Domain cluster 0: static same-thread dispatch for Checkout, Inventory, 
   "$test_build/clustered_checkout.rs" >/dev/null || fail "cluster plan was not recorded"
 grep -F 'self.Inventory_Reserve_local(quantity)' "$test_build/clustered_checkout.rs" >/dev/null ||
   fail "clustered await did not select the local call version"
-grep -F 'self.Payments_Charge_local(quantity * price)' "$test_build/clustered_checkout.rs" >/dev/null ||
+grep -F 'self.Payments_Charge_local((quantity).wrapping_mul(price))' \
+  "$test_build/clustered_checkout.rs" >/dev/null ||
   fail "second clustered await did not select the local call version"
 grep -F '// Moss backend: CLUSTER-LOCAL version: flush older local messages, then call the handler directly' \
   "$test_build/clustered_checkout.rs" >/dev/null ||

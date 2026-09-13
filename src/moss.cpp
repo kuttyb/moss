@@ -1306,7 +1306,7 @@ class Checker {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
         const_cast<Function&>(f).return_type = *actual;
-      } else if (!starts_with(*f.return_type, "_method_result:") &&
+      } else if (!starts_with(*f.return_type, "_") &&
                  !starts_with(*actual, "_method_") &&
                  canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
         err(f.result_line ? f.result_line : f.line,
@@ -2015,6 +2015,7 @@ class Checker {
             for (const auto& p : function.params) {
               if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
                 function.generic = true;
+                function.static_dispatch = true;
                 string e = trim(expression);
                 string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/";
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
@@ -2087,7 +2088,7 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (auto result = inferred_expr_type(*function.result_expression, env)) {
             if (!function.return_type) function.return_type = *result;
-            else if (!starts_with(*function.return_type, "_method_result:") &&
+            else if (!starts_with(*function.return_type, "_") &&
                      !starts_with(*result, "_method_") &&
                      !same_type(*function.return_type, *result))
               err(function.result_line, "function '" + function.name + "' returns '" + *result +
@@ -2130,6 +2131,7 @@ class Checker {
         if (binary) for (const auto& p : function.params)
           if (p.type.empty() && trim(binary->first) == p.name && trim(binary->second) == p.name) {
             function.generic = true;
+            function.static_dispatch = true;
             string be = trim(*function.result_expression);
             string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/";
             function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
@@ -3952,7 +3954,7 @@ class Checker {
             concrete_specialization_type(*actual) &&
             trait_conforms(*actual, *current_function->return_type);
         if (current_function->return_type &&
-            !starts_with(*current_function->return_type, "_method_result:") &&
+            !starts_with(*current_function->return_type, "_") &&
             !starts_with(*actual, "_method_") &&
             !trait_result_match &&
             !same_type(*actual, *current_function->return_type))
@@ -5282,7 +5284,30 @@ class Generator {
     return "&( " + rendered + ")";
   }
 
-  static std::optional<std::pair<string,string>> generated_split_binary(
+  struct GeneratedBinaryExpression {
+    string left;
+    string op;
+    string right;
+  };
+
+  static bool generated_integer_literal(const string& expression) {
+    string value = trim(expression);
+    size_t start = !value.empty() && (value.front() == '+' || value.front() == '-')
+        ? 1 : 0;
+    return start < value.size() &&
+        std::all_of(value.begin() + static_cast<std::ptrdiff_t>(start), value.end(),
+                    [](char ch) {
+                      return std::isdigit(static_cast<unsigned char>(ch));
+                    });
+  }
+
+  static string generated_integer_literal_as_float(string expression) {
+    expression = trim(std::move(expression));
+    if (!expression.empty() && expression.front() == '+') expression.erase(expression.begin());
+    return expression + ".0";
+  }
+
+  static std::optional<GeneratedBinaryExpression> generated_split_binary(
       const string& expression, const vector<string>& operators) {
     int parens = 0, braces = 0, brackets = 0;
     bool in_string = false;
@@ -5301,11 +5326,28 @@ class Generator {
       else if (ch == ']') ++brackets;
       else if (ch == '[') --brackets;
       if (parens != 0 || braces != 0 || brackets != 0) continue;
-      for (const auto& op : operators)
-        if (index + op.size() <= expression.size() &&
-            expression.compare(index, op.size(), op) == 0)
-          return std::make_pair(trim(expression.substr(0, index)),
-                                trim(expression.substr(index + op.size())));
+      for (const auto& op : operators) {
+        if (index + op.size() > expression.size() ||
+            expression.compare(index, op.size(), op) != 0)
+          continue;
+        string left = trim(expression.substr(0, index));
+        string right = trim(expression.substr(index + op.size()));
+        if (left.empty() || right.empty()) continue;
+        if (op == "+" || op == "-") {
+          size_t before = index;
+          while (before > 0 &&
+                 std::isspace(static_cast<unsigned char>(expression[before - 1])))
+            --before;
+          if (before == 0) continue;
+          char previous = expression[before - 1];
+          if (previous == '(' || previous == '[' || previous == '{' ||
+              previous == ',' || previous == '+' || previous == '-' ||
+              previous == '*' || previous == '/' || previous == '<' ||
+              previous == '>' || previous == '=' || previous == '!')
+            continue;
+        }
+        return GeneratedBinaryExpression{left, op, right};
+      }
     }
     return std::nullopt;
   }
@@ -5314,6 +5356,9 @@ class Generator {
       const string& expression,
       const std::unordered_map<string,string>* types) const {
     string value = normalize_pipeline(trim(expression));
+    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+           matching_paren(value, 0) == value.size() - 1)
+      value = trim(value.substr(1, value.size() - 2));
     if (value == "true" || value == "false") return string("bool");
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       return string("string");
@@ -5324,9 +5369,7 @@ class Generator {
         return canonical_type_name(local->second);
     }
     size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
-    if (start < value.size() &&
-        std::all_of(value.begin() + static_cast<std::ptrdiff_t>(start), value.end(),
-                    [](char ch) { return std::isdigit(static_cast<unsigned char>(ch)); }))
+    if (generated_integer_literal(value))
       return string("int");
     bool dot = false;
     bool numeric = start < value.size();
@@ -5335,6 +5378,19 @@ class Generator {
       else if (!std::isdigit(static_cast<unsigned char>(value[index]))) numeric = false;
     }
     if (numeric && dot) return string("float");
+    if (value.size() >= 2 && value.front() == '[' && value.back() == ']') {
+      auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
+      if (elements.size() == 1 && elements.front().empty()) return std::nullopt;
+      string element_type;
+      for (const auto& element : elements) {
+        auto current = generated_expr_type(element, types);
+        if (!current) return std::nullopt;
+        string concrete = canonical_type_name(*current);
+        if (element_type.empty()) element_type = concrete;
+        else if (element_type != concrete) return std::nullopt;
+      }
+      return "vector[" + element_type + "]";
+    }
 
     string receiver, method_name;
     vector<string> method_args;
@@ -5395,19 +5451,21 @@ class Generator {
               return canonical_type_name(field.type);
       }
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
-      if (auto binary = generated_split_binary(value, operators)) {
-        if (operators.front() == "==") return string("bool");
-        auto left = generated_expr_type(binary->first, types);
-        auto right = generated_expr_type(binary->second, types);
-        if (left && right) {
-          if (*left == "string" && *right == "string" && value.find('+') != string::npos)
-            return string("string");
-          if ((*left == "int" || *left == "float") &&
-              (*right == "int" || *right == "float"))
-            return (*left == "float" || *right == "float") ? "float" : "int";
-        }
+    if (generated_split_binary(value, {" or "}) ||
+        generated_split_binary(value, {" and "}) ||
+        generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
+      return string("bool");
+    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/"}}) {
+      auto binary = generated_split_binary(value, operators);
+      if (!binary) continue;
+      auto left = generated_expr_type(binary->left, types);
+      auto right = generated_expr_type(binary->right, types);
+      if (left && right) {
+        if (*left == "string" && *right == "string" && binary->op == "+")
+          return string("string");
+        if ((*left == "int" || *left == "float") &&
+            (*right == "int" || *right == "float"))
+          return (*left == "float" || *right == "float") ? "float" : "int";
       }
     }
     return std::nullopt;
@@ -5452,8 +5510,67 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
+    if (generated_integer_literal(e)) {
+      if (e.front() == '+') e.erase(e.begin());
+      return e + "_i64";
+    }
     if (e == "Map()") return "HashMap::new()";
     if (e == "Queue()") return "VecDeque::new()";
+    if (e.size() >= 2 && e.front() == '(' && e.back() == ')' &&
+        matching_paren(e, 0) == e.size() - 1)
+      return "(" + expr(e.substr(1, e.size() - 2), d, locals, types) + ")";
+
+    for (const auto& boolean_operator :
+         vector<std::pair<string, string>>{{" or ", "||"}, {" and ", "&&"}}) {
+      if (auto binary = generated_split_binary(e, {boolean_operator.first}))
+        return "(" + expr(binary->left, d, locals, types) + ") " +
+            boolean_operator.second + " (" +
+            expr(binary->right, d, locals, types) + ")";
+    }
+    if (starts_with(e, "not "))
+      return "!(" + expr(e.substr(4), d, locals, types) + ")";
+    if (auto comparison =
+            generated_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"})) {
+      string left = expr(comparison->left, d, locals, types);
+      string right = expr(comparison->right, d, locals, types);
+      auto left_type = generated_expr_type(comparison->left, types);
+      auto right_type = generated_expr_type(comparison->right, types);
+      if (left_type && canonical_type_name(*left_type) == "float" &&
+          right_type && canonical_type_name(*right_type) == "int" &&
+          generated_integer_literal(comparison->right))
+        right = generated_integer_literal_as_float(comparison->right);
+      if (right_type && canonical_type_name(*right_type) == "float" &&
+          left_type && canonical_type_name(*left_type) == "int" &&
+          generated_integer_literal(comparison->left))
+        left = generated_integer_literal_as_float(comparison->left);
+      return "(" + left + ") " + comparison->op + " (" + right + ")";
+    }
+    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/"}}) {
+      auto binary = generated_split_binary(e, operators);
+      if (!binary) continue;
+      string left = expr(binary->left, d, locals, types);
+      string right = expr(binary->right, d, locals, types);
+      auto left_type = generated_expr_type(binary->left, types);
+      auto right_type = generated_expr_type(binary->right, types);
+      bool integer_operation = left_type && right_type &&
+          canonical_type_name(*left_type) == "int" &&
+          canonical_type_name(*right_type) == "int";
+      if (integer_operation) {
+        string method = binary->op == "+" ? "wrapping_add"
+            : binary->op == "-" ? "wrapping_sub"
+            : binary->op == "*" ? "wrapping_mul" : "wrapping_div";
+        return "(" + left + ")." + method + "(" + right + ")";
+      }
+      if (left_type && canonical_type_name(*left_type) == "float" &&
+          right_type && canonical_type_name(*right_type) == "int" &&
+          generated_integer_literal(binary->right))
+        right = generated_integer_literal_as_float(binary->right);
+      if (right_type && canonical_type_name(*right_type) == "float" &&
+          left_type && canonical_type_name(*left_type) == "int" &&
+          generated_integer_literal(binary->left))
+        left = generated_integer_literal_as_float(binary->left);
+      return "(" + left + ") " + binary->op + " (" + right + ")";
+    }
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
       std::ostringstream r; r << "vec![";
@@ -5462,7 +5579,13 @@ class Generator {
     }
     string ib, ii;
     if (parse_index(e, ib, ii)) {
-      string ir = (ii.size() >= 2 && ii.front() == '"' && ii.back() == '"') ? ii : expr(ii, d, locals, types);
+      bool string_index = ii.size() >= 2 && ii.front() == '"' && ii.back() == '"';
+      string ir = string_index ? ii : expr(ii, d, locals, types);
+      auto base_type = generated_expr_type(ib, types);
+      bool map_index = base_type &&
+          (canonical_type_name(*base_type) == "map" ||
+           starts_with(canonical_type_name(*base_type), "map["));
+      if (!string_index && !map_index) ir = "(" + ir + ") as usize";
       return "(" + expr(ib, d, locals, types) + "[" + ir + "]).clone()";
     }
 
@@ -5511,18 +5634,25 @@ class Generator {
       if (builtin == "sqrt" && builtin_args.size() == 1)
         return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
       if (builtin == "sum" && builtin_args.size() == 1) {
-        string result = expr(builtin_args.front(), d, locals, types) +
-            ".iter().copied().sum";
         auto argument_type = generated_expr_type(builtin_args.front(), types);
+        string element_type;
         if (argument_type && starts_with(*argument_type, "vector[") &&
             ends_with(*argument_type, "]"))
-          return result + "::<" + rust_type(argument_type->substr(
-              7, argument_type->size() - 8)) + ">()";
-        if (argument_type && starts_with(*argument_type, "seq[") &&
+          element_type = canonical_type_name(argument_type->substr(
+              7, argument_type->size() - 8));
+        else if (argument_type && starts_with(*argument_type, "seq[") &&
             ends_with(*argument_type, "]"))
-          return result + "::<" + rust_type(argument_type->substr(
-              4, argument_type->size() - 5)) + ">()";
-        return result + "()";
+          element_type = canonical_type_name(argument_type->substr(
+              4, argument_type->size() - 5));
+        string result = expr(builtin_args.front(), d, locals, types) +
+            ".iter().copied()";
+        if (element_type == "int")
+          return result +
+              ".fold(0_i64, |__moss_sum, __moss_value| "
+              "__moss_sum.wrapping_add(__moss_value))";
+        if (!element_type.empty())
+          return result + ".sum::<" + rust_type(element_type) + ">()";
+        return result + ".sum()";
       }
     }
 
@@ -6756,7 +6886,14 @@ class Generator {
           string lhs;
           string lhs_base, lhs_index;
           if (parse_index(s.a, lhs_base, lhs_index)) {
-            string ir = (lhs_index.size() >= 2 && lhs_index.front() == '"' && lhs_index.back() == '"') ? lhs_index : expr(lhs_index, d, locals, &types);
+            bool string_index = lhs_index.size() >= 2 && lhs_index.front() == '"' &&
+                lhs_index.back() == '"';
+            string ir = string_index ? lhs_index : expr(lhs_index, d, locals, &types);
+            auto base_type = generated_expr_type(lhs_base, &types);
+            bool map_index = base_type &&
+                (canonical_type_name(*base_type) == "map" ||
+                 starts_with(canonical_type_name(*base_type), "map["));
+            if (!string_index && !map_index) ir = "(" + ir + ") as usize";
             lhs = expr(lhs_base, d, locals, &types) + "[" + ir + "]";
           }
           else lhs = expr(s.a, d, locals, &types);

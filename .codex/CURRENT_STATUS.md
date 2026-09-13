@@ -12,9 +12,11 @@ Updated: 2026-09-13
   stabilized static duck-typing, named-trait, collection, pipeline, and domain syntax.
   It adds no ownership, borrow, move, optimizer, or runtime-dispatch semantics.
 - Phase 2 ownership/effect safety is present in the current history (`c5396c6` and
-  `58772f3`). The current Phase 2.5 checkpoint adds backend-only batching, explicit
-  domain-lowering plans, direct lock regions, RwLock specialization, and whole-domain
-  atomics without changing Moss source semantics.
+  `58772f3`). Phase 2.5 is frozen and complete on top of `d76449f`. It adds
+  backend-only batching, explicit domain-lowering plans, direct lock regions,
+  RwLock specialization, and whole-domain atomics without changing Moss source
+  semantics. The freeze checkpoint closes the final `-O0`/atomic equivalence gap
+  by defining and explicitly lowering wrapping `i64` arithmetic.
 
 ## Approved semantics
 
@@ -24,6 +26,9 @@ Updated: 2026-09-13
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Future ordinary procedures read parameters temporarily by default; `var` permits temporary caller-visible mutation without transfer.
 - Immutable sharing, arenas, `ref object` identity, and persistent `revise` versions are deferred because retention and leak behavior is unresolved.
+- Moss `Int` is currently signed 64-bit two's-complement. Overflowing integer
+  arithmetic wraps modulo 2^64 in every backend; Rust overflow-check settings are
+  not observable Moss semantics.
 
 ## Implemented features
 
@@ -84,6 +89,10 @@ Updated: 2026-09-13
   `Ordering::SeqCst`. Loads, stores, add/subtract, boolean toggle, and scalar swap are
   supported. Both one-way and awaited calls execute directly, and a fully atomic
   program emits no mailbox, condition variable, mutex, or worker thread.
+- Ordinary integer `+`, `-`, `*`, `/`, integer `sum`, and generated state-update
+  equivalents lower through explicit `i64` wrapping operations. Atomic fetch-add/
+  fetch-sub reply reconstruction uses the same rule, keeping optimized execution
+  equivalent to the mailbox reference at `i64::MIN` and `i64::MAX`.
 - One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
@@ -130,7 +139,7 @@ Updated: 2026-09-13
 
 ## Tests run and results
 
-`make check` passes for the Phase 2.5 checkpoint. The suite compiles ordinary,
+`make check` passes for the frozen Phase 2.5 checkpoint. The suite compiles ordinary,
 Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
 `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
@@ -161,6 +170,13 @@ SeqCst use, atomic request/reply copy boundaries, locking fallbacks for invarian
 external effects, fully atomic runtime removal, atomic and read-heavy contention, and
 representative `-O0`/`-O` output parity.
 
+The overflow differential additionally runs increment-at-`i64::MAX`, decrement-at-
+`i64::MIN`, positive addition overflow, negative-direction subtraction overflow,
+and awaited new-value replies through both `-O0` mailboxes and `DirectAtomic`.
+Both generated programs are compiled with `rustc -C overflow-checks=yes -D warnings`
+and must match. It also checks ordinary wrapping multiplication and division,
+integer `sum`, and a concretely specialized duck-typed integer operation.
+
 `make examples` passed, compiling every valid example (including the executable static
 trait and dataflow showcases in `examples/traits.moss` and
 `examples/functional_dataflow.moss`) with `-Oshared-memory`; the intentional
@@ -171,6 +187,8 @@ passed for this checkpoint.
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 
 ## Immediate next tasks
+
+Phase 2.5 is frozen; none of the following work belongs in this checkpoint.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
    representative workloads.

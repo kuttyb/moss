@@ -1,0 +1,58 @@
+domain IncrementAtMax:
+  value = 9223372036854775807
+
+  fn Increment() -> int:
+    value = value + 1
+    reply value
+
+domain DecrementAtMin:
+  value = -9223372036854775808
+
+  fn Decrement() -> int:
+    value = value - 1
+    reply value
+
+domain AddAcrossMax:
+  value = 9223372036854775806
+
+  fn Add(delta: int) -> int:
+    value = value + delta
+    reply value
+
+domain SubtractAcrossMin:
+  value = -9223372036854775807
+
+  fn Subtract(delta: int) -> int:
+    value = value - delta
+    reply value
+
+fn duck_add(value):
+  return value + value
+
+fn main():
+  incrementer = spawn IncrementAtMax()
+  decrementer = spawn DecrementAtMin()
+  adder = spawn AddAcrossMax()
+  subtractor = spawn SubtractAcrossMin()
+
+  incremented = await incrementer.Increment()
+  decremented = await decrementer.Decrement()
+  added = await adder.Add(2)
+  subtracted = await subtractor.Subtract(2)
+
+  product = 4611686018427387904 * 2
+  quotient = -9223372036854775808 / -1
+  duck_added = duck_add(4611686018427387904)
+  duck_float = duck_add(1.5)
+  values = [9223372036854775807, 1]
+  total = sum(values)
+
+  echo incremented
+  echo decremented
+  echo added
+  echo subtracted
+  echo product
+  echo quotient
+  echo duck_added
+  echo duck_float
+  echo total

@@ -2,6 +2,10 @@
 
 This is the latest implemented Moss compiler currently available. It is a dependency-free C++17 front end that validates Moss source and emits standalone Rust.
 
+Phase 2.5 is frozen and complete. Its mailbox, batching, direct-lock, RwLock,
+atomic, and cluster lowerings are backend choices beneath one Moss semantic
+model; later language or optimizer phases belong in separate checkpoints.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
@@ -93,6 +97,16 @@ moss:12: error: value 'original' was transferred to 'destination' at line 10. Cr
 This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy in ordinary local code. The approved `deepCopy()` operation is not implemented yet; see `.codex/MOSS_DESIGN.md` for the current contract and deferred work.
 
 ## Implemented language slice
+
+Moss `Int` is currently a signed 64-bit two's-complement value. Integer
+arithmetic has explicit wrapping semantics: overflow is reduced modulo
+2<sup>64</sup> and interpreted again as a signed `Int`. In particular, integer
+`+`, `-`, and `*`, integer collection `sum`, and generated state-update
+equivalents all wrap. Integer division also wraps its sole signed-overflow case
+(`Int` minimum divided by `-1`); division by zero remains invalid. Generated
+Rust uses explicit wrapping operations, so Rust debug/release overflow settings
+cannot change Moss results. Atomic add/sub handlers use the same rule when
+deriving a returned new value.
 
 - Domain-owned mutable state
 - Serialized, run-to-completion domain handlers
@@ -202,6 +216,9 @@ sender FIFO and a valid domain-wide total order remain intact; `message`, `await
 `reply` remain semantic copy boundaries; and an awaiting handler remains non-reentrant.
 No optimization inserts `unsafe` or synchronization syntax into Moss. `-O0` retains
 the ordinary lock-backed mailbox implementation as the semantic reference.
+Boundary regressions compile that reference and the optimized atomic backend with
+Rust overflow checks enabled and require identical results at `i64::MIN` and
+`i64::MAX`.
 
 Generated Rust is annotated for inspection: `Moss line N` identifies the source line
 for a directly corresponding declaration or statement. `Moss backend plan` records

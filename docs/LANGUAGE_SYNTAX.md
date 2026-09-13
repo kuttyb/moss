@@ -155,6 +155,22 @@ The frontend initially normalizes a pipeline to ordinary nested local calls. The
 form leaves room for future fusion, SIMD, and GPU planning without making those backend
 choices language semantics.
 
+### Integer arithmetic
+
+`Int` is currently a signed 64-bit two's-complement value. Moss defines integer
+arithmetic independently of the generated Rust build profile: an overflowing
+result wraps modulo 2<sup>64</sup> and is interpreted again as a signed value.
+Integer `+`, `-`, and `*` therefore wrap at the `i64` boundary. Integer `/`
+likewise wraps the `Int`-minimum divided by `-1` case; division by zero remains
+invalid.
+
+This rule also applies to compiler-generated arithmetic representing the same
+source operation, including integer `sum`, domain-state updates, and the new
+value returned by an atomic add/sub handler. The Rust backend emits explicit
+`i64` literals and wrapping operations; Rust debug overflow checks must not
+change observable Moss behavior. Comparisons and boolean operations are not
+changed by this rule.
+
 ## Domain communication
 
 Cross-domain communication is always visible in source. The three forms have distinct
