@@ -19,7 +19,7 @@ struct TraitMethod { string name; vector<Param> params; std::optional<string> re
 struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
-  bool is_mutable = false; bool declaration = true;
+  bool is_mutable = false; bool declaration = true; string semantic_type;
 };
 struct Handler { string name, header; vector<Param> params; std::optional<string> reply_type; vector<Stmt> body; int line = 0; };
 struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };

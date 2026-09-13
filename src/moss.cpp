@@ -1610,6 +1610,9 @@ class Checker {
       }
       if (function.result_expression) derive_expression_constraints(function, *function.result_expression);
       for (const auto& s : function.body) {
+        derive_expression_constraints(function, s.a);
+        derive_expression_constraints(function, s.b);
+        for (const auto& arg : s.args) derive_expression_constraints(function, arg);
         if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
           derive_expression_constraints(function, s.b);
         if (s.kind == Stmt::Kind::Return && !s.a.empty()) derive_expression_constraints(function, s.a);
@@ -2035,6 +2038,7 @@ class Checker {
             auto inferred = inferred_expr_type(s.b, env);
             if (!inferred && trim(s.b).find('[') == 0) err(s.line, "heterogeneous or unresolved collection element type");
             env[s.a] = inferred.value_or("_value");
+            const_cast<Stmt&>(s).semantic_type = env[s.a];
           } else {
             string base, idx;
             if (parse_index(s.a, base, idx)) {
@@ -2044,6 +2048,7 @@ class Checker {
                 auto kt = inferred_expr_type(idx, env);
                 if (!kt) err(s.line, "cannot infer map key type");
                 bt->second = "map[" + *kt + "," + *rt + "]";
+                for (auto& prior : const_cast<vector<Stmt>&>(ss)) if (prior.a == base && prior.b == "Map()") prior.semantic_type = bt->second;
               } else if (bt != env.end() && rt && (bt->second == "queue" || bt->second == "vector")) {
                 bt->second += "[" + *rt + "]";
               }
@@ -2061,7 +2066,8 @@ class Checker {
           if (source != env.end() && domains_.count(source->second))
             env[s.a] = source->second;
           else
-            env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
+          env[s.a] = inferred_expr_type(s.b, env).value_or("_value");
+          const_cast<Stmt&>(s).semantic_type = env[s.a];
           check_expression(s.line, s.b, env);
         }
       }
@@ -3599,16 +3605,7 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            if (s.b == "Map()") {
-              for (size_t look = i + 1; look < ss.size(); ++look) {
-                string lb, li;
-                if (parse_index(ss[look].a, lb, li) && lb == s.a && ss[look].kind == Stmt::Kind::Assign) {
-                  string kt = (li.size() >= 2 && li.front() == '"' && li.back() == '"') ? "String" : (ss[look].b.find('.') != string::npos ? "f64" : "i64");
-                  string vt = ss[look].b.find('.') != string::npos ? "f64" : "i64";
-                  annotation = "HashMap<" + kt + ", " + vt + ">"; break;
-                }
-              }
-            }
+            if (starts_with(s.semantic_type, "map[") && ends_with(s.semantic_type, "]")) annotation = rust_type(s.semantic_type);
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = " << expr(s.b, d, locals) << ";\n";
