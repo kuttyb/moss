@@ -20,15 +20,17 @@ This is an append-only decision history. New decisions and revisions are added a
 
 **Question:** How should a handler return a value to a caller, and what should happen to the caller's domain while it waits?
 
-**Final decision:** A handler may declare `-> ReplyType` and use `reply value`. For v0.2, `await` is permitted only as the complete initializer of a local `let` or `var`. The awaiting domain stays logically occupied and does not process other messages. Self-await is a static error. A reply handler may be called without await, in which case the reply is ignored. Cross-domain await-cycle detection, cancellation, timeouts, and general failure propagation are out of scope.
+**Final decision at that checkpoint:** A handler may declare `-> ReplyType` and use `reply value`. For v0.2, `await` is permitted only as the complete initializer of a local `let` or `var`. The awaiting domain stays logically occupied and does not process other messages. Self-await is a static error. A reply handler may be called without await, in which case the reply is ignored. Cross-domain await-cycle detection was deferred at this checkpoint and is superseded by the Phase 2 update below; cancellation, timeouts, and general failure propagation remain out of scope.
 
 **Reason:** This adds direct request/reply syntax while preserving the existing serialized domain model and avoiding reentrant event-loop behavior.
 
 **Alternatives considered and rejected:** A separate response-message language mechanism; reentrant message processing during await; unrestricted nested await expressions in the first milestone; allowing self-await; requiring every reply-capable send to be awaited.
 
-**Programmer-facing consequences:** Awaited results have the declared reply type. A domain does not become reentrant at an await. Missing replies produce a clear runtime failure. Cross-domain await cycles may deadlock.
+**Programmer-facing consequences at that checkpoint:** Awaited results have the declared reply type. A domain does not become reentrant at an await. Missing replies produce a clear runtime failure. The former cross-domain deadlock limitation is superseded by Phase 2 compile-time cycle rejection.
 
 **Supersedes:** The v0.1 restriction that cross-domain messages have no direct request/reply form.
+
+**Phase 2 update (2026-09-12):** The earlier decision to leave cross-domain cycle detection out of scope is superseded. Moss now rejects every possible cycle in its conservative whole-program await graph, including await dependencies reached through ordinary local calls.
 
 ## 2026-09-05 - Design authority and backend separation
 
@@ -104,7 +106,7 @@ This is an append-only decision history. New decisions and revisions are added a
 
 **Final decision:** Generated Rust uses no standard message-passing channel. Cross-thread requests and replies use generated lock-backed shared-memory queues and one-shot cells, with Rust `Send` assertions at thread boundaries. A backend cluster configuration groups domain types into one generated worker thread and one shared ingress queue. Calls from outside use `_shared` methods. Calls between cluster members are selected statically and use `_local` handler calls plus zero-sized local capability types; one-way messages wait in a plain local `VecDeque` until the active handler completes. Member-to-member dispatch contains no mutexes, atomics, condition variables, shared-handle clones, or runtime cluster checks. Outbound communication to a nonmember uses the shared path.
 
-For the initial implementation, `--cluster=A,B` supplies the backend configuration without adding Moss syntax. Each clustered type must have exactly one unconditional spawn in `main`. A generated `spawn_moss_cluster_N` runtime call creates the group. Before a direct local await, older local messages for its target are drained so the direct call cannot violate per-sender FIFO. A statically visible await cycle within the proposed group is rejected because direct execution would otherwise re-enter an active domain.
+For the initial implementation, `--cluster=A,B` supplies the backend configuration without adding Moss syntax. Each clustered type must have exactly one unconditional spawn in `main`. A generated `spawn_moss_cluster_N` runtime call creates the group. Before a direct local await, older local messages for its target are drained so the direct call cannot violate per-sender FIFO. The initial cluster-only cycle check described here is superseded by Phase 2's placement-independent global await graph.
 
 **Reason:** Moss retains one clean message model while the compiler chooses the cheapest correct Rust mechanism from static placement. A cluster has one executor, so synchronization among its members is redundant, but queued one-way behavior is still required for run-to-completion and non-reentrancy.
 
@@ -123,6 +125,20 @@ For the initial implementation, `--cluster=A,B` supplies the backend configurati
 **Programmer-facing consequences:** The flag assumes every awaited operation delivers a reply and every reply channel remains valid. Violating that assumption makes generated Rust's unchecked extraction invalid; current programs should keep the default checks until supervision trees provide the corresponding guarantee. The flag changes generated Rust only and adds no Moss syntax.
 
 **Supersedes:** No earlier decision; this adds an explicitly unsafe backend mode alongside the checked default.
+
+## 2026-09-12 - Phase 2 calls are acyclic and conflicting accesses are rejected
+
+**Question:** Which whole-program restrictions make Phase 2 ownership/effect inference and non-reentrant awaits statically safe?
+
+**Final decision:** All ordinary local functions and object methods form one statically known, acyclic call graph; direct and mutual recursion are compile-time errors. The compiler builds a conservative await-dependency graph across every domain and handler, propagates await dependencies through ordinary local calls, and rejects every possible cycle regardless of runtime control flow. Asynchronous `message` sends do not create await edges. A dynamic await target is legal only when its possible domain set is statically bounded.
+
+At every ordinary call expression, multiple reads of one storage location are legal, while any overlapping mutation or ownership transfer conflicts with another read, mutation, or transfer. These checks and the READ/WRITE/CONSUME summaries are compiler-internal and add no Moss ownership syntax. Copyable field projections read their containing value; moving a nontrivial field consumes the containing value in the current whole-value ownership model.
+
+**Reason:** Phase 2 must diagnose ordinary deadlock and ownership errors in Moss rather than relying on runtime hangs or generated Rust diagnostics. Acyclic calls also give effect propagation a finite static foundation.
+
+**Programmer-facing consequences:** Recursive helpers must be rewritten iteratively. Potential await cycles are rejected conservatively, even behind branches or local helper calls. Passing one nontrivial binding to conflicting parameters in the same call produces a source-level Moss diagnostic; repeated read-only use remains valid.
+
+**Supersedes:** The cross-domain-cycle limitation in the 2026-09-05 await decision and the cluster-only cycle check in the initial 2026-09-11 clustering milestone. It does not change message/await/reply value-copy boundaries, local assignment transfer, or the prohibition on hidden local copies and copy-on-write.
 
 ## Open questions and experiments - not decisions
 

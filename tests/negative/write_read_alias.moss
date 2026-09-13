@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn conflict(changed: Box, observed: Box):
+  changed.value = changed.value + 1
+  echo observed.value
+
+fn main():
+  var item = Box(value = 7)
+  conflict(item, item)

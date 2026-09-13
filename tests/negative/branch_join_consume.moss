@@ -1,0 +1,12 @@
+type Box:
+  value: Int
+
+fn consume(value: Box):
+  let moved = value
+  echo moved.value
+
+fn main():
+  let item = Box(value = 7)
+  if true:
+    consume(item)
+  echo item.value

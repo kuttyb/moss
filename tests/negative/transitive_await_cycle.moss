@@ -1,0 +1,23 @@
+domain First
+  on Start(second: Second, third: Third) -> int
+    let result = await second.Step(self, third)
+    reply result
+
+  on Finish() -> int
+    reply 1
+
+domain Second
+  on Step(first: First, third: Third) -> int
+    let result = await third.Step(first)
+    reply result
+
+domain Third
+  on Step(first: First) -> int
+    let result = await first.Finish()
+    reply result
+
+fn main():
+  let first = spawn First()
+  let second = spawn Second()
+  let third = spawn Third()
+  message first.Start(second, third)

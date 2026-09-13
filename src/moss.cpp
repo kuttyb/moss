@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <numeric>
@@ -871,10 +872,13 @@ class Checker {
     infer_handler_reply_types(true);
     infer_function_signatures(true);
     check_objects();
+    check_local_call_cycles();
     infer_effects();
+    check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
+    check_global_await_cycles();
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -1286,8 +1290,12 @@ class Checker {
     check_stmts(f.body, env, nullptr, nullptr, &f);
     OwnershipEnv ownership;
     ownership.types = env;
-    check_ownership(f.body, std::move(ownership), nullptr, nullptr);
+    OwnershipEnv final_ownership = check_ownership(
+        f.body, std::move(ownership), nullptr, nullptr);
     if (f.result_expression) {
+      check_ownership_expression(f.result_line ? f.result_line : f.line,
+                                 *f.result_expression, final_ownership,
+                                 Effect::Consume);
       check_expression(f.result_line ? f.result_line : f.line, *f.result_expression, env);
       auto actual = inferred_expr_type(*f.result_expression, env);
       if (!actual)
@@ -2173,6 +2181,128 @@ class Checker {
     return true;
   }
 
+  struct StorageLocation {
+    string root;
+    vector<string> path;
+  };
+
+  static string strip_expression_parens(string value) {
+    value = trim(std::move(value));
+    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+           matching_paren(value, 0) == value.size() - 1)
+      value = trim(value.substr(1, value.size() - 2));
+    return value;
+  }
+
+  std::optional<StorageLocation> storage_location(
+      const string& expression,
+      const std::unordered_map<string,string>& env) const {
+    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    if (simple_identifier(value)) {
+      if (!env.count(value)) return std::nullopt;
+      if (current_object_ && value != "self" &&
+          std::any_of(current_object_->fields.begin(), current_object_->fields.end(),
+                      [&](const Field& field) { return field.name == value; }))
+        return StorageLocation{"self", {value}};
+      return StorageLocation{value, {}};
+    }
+    string base, index;
+    if (parse_index(value, base, index)) {
+      auto location = storage_location(base, env);
+      if (!location) return std::nullopt;
+      location->path.push_back("[]");
+      return location;
+    }
+    auto dot = value.rfind('.');
+    if (dot != string::npos && value.find('(', dot) == string::npos) {
+      auto location = storage_location(value.substr(0, dot), env);
+      if (!location) return std::nullopt;
+      location->path.push_back(trim(value.substr(dot + 1)));
+      return location;
+    }
+    return std::nullopt;
+  }
+
+  static bool storage_locations_overlap(const StorageLocation& left,
+                                        const StorageLocation& right) {
+    if (left.root != right.root) return false;
+    size_t shared = std::min(left.path.size(), right.path.size());
+    for (size_t index = 0; index < shared; ++index) {
+      if (left.path[index] == "[]" || right.path[index] == "[]") continue;
+      if (left.path[index] != right.path[index]) return false;
+    }
+    return true;
+  }
+
+  static string effect_access_name(Effect effect) {
+    if (effect == Effect::Write) return "mutation";
+    if (effect == Effect::Consume) return "transfer";
+    return "read";
+  }
+
+  void check_conflicting_call_accesses(
+      int line, const string& call_name, const vector<string>& expressions,
+      const vector<Effect>& effects, const OwnershipEnv& env) const {
+    struct Access { StorageLocation location; Effect effect; };
+    vector<Access> accesses;
+    for (size_t index = 0; index < expressions.size(); ++index) {
+      auto location = storage_location(expressions[index], env.types);
+      if (!location) continue;
+      auto type = inferred_expr_type(expressions[index], env.types);
+      if (!type || !transfer_type(*type)) continue;
+      accesses.push_back(Access{*location,
+          index < effects.size() ? effects[index] : Effect::Read});
+    }
+    for (size_t left = 0; left < accesses.size(); ++left) {
+      for (size_t right = left + 1; right < accesses.size(); ++right) {
+        if (!storage_locations_overlap(accesses[left].location,
+                                       accesses[right].location))
+          continue;
+        if (accesses[left].effect == Effect::Read &&
+            accesses[right].effect == Effect::Read)
+          continue;
+        err(line, "conflicting accesses to value '" + accesses[left].location.root +
+            "' in call to '" + call_name + "': " +
+            effect_access_name(accesses[left].effect) + " overlaps with " +
+            effect_access_name(accesses[right].effect));
+      }
+    }
+  }
+
+  Effect projection_effect(const string& expression, Effect requested,
+                           const std::unordered_map<string,string>& env) const {
+    if (requested != Effect::Consume) return requested;
+    auto type = inferred_expr_type(expression, env);
+    return type && transfer_type(*type) ? Effect::Consume : Effect::Read;
+  }
+
+  bool possible_method_effects(const string& receiver_type,
+                               const string& method_name, size_t arity,
+                               Effect& receiver_effect,
+                               vector<Effect>& parameter_effects) const {
+    receiver_effect = Effect::Read;
+    parameter_effects.assign(arity, Effect::Read);
+    bool found = false;
+    string type = canonical_type_name(receiver_type);
+    for (const auto& object : p_.objects) {
+      if (!starts_with(type, "_") && traits_.count(type) &&
+          !trait_conforms(object.name, type))
+        continue;
+      if (!starts_with(type, "_") && !traits_.count(type) &&
+          object.name != type)
+        continue;
+      for (const auto& method : object.methods) {
+        if (method.name != method_name || method.params.size() != arity) continue;
+        found = true;
+        receiver_effect = join_effect(receiver_effect, method.receiver_effect);
+        for (size_t index = 0; index < arity; ++index)
+          parameter_effects[index] = join_effect(
+              parameter_effects[index], method_parameter_effect(method, index));
+      }
+    }
+    return found;
+  }
+
   void mark_effect_name(const string& name, Effect effect,
                         const vector<Param>& params,
                         const std::unordered_map<string,string>& env,
@@ -2250,9 +2380,23 @@ class Checker {
           return;
         }
       }
-      // Trait and unresolved duck-typed method calls are statically constrained
-      // by the normal resolver.  Until a concrete method is selected, a call is
-      // conservatively a read of its receiver and arguments.
+      Effect possible_receiver = Effect::Read;
+      vector<Effect> possible_parameters;
+      if (receiver_type && possible_method_effects(*receiver_type, method,
+                                                   arguments.size(),
+                                                   possible_receiver,
+                                                   possible_parameters)) {
+        analyze_effect_expression(receiver, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields,
+                                  possible_receiver);
+        for (size_t index = 0; index < arguments.size(); ++index)
+          analyze_effect_expression(arguments[index], env, params,
+                                    parameter_effects, receiver_effect,
+                                    receiver_fields, possible_parameters[index]);
+        return;
+      }
+      // An unresolved call with no bounded concrete candidate is diagnosed by
+      // ordinary static dispatch checking; keep the effect walk conservative.
       analyze_effect_expression(receiver, env, params, parameter_effects,
                                 receiver_effect, receiver_fields, Effect::Read);
       for (const auto& argument : arguments)
@@ -2290,6 +2434,27 @@ class Checker {
                                     parameter_effects, receiver_effect,
                                     receiver_fields, argument_effect);
         }
+      } else if (auto self = env.find("self"); self != env.end() &&
+                 objects_.count(canonical_type_name(self->second))) {
+        vector<string> argument_types;
+        for (const auto& argument : call_arguments)
+          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+        if (const Method* object_method = resolve_method(
+                canonical_type_name(self->second), callee, argument_types,
+                true, nullptr)) {
+          analyze_effect_expression("self", env, params, parameter_effects,
+                                    receiver_effect, receiver_fields,
+                                    object_method->receiver_effect);
+          for (size_t index = 0; index < call_arguments.size(); ++index)
+            analyze_effect_expression(call_arguments[index], env, params,
+                                      parameter_effects, receiver_effect,
+                                      receiver_fields,
+                                      method_parameter_effect(*object_method, index));
+        } else {
+          for (const auto& argument : call_arguments)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+        }
       } else {
         for (const auto& argument : call_arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
@@ -2301,7 +2466,8 @@ class Checker {
     string base, index;
     if (parse_index(value, base, index)) {
       analyze_effect_expression(base, env, params, parameter_effects,
-                                receiver_effect, receiver_fields, Effect::Read);
+                                receiver_effect, receiver_fields,
+                                projection_effect(value, requested, env));
       analyze_effect_expression(index, env, params, parameter_effects,
                                 receiver_effect, receiver_fields, Effect::Read);
       return;
@@ -2311,8 +2477,8 @@ class Checker {
     if (dot != string::npos && value.find('(', dot) == string::npos) {
       analyze_effect_expression(value.substr(0, dot), env, params,
                                 parameter_effects, receiver_effect,
-                                receiver_fields, requested == Effect::Consume
-                                    ? Effect::Consume : Effect::Read);
+                                receiver_fields,
+                                projection_effect(value, requested, env));
       return;
     }
 
@@ -2367,10 +2533,10 @@ class Checker {
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
-          string source = trim(statement.b);
-          if (simple_effect_identifier(source) && env.count(source) &&
-              effect_requires_borrow(env.at(source)))
-            analyze_effect_expression(source, env, params, parameter_effects,
+          auto source_type = inferred_expr_type(statement.b, env);
+          if (storage_location(statement.b, env) && source_type &&
+              effect_requires_borrow(*source_type))
+            analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Consume);
           else
             analyze_effect_expression(statement.b, env, params, parameter_effects,
@@ -2384,22 +2550,22 @@ class Checker {
         case Stmt::Kind::Assign: {
           string base, ignored;
           if (parse_index(statement.a, base, ignored))
-            analyze_effect_expression(base, env, params, parameter_effects,
+            analyze_effect_expression(statement.a, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Write);
           else {
             auto dot = statement.a.rfind('.');
             if (dot != string::npos)
-              analyze_effect_expression(statement.a.substr(0, dot), env, params,
+              analyze_effect_expression(statement.a, env, params,
                                         parameter_effects, receiver_effect,
                                         receiver_fields, Effect::Write);
             else if (simple_effect_identifier(statement.a) && env.count(statement.a))
               mark_effect_name(statement.a, Effect::Write, params, env,
                                parameter_effects, receiver_effect, receiver_fields);
           }
-          string source = trim(statement.b);
-          if (simple_effect_identifier(source) && env.count(source) &&
-              effect_requires_borrow(env.at(source)))
-            analyze_effect_expression(source, env, params, parameter_effects,
+          auto source_type = inferred_expr_type(statement.b, env);
+          if (storage_location(statement.b, env) && source_type &&
+              effect_requires_borrow(*source_type))
+            analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Consume);
           else
             analyze_effect_expression(statement.b, env, params, parameter_effects,
@@ -2481,6 +2647,387 @@ class Checker {
     return out.str();
   }
 
+  struct LocalCallSite {
+    string target;
+    vector<string> arguments;
+    vector<string> argument_types;
+  };
+
+  string callable_label(const string& id) const {
+    if (starts_with(id, "fn:")) return id.substr(3);
+    if (starts_with(id, "method:")) return id.substr(7);
+    return id;
+  }
+
+  const Method* callable_method(const string& id, const ObjectType** owner = nullptr) const {
+    if (!starts_with(id, "method:")) return nullptr;
+    string qualified = id.substr(7);
+    auto dot = qualified.find('.');
+    if (dot == string::npos) return nullptr;
+    auto object = objects_.find(qualified.substr(0, dot));
+    if (object == objects_.end()) return nullptr;
+    if (owner) *owner = object->second;
+    string method_name = qualified.substr(dot + 1);
+    auto found = std::find_if(object->second->methods.begin(), object->second->methods.end(),
+                              [&](const Method& method) {
+                                return method.name == method_name;
+                              });
+    return found == object->second->methods.end() ? nullptr : &*found;
+  }
+
+  void collect_local_call_sites(
+      int line, const string& expression,
+      const std::unordered_map<string,string>& env,
+      const ObjectType* implicit_owner,
+      vector<LocalCallSite>& calls) const {
+    (void)line;
+    string value = normalize_pipeline(trim(expression));
+    if (value.empty()) return;
+    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+           matching_paren(value, 0) == value.size() - 1)
+      value = trim(value.substr(1, value.size() - 2));
+
+    string receiver, method_name;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, method_name, arguments)) {
+      vector<string> argument_types;
+      for (const auto& argument : arguments)
+        argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+      auto receiver_type = inferred_expr_type(receiver, env);
+      if (receiver_type) {
+        string type = canonical_type_name(*receiver_type);
+        if (objects_.count(type)) {
+          if (const Method* method = resolve_method(type, method_name, argument_types,
+                                                    true, nullptr)) {
+            calls.push_back(LocalCallSite{
+                "method:" + type + "." + method->name, arguments,
+                argument_types});
+          }
+        } else if (traits_.count(type) || starts_with(type, "_")) {
+          for (const auto& object : p_.objects) {
+            if (traits_.count(type) && !trait_conforms(object.name, type)) continue;
+            for (const auto& method : object.methods)
+              if (method.name == method_name && method.params.size() == arguments.size()) {
+                calls.push_back(LocalCallSite{
+                    "method:" + object.name + "." + method.name, arguments,
+                    argument_types});
+              }
+          }
+        }
+      }
+      collect_local_call_sites(line, receiver, env, implicit_owner, calls);
+      for (const auto& argument : arguments)
+        collect_local_call_sites(line, argument, env, implicit_owner, calls);
+      return;
+    }
+
+    string callee;
+    vector<string> call_arguments;
+    if (parse_simple_call(value, callee, call_arguments)) {
+      vector<string> argument_types;
+      for (const auto& argument : call_arguments)
+        argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+      auto function = functions_.find(callee);
+      if (function != functions_.end()) {
+        calls.push_back(LocalCallSite{"fn:" + callee, call_arguments,
+                                      argument_types});
+      } else if (implicit_owner && !objects_.count(callee)) {
+        if (const Method* method = resolve_method(implicit_owner->name, callee,
+                                                  argument_types, true, nullptr))
+          calls.push_back(LocalCallSite{
+              "method:" + implicit_owner->name + "." + method->name,
+              call_arguments, argument_types});
+      }
+      for (const auto& argument : call_arguments) {
+        string field, field_value;
+        collect_local_call_sites(line,
+                                 parse_named_argument(argument, field, field_value)
+                                     ? field_value : argument,
+                                 env, implicit_owner, calls);
+      }
+      return;
+    }
+
+    string base, index;
+    if (parse_index(value, base, index)) {
+      collect_local_call_sites(line, base, env, implicit_owner, calls);
+      collect_local_call_sites(line, index, env, implicit_owner, calls);
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}})
+      if (auto binary = split_binary(value, operators)) {
+        collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
+        collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
+        return;
+      }
+  }
+
+  vector<string> statement_expressions(const Stmt& statement) const {
+    vector<string> expressions;
+    switch (statement.kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var:
+        expressions.push_back(statement.b);
+        break;
+      case Stmt::Kind::Assign:
+        expressions.push_back(statement.a);
+        expressions.push_back(statement.b);
+        break;
+      case Stmt::Kind::Call:
+        expressions.push_back(!statement.text.empty()
+            ? statement.text
+            : statement.a + "(" + join_arguments(statement.args) + ")");
+        break;
+      case Stmt::Kind::Message:
+        expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+        break;
+      case Stmt::Kind::AwaitMessage:
+        expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+        break;
+      case Stmt::Kind::Echo:
+        expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
+        break;
+      case Stmt::Kind::If:
+      case Stmt::Kind::While:
+        expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Reply:
+      case Stmt::Kind::Return:
+        if (!statement.a.empty()) expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Raw:
+        expressions.push_back(statement.text);
+        break;
+      case Stmt::Kind::Else:
+        break;
+    }
+    return expressions;
+  }
+
+  void update_graph_env(const Stmt& statement,
+                        std::unordered_map<string,string>& env) const {
+    if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+        statement.kind == Stmt::Kind::Assign) {
+      if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
+      else if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+    } else if (statement.kind == Stmt::Kind::AwaitMessage) {
+      auto receiver = env.find(statement.b);
+      if (receiver != env.end()) {
+        auto domain = domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* handler = find_handler(*domain->second, statement.c))
+            if (handler->reply_type) env[statement.a] = *handler->reply_type;
+      }
+    }
+  }
+
+  void collect_callable_edges(
+      const vector<Stmt>& body, const std::optional<string>& result_expression,
+      std::unordered_map<string,string> env, const ObjectType* implicit_owner,
+      const string& source, std::map<string,std::set<string>>& graph,
+      std::map<string,int>& edge_lines) const {
+    for (const auto& statement : body) {
+      for (const auto& expression : statement_expressions(statement)) {
+        vector<LocalCallSite> calls;
+        collect_local_call_sites(statement.line, expression, env, implicit_owner, calls);
+        for (const auto& call : calls) {
+          graph[source].insert(call.target);
+          edge_lines.emplace(source + "\n" + call.target, statement.line);
+        }
+      }
+      update_graph_env(statement, env);
+    }
+    if (result_expression) {
+      vector<LocalCallSite> calls;
+      collect_local_call_sites(implicit_owner ? implicit_owner->line : 1,
+                               *result_expression, env, implicit_owner, calls);
+      for (const auto& call : calls) {
+        graph[source].insert(call.target);
+        edge_lines.emplace(source + "\n" + call.target,
+                           implicit_owner ? implicit_owner->line : 1);
+      }
+    }
+  }
+
+  void check_local_call_cycles() const {
+    std::map<string,std::set<string>> graph;
+    std::map<string,int> edge_lines;
+    for (const auto& function : p_.functions) {
+      std::unordered_map<string,string> env;
+      for (const auto& parameter : function.params)
+        env[parameter.name] = parameter.type.empty()
+            ? "_generic:" + parameter.name : parameter.type;
+      collect_callable_edges(function.body, function.result_expression, std::move(env),
+                             nullptr, "fn:" + function.name, graph, edge_lines);
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& method : object.methods) {
+        std::unordered_map<string,string> env;
+        env["self"] = object.name;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
+        collect_callable_edges(method.body, method.result_expression, std::move(env),
+                               &object, "method:" + object.name + "." + method.name,
+                               graph, edge_lines);
+      }
+    }
+
+    std::map<string,int> state;
+    vector<string> stack;
+    std::function<void(const string&)> visit = [&](const string& node) {
+      state[node] = 1;
+      stack.push_back(node);
+      for (const auto& next : graph[node]) {
+        if (state[next] == 0) visit(next);
+        else if (state[next] == 1) {
+          auto begin = std::find(stack.begin(), stack.end(), next);
+          std::ostringstream cycle;
+          for (auto at = begin; at != stack.end(); ++at) {
+            if (at != begin) cycle << " -> ";
+            cycle << callable_label(*at);
+          }
+          cycle << " -> " << callable_label(next);
+          int line = edge_lines.count(node + "\n" + next)
+              ? edge_lines.at(node + "\n" + next) : 1;
+          err(line, "recursive local call cycle: " + cycle.str() +
+              "; recursion is not supported in Phase 2");
+        }
+      }
+      stack.pop_back();
+      state[node] = 2;
+    };
+    for (const auto& entry : graph)
+      if (state[entry.first] == 0) visit(entry.first);
+  }
+
+  void check_global_await_cycles() const {
+    std::map<string,std::set<string>> graph;
+    std::map<string,int> edge_lines;
+    std::set<string> visited;
+    using TypeEnv = std::unordered_map<string,string>;
+    std::function<void(const vector<Stmt>&, const std::optional<string>&,
+                       TypeEnv, const ObjectType*, const string&)> visit_body;
+    std::function<void(int, const string&, const TypeEnv&,
+                       const ObjectType*, const string&)> visit_expression;
+    std::function<void(const LocalCallSite&, const string&)> visit_callable;
+
+    visit_expression = [&](int line, const string& expression, const TypeEnv& env,
+                           const ObjectType* implicit_owner,
+                           const string& source_domain) {
+      vector<LocalCallSite> calls;
+      collect_local_call_sites(line, expression, env, implicit_owner, calls);
+      for (const auto& call : calls) visit_callable(call, source_domain);
+    };
+
+    visit_callable = [&](const LocalCallSite& call, const string& source_domain) {
+      std::ostringstream key;
+      key << source_domain << "\n" << call.target;
+      for (const auto& type : call.argument_types) key << "\n" << type;
+      if (!visited.insert(key.str()).second) return;
+
+      if (starts_with(call.target, "fn:")) {
+        auto function = functions_.find(call.target.substr(3));
+        if (function == functions_.end()) return;
+        TypeEnv env;
+        for (size_t index = 0; index < function->second->params.size(); ++index) {
+          const auto& parameter = function->second->params[index];
+          bool use_actual = parameter.type.empty() || traits_.count(parameter.type);
+          string actual = index < call.argument_types.size()
+              ? call.argument_types[index] : "";
+          env[parameter.name] = use_actual && !actual.empty()
+              ? actual
+              : parameter.type.empty() ? "_dynamic:" + parameter.name
+                                       : parameter.type;
+        }
+        visit_body(function->second->body, function->second->result_expression,
+                   std::move(env), nullptr, source_domain);
+        return;
+      }
+
+      const ObjectType* owner = nullptr;
+      const Method* method = callable_method(call.target, &owner);
+      if (!method || !owner) return;
+      TypeEnv env;
+      env["self"] = owner->name;
+      for (const auto& field : owner->fields) env[field.name] = field.type;
+      for (size_t index = 0; index < method->params.size(); ++index) {
+        string actual = index < call.argument_types.size()
+            ? call.argument_types[index] : "";
+        env[method->params[index].name] = method->params[index].type.empty() &&
+            !actual.empty() ? actual : method->params[index].type;
+      }
+      visit_body(method->body, method->result_expression, std::move(env), owner,
+                 source_domain);
+    };
+
+    visit_body = [&](const vector<Stmt>& body,
+                     const std::optional<string>& result_expression,
+                     TypeEnv env, const ObjectType* implicit_owner,
+                     const string& source_domain) {
+      for (const auto& statement : body) {
+        if (statement.kind == Stmt::Kind::AwaitMessage) {
+          auto receiver = env.find(statement.b);
+          if (receiver == env.end() || starts_with(receiver->second, "_") ||
+              !domains_.count(canonical_type_name(receiver->second)))
+            err(statement.line, "await target '" + statement.b +
+                "' cannot be conservatively bounded to a finite set of domains");
+          string target = canonical_type_name(receiver->second);
+          if (!source_domain.empty()) {
+            graph[source_domain].insert(target);
+            edge_lines.emplace(source_domain + "\n" + target, statement.line);
+          }
+        }
+        for (const auto& expression : statement_expressions(statement))
+          visit_expression(statement.line, expression, env, implicit_owner,
+                           source_domain);
+        update_graph_env(statement, env);
+      }
+      if (result_expression)
+        visit_expression(implicit_owner ? implicit_owner->line : 1,
+                         *result_expression, env, implicit_owner, source_domain);
+    };
+
+    for (const auto& domain : p_.domains) {
+      graph[domain.name];
+      for (const auto& handler : domain.handlers) {
+        std::unordered_map<string,string> env;
+        env["self"] = domain.name;
+        for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
+        visit_body(handler.body, std::nullopt, std::move(env), nullptr,
+                   domain.name);
+      }
+    }
+
+    std::map<string,int> state;
+    vector<string> stack;
+    std::function<void(const string&)> visit = [&](const string& domain) {
+      state[domain] = 1;
+      stack.push_back(domain);
+      for (const auto& target : graph[domain]) {
+        if (state[target] == 0) visit(target);
+        else if (state[target] == 1) {
+          auto begin = std::find(stack.begin(), stack.end(), target);
+          std::ostringstream cycle;
+          for (auto at = begin; at != stack.end(); ++at) {
+            if (at != begin) cycle << " -> ";
+            cycle << *at;
+          }
+          cycle << " -> " << target;
+          int line = edge_lines.count(domain + "\n" + target)
+              ? edge_lines.at(domain + "\n" + target) : 1;
+          err(line, "await dependency cycle: " + cycle.str() +
+              "; every possible await cycle is rejected in Phase 2");
+        }
+      }
+      stack.pop_back();
+      state[domain] = 2;
+    };
+    for (const auto& domain : p_.domains)
+      if (state[domain.name] == 0) visit(domain.name);
+  }
+
   void infer_effects() {
     for (auto& function : p_.functions)
       function.parameter_effects.assign(function.params.size(), Effect::Read);
@@ -2537,6 +3084,26 @@ class Checker {
         }
       }
       if (!changed) break;
+    }
+  }
+
+  void check_method_ownership() {
+    for (const auto& object : p_.objects) {
+      current_object_ = &object;
+      for (const auto& method : object.methods) {
+        OwnershipEnv ownership;
+        ownership.types["self"] = object.name;
+        for (const auto& field : object.fields)
+          ownership.types[field.name] = field.type;
+        for (const auto& parameter : method.params)
+          ownership.types[parameter.name] = parameter.type;
+        OwnershipEnv final_ownership = check_ownership(
+            method.body, std::move(ownership), nullptr, nullptr);
+        if (method.result_expression)
+          check_ownership_expression(method.line, *method.result_expression,
+                                     final_ownership, Effect::Consume);
+      }
+      current_object_ = nullptr;
     }
   }
 
@@ -2600,9 +3167,12 @@ class Checker {
     string value = normalize_pipeline(trim(expression));
     if (value.empty()) return;
     if (simple_identifier(value)) {
-      require_available(line, value, env);
+      auto location = storage_location(value, env.types);
+      string binding = location ? location->root : value;
+      require_available(line, binding, env);
       if (requested == Effect::Consume)
-        consume_binding(line, value, env, "an expression at line " + std::to_string(line));
+        consume_binding(line, binding, env,
+                        "an expression at line " + std::to_string(line));
       return;
     }
 
@@ -2616,6 +3186,16 @@ class Checker {
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
+          vector<string> access_expressions{receiver};
+          vector<Effect> access_effects{
+              (method == "push" || method == "pop") ? Effect::Write : Effect::Read};
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            access_expressions.push_back(arguments[index]);
+            access_effects.push_back(method == "push" && index == 0
+                ? Effect::Consume : Effect::Read);
+          }
+          check_conflicting_call_accesses(line, method, access_expressions,
+                                          access_effects, env);
           check_ownership_expression(line, receiver, env,
               (method == "push" || method == "pop") ? Effect::Write : Effect::Read);
           for (size_t index = 0; index < arguments.size(); ++index)
@@ -2627,12 +3207,40 @@ class Checker {
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env.types).value_or(""));
         if (auto object_method = resolve_method(concrete, method, argument_types, true, nullptr)) {
+          vector<string> access_expressions{receiver};
+          vector<Effect> access_effects{object_method->receiver_effect};
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            access_expressions.push_back(arguments[index]);
+            access_effects.push_back(method_parameter_effect(*object_method, index));
+          }
+          check_conflicting_call_accesses(line, method, access_expressions,
+                                          access_effects, env);
           check_ownership_expression(line, receiver, env, object_method->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
                 method_parameter_effect(*object_method, index));
           return;
         }
+      }
+      Effect possible_receiver = Effect::Read;
+      vector<Effect> possible_parameters;
+      if (receiver_type && possible_method_effects(*receiver_type, method,
+                                                   arguments.size(),
+                                                   possible_receiver,
+                                                   possible_parameters)) {
+        vector<string> access_expressions{receiver};
+        vector<Effect> access_effects{possible_receiver};
+        access_expressions.insert(access_expressions.end(), arguments.begin(),
+                                  arguments.end());
+        access_effects.insert(access_effects.end(), possible_parameters.begin(),
+                              possible_parameters.end());
+        check_conflicting_call_accesses(line, method, access_expressions,
+                                        access_effects, env);
+        check_ownership_expression(line, receiver, env, possible_receiver);
+        for (size_t index = 0; index < arguments.size(); ++index)
+          check_ownership_expression(line, arguments[index], env,
+                                     possible_parameters[index]);
+        return;
       }
       check_ownership_expression(line, receiver, env, Effect::Read);
       for (const auto& argument : arguments)
@@ -2649,6 +3257,18 @@ class Checker {
           string field, field_value;
           if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
         }
+        vector<string> access_expressions;
+        vector<Effect> access_effects;
+        for (const auto& field : objects_.at(callee)->fields) {
+          auto supplied_value = supplied.find(field.name);
+          if (supplied_value != supplied.end()) {
+            access_expressions.push_back(supplied_value->second);
+            access_effects.push_back(effect_requires_borrow(field.type)
+                ? Effect::Consume : Effect::Read);
+          }
+        }
+        check_conflicting_call_accesses(line, callee, access_expressions,
+                                        access_effects, env);
         for (const auto& field : objects_.at(callee)->fields) {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end())
@@ -2658,6 +3278,33 @@ class Checker {
         return;
       }
       auto function = functions_.find(callee);
+      if (function != functions_.end()) {
+        vector<Effect> effects;
+        for (size_t index = 0; index < call_arguments.size(); ++index)
+          effects.push_back(function_parameter_effect(*function->second, index));
+        check_conflicting_call_accesses(line, callee, call_arguments, effects, env);
+      } else if (current_object_) {
+        vector<string> argument_types;
+        for (const auto& argument : call_arguments)
+          argument_types.push_back(inferred_expr_type(argument, env.types).value_or(""));
+        if (const Method* object_method = resolve_method(
+                current_object_->name, callee, argument_types, true, nullptr)) {
+          vector<string> access_expressions{"self"};
+          vector<Effect> access_effects{object_method->receiver_effect};
+          for (size_t index = 0; index < call_arguments.size(); ++index) {
+            access_expressions.push_back(call_arguments[index]);
+            access_effects.push_back(method_parameter_effect(*object_method, index));
+          }
+          check_conflicting_call_accesses(line, callee, access_expressions,
+                                          access_effects, env);
+          check_ownership_expression(line, "self", env,
+                                     object_method->receiver_effect);
+          for (size_t index = 0; index < call_arguments.size(); ++index)
+            check_ownership_expression(line, call_arguments[index], env,
+                                       method_parameter_effect(*object_method, index));
+          return;
+        }
+      }
       for (size_t index = 0; index < call_arguments.size(); ++index) {
         Effect argument_effect = function == functions_.end()
             ? Effect::Read : function_parameter_effect(*function->second, index);
@@ -2668,7 +3315,8 @@ class Checker {
 
     string base, index;
     if (parse_index(value, base, index)) {
-      check_ownership_expression(line, base, env, Effect::Read);
+      check_ownership_expression(line, base, env,
+                                 projection_effect(value, requested, env.types));
       check_ownership_expression(line, index, env, Effect::Read);
       return;
     }
@@ -2676,7 +3324,7 @@ class Checker {
     auto dot = value.rfind('.');
     if (dot != string::npos && value.find('(', dot) == string::npos) {
       check_ownership_expression(line, value.substr(0, dot), env,
-                                 requested == Effect::Consume ? Effect::Consume : Effect::Read);
+                                 projection_effect(value, requested, env.types));
       return;
     }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
@@ -2712,11 +3360,12 @@ class Checker {
     (void)action;
   }
 
-  void check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
-                       const Domain* current_domain,
-                       const Handler* current_handler) {
+  OwnershipEnv check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
+                               const Domain* current_domain,
+                               const Handler* current_handler) {
     size_t index = 0;
     check_ownership_block(statements, index, 0, env, current_domain, current_handler);
+    return env;
   }
 
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
@@ -2751,11 +3400,16 @@ class Checker {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
           string source = trim(s.b);
-          bool transfers = simple_identifier(source) && env.types.count(source) &&
-              effect_requires_borrow(env.types.at(source));
+          auto source_type = inferred_expr_type(s.b, env.types);
+          bool transfers = storage_location(s.b, env.types) && source_type &&
+              effect_requires_borrow(*source_type);
           if (transfers) {
-            require_available(s.line, source, env);
-            consume_binding(s.line, source, env, s.a);
+            if (simple_identifier(source)) {
+              require_available(s.line, source, env);
+              consume_binding(s.line, source, env, s.a);
+            } else {
+              check_ownership_expression(s.line, s.b, env, Effect::Consume);
+            }
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
@@ -2778,11 +3432,16 @@ class Checker {
               check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
           }
           string source = trim(s.b);
-          bool transfers = simple_identifier(source) && env.types.count(source) &&
-              effect_requires_borrow(env.types.at(source));
+          auto source_type = inferred_expr_type(s.b, env.types);
+          bool transfers = storage_location(s.b, env.types) && source_type &&
+              effect_requires_borrow(*source_type);
           if (transfers) {
-            require_available(s.line, source, env);
-            consume_binding(s.line, source, env, s.a);
+            if (simple_identifier(source)) {
+              require_available(s.line, source, env);
+              consume_binding(s.line, source, env, s.a);
+            } else {
+              check_ownership_expression(s.line, s.b, env, Effect::Consume);
+            }
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
@@ -3424,46 +4083,6 @@ class MessageTransportOptimizer {
         if (nested_spawns.count(name))
           throw std::runtime_error("clustered domain type '" + name +
                                    "' must be spawned unconditionally at main scope");
-      }
-    }
-
-    for (const auto& cluster : plan.domain_clusters) {
-      std::unordered_map<string, size_t> position;
-      for (size_t index = 0; index < cluster.size(); ++index) position[cluster[index]] = index;
-      vector<vector<bool>> awaits(cluster.size(), vector<bool>(cluster.size(), false));
-      for (const auto& source_name : cluster) {
-        const Domain& source = *domains_.at(source_name);
-        for (const auto& handler : source.handlers) {
-          std::unordered_map<string, string> types;
-          types["self"] = source.name;
-          for (const auto& field : source.state) types[field.name] = field.type;
-          for (const auto& param : handler.params) types[param.name] = param.type;
-          for (const auto& statement : handler.body) {
-            if (statement.kind == Stmt::Kind::AwaitMessage) {
-              auto receiver = types.find(statement.b);
-              if (receiver != types.end() && position.count(receiver->second)) {
-                awaits[position.at(source.name)][position.at(receiver->second)] = true;
-              }
-              if (receiver != types.end() && domains_.count(receiver->second)) {
-                const Handler* target = find_handler(*domains_.at(receiver->second), statement.c);
-                if (target && target->reply_type) types[statement.a] = *target->reply_type;
-              }
-            } else if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var) {
-              auto source_type = types.find(trim(statement.b));
-              types[statement.a] = source_type != types.end() && domains_.count(source_type->second)
-                  ? source_type->second : "_value";
-            }
-          }
-        }
-      }
-      for (size_t via = 0; via < cluster.size(); ++via)
-        for (size_t from = 0; from < cluster.size(); ++from)
-          for (size_t to = 0; to < cluster.size(); ++to)
-            awaits[from][to] = awaits[from][to] || (awaits[from][via] && awaits[via][to]);
-      for (size_t index = 0; index < cluster.size(); ++index) {
-        if (awaits[index][index])
-          throw std::runtime_error("clustered await cycle involving '" + cluster[index] +
-              "' cannot use direct same-thread dispatch");
       }
     }
 
@@ -4127,8 +4746,6 @@ class Generator {
           auto vit = values.find(f.name);
           if (vit == values.end()) throw std::runtime_error("missing object constructor field: " + head + "." + f.name);
           string v = expr(vit->second, d, locals, types);
-          string ft = trim(f.type);
-          if (!(ft == "int" || ft == "float" || ft == "bool")) v = "(" + v + ").clone()";
           if (!first) r << ", ";
           first = false;
           r << f.name << ": " << v;
@@ -4342,8 +4959,10 @@ class Generator {
     }
     o << "}\n\n";
     for (const auto& method : t.methods) {
-      o << "impl " << t.name << " {\n    fn " << method.name
-        << (method.receiver_effect == Effect::Write ? "(&mut self" : "(&self");
+      o << "impl " << t.name << " {\n    fn " << method.name;
+      if (method.receiver_effect == Effect::Consume) o << "(self";
+      else if (method.receiver_effect == Effect::Write) o << "(&mut self";
+      else o << "(&self";
       for (const auto& p : method.params) {
         if (p.type.empty()) throw std::runtime_error("unresolved concrete method parameter type: " + method.name + "." + p.name);
         size_t parameter_index = static_cast<size_t>(&p - method.params.data());

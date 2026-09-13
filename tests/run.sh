@@ -292,18 +292,49 @@ run_case await_payload_copy tests/negative/await_object_transfer.moss '7'
 run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
 run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
 run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
+run_case read_alias tests/read_alias.moss "$(printf '7 7\n7')"
+run_case primitive_field_projection tests/primitive_field_projection.moss \
+  "$(printf '42\n7')"
+run_case method_receiver_effects tests/method_receiver_effects.moss \
+  "$(printf '42\n7')"
+run_case generic_method_effects tests/generic_method_effects.moss '12 5'
+run_case phase2_safety examples/phase2_safety.moss \
+  "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter await copy: 7 7\ntransferred payload: original')"
+grep -F 'fn read_code(&self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
+  fail "copyable field read did not retain a READ receiver"
+grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
+  fail "nontrivial field movement did not lower a CONSUME receiver"
 warning_stdout="$test_build/large_payload_warning.stdout"
 warning_stderr="$test_build/large_payload_warning.stderr"
 "$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
 grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
   "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
 
+reject_case direct_await_cycle "await dependency cycle: Left -> Right -> Left"
+reject_case transitive_await_cycle "await dependency cycle: First -> Second -> Third -> First"
+reject_case function_await_cycle "await dependency cycle: Left -> Right -> Left"
+reject_case recursive_function "recursive local call cycle: recurse -> recurse"
+reject_case mutually_recursive_functions "recursive local call cycle: first -> second -> first"
+reject_case write_read_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
+reject_case write_write_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with mutation"
+reject_case consume_read_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with read"
+reject_case consume_write_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with mutation"
+reject_case double_consume_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with transfer"
+reject_case nontrivial_field_move "value 'packet' was transferred"
+reject_case branch_join_consume "value 'item' was transferred"
+reject_source example_await_cycle examples/errors/await_cycle.moss \
+  "await dependency cycle: Coordinator -> Worker -> Coordinator"
+reject_source example_recursive_call examples/errors/recursive_call.moss \
+  "recursive local call cycle: countdown -> countdown"
+reject_source example_conflicting_access examples/errors/conflicting_access.moss \
+  "conflicting accesses to value 'counter' in call to 'increment_from': mutation overlaps with read"
+
 reject_cluster cluster_duplicate_spawn tests/shared_memory_contention.moss 'Counter,Producer' \
   "clustered domain type 'Producer' must be spawned exactly once in main (found 2)"
 reject_cluster cluster_unknown_domain examples/counter.moss 'Counter,Missing' \
   'unknown domain in cluster: Missing'
 reject_cluster cluster_await_cycle tests/cluster_await_cycle.moss 'Left,Right' \
-  "clustered await cycle involving 'Left' cannot use direct same-thread dispatch"
+  'await dependency cycle: Left -> Right -> Left'
 
 compile_cluster_case clustered_checkout examples/checkout.moss 'Checkout,Inventory,Payments'
 clustered_checkout_output=$("$test_build/clustered_checkout")

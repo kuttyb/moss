@@ -1,0 +1,27 @@
+# Intentional Phase 2 error: the possible await cycle is hidden behind both
+# an ordinary local call and a branch that is false at runtime. Moss still
+# rejects the program because await-cycle checking is conservative and global.
+
+fn wait_for_worker(worker: Worker, coordinator: Coordinator) -> Int:
+  let result = await worker.Check(coordinator)
+  return result
+
+domain Coordinator:
+  fn Start(worker: Worker):
+    if false:
+      let result = wait_for_worker(worker, self)
+      reply result
+    reply 0
+
+  fn Finish():
+    reply 1
+
+domain Worker:
+  fn Check(coordinator: Coordinator):
+    let result = await coordinator.Finish()
+    reply result
+
+fn main():
+  let coordinator = spawn Coordinator()
+  let worker = spawn Worker()
+  message coordinator.Start(worker)

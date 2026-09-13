@@ -15,7 +15,7 @@ Updated: 2026-09-12
 ## Approved semantics
 
 - Assignment of a uniquely owned nontrivial local transfers ownership; later source use is an error.
-- Existing owned non-primitive locals, parameters, state, and projections cannot cross a domain boundary through a message or reply. Fresh message construction, primitive snapshots, domain references, and queued same-domain transfers remain allowed.
+- `message`, awaited request payloads, and `reply` are explicit value-copy boundaries. Existing non-primitive locals, parameters, state, and projections may cross while the sender retains an independent value.
 - Primitive values and domain references remain usable after sending.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Future ordinary procedures read parameters temporarily by default; `var` permits temporary caller-visible mutation without transfer.
@@ -66,6 +66,9 @@ Updated: 2026-09-12
 - One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
+- Whole-program await-dependency checking rejects every possible cycle, including dependencies reached through ordinary local functions. Asynchronous sends do not create await edges.
+- Direct and mutual recursion are rejected. Compiler-internal READ/WRITE/CONSUME summaries drive local call lowering, and conflicting aliases at a call site are Moss compile-time errors.
+- Copyable field projections retain a read effect; moving a nontrivial field consumes its containing value. Consuming method receivers lower by value rather than as shared receiver references.
 - Generated Rust compilation with warnings denied in the test suite.
 - Executable showcases cover method-based duck typing, two concrete named-trait
   implementations, inferred Vector/Map/Queue use, the future dataflow pipeline shape,
@@ -73,13 +76,13 @@ Updated: 2026-09-12
 
 ## Partially implemented or unimplemented
 
-- Ownership analysis remains lightweight around arbitrary raw expressions, indirect aliases, and complete control-flow dataflow.
+- Ownership analysis remains conservative around arbitrary raw expressions and indirect aliases outside the statically represented projection/call slice.
 - `deepCopy()` and its cost warnings are approved but not implemented; no implicit copy is inserted.
 - The future ordinary `proc` parameter model is not implemented; top-level `fn` local functions are implemented. `self.Message(...)` remains queued communication.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
 - The additional awaited-only state-lock optimization is domain-wide and opt-in. It does not yet use profiles or a cost model.
 - Cluster configuration is type-wide and currently requires exactly one unconditional `main` spawn for every member.
-- Statically visible await cycles among proposed cluster members are rejected; general cycle handling remains unimplemented.
+- Await-cycle checking is global and placement-independent; cluster planning relies on the language-level result.
 
 ## Known bugs and limitations
 
@@ -97,8 +100,8 @@ Updated: 2026-09-12
   inheritance, default trait methods, runtime trait objects, and source-level generic
   declarations remain intentionally unsupported.
 
-- Rust type/ownership errors may still surface when Moss inference lacks enough source information.
-- General await expressions, spawning from handlers, cancellation, timeouts, failure propagation, and cycle detection are not implemented.
+- Rust type errors may still surface when Moss inference lacks enough source information; normal Phase 2 ownership and conflicting-call-access errors are diagnosed by Moss.
+- General await expressions, spawning from handlers, cancellation, timeouts, and failure propagation are not implemented.
 - The compiler remains a single C++17 source file with a deliberately small type checker.
 
 ## Tests run and results
@@ -139,7 +142,7 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 1. Extend cluster placement from one instance per domain type to a static per-spawn identity plan.
 2. Benchmark lock-backed mailboxes, direct state locking, and clusters on representative workloads.
 3. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
-4. Expand ownership-boundary analysis to arbitrary aliases and complete control flow.
+4. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
 
 ## Open design questions requiring Kutty's decision
 

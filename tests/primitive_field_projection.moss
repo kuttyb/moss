@@ -1,0 +1,13 @@
+type Payload:
+  value: Int
+
+type Packet:
+  payload: Payload
+  code: Int
+
+fn code_of(packet: Packet) = packet.code
+
+fn main():
+  let packet = Packet(payload = Payload(value = 7), code = 42)
+  echo code_of(packet)
+  echo packet.payload.value

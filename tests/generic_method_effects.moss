@@ -1,0 +1,14 @@
+type Counter:
+  value: Int
+
+  fn add(other: Counter):
+    value = value + other.value
+
+fn update(target, source):
+  target.add(source)
+
+fn main():
+  var target = Counter(value = 7)
+  let source = Counter(value = 5)
+  update(target, source)
+  echo target.value, source.value

@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn conflict(first: Box, second: Box):
+  first.value = 1
+  second.value = 2
+
+fn main():
+  var item = Box(value = 7)
+  conflict(item, item)

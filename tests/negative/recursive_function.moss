@@ -1,0 +1,5 @@
+fn recurse(value: Int):
+  recurse(value)
+
+fn main():
+  recurse(1)

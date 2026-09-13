@@ -1,0 +1,17 @@
+domain Left
+  on Start(right: Right) -> int
+    let result = await right.Ping(self)
+    reply result
+
+  on Pong() -> int
+    reply 1
+
+domain Right
+  on Ping(left: Left) -> int
+    let result = await left.Pong()
+    reply result
+
+fn main():
+  let left = spawn Left()
+  let right = spawn Right()
+  message left.Start(right)

@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn inspect(first: Box, second: Box):
+  echo first.value, second.value
+
+fn main():
+  let item = Box(value = 7)
+  inspect(item, item)
+  echo item.value

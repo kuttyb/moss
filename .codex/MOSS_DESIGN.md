@@ -138,7 +138,7 @@ The source-level rules are:
 - Calling a reply-capable handler without `await` is allowed and means send the request but ignore its reply.
 - General expression nesting such as `1 + await worker.Compute()` is not supported in v0.2.
 
-Cross-domain await cycles can deadlock. For example, A awaiting B while B awaits A is not detected statically because such cycles may be data-dependent. Cancellation, timeouts, and failure propagation are not defined in v0.2.
+The compiler builds a conservative await-dependency graph across every domain and handler. Dependencies reached through ordinary local function calls participate; asynchronous `message` sends do not. Every possible cycle is a compile-time error even when a runtime branch might avoid it. An indirect await target is accepted only when its possible domain set is statically bounded; otherwise the target is rejected. Cancellation, timeouts, and failure propagation are not defined in v0.2.
 
 ### Local bindings and mutation
 
@@ -148,6 +148,8 @@ Cross-domain await cycles can deadlock. For example, A awaiting B while B awaits
 - Primitive expressions and conditions use the currently implemented Nim-style words `and`, `or`, `not`, `true`, and `false`.
 
 Direct assignment of a uniquely owned nontrivial local transfers ownership. The source is unavailable after transfer, and a later use is a compile-time error. This is a Moss rule, not an inference from Rust's borrow checker.
+
+Local functions and object methods are non-recursive in Phase 2. READ, WRITE, and CONSUME effects are compiler-internal summaries used to lower temporary reads, mutations, and ownership transfers. At each local call, overlapping storage may be read more than once, but mutation or transfer may not overlap any other access. No effect or ownership annotation is part of Moss syntax.
 
 ## Rust lowering
 
@@ -167,7 +169,7 @@ This section describes the current v0.2 backend. It is not a source-language con
 - `--cluster=A,B` is a backend configuration, not Moss syntax. Each configured domain type must have exactly one unconditional spawn in `main`. The generated `spawn_moss_cluster_N` runtime call constructs one worker and one shared ingress mailbox for all members.
 - Calls from outside a cluster use generated `_shared` methods and the lock-backed ingress mailbox. Calls between members are statically emitted as `_local` calls; there is no runtime cluster test. Cluster-member capabilities use zero-sized local reference types and convert to shared references only when they leave the cluster. Awaited local messages call the target handler directly. One-way local messages use a plain single-threaded `VecDeque` and are invoked after the current handler, preserving non-reentrancy.
 - Before a direct local await, the generated runtime drains older local messages for that target. This prevents the direct call from overtaking an earlier message while allowing unrelated domains' local work to remain queued.
-- A cluster configuration with a statically visible await cycle among its members is rejected; direct same-thread execution cannot represent the original blocked cycle without re-entering an active domain.
+- Await-cycle rejection is a placement-independent language check. A program containing a possible cycle is rejected before either clustered or unclustered lowering.
 - Cluster state and the local queue use `RefCell` because only the cluster worker accesses them. Member-to-member dispatch contains no mutex, condition variable, atomic, or thread-safe channel operation; a handler that communicates outside its cluster still uses the shared path for that outbound call.
 - The generated tracker counts enqueued messages so `main` can wait for quiescence.
 - Every non-copy payload is cloned at a `message`, `await`, or `reply` boundary, including an existing binding or a projection. This is the explicit Moss value-copy boundary, not a hidden local copy.
@@ -177,7 +179,7 @@ This section describes the current v0.2 backend. It is not a source-language con
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 - By default, generated await sites use a lazy `unwrap_or_else` failure path that reports a missing reply. `--no-await-error-handling` is an explicit backend opt-in that replaces those checks with unchecked extraction for a future supervision-tree runtime; it is unsafe if a reply is absent or its channel closes.
 
-The current compiler enforces direct-assignment transfer and explicit communication-boundary copying with a lightweight ownership/effect pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
+The current compiler enforces direct-assignment and nontrivial-projection transfer, conflicting call-access rejection, branch/join consumption, and explicit communication-boundary copying with a Moss-level ownership/effect pass. It does not yet implement `deepCopy()` or general reference/alias facilities.
 
 ## Explicit deep copy
 

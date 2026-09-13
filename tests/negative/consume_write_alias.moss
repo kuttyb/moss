@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn conflict(taken: Box, changed: Box):
+  let moved = taken
+  changed.value = moved.value
+
+fn main():
+  var item = Box(value = 7)
+  conflict(item, item)

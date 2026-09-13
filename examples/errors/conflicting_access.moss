@@ -1,0 +1,12 @@
+# Intentional Phase 2 error: changed needs WRITE access while observed needs
+# READ access. One Counter cannot satisfy both effects in the same call.
+
+type Counter:
+  value: Int
+
+fn increment_from(changed: Counter, observed: Counter):
+  changed.value = observed.value + 1
+
+fn main():
+  var counter = Counter(value = 7)
+  increment_from(counter, counter)

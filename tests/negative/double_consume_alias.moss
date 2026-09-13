@@ -1,0 +1,11 @@
+type Box:
+  value: Int
+
+fn conflict(first: Box, second: Box):
+  let moved_first = first
+  let moved_second = second
+  echo moved_first.value, moved_second.value
+
+fn main():
+  let item = Box(value = 7)
+  conflict(item, item)

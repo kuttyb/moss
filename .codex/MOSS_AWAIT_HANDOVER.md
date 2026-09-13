@@ -238,11 +238,9 @@ Preserve these invariants:
 
 Do not implement reentrant event-loop behavior while awaiting. That would violate Moss's agreed semantics.
 
-## Known deadlock boundary
+## Historical deadlock boundary (superseded in Phase 2)
 
-The blocking prototype can deadlock when domains form an await cycle, for example A awaits B while B awaits A. Self-await must be rejected statically. General cross-domain cycle detection is out of scope because the cycle may be data-dependent.
-
-Document this limitation. A future runtime can suspend continuations instead of OS threads while still keeping the domain logically occupied, but that is not required now.
+This handover originally allowed the blocking prototype to deadlock on cross-domain await cycles. Phase 2 supersedes that limitation: the compiler now builds a conservative global await graph and rejects every possible cycle, including dependencies reached through ordinary local calls. A future runtime may still suspend continuations instead of OS threads, but it must preserve the same logically occupied, non-reentrant domain semantics.
 
 ## Required example
 
@@ -337,7 +335,7 @@ Update the README to describe:
 - `let value = await domain.Message(...)`;
 - non-reentrant await semantics;
 - the blocking thread-per-domain implementation;
-- the possibility of cross-domain await-cycle deadlock; and
+- compile-time rejection of every possible cross-domain await cycle; and
 - the fact that cancellation, timeouts, and failure propagation remain unimplemented.
 
 Change the compiler's displayed version and generated-file banner from v0.1 to v0.2.

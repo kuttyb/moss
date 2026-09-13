@@ -36,7 +36,7 @@ order rejected: insufficient inventory
 
 Run the complete smoke test with `make check`.
 
-Compile every valid example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped.
+Compile every valid top-level example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped. Additional diagnostic examples live under `examples/errors` and are not part of this build target.
 
 ## What Moss looks like
 
@@ -50,6 +50,7 @@ The showcase programs are executable syntax guides:
 - [collections and methods](examples/collections_and_methods.moss) combines inferred Vector, Map, and Queue values with object methods.
 - [functional dataflow](examples/functional_dataflow.moss) records the `map |> filter |> map |> sum` source shape that future fusion can target.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
+- [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
 
 Every valid showcase compiles to standalone Rust with `make examples`; the generated
 programs contain concrete calls rather than runtime trait objects or vtables.
@@ -61,6 +62,21 @@ Additional examples:
 - `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, explicit messages, and assignment-await syntax.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
+
+The intentional programs under `examples/errors` showcase Phase 2 diagnostics rather
+than Rust backend failures:
+
+- [global await cycle](examples/errors/await_cycle.moss) hides one dependency behind an ordinary function call and an unreachable runtime branch.
+- [recursive local call](examples/errors/recursive_call.moss) has a base case but is rejected because Phase 2 has no recursion.
+- [conflicting call access](examples/errors/conflicting_access.moss) passes one binding as both WRITE and READ; two READ uses remain legal in `phase2_safety.moss`.
+
+Inspect them directly:
+
+```sh
+./moss --check examples/errors/await_cycle.moss
+./moss --check examples/errors/recursive_call.moss
+./moss --check examples/errors/conflicting_access.moss
+```
 
 To inspect the ownership failure:
 
@@ -165,7 +181,7 @@ Generated Rust is annotated for inspection: `Moss line N` identifies the source 
 
 The promoted handler runs on the awaiting caller's physical thread; physical thread identity is not part of Moss's approved semantics. Because the caller was already required to block and the target has no asynchronous callers, this does not turn an asynchronous source operation into a synchronous one. A local contention smoke benchmark is included in the tests, but production transport choices should still be based on representative workloads.
 
-Two or more domains can still deadlock if they form a cross-domain await cycle, such as A awaiting B while B awaits A. Such cycles can be data-dependent and are not detected in v0.2. Cancellation, timeouts, and failure propagation are also not implemented.
+Moss builds a conservative whole-program await-dependency graph and rejects every possible domain cycle at compile time. Await dependencies propagate through ordinary local function calls; asynchronous `message` sends do not add dependency edges. An await target must resolve to a conservatively bounded domain set. Cancellation, timeouts, and failure propagation are not implemented.
 
 ## Domain clustering
 
@@ -179,11 +195,13 @@ Each clustered type must currently be spawned exactly once and unconditionally i
 
 Awaited local messages invoke the target handler directly. One-way local messages enter a plain single-threaded `VecDeque` and run after the current handler, retaining Moss's asynchronous and non-reentrant behavior without locks, atomics, or condition variables on the local path. If a local await follows an older queued message to the same target, the generated runtime drains that older work before making the direct call to preserve FIFO.
 
-The initial planner rejects clusters with a statically visible await cycle between members. Such a cycle requires one active clustered domain to wait for another call that would eventually re-enter it; unclustered Moss retains its existing potential to deadlock on the same program.
+Await-cycle rejection is a language rule applied before backend placement, so the same source is rejected with or without `--cluster`. Cluster planning does not define a separate or weaker cycle policy.
 
 ## Important status
 
 This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements the initial static duck-typed method and named-trait foundation by generating concrete call-site specializations, without runtime trait objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
+
+Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
 Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. The compiler emits the required payload clone only at that explicit communication boundary, never for an ordinary local assignment or call. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 

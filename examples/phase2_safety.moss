@@ -1,0 +1,41 @@
+# Phase 2 ownership and effect behavior in one runnable program.
+# READ/WRITE/CONSUME are inferred by the compiler; they are not Moss syntax.
+
+type Payload:
+  text: String
+
+type Packet:
+  payload: Payload
+  code: Int
+
+  # Reading a copyable field keeps a READ receiver.
+  fn read_code():
+    return code
+
+  # Returning a nontrivial field transfers it and consumes this Packet.
+  fn take_payload():
+    return payload
+
+# Passing the same value to multiple READ parameters is legal.
+fn inspect(first: Packet, second: Packet):
+  echo "read aliases:", first.code, second.code
+
+domain Mirror:
+  # Request and reply values cross explicit copy boundaries.
+  fn Copy(packet: Packet):
+    reply packet
+
+fn main():
+  let mirror = spawn Mirror()
+  let packet = Packet(payload = Payload(text = "original"), code = 7)
+
+  inspect(packet, packet)
+  echo "primitive projection:", packet.read_code()
+
+  # The await request and reply are detached copies, so packet remains usable.
+  let copied = await mirror.Copy(packet)
+  echo "after await copy:", packet.code, copied.code
+
+  # This is the final use of packet: take_payload consumes the receiver.
+  let payload = packet.take_payload()
+  echo "transferred payload:", payload.text

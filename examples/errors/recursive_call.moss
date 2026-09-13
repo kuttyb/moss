@@ -1,0 +1,9 @@
+# Intentional Phase 2 error: a runtime base case does not make recursion legal.
+
+fn countdown(value: Int) -> Int:
+  if value <= 0:
+    return 0
+  return countdown(value - 1)
+
+fn main():
+  echo countdown(3)

@@ -209,7 +209,8 @@ call whose receiver is a domain reference is now diagnosed and must use `message
 - Local function calls are not yet modeled interprocedurally for optimization; the
   optimizer disables promotion conservatively when it cannot see through them.
 - Cluster placement remains type-wide and requires exactly one unconditional main-scope
-  spawn per member. General cross-domain await cycles can still deadlock.
+  spawn per member. This older checkpoint predated the Phase 2 global await graph;
+  current Moss rejects every possible cross-domain await cycle at compile time.
 - The compiler remains a single C++17 source file and emits support helpers globally,
   including helpers not used by every optimized program.
 

@@ -1,0 +1,14 @@
+type Payload:
+  value: Int
+
+type Packet:
+  payload: Payload
+  code: Int
+
+fn take_payload(packet: Packet) = packet.payload
+
+fn main():
+  let packet = Packet(payload = Payload(value = 7), code = 42)
+  let payload = take_payload(packet)
+  echo payload.value
+  echo packet.code

@@ -1,0 +1,18 @@
+type Payload:
+  value: Int
+
+type Packet:
+  payload: Payload
+  code: Int
+
+  fn read_code():
+    return code
+
+  fn take_payload():
+    return payload
+
+fn main():
+  let packet = Packet(payload = Payload(value = 7), code = 42)
+  echo packet.read_code()
+  let payload = packet.take_payload()
+  echo payload.value

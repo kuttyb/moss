@@ -1,0 +1,10 @@
+type Box:
+  value: Int
+
+fn conflict(taken: Box, observed: Box):
+  let moved = taken
+  echo moved.value, observed.value
+
+fn main():
+  let item = Box(value = 7)
+  conflict(item, item)
