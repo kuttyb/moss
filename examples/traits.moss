@@ -1,11 +1,12 @@
-# Named traits are compile-time contracts. Each call to render is resolved to a
-# concrete specialization; Moss does not create a runtime trait object.
+# A named trait is a compile-time contract. Circle and Rectangle both satisfy
+# Drawable through their concrete methods. Each render call below selects a
+# concrete specialization before Rust is generated; no trait object is created.
 type Canvas:
   scale: Int
 
 trait Drawable:
-  fn area()
-  fn draw(canvas)
+  fn area() -> Int
+  fn draw(canvas: Canvas) -> Int
 
 type Circle:
   radius: Int
@@ -26,8 +27,10 @@ type Rectangle:
   fn draw(canvas: Canvas):
     return width * height * canvas.scale
 
-fn render(value: Drawable, canvas):
-  value.draw(canvas)
+fn render(value: Drawable, canvas: Canvas):
+  area = value.area()
+  painted = value.draw(canvas)
+  return area + painted
 
 fn main():
   echo render(Circle(radius = 3), Canvas(scale = 2))

@@ -1,27 +1,120 @@
-type Job:
-  id: Int
-  score: Float
+# A small static job scheduler. Object work stays local; only primitive snapshots
+# cross domain boundaries. Untyped and trait-typed functions are specialized to
+# the concrete job types before Rust generation.
 
-fn score(job: Job):
-  return job.score
+trait Schedulable:
+  fn cost() -> Int
+  fn urgency_score() -> Int
+
+type BuildJob:
+  id: Int
+  units: Int
+  urgency: Int
+
+  fn cost():
+    return units * 3
+
+  fn urgency_score():
+    return urgency
+
+  fn public_code():
+    return id + 1000
+
+type MaintenanceJob:
+  id: Int
+  affected_services: Int
+  urgency: Int
+
+  fn cost():
+    return affected_services * 2
+
+  fn urgency_score():
+    return urgency
+
+  fn public_code():
+    return id + 2000
+
+# This named-trait function gets one concrete specialization per job type.
+fn schedule_score(job: Schedulable, urgency_weight: Int):
+  base = job.cost()
+  urgent = job.urgency_score()
+  return base + urgent * urgency_weight
+
+# This untyped function derives its public_code() requirement structurally.
+fn public_code(job):
+  return job.public_code()
+
+fn add_service_bonus(score: Int, bonus: Int):
+  return score + bonus
 
 domain Scheduler:
-  completed = 0
+  accepted = 0
+  started = 0
 
-  fn Submit(job: Job):
-    completed = completed + 1
-    reply completed
+  fn Submit(job_code: Int, score: Int):
+    accepted = accepted + 1
+    reply accepted
 
-  fn Count():
-    reply completed
+  fn MarkStarted(job_code: Int):
+    started = started + 1
+
+  fn Snapshot():
+    reply accepted * 100 + started
+
+domain Metrics:
+  total_score = 0
+
+  fn Record(score: Int):
+    total_score = total_score + score
+
+  fn Total():
+    reply total_score
 
 fn main():
-  jobs = [Job(id = 1, score = 10.5), Job(id = 2, score = 20.0)]
-  scores = [score(jobs[0]), score(jobs[1])]
+  # A Vector of BuildJob values is inferred from the constructors and indexing.
+  builds = [BuildJob(id = 101, units = 8, urgency = 4), BuildJob(id = 102, units = 5, urgency = 2)]
+  lead = builds[0]
+  maintenance = MaintenanceJob(id = 7, affected_services = 5, urgency = 7)
+
+  # Fresh values exercise the same duck-typed function with two unrelated types.
+  build_code = public_code(BuildJob(id = 101, units = 8, urgency = 4))
+  maintenance_code = public_code(MaintenanceJob(id = 7, affected_services = 5, urgency = 7))
+
+  # Pipelines remain ordinary nested calls today. The first stage uses the
+  # named trait and is statically specialized for each concrete job type.
+  build_score = lead
+    |> schedule_score(2)
+    |> add_service_bonus(5)
+  maintenance_score = maintenance
+    |> schedule_score(3)
+    |> add_service_bonus(5)
+
+  # A Map from String to Int is inferred from its first indexed assignment.
+  scores = Map()
+  scores["build"] = build_score
+  scores["maintenance"] = maintenance_score
+
+  # A Queue of BuildJob values is inferred from push; no element annotation is written.
+  pending = Queue()
+  pending.push(BuildJob(id = 103, units = 3, urgency = 6))
+  pending.push(BuildJob(id = 104, units = 2, urgency = 1))
+
   scheduler = spawn Scheduler()
-  accepted = await scheduler.Submit(jobs[0])
-  message scheduler.Submit(jobs[1])
-  total = await scheduler.Count()
-  echo scores[0]
-  echo accepted
-  echo total
+  metrics = spawn Metrics()
+
+  first_position = await scheduler.Submit(build_code, scores["build"])
+  second_position = await scheduler.Submit(maintenance_code, scores["maintenance"])
+
+  # The message is asynchronous. The later await observes it in FIFO order.
+  message scheduler.MarkStarted(build_code)
+  snapshot = await scheduler.Snapshot()
+
+  message metrics.Record(scores["build"])
+  message metrics.Record(scores["maintenance"])
+  total = await metrics.Total()
+
+  echo "queue positions:", first_position, second_position
+  echo "public codes:", build_code, maintenance_code
+  echo "scores:", scores["build"], scores["maintenance"]
+  echo "scheduler snapshot:", snapshot
+  echo "recorded total:", total

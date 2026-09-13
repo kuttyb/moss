@@ -233,3 +233,17 @@ The current implementation has begun separating semantic data (`src/ast.hpp`),
 inferred requirements (`src/constraints.hpp`), and diagnostics
 (`src/diagnostics.hpp`). The remaining parser, inference, ownership, domain,
 optimization, and Rust lowering code is still being extracted incrementally.
+
+## What Moss looks like
+
+The executable showcase set in [`examples/`](../examples/) is the quickest syntax
+tour. [`static_duck_typing.moss`](../examples/static_duck_typing.moss) demonstrates
+method-based structural requirements; [`traits.moss`](../examples/traits.moss)
+demonstrates two concrete implementations of one named trait;
+[`collections_and_methods.moss`](../examples/collections_and_methods.moss) shows
+inferred Vector, Map, and Queue element types; and
+[`functional_dataflow.moss`](../examples/functional_dataflow.moss) records the
+`values |> map(...) |> filter(...) |> map(...) |> sum` source shape. The larger
+[`mini_application.moss`](../examples/mini_application.moss) combines those static
+features with domains, `message`, and `await`. These are ordinary source programs:
+Moss resolves calls before Rust generation and does not create runtime trait objects.

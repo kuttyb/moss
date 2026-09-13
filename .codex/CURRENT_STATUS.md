@@ -8,6 +8,9 @@ Updated: 2026-09-12
 - Static duck-typed methods and named-trait specialization are complete on top of
   `df73771` (`Complete concrete method semantics`). This checkpoint closes the initial
   static method/trait foundation without adding runtime dispatch.
+- The showcase/documentation checkpoint is built on `eecac49` and demonstrates the
+  stabilized static duck-typing, named-trait, collection, pipeline, and domain syntax.
+  It adds no ownership, borrow, move, optimizer, or runtime-dispatch semantics.
 
 ## Approved semantics
 
@@ -47,6 +50,8 @@ Updated: 2026-09-12
   calls target those instances directly, so multiple conforming object types execute
   through ordinary inherent calls without `dyn Trait`, vtables, runtime method search,
   implicit `Any`, or source-level generic type parameters.
+- The Rust emitter lowers the existing `sum` builtin for inferred `Vector`/`seq`
+  element types, including the concrete result annotation needed by strict Rust.
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn` functions, pipeline expressions, explicit `message`, and assignment-style `await`.
@@ -62,6 +67,9 @@ Updated: 2026-09-12
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
 - Generated Rust compilation with warnings denied in the test suite.
+- Executable showcases cover method-based duck typing, two concrete named-trait
+  implementations, inferred Vector/Map/Queue use, the future dataflow pipeline shape,
+  and a small static job-scheduler application with domains, messages, and awaits.
 
 ## Partially implemented or unimplemented
 
@@ -95,7 +103,7 @@ Updated: 2026-09-12
 
 ## Tests run and results
 
-`make check` passed after the static method/trait milestone. The suite compiles ordinary,
+`make check` passed for the showcase checkpoint. The suite compiles ordinary,
 direct-lock optimized, and clustered Rust with `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
 boundary; compares behavior for checkout, object isolation, ignored replies, local and
@@ -111,13 +119,18 @@ cases execute one duck-typed function and one trait-typed function with two dist
 user-defined types, assert that two concrete specializations are emitted, and reject
 runtime Rust trait machinery. Negative coverage includes missing methods, wrong arity,
 incompatible method arguments, missing trait methods, incompatible trait signatures,
-and conflicting method-result expectations.
+conflicting method-result expectations, unresolved collection element types,
+heterogeneous collections, and naked cross-domain calls. The five showcase programs
+also execute under the regression harness: static duck typing, named traits, inferred
+collections and methods, the `map |> filter |> map |> sum` dataflow shape, and the
+domain-backed mini application.
 
 `make examples` passed, compiling every valid example (including the executable static
-trait example in `examples/traits.moss`) with `-Oshared-memory`; the intentional
+trait and dataflow showcases in `examples/traits.moss` and
+`examples/functional_dataflow.moss`) with `-Oshared-memory`; the intentional
 `use_after_transfer.moss` negative example was skipped. A strict
 `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n tests/run.sh` also
-passed after the milestone.
+passed for this checkpoint.
 
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 

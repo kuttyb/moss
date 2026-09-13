@@ -161,6 +161,11 @@ run_case concrete_method tests/concrete_method.moss '12.56636'
 run_case concrete_method_body tests/concrete_method_body.moss "$(printf '12.566368\n0')"
 run_case duck_typed_methods tests/duck_typed_methods.moss "$(printf '6\n9')"
 run_case static_trait_dispatch tests/static_trait_dispatch.moss "$(printf '18\n60')"
+run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf '112\n45')"
+run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
+run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
+run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
+run_case mini_application_showcase examples/mini_application.moss "$(printf 'queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73')"
 duck_specializations=$(grep -c '^fn __moss_specialize_describe_' \
   "$test_build/duck_typed_methods.rs")
 [ "$duck_specializations" -eq 2 ] ||
@@ -425,5 +430,7 @@ reject_case duck_incompatible_method_argument "method 'draw' is incompatible wit
 reject_case trait_missing_method "missing required trait method 'area'"
 reject_case trait_incompatible_method_signature "trait method 'draw' has an incompatible parameter signature"
 reject_case conflicting_method_results "conflicting result expectations for required method 'current'"
+reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
+reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 
 echo 'all Moss v0.2 tests passed'

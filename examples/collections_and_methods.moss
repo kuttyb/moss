@@ -1,0 +1,34 @@
+# Collection arguments are named Vector, Map, and Queue in source. Their
+# contained types are inferred from literals, indexed assignment, and push.
+type Job:
+  name: String
+  effort: Int
+
+  fn weighted(factor: Int):
+    return effort * factor
+
+  fn code():
+    return effort + 100
+
+fn first(items: Vector):
+  return items[0]
+
+fn main():
+  # A Vector of Job values is inferred from the two constructors.
+  jobs = [Job(name = "compile", effort = 6), Job(name = "test", effort = 4)]
+  test_score = jobs[1].weighted(3)
+  first(jobs)
+  lead = Job(name = "compile", effort = 6)
+
+  # A Map from String to Int is inferred from this indexed assignment.
+  scores = Map()
+  scores["compile"] = lead.weighted(2)
+  compile_score = scores["compile"]
+
+  # A Queue of Job values is inferred from the first pushed value.
+  pending = Queue()
+  pending.push(Job(name = "package", effort = 3))
+  pending.push(Job(name = "publish", effort = 2))
+
+  echo "lead code:", lead.code(), compile_score
+  echo "test score:", test_score

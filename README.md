@@ -38,6 +38,22 @@ Run the complete smoke test with `make check`.
 
 Compile every valid example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped.
 
+## What Moss looks like
+
+Moss keeps types static while letting ordinary source stay compact: untyped functions
+can require methods structurally, named traits are resolved to concrete call sites,
+collections infer their contained types, and pipelines remain readable nested calls.
+The showcase programs are executable syntax guides:
+
+- [static duck typing](examples/static_duck_typing.moss) uses one method-based function with unrelated concrete types.
+- [named traits](examples/traits.moss) calls one trait-typed function for Circle and Rectangle.
+- [collections and methods](examples/collections_and_methods.moss) combines inferred Vector, Map, and Queue values with object methods.
+- [functional dataflow](examples/functional_dataflow.moss) records the `map |> filter |> map |> sum` source shape that future fusion can target.
+- [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
+
+Every valid showcase compiles to standalone Rust with `make examples`; the generated
+programs contain concrete calls rather than runtime trait objects or vtables.
+
 Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.

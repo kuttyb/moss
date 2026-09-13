@@ -1,7 +1,22 @@
-# One statically inferred operation, specialized at both call sites.
-fn twice(x):
-  return x + x
+# Untyped parameters are statically duck typed. These unrelated concrete types
+# both provide describe(), so Moss emits one concrete describe specialization
+# for each call site. There is no source-level generic parameter or runtime search.
+type Build:
+  minutes: Int
+
+  fn describe():
+    return minutes + 100
+
+type Shipment:
+  distance: Int
+  stops: Int
+
+  fn describe():
+    return distance + stops
+
+fn describe(value):
+  return value.describe()
 
 fn main():
-  echo twice(10)
-  echo twice(2.5)
+  echo describe(Build(minutes = 12))
+  echo describe(Shipment(distance = 40, stops = 5))

@@ -1496,6 +1496,8 @@ class Checker {
         auto argument_type = inferred_expr_type(args.front(), env);
         if (argument_type && starts_with(*argument_type, "seq[") && ends_with(*argument_type, "]"))
           return trim(argument_type->substr(4, argument_type->size() - 5));
+        if (argument_type && starts_with(*argument_type, "vector[") && ends_with(*argument_type, "]"))
+          return trim(argument_type->substr(7, argument_type->size() - 8));
         return argument_type;
       }
       auto function = functions_.find(callee);
@@ -3462,6 +3464,27 @@ class Generator {
       return "(" + expr(ib, d, locals, types) + "[" + ir + "]).clone()";
     }
 
+    string builtin;
+    vector<string> builtin_args;
+    if (parse_simple_call(e, builtin, builtin_args)) {
+      if (builtin == "sqrt" && builtin_args.size() == 1)
+        return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
+      if (builtin == "sum" && builtin_args.size() == 1) {
+        string result = expr(builtin_args.front(), d, locals, types) +
+            ".iter().copied().sum";
+        auto argument_type = generated_expr_type(builtin_args.front(), types);
+        if (argument_type && starts_with(*argument_type, "vector[") &&
+            ends_with(*argument_type, "]"))
+          return result + "::<" + rust_type(argument_type->substr(
+              7, argument_type->size() - 8)) + ">()";
+        if (argument_type && starts_with(*argument_type, "seq[") &&
+            ends_with(*argument_type, "]"))
+          return result + "::<" + rust_type(argument_type->substr(
+              4, argument_type->size() - 5)) + ">()";
+        return result + "()";
+      }
+    }
+
     // Named value-object construction. Moss prefers `=` here; `:` remains a
     // compatibility spelling for existing sources.
     auto lp0 = e.find('(');
@@ -3500,21 +3523,6 @@ class Generator {
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << emitted_function_name(head, call_args, types) << "(";
         for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals, types); }
-        r << ")"; return r.str();
-      }
-    }
-
-    string builtin;
-    vector<string> builtin_args;
-    if (parse_simple_call(e, builtin, builtin_args)) {
-      if (builtin == "sqrt" && builtin_args.size() == 1)
-        return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
-      if (builtin == "sum" && builtin_args.size() == 1)
-        return expr(builtin_args.front(), d, locals, types) + ".iter().copied().sum()";
-      bool known_function = functions_.count(builtin);
-      if (d && objects_.count(d->name) && !known_function) {
-        std::ostringstream r; r << "self." << builtin << "(";
-        for (size_t i = 0; i < builtin_args.size(); ++i) { if (i) r << ", "; r << expr(builtin_args[i], d, locals, types); }
         r << ")"; return r.str();
       }
     }
