@@ -1,0 +1,19 @@
+type Circle:
+  radius: Float
+
+  fn area():
+    if radius > 0:
+      return radius * radius
+    else:
+      return 0.0
+
+  fn repeat(count: Int):
+    while count > 0:
+      count = count - 1
+    return radius
+
+fn after_type(value: Int):
+  return value + 1
+
+fn main():
+  echo after_type(4)

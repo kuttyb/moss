@@ -415,10 +415,15 @@ class Parser {
         string sig = trim(L.text.substr(3)); auto lp = sig.find('('), rp = matching_paren(sig, lp);
         if (lp == string::npos || rp == string::npos) fail(L, "object method requires a signature");
         TraitMethod m; m.name = trim(sig.substr(0, lp)); m.params = parse_params(L, sig.substr(lp + 1, rp - lp - 1)); m.line = L.no;
+        m.owner = o.name;
         string suffix = trim(sig.substr(rp + 1)); if (ends_with(suffix, ":")) suffix.pop_back(); suffix = trim(suffix);
         if (!suffix.empty() && starts_with(suffix, "->")) m.return_type = canonical_type_name(trim(suffix.substr(2)));
+        m.body = parse_stmt_block(L.indent + indent_unit_);
+        if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
+          m.result_expression = m.body.back().text;
+          m.body.pop_back();
+        }
         o.methods.push_back(std::move(m));
-        while (i_ < lines_.size() && lines_[i_].indent > L.indent) ++i_;
         continue;
       }
       auto c = L.text.find(':');

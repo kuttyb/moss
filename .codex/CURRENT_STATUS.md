@@ -27,6 +27,9 @@ Updated: 2026-09-11
   `src/diagnostics.hpp` modules. `moss.cpp` still contains the parser, checker,
   ownership, optimizer, and Rust generator; the extraction is an incremental
   architectural checkpoint rather than a completed module split.
+- Type declarations now retain method bodies as children of their method nodes
+  in the AST, including nested control-flow blocks. Method semantic checking and
+  Rust lowering remain intentionally deferred to the next milestone.
 - Untyped-function operation metadata now flows through structured `Constraint`
   records; the former `generic_ops` field has been removed.
 
