@@ -7,6 +7,11 @@
 
 namespace moss {
 
+// Ownership/effect requirements inferred by the compiler.  These are an
+// internal representation only; Moss source deliberately has no ownership
+// annotations or reference syntax.
+enum class Effect { Read, Write, Consume };
+
 // Semantic requirements inferred from Moss expressions. These are compiler
 // data, never source-level generic syntax.
 enum class ConstraintKind { Operator, Method, Field, Indexable, Iterable, Callable, SameType, ResultType };

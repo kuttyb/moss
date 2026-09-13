@@ -74,7 +74,7 @@ Moss reports the later use and the line where ownership transferred:
 moss:12: error: value 'original' was transferred to 'destination' at line 10. Create an explicit deep copy if both values must remain independently usable.
 ```
 
-This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy. The approved `deepCopy()` operation is not implemented yet; see `.codex/MOSS_DESIGN.md` for the current contract and deferred work.
+This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy in ordinary local code. The approved `deepCopy()` operation is not implemented yet; see `.codex/MOSS_DESIGN.md` for the current contract and deferred work.
 
 ## Implemented language slice
 
@@ -185,7 +185,7 @@ The initial planner rejects clusters with a statically visible await cycle betwe
 
 This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements the initial static duck-typed method and named-trait foundation by generating concrete call-site specializations, without runtime trait objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
 
-An existing non-primitive local, parameter, state value, or non-primitive projection cannot be transferred across a domain boundary, including between clustered domains. A fresh value constructed directly as a payload is message-owned, primitive snapshots may cross, and domain-reference arguments remain usable by the sender. Queued self-messages stay within one domain and may transfer a local. Hidden deep copies and copy-on-write are not part of Moss; explicit `deepCopy()` remains future work.
+Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. The compiler emits the required payload clone only at that explicit communication boundary, never for an ordinary local assignment or call. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 
 ## Platforms
 

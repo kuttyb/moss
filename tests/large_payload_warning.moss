@@ -1,0 +1,43 @@
+type Word = object
+  a: int
+  b: int
+  c: int
+  d: int
+  e: int
+  f: int
+  g: int
+  h: int
+
+type Large = object
+  a: Word
+  b: Word
+  c: Word
+  d: Word
+  e: Word
+  f: Word
+  g: Word
+  h: Word
+  i: Word
+  j: Word
+  k: Word
+  l: Word
+  m: Word
+  n: Word
+  o: Word
+  p: Word
+  q: Word
+
+domain Worker
+  on Store(payload: Large)
+    echo payload.a.a
+
+domain Sender
+  var payload: Large
+
+  on Start(worker: Worker)
+    message worker.Store(payload)
+
+proc main()
+  let worker = spawn Worker()
+  let sender = spawn Sender()
+  message sender.Start(worker)

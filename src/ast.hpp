@@ -20,7 +20,18 @@ struct Stmt {
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
   bool is_mutable = false; bool declaration = true; string semantic_type;
 };
-struct Method { string owner, name; vector<Param> params; std::optional<string> return_type; vector<Stmt> body; std::optional<string> result_expression; int line = 0; };
+struct Method {
+  string owner, name;
+  vector<Param> params;
+  std::optional<string> return_type;
+  vector<Stmt> body;
+  std::optional<string> result_expression;
+  // Inferred receiver/parameter effects used by ownership checking and Rust
+  // lowering.  They are never written in Moss source.
+  Effect receiver_effect = Effect::Read;
+  vector<Effect> parameter_effects;
+  int line = 0;
+};
 struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
 struct Handler { string name, header; vector<Param> params; std::optional<string> reply_type; vector<Stmt> body; int line = 0; };
 struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };
@@ -38,6 +49,8 @@ struct Function {
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
   vector<FunctionSpecialization> specializations;
+  // Inferred parameter effects, parallel to `params`.
+  vector<Effect> parameter_effects;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
 struct Program { vector<Function> functions; vector<Trait> traits; vector<ObjectType> objects; vector<Domain> domains; std::optional<MainProc> main; };

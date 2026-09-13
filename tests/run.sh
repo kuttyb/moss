@@ -286,12 +286,17 @@ reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
 reject_case main_return_value "main cannot return a value"
-reject_case message_transfer "owned non-primitive value 'payload' cannot cross a domain boundary"
-reject_case domain_state_transfer "domain state 'dataset' cannot be transferred by message"
-reject_case await_object_transfer "owned non-primitive value 'payload' cannot cross a domain boundary"
-reject_case object_reply_transfer "owned non-primitive value 'payload' cannot cross a domain boundary in a reply"
-reject_case nested_object_transfer "owned non-primitive value 'envelope' cannot cross a domain boundary"
-reject_case string_transfer "owned non-primitive value 'text' cannot cross a domain boundary"
+run_case message_payload_copy tests/negative/message_transfer.moss "$(printf 'detached\ndetached')"
+run_case state_payload_copy tests/negative/domain_state_transfer.moss '34'
+run_case await_payload_copy tests/negative/await_object_transfer.moss '7'
+run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
+run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
+run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
+warning_stdout="$test_build/large_payload_warning.stdout"
+warning_stderr="$test_build/large_payload_warning.stderr"
+"$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
+grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
+  "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
 
 reject_cluster cluster_duplicate_spawn tests/shared_memory_contention.moss 'Counter,Producer' \
   "clustered domain type 'Producer' must be spawned exactly once in main (found 2)"

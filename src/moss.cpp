@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -870,10 +871,13 @@ class Checker {
     infer_handler_reply_types(true);
     infer_function_signatures(true);
     check_objects();
+    infer_effects();
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
   }
+
+  const vector<Warning>& warnings() const { return warnings_; }
 
  private:
   Program& p_;
@@ -882,6 +886,7 @@ class Checker {
   std::unordered_map<string, ObjectType*> objects_;
   std::unordered_map<string, Trait*> traits_;
   const ObjectType* current_object_ = nullptr;
+  vector<Warning> warnings_;
 
   [[noreturn]] void err(int line, const string& msg) const { throw CompileError(line, msg); }
 
@@ -2140,14 +2145,549 @@ class Checker {
     }
   }
 
+  static Effect join_effect(Effect left, Effect right) {
+    return static_cast<int>(left) >= static_cast<int>(right) ? left : right;
+  }
+
+  static bool effect_is_stronger(Effect left, Effect right) {
+    return static_cast<int>(left) > static_cast<int>(right);
+  }
+
+  static Effect function_parameter_effect(const Function& function, size_t index) {
+    return index < function.parameter_effects.size()
+        ? function.parameter_effects[index] : Effect::Read;
+  }
+
+  static Effect method_parameter_effect(const Method& method, size_t index) {
+    return index < method.parameter_effects.size()
+        ? method.parameter_effects[index] : Effect::Read;
+  }
+
+  static bool simple_effect_identifier(const string& value) {
+    return simple_identifier(trim(value));
+  }
+
+  bool effect_requires_borrow(const string& type) const {
+    string t = canonical_type_name(type);
+    if (t.empty() || starts_with(t, "_") || copy_type(t) || domains_.count(t)) return false;
+    return true;
+  }
+
+  void mark_effect_name(const string& name, Effect effect,
+                        const vector<Param>& params,
+                        const std::unordered_map<string,string>& env,
+                        vector<Effect>& parameter_effects,
+                        Effect& receiver_effect,
+                        const std::set<string>& receiver_fields) const {
+    string value = trim(name);
+    auto parameter = std::find_if(params.begin(), params.end(),
+                                  [&](const Param& candidate) { return candidate.name == value; });
+    if (parameter != params.end()) {
+      size_t index = static_cast<size_t>(parameter - params.begin());
+      if (index >= parameter_effects.size()) parameter_effects.resize(params.size(), Effect::Read);
+      parameter_effects[index] = join_effect(parameter_effects[index], effect);
+      return;
+    }
+    if (value == "self" || receiver_fields.count(value)) {
+      receiver_effect = join_effect(receiver_effect, effect);
+      return;
+    }
+    // A field/member expression may have been normalized into an identifier by
+    // the parser.  Only bindings in the current environment participate in the
+    // effect summary; unknown names are handled by the type checker.
+    (void)env;
+  }
+
+  void analyze_effect_expression(
+      const string& expression, const std::unordered_map<string,string>& env,
+      const vector<Param>& params, vector<Effect>& parameter_effects,
+      Effect& receiver_effect, const std::set<string>& receiver_fields,
+      Effect requested = Effect::Read) const {
+    string value = normalize_pipeline(trim(expression));
+    if (value.empty()) return;
+
+    if (simple_effect_identifier(value)) {
+      auto type = env.find(value);
+      Effect effective = requested;
+      if (effective == Effect::Consume && (type == env.end() ||
+                                           !effect_requires_borrow(type->second)))
+        effective = Effect::Read;
+      mark_effect_name(value, effective, params, env, parameter_effects,
+                       receiver_effect, receiver_fields);
+      return;
+    }
+
+    string receiver, method;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, method, arguments)) {
+      auto receiver_type = inferred_expr_type(receiver, env);
+      if (receiver_type) {
+        string concrete = canonical_type_name(*receiver_type);
+        bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
+            starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
+            starts_with(concrete, "map[");
+        if (collection) {
+          Effect receiver_use = (method == "push" || method == "pop")
+              ? Effect::Write : Effect::Read;
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, receiver_use);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            analyze_effect_expression(arguments[index], env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      method == "push" && index == 0
+                                          ? Effect::Consume : Effect::Read);
+          return;
+        }
+        if (auto object_method = resolve_method(concrete, method, {} , true, nullptr)) {
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields,
+                                    object_method->receiver_effect);
+          for (size_t index = 0; index < arguments.size(); ++index) {
+            Effect argument_effect = method_parameter_effect(*object_method, index);
+            analyze_effect_expression(arguments[index], env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, argument_effect);
+          }
+          return;
+        }
+      }
+      // Trait and unresolved duck-typed method calls are statically constrained
+      // by the normal resolver.  Until a concrete method is selected, a call is
+      // conservatively a read of its receiver and arguments.
+      analyze_effect_expression(receiver, env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      for (const auto& argument : arguments)
+        analyze_effect_expression(argument, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+      return;
+    }
+
+    string callee;
+    vector<string> call_arguments;
+    if (parse_simple_call(value, callee, call_arguments)) {
+      if (objects_.count(callee)) {
+        auto object = objects_.at(callee);
+        std::unordered_map<string,string> supplied;
+        for (const auto& argument : call_arguments) {
+          string field, field_value;
+          if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
+        }
+        for (const auto& field : object->fields) {
+          auto value_it = supplied.find(field.name);
+          if (value_it != supplied.end()) {
+            analyze_effect_expression(value_it->second, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      effect_requires_borrow(field.type)
+                                          ? Effect::Consume : Effect::Read);
+          }
+        }
+        return;
+      }
+      auto function = functions_.find(callee);
+      if (function != functions_.end()) {
+        for (size_t index = 0; index < call_arguments.size(); ++index) {
+          Effect argument_effect = function_parameter_effect(*function->second, index);
+          analyze_effect_expression(call_arguments[index], env, params,
+                                    parameter_effects, receiver_effect,
+                                    receiver_fields, argument_effect);
+        }
+      } else {
+        for (const auto& argument : call_arguments)
+          analyze_effect_expression(argument, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+      }
+      return;
+    }
+
+    string base, index;
+    if (parse_index(value, base, index)) {
+      analyze_effect_expression(base, env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      analyze_effect_expression(index, env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      return;
+    }
+
+    auto dot = value.rfind('.');
+    if (dot != string::npos && value.find('(', dot) == string::npos) {
+      analyze_effect_expression(value.substr(0, dot), env, params,
+                                parameter_effects, receiver_effect,
+                                receiver_fields, requested == Effect::Consume
+                                    ? Effect::Consume : Effect::Read);
+      return;
+    }
+
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
+
+    // Keep the analysis conservative for expressions that are not represented
+    // by a richer AST node yet: every parameter mentioned is observed.
+    for (const auto& parameter : params)
+      if (expression_uses(value, parameter.name))
+        mark_effect_name(parameter.name, Effect::Read, params, env,
+                         parameter_effects, receiver_effect, receiver_fields);
+    for (const auto& field : receiver_fields)
+      if (expression_uses(value, field)) receiver_effect = join_effect(receiver_effect, Effect::Read);
+  }
+
+  void analyze_effect_block(const vector<Stmt>& statements, size_t& index, int level,
+                            std::unordered_map<string,string>& env,
+                            const vector<Param>& params,
+                            vector<Effect>& parameter_effects,
+                            Effect& receiver_effect,
+                            const std::set<string>& receiver_fields) const {
+    while (index < statements.size()) {
+      const Stmt& statement = statements[index];
+      if (statement.indent < level || statement.indent > level) return;
+      if (statement.kind == Stmt::Kind::Else) return;
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+        analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        bool is_if = statement.kind == Stmt::Kind::If;
+        ++index;
+        auto child_env = env;
+        analyze_effect_block(statements, index, level + 1, child_env, params,
+                             parameter_effects, receiver_effect, receiver_fields);
+        if (is_if && index < statements.size() && statements[index].indent == level &&
+            statements[index].kind == Stmt::Kind::Else) {
+          ++index;
+          auto else_env = env;
+          analyze_effect_block(statements, index, level + 1, else_env, params,
+                               parameter_effects, receiver_effect, receiver_fields);
+        }
+        continue;
+      }
+      switch (statement.kind) {
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var: {
+          string source = trim(statement.b);
+          if (simple_effect_identifier(source) && env.count(source) &&
+              effect_requires_borrow(env.at(source)))
+            analyze_effect_expression(source, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Consume);
+          else
+            analyze_effect_expression(statement.b, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+          else if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
+          else env[statement.a] = "_value";
+          ++index;
+          break;
+        }
+        case Stmt::Kind::Assign: {
+          string base, ignored;
+          if (parse_index(statement.a, base, ignored))
+            analyze_effect_expression(base, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Write);
+          else {
+            auto dot = statement.a.rfind('.');
+            if (dot != string::npos)
+              analyze_effect_expression(statement.a.substr(0, dot), env, params,
+                                        parameter_effects, receiver_effect,
+                                        receiver_fields, Effect::Write);
+            else if (simple_effect_identifier(statement.a) && env.count(statement.a))
+              mark_effect_name(statement.a, Effect::Write, params, env,
+                               parameter_effects, receiver_effect, receiver_fields);
+          }
+          string source = trim(statement.b);
+          if (simple_effect_identifier(source) && env.count(source) &&
+              effect_requires_borrow(env.at(source)))
+            analyze_effect_expression(source, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Consume);
+          else
+            analyze_effect_expression(statement.b, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+          ++index;
+          break;
+        }
+        case Stmt::Kind::Call:
+          if (!statement.b.empty())
+            analyze_effect_expression(statement.text, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          else
+            analyze_effect_expression(statement.a + "(" + join_arguments(statement.args) + ")",
+                                      env, params, parameter_effects, receiver_effect,
+                                      receiver_fields, Effect::Read);
+          ++index;
+          break;
+        case Stmt::Kind::Message: {
+          analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : statement.args)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          ++index;
+          break;
+        }
+        case Stmt::Kind::AwaitMessage: {
+          analyze_effect_expression(statement.b, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : statement.args)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          if (auto receiver = env.find(statement.b); receiver != env.end() && domains_.count(receiver->second)) {
+            if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
+              if (const Handler* handler = find_handler(*domain->second, statement.c))
+                if (handler->reply_type) env[statement.a] = *handler->reply_type;
+            }
+          }
+          ++index;
+          break;
+        }
+        case Stmt::Kind::Reply:
+          analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          ++index;
+          break;
+        case Stmt::Kind::Echo:
+          for (const auto& argument : statement.args)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          ++index;
+          break;
+        case Stmt::Kind::Return:
+          if (!statement.a.empty())
+            analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Consume);
+          ++index;
+          break;
+        case Stmt::Kind::Raw:
+          analyze_effect_expression(statement.text, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          ++index;
+          break;
+        case Stmt::Kind::Else:
+        case Stmt::Kind::If:
+        case Stmt::Kind::While:
+          return;
+      }
+    }
+  }
+
+  static string join_arguments(const vector<string>& arguments) {
+    std::ostringstream out;
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (index) out << ", ";
+      out << arguments[index];
+    }
+    return out.str();
+  }
+
+  void infer_effects() {
+    for (auto& function : p_.functions)
+      function.parameter_effects.assign(function.params.size(), Effect::Read);
+    for (auto& object : p_.objects)
+      for (auto& method : object.methods)
+        method.parameter_effects.assign(method.params.size(), Effect::Read);
+
+    size_t entities = p_.functions.size();
+    for (const auto& object : p_.objects) entities += object.methods.size();
+    size_t rounds = entities * 4 + 4;
+    for (size_t round = 0; round < rounds; ++round) {
+      bool changed = false;
+      for (auto& function : p_.functions) {
+        std::unordered_map<string,string> env;
+        for (const auto& parameter : function.params)
+          env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
+        auto inferred = function.parameter_effects;
+        Effect receiver = Effect::Read;
+        std::set<string> no_fields;
+        size_t index = 0;
+        analyze_effect_block(function.body, index, 0, env, function.params,
+                             inferred, receiver, no_fields);
+        if (function.result_expression)
+          analyze_effect_expression(*function.result_expression, env, function.params,
+                                    inferred, receiver, no_fields, Effect::Consume);
+        if (inferred != function.parameter_effects) {
+          function.parameter_effects = std::move(inferred);
+          changed = true;
+        }
+      }
+      for (auto& object : p_.objects) {
+        for (auto& method : object.methods) {
+          std::unordered_map<string,string> env;
+          std::set<string> fields;
+          for (const auto& field : object.fields) {
+            env[field.name] = field.type;
+            fields.insert(field.name);
+          }
+          env["self"] = object.name;
+          for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
+          auto inferred = method.parameter_effects;
+          Effect receiver = Effect::Read;
+          size_t index = 0;
+          analyze_effect_block(method.body, index, 0, env, method.params,
+                               inferred, receiver, fields);
+          if (method.result_expression)
+            analyze_effect_expression(*method.result_expression, env, method.params,
+                                      inferred, receiver, fields, Effect::Consume);
+          if (inferred != method.parameter_effects || receiver != method.receiver_effect) {
+            method.parameter_effects = std::move(inferred);
+            method.receiver_effect = receiver;
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
+  std::optional<size_t> static_payload_size(const string& type,
+                                             std::set<string>& visiting) const {
+    string t = canonical_type_name(type);
+    if (t == "int" || t == "float") return sizeof(std::int64_t);
+    if (t == "bool") return sizeof(bool);
+    if (t == "unit") return size_t(0);
+    if (t == "string" || domains_.count(t)) return std::nullopt;
+    if (starts_with(t, "option[") && ends_with(t, "]")) {
+      auto inner = static_payload_size(trim(t.substr(7, t.size() - 8)), visiting);
+      return inner ? std::optional<size_t>(*inner + 1) : std::nullopt;
+    }
+    auto object = objects_.find(t);
+    if (object == objects_.end()) return std::nullopt;
+    if (!visiting.insert(t).second) return std::nullopt;
+    size_t total = 0;
+    for (const auto& field : object->second->fields) {
+      auto size = static_payload_size(field.type, visiting);
+      if (!size) { visiting.erase(t); return std::nullopt; }
+      total += *size;
+    }
+    visiting.erase(t);
+    return total;
+  }
+
+  void warn_payload(int line, const string& type) {
+    std::set<string> visiting;
+    auto size = static_payload_size(type, visiting);
+    if (!size || *size <= 1024) return;
+    string message = "message payload copies " + std::to_string(*size) +
+        " bytes across a domain boundary";
+    if (std::any_of(warnings_.begin(), warnings_.end(), [&](const Warning& warning) {
+          return warning.line == line && warning.message == message;
+        })) return;
+    warnings_.push_back(Warning{line, std::move(message)});
+  }
+
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
     for (const auto& entry : env.moved) {
       if (expression_uses(expression, entry.first)) {
         err(line, "value '" + entry.first + "' was transferred to '" +
             entry.second.destination + "' at line " + std::to_string(entry.second.line) +
-            ". Create an explicit deep copy if both values must remain independently usable.");
+            " (the value was consumed). Create an explicit deep copy if both values must remain independently usable.");
       }
     }
+  }
+
+  void consume_binding(int line, const string& name, const OwnershipEnv& env,
+                       const string& destination) const {
+    auto type = env.types.find(name);
+    if (type == env.types.end() || !transfer_type(type->second)) return;
+    if (env.state_fields.count(name))
+      err(line, "domain state '" + name + "' cannot be consumed into '" + destination + "'");
+    const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
+  }
+
+  void check_ownership_expression(int line, const string& expression,
+                                  OwnershipEnv& env, Effect requested = Effect::Read) {
+    string value = normalize_pipeline(trim(expression));
+    if (value.empty()) return;
+    if (simple_identifier(value)) {
+      require_available(line, value, env);
+      if (requested == Effect::Consume)
+        consume_binding(line, value, env, "an expression at line " + std::to_string(line));
+      return;
+    }
+
+    string receiver, method;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, method, arguments)) {
+      auto receiver_type = inferred_expr_type(receiver, env.types);
+      if (receiver_type) {
+        string concrete = canonical_type_name(*receiver_type);
+        bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
+            starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
+            starts_with(concrete, "map[");
+        if (collection) {
+          check_ownership_expression(line, receiver, env,
+              (method == "push" || method == "pop") ? Effect::Write : Effect::Read);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            check_ownership_expression(line, arguments[index], env,
+                method == "push" && index == 0 ? Effect::Consume : Effect::Read);
+          return;
+        }
+        vector<string> argument_types;
+        for (const auto& argument : arguments)
+          argument_types.push_back(inferred_expr_type(argument, env.types).value_or(""));
+        if (auto object_method = resolve_method(concrete, method, argument_types, true, nullptr)) {
+          check_ownership_expression(line, receiver, env, object_method->receiver_effect);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            check_ownership_expression(line, arguments[index], env,
+                method_parameter_effect(*object_method, index));
+          return;
+        }
+      }
+      check_ownership_expression(line, receiver, env, Effect::Read);
+      for (const auto& argument : arguments)
+        check_ownership_expression(line, argument, env, Effect::Read);
+      return;
+    }
+
+    string callee;
+    vector<string> call_arguments;
+    if (parse_simple_call(value, callee, call_arguments)) {
+      if (objects_.count(callee)) {
+        std::unordered_map<string,string> supplied;
+        for (const auto& argument : call_arguments) {
+          string field, field_value;
+          if (parse_named_argument(argument, field, field_value)) supplied[field] = field_value;
+        }
+        for (const auto& field : objects_.at(callee)->fields) {
+          auto supplied_value = supplied.find(field.name);
+          if (supplied_value != supplied.end())
+            check_ownership_expression(line, supplied_value->second, env,
+                effect_requires_borrow(field.type) ? Effect::Consume : Effect::Read);
+        }
+        return;
+      }
+      auto function = functions_.find(callee);
+      for (size_t index = 0; index < call_arguments.size(); ++index) {
+        Effect argument_effect = function == functions_.end()
+            ? Effect::Read : function_parameter_effect(*function->second, index);
+        check_ownership_expression(line, call_arguments[index], env, argument_effect);
+      }
+      return;
+    }
+
+    string base, index;
+    if (parse_index(value, base, index)) {
+      check_ownership_expression(line, base, env, Effect::Read);
+      check_ownership_expression(line, index, env, Effect::Read);
+      return;
+    }
+
+    auto dot = value.rfind('.');
+    if (dot != string::npos && value.find('(', dot) == string::npos) {
+      check_ownership_expression(line, value.substr(0, dot), env,
+                                 requested == Effect::Consume ? Effect::Consume : Effect::Read);
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        check_ownership_expression(line, binary->first, env, Effect::Read);
+        check_ownership_expression(line, binary->second, env, Effect::Read);
+        return;
+      }
+    }
+    require_available(line, value, env);
   }
 
   static void merge_moved(OwnershipEnv& destination, const OwnershipEnv& branch) {
@@ -2160,50 +2700,29 @@ class Checker {
                                   const string& expected_type,
                                   const OwnershipEnv& env,
                                   const string& action) const {
-    if (!transfer_type(expected_type)) return;
-    string value = trim(expression);
-
-    auto object = objects_.find(trim(expected_type));
-    auto lp = value.find('(');
-    if (object != objects_.end() && lp != string::npos && ends_with(value, ")") &&
-        trim(value.substr(0, lp)) == object->first) {
-      auto parts = split_top_level(value.substr(lp + 1, value.size() - lp - 2), ',');
-      std::unordered_map<string, string> fields;
-      if (parts.size() == 1 && parts.front().empty()) parts.clear();
-      for (const auto& part : parts) {
-        string field_name, field_value;
-        if (parse_named_argument(part, field_name, field_value))
-          fields[field_name] = field_value;
-      }
-      for (const auto& field : object->second->fields) {
-        auto supplied = fields.find(field.name);
-        if (supplied != fields.end())
-          require_cross_domain_value(line, supplied->second, field.type, env, action);
-      }
-      return;
-    }
-
-    for (const auto& binding : env.types) {
-      if (!transfer_type(binding.second) || !expression_uses(value, binding.first)) continue;
-      if (env.state_fields.count(binding.first))
-        err(line, "domain state '" + binding.first + "' cannot be transferred" +
-            (action.empty() ? " by message" : action));
-      err(line, "owned non-primitive value '" + binding.first +
-          "' cannot cross a domain boundary" + action +
-          "; construct a fresh message value instead");
-    }
+    // A message is Moss's explicit semantic copy boundary.  The source value
+    // remains available after a send/await/reply; the backend materializes a
+    // detached payload (or an equivalent proven optimization).  This helper is
+    // retained as a single validation hook for future reference-capability
+    // checks, but ordinary aggregate values are intentionally legal here.
+    (void)line;
+    (void)expression;
+    (void)expected_type;
+    (void)env;
+    (void)action;
   }
 
   void check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
                        const Domain* current_domain,
-                       const Handler* current_handler) const {
+                       const Handler* current_handler) {
     size_t index = 0;
     check_ownership_block(statements, index, 0, env, current_domain, current_handler);
   }
 
   void check_ownership_block(const vector<Stmt>& statements, size_t& index, int level,
                              OwnershipEnv& env, const Domain* current_domain,
-                             const Handler* current_handler) const {
+                             const Handler* current_handler) {
+    (void)current_domain;
     while (index < statements.size()) {
       const Stmt& s = statements[index];
       if (s.indent < level) return;
@@ -2231,53 +2750,65 @@ class Checker {
       switch (s.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
-          require_available(s.line, s.b, env);
+          string source = trim(s.b);
+          bool transfers = simple_identifier(source) && env.types.count(source) &&
+              effect_requires_borrow(env.types.at(source));
+          if (transfers) {
+            require_available(s.line, source, env);
+            consume_binding(s.line, source, env, s.a);
+          } else {
+            check_ownership_expression(s.line, s.b, env, Effect::Read);
+          }
           std::optional<string> type;
           if (auto spawned = spawn_domain(s.b)) type = *spawned;
           else type = inferred_expr_type(s.b, env.types);
 
-          string source = trim(s.b);
-          bool transfers = simple_identifier(source) && env.types.count(source) &&
-                           transfer_type(env.types.at(source));
-          if (transfers && env.state_fields.count(source))
-            err(s.line, "domain state '" + source + "' cannot be transferred into local '" + s.a +
-                "'; the field must remain available for later messages");
-
           env.types[s.a] = type.value_or("_value");
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
-          if (transfers && source != s.a) env.moved[source] = MoveInfo{s.line, s.a};
           ++index;
           break;
         }
         case Stmt::Kind::Assign: {
-          require_available(s.line, s.b, env);
+          string lhs_base, lhs_index;
+          if (parse_index(s.a, lhs_base, lhs_index))
+            check_ownership_expression(s.line, lhs_base, env, Effect::Write);
+          else {
+            auto dot = s.a.rfind('.');
+            if (dot != string::npos)
+              check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
+          }
+          string source = trim(s.b);
+          bool transfers = simple_identifier(source) && env.types.count(source) &&
+              effect_requires_borrow(env.types.at(source));
+          if (transfers) {
+            require_available(s.line, source, env);
+            consume_binding(s.line, source, env, s.a);
+          } else {
+            check_ownership_expression(s.line, s.b, env, Effect::Read);
+          }
           if (auto spawned = spawn_domain(s.b)) {
             env.types[s.a] = *spawned;
+            env.moved.erase(s.a);
             ++index;
             break;
           }
           if (simple_identifier(s.a) && env.types.count(s.a)) {
-            string source = trim(s.b);
-            bool transfers = simple_identifier(source) && env.types.count(source) &&
-                             transfer_type(env.types.at(source));
-            if (transfers && env.state_fields.count(source))
-              err(s.line, "domain state '" + source + "' cannot be transferred into '" + s.a + "'");
-            if (transfers && source != s.a) {
-              env.moved.erase(s.a);
-              env.moved[source] = MoveInfo{s.line, s.a};
-            }
+            // Assignment reinitializes the target, including a binding that
+            // was consumed on an earlier path.
+            env.moved.erase(s.a);
           }
           ++index;
           break;
         }
         case Stmt::Kind::AwaitMessage: {
-          require_available(s.line, s.b, env);
+          check_ownership_expression(s.line, s.b, env, Effect::Read);
           const Handler* awaited = check_call(s.line, s.b, s.c, s.args, env.types);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
-            require_available(s.line, arg, env);
+            check_ownership_expression(s.line, arg, env, Effect::Read);
             require_cross_domain_value(s.line, arg, awaited->params[arg_index].type,
                                        env, "");
+            warn_payload(s.line, awaited->params[arg_index].type);
           }
           if (auto receiver = env.types.find(s.b); receiver != env.types.end()) {
             if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
@@ -2291,57 +2822,48 @@ class Checker {
           break;
         }
         case Stmt::Kind::Message: {
-          require_available(s.line, s.a, env);
+          check_ownership_expression(s.line, s.a, env, Effect::Read);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
-          const auto receiver = env.types.find(s.a);
-          const Domain* target = receiver != env.types.end() && domains_.count(receiver->second)
-              ? domains_.at(receiver->second) : nullptr;
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
-            require_available(s.line, arg, env);
-            bool stays_in_domain = current_domain && s.a == "self";
-            if (!stays_in_domain)
+            check_ownership_expression(s.line, arg, env, Effect::Read);
+            if (arg_index < handler->params.size()) {
               require_cross_domain_value(s.line, arg, handler->params[arg_index].type,
                                          env, "");
-            string source = trim(arg);
-            if (!simple_identifier(source) || !env.types.count(source)) continue;
-            string source_type = env.types.at(source);
-            if (arg_index < handler->params.size() && transfer_type(source_type)) {
-              if (env.state_fields.count(source))
-                err(s.line, "domain state '" + source + "' cannot be transferred by message");
-              if (!stays_in_domain)
-                err(s.line, "owned non-primitive value '" + source +
-                    "' cannot cross a domain boundary; construct a fresh message value instead");
-              string destination = target ? target->name + "." + handler->name : handler->name;
-              env.moved[source] = MoveInfo{s.line, destination};
+              warn_payload(s.line, handler->params[arg_index].type);
             }
           }
           ++index;
           break;
         }
         case Stmt::Kind::Echo:
-          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          for (const auto& arg : s.args) check_ownership_expression(s.line, arg, env, Effect::Read);
           ++index;
           break;
         case Stmt::Kind::Call:
-          require_available(s.line, s.a, env);
-          for (const auto& arg : s.args) require_available(s.line, arg, env);
+          if (!s.b.empty())
+            check_ownership_expression(s.line, s.text, env, Effect::Read);
+          else
+            check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
+                                       env, Effect::Read);
           ++index;
           break;
         case Stmt::Kind::Reply: {
-          require_available(s.line, s.a, env);
+          check_ownership_expression(s.line, s.a, env, Effect::Read);
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
                                        env, " in a reply");
+          if (current_handler && current_handler->reply_type)
+            warn_payload(s.line, *current_handler->reply_type);
           ++index;
           break;
         }
         case Stmt::Kind::Raw:
-          require_available(s.line, s.text, env);
+          check_ownership_expression(s.line, s.text, env, Effect::Read);
           ++index;
           break;
         case Stmt::Kind::Return:
-          if (!s.a.empty()) require_available(s.line, s.a, env);
+          if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
           ++index;
           break;
         case Stmt::Kind::If:
@@ -3280,6 +3802,64 @@ class Generator {
     return false;
   }
 
+  bool borrowable_type(const string& type) const {
+    string t = canonical_type_name(type);
+    if (t.empty() || starts_with(t, "_") || copy_type(t) || domains_.count(t)) return false;
+    return true;
+  }
+
+  static Effect function_effect(const Function& function, size_t index) {
+    return index < function.parameter_effects.size()
+        ? function.parameter_effects[index] : Effect::Read;
+  }
+
+  static Effect method_effect(const Method& method, size_t index) {
+    return index < method.parameter_effects.size()
+        ? method.parameter_effects[index] : Effect::Read;
+  }
+
+  bool should_borrow_function_parameter(const Function& function, size_t index,
+                                        const string& parameter_type,
+                                        const string& actual_type) const {
+    Effect effect = function_effect(function, index);
+    if (effect == Effect::Consume) return false;
+    const auto& parameter = function.params[index];
+    auto ops = constraint_ops(function, parameter.name);
+    if (parameter.type.empty() && !ops.empty() && !ops.count("[]")) return false;
+    string candidate = parameter_type.empty() ? actual_type : parameter_type;
+    if (candidate.empty() || starts_with(candidate, "_") ||
+        (parameter.type.empty() && ops.empty() && !function.static_dispatch)) return false;
+    return borrowable_type(candidate);
+  }
+
+  string function_call_argument(const Function& function, size_t index,
+                                const string& argument, const Domain* d,
+                                const std::set<string>& locals,
+                                const std::unordered_map<string,string>* types) const {
+    string rendered = expr(argument, d, locals, types);
+    if (index >= function.params.size()) return rendered;
+    Effect effect = function_effect(function, index);
+    string parameter_type = function.params[index].type;
+    string actual_type = generated_expr_type(argument, types).value_or("");
+    if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
+      return rendered;
+    if (effect == Effect::Write) return "&mut (" + rendered + ")";
+    return "&(" + rendered + ")";
+  }
+
+  string method_call_argument(const Method& method, size_t index,
+                              const string& argument, const Domain* d,
+                              const std::set<string>& locals,
+                              const std::unordered_map<string,string>* types) const {
+    string rendered = expr(argument, d, locals, types);
+    if (index >= method.params.size()) return rendered;
+    Effect effect = method_effect(method, index);
+    string type = method.params[index].type;
+    if (effect == Effect::Consume || !borrowable_type(type)) return rendered;
+    if (effect == Effect::Write) return "&mut (" + rendered + ")";
+    return "&( " + rendered + ")";
+  }
+
   static std::optional<std::pair<string,string>> generated_split_binary(
       const string& expression, const vector<string>& operators) {
     int parens = 0, braces = 0, brackets = 0;
@@ -3464,6 +4044,45 @@ class Generator {
       return "(" + expr(ib, d, locals, types) + "[" + ir + "]).clone()";
     }
 
+    string member_receiver, member_name;
+    vector<string> member_arguments;
+    if (parse_member_call(e, member_receiver, member_name, member_arguments)) {
+      string receiver_expression = expr(member_receiver, d, locals, types);
+      auto receiver_type = generated_expr_type(member_receiver, types);
+      if (receiver_type) {
+        string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "queue" || starts_with(concrete, "queue["))
+          member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
+        if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
+                                                [&]() {
+                                                  vector<string> result;
+                                                  for (const auto& argument : member_arguments)
+                                                    result.push_back(generated_expr_type(argument, types).value_or(""));
+                                                  return result;
+                                                }(), true, nullptr)) {
+          std::ostringstream rendered;
+          rendered << receiver_expression << "." << member_name << "(";
+          for (size_t index = 0; index < member_arguments.size(); ++index) {
+            if (index) rendered << ", ";
+            rendered << method_call_argument(*method, index, member_arguments[index], d, locals, types);
+          }
+          rendered << ")";
+          return rendered.str();
+        }
+      }
+      // Trait/duck-typed calls are already statically specialized by the
+      // checker; retain their ordinary Rust method spelling when the concrete
+      // method is not available to this expression pass.
+      std::ostringstream rendered;
+      rendered << receiver_expression << "." << member_name << "(";
+      for (size_t index = 0; index < member_arguments.size(); ++index) {
+        if (index) rendered << ", ";
+        rendered << expr(member_arguments[index], d, locals, types);
+      }
+      rendered << ")";
+      return rendered.str();
+    }
+
     string builtin;
     vector<string> builtin_args;
     if (parse_simple_call(e, builtin, builtin_args)) {
@@ -3522,7 +4141,13 @@ class Generator {
         bool known_function = functions_.count(head);
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << emitted_function_name(head, call_args, types) << "(";
-        for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals, types); }
+        for (size_t i = 0; i < call_args.size(); ++i) {
+          if (i) r << ", ";
+          if (known_function)
+            r << function_call_argument(*functions_.at(head), i, call_args[i], d, locals, types);
+          else
+            r << expr(call_args[i], d, locals, types);
+        }
         r << ")"; return r.str();
       }
     }
@@ -3591,10 +4216,12 @@ class Generator {
                      const std::unordered_map<string,string>* types = nullptr) const {
     string r = expr(e, d, locals, types);
     string t = trim(type);
-    if (copy_type(t) || domains_.count(t) || t == "_") return domains_.count(t) ? "(" + r + ").clone()" : r;
-    // Detached non-copy values transfer ownership through a message. The checker
-    // diagnoses subsequent source uses; no hidden deep copy is inserted here.
-    return r;
+    if (copy_type(t) || t == "_") return r;
+    // Messages are the explicit Moss semantic copy boundary.  A payload is
+    // detached from the sender even when the source binding remains available;
+    // the generated clone is an implementation of that boundary, never an
+    // implicit copy for an ordinary local call.
+    return "(" + r + ").clone()";
   }
 
   string cluster_call_arg(const string& expression, const string& type,
@@ -3715,10 +4342,19 @@ class Generator {
     }
     o << "}\n\n";
     for (const auto& method : t.methods) {
-      o << "impl " << t.name << " {\n    fn " << method.name << "(&self";
+      o << "impl " << t.name << " {\n    fn " << method.name
+        << (method.receiver_effect == Effect::Write ? "(&mut self" : "(&self");
       for (const auto& p : method.params) {
         if (p.type.empty()) throw std::runtime_error("unresolved concrete method parameter type: " + method.name + "." + p.name);
-        o << ", mut " << p.name << ": " << rust_type(p.type);
+        size_t parameter_index = static_cast<size_t>(&p - method.params.data());
+        Effect effect = method_effect(method, parameter_index);
+        string parameter_type = rust_type(p.type);
+        if (effect != Effect::Consume && borrowable_type(p.type)) {
+          o << ", " << (effect == Effect::Write ? "" : "") << p.name << ": "
+            << (effect == Effect::Write ? "&mut " : "&") << parameter_type;
+        } else {
+          o << ", mut " << p.name << ": " << parameter_type;
+        }
       }
       if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " {\n";
       else o << ") {\n";
@@ -3760,12 +4396,27 @@ class Generator {
       string pt = specialization ? specialization->parameter_types[index]
                                  : f.params[index].type;
       auto ops = constraint_ops(f, f.params[index].name);
+      string parameter_rust_type;
       if (!specialization && pt.empty() && !ops.empty()) {
-        if (ops.count("[]")) o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
-        else o << f.params[index].name << ": T_" << f.params[index].name;
-      } else if (!specialization && pt == "vector") o << f.params[index].name << ": Vec<T_" << f.params[index].name << ">";
-      else if (!specialization && pt == "queue") o << f.params[index].name << ": VecDeque<T_" << f.params[index].name << ">";
-      else o << f.params[index].name << ": " << rust_type(pt);
+        if (ops.count("[]")) parameter_rust_type = "Vec<T_" + f.params[index].name + ">";
+        else parameter_rust_type = "T_" + f.params[index].name;
+      } else if (!specialization && pt == "vector") {
+        parameter_rust_type = "Vec<T_" + f.params[index].name + ">";
+      } else if (!specialization && pt == "queue") {
+        parameter_rust_type = "VecDeque<T_" + f.params[index].name + ">";
+      } else if (!specialization && pt == "map") {
+        parameter_rust_type = "HashMap<K_" + f.params[index].name + ", V_" + f.params[index].name + ">";
+      } else {
+        parameter_rust_type = rust_type(pt);
+      }
+      Effect effect = function_effect(f, index);
+      bool generic_copy_value = !specialization && f.params[index].type.empty() &&
+          !ops.empty() && !ops.count("[]");
+      bool borrow = !generic_copy_value && effect != Effect::Consume &&
+          borrowable_type(pt.empty() ? parameter_rust_type : pt);
+      o << f.params[index].name << ": "
+        << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
+        << parameter_rust_type;
     }
     string return_type = specialization ? specialization->return_type
                                         : f.return_type.value_or("unit");
@@ -4509,7 +5160,29 @@ class Generator {
           o << "(";
           for (size_t k = 0; k < s.args.size(); ++k) {
             if (k) o << ", ";
-            o << expr(s.args[k], d, locals, &types);
+            if (known_function) {
+              o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
+                                          locals, &types);
+            } else if (!s.b.empty() || implicit_method) {
+              auto receiver_type = implicit_method
+                  ? std::optional<string>(d->name)
+                  : generated_expr_type(s.a, &types);
+              const Method* method = nullptr;
+              if (receiver_type)
+                method = resolve_object_method(objects_, canonical_type_name(*receiver_type),
+                                               implicit_method ? s.a : s.b, [&]() {
+                                                 vector<string> result;
+                                                 for (const auto& argument : s.args)
+                                                   result.push_back(generated_expr_type(argument, &types).value_or(""));
+                                                 return result;
+                                               }(), true, nullptr);
+              if (method)
+                o << method_call_argument(*method, k, s.args[k], d, locals, &types);
+              else
+                o << expr(s.args[k], d, locals, &types);
+            } else {
+              o << expr(s.args[k], d, locals, &types);
+            }
           }
           o << ");\n";
           ++i;
@@ -4875,6 +5548,8 @@ int main(int argc, char** argv) {
     auto program = parser.parse();
     moss::Checker checker(program);
     checker.run();
+    for (const auto& warning : checker.warnings())
+      std::cerr << "moss:" << warning.line << ": warning: " << warning.message << "\n";
 
     auto plan = moss::MessageTransportOptimizer(program).run(
         optimize_shared_memory, requested_clusters);

@@ -79,15 +79,15 @@ Approved message semantics are:
 - Messages already queued for a domain are not processed reentrantly during the current handler.
 - Messages from one sender to one receiving domain preserve FIFO order.
 - Message payloads have value semantics. A receiver cannot use a payload to mutate the sender's local value.
-- A nontrivial value already owned by a domain or by `main` cannot be transferred to another domain. This includes state, handler parameters, locals, and nontrivial fields reached through them:
+- A message, await request, or reply is an explicit value-copy boundary. Nontrivial state, locals, parameters, and projections may cross it, and the sender retains its independent value:
 
 ```moss
 let payload = buildPayload()
-message worker.Process(payload) # compile-time error: payload cannot cross a domain boundary
+message worker.Process(payload) # `worker` receives an independent payload value
 ```
 
-- A value constructed directly as a message or reply payload is owned by that message and may cross the boundary. Primitive field projections can be used to construct a purpose-specific snapshot.
-- Domain state and aliases into domain state cannot be transferred by message or reply. A nontrivial value that must exist independently on both sides requires the future explicit `deepCopy()` operation.
+- This boundary copy is part of the semantics of `message`, `await`, and `reply`; it is not a hidden copy inserted for an ordinary local expression. The compiler warns when a payload has a statically known size above 1024 bytes. Dynamically sized payloads have no fixed estimate in this initial implementation.
+- A value constructed directly as a message or reply payload follows the same value semantics. Primitive field projections remain useful for purpose-specific, smaller snapshots.
 - Primitive values and domain references remain usable by the sender after a message send. A domain reference is a capability, not the domain's mutable state.
 - For ownership checks, `int`, `float`, and `bool` are copy primitives; `option[T]` is copyable only when `T` is. Dynamically stored `string`, `seq`, `table`, and value-object data are non-primitive. Domain references follow the separate capability rule.
 
@@ -97,7 +97,7 @@ message worker.Process(payload) # compile-time error: payload cannot cross a dom
 message self.Continue(item)
 ```
 
-The current handler completes before `Continue` can be dequeued. Because a self-message does not cross a domain boundary, it may transfer an owned local within the same domain. Top-level `fn` declarations and calls are now available for ordinary local computation; the future `proc` parameter model (including read-only and `var` parameters) remains deferred, and a self-message must not be used as a synchronous procedure substitute.
+The current handler completes before `Continue` can be dequeued. A self-message also creates its explicit payload value, so sender and receiver do not share a mutable object. Top-level `fn` declarations and calls are now available for ordinary local computation; the future `proc` parameter model (including read-only and `var` parameters) remains deferred, and a self-message must not be used as a synchronous procedure substitute.
 
 ### Request/reply handlers
 
@@ -162,7 +162,7 @@ This section describes the current v0.2 backend. It is not a source-language con
 - An unclustered queued domain owns one worker thread. Its reference writes to the lock-backed mailbox, and its worker drains the shared queue serially.
 - With `-Oshared-memory` (or `-O`), a backend-only whole-program pass may eliminate awaited request/reply transport for a domain when all of its handlers reply, every call to it is awaited, and its state and message types satisfy the supported `Send` analysis.
 - An eligible domain lowers to `Arc<Mutex<DomainState>>`. The awaiting caller locks that state, executes the handler to completion on its physical thread, and receives the result directly. Generated Rust assertions retain the `Send` boundary.
-- Domains with any asynchronous call retain the lock-backed queue-and-thread lowering. The optimization does not expose domain state, change any Moss call from asynchronous to synchronous, relax payload restrictions, alter FIFO guarantees, or make handlers reentrant.
+- Domains with any asynchronous call retain the lock-backed queue-and-thread lowering. The optimization does not expose domain state, change any Moss call from asynchronous to synchronous, alter explicit payload-copy semantics, alter FIFO guarantees, or make handlers reentrant.
 - Each unpromoted handler lowers to a message-enum variant and a `DomainRef` send method. A promoted reply handler lowers to a lock-taking `DomainRef` method returning `Option<ReplyType>`, where `None` preserves the existing missing-reply failure.
 - `--cluster=A,B` is a backend configuration, not Moss syntax. Each configured domain type must have exactly one unconditional spawn in `main`. The generated `spawn_moss_cluster_N` runtime call constructs one worker and one shared ingress mailbox for all members.
 - Calls from outside a cluster use generated `_shared` methods and the lock-backed ingress mailbox. Calls between members are statically emitted as `_local` calls; there is no runtime cluster test. Cluster-member capabilities use zero-sized local reference types and convert to shared references only when they leave the cluster. Awaited local messages call the target handler directly. One-way local messages use a plain single-threaded `VecDeque` and are invoked after the current handler, preserving non-reentrancy.
@@ -170,14 +170,14 @@ This section describes the current v0.2 backend. It is not a source-language con
 - A cluster configuration with a statically visible await cycle among its members is rejected; direct same-thread execution cannot represent the original blocked cycle without re-entering an active domain.
 - Cluster state and the local queue use `RefCell` because only the cluster worker accesses them. Member-to-member dispatch contains no mutex, condition variable, atomic, or thread-safe channel operation; a handler that communicates outside its cluster still uses the shared path for that outbound call.
 - The generated tracker counts enqueued messages so `main` can wait for quiescence.
-- Existing owned nontrivial bindings are rejected at a cross-domain send or reply. Fresh message construction does not trigger a hidden copy of a domain-owned value.
+- Every non-copy payload is cloned at a `message`, `await`, or `reply` boundary, including an existing binding or a projection. This is the explicit Moss value-copy boundary, not a hidden local copy.
 - Domain-reference arguments are cloned as backend handles so the sender retains its capability; this is not immutable shared-value source semantics.
 - A cross-thread await creates a one-shot lock-backed shared-memory cell, sends its handle with the request, and blocks on its condition variable. Blocking an OS thread is the current implementation of logical non-reentrancy, not a requirement for future runtimes.
 - An ignored reply creates the same one-shot cell and immediately drops its receiver.
 - `reply value` sends through the one-shot sender and exits the generated handler block. The domain tracker is completed once after the handler block.
 - By default, generated await sites use a lazy `unwrap_or_else` failure path that reports a missing reply. `--no-await-error-handling` is an explicit backend opt-in that replaces those checks with unchecked extraction for a future supervision-tree runtime; it is unsafe if a reply is absent or its channel closes.
 
-The current compiler enforces direct-assignment transfer, direct and nested owned payload boundaries, and state/reply restrictions with a lightweight ownership pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
+The current compiler enforces direct-assignment transfer and explicit communication-boundary copying with a lightweight ownership/effect pass. It does not yet implement `deepCopy()` or complete ownership dataflow.
 
 ## Explicit deep copy
 
@@ -187,7 +187,7 @@ The current compiler enforces direct-assignment transfer, direct and nested owne
 let duplicate = original.deepCopy()
 ```
 
-It is not implemented in v0.2. The compiler must not silently insert it. A future implementation should classify copies containing strings, sequences, tables, or transitively dynamic objects as potentially unbounded and warn accordingly.
+It is not implemented in v0.2. The compiler must not silently insert it for ordinary local code; message, await, and reply remain the explicit value-copy operations. A future implementation should classify copies containing strings, sequences, tables, or transitively dynamic objects as potentially unbounded and warn accordingly.
 
 ### Ordinary intra-domain procedures
 
