@@ -1,0 +1,7 @@
+fn wrong_accumulator(accumulator: Int, value: Int) -> Bool:
+  return value > accumulator
+
+proc main():
+  values = [1, 2, 3]
+  invalid = values |> reduce(0, wrong_accumulator)
+  echo invalid

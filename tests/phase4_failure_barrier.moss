@@ -1,0 +1,5 @@
+proc main():
+  values = [2, 4]
+  divisor = 2
+  total = values |> map(_ / divisor) |> map(_ + 1) |> sum
+  echo total

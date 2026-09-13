@@ -6,18 +6,25 @@
 #include <unordered_map>
 #include <vector>
 #include "constraints.hpp"
+#include "functional_ir.hpp"
 
 namespace moss {
 
 using std::string;
 using std::vector;
 
-struct Line { int no = 0; int indent = 0; string text; };
+struct Line {
+  int no = 0;
+  int indent = 0;
+  string text;
+  vector<int> continuation_lines;
+};
 struct Field { string name, type, init, header; int line = 0; };
 struct Param { string name, type; };
 struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
+  vector<int> continuation_lines;
   bool is_mutable = false; bool declaration = true; string semantic_type;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
@@ -30,10 +37,12 @@ struct Method {
   std::optional<string> return_type;
   vector<Stmt> body;
   std::optional<string> result_expression;
+  vector<int> result_continuation_lines;
   // Inferred receiver/parameter effects used by ownership checking and Rust
   // lowering.  They are never written in Moss source.
   Effect receiver_effect = Effect::Read;
   vector<Effect> parameter_effects;
+  ObservableEffects observable_effects;
   int line = 0;
 };
 struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
@@ -49,14 +58,26 @@ struct FunctionSpecialization {
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
+  vector<int> result_continuation_lines;
   bool generic = false; bool static_dispatch = false;
   std::unordered_map<string,string> generic_results; int line = 0;
   vector<Constraint> constraints;
   vector<FunctionSpecialization> specializations;
+  // Concrete callable specializations referenced by functional code.  This is
+  // retained as semantic dependency information for later incremental work.
+  vector<string> callable_dependencies;
+  ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
-struct Program { vector<Function> functions; vector<Trait> traits; vector<ObjectType> objects; vector<Domain> domains; std::optional<MainProc> main; };
+struct Program {
+  vector<Function> functions;
+  vector<Trait> traits;
+  vector<ObjectType> objects;
+  vector<Domain> domains;
+  std::optional<MainProc> main;
+  vector<FunctionalPipeline> functional_pipelines;
+};
 
 } // namespace moss

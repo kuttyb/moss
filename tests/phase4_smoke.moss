@@ -1,0 +1,12 @@
+fn twice(x: Int) -> Int:
+  return x * 2
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+proc main():
+  values = [-2, 3, 5]
+  mapped = values |> map(twice)
+  total = values |> map(twice) |> filter(_ > 0) |> map(_ + 10) |> sum
+  reduced = values |> reduce(0, add)
+  echo mapped[1], total, reduced

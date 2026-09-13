@@ -1,0 +1,10 @@
+type Token:
+  value: Int
+
+fn take(token: Token) -> Token:
+  return token
+
+proc main():
+  values = [Token(value = 1), Token(value = 2)]
+  invalid = values |> map(take)
+  echo invalid[0].value

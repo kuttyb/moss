@@ -1,0 +1,14 @@
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+fn score(value: Int) -> Int:
+  return value + 10
+
+proc main():
+  values = [-2, 3, 5]
+  total = values
+    |> map(normalize)
+    |> filter(_ > 0)
+    |> map(score)
+    |> sum
+  echo total

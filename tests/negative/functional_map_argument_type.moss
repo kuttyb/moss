@@ -1,0 +1,7 @@
+fn text_length(value: String) -> Int:
+  return 1
+
+proc main():
+  values = [1, 2, 3]
+  invalid = values |> map(text_length)
+  echo invalid[0]

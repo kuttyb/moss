@@ -1,0 +1,7 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [1, 2, 3]
+  mapped = values |> map(double) |> map(_ + 1)
+  echo mapped[0], mapped[2]

@@ -1,0 +1,6 @@
+fn recurse(value: Int) -> Int:
+  values = [value]
+  return values |> map(recurse) |> sum
+
+proc main():
+  echo recurse(1)

@@ -1,0 +1,5 @@
+proc main():
+  values = [1, 2, 3]
+  candidate = 42
+  invalid = values |> map(candidate)
+  echo invalid[0]

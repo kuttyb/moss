@@ -1,55 +1,20 @@
-# Today these are ordinary Moss functions and concrete methods. The pipeline is
-# deliberately written in the collection/dataflow shape that future loop-fusion
-# work can optimize without changing its source meaning.
-type Values:
-  first: Int
-  second: Int
-  third: Int
-  fourth: Int
+# Moss keeps this high-level dataflow structure in typed functional IR. -O0
+# executes eager stages in source order; -O proves these callbacks pure and
+# emits one straightforward loop with no intermediate vectors.
+fn normalize(value: Int) -> Int:
+  return value * 2
 
-  fn map(factor: Int):
-    return ScaledValues(first = first * factor, second = second * factor, third = third * factor, fourth = fourth * factor)
+fn score(value: Int) -> Int:
+  return value * 3
 
-type ScaledValues:
-  first: Int
-  second: Int
-  third: Int
-  fourth: Int
-
-  fn filter(minimum: Int):
-    selected = FilteredValues(first = first, second = second, third = third, fourth = fourth)
-    if selected.first < minimum:
-      selected.first = 0
-    if selected.second < minimum:
-      selected.second = 0
-    if selected.third < minimum:
-      selected.third = 0
-    if selected.fourth < minimum:
-      selected.fourth = 0
-    return selected
-
-type FilteredValues:
-  first: Int
-  second: Int
-  third: Int
-  fourth: Int
-
-  fn map(factor: Int):
-    return [first * factor, second * factor, third * factor, fourth * factor]
-
-fn map(values, factor):
-  return values.map(factor)
-
-fn filter(values, minimum):
-  return values.filter(minimum)
-
-fn main():
-  values = Values(first = 1, second = 2, third = 3, fourth = 4)
-
-  total = values
-    |> map(2)
-    |> filter(5)
-    |> map(3)
+fn evaluate(values: Vector) -> Int:
+  return values
+    |> map(normalize)
+    |> filter(_ > 4)
+    |> map(score)
     |> sum
 
+proc main():
+  values = [1, 2, 3, 4]
+  total = evaluate(values)
   echo "pipeline total:", total

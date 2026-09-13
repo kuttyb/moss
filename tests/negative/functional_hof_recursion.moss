@@ -1,0 +1,10 @@
+fn apply(values, callable):
+  return values |> map(callable)
+
+fn recurse(value: Int) -> Int:
+  values = [value]
+  transformed = apply(values, recurse)
+  return transformed[0]
+
+proc main():
+  echo recurse(1)

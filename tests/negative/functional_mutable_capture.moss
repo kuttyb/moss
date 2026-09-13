@@ -1,0 +1,5 @@
+proc main():
+  values = [1, 2, 3]
+  captured = [0]
+  invalid = values |> map(captured.push(_))
+  echo invalid[0]

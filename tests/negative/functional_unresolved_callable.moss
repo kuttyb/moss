@@ -1,0 +1,4 @@
+proc main():
+  values = [1, 2, 3]
+  invalid = values |> map(not_declared)
+  echo invalid[0]

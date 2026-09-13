@@ -1,0 +1,10 @@
+type Point:
+  value: Int
+
+  fn score() -> Int:
+    return value * 2
+
+proc main():
+  points = [Point(value = 2), Point(value = 4)]
+  total = points |> map(_.score()) |> sum
+  echo total

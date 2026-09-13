@@ -1,0 +1,14 @@
+domain Sink:
+  fn Total(values: Vector) -> Int:
+    total = values |> sum
+    reply total
+
+fn double(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  sink = spawn Sink()
+  source = [1, 2, 3]
+  materialized = source |> map(double)
+  total = await sink.Total(materialized)
+  echo total

@@ -1,0 +1,7 @@
+fn apply(values, callable):
+  return values |> map(callable)
+
+proc main():
+  values = [1, 2, 3]
+  invalid = apply(values, 42)
+  echo invalid[0]

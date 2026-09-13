@@ -1,0 +1,40 @@
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+fn transform(values, callable):
+  return values |> map(callable)
+
+proc main():
+  values = [-2, 0, 3, 5]
+
+  named = values |> map(double)
+  placeholder = values |> map(_ + 1)
+  filtered = values |> filter(_ > 0)
+  map_map = values |> map(double) |> map(_ + 1)
+  map_filter_map = values |> map(double) |> filter(_ > 0) |> map(_ + 10)
+  map_sum = values |> map(double) |> sum
+  fused_sum = values |> map(double) |> filter(_ > 0) |> map(_ + 10) |> sum
+  reduced = values |> reduce(0, add)
+  counted = values |> filter(_ > 0) |> count
+  has_large = values |> any(_ > 4)
+  all_bounded = values |> all(_ > -3)
+
+  scale = 10
+  captured = values |> map(_ * scale) |> sum
+  specialized = transform(values, double)
+
+  empty_count = values |> filter(_ > 100) |> count
+  empty_sum = values |> filter(_ > 100) |> sum
+  empty_any = values |> filter(_ > 100) |> any(_ > 0)
+  empty_all = values |> filter(_ > 100) |> all(_ > 0)
+  empty_reduce = values |> filter(_ > 100) |> reduce(7, add)
+  wrapped = [9223372036854775807, 1] |> sum
+
+  echo named[2], placeholder[0], filtered[1], map_map[3], map_filter_map[0]
+  echo map_sum, fused_sum, reduced, counted, has_large, all_bounded
+  echo captured, specialized[3], values[0]
+  echo empty_count, empty_sum, empty_any, empty_all, empty_reduce
+  echo wrapped

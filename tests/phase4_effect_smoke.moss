@@ -1,0 +1,12 @@
+fn first(x: Int) -> Int:
+  echo "first", x
+  return x
+
+fn second(x: Int) -> Int:
+  echo "second", x
+  return x
+
+proc main():
+  values = [1, 2, 3]
+  total = values |> map(first) |> map(second) |> sum
+  echo "total", total

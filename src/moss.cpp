@@ -215,7 +215,7 @@ static bool parse_named_argument(const string& text, string& name, string& value
   return plain_identifier(name) && !value.empty();
 }
 
-static string normalize_pipeline(string expression) {
+static vector<string> split_pipeline_stages(string expression) {
   expression = trim(std::move(expression));
   vector<string> stages;
   int par = 0, br = 0, sq = 0;
@@ -242,8 +242,62 @@ static string normalize_pipeline(string expression) {
       ++i;
     }
   }
-  if (stages.empty()) return expression;
+  if (stages.empty()) return {};
   stages.push_back(trim(expression.substr(start)));
+  return stages;
+}
+
+struct ParsedFunctionalStage {
+  FunctionalNodeKind kind = FunctionalNodeKind::Source;
+  string raw;
+  vector<string> arguments;
+};
+
+struct ParsedFunctionalPipeline {
+  string source;
+  vector<ParsedFunctionalStage> stages;
+};
+
+static std::optional<FunctionalNodeKind> functional_stage_kind(const string& name) {
+  if (name == "map") return FunctionalNodeKind::Map;
+  if (name == "filter") return FunctionalNodeKind::Filter;
+  if (name == "reduce") return FunctionalNodeKind::Reduce;
+  if (name == "sum") return FunctionalNodeKind::Sum;
+  if (name == "count") return FunctionalNodeKind::Count;
+  if (name == "any") return FunctionalNodeKind::Any;
+  if (name == "all") return FunctionalNodeKind::All;
+  return std::nullopt;
+}
+
+// This recognizes the functional source surface but deliberately does not
+// decide whether the source is a collection.  The typed checker makes that
+// decision so legacy/general scalar pipelines keep their existing meaning.
+static std::optional<ParsedFunctionalPipeline> parse_functional_pipeline(
+    const string& expression) {
+  auto parts = split_pipeline_stages(expression);
+  if (parts.size() < 2) return std::nullopt;
+  ParsedFunctionalPipeline pipeline;
+  pipeline.source = parts.front();
+  for (size_t index = 1; index < parts.size(); ++index) {
+    string callee;
+    vector<string> arguments;
+    bool call = parse_simple_call(parts[index], callee, arguments);
+    if (!call) callee = trim(parts[index]);
+    auto kind = functional_stage_kind(callee);
+    if (!kind) return std::nullopt;
+    ParsedFunctionalStage stage;
+    stage.kind = *kind;
+    stage.raw = parts[index];
+    if (call) stage.arguments = std::move(arguments);
+    pipeline.stages.push_back(std::move(stage));
+  }
+  return pipeline;
+}
+
+static string normalize_pipeline(string expression) {
+  expression = trim(std::move(expression));
+  auto stages = split_pipeline_stages(expression);
+  if (stages.empty()) return expression;
   string value = stages.front();
   for (size_t i = 1; i < stages.size(); ++i) {
     string stage = stages[i];
@@ -308,6 +362,7 @@ class Parser {
             statement.line = function.result_line;
             statement.indent = 0;
             statement.text = *function.result_expression;
+            statement.continuation_lines = function.result_continuation_lines;
             if (parse_message_call(statement.text, statement.a, statement.b, statement.args))
               statement.kind = Stmt::Kind::Call;
             else {
@@ -424,6 +479,7 @@ class Parser {
         m.body = parse_stmt_block(L.indent + indent_unit_);
         if (!m.body.empty() && (m.body.back().kind == Stmt::Kind::Raw || m.body.back().kind == Stmt::Kind::Call)) {
           m.result_expression = m.body.back().text;
+          m.result_continuation_lines = m.body.back().continuation_lines;
           m.body.pop_back();
         }
         o.methods.push_back(std::move(m));
@@ -603,6 +659,7 @@ class Parser {
         (f.body.back().kind == Stmt::Kind::Raw || f.body.back().kind == Stmt::Kind::Call)) {
       f.result_expression = f.body.back().text;
       f.result_line = f.body.back().line;
+      f.result_continuation_lines = f.body.back().continuation_lines;
       f.body.pop_back();
     }
     if (f.body.empty() && !f.result_expression)
@@ -640,6 +697,7 @@ class Parser {
     s.line = L.no;
     s.indent = (L.indent - base_indent) / indent_unit_;
     s.text = L.text;
+    s.continuation_lines = L.continuation_lines;
 
     static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
     for (const auto& k : forbidden) if (starts_with(L.text, k)) fail(L, "'" + trim(k) + "' is not part of Moss's concurrency model");
@@ -778,9 +836,10 @@ static vector<Line> lex_lines(std::istream& in) {
     string text = trim(raw.substr(indent));
     if (starts_with(text, "|>") && !out.empty()) {
       out.back().text += " " + text;
+      out.back().continuation_lines.push_back(no);
       continue;
     }
-    out.push_back(Line{no, indent, std::move(text)});
+    out.push_back(Line{no, indent, std::move(text), {}});
   }
   return out;
 }
@@ -875,6 +934,7 @@ class Checker {
     check_objects();
     check_local_call_cycles();
     infer_effects();
+    infer_observable_effects();
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
@@ -882,6 +942,7 @@ class Checker {
     // Await boundedness is an ordinary well-formedness rule checked for every
     // executable body above. Graph construction below only records domain edges.
     check_global_await_cycles();
+    build_functional_ir();
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -1012,7 +1073,68 @@ class Checker {
 
   void derive_expression_constraints(Function& function, const string& expression,
                                      const string& expected_result = "") {
-    string e = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (auto pipeline = parse_functional_pipeline(original)) {
+      for (const auto& parameter : function.params) {
+        if (trim(pipeline->source) == parameter.name &&
+            (parameter.type.empty() || parameter.type == "vector")) {
+          if (!has_structural_requirement(function, parameter.name,
+                                          ConstraintKind::Iterable,
+                                          "functional source"))
+            function.constraints.push_back({ConstraintKind::Iterable,
+                                            parameter.name,
+                                            "functional source", ""});
+          function.generic = true;
+          function.static_dispatch = true;
+        }
+      }
+      derive_expression_constraints(function, pipeline->source);
+      for (const auto& stage : pipeline->stages) {
+        if (stage.kind == FunctionalNodeKind::Map ||
+            stage.kind == FunctionalNodeKind::Filter ||
+            stage.kind == FunctionalNodeKind::Any ||
+            stage.kind == FunctionalNodeKind::All) {
+          if (!stage.arguments.empty()) {
+            string callable = trim(stage.arguments.front());
+            for (const auto& parameter : function.params)
+              if (callable == parameter.name && parameter.type.empty()) {
+                if (!has_structural_requirement(function, parameter.name,
+                                                ConstraintKind::Callable,
+                                                "functional callable"))
+                  function.constraints.push_back({ConstraintKind::Callable,
+                                                  parameter.name,
+                                                  "functional callable", ""});
+                function.generic = true;
+                function.static_dispatch = true;
+              }
+            derive_expression_constraints(function, callable);
+          }
+        } else if (stage.kind == FunctionalNodeKind::Reduce) {
+          if (!stage.arguments.empty())
+            derive_expression_constraints(function, stage.arguments.front());
+          if (stage.arguments.size() == 2) {
+            string callable = trim(stage.arguments[1]);
+            for (const auto& parameter : function.params)
+              if (callable == parameter.name && parameter.type.empty()) {
+                if (!has_structural_requirement(function, parameter.name,
+                                                ConstraintKind::Callable,
+                                                "functional callable"))
+                  function.constraints.push_back({ConstraintKind::Callable,
+                                                  parameter.name,
+                                                  "functional callable", ""});
+                function.generic = true;
+                function.static_dispatch = true;
+              }
+            derive_expression_constraints(function, callable);
+          }
+        }
+      }
+      if (expected_result == "$function_result" &&
+          (!function.return_type || starts_with(*function.return_type, "_")))
+        function.return_type = "_functional_result:" + function.name;
+      return;
+    }
+    string e = normalize_pipeline(std::move(original));
     if (e.empty()) return;
     string receiver, method;
     vector<string> member_args;
@@ -1351,6 +1473,10 @@ class Checker {
       err(line, "message " + dit->second->name + "." + message + " expects " +
           std::to_string(h->params.size()) + " arguments, got " + std::to_string(args.size()));
     for (size_t index = 0; index < args.size(); ++index) {
+      if (args[index].find("|>") != string::npos)
+        err(line,
+            "functional pipeline must be materialized in a local binding "
+            "before crossing a domain boundary");
       auto actual = inferred_expr_type(args[index], env);
       if (actual && !same_type(h->params[index].type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to message " +
@@ -1378,6 +1504,152 @@ class Checker {
     }
     if (digit && dot) return "float";
     return std::nullopt;
+  }
+
+  static bool unresolved_semantic_type(const string& type) {
+    return type.empty() || starts_with(type, "_") || type == "vector" ||
+        type == "queue" || type == "map";
+  }
+
+  static std::optional<string> functional_element_type(const string& type,
+                                                        const string& source) {
+    string value = canonical_type_name(type);
+    if (starts_with(value, "vector[") && ends_with(value, "]"))
+      return trim(value.substr(7, value.size() - 8));
+    if (starts_with(value, "seq[") && ends_with(value, "]"))
+      return trim(value.substr(4, value.size() - 5));
+    if (value == "vector" || starts_with(value, "_generic:"))
+      return "_functional_element:" + trim(source);
+    return std::nullopt;
+  }
+
+  std::optional<string> functional_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const TypeEnv& env) const {
+    string value = trim(callable);
+    if (value.empty()) return std::nullopt;
+
+    // `_` is an expression-local placeholder.  It never becomes a runtime
+    // callable object; ordinary expression inference runs with a concrete
+    // synthetic binding for the current element.
+    if (expression_uses(value, "_")) {
+      if (input_types.size() != 1) return std::nullopt;
+      TypeEnv placeholder_env = env;
+      placeholder_env["_"] = input_types.front();
+      return inferred_expr_type(value, placeholder_env);
+    }
+
+    auto local = env.find(value);
+    if (local != env.end() && starts_with(local->second, "callable:"))
+      value = local->second.substr(9);
+    else if (local != env.end() && starts_with(local->second, "_generic:"))
+      return "_functional_callable_result:" + value;
+    auto function = functions_.find(value);
+    if (function == functions_.end() ||
+        function->second->params.size() != input_types.size())
+      return std::nullopt;
+    for (size_t index = 0; index < input_types.size(); ++index) {
+      const string& expected = function->second->params[index].type;
+      if (!expected.empty() && !traits_.count(expected) &&
+          !unresolved_semantic_type(input_types[index]) &&
+          !same_type(expected, input_types[index]))
+        return std::nullopt;
+    }
+    if (!function->second->return_type) return std::nullopt;
+    string result = canonical_type_name(*function->second->return_type);
+    if (starts_with(result, "_") || traits_.count(result))
+      return specialized_function_return_type(*function->second, input_types);
+    return result;
+  }
+
+  std::optional<string> inferred_functional_pipeline_type(
+      const string& expression, const TypeEnv& env) const {
+    auto parsed = parse_functional_pipeline(expression);
+    if (!parsed) return std::nullopt;
+    auto source_type = inferred_expr_type(parsed->source, env);
+    if (!source_type) return std::nullopt;
+    auto element = functional_element_type(*source_type, parsed->source);
+    if (!element) return std::nullopt;
+
+    string current_element = *element;
+    string output = starts_with(*source_type, "vector[")
+        ? *source_type : "_functional_collection:" + current_element;
+    bool terminal = false;
+    for (const auto& stage : parsed->stages) {
+      if (terminal) return std::nullopt;
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          if (stage.arguments.size() != 1) return std::nullopt;
+          auto result = functional_callable_result(stage.arguments.front(),
+                                                   {current_element}, env);
+          if (!result) return std::nullopt;
+          current_element = canonical_type_name(*result);
+          output = unresolved_semantic_type(current_element)
+              ? "_functional_collection:" + current_element
+              : "vector[" + current_element + "]";
+          break;
+        }
+        case FunctionalNodeKind::Filter: {
+          if (stage.arguments.size() != 1) return std::nullopt;
+          auto result = functional_callable_result(stage.arguments.front(),
+                                                   {current_element}, env);
+          if (!result || (!unresolved_semantic_type(*result) &&
+                          canonical_type_name(*result) != "bool"))
+            return std::nullopt;
+          output = unresolved_semantic_type(current_element)
+              ? "_functional_collection:" + current_element
+              : "vector[" + current_element + "]";
+          break;
+        }
+        case FunctionalNodeKind::Reduce: {
+          if (stage.arguments.size() != 2) return std::nullopt;
+          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+          if (!accumulator) return std::nullopt;
+          auto result = functional_callable_result(stage.arguments[1],
+                                                   {*accumulator, current_element}, env);
+          if (!result || (!unresolved_semantic_type(*result) &&
+                          !unresolved_semantic_type(*accumulator) &&
+                          !same_type(*result, *accumulator)))
+            return std::nullopt;
+          output = canonical_type_name(*accumulator);
+          terminal = true;
+          break;
+        }
+        case FunctionalNodeKind::Sum:
+          if (!stage.arguments.empty() ||
+              (!unresolved_semantic_type(current_element) &&
+               !numeric_type(current_element)))
+            return std::nullopt;
+          output = current_element;
+          terminal = true;
+          break;
+        case FunctionalNodeKind::Count:
+          if (!stage.arguments.empty()) return std::nullopt;
+          output = "int";
+          terminal = true;
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All: {
+          if (stage.arguments.size() > 1) return std::nullopt;
+          string predicate_type = current_element;
+          if (!stage.arguments.empty()) {
+            auto result = functional_callable_result(stage.arguments.front(),
+                                                     {current_element}, env);
+            if (!result) return std::nullopt;
+            predicate_type = *result;
+          }
+          if (!unresolved_semantic_type(predicate_type) &&
+              canonical_type_name(predicate_type) != "bool")
+            return std::nullopt;
+          output = "bool";
+          terminal = true;
+          break;
+        }
+        case FunctionalNodeKind::Source:
+          return std::nullopt;
+      }
+    }
+    return output;
   }
 
   struct MoveInfo {
@@ -1471,7 +1743,10 @@ class Checker {
 
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
-    string e = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (auto functional = inferred_functional_pipeline_type(original, env))
+      return functional;
+    string e = normalize_pipeline(std::move(original));
     while (e.size() >= 2 && e.front() == '(' && e.back() == ')') {
       int depth = 0;
       bool wraps = true;
@@ -1483,6 +1758,8 @@ class Checker {
       e = trim(e.substr(1, e.size() - 2));
     }
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
+    if (plain_identifier(e) && functions_.count(e))
+      return "callable:" + e;
     if (e == "Map()") return string("map");
     if (e == "Queue()") return string("queue");
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
@@ -1532,6 +1809,21 @@ class Checker {
       }
       if (function != functions_.end() && function->second->return_type) {
         string r = canonical_type_name(*function->second->return_type);
+        if (function->second->static_dispatch) {
+          vector<string> actual_types;
+          for (const auto& arg : args)
+            actual_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          bool concrete = actual_types.size() == function->second->params.size() &&
+              std::all_of(actual_types.begin(), actual_types.end(),
+                          [](const string& type) {
+                            return !type.empty() && !starts_with(type, "_");
+                          });
+          if (concrete) {
+            auto specialized = specialized_function_return_type(
+                *function->second, actual_types);
+            if (specialized) return specialized;
+          }
+        }
         if (starts_with(r, "_method_result:")) {
           vector<string> actual_types;
           for (const auto& arg : args)
@@ -2005,10 +2297,19 @@ class Checker {
               if (handler) {
                 for (size_t index = 0;
                      index < statement.args.size() && index < handler->params.size(); ++index) {
+                  if (statement.args[index].find("|>") != string::npos)
+                    err(statement.line,
+                        "functional pipeline must be materialized in a local binding "
+                        "before crossing a domain boundary");
                   auto actual = inferred_expr_type(statement.args[index], current_env);
                   if (!actual) continue;
                   auto& parameter = handler->params[index];
-                  if (parameter.type.empty()) parameter.type = *actual;
+                  bool inferred_container =
+                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
+                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
+                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  if (parameter.type.empty() || inferred_container)
+                    parameter.type = *actual;
                   else if (!same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
                         " to message " + receiver->second + "." + handler_name +
@@ -2866,7 +3167,56 @@ class Checker {
       const ObjectType* implicit_owner,
       vector<LocalCallSite>& calls) const {
     (void)line;
-    string value = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (auto pipeline = parse_functional_pipeline(original)) {
+      collect_local_call_sites(line, pipeline->source, env, implicit_owner, calls);
+      auto source_type = inferred_expr_type(pipeline->source, env);
+      string element = source_type
+          ? functional_element_type(*source_type, pipeline->source).value_or("")
+          : "";
+      for (const auto& stage : pipeline->stages) {
+        if (stage.kind == FunctionalNodeKind::Reduce &&
+            !stage.arguments.empty())
+          collect_local_call_sites(line, stage.arguments.front(), env,
+                                   implicit_owner, calls);
+        string callable;
+        vector<string> argument_types;
+        if ((stage.kind == FunctionalNodeKind::Map ||
+             stage.kind == FunctionalNodeKind::Filter ||
+             stage.kind == FunctionalNodeKind::Any ||
+             stage.kind == FunctionalNodeKind::All) &&
+            !stage.arguments.empty()) {
+          callable = stage.arguments.front();
+          argument_types = {element};
+        } else if (stage.kind == FunctionalNodeKind::Reduce &&
+                   stage.arguments.size() == 2) {
+          callable = stage.arguments[1];
+          argument_types = {
+              inferred_expr_type(stage.arguments.front(), env).value_or(""),
+              element};
+        }
+        if (callable.empty()) continue;
+        if (expression_uses(callable, "_")) {
+          TypeEnv placeholder_env = env;
+          placeholder_env["_"] = element;
+          collect_local_call_sites(line, callable, placeholder_env,
+                                   implicit_owner, calls);
+        } else {
+          string identity = trim(callable);
+          auto local = env.find(identity);
+          if (local != env.end() && starts_with(local->second, "callable:"))
+            identity = local->second.substr(9);
+          if (functions_.count(identity))
+            calls.push_back(LocalCallSite{"fn:" + identity, {}, argument_types});
+        }
+        if (stage.kind == FunctionalNodeKind::Map) {
+          auto result = functional_callable_result(callable, {element}, env);
+          if (result) element = *result;
+        }
+      }
+      return;
+    }
+    string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
     while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
            matching_paren(value, 0) == value.size() - 1)
@@ -2916,6 +3266,18 @@ class Checker {
       if (function != functions_.end()) {
         calls.push_back(LocalCallSite{"fn:" + callee, call_arguments,
                                       argument_types});
+        for (size_t index = 0;
+             index < call_arguments.size() && index < function->second->params.size();
+             ++index) {
+          if (!has_structural_requirement(*function->second,
+                                          function->second->params[index].name,
+                                          ConstraintKind::Callable,
+                                          "functional callable"))
+            continue;
+          string identity = trim(call_arguments[index]);
+          if (functions_.count(identity))
+            calls.push_back(LocalCallSite{"fn:" + identity, {}, {}});
+        }
       } else if (implicit_owner && !objects_.count(callee)) {
         if (const Method* method = resolve_method(implicit_owner->name, callee,
                                                   argument_types, true, nullptr))
@@ -3292,6 +3654,566 @@ class Checker {
     }
   }
 
+  static ObservableEffects no_observable_effects() {
+    ObservableEffects effects;
+    effects.unresolved = false;
+    return effects;
+  }
+
+  static bool same_observable_effects(const ObservableEffects& left,
+                                      const ObservableEffects& right) {
+    return left.local_capture_read == right.local_capture_read &&
+        left.local_mutation == right.local_mutation &&
+        left.domain_read == right.domain_read &&
+        left.domain_write == right.domain_write &&
+        left.message == right.message && left.await == right.await &&
+        left.external_io == right.external_io &&
+        left.may_fail == right.may_fail &&
+        left.unresolved == right.unresolved;
+  }
+
+  ObservableEffects observable_expression_effects(
+      const string& expression, const TypeEnv& env,
+      const std::set<string>& domain_fields = {},
+      const ObjectType* implicit_object = nullptr) const {
+    ObservableEffects effects = no_observable_effects();
+    string original = trim(expression);
+    if (original.empty()) return effects;
+
+    if (auto pipeline = parse_functional_pipeline(original)) {
+      effects.merge(observable_expression_effects(
+          pipeline->source, env, domain_fields, implicit_object));
+      auto source_type = inferred_expr_type(pipeline->source, env);
+      string element = source_type
+          ? functional_element_type(*source_type, pipeline->source).value_or("")
+          : "";
+      for (const auto& stage : pipeline->stages) {
+        if (stage.kind == FunctionalNodeKind::Reduce &&
+            !stage.arguments.empty())
+          effects.merge(observable_expression_effects(
+              stage.arguments.front(), env, domain_fields, implicit_object));
+        string callable;
+        if ((stage.kind == FunctionalNodeKind::Map ||
+             stage.kind == FunctionalNodeKind::Filter ||
+             stage.kind == FunctionalNodeKind::Any ||
+             stage.kind == FunctionalNodeKind::All) &&
+            !stage.arguments.empty())
+          callable = stage.arguments.front();
+        else if (stage.kind == FunctionalNodeKind::Reduce &&
+                 stage.arguments.size() == 2)
+          callable = stage.arguments[1];
+        if (callable.empty()) continue;
+        if (expression_uses(callable, "_")) {
+          TypeEnv placeholder_env = env;
+          placeholder_env["_"] = element;
+          effects.merge(observable_expression_effects(
+              callable, placeholder_env, domain_fields, implicit_object));
+        } else {
+          string identity = trim(callable);
+          auto local = env.find(identity);
+          if (local != env.end() && starts_with(local->second, "callable:"))
+            identity = local->second.substr(9);
+          auto function = functions_.find(identity);
+          if (function != functions_.end())
+            effects.merge(function->second->observable_effects);
+          else
+            effects.unresolved = true;
+        }
+        if (stage.kind == FunctionalNodeKind::Map) {
+          auto result = functional_callable_result(callable, {element}, env);
+          if (result) element = *result;
+        }
+      }
+      return effects;
+    }
+
+    string value = normalize_pipeline(original);
+    string index_base, index_expression;
+    if (parse_index(value, index_base, index_expression)) {
+      effects.may_fail = true;
+      effects.merge(observable_expression_effects(
+          index_base, env, domain_fields, implicit_object));
+      effects.merge(observable_expression_effects(
+          index_expression, env, domain_fields, implicit_object));
+      return effects;
+    }
+    string receiver, method;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, method, arguments)) {
+      effects.merge(observable_expression_effects(
+          receiver, env, domain_fields, implicit_object));
+      for (const auto& argument : arguments)
+        effects.merge(observable_expression_effects(
+            argument, env, domain_fields, implicit_object));
+      auto receiver_type = inferred_expr_type(receiver, env);
+      if (receiver_type) {
+        vector<string> argument_types;
+        for (const auto& argument : arguments)
+          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+        if (const Method* resolved = resolve_method(
+                canonical_type_name(*receiver_type), method, argument_types,
+                true, nullptr)) {
+          effects.merge(resolved->observable_effects);
+          return effects;
+        }
+        if (domains_.count(canonical_type_name(*receiver_type))) {
+          effects.domain_read = true;
+          return effects;
+        }
+      }
+      effects.unresolved = true;
+      return effects;
+    }
+    string callee;
+    vector<string> arguments_call;
+    if (parse_simple_call(value, callee, arguments_call)) {
+      for (const auto& argument : arguments_call) {
+        string field, field_value;
+        effects.merge(observable_expression_effects(
+            parse_named_argument(argument, field, field_value) ? field_value : argument,
+            env, domain_fields, implicit_object));
+      }
+      auto function = functions_.find(callee);
+      if (function != functions_.end()) {
+        effects.merge(function->second->observable_effects);
+        return effects;
+      }
+      if (implicit_object) {
+        vector<string> argument_types;
+        for (const auto& argument : arguments_call)
+          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+        if (const Method* resolved = resolve_method(
+                implicit_object->name, callee, argument_types, true, nullptr)) {
+          effects.merge(resolved->observable_effects);
+          return effects;
+        }
+      }
+      if (objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
+          callee == "Map" || callee == "Queue")
+        return effects;
+      effects.unresolved = true;
+      return effects;
+    }
+    for (const auto& operators :
+         vector<vector<string>>{{" or ", " and "},
+                                {"==", "!=", "<=", ">=", "<", ">"},
+                                {"+", "-"}, {"*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        effects.merge(observable_expression_effects(
+            binary->first, env, domain_fields, implicit_object));
+        effects.merge(observable_expression_effects(
+            binary->second, env, domain_fields, implicit_object));
+        if (operators.front() == "*") {
+          auto division = split_binary(value, {"/"});
+          if (division) effects.may_fail = true;
+        }
+        return effects;
+      }
+    }
+    for (const auto& field : domain_fields)
+      if (expression_uses(value, field)) effects.domain_read = true;
+    return effects;
+  }
+
+  ObservableEffects observable_body_effects(
+      const vector<Stmt>& body, TypeEnv env,
+      const std::set<string>& parameters,
+      const std::set<string>& domain_fields = {},
+      const ObjectType* implicit_object = nullptr) const {
+    ObservableEffects effects = no_observable_effects();
+    std::set<string> locals = parameters;
+    for (const auto& statement : body) {
+      if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
+      if (statement.kind == Stmt::Kind::Message) effects.message = true;
+      if (statement.kind == Stmt::Kind::AwaitMessage) effects.await = true;
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        string root = trim(statement.a);
+        auto dot = root.find('.');
+        auto bracket = root.find('[');
+        size_t end = std::min(dot == string::npos ? root.size() : dot,
+                              bracket == string::npos ? root.size() : bracket);
+        root = trim(root.substr(0, end));
+        if (domain_fields.count(root)) effects.domain_write = true;
+        else if (parameters.count(root) ||
+                 (implicit_object && (root == "self" ||
+                  std::any_of(implicit_object->fields.begin(),
+                              implicit_object->fields.end(),
+                              [&](const Field& field) {
+                                return field.name == root;
+                              }))))
+          effects.local_mutation = true;
+        locals.insert(statement.a);
+      }
+      for (const auto& expression_value : statement_expressions(statement))
+        effects.merge(observable_expression_effects(
+            expression_value, env, domain_fields, implicit_object));
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(statement.b, env))
+          env[statement.a] = *type;
+      }
+    }
+    return effects;
+  }
+
+  void infer_observable_effects() {
+    for (auto& function : p_.functions)
+      function.observable_effects = no_observable_effects();
+    for (auto& object : p_.objects)
+      for (auto& method : object.methods)
+        method.observable_effects = no_observable_effects();
+
+    size_t entities = p_.functions.size();
+    for (const auto& object : p_.objects) entities += object.methods.size();
+    for (size_t round = 0; round < entities * 3 + 3; ++round) {
+      bool changed = false;
+      for (auto& function : p_.functions) {
+        TypeEnv env;
+        std::set<string> parameters;
+        for (const auto& parameter : function.params) {
+          env[parameter.name] = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
+          parameters.insert(parameter.name);
+        }
+        auto inferred = observable_body_effects(
+            function.body, env, parameters);
+        if (function.result_expression)
+          inferred.merge(observable_expression_effects(
+              *function.result_expression, env));
+        if (!same_observable_effects(inferred, function.observable_effects)) {
+          function.observable_effects = inferred;
+          changed = true;
+        }
+      }
+      for (auto& object : p_.objects) {
+        for (auto& method : object.methods) {
+          TypeEnv env;
+          std::set<string> parameters;
+          env["self"] = object.name;
+          for (const auto& field : object.fields) env[field.name] = field.type;
+          for (const auto& parameter : method.params) {
+            env[parameter.name] = parameter.type;
+            parameters.insert(parameter.name);
+          }
+          auto inferred = observable_body_effects(
+              method.body, env, parameters, {}, &object);
+          if (method.result_expression)
+            inferred.merge(observable_expression_effects(
+                *method.result_expression, env, {}, &object));
+          if (!same_observable_effects(inferred, method.observable_effects)) {
+            method.observable_effects = inferred;
+            changed = true;
+          }
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
+  static vector<string> functional_captures(const string& expression,
+                                            const TypeEnv& env) {
+    std::set<string> captures;
+    bool in_string = false, escaped = false;
+    for (size_t index = 0; index < expression.size();) {
+      char ch = expression[index];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == '"') in_string = false;
+        ++index;
+        continue;
+      }
+      if (ch == '"') { in_string = true; ++index; continue; }
+      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      string name = expression.substr(index, end - index);
+      size_t before = index;
+      while (before > 0 &&
+             std::isspace(static_cast<unsigned char>(expression[before - 1])))
+        --before;
+      bool member_name = before > 0 && expression[before - 1] == '.';
+      if (name != "_" && !member_name && env.count(name)) captures.insert(name);
+      index = end;
+    }
+    return vector<string>(captures.begin(), captures.end());
+  }
+
+  static string observable_barrier(const ObservableEffects& effects) {
+    if (effects.domain_write) return "observable domain WRITE";
+    if (effects.domain_read) return "observable domain READ";
+    if (effects.message) return "message send";
+    if (effects.await) return "await";
+    if (effects.external_io) return "external/I/O effect";
+    if (effects.local_mutation) return "observable local mutation";
+    if (effects.may_fail) return "possible failure ordering";
+    if (effects.unresolved) return "unresolved effect";
+    return "none";
+  }
+
+  ObservableEffects functional_stage_effects(
+      const string& callable, const string& element_type,
+      const TypeEnv& env, string& identity,
+      vector<string>& captures,
+      const std::set<string>& domain_fields,
+      const ObjectType* implicit_object) const {
+    ObservableEffects effects = no_observable_effects();
+    identity = trim(callable);
+    if (expression_uses(identity, "_")) {
+      TypeEnv placeholder_env = env;
+      placeholder_env["_"] = element_type;
+      effects = observable_expression_effects(
+          identity, placeholder_env, domain_fields, implicit_object);
+      captures = functional_captures(identity, env);
+      effects.local_capture_read = !captures.empty();
+      identity = "placeholder:" + identity;
+      return effects;
+    }
+    auto local = env.find(identity);
+    if (local != env.end() && starts_with(local->second, "callable:"))
+      identity = local->second.substr(9);
+    auto function = functions_.find(identity);
+    if (function == functions_.end()) {
+      effects.unresolved = true;
+      return effects;
+    }
+    effects = function->second->observable_effects;
+    return effects;
+  }
+
+  void add_functional_pipeline_ir(
+      int line, const string& expression, const string& context,
+      const TypeEnv& env, Function* owning_function,
+      size_t& next_pipeline_id, size_t& next_node_id,
+      const std::set<string>& domain_fields = {},
+      const ObjectType* implicit_object = nullptr,
+      const vector<int>& continuation_lines = {}) {
+    auto parsed = parse_functional_pipeline(expression);
+    if (!parsed) return;
+    auto source_type = inferred_expr_type(parsed->source, env);
+    if (!source_type) return;
+    auto element = functional_element_type(*source_type, parsed->source);
+    if (!element || starts_with(*source_type, "_")) return;
+
+    FunctionalPipeline pipeline;
+    pipeline.id = next_pipeline_id++;
+    pipeline.line = line;
+    pipeline.context = context;
+    pipeline.expression = trim(expression);
+    pipeline.source_expression = parsed->source;
+    pipeline.source_type = canonical_type_name(*source_type);
+    pipeline.fusion_eligible = true;
+    pipeline.element_independent = true;
+    pipeline.deterministic = true;
+
+    FunctionalNode source;
+    source.id = next_node_id++;
+    source.kind = FunctionalNodeKind::Source;
+    source.span = {line, 0};
+    source.source_text = parsed->source;
+    source.input_type = pipeline.source_type;
+    source.output_type = pipeline.source_type;
+    source.effects = observable_expression_effects(
+        parsed->source, env, domain_fields, implicit_object);
+    source.effects.unresolved = false;
+    source.provenance.push_back(source.id);
+    pipeline.nodes.push_back(std::move(source));
+
+    string current_element = canonical_type_name(*element);
+    string current_value_type = pipeline.source_type;
+    for (size_t index = 0; index < parsed->stages.size(); ++index) {
+      const auto& parsed_stage = parsed->stages[index];
+      FunctionalNode node;
+      node.id = next_node_id++;
+      node.kind = parsed_stage.kind;
+      int stage_line = index < continuation_lines.size()
+          ? continuation_lines[index] : line;
+      node.span = {stage_line, index + 1};
+      node.source_text = parsed_stage.raw;
+      node.input_type = current_value_type;
+      node.effects = no_observable_effects();
+      node.provenance.push_back(node.id);
+
+      string callable;
+      if ((node.kind == FunctionalNodeKind::Map ||
+           node.kind == FunctionalNodeKind::Filter ||
+           node.kind == FunctionalNodeKind::Any ||
+           node.kind == FunctionalNodeKind::All) &&
+          !parsed_stage.arguments.empty())
+        callable = parsed_stage.arguments.front();
+      else if (node.kind == FunctionalNodeKind::Reduce &&
+               parsed_stage.arguments.size() == 2)
+        callable = parsed_stage.arguments[1];
+      if (!callable.empty()) {
+        node.callable_expression = callable;
+        node.effects = functional_stage_effects(
+            callable, current_element, env, node.callable_identity,
+            node.captures, domain_fields, implicit_object);
+        if (owning_function &&
+            !starts_with(node.callable_identity, "placeholder:") &&
+            functions_.count(node.callable_identity) &&
+            std::find(owning_function->callable_dependencies.begin(),
+                      owning_function->callable_dependencies.end(),
+                      node.callable_identity) ==
+                owning_function->callable_dependencies.end())
+          owning_function->callable_dependencies.push_back(node.callable_identity);
+        auto function = functions_.find(node.callable_identity);
+        if (function != functions_.end() && !function->second->parameter_effects.empty())
+          node.ownership = function->second->parameter_effects.front();
+      }
+
+      switch (node.kind) {
+        case FunctionalNodeKind::Map: {
+          auto result = functional_callable_result(
+              callable, {current_element}, env);
+          if (!result) return;
+          current_element = canonical_type_name(*result);
+          current_value_type = "vector[" + current_element + "]";
+          node.output_type = current_value_type;
+          node.logical_materialization = true;
+          break;
+        }
+        case FunctionalNodeKind::Filter:
+          node.output_type = current_value_type;
+          node.logical_materialization = true;
+          break;
+        case FunctionalNodeKind::Reduce:
+          node.output_type = inferred_expr_type(
+              parsed_stage.arguments.front(), env).value_or("");
+          current_value_type = node.output_type;
+          pipeline.reduction_compatible = true;
+          break;
+        case FunctionalNodeKind::Sum:
+          node.output_type = current_element;
+          current_value_type = current_element;
+          pipeline.reduction_compatible = true;
+          break;
+        case FunctionalNodeKind::Count:
+          node.output_type = "int";
+          current_value_type = "int";
+          pipeline.reduction_compatible = true;
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All:
+          node.output_type = "bool";
+          current_value_type = "bool";
+          pipeline.reduction_compatible = true;
+          break;
+        case FunctionalNodeKind::Source:
+          return;
+      }
+      if (!node.effects.fusion_safe()) {
+        pipeline.fusion_eligible = false;
+        pipeline.element_independent = false;
+        pipeline.deterministic = false;
+        if (pipeline.decision.empty())
+          pipeline.decision = "fusion stopped: " + observable_barrier(node.effects);
+      }
+      pipeline.nodes.push_back(std::move(node));
+    }
+    pipeline.output_type = current_value_type;
+    if (pipeline.decision.empty())
+      pipeline.decision = "fusion eligible: ordered element-independent stages";
+    p_.functional_pipelines.push_back(std::move(pipeline));
+  }
+
+  void collect_functional_ir_from_body(
+      const vector<Stmt>& body, const std::optional<string>& result,
+      TypeEnv env, const string& context, Function* owning_function,
+      size_t& next_pipeline_id, size_t& next_node_id,
+      const std::set<string>& domain_fields = {},
+      const ObjectType* implicit_object = nullptr) {
+    TypeEnvVisitor visitor = [&](const Stmt& statement,
+                                 const TypeEnv& current_env) {
+      for (const auto& expression : statement_expressions(statement))
+        add_functional_pipeline_ir(statement.line, expression, context,
+                                   current_env, owning_function,
+                                   next_pipeline_id, next_node_id,
+                                   domain_fields, implicit_object,
+                                   statement.continuation_lines);
+    };
+    env = walk_type_environment(body, std::move(env), visitor, true);
+    if (result)
+      add_functional_pipeline_ir(1, *result, context, env, owning_function,
+                                 next_pipeline_id, next_node_id,
+                                 domain_fields, implicit_object);
+  }
+
+  void build_functional_ir() {
+    p_.functional_pipelines.clear();
+    size_t next_pipeline_id = 1;
+    size_t next_node_id = 1;
+    for (auto& function : p_.functions) {
+      function.callable_dependencies.clear();
+      if (function.static_dispatch && !function.specializations.empty()) {
+        for (const auto& specialization : function.specializations) {
+          TypeEnv env;
+          std::ostringstream context;
+          context << "fn:" << function.name << "<";
+          for (size_t index = 0; index < function.params.size(); ++index) {
+            if (index) context << ",";
+            env[function.params[index].name] = specialization.parameter_types[index];
+            context << specialization.parameter_types[index];
+          }
+          context << ">";
+          collect_functional_ir_from_body(
+              function.body, function.result_expression, std::move(env),
+              context.str(), &function, next_pipeline_id, next_node_id);
+        }
+      } else {
+        TypeEnv env;
+        for (const auto& parameter : function.params)
+          env[parameter.name] = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
+        collect_functional_ir_from_body(
+            function.body, function.result_expression, std::move(env),
+            "fn:" + function.name, &function,
+            next_pipeline_id, next_node_id);
+      }
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& method : object.methods) {
+        TypeEnv env;
+        env["self"] = object.name;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& parameter : method.params)
+          env[parameter.name] = parameter.type;
+        collect_functional_ir_from_body(
+            method.body, method.result_expression, std::move(env),
+            "method:" + object.name + "." + method.name, nullptr,
+            next_pipeline_id, next_node_id, {}, &object);
+      }
+    }
+    for (const auto& domain : p_.domains) {
+      for (const auto& handler : domain.handlers) {
+        TypeEnv env;
+        env["self"] = domain.name;
+        for (const auto& field : domain.state) env[field.name] = field.type;
+        std::set<string> domain_fields;
+        for (const auto& field : domain.state) domain_fields.insert(field.name);
+        for (const auto& parameter : handler.params)
+          env[parameter.name] = parameter.type;
+        collect_functional_ir_from_body(
+            handler.body, std::nullopt, std::move(env),
+            "handler:" + domain.name + "." + handler.name, nullptr,
+            next_pipeline_id, next_node_id, domain_fields);
+      }
+    }
+    if (p_.main)
+      collect_functional_ir_from_body(
+          p_.main->body, std::nullopt, {}, "main", nullptr,
+          next_pipeline_id, next_node_id);
+  }
+
   void check_method_ownership() {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
@@ -3367,11 +4289,85 @@ class Checker {
     const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
   }
 
+  bool check_functional_pipeline_ownership(int line, const string& expression,
+                                           OwnershipEnv& env) {
+    auto parsed = parse_functional_pipeline(expression);
+    if (!parsed) return false;
+    auto source_type = inferred_expr_type(parsed->source, env.types);
+    if (!source_type) return false;
+    auto element = functional_element_type(*source_type, parsed->source);
+    if (!element) return false;
+
+    // Functional collection transformations logically read their source.
+    check_ownership_expression(line, parsed->source, env, Effect::Read);
+    string current_element = *element;
+    for (const auto& stage : parsed->stages) {
+      vector<string> callback_inputs;
+      string callable;
+      if ((stage.kind == FunctionalNodeKind::Map ||
+           stage.kind == FunctionalNodeKind::Filter ||
+           stage.kind == FunctionalNodeKind::Any ||
+           stage.kind == FunctionalNodeKind::All) &&
+          !stage.arguments.empty()) {
+        callback_inputs = {current_element};
+        callable = stage.arguments.front();
+      } else if (stage.kind == FunctionalNodeKind::Reduce &&
+                 stage.arguments.size() == 2) {
+        auto accumulator = inferred_expr_type(stage.arguments.front(), env.types);
+        check_ownership_expression(line, stage.arguments.front(), env, Effect::Read);
+        callback_inputs = {accumulator.value_or("_value"), current_element};
+        callable = stage.arguments[1];
+      }
+      if (callable.empty()) continue;
+
+      if (expression_uses(callable, "_")) {
+        OwnershipEnv placeholder_env = env;
+        placeholder_env.types["_"] = current_element;
+        check_ownership_expression(line, callable, placeholder_env, Effect::Read);
+      } else {
+        string identity = trim(callable);
+        auto local = env.types.find(identity);
+        if (local != env.types.end() && starts_with(local->second, "callable:"))
+          identity = local->second.substr(9);
+        auto function = functions_.find(identity);
+        if (function != functions_.end()) {
+          for (size_t index = 0;
+               index < callback_inputs.size() && index < function->second->params.size();
+               ++index) {
+            Effect effect = function_parameter_effect(*function->second, index);
+            bool element_input = stage.kind != FunctionalNodeKind::Reduce || index == 1;
+            if (element_input && !copy_type(callback_inputs[index]) &&
+                effect != Effect::Read)
+              err(line, "functional callable '" + identity +
+                  "' requires " + string(effect == Effect::Write ? "WRITE" : "CONSUME") +
+                  " access to an element, but this pipeline only reads its source; "
+                  "no implicit copy is inserted");
+            if ((stage.kind == FunctionalNodeKind::Filter ||
+                 stage.kind == FunctionalNodeKind::Any ||
+                 stage.kind == FunctionalNodeKind::All) &&
+                effect != Effect::Read)
+              err(line, "functional predicate '" + identity +
+                  "' must not mutate or consume its element");
+          }
+        }
+      }
+
+      if (stage.kind == FunctionalNodeKind::Map) {
+        auto result = functional_callable_result(callable, {current_element}, env.types);
+        if (result) current_element = *result;
+      }
+    }
+    return true;
+  }
+
   void check_ownership_expression(int line, const string& expression,
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
-    string value = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (check_functional_pipeline_ownership(line, original, env)) return;
+    string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
     if (simple_identifier(value)) {
+      if (functions_.count(value)) return;  // Statically closed callable identity.
       auto location = storage_location(value, env.types);
       string binding = location ? location->root : value;
       require_available(line, binding, env);
@@ -3904,6 +4900,17 @@ class Checker {
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
           if (c.kind == ConstraintKind::Field && !type_has_field(actual_type, c.detail))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + actual_type + "' missing required field '" + c.detail + "'");
+          if (c.kind == ConstraintKind::Iterable &&
+              !starts_with(actual_type, "vector[") &&
+              !starts_with(actual_type, "seq["))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to function '" + name +
+                "' is not a statically typed functional collection");
+          if (c.kind == ConstraintKind::Callable &&
+              !starts_with(actual_type, "callable:"))
+            err(line, "argument " + std::to_string(index + 1) +
+                " to function '" + name +
+                "' is not a statically bounded callable identity");
         }
       }
     }
@@ -3918,9 +4925,208 @@ class Checker {
     }
   }
 
+  std::optional<string> check_functional_callable(
+      int line, const string& callable, const vector<string>& input_types,
+      const TypeEnv& env) {
+    string identity = trim(callable);
+    if (identity.empty()) err(line, "functional stage requires a callable");
+    if (expression_uses(identity, "_")) {
+      if (input_types.size() != 1)
+        err(line, "placeholder '_' is only valid for a one-argument functional stage");
+      TypeEnv placeholder_env = env;
+      placeholder_env["_"] = input_types.front();
+      string capture_receiver, capture_method;
+      vector<string> capture_arguments;
+      if (parse_member_call(identity, capture_receiver, capture_method,
+                            capture_arguments) &&
+          trim(capture_receiver) != "_") {
+        auto capture_type = inferred_expr_type(capture_receiver, env);
+        bool mutates_collection = capture_type &&
+            (canonical_type_name(*capture_type) == "vector" ||
+             canonical_type_name(*capture_type) == "queue" ||
+             starts_with(canonical_type_name(*capture_type), "vector[") ||
+             starts_with(canonical_type_name(*capture_type), "queue[")) &&
+            (capture_method == "push" || capture_method == "pop");
+        bool mutates_object = false;
+        if (capture_type) {
+          vector<string> argument_types;
+          for (const auto& argument : capture_arguments)
+            argument_types.push_back(
+                inferred_expr_type(argument, placeholder_env).value_or(""));
+          if (const Method* method = resolve_method(
+                  canonical_type_name(*capture_type), capture_method,
+                  argument_types, true, nullptr))
+            mutates_object = method->receiver_effect != Effect::Read;
+        }
+        if (mutates_collection || mutates_object)
+          err(line, "functional placeholder cannot mutate captured binding '" +
+              trim(capture_receiver) + "'");
+      }
+      check_expression(line, identity, placeholder_env);
+      auto result = inferred_expr_type(identity, placeholder_env);
+      if (!result)
+        err(line, "cannot infer the result type of placeholder expression '" +
+            identity + "'");
+      return result;
+    }
+
+    auto local = env.find(identity);
+    if (local != env.end()) {
+      if (starts_with(local->second, "callable:")) {
+        identity = local->second.substr(9);
+      } else if (starts_with(local->second, "_generic:")) {
+        return "_functional_callable_result:" + identity;
+      } else {
+        err(line, "callable identity '" + identity +
+            "' is not statically bounded to one function");
+      }
+    }
+    auto function = functions_.find(identity);
+    if (function == functions_.end())
+      err(line, "unresolved functional callable '" + identity + "'");
+    if (function->second->params.size() != input_types.size())
+      err(line, "functional callable '" + identity + "' expects " +
+          std::to_string(function->second->params.size()) + " arguments, got " +
+          std::to_string(input_types.size()));
+
+    for (size_t index = 0; index < input_types.size(); ++index) {
+      const auto& parameter = function->second->params[index];
+      const auto& actual = input_types[index];
+      if (!parameter.type.empty() && traits_.count(parameter.type) &&
+          !unresolved_semantic_type(actual)) {
+        string reason;
+        if (!trait_conforms(actual, parameter.type, &reason))
+          err(line, "functional callable '" + identity + "' cannot accept '" +
+              actual + "': " + reason);
+      } else if (!parameter.type.empty() &&
+                 !unresolved_semantic_type(actual) &&
+                 !same_type(parameter.type, actual)) {
+        err(line, "functional callable '" + identity + "' argument " +
+            std::to_string(index + 1) + " has type '" + actual +
+            "', expected '" + parameter.type + "'");
+      }
+    }
+
+    bool concrete = std::all_of(input_types.begin(), input_types.end(),
+                                [&](const string& type) {
+                                  return !unresolved_semantic_type(type) &&
+                                      !traits_.count(canonical_type_name(type));
+                                });
+    if (concrete) {
+      validate_method_requirements(line, *function->second, input_types);
+      register_static_specialization(line, *function->second, input_types);
+    }
+    auto result = functional_callable_result(identity, input_types, env);
+    if (!result && concrete)
+      err(line, "cannot determine the result type of functional callable '" +
+          identity + "'");
+    return result;
+  }
+
+  bool check_functional_pipeline(int line, const string& expression,
+                                 const TypeEnv& env) {
+    auto parsed = parse_functional_pipeline(expression);
+    if (!parsed) return false;
+    auto source_type = inferred_expr_type(parsed->source, env);
+    if (!source_type) return false;
+    auto element = functional_element_type(*source_type, parsed->source);
+    if (!element) return false;  // General/scalar pipeline compatibility.
+
+    check_expression(line, parsed->source, env);
+    string current_element = *element;
+    bool terminal = false;
+    for (size_t stage_index = 0; stage_index < parsed->stages.size(); ++stage_index) {
+      const auto& stage = parsed->stages[stage_index];
+      if (terminal)
+        err(line, "functional terminal must be the final pipeline stage");
+      auto require_arity = [&](size_t expected) {
+        if (stage.arguments.size() != expected)
+          err(line, string(functional_node_name(stage.kind)) +
+              " stage expects " + std::to_string(expected) +
+              " argument" + (expected == 1 ? "" : "s") + ", got " +
+              std::to_string(stage.arguments.size()));
+      };
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          require_arity(1);
+          auto result = check_functional_callable(
+              line, stage.arguments.front(), {current_element}, env);
+          if (result) current_element = canonical_type_name(*result);
+          break;
+        }
+        case FunctionalNodeKind::Filter: {
+          require_arity(1);
+          if (!unresolved_semantic_type(current_element) &&
+              !copy_type(current_element))
+            err(line, "filter over nontrivial element type '" + current_element +
+                "' cannot produce a new collection without an explicit deep copy");
+          auto result = check_functional_callable(
+              line, stage.arguments.front(), {current_element}, env);
+          if (result && !unresolved_semantic_type(*result) &&
+              canonical_type_name(*result) != "bool")
+            err(line, "filter predicate returns '" + *result +
+                "'; expected 'bool'");
+          break;
+        }
+        case FunctionalNodeKind::Reduce: {
+          require_arity(2);
+          check_expression(line, stage.arguments.front(), env);
+          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+          if (!accumulator)
+            err(line, "cannot infer reduce initial accumulator type");
+          auto result = check_functional_callable(
+              line, stage.arguments[1], {*accumulator, current_element}, env);
+          if (result && !unresolved_semantic_type(*result) &&
+              !unresolved_semantic_type(*accumulator) &&
+              !same_type(*result, *accumulator))
+            err(line, "reduce callable returns '" + *result +
+                "'; expected accumulator type '" + *accumulator + "'");
+          terminal = true;
+          break;
+        }
+        case FunctionalNodeKind::Sum:
+          require_arity(0);
+          if (!unresolved_semantic_type(current_element) &&
+              !numeric_type(current_element))
+            err(line, "sum requires numeric elements, found '" +
+                current_element + "'");
+          terminal = true;
+          break;
+        case FunctionalNodeKind::Count:
+          require_arity(0);
+          terminal = true;
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All: {
+          if (stage.arguments.size() > 1)
+            err(line, string(functional_node_name(stage.kind)) +
+                " stage accepts zero or one predicate");
+          string predicate_type = current_element;
+          if (!stage.arguments.empty()) {
+            auto result = check_functional_callable(
+                line, stage.arguments.front(), {current_element}, env);
+            if (result) predicate_type = *result;
+          }
+          if (!unresolved_semantic_type(predicate_type) &&
+              canonical_type_name(predicate_type) != "bool")
+            err(line, string(functional_node_name(stage.kind)) +
+                " predicate returns '" + predicate_type +
+                "'; expected 'bool'");
+          terminal = true;
+          break;
+        }
+        case FunctionalNodeKind::Source:
+          err(line, "invalid Source functional stage");
+      }
+    }
+    return true;
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
-    string value = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (check_functional_pipeline(line, original, env)) return;
+    string value = normalize_pipeline(std::move(original));
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
@@ -4071,10 +5277,21 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
+        for (const auto& argument : statement.args) {
+          if (auto pipeline = parse_functional_pipeline(argument)) {
+            auto source_type = inferred_expr_type(pipeline->source, current_env);
+            if (source_type && functional_element_type(
+                                   *source_type, pipeline->source))
+              err(statement.line,
+                  "functional pipeline must be materialized in a local binding "
+                  "before crossing a domain boundary");
+          }
+        }
         check_call(statement.line, statement.a, statement.b, statement.args,
                    current_env);
-        for (const auto& argument : statement.args)
+        for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
+        }
         return;
       }
 
@@ -4084,11 +5301,22 @@ class Checker {
               "a domain cannot await itself because handlers are non-reentrant");
         const Domain& target = require_bounded_await_target(
             statement.line, statement.b, current_env);
+        for (const auto& argument : statement.args) {
+          if (auto pipeline = parse_functional_pipeline(argument)) {
+            auto source_type = inferred_expr_type(pipeline->source, current_env);
+            if (source_type && functional_element_type(
+                                   *source_type, pipeline->source))
+              err(statement.line,
+                  "functional pipeline must be materialized in a local binding "
+                  "before crossing a domain boundary");
+          }
+        }
         const Handler* handler = check_call(statement.line, statement.b,
                                             statement.c, statement.args,
                                             current_env);
-        for (const auto& argument : statement.args)
+        for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
+        }
         if (!handler->reply_type)
           err(statement.line, "cannot await one-way handler '" + target.name + "." +
               statement.c + "'");
@@ -4164,6 +5392,14 @@ class Checker {
           err(statement.line,
               "reply is only valid in a handler declaring '-> Type'");
         auto actual = inferred_expr_type(statement.a, current_env);
+        if (auto pipeline = parse_functional_pipeline(statement.a)) {
+          auto source_type = inferred_expr_type(pipeline->source, current_env);
+          if (source_type && functional_element_type(
+                                 *source_type, pipeline->source))
+            err(statement.line,
+                "functional pipeline must be materialized in a local binding "
+                "before crossing a domain boundary");
+        }
         if (!actual)
           err(statement.line, "cannot infer the type of this reply expression; add an annotation or use a statically typed value");
         if (!same_type(*actual, *current_handler->reply_type))
@@ -4203,6 +5439,97 @@ class Checker {
                                  true, true, true);
   }
 };
+
+// This is a Moss-level optimization plan over typed functional/dataflow IR.
+// Rust generation consumes the decision and never relies on iterator-library
+// optimization to recover the source structure.
+class FunctionalOptimizer {
+ public:
+  explicit FunctionalOptimizer(Program& program) : program_(program) {}
+
+  void run(bool enabled) {
+    for (auto& pipeline : program_.functional_pipelines) {
+      pipeline.fused = enabled && pipeline.fusion_eligible;
+      pipeline.lowered_provenance.clear();
+      for (auto& node : pipeline.nodes) {
+        pipeline.lowered_provenance.insert(
+            pipeline.lowered_provenance.end(), node.provenance.begin(),
+            node.provenance.end());
+        node.materialization_eliminated =
+            pipeline.fused && node.logical_materialization;
+      }
+      if (pipeline.fused) {
+        pipeline.decision = "fused stages 1-" +
+            std::to_string(pipeline.nodes.size() - 1) +
+            "; intermediates eliminated";
+      } else if (!enabled && pipeline.fusion_eligible) {
+        pipeline.decision =
+            "eager reference lowering (-O0); logical intermediates retained";
+      }
+    }
+  }
+
+ private:
+  Program& program_;
+};
+
+static string observable_effect_label(const ObservableEffects& effects) {
+  vector<string> labels;
+  if (effects.fusion_safe()) labels.push_back("PURE");
+  if (effects.local_capture_read) labels.push_back("CAPTURE_READ");
+  if (effects.local_mutation) labels.push_back("LOCAL_WRITE");
+  if (effects.domain_read) labels.push_back("DOMAIN_READ");
+  if (effects.domain_write) labels.push_back("DOMAIN_WRITE");
+  if (effects.message) labels.push_back("MESSAGE");
+  if (effects.await) labels.push_back("AWAIT");
+  if (effects.external_io) labels.push_back("IO");
+  if (effects.may_fail) labels.push_back("MAY_FAIL");
+  if (effects.unresolved) labels.push_back("UNRESOLVED");
+  std::ostringstream out;
+  for (size_t index = 0; index < labels.size(); ++index) {
+    if (index) out << "+";
+    out << labels[index];
+  }
+  return out.str();
+}
+
+static void dump_functional_ir(std::ostream& out, const Program& program,
+                               bool decisions_only) {
+  for (const auto& pipeline : program.functional_pipelines) {
+    out << "Pipeline #" << pipeline.id << " [" << pipeline.context << "]"
+        << " line " << pipeline.line << "\n";
+    if (!decisions_only) {
+      for (const auto& node : pipeline.nodes) {
+        out << "  #" << node.id << " " << functional_node_name(node.kind)
+            << " " << node.input_type;
+        if (!node.output_type.empty() && node.output_type != node.input_type)
+          out << " -> " << node.output_type;
+        if (!node.callable_identity.empty())
+          out << " callable=" << node.callable_identity;
+        out << " " << observable_effect_label(node.effects)
+            << " span=" << node.span.line << ":" << node.span.stage;
+        if (!node.captures.empty()) {
+          out << " captures=";
+          for (size_t index = 0; index < node.captures.size(); ++index) {
+            if (index) out << ",";
+            out << node.captures[index];
+          }
+        }
+        if (node.materialization_eliminated)
+          out << " materialization=eliminated";
+        else if (node.logical_materialization)
+          out << " materialization=logical";
+        out << "\n";
+      }
+      out << "  facts: element-independent="
+          << (pipeline.element_independent ? "yes" : "no")
+          << " deterministic=" << (pipeline.deterministic ? "yes" : "no")
+          << " reduction-compatible="
+          << (pipeline.reduction_compatible ? "yes" : "no") << "\n";
+    }
+    out << "  decision: " << pipeline.decision << "\n\n";
+  }
+}
 
 enum class DomainLowering {
   Mailbox,
@@ -5591,10 +6918,138 @@ class Generator {
     return std::nullopt;
   }
 
+  static std::optional<string> generated_functional_element_type(
+      const string& type) {
+    string value = canonical_type_name(type);
+    if (starts_with(value, "vector[") && ends_with(value, "]"))
+      return trim(value.substr(7, value.size() - 8));
+    if (starts_with(value, "seq[") && ends_with(value, "]"))
+      return trim(value.substr(4, value.size() - 5));
+    return std::nullopt;
+  }
+
+  string resolved_callable_identity(
+      string callable, const std::unordered_map<string,string>* types) const {
+    callable = trim(std::move(callable));
+    if (types) {
+      auto local = types->find(callable);
+      if (local != types->end() && starts_with(local->second, "callable:"))
+        return local->second.substr(9);
+    }
+    return callable;
+  }
+
+  static bool generated_expression_uses(const string& expression,
+                                        const string& name) {
+    bool in_string = false, escaped = false;
+    for (size_t index = 0; index < expression.size();) {
+      char ch = expression[index];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (ch == '\\') escaped = true;
+        else if (ch == '"') in_string = false;
+        ++index;
+        continue;
+      }
+      if (ch == '"') { in_string = true; ++index; continue; }
+      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_'))
+        ++end;
+      if (expression.compare(index, end - index, name) == 0) return true;
+      index = end;
+    }
+    return false;
+  }
+
+  std::optional<string> generated_callable_result(
+      const string& callable, const vector<string>& input_types,
+      const std::unordered_map<string,string>* types) const {
+    if (generated_expression_uses(callable, "_")) {
+      if (input_types.size() != 1) return std::nullopt;
+      std::unordered_map<string,string> placeholder_types = types
+          ? *types : std::unordered_map<string,string>{};
+      placeholder_types["_"] = input_types.front();
+      return generated_expr_type(callable, &placeholder_types);
+    }
+    string identity = resolved_callable_identity(callable, types);
+    auto function = functions_.find(identity);
+    if (function == functions_.end()) return std::nullopt;
+    if (function->second->static_dispatch) {
+      auto specialization = std::find_if(
+          function->second->specializations.begin(),
+          function->second->specializations.end(),
+          [&](const FunctionSpecialization& candidate) {
+            return candidate.parameter_types == input_types;
+          });
+      if (specialization != function->second->specializations.end())
+        return specialization->return_type;
+      return std::nullopt;
+    }
+    if (function->second->return_type &&
+        !starts_with(*function->second->return_type, "_"))
+      return canonical_type_name(*function->second->return_type);
+    return std::nullopt;
+  }
+
+  std::optional<string> generated_functional_pipeline_type(
+      const string& expression,
+      const std::unordered_map<string,string>* types) const {
+    auto pipeline = parse_functional_pipeline(expression);
+    if (!pipeline) return std::nullopt;
+    auto source_type = generated_expr_type(pipeline->source, types);
+    if (!source_type) return std::nullopt;
+    auto element = generated_functional_element_type(*source_type);
+    if (!element) return std::nullopt;
+    string current = *element;
+    string output = "vector[" + current + "]";
+    for (const auto& stage : pipeline->stages) {
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          if (stage.arguments.size() != 1) return std::nullopt;
+          auto result = generated_callable_result(stage.arguments.front(),
+                                                  {current}, types);
+          if (!result) return std::nullopt;
+          current = *result;
+          output = "vector[" + current + "]";
+          break;
+        }
+        case FunctionalNodeKind::Filter:
+          output = "vector[" + current + "]";
+          break;
+        case FunctionalNodeKind::Reduce:
+          if (stage.arguments.size() != 2) return std::nullopt;
+          output = generated_expr_type(stage.arguments.front(), types).value_or("");
+          break;
+        case FunctionalNodeKind::Sum:
+          output = current;
+          break;
+        case FunctionalNodeKind::Count:
+          output = "int";
+          break;
+        case FunctionalNodeKind::Any:
+        case FunctionalNodeKind::All:
+          output = "bool";
+          break;
+        case FunctionalNodeKind::Source:
+          return std::nullopt;
+      }
+    }
+    return output.empty() ? std::nullopt : std::optional<string>(output);
+  }
+
   std::optional<string> generated_expr_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
-    string value = normalize_pipeline(trim(expression));
+    string original = trim(expression);
+    if (auto pipeline = generated_functional_pipeline_type(original, types))
+      return pipeline;
+    string value = normalize_pipeline(std::move(original));
     while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
@@ -5607,6 +7062,8 @@ class Generator {
           !starts_with(local->second, "_"))
         return canonical_type_name(local->second);
     }
+    if (plain_identifier(value) && functions_.count(value))
+      return "callable:" + value;
     size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
     if (generated_integer_literal(value))
       return string("int");
@@ -5740,9 +7197,376 @@ class Generator {
     return specialization->generated_name;
   }
 
+  struct FunctionalValue {
+    string expression;
+    string type;
+    bool reference = false;
+  };
+
+  const FunctionalPipeline* planned_functional_pipeline(
+      const string& expression, const ParsedFunctionalPipeline& pipeline,
+      const std::unordered_map<string,string>* types) const {
+    auto source_type = generated_expr_type(pipeline.source, types);
+    if (!source_type) return nullptr;
+    vector<string> callable_identities;
+    for (const auto& stage : pipeline.stages) {
+      string callable;
+      if ((stage.kind == FunctionalNodeKind::Map ||
+           stage.kind == FunctionalNodeKind::Filter ||
+           stage.kind == FunctionalNodeKind::Any ||
+           stage.kind == FunctionalNodeKind::All) &&
+          !stage.arguments.empty())
+        callable = stage.arguments.front();
+      else if (stage.kind == FunctionalNodeKind::Reduce &&
+               stage.arguments.size() == 2)
+        callable = stage.arguments[1];
+      if (callable.empty()) continue;
+      callable_identities.push_back(
+          generated_expression_uses(callable, "_")
+              ? "placeholder:" + trim(callable)
+              : resolved_callable_identity(callable, types));
+    }
+    for (const auto& candidate : p_.functional_pipelines) {
+      if (trim(candidate.expression) != trim(expression) ||
+          canonical_type_name(candidate.source_type) !=
+              canonical_type_name(*source_type))
+        continue;
+      vector<string> candidate_identities;
+      for (const auto& node : candidate.nodes)
+        if (!node.callable_identity.empty())
+          candidate_identities.push_back(node.callable_identity);
+      if (candidate_identities == callable_identities) return &candidate;
+    }
+    return nullptr;
+  }
+
+  string render_functional_callable(
+      const string& callable, const vector<FunctionalValue>& arguments,
+      const Domain* domain, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    if (generated_expression_uses(callable, "_")) {
+      if (arguments.size() != 1)
+        throw std::runtime_error("internal error: placeholder functional arity");
+      string replaced = replace_unqualified_word(callable, "_",
+                                                 arguments.front().expression);
+      std::unordered_map<string,string> callback_types = types
+          ? *types : std::unordered_map<string,string>{};
+      callback_types[arguments.front().expression] = arguments.front().type;
+      auto callback_locals = locals;
+      callback_locals.insert(arguments.front().expression);
+      return expr(replaced, domain, callback_locals, &callback_types);
+    }
+
+    string identity = resolved_callable_identity(callable, types);
+    auto function = functions_.find(identity);
+    if (function == functions_.end())
+      throw std::runtime_error("missing statically resolved functional callable '" +
+                               identity + "'");
+    string emitted = identity;
+    vector<string> argument_types;
+    for (const auto& argument : arguments) argument_types.push_back(argument.type);
+    if (function->second->static_dispatch) {
+      auto specialization = std::find_if(
+          function->second->specializations.begin(),
+          function->second->specializations.end(),
+          [&](const FunctionSpecialization& candidate) {
+            return candidate.parameter_types == argument_types;
+          });
+      if (specialization == function->second->specializations.end())
+        throw std::runtime_error("missing functional specialization for '" +
+                                 identity + "'");
+      emitted = specialization->generated_name;
+    }
+    std::ostringstream rendered;
+    rendered << emitted << "(";
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (index) rendered << ", ";
+      const auto& argument = arguments[index];
+      Effect effect = function_effect(*function->second, index);
+      bool borrow = effect != Effect::Consume && borrowable_type(argument.type);
+      if (borrow && !argument.reference)
+        rendered << (effect == Effect::Write ? "&mut (" : "&(")
+                 << argument.expression << ")";
+      else
+        rendered << argument.expression;
+    }
+    rendered << ")";
+    return rendered.str();
+  }
+
+  static string functional_zero(const string& type) {
+    return canonical_type_name(type) == "float" ? "0.0_f64" : "0_i64";
+  }
+
+  string gen_eager_functional_pipeline(
+      const ParsedFunctionalPipeline& pipeline, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const FunctionalPipeline* planned) const {
+    auto source_type = generated_expr_type(pipeline.source, types);
+    auto element = source_type
+        ? generated_functional_element_type(*source_type) : std::nullopt;
+    if (!element)
+      throw std::runtime_error("internal error: untyped functional source");
+    string current_type = *element;
+    string current_collection = "__moss_pipeline_source";
+    std::ostringstream out;
+    out << "{\n        // Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics";
+    if (planned) out << " (Pipeline #" << planned->id << ")";
+    out << "\n"
+        << "        let __moss_pipeline_source = &("
+        << expr(pipeline.source, domain, locals, types) << ");\n";
+
+    size_t stage_number = 0;
+    for (const auto& stage : pipeline.stages) {
+      if (stage.kind != FunctionalNodeKind::Map &&
+          stage.kind != FunctionalNodeKind::Filter)
+        continue;
+      string output = "__moss_stage_" + std::to_string(stage_number);
+      string item_ref = "__moss_item_ref_" + std::to_string(stage_number);
+      string value = "__moss_value_" + std::to_string(stage_number);
+      bool item_copy = copy_type(current_type);
+      out << "        let mut " << output << " = Vec::new();\n"
+          << "        for " << item_ref << " in " << current_collection
+          << ".iter() {\n"
+          << "            let " << value << " = "
+          << (item_copy ? "*" : "") << item_ref << ";\n";
+      FunctionalValue input{value, current_type, !item_copy};
+      if (stage.kind == FunctionalNodeKind::Map) {
+        string mapped = render_functional_callable(
+            stage.arguments.front(), {input}, domain, locals, types);
+        out << "            " << output << ".push(" << mapped << ");\n";
+        auto result = generated_callable_result(stage.arguments.front(),
+                                                {current_type}, types);
+        if (!result)
+          throw std::runtime_error("internal error: untyped eager map result");
+        current_type = *result;
+      } else {
+        string predicate = render_functional_callable(
+            stage.arguments.front(), {input}, domain, locals, types);
+        out << "            if " << predicate << " { " << output << ".push("
+            << value << "); }\n";
+      }
+      out << "        }\n";
+      current_collection = output;
+      ++stage_number;
+    }
+
+    const auto& terminal = pipeline.stages.back();
+    bool has_terminal = terminal.kind == FunctionalNodeKind::Reduce ||
+        terminal.kind == FunctionalNodeKind::Sum ||
+        terminal.kind == FunctionalNodeKind::Count ||
+        terminal.kind == FunctionalNodeKind::Any ||
+        terminal.kind == FunctionalNodeKind::All;
+    if (!has_terminal) {
+      out << "        " << current_collection << "\n    }";
+      return out.str();
+    }
+
+    string accumulator = "__moss_result";
+    if (terminal.kind == FunctionalNodeKind::Reduce)
+      out << "        let mut " << accumulator << " = "
+          << expr(terminal.arguments.front(), domain, locals, types) << ";\n";
+    else if (terminal.kind == FunctionalNodeKind::Sum)
+      out << "        let mut " << accumulator << " = "
+          << functional_zero(current_type) << ";\n";
+    else if (terminal.kind == FunctionalNodeKind::Count)
+      out << "        let mut " << accumulator << " = 0_i64;\n";
+    else
+      out << "        let mut " << accumulator << " = "
+          << (terminal.kind == FunctionalNodeKind::All ? "true" : "false")
+          << ";\n";
+
+    string item_ref = "__moss_terminal_ref";
+    string value = "__moss_terminal_value";
+    bool item_copy = copy_type(current_type);
+    out << "        for " << item_ref << " in " << current_collection
+        << ".iter() {\n"
+        << "            let " << value << " = "
+        << (item_copy ? "*" : "") << item_ref << ";\n";
+    FunctionalValue input{value, current_type, !item_copy};
+    if (terminal.kind == FunctionalNodeKind::Reduce) {
+      auto accumulator_type = generated_expr_type(terminal.arguments.front(), types)
+          .value_or(current_type);
+      out << "            " << accumulator << " = "
+          << render_functional_callable(
+                 terminal.arguments[1],
+                 {{accumulator, accumulator_type, false}, input},
+                 domain, locals, types)
+          << ";\n";
+    } else if (terminal.kind == FunctionalNodeKind::Sum) {
+      if (canonical_type_name(current_type) == "int")
+        out << "            " << accumulator << " = " << accumulator
+            << ".wrapping_add(" << value << ");\n";
+      else
+        out << "            " << accumulator << " += " << value << ";\n";
+    } else if (terminal.kind == FunctionalNodeKind::Count) {
+      out << "            " << accumulator << " = " << accumulator
+          << ".wrapping_add(1_i64);\n";
+    } else {
+      string predicate = terminal.arguments.empty()
+          ? value
+          : render_functional_callable(terminal.arguments.front(), {input},
+                                       domain, locals, types);
+      if (terminal.kind == FunctionalNodeKind::Any)
+        out << "            if " << predicate << " { " << accumulator
+            << " = true; break; }\n";
+      else
+        out << "            if !(" << predicate << ") { " << accumulator
+            << " = false; break; }\n";
+    }
+    out << "        }\n        " << accumulator << "\n    }";
+    return out.str();
+  }
+
+  string gen_fused_functional_pipeline(
+      const ParsedFunctionalPipeline& pipeline, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      const FunctionalPipeline* planned) const {
+    auto source_type = generated_expr_type(pipeline.source, types);
+    auto element = source_type
+        ? generated_functional_element_type(*source_type) : std::nullopt;
+    if (!element)
+      throw std::runtime_error("internal error: untyped fused functional source");
+    string current_type = *element;
+    string final_element_type = current_type;
+    for (const auto& stage : pipeline.stages) {
+      if (stage.kind != FunctionalNodeKind::Map) continue;
+      auto result = generated_callable_result(stage.arguments.front(),
+                                              {final_element_type}, types);
+      if (!result)
+        throw std::runtime_error("internal error: untyped fused map result");
+      final_element_type = *result;
+    }
+    const auto& last = pipeline.stages.back();
+    bool terminal = last.kind == FunctionalNodeKind::Reduce ||
+        last.kind == FunctionalNodeKind::Sum ||
+        last.kind == FunctionalNodeKind::Count ||
+        last.kind == FunctionalNodeKind::Any ||
+        last.kind == FunctionalNodeKind::All;
+    std::ostringstream out;
+    out << "{\n        // Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated";
+    if (planned) {
+      out << "; provenance";
+      for (auto node : planned->lowered_provenance) out << " #" << node;
+    }
+    out << "\n"
+        << "        let __moss_pipeline_source = &("
+        << expr(pipeline.source, domain, locals, types) << ");\n";
+    if (!terminal)
+      out << "        let mut __moss_result = Vec::new();\n";
+    else if (last.kind == FunctionalNodeKind::Reduce)
+      out << "        let mut __moss_result = "
+          << expr(last.arguments.front(), domain, locals, types) << ";\n";
+    else if (last.kind == FunctionalNodeKind::Sum)
+      out << "        let mut __moss_result = "
+          << functional_zero(final_element_type) << ";\n";
+    else if (last.kind == FunctionalNodeKind::Count)
+      out << "        let mut __moss_result = 0_i64;\n";
+    else
+      out << "        let mut __moss_result = "
+          << (last.kind == FunctionalNodeKind::All ? "true" : "false") << ";\n";
+    bool source_copy = copy_type(current_type);
+    out << "        for __moss_item_ref in __moss_pipeline_source.iter() {\n"
+        << "            let __moss_value_0 = "
+        << (source_copy ? "*" : "") << "__moss_item_ref;\n";
+    FunctionalValue current{"__moss_value_0", current_type, !source_copy};
+    size_t map_number = 0;
+    for (const auto& stage : pipeline.stages) {
+      switch (stage.kind) {
+        case FunctionalNodeKind::Map: {
+          string next = "__moss_value_" + std::to_string(++map_number);
+          out << "            let " << next << " = "
+              << render_functional_callable(stage.arguments.front(), {current},
+                                             domain, locals, types)
+              << ";\n";
+          auto result = generated_callable_result(stage.arguments.front(),
+                                                  {current.type}, types);
+          if (!result)
+            throw std::runtime_error("internal error: untyped fused map result");
+          current = {next, *result, false};
+          break;
+        }
+        case FunctionalNodeKind::Filter:
+          out << "            if !("
+              << render_functional_callable(stage.arguments.front(), {current},
+                                             domain, locals, types)
+              << ") { continue; }\n";
+          break;
+        case FunctionalNodeKind::Reduce: {
+          auto accumulator_type = generated_expr_type(stage.arguments.front(), types)
+              .value_or(current.type);
+          out << "            __moss_result = "
+              << render_functional_callable(
+                     stage.arguments[1],
+                     {{"__moss_result", accumulator_type, false}, current},
+                     domain, locals, types)
+              << ";\n";
+          break;
+        }
+        case FunctionalNodeKind::Sum:
+          if (canonical_type_name(current.type) == "int")
+            out << "            __moss_result = __moss_result.wrapping_add("
+                << current.expression << ");\n";
+          else
+            out << "            __moss_result += " << current.expression << ";\n";
+          break;
+        case FunctionalNodeKind::Count:
+          out << "            __moss_result = __moss_result.wrapping_add(1_i64);\n";
+          break;
+        case FunctionalNodeKind::Any: {
+          string predicate = stage.arguments.empty()
+              ? current.expression
+              : render_functional_callable(stage.arguments.front(), {current},
+                                           domain, locals, types);
+          out << "            if " << predicate
+              << " { __moss_result = true; break; }\n";
+          break;
+        }
+        case FunctionalNodeKind::All: {
+          string predicate = stage.arguments.empty()
+              ? current.expression
+              : render_functional_callable(stage.arguments.front(), {current},
+                                           domain, locals, types);
+          out << "            if !(" << predicate
+              << ") { __moss_result = false; break; }\n";
+          break;
+        }
+        case FunctionalNodeKind::Source:
+          break;
+      }
+    }
+    if (!terminal)
+      out << "            __moss_result.push(" << current.expression << ");\n";
+    out << "        }\n        __moss_result\n    }";
+    return out.str();
+  }
+
+  std::optional<string> functional_expr(
+      const string& expression, const Domain* domain,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    auto pipeline = parse_functional_pipeline(expression);
+    if (!pipeline) return std::nullopt;
+    auto source_type = generated_expr_type(pipeline->source, types);
+    if (!source_type || !generated_functional_element_type(*source_type))
+      return std::nullopt;
+    const FunctionalPipeline* planned = planned_functional_pipeline(
+        expression, *pipeline, types);
+    if (planned && planned->fused)
+      return gen_fused_functional_pipeline(*pipeline, domain, locals, types,
+                                           planned);
+    return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+                                         planned);
+  }
+
   string expr(string e, const Domain* d, const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr) const {
-    e = normalize_pipeline(trim(e));
+    e = trim(std::move(e));
+    if (auto functional = functional_expr(e, d, locals, types))
+      return *functional;
+    e = normalize_pipeline(std::move(e));
     if (e.size() >= 6 && e.find(".pop()") != string::npos) {
       auto pos = e.find(".pop()"); e.replace(pos, 6, ".pop_front()");
     }
@@ -5930,8 +7754,13 @@ class Generator {
         bool known_function = functions_.count(head);
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << emitted_function_name(head, call_args, types) << "(";
+        size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
-          if (i) r << ", ";
+          bool compile_time_callable = known_function &&
+              generated_expr_type(call_args[i], types).value_or("").rfind(
+                  "callable:", 0) == 0;
+          if (compile_time_callable) continue;
+          if (emitted_arguments++) r << ", ";
           if (known_function)
             r << function_call_argument(*functions_.at(head), i, call_args[i], d, locals, types);
           else
@@ -6230,10 +8059,14 @@ class Generator {
       o << ">";
     }
     o << "(";
+    size_t emitted_parameters = 0;
     for (size_t index = 0; index < f.params.size(); ++index) {
-      if (index) o << ", ";
       string pt = specialization ? specialization->parameter_types[index]
                                  : f.params[index].type;
+      // A callable parameter in a static higher-order specialization is a
+      // compile-time identity, not a Rust function value.
+      if (specialization && starts_with(pt, "callable:")) continue;
+      if (emitted_parameters++) o << ", ";
       auto ops = constraint_ops(f, f.params[index].name);
       string parameter_rust_type;
       if (!specialization && pt.empty() && !ops.empty()) {
@@ -7203,8 +9036,13 @@ class Generator {
             o << "." << method;
           }
           o << "(";
+          size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
-            if (k) o << ", ";
+            bool compile_time_callable = known_function &&
+                starts_with(generated_expr_type(s.args[k], &types).value_or(""),
+                            "callable:");
+            if (compile_time_callable) continue;
+            if (emitted_arguments++) o << ", ";
             if (known_function) {
               o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
                                           locals, &types);
@@ -7679,11 +9517,13 @@ class Generator {
 static void usage() {
   std::cerr << "Moss v0.2 - actor/domain DSL to Rust with await/reply\n\n"
             << "Usage:\n"
-            << "  moss <input.moss> [-Oshared-memory] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
+            << "  moss <input.moss> [-Oshared-memory] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    plan batching, direct locks, RwLock, and atomic domains\n"
             << "  -O0                    retain lock-backed mailbox dispatch for every domain\n\n"
+            << "  --dump-functional-ir   print typed functional/dataflow nodes and optimization decisions\n"
+            << "  --explain-fusion       print deterministic fusion decisions only\n\n"
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
@@ -7701,11 +9541,15 @@ int main(int argc, char** argv) {
     bool check_only = false;
     bool optimize_shared_memory = false;
     bool await_error_handling = true;
+    bool dump_functional = false;
+    bool explain_fusion = false;
     string input, output;
     vector<vector<string>> requested_clusters;
     for (int i = 1; i < argc; ++i) {
       string a = argv[i];
       if (a == "--check") check_only = true;
+      else if (a == "--dump-functional-ir") dump_functional = true;
+      else if (a == "--explain-fusion") explain_fusion = true;
       else if (a == "-O" || a == "-Oshared-memory" || a == "--optimize-shared-memory")
         optimize_shared_memory = true;
       else if (a == "-O0") optimize_shared_memory = false;
@@ -7745,6 +9589,11 @@ int main(int argc, char** argv) {
     checker.run();
     for (const auto& warning : checker.warnings())
       std::cerr << "moss:" << warning.line << ": warning: " << warning.message << "\n";
+
+    moss::FunctionalOptimizer(program).run(optimize_shared_memory);
+    if (dump_functional || explain_fusion)
+      moss::dump_functional_ir(std::cout, program,
+                               explain_fusion && !dump_functional);
 
     auto plan = moss::BackendOptimizer(program).run(
         optimize_shared_memory, requested_clusters);

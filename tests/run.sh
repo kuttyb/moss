@@ -112,6 +112,29 @@ run_optimized_case() {
   fi
 }
 
+run_phase4_differential() {
+  name=$1
+  source=$2
+  expected=$3
+  o0_rs="$test_build/${name}_o0.rs"
+  optimized_rs="$test_build/${name}_optimized.rs"
+  o0_bin="$test_build/${name}_o0"
+  optimized_bin="$test_build/${name}_optimized"
+
+  "$compiler" -O0 "$source" -o "$o0_rs"
+  "$compiler" -O "$source" -o "$optimized_rs"
+  rustc -D warnings "$o0_rs" -o "$o0_bin"
+  rustc -D warnings "$optimized_rs" -o "$optimized_bin"
+  o0_output=$("$o0_bin")
+  optimized_output=$("$optimized_bin")
+  [ "$o0_output" = "$expected" ] ||
+    fail "$name -O0 output differed from its expected Moss result"
+  [ "$optimized_output" = "$expected" ] ||
+    fail "$name optimized output differed from its expected Moss result"
+  [ "$optimized_output" = "$o0_output" ] ||
+    fail "$name optimized output differed from -O0"
+}
+
 reject_source() {
   name=$1
   source=$2
@@ -166,6 +189,88 @@ run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf 
 run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
 run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
 run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
+run_phase4_differential phase4_functional tests/phase4_functional.moss \
+  "$(printf '6 -1 5 11 16\n12 36 6 2 true true\n60 10 -2\n0 0 false true 7\n-9223372036854775808')"
+run_phase4_differential phase4_fusion tests/phase4_fusion.moss '36'
+run_phase4_differential phase4_map_map tests/phase4_map_map.moss '3 7'
+run_phase4_differential phase4_object tests/phase4_object_smoke.moss '12'
+run_phase4_differential phase4_hof tests/phase4_hof_smoke.moss '6'
+run_phase4_differential phase4_effect_order tests/phase4_effect_smoke.moss \
+  "$(printf 'first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\ntotal 6')"
+run_phase4_differential phase4_failure_barrier \
+  tests/phase4_failure_barrier.moss '5'
+run_phase4_differential phase4_domain_barrier \
+  tests/phase4_domain_barrier.moss '12'
+run_phase4_differential phase4_materialized_message \
+  tests/phase4_materialized_message.moss '12'
+
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_fusion_o0.rs" >/dev/null ||
+  fail 'Phase 4 -O0 did not retain eager functional reference semantics'
+grep -F 'Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated' \
+  "$test_build/phase4_fusion_optimized.rs" >/dev/null ||
+  fail 'pure map/filter/map/sum pipeline was not fused'
+[ "$(grep -c 'for __moss_item_ref in' "$test_build/phase4_fusion_optimized.rs")" -eq 1 ] ||
+  fail 'fused reduction pipeline did not lower to exactly one explicit loop'
+if grep -F '__moss_stage_' "$test_build/phase4_fusion_optimized.rs" >/dev/null; then
+  fail 'fused reduction pipeline retained an intermediate collection'
+fi
+if grep -E '\.iter\(\)\.(map|filter)|\.into_iter\(\)\.(map|filter)' \
+    "$test_build/phase4_fusion_optimized.rs" >/dev/null; then
+  fail 'functional pipeline was delegated to a Rust iterator chain'
+fi
+if grep -F 'Vec::new()' "$test_build/phase4_fusion_optimized.rs" >/dev/null; then
+  fail 'fused terminal reduction allocated an intermediate Vec'
+fi
+[ "$(grep -c 'for __moss_item_ref in' "$test_build/phase4_map_map_optimized.rs")" -eq 1 ] ||
+  fail 'map/map did not lower to one explicit loop'
+if grep -F '__moss_stage_' "$test_build/phase4_map_map_optimized.rs" >/dev/null; then
+  fail 'map/map retained an intermediate vector'
+fi
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_effect_order_optimized.rs" >/dev/null ||
+  fail 'I/O callback did not stop fusion'
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_failure_barrier_optimized.rs" >/dev/null ||
+  fail 'possibly failing callback did not stop fusion'
+grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
+  "$test_build/phase4_domain_barrier_optimized.rs" >/dev/null ||
+  fail 'domain-state observation did not stop fusion'
+grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
+  "$test_build/phase4_hof_optimized.rs" >/dev/null ||
+  fail 'static higher-order helper did not erase its compile-time callable parameter'
+if grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)' "$test_build/phase4_hof_optimized.rs"; then
+  fail 'static higher-order helper emitted runtime callable machinery'
+fi
+
+"$compiler" -O --dump-functional-ir --check tests/phase4_fusion.moss \
+  >"$test_build/phase4_functional_ir.first"
+"$compiler" -O --dump-functional-ir --check tests/phase4_fusion.moss \
+  >"$test_build/phase4_functional_ir.second"
+cmp "$test_build/phase4_functional_ir.first" \
+    "$test_build/phase4_functional_ir.second" >/dev/null ||
+  fail 'functional IR dump was not deterministic'
+grep -F 'Map vector[int] callable=normalize PURE span=10:1 materialization=eliminated' \
+  "$test_build/phase4_functional_ir.first" >/dev/null ||
+  fail 'functional IR omitted typed callable, source span, or materialization provenance'
+grep -F 'decision: fused stages 1-4; intermediates eliminated' \
+  "$test_build/phase4_functional_ir.first" >/dev/null ||
+  fail 'functional IR dump omitted its fusion decision'
+"$compiler" -O --explain-fusion --check tests/phase4_effect_smoke.moss \
+  >"$test_build/phase4_effect.explain"
+grep -F 'fusion stopped: external/I/O effect' \
+  "$test_build/phase4_effect.explain" >/dev/null ||
+  fail 'fusion explanation omitted the I/O barrier'
+"$compiler" -O --explain-fusion --check tests/phase4_failure_barrier.moss \
+  >"$test_build/phase4_failure.explain"
+grep -F 'fusion stopped: possible failure ordering' \
+  "$test_build/phase4_failure.explain" >/dev/null ||
+  fail 'fusion explanation omitted the possible-failure barrier'
+"$compiler" -O --explain-fusion --check tests/phase4_domain_barrier.moss \
+  >"$test_build/phase4_domain.explain"
+grep -F 'fusion stopped: observable domain READ' \
+  "$test_build/phase4_domain.explain" >/dev/null ||
+  fail 'fusion explanation omitted the domain-state barrier'
 run_case mini_application_showcase examples/mini_application.moss "$(printf 'queue positions: 1 2\npublic codes: 1101 2007\nscores: 37 36\nscheduler snapshot: 201\nrecorded total: 73')"
 duck_specializations=$(grep -c '^fn __moss_specialize_describe_' \
   "$test_build/duck_typed_methods.rs")
@@ -783,5 +888,28 @@ reject_case trait_incompatible_method_signature "trait method 'draw' has an inco
 reject_case conflicting_method_results "conflicting result expectations for required method 'current'"
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
+reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"
+reject_case functional_map_argument_type \
+  "functional callable 'text_length' argument 1 has type 'int', expected 'string'"
+reject_case functional_unresolved_callable \
+  "unresolved functional callable 'not_declared'"
+reject_case functional_reduce_mismatch \
+  "reduce callable returns 'bool'; expected accumulator type 'int'"
+reject_case functional_consume_element \
+  "functional callable 'take' requires CONSUME access to an element"
+reject_case functional_mutable_capture \
+  "functional placeholder cannot mutate captured binding 'captured'"
+reject_case functional_unbounded_callable \
+  "callable identity 'candidate' is not statically bounded to one function"
+reject_case functional_unbounded_hof \
+  "argument 2 to function 'apply' is not a statically bounded callable identity"
+reject_case functional_domain_boundary \
+  "functional pipeline must be materialized in a local binding before crossing a domain boundary"
+reject_case functional_recursion \
+  "recursive local call cycle: recurse -> recurse"
+reject_case functional_hof_recursion \
+  "recursive local call cycle: recurse -> recurse"
+reject_case functional_callback_alias \
+  "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
 
 echo 'all Moss v0.2 tests passed'

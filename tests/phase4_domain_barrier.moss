@@ -1,0 +1,12 @@
+domain Analyzer:
+  values = [1, 2, 3]
+  factor = 2
+
+  fn Total() -> Int:
+    total = values |> map(_ * factor) |> sum
+    reply total
+
+proc main():
+  analyzer = spawn Analyzer()
+  total = await analyzer.Total()
+  echo total

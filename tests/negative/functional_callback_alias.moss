@@ -1,0 +1,14 @@
+type Box:
+  value: Int
+
+fn conflict(changed: Box, observed: Box) -> Int:
+  changed.value = changed.value + 1
+  return observed.value
+
+fn invalid_callback(item: Box) -> Int:
+  return conflict(item, item)
+
+proc main():
+  values = [Box(value = 1)]
+  result = values |> map(invalid_callback)
+  echo result[0]
