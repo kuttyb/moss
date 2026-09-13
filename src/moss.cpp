@@ -882,8 +882,10 @@ class Checker {
     for (const auto& method : object->second->methods) if (method.name == name) {
       if (method.params.size() != argument_types.size()) continue;
       bool compatible = true;
-      for (size_t i = 0; i < argument_types.size(); ++i)
-        if (!method.params[i].type.empty() && !same_type(method.params[i].type, argument_types[i])) compatible = false;
+      for (size_t i = 0; i < argument_types.size(); ++i) {
+        if (!method.params[i].type.empty() && argument_types[i].empty()) { compatible = false; break; }
+        if (!method.params[i].type.empty() && !same_type(method.params[i].type, argument_types[i])) { compatible = false; break; }
+      }
       if (compatible) { if (found) return nullptr; found = &method; }
     }
     return found;
@@ -959,25 +961,43 @@ class Checker {
           err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
       current_object_ = &object;
-      for (const auto& method : object.methods) {
-        std::unordered_map<string,string> env;
-        for (const auto& field : object.fields) env[field.name] = field.type;
-        for (const auto& param : method.params) env[param.name] = param.type;
-        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
-        check_stmts(method.body, env, nullptr, nullptr, &method_function);
-        if (method.result_expression) check_expression(method.line, *method.result_expression, env);
-      }
-      current_object_ = nullptr;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
         std::unordered_map<string,string> env;
         for (const auto& field : object.fields) env[field.name] = field.type;
-        for (const auto& param : method.params) env[param.name] = param.type;
-        if (!method.return_type) {
-          if (method.result_expression) { if (auto result = inferred_expr_type(*method.result_expression, env)) method.return_type = *result; }
-          for (const auto& s : method.body) if (s.kind == Stmt::Kind::Return && !s.a.empty())
-            if (auto result = inferred_expr_type(s.a, env)) method.return_type = *result;
+        for (const auto& param : method.params) {
+          if (param.type.empty())
+            err(method.line, "cannot infer type for parameter '" + param.name +
+                "' in method '" + object.name + "." + method.name + "'");
+          env[param.name] = param.type;
         }
+        infer_statement_expressions(method.body, env);
+        for (const auto& s : method.body) {
+          if (s.kind == Stmt::Kind::Return && !s.a.empty()) {
+            auto result = inferred_expr_type(s.a, env);
+            if (result) {
+              if (!method.return_type) method.return_type = *result;
+              else if (!same_type(*method.return_type, *result))
+                err(s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
+                    "' but another return path has type '" + *method.return_type + "'");
+            }
+          }
+        }
+        if (method.result_expression) {
+          auto result = inferred_expr_type(*method.result_expression, env);
+          if (result) {
+            if (!method.return_type) method.return_type = *result;
+            else if (!same_type(*method.return_type, *result))
+              err(method.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
+                  "' but is annotated/inferred as '" + *method.return_type + "'");
+          }
+        }
+        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        check_stmts(method.body, env, nullptr, nullptr, &method_function);
+        if (method.result_expression) check_expression(method.line, *method.result_expression, env);
+        if (!method.return_type && (!method.body.empty() || method.result_expression))
+          err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
+      current_object_ = nullptr;
     }
   }
 
@@ -1310,10 +1330,10 @@ class Checker {
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
-        auto object = objects_.find(*base);
-        if (object != objects_.end()) for (const auto& method : object->second->methods)
-          if (method.name == method_name && method.params.size() == method_args.size() && method.return_type)
-            return *method.return_type;
+        vector<string> argument_types;
+        for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+        if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
+          if (method->return_type) return *method->return_type;
       }
     }
 
@@ -2165,7 +2185,16 @@ class Checker {
             err(s.line, "naked cross-domain call '" + s.a + "." + s.b +
                 "' requires 'message' or 'await'");
           auto collection = receiver != env.end() && (receiver->second == "vector" || receiver->second == "queue" || receiver->second == "map" || starts_with(receiver->second, "vector[") || starts_with(receiver->second, "queue[") || starts_with(receiver->second, "map["));
-          if (!collection) err(s.line, "local member calls are not implemented; use a top-level function");
+          if (!collection) {
+            if (receiver != env.end() && objects_.count(canonical_type_name(receiver->second))) {
+              vector<string> argument_types;
+              for (const auto& arg : s.args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+              if (!resolve_method(canonical_type_name(receiver->second), s.b, argument_types))
+                err(s.line, "no matching method '" + receiver->second + "." + s.b + "' for supplied arguments");
+            } else {
+              err(s.line, "local member calls are not implemented; use a top-level function");
+            }
+          }
         } else {
           check_function_call(s.line, s.a, s.args, env);
         }
@@ -2761,7 +2790,9 @@ class Generator {
       }
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
-        std::ostringstream r; r << head << "(";
+        bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == head; });
+        std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
+        r << head << "(";
         for (size_t i = 0; i < call_args.size(); ++i) { if (i) r << ", "; r << expr(call_args[i], d, locals); }
         r << ")"; return r.str();
       }
@@ -2774,6 +2805,12 @@ class Generator {
         return "(" + expr(builtin_args.front(), d, locals) + ").sqrt()";
       if (builtin == "sum" && builtin_args.size() == 1)
         return expr(builtin_args.front(), d, locals) + ".iter().copied().sum()";
+      bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == builtin; });
+      if (d && objects_.count(d->name) && !known_function) {
+        std::ostringstream r; r << "self." << builtin << "(";
+        for (size_t i = 0; i < builtin_args.size(); ++i) { if (i) r << ", "; r << expr(builtin_args[i], d, locals); }
+        r << ")"; return r.str();
+      }
     }
 
     // Replace domain state identifiers with state.<name>, respecting basic identifier boundaries.
@@ -2799,12 +2836,22 @@ class Generator {
           string tok = e.substr(i, j-i);
           // If already preceded by '.', it is a member name, not state identifier.
           bool member = i > 0 && e[i-1] == '.';
-          if (!member && fields.count(tok) && !locals.count(tok)) out += "state." + tok;
+          if (!member && fields.count(tok) && !locals.count(tok))
+            out += (objects_.count(d->name) ? "self." : "state.") + tok;
           else out += tok;
           i = j;
         } else { out.push_back(c); ++i; }
       }
       e = out;
+      if (objects_.count(d->name)) {
+        for (const auto& f : d->state) if (canonical_type_name(f.type) == "float") {
+          for (const auto& op : {string(" > "), string(" < "), string(" >= "), string(" <= "), string(" == "), string(" != ")}) {
+            string needle = "self." + f.name + op + "0";
+            auto pos = e.find(needle);
+            if (pos != string::npos) e.replace(pos, needle.size(), "self." + f.name + op + "0.0");
+          }
+        }
+      }
     }
     // Nim-ish boolean words.
     replace_word(e, "and", "&&");
@@ -2954,16 +3001,21 @@ class Generator {
       o << "impl " << t.name << " {\n    fn " << method.name << "(&self";
       for (const auto& p : method.params) {
         if (p.type.empty()) throw std::runtime_error("unresolved concrete method parameter type: " + method.name + "." + p.name);
-        o << ", " << p.name << ": " << rust_type(p.type);
+        o << ", mut " << p.name << ": " << rust_type(p.type);
       }
-      string value = method.result_expression.value_or("");
-      if (value.empty()) for (const auto& s : method.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) value = s.a;
-      for (const auto& f : t.fields) {
-        if (trim(value) == f.name) value = "self." + f.name;
-        else replace_word(value, f.name, "self." + f.name);
-      }
-      if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " { " << value << " }\n";
-      else o << ") { }\n";
+      if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " {\n";
+      else o << ") {\n";
+      Domain receiver;
+      receiver.name = t.name;
+      receiver.state = t.fields;
+      std::set<string> locals;
+      std::unordered_map<string,string> types;
+      for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
+      gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, false,
+                std::nullopt, true);
+      if (method.result_expression)
+        o << "        " << expr(*method.result_expression, &receiver, locals) << "\n";
+      o << "    }\n";
       o << "}\n\n";
     }
   }
@@ -3699,7 +3751,10 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
-          o << indent(level) << expr(s.a, d, locals);
+          bool known_function = std::any_of(p_.functions.begin(), p_.functions.end(), [&](const Function& f) { return f.name == s.a; });
+          bool implicit_method = in_function && d && objects_.count(d->name) &&
+              s.b.empty() && !known_function;
+          o << indent(level) << (implicit_method ? "self." : "") << expr(s.a, d, locals);
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);

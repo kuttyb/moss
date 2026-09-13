@@ -27,13 +27,14 @@ Updated: 2026-09-11
   `src/diagnostics.hpp` modules. `moss.cpp` still contains the parser, checker,
   ownership, optimizer, and Rust generator; the extraction is an incremental
   architectural checkpoint rather than a completed module split.
-- Type declarations now retain method bodies as children of their method nodes
-  in the AST, including nested control-flow blocks. Method semantic checking and
-  Rust lowering remain intentionally deferred to the next milestone.
-- Concrete method result inference and static Rust inherent-method lowering are
-  now implemented for field-based expression/return methods. Method arguments,
-  receiver-aware method bodies, and method-to-method resolution remain follow-up
-  work.
+- Type declarations retain method bodies as children of their method nodes in the
+  AST, including nested control-flow blocks.
+- Concrete methods are checked with receiver fields and typed parameters in scope;
+  result types are inferred across return paths and lowered through the ordinary
+  statement generator to executable Rust inherent methods. Same-receiver calls,
+  locals, conditionals, loops, and early returns are supported.
+- Concrete method parameters must have resolved static types; unresolved parameters
+  are compile errors rather than defaulting to an integer backend type.
 - Untyped-function operation metadata now flows through structured `Constraint`
   records; the former `generic_ops` field has been removed.
 
@@ -73,10 +74,9 @@ Updated: 2026-09-11
   serialized handler ordering; compound or multi-field updates must retain the
   mutex.
 
-- Trait declarations are parsed and checked structurally for currently
-  representable primitive operation contracts. User-defined object methods are
-  not yet represented in object declarations, so positive structural object
-  conformance remains an open implementation task.
+- Trait declarations and duck-typed method constraints still need to be wired to
+  the concrete method resolver; runtime dispatch and dynamic fallback remain
+  forbidden.
 
 - Rust type/ownership errors may still surface when Moss inference lacks enough source information.
 - General await expressions, spawning from handlers, cancellation, timeouts, failure propagation, and cycle detection are not implemented.

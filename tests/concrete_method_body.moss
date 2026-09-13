@@ -1,0 +1,22 @@
+type Circle:
+  radius: Float
+
+  fn diameter():
+    return radius * 2.0
+
+  fn area(scale: Float):
+    d = diameter()
+    if scale > 0.0:
+      return d * d * 0.785398 * scale
+    else:
+      return 0.0
+
+  fn countdown(count: Int):
+    while count > 0:
+      count = count - 1
+    return count
+
+fn main():
+  c = Circle(radius = 2.0)
+  echo c.area(1.0)
+  echo c.countdown(3)
