@@ -175,6 +175,26 @@ The Rust emitter executes the completed plan. Fused output is deliberately simpl
 control flow, not an opaque iterator abstraction. Generated comments identify eager and
 fused pipelines and list their retained provenance.
 
+## Executable examples
+
+The examples directory separates the main ideas into small programs:
+
+- `functional_basics.moss` covers named functions, placeholders, immutable captures,
+  and reuse of the READ-only source.
+- `functional_reductions.moss` covers every terminal, empty-input identities, explicit
+  reduction initializers, and wrapping integer accumulation.
+- `functional_static_callables.moss` covers bound methods, method placeholders, and
+  compile-time specialization of a higher-order helper.
+- `functional_effect_order.moss` makes eager callback and initializer ordering visible
+  with `echo`, demonstrating why observable effects stop fusion.
+- `functional_objects.moss` applies concrete read-only methods and safe trivial-field
+  projections to user-defined values without dynamic dispatch or hidden object copies.
+- `functional_domains.moss` demonstrates an awaited domain callback as a fusion barrier
+  and then sends the concrete terminal result across a normal message boundary.
+
+Each program is compiled and executed through both `-O0` and `-O` by the regression
+suite. Their observable output must agree.
+
 ## Deliberately deferred
 
 Phase 4 does not add automatic parallelism, SIMD, GPU code generation, a dynamic callable

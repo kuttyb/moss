@@ -159,6 +159,11 @@ Updated: 2026-09-13
   implementations, inferred Vector/Map/Queue use, an executable optimized functional
   dataflow pipeline, and a small static job-scheduler application with domains, messages,
   and awaits.
+- Six focused functional showcases additionally cover named and placeholder stages,
+  immutable captures and source reuse, every reduction terminal and empty-input identity,
+  bound methods and static higher-order specialization, observable eager effect order,
+  wrapping reduction arithmetic, read-only pipelines over user-defined values, and an
+  awaited domain callback that remains an eager fusion barrier.
 
 ## Partially implemented or unimplemented
 
@@ -229,10 +234,10 @@ user-defined types, assert that two concrete specializations are emitted, and re
 runtime Rust trait machinery. Negative coverage includes missing methods, wrong arity,
 incompatible method arguments, missing trait methods, incompatible trait signatures,
 conflicting method-result expectations, unresolved collection element types,
-heterogeneous collections, and naked cross-domain calls. The five showcase programs
-also execute under the regression harness: static duck typing, named traits, inferred
-collections and methods, the `map |> filter |> map |> sum` dataflow shape, and the
-domain-backed mini application.
+heterogeneous collections, and naked cross-domain calls. The showcase suite also executes
+under the regression harness: static duck typing, named traits, inferred collections and
+methods, the `map |> filter |> map |> sum` dataflow shape, the domain-backed mini
+application, and six focused functional examples.
 
 Await regressions additionally accept same-concrete-domain branch joins, reject
 different-domain joins and one-branch-only targets, validate an await helper reached
@@ -274,11 +279,13 @@ contexts, prove that an I/O-producing `reduce` initializer is recorded on the `R
 node and preserves differential evaluation order, verify real method-result provenance,
 reject non-Copy `_`/field-projection maps before Rust generation, and reject captured
 mutation propagated through nested ordinary helpers.
+The focused functional examples are likewise differential tests: each is compiled with
+both `-O0` and `-O`, compiled by `rustc -D warnings`, executed, and compared against one
+expected output.
 
 `make examples` passed, compiling every valid example (including the executable static
-trait and dataflow showcases in `examples/traits.moss` and
-`examples/functional_dataflow.moss`) with `-Oshared-memory`; the intentional
-`use_after_transfer.moss` negative example was skipped. A strict
+trait, dataflow, reduction, callable, effect-order, and object-pipeline showcases) with
+`-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was skipped. A strict
 `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n tests/run.sh` also
 passed for this checkpoint.
 

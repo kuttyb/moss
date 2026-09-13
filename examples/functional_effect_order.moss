@@ -1,0 +1,33 @@
+# Moss pipelines are logically eager and source ordered. The echo calls make
+# these stages observable, so -O deliberately preserves stage-at-a-time order.
+fn first(value: Int) -> Int:
+  echo "first", value
+  return value
+
+fn second(value: Int) -> Int:
+  echo "second", value
+  return value
+
+fn source_values():
+  echo "build source"
+  return [1, 2, 3]
+
+fn initial_total() -> Int:
+  echo "build initial"
+  return 10
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+proc main():
+  ordered_total = [1, 2, 3]
+    |> map(first)
+    |> map(second)
+    |> sum
+  echo "ordered total:", ordered_total
+
+  # Initializer effects belong to the reduce stage and are evaluated once.
+  reduced_total = source_values()
+    |> map(_ * 2)
+    |> reduce(initial_total(), add)
+  echo "reduced total:", reduced_total

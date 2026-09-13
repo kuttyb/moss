@@ -60,6 +60,12 @@ The showcase programs are executable syntax guides:
 - [named traits](examples/traits.moss) calls one trait-typed function for Circle and Rectangle.
 - [collections and methods](examples/collections_and_methods.moss) combines inferred Vector, Map, and Queue values with object methods.
 - [functional dataflow](examples/functional_dataflow.moss) executes a typed `map |> filter |> map |> sum` chain that `-O` fuses into one explicit loop.
+- [functional basics](examples/functional_basics.moss) combines named functions, placeholders, an immutable capture, and source reuse.
+- [functional reductions](examples/functional_reductions.moss) demonstrates every terminal, empty-input identities, explicit-initializer `reduce`, and wrapping sums.
+- [static functional callables](examples/functional_static_callables.moss) uses bound methods, method placeholders, and a higher-order helper specialized to two functions.
+- [functional effect order](examples/functional_effect_order.moss) makes eager stage ordering and an effectful reduction initializer observable.
+- [functional objects](examples/functional_objects.moss) runs statically resolved read-only methods and trivial field projections over user-defined values.
+- [functional domains](examples/functional_domains.moss) shows an explicit `await` inside a callback acting as a fusion barrier, followed by a scalar message boundary.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
 - [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
 

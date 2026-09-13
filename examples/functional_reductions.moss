@@ -1,0 +1,36 @@
+# Terminal operations return concrete values. reduce always has an explicit
+# initializer, which also defines its result for an empty input.
+fn square(value: Int) -> Int:
+  return value * value
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+proc main():
+  values = [-2, 0, 3, 5]
+
+  square_sum = values |> map(square) |> sum
+  positive_count = values |> filter(_ > 0) |> count
+  has_large_value = values |> any(_ > 4)
+  all_in_range = values |> all(_ >= -2)
+  explicit_reduce = values |> reduce(100, add)
+
+  flags = [true, false, true]
+  any_flag = flags |> any
+  all_flags = flags |> all
+
+  empty = values |> filter(_ > 100)
+  empty_sum = empty |> sum
+  empty_count = empty |> count
+  empty_any = empty |> any(_ > 0)
+  empty_all = empty |> all(_ > 0)
+  empty_reduce = empty |> reduce(7, add)
+
+  # Int arithmetic is two's-complement wrapping, including fused reductions.
+  wrapped = [9223372036854775807, 1] |> sum
+
+  echo "reductions:", square_sum, positive_count, has_large_value, all_in_range
+  echo "reduce with initial:", explicit_reduce
+  echo "boolean terminals:", any_flag, all_flags
+  echo "empty terminals:", empty_sum, empty_count, empty_any, empty_all, empty_reduce
+  echo "wrapping sum:", wrapped

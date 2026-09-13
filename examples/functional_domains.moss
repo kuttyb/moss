@@ -1,0 +1,33 @@
+# Functional callbacks obey the same explicit domain rules as ordinary code.
+# read_source contains await, so its map stage is an eager fusion barrier.
+domain Source:
+  value = 7
+
+  fn Read() -> Int:
+    reply value
+
+domain Sink:
+  stored = 0
+
+  fn Store(value: Int):
+    stored = value
+
+  fn Stored() -> Int:
+    reply stored
+
+fn read_source(source: Source) -> Int:
+  value = await source.Read()
+  return value
+
+proc main():
+  first = spawn Source()
+  second = spawn Source()
+  sources = [first, second]
+
+  total = sources |> map(read_source) |> sum
+
+  # A terminal is a concrete scalar and can cross a message boundary normally.
+  sink = spawn Sink()
+  message sink.Store(total)
+  observed = await sink.Stored()
+  echo "domain-backed total:", observed

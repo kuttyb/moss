@@ -1,0 +1,16 @@
+# Named functions and placeholder expressions are both statically resolved.
+# Ordinary map/filter operations READ their source, so values remains usable.
+fn normalize(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [-3, -1, 2, 4]
+  offset = 10
+
+  transformed = values
+    |> map(normalize)
+    |> filter(_ > 0)
+    |> map(_ + offset)
+
+  echo "transformed:", transformed[0], transformed[1]
+  echo "source still available:", values[0], values[3]

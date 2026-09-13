@@ -1,0 +1,38 @@
+# Functional callables are compile-time identities: named functions, bound
+# methods, and method placeholders do not create runtime function objects.
+type Scaler:
+  factor: Int
+
+  fn apply(value: Int) -> Int:
+    return value * factor
+
+type Sample:
+  value: Int
+
+  fn score() -> Int:
+    return value * 3
+
+fn double(value: Int) -> Int:
+  return value * 2
+
+fn increment(value: Int) -> Int:
+  return value + 1
+
+# Moss specializes this helper separately for each concrete callable passed in.
+fn transform(values, operation):
+  return values |> map(operation)
+
+proc main():
+  values = [1, 2, 3]
+  doubled = transform(values, double)
+  incremented = transform(values, increment)
+
+  scaler = Scaler(factor = 4)
+  scaled_total = values |> map(scaler.apply) |> sum
+
+  samples = [Sample(value = 2), Sample(value = 5)]
+  score_total = samples |> map(_.score()) |> sum
+
+  echo "specializations:", doubled[2], incremented[2]
+  echo "bound method:", scaled_total
+  echo "method placeholder:", score_total

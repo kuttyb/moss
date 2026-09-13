@@ -189,6 +189,23 @@ run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf 
 run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
 run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
 run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
+run_phase4_differential functional_basics_showcase \
+  examples/functional_basics.moss \
+  "$(printf 'transformed: 14 18\nsource still available: -3 4')"
+run_phase4_differential functional_reductions_showcase \
+  examples/functional_reductions.moss \
+  "$(printf 'reductions: 38 2 true true\nreduce with initial: 106\nboolean terminals: true false\nempty terminals: 0 0 false true 7\nwrapping sum: -9223372036854775808')"
+run_phase4_differential functional_static_callables_showcase \
+  examples/functional_static_callables.moss \
+  "$(printf 'specializations: 6 4\nbound method: 24\nmethod placeholder: 21')"
+run_phase4_differential functional_effect_order_showcase \
+  examples/functional_effect_order.moss \
+  "$(printf 'first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\nordered total: 6\nbuild source\nbuild initial\nreduced total: 22')"
+run_phase4_differential functional_objects_showcase \
+  examples/functional_objects.moss \
+  "$(printf 'accepted total: 20\nsensor ids: 101 103\nvalidity: true false true')"
+run_phase4_differential functional_domains_showcase \
+  examples/functional_domains.moss 'domain-backed total: 14'
 run_phase4_differential phase4_functional tests/phase4_functional.moss \
   "$(printf '6 -1 5 11 16\n12 36 6 2 true true\ntrue false\n60 10 -2\n0 0 false true 7\n-9223372036854775808\n7')"
 run_phase4_differential phase4_fusion tests/phase4_fusion.moss '36'

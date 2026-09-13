@@ -1,0 +1,32 @@
+# Pipelines work over user-defined values without dynamic dispatch. These
+# callbacks only read each Reading and return trivial Int/Bool values.
+type Reading:
+  sensor_id: Int
+  raw_value: Int
+  offset: Int
+
+  fn calibrated() -> Int:
+    return raw_value + offset
+
+  fn is_valid() -> Bool:
+    return raw_value >= 0
+
+proc main():
+  readings = [Reading(sensor_id = 101, raw_value = 8, offset = 2)]
+  readings.push(Reading(sensor_id = 102, raw_value = -4, offset = 1))
+  readings.push(Reading(sensor_id = 103, raw_value = 15, offset = -5))
+
+  accepted_total = readings
+    |> map(_.calibrated())
+    |> filter(_ >= 0)
+    |> sum
+
+  sensor_ids = readings |> map(_.sensor_id)
+  validity = readings |> map(_.is_valid())
+
+  echo "accepted total:", accepted_total
+  echo "sensor ids:", sensor_ids[0], sensor_ids[2]
+  echo "validity:", validity[0], validity[1], validity[2]
+
+  # Mapping a whole non-Copy object with map(_) is intentionally not shown:
+  # map READs its source, and Moss never inserts a hidden clone to copy it out.
