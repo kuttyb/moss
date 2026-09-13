@@ -828,6 +828,7 @@ class Checker {
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
   std::unordered_map<string, Trait*> traits_;
+  const ObjectType* current_object_ = nullptr;
 
   [[noreturn]] void err(int line, const string& msg) const { throw CompileError(line, msg); }
 
@@ -957,6 +958,16 @@ class Checker {
         if (!field_names.insert(field.name).second)
           err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
+      current_object_ = &object;
+      for (const auto& method : object.methods) {
+        std::unordered_map<string,string> env;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& param : method.params) env[param.name] = param.type;
+        Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        check_stmts(method.body, env, nullptr, nullptr, &method_function);
+        if (method.result_expression) check_expression(method.line, *method.result_expression, env);
+      }
+      current_object_ = nullptr;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
         std::unordered_map<string,string> env;
         for (const auto& field : object.fields) env[field.name] = field.type;
@@ -1248,6 +1259,10 @@ class Checker {
         return argument_type;
       }
       auto function = functions_.find(callee);
+      if (function == functions_.end() && current_object_) {
+        auto method = resolve_method(current_object_->name, callee, {});
+        if (method && method->return_type) return *method->return_type;
+      }
       if (function != functions_.end() && function->second->return_type) {
         string r = canonical_type_name(*function->second->return_type);
         if (starts_with(r, "_generic:")) {
@@ -1954,6 +1969,12 @@ class Checker {
     auto function = functions_.find(name);
     if (function == functions_.end()) {
       if (name == "sqrt" || name == "sum") return;
+      if (current_object_) {
+        vector<string> argument_types;
+        for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+        auto method = resolve_method(current_object_->name, name, argument_types);
+        if (method) return;
+      }
       err(line, "unknown local function '" + name + "'");
     }
     if (function->second->params.size() != args.size())
@@ -2931,7 +2952,10 @@ class Generator {
     o << "}\n\n";
     for (const auto& method : t.methods) {
       o << "impl " << t.name << " {\n    fn " << method.name << "(&self";
-      for (const auto& p : method.params) o << ", " << p.name << ": " << rust_type(p.type.empty() ? "int" : p.type);
+      for (const auto& p : method.params) {
+        if (p.type.empty()) throw std::runtime_error("unresolved concrete method parameter type: " + method.name + "." + p.name);
+        o << ", " << p.name << ": " << rust_type(p.type);
+      }
       string value = method.result_expression.value_or("");
       if (value.empty()) for (const auto& s : method.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) value = s.a;
       for (const auto& f : t.fields) {
