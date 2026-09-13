@@ -278,6 +278,20 @@ run_phase4_differential phase45_shared_wrapping \
   tests/phase45_shared_wrapping.moss '-9223372036854775808 2'
 run_phase4_differential phase45_shared_dependency_barrier \
   tests/phase45_shared_dependency_barrier.moss '6 12'
+run_phase4_differential phase45_divergent_work_skipping \
+  tests/phase45_divergent_work_skipping.moss '3 true true'
+run_phase4_differential phase45_divergence_transitive \
+  tests/phase45_divergence_transitive.moss '3'
+run_phase4_differential phase45_divergent_shared_any_all \
+  tests/phase45_divergent_shared_any_all.moss 'true false 3'
+run_phase4_differential phase45_cross_let_skip_revalidation \
+  tests/phase45_cross_let_skip_revalidation.moss '3'
+run_phase4_differential phase45_cross_let_filter_count \
+  tests/phase45_cross_let_filter_count.moss '2'
+run_phase4_differential phase45_divergence_fusion \
+  tests/phase45_divergence_fusion.moss '6'
+run_phase4_differential phase45_divergence_method \
+  tests/phase45_divergence_method.moss '2'
 
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_fusion_o0.rs" >/dev/null ||
@@ -352,6 +366,59 @@ if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
     "$test_build/phase45_terminal_simplification_o0.rs" >/dev/null; then
   fail '-O0 used the optimized count-to-length plan'
 fi
+
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_divergent_work_skipping_optimized.rs" >/dev/null; then
+  fail 'potentially divergent mapped-count was incorrectly lowered to length'
+fi
+grep -F 'spin(__moss_shared_value_' \
+  "$test_build/phase45_divergent_work_skipping_optimized.rs" >/dev/null ||
+  fail 'potentially divergent callback disappeared from optimized traversal'
+if grep -F 'break;' \
+    "$test_build/phase45_divergent_work_skipping_optimized.rs" >/dev/null; then
+  fail 'potentially divergent any/all callback was incorrectly short circuited'
+fi
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_divergence_transitive_optimized.rs" >/dev/null; then
+  fail 'transitively divergent mapped-count was incorrectly lowered to length'
+fi
+grep -F 'outer(__moss_value_' \
+  "$test_build/phase45_divergence_transitive_optimized.rs" >/dev/null ||
+  fail 'transitively divergent callback disappeared from optimized traversal'
+grep -F 'Moss backend: SHARED FUNCTIONAL SOURCE TRAVERSAL (3 terminal consumers)' \
+  "$test_build/phase45_divergent_shared_any_all_optimized.rs" >/dev/null ||
+  fail 'divergence-safe shared traversal DAG was not retained'
+[ "$(grep -c 'inspect(__moss_shared_value_' \
+    "$test_build/phase45_divergent_shared_any_all_optimized.rs")" -eq 2 ] ||
+  fail 'shared any/all branches dropped a potentially divergent callback'
+if grep -E 'if !?__moss_shared_result_' \
+    "$test_build/phase45_divergent_shared_any_all_optimized.rs" >/dev/null; then
+  fail 'shared any/all branch was guarded despite potential divergence'
+fi
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_cross_let_skip_revalidation_optimized.rs" >/dev/null; then
+  fail 'cross-binding count ignored divergent upstream work'
+fi
+grep -F 'spin(__moss_value_' \
+  "$test_build/phase45_cross_let_skip_revalidation_optimized.rs" >/dev/null ||
+  fail 'cross-binding fusion dropped a divergent upstream callback'
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_cross_let_filter_count_optimized.rs" >/dev/null; then
+  fail 'cross-binding count ignored a cardinality-changing filter'
+fi
+grep -F 'Moss backend: FUSED FUNCTIONAL PIPELINE' \
+  "$test_build/phase45_divergence_fusion_optimized.rs" >/dev/null ||
+  fail 'potential divergence unnecessarily disabled invocation-preserving fusion'
+grep -F 'spin(__moss_value_' \
+  "$test_build/phase45_divergence_fusion_optimized.rs" >/dev/null ||
+  fail 'ordinary fusion dropped its potentially divergent callback'
+if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
+    "$test_build/phase45_divergence_method_optimized.rs" >/dev/null; then
+  fail 'potentially divergent method callback was incorrectly eliminated'
+fi
+grep -F '__moss_value_0.inspect()' \
+  "$test_build/phase45_divergence_method_optimized.rs" >/dev/null ||
+  fail 'potentially divergent method callback disappeared from traversal'
 
 [ "$(grep -c 'break;' \
     "$test_build/phase45_short_circuit_single_optimized.rs")" -eq 3 ] ||
@@ -437,9 +504,57 @@ fi
 grep -F 'count -> len; reason: exact source cardinality known' \
   "$test_build/phase45_terminal_simplification.ir" >/dev/null ||
   fail 'functional explanation omitted count-to-length reasoning'
-grep -F 'map stage eliminated; reason: output unused and callback is pure/non-failing' \
+grep -F 'map stage eliminated; reason: output unused and callback is pure/non-failing/non-divergent' \
   "$test_build/phase45_terminal_simplification.ir" >/dev/null ||
   fail 'functional explanation omitted dead-map reasoning'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_divergent_work_skipping.moss \
+  >"$test_build/phase45_divergent_work_skipping.ir"
+grep -F 'callable=spin PURE+MAY_DIVERGE' \
+  "$test_build/phase45_divergent_work_skipping.ir" >/dev/null ||
+  fail 'functional IR omitted direct callback divergence'
+grep -F 'map elimination: disabled; reason: callback may diverge' \
+  "$test_build/phase45_divergent_work_skipping.ir" >/dev/null ||
+  fail 'functional explanation omitted the divergent map-elimination barrier'
+grep -F 'short-circuit any disabled; reason: skipped callback may diverge' \
+  "$test_build/phase45_divergent_work_skipping.ir" >/dev/null ||
+  fail 'functional explanation omitted the divergent any barrier'
+grep -F 'short-circuit all disabled; reason: skipped callback may diverge' \
+  "$test_build/phase45_divergent_work_skipping.ir" >/dev/null ||
+  fail 'functional explanation omitted the divergent all barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_divergence_transitive.moss \
+  >"$test_build/phase45_divergence_transitive.ir"
+grep -F 'callable=outer PURE+MAY_DIVERGE' \
+  "$test_build/phase45_divergence_transitive.ir" >/dev/null ||
+  fail 'functional IR omitted transitive callback divergence'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_cross_let_skip_revalidation.moss \
+  >"$test_build/phase45_cross_let_skip_revalidation.ir"
+grep -F 'count -> len disabled; reason: callback may diverge' \
+  "$test_build/phase45_cross_let_skip_revalidation.ir" >/dev/null ||
+  fail 'cross-binding work elimination was not revalidated for divergence'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_cross_let_filter_count.moss \
+  >"$test_build/phase45_cross_let_filter_count.ir"
+grep -F 'count -> len disabled; reason: upstream stage changes cardinality' \
+  "$test_build/phase45_cross_let_filter_count.ir" >/dev/null ||
+  fail 'cross-binding count omitted its cardinality barrier explanation'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_divergence_fusion.moss \
+  >"$test_build/phase45_divergence_fusion.ir"
+grep -F 'callable=spin PURE+MAY_DIVERGE' \
+  "$test_build/phase45_divergence_fusion.ir" >/dev/null ||
+  fail 'ordinary fusion IR omitted callback divergence provenance'
+grep -F 'decision: fused stages 1-4; intermediates eliminated' \
+  "$test_build/phase45_divergence_fusion.ir" >/dev/null ||
+  fail 'potential divergence was treated as a generic fusion barrier'
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase45_divergence_method.moss \
+  >"$test_build/phase45_divergence_method.ir"
+grep -F 'callable=placeholder:_.inspect() PURE+MAY_DIVERGE' \
+  "$test_build/phase45_divergence_method.ir" >/dev/null ||
+  fail 'functional IR omitted method callback divergence'
 "$compiler" -O --dump-functional-ir --check \
   tests/phase45_short_circuit_effect_barrier.moss \
   >"$test_build/phase45_short_circuit_effect_barrier.ir"

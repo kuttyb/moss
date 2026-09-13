@@ -1,0 +1,12 @@
+fn outer(value: Int) -> Int:
+  return inner(value)
+
+fn inner(value: Int) -> Int:
+  while value < 0:
+    let observed = value
+  return value
+
+proc main():
+  values = [0, 1, 2]
+  mapped_count = values |> map(outer) |> count
+  echo mapped_count

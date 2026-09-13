@@ -53,7 +53,14 @@ struct Method {
   int line = 0;
 };
 struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
-struct Handler { string name, header; vector<Param> params; std::optional<string> reply_type; vector<Stmt> body; int line = 0; };
+struct Handler {
+  string name, header;
+  vector<Param> params;
+  std::optional<string> reply_type;
+  vector<Stmt> body;
+  ObservableEffects observable_effects;
+  int line = 0;
+};
 struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; };

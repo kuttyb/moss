@@ -1,0 +1,11 @@
+fn spin(value: Int) -> Int:
+  while value < 0:
+    let observed = value
+  return value
+
+fn total(values: Vector) -> Int:
+  return values |> map(spin) |> filter(_ >= 0) |> map(_ + 1) |> sum
+
+proc main():
+  values = [0, 1, 2]
+  echo total(values)

@@ -49,6 +49,11 @@ struct ObservableEffects {
   bool await = false;
   bool external_io = false;
   bool may_fail = false;
+  // Termination is independent of failure and externally visible effects.
+  // Phase 4.5 currently treats any reachable Moss `while` as potentially
+  // divergent; ordinary fusion may preserve it, but work-skipping transforms
+  // must not omit it.
+  bool may_diverge = false;
   bool unresolved = true;
 
   bool fusion_safe() const {
@@ -60,6 +65,10 @@ struct ObservableEffects {
     return fusion_safe();
   }
 
+  bool safe_to_skip() const {
+    return fusion_safe() && !may_diverge;
+  }
+
   void merge(const ObservableEffects& other) {
     local_capture_read = local_capture_read || other.local_capture_read;
     local_mutation = local_mutation || other.local_mutation;
@@ -69,6 +78,7 @@ struct ObservableEffects {
     await = await || other.await;
     external_io = external_io || other.external_io;
     may_fail = may_fail || other.may_fail;
+    may_diverge = may_diverge || other.may_diverge;
     unresolved = unresolved || other.unresolved;
   }
 };

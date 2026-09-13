@@ -110,9 +110,14 @@ Updated: 2026-09-13
   vectors. Effectful or possibly failing stages retain eager lowering.
 - Phase 4.5 separates traversal fusion from physical materialization. Transformation
   nodes record virtual/materialized state plus escape, multiple-consumer, and barrier
-  reasons. Exact count uses collection length; preceding pure/non-failing maps are dead
-  when only cardinality is observed. Safe optimized `any`/`all` stop their consumer at a
-  decisive element, while eager/effectful/failing callbacks visit the full source.
+  reasons. Exact count uses collection length; preceding pure/non-failing/non-divergent
+  maps are dead when only cardinality is observed. Safe optimized `any`/`all` stop their
+  consumer at a decisive element, while eager/effectful/failing/divergent callbacks visit
+  the full source.
+- Callable summaries carry `may_diverge` independently of ordinary effects and failure.
+  Any function/method/handler containing `while`, plus callers reached through the
+  acyclic local call graph, is conservatively marked. Work-eliminating plans require
+  non-divergence; invocation-preserving ordinary fusion remains legal.
 - A new local binding or `let` transformation with one adjacent immutable consumer can
   remain virtual across statements. Mutable/reassigned bindings, later uses, multiple
   consumers, intervening effects/statements, source effects, and control-flow ambiguity
@@ -310,6 +315,9 @@ Phase 4.5 differentials cover exact and mapped count, empty/immediate/late/no-ma
 immutable cross-binding fusion (including a function result), later-use/mutable/effect
 materialization barriers, multiple consumers, sum/count/filter-count and any/all/count
 shared DAGs, result-dependency and source-mutation barriers, and wrapping shared sums.
+Direct/transitive `while` regressions verify that mapped-count elimination and standalone,
+cross-binding, and shared-DAG `any`/`all` skipping are disabled by `may_diverge`, while
+ordinary invocation-preserving fusion remains enabled.
 Generated-Rust checks require eliminated callbacks/loops, optimized-only short-circuit
 control flow, absent virtual collections, present required collections, and one shared
 source loop. Deterministic IR checks assert materialization reasons, DAG edges, stable

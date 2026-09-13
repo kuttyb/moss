@@ -121,14 +121,21 @@ barriers. A missed fusion is valid; a speculative reordering is not. Fused reduc
 use Moss's wrapping integer arithmetic and allocate no intermediate vector.
 
 Phase 4.5 applies the same proof facts to scope-level plans. Exact `count` becomes a
-length query; preceding pure, non-failing maps can be removed when only cardinality is
-used. Optimized `any` and `all` stop their own computation once known, while the `-O0`
-reference and effectful or possibly failing callbacks still visit every element. A
+length query; preceding pure, non-failing, non-divergent maps can be removed when only
+cardinality is used. Optimized `any` and `all` stop their own computation once known,
+while the `-O0` reference and effectful, possibly failing, or potentially divergent
+callbacks still visit every element. A
 single-use immutable functional binding may remain virtual across the immediately
 following consumer. Independent pure terminals over one unchanged local source may
 share one explicit loop. Multiple uses, mutable bindings, intervening effects, source
 mutation, dependencies between terminal results, and control flow conservatively keep
 the relevant materialization or traversal boundary.
+
+Potential divergence is distinct from failure and other observable effects. A callback
+containing `while`, or transitively calling one that does, is conservatively marked
+`may_diverge`; Moss does not claim to prove termination. This fact blocks optimizations
+that skip invocations, but does not by itself block ordered fusion that preserves the
+eager program's callback work.
 
 Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
 code generation does not infer a plan again from matching source text. Numeric IR IDs are

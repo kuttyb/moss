@@ -1,0 +1,12 @@
+type Spinner:
+  value: Int
+
+  fn inspect() -> Int:
+    while value < 0:
+      let observed = value
+    return value
+
+proc main():
+  values = [Spinner(value = 0), Spinner(value = 1)]
+  item_count = values |> map(_.inspect()) |> count
+  echo item_count

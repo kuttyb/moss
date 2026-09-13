@@ -3796,6 +3796,7 @@ class Checker {
         left.message == right.message && left.await == right.await &&
         left.external_io == right.external_io &&
         left.may_fail == right.may_fail &&
+        left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
   }
 
@@ -3977,6 +3978,9 @@ class Checker {
     ObservableEffects effects = no_observable_effects();
     std::set<string> locals = parameters;
     for (const auto& statement : body) {
+      // Moss does not attempt a termination proof. A syntactic while is a
+      // conservative divergence seed, including when nested in control flow.
+      if (statement.kind == Stmt::Kind::While) effects.may_diverge = true;
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
       if (statement.kind == Stmt::Kind::AwaitMessage) effects.await = true;
@@ -4019,9 +4023,16 @@ class Checker {
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
         method.observable_effects = no_observable_effects();
+    for (auto& domain : p_.domains)
+      for (auto& handler : domain.handlers)
+        handler.observable_effects = no_observable_effects();
 
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
+    for (const auto& domain : p_.domains) entities += domain.handlers.size();
+    // Local call cycles were rejected before this pass. Repeated rounds make
+    // the declaration order irrelevant while propagating the finite summaries
+    // bottom-up through that acyclic graph.
     for (size_t round = 0; round < entities * 3 + 3; ++round) {
       bool changed = false;
       for (auto& function : p_.functions) {
@@ -4059,6 +4070,28 @@ class Checker {
                 *method.result_expression, env, {}, &object));
           if (!same_observable_effects(inferred, method.observable_effects)) {
             method.observable_effects = inferred;
+            changed = true;
+          }
+        }
+      }
+      for (auto& domain : p_.domains) {
+        std::set<string> domain_fields;
+        for (const auto& field : domain.state)
+          domain_fields.insert(field.name);
+        for (auto& handler : domain.handlers) {
+          TypeEnv env;
+          std::set<string> parameters;
+          env["self"] = domain.name;
+          for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& parameter : handler.params) {
+            env[parameter.name] = parameter.type;
+            parameters.insert(parameter.name);
+          }
+          auto inferred = observable_body_effects(
+              handler.body, env, parameters, domain_fields);
+          if (!same_observable_effects(inferred,
+                                       handler.observable_effects)) {
+            handler.observable_effects = inferred;
             changed = true;
           }
         }
@@ -5962,7 +5995,36 @@ class FunctionalOptimizer {
         pipeline.nodes.begin() + 1, pipeline.nodes.end() - 1,
         [](const FunctionalNode& node) {
           return node.kind == FunctionalNodeKind::Map &&
-              node.effects.fusion_safe();
+              node.effects.safe_to_skip();
+        });
+  }
+
+  // Sharing a traversal and omitting work have deliberately different proof
+  // obligations. Potential divergence does not prevent ordinary ordered
+  // fusion, but it does prevent an optimization from dropping an invocation.
+  static bool callbacks_safe_to_skip(const FunctionalPipeline& pipeline) {
+    if (pipeline.nodes.size() < 2) return true;
+    return std::all_of(
+        pipeline.nodes.begin() + 1, pipeline.nodes.end(),
+        [](const FunctionalNode& node) {
+          return node.effects.safe_to_skip();
+        });
+  }
+
+  static bool callback_may_diverge(const FunctionalPipeline& pipeline) {
+    if (pipeline.nodes.size() < 2) return false;
+    return std::any_of(
+        pipeline.nodes.begin() + 1, pipeline.nodes.end(),
+        [](const FunctionalNode& node) {
+          return node.effects.may_diverge;
+        });
+  }
+
+  static bool has_map_stage(const FunctionalPipeline& pipeline) {
+    return std::any_of(
+        pipeline.nodes.begin(), pipeline.nodes.end(),
+        [](const FunctionalNode& node) {
+          return node.kind == FunctionalNodeKind::Map;
         });
   }
 
@@ -5976,9 +6038,72 @@ class FunctionalOptimizer {
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
       if (effects.may_fail) return "callback may fail";
+      if (effects.may_diverge) return "callback may diverge";
       if (effects.unresolved) return "unresolved callback effect";
     }
     return "eager semantics required";
+  }
+
+  static string skipped_callback_barrier_reason(
+      const FunctionalPipeline& pipeline) {
+    if (pipeline.nodes.size() >= 2) {
+      for (auto node = pipeline.nodes.begin() + 1;
+           node != pipeline.nodes.end(); ++node) {
+        const auto& effects = node->effects;
+        if (effects.domain_write) return "observable domain WRITE";
+        if (effects.domain_read) return "observable domain READ";
+        if (effects.message) return "message send";
+        if (effects.await) return "await";
+        if (effects.external_io) return "observable callback effect";
+        if (effects.local_mutation) return "observable local mutation";
+        if (effects.may_fail) return "callback may fail";
+        if (effects.may_diverge) return "skipped callback may diverge";
+        if (effects.unresolved) return "unresolved callback effect";
+      }
+    }
+    return "eager semantics required";
+  }
+
+  static string count_elimination_barrier_reason(
+      const FunctionalPipeline& pipeline) {
+    string reason = skipped_callback_barrier_reason(pipeline);
+    if (reason == "skipped callback may diverge")
+      return "callback may diverge";
+    return reason;
+  }
+
+  static void erase_notes_with_prefix(FunctionalPipeline& pipeline,
+                                      const string& prefix) {
+    pipeline.optimization_notes.erase(
+        std::remove_if(
+            pipeline.optimization_notes.begin(),
+            pipeline.optimization_notes.end(),
+            [&](const string& note) { return starts_with(note, prefix); }),
+        pipeline.optimization_notes.end());
+  }
+
+  static void disable_count_elimination(FunctionalPipeline& pipeline,
+                                        const string& reason,
+                                        bool mapped_work) {
+    pipeline.count_uses_exact_length = false;
+    for (auto& node : pipeline.nodes) node.dead_stage_eliminated = false;
+    erase_notes_with_prefix(pipeline, "count -> len");
+    erase_notes_with_prefix(pipeline, "map stage eliminated");
+    erase_notes_with_prefix(pipeline, "map elimination:");
+    pipeline.optimization_notes.push_back(
+        "count -> len disabled; reason: " + reason);
+    if (mapped_work)
+      pipeline.optimization_notes.push_back(
+          "map elimination: disabled; reason: " + reason);
+  }
+
+  static void disable_short_circuit(FunctionalPipeline& pipeline,
+                                    const string& reason) {
+    pipeline.short_circuit_terminal = false;
+    erase_notes_with_prefix(pipeline, "short-circuit ");
+    pipeline.optimization_notes.push_back(
+        "short-circuit " + terminal_name(pipeline) +
+        " disabled; reason: " + reason);
   }
 
   static string terminal_name(const FunctionalPipeline& pipeline) {
@@ -6014,10 +6139,11 @@ class FunctionalOptimizer {
       if (pipeline.nodes.size() > 2)
         pipeline.optimization_notes.push_back(
             "map stage eliminated; reason: output unused and callback is "
-            "pure/non-failing");
+            "pure/non-failing/non-divergent");
     } else if (enabled && count_shape) {
-      pipeline.optimization_notes.push_back(
-          "count -> len disabled; reason: " + barrier_reason(pipeline));
+      disable_count_elimination(
+          pipeline, count_elimination_barrier_reason(pipeline),
+          has_map_stage(pipeline));
     }
 
     if (pipeline.nodes.empty()) return;
@@ -6026,15 +6152,16 @@ class FunctionalOptimizer {
         terminal != FunctionalNodeKind::All)
       return;
     string name = terminal == FunctionalNodeKind::Any ? "any" : "all";
-    if (enabled && pipeline.fusion_eligible) {
+    if (enabled && pipeline.fusion_eligible &&
+        callbacks_safe_to_skip(pipeline)) {
       pipeline.short_circuit_terminal = true;
       pipeline.optimization_notes.push_back(
           "short-circuit " + name + " enabled");
     } else {
-      pipeline.optimization_notes.push_back(
-          "short-circuit " + name + " disabled; reason: " +
-          (enabled ? barrier_reason(pipeline)
-                   : "eager -O0 reference traversal"));
+      disable_short_circuit(
+          pipeline, enabled
+              ? skipped_callback_barrier_reason(pipeline)
+              : "eager -O0 reference traversal");
     }
   }
 
@@ -6217,6 +6344,47 @@ class FunctionalOptimizer {
       producer->fused = true;
       producer->binding_materialization_reason.clear();
       consumer->fused = true;
+
+      // Terminal plans were formed before lexical graphs were linked. Recheck
+      // any transform that can now omit upstream callback executions against
+      // the combined graph rather than just the terminal statement.
+      if (consumer->count_uses_exact_length) {
+        bool upstream_preserves_exact_count = std::all_of(
+            producer->nodes.begin() + 1, producer->nodes.end(),
+            [](const FunctionalNode& node) {
+              return node.kind == FunctionalNodeKind::Map &&
+                  node.effects.safe_to_skip();
+            });
+        if (upstream_preserves_exact_count) {
+          for (auto& node : producer->nodes)
+            if (node.kind == FunctionalNodeKind::Map)
+              node.dead_stage_eliminated = true;
+          if (has_map_stage(*producer) &&
+              std::none_of(
+                  consumer->optimization_notes.begin(),
+                  consumer->optimization_notes.end(),
+                  [](const string& note) {
+                    return starts_with(note, "map stage eliminated");
+                  }))
+            consumer->optimization_notes.push_back(
+                "map stage eliminated; reason: output unused and callback is "
+                "pure/non-failing/non-divergent");
+        } else {
+          string reason = callback_may_diverge(*producer)
+              ? "callback may diverge"
+              : "upstream stage changes cardinality";
+          for (auto& node : producer->nodes)
+            node.dead_stage_eliminated = false;
+          disable_count_elimination(
+              *consumer, reason,
+              has_map_stage(*producer) || has_map_stage(*consumer));
+        }
+      }
+      if (consumer->short_circuit_terminal &&
+          !callbacks_safe_to_skip(*producer))
+        disable_short_circuit(
+            *consumer, skipped_callback_barrier_reason(*producer));
+
       producer->optimization_notes.push_back(
           "intermediate " + binding +
           ": virtualized across immutable binding");
@@ -6449,6 +6617,7 @@ static string observable_effect_label(const ObservableEffects& effects) {
   if (effects.await) labels.push_back("AWAIT");
   if (effects.external_io) labels.push_back("IO");
   if (effects.may_fail) labels.push_back("MAY_FAIL");
+  if (effects.may_diverge) labels.push_back("MAY_DIVERGE");
   if (effects.unresolved) labels.push_back("UNRESOLVED");
   std::ostringstream out;
   for (size_t index = 0; index < labels.size(); ++index) {
@@ -8480,8 +8649,14 @@ class Generator {
         string result = "__moss_shared_result_" +
             std::to_string(group.transient_id) + "_" +
             std::to_string(consumer_index);
-        bool guarded_any = terminal.kind == FunctionalNodeKind::Any;
-        bool guarded_all = terminal.kind == FunctionalNodeKind::All;
+        // A completed any/all branch may stop receiving elements only when
+        // the semantic plan proves every skipped callback non-observable,
+        // non-failing, and non-divergent. Otherwise the shared loop continues
+        // invoking that branch exactly as eager execution would.
+        bool guarded_any = terminal.kind == FunctionalNodeKind::Any &&
+            plans[consumer_index]->short_circuit_terminal;
+        bool guarded_all = terminal.kind == FunctionalNodeKind::All &&
+            plans[consumer_index]->short_circuit_terminal;
         if (guarded_any || guarded_all)
           out << deep << "if " << (guarded_any ? "!" : "") << result
               << " {\n";

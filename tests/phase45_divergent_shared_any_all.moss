@@ -1,0 +1,11 @@
+fn inspect(value: Int) -> Bool:
+  while value < 0:
+    let observed = value
+  return value > 0
+
+proc main():
+  values = [1, 0, 1]
+  has_true = values |> any(inspect)
+  all_true = values |> all(inspect)
+  item_count = values |> count
+  echo has_true, all_true, item_count

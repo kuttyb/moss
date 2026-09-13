@@ -208,15 +208,20 @@ boundary. No boundary transports a lazy or compiler-internal pipeline value.
 
 Observable callable effects are distinct from ownership effects. The compiler records
 local capture reads, local mutation, domain reads and writes, messages, awaits, external
-or I/O effects, unresolved effects, and possible failure. Fusion is allowed only when
-changing eager stage-at-a-time execution into element-at-a-time execution cannot make any
-of those effects or their failure order observable. Missing an optimization is valid;
-reordering without proof is not.
+or I/O effects, unresolved effects, possible failure, and potential divergence. The last
+fact is separate: a syntactic `while` (including one reached through a local call) is
+conservatively `may_diverge`; Moss does not prove loop termination. Fusion is allowed
+only when changing eager stage-at-a-time execution into element-at-a-time execution
+cannot make any of those effects or their failure order observable. Missing an
+optimization is valid; reordering without proof is not.
 
 Phase 4.5 keeps these eager source semantics and adds no functional syntax. The `-O0`
 reference evaluates all `any`/`all` predicates in order. `-O` may short-circuit only
-pure, non-failing work, and may replace exact `count` (including through dead pure maps)
-with collection length. Materialization is planned separately from loop fusion. A
+pure, non-failing, non-divergent work, and may replace exact `count` (including through
+dead pure maps) with collection length only when eliminated callbacks are likewise safe
+to skip. Potential divergence does not alone block ordinary fusion that preserves
+required callback work and whose changed inter-stage schedule is otherwise unobservable.
+Materialization is planned separately from loop fusion. A
 single-use immutable intermediate can remain virtual across one adjacent consumer, while
 multiple consumers, escape, mutation, control flow, ownership requirements, or an
 observable/failure barrier force a concrete collection.

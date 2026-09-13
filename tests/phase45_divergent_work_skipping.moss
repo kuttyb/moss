@@ -1,0 +1,11 @@
+fn spin(value: Int) -> Int:
+  while value < 0:
+    let observed = value
+  return value
+
+proc main():
+  values = [0, 1, 2]
+  mapped_count = values |> map(spin) |> count
+  has_zero = values |> map(spin) |> any(_ == 0)
+  all_small = values |> map(spin) |> all(_ < 3)
+  echo mapped_count, has_zero, all_small

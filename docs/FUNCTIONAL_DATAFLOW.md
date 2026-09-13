@@ -34,7 +34,7 @@ The reference semantics are logically eager and ordered. The first `map` visits 
 source elements in order and logically produces its result collection, then `filter`
 does the same, and so on. A compiler optimization may remove those logical collections
 only after proving that the changed execution schedule has the same result, effects, and
-failure order.
+failure order **and termination behavior**.
 
 Ordinary `map` and `filter` READ their source and produce a new Moss value. They are not
 secretly destructive, and the source remains usable. On empty input:
@@ -121,13 +121,28 @@ whether changing the schedule is visible. It records:
 - domain-state observation and mutation;
 - `message` and `await`;
 - external or I/O effects such as `echo`;
-- possible failure and unresolved effects.
+- possible failure and unresolved effects;
+- potential divergence, tracked separately from both failure and observable effects.
 
 Arithmetic, comparisons, local temporaries, immutable capture reads, and transitively
 equivalent calls can be fusion-safe. Mutation, domain effects, communication, I/O,
 unresolved calls, and potentially different failure ordering are barriers. In
 particular, division or indexing remains a conservative `may_fail` barrier when the
 compiler lacks a proof that it cannot fail.
+
+Phase 4.5 also distinguishes invocation-preserving fusion from work-skipping
+optimization. A function, method, or handler containing a `while` is conservatively
+`may_diverge`, as is a callable that transitively calls one. The fact propagates through
+the existing acyclic local call graph. The current analysis does not try to prove that a
+loop terminates. Placeholder expressions with no call to such a callable are
+non-divergent.
+
+Potential divergence alone does not stop ordinary ordered map/filter fusion: that
+lowering preserves the callback computations needed by the eager program. A
+transformation that can execute fewer callbacks has a stronger proof obligation. Dead
+map elimination and `any`/`all` short circuiting require every skipped callback to be
+free of observable effects, observable failure, and potential divergence. The same rule
+governs a completed `any`/`all` branch inside a shared-source traversal.
 
 This preserves eager ordering for effectful callbacks. For a safe chain, `-O` can turn:
 
@@ -191,11 +206,11 @@ internal stages are virtual. `--dump-functional-ir` prints both the decision and
 For an exact-size vector source, optimized `count` reads `len` directly. A chain of
 pure, non-failing maps followed only by `count` also becomes the original source length;
 the unused mapped values and callback executions disappear. This is forbidden when a
-callback has an observable effect or may fail.
+callback has an observable effect, may fail, or may diverge.
 
 The eager reference lowering evaluates every `any`/`all` predicate in source order.
 Optimized lowering may stop a terminal's computation at its first decisive element only
-when all skipped work is pure and non-failing. Inside a shared traversal, another
+when all skipped work is pure, non-failing, and non-divergent. Inside a shared traversal, another
 terminal may still require the source loop to continue; the completed `any`/`all`
 consumer is then disabled for later elements.
 

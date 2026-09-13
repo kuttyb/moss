@@ -1,0 +1,5 @@
+proc main():
+  values = [-1, 2, 3]
+  let positives = values |> filter(_ > 0)
+  positive_count = positives |> count
+  echo positive_count
