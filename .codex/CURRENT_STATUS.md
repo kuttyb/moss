@@ -312,9 +312,9 @@ Updated: 2026-09-14
 
 ## Partially implemented or unimplemented
 
-- Phase 7 deliberately has no package, dependency, or module/import system. Discovered
-  `tests/` and `benches/` files are independent compilation units; declarations that
-  directly exercise application-local helpers currently live in the configured source.
+- Phase 7 deliberately has no package, dependency, or module/import system. Project
+  targets use a temporary uber-module: build links `src/**/*.moss`, test links src plus
+  `tests/**/*.moss`, and bench links src plus `benches/**/*.moss` as one global unit.
   Assertion panics are isolated per test in one process, but process aborts and failures
   on spawned threads can still terminate that unit. Benchmark warmup/sample counts are a
   fixed conservative first methodology rather than adaptive statistical calibration.
@@ -604,3 +604,13 @@ checkpoint is `c130ff2`; the completed frontend checkpoint is the commit that fo
 ### Exact commit hash containing the work
 
 `0adac33` — Implement approved Moss transfer semantics.
+
+## 2026-09-14 temporary multi-file project linkage
+
+Project targets now use a temporary uber-module model until Moss gains explicit
+modules/imports. `moss build` compiles every `src/**/*.moss`; `moss test` adds
+`tests/**/*.moss`; and `moss bench` adds `benches/**/*.moss`. Each target is one
+global compilation unit with deterministic path discovery, order-independent
+declaration resolution, duplicate-symbol diagnostics, and original physical
+source provenance in diagnostics, semantic queries, generated maps, tests, and
+benchmarks. Native artifact fingerprints include the complete source set.

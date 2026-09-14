@@ -18,8 +18,11 @@ struct Line {
   int indent = 0;
   string text;
   vector<int> continuation_lines;
+  // Physical source path retained when several files are linked into one
+  // project compilation unit.
+  string source_file;
 };
-struct Field { string name, type, init, header; int line = 0; };
+struct Field { string name, type, init, header; int line = 0; string source_file; };
 struct Param { string name, type; };
 struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
@@ -35,6 +38,7 @@ struct Stmt {
   // have several static specializations, so one AST statement can legitimately
   // point at several distinct compilation-local pipeline IDs.
   mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
+  string source_file;
 };
 struct Method {
   string owner, name;
@@ -51,8 +55,9 @@ struct Method {
   vector<Effect> parameter_effects;
   ObservableEffects observable_effects;
   int line = 0;
+  string source_file;
 };
-struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; };
+struct TraitMethod { string name; vector<Param> params; std::optional<string> return_type; int line = 0; string source_file; };
 struct Handler {
   string name, header;
   vector<Param> params;
@@ -60,10 +65,11 @@ struct Handler {
   vector<Stmt> body;
   ObservableEffects observable_effects;
   int line = 0;
+  string source_file;
 };
-struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; };
-struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; };
-struct MainProc { vector<Stmt> body; int line = 0; string header; };
+struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; string source_file; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; string source_file; };
+struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
@@ -84,8 +90,9 @@ struct Function {
   ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
+  string source_file;
 };
-struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
+struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; string source_file; };
 
 struct TestDecl {
   string name;
@@ -93,6 +100,7 @@ struct TestDecl {
   string semantic_identity;
   vector<Stmt> body;
   int line = 0;
+  string source_file;
 };
 
 struct BenchDecl {
@@ -101,6 +109,7 @@ struct BenchDecl {
   string semantic_identity;
   vector<Stmt> body;
   int line = 0;
+  string source_file;
 };
 
 // Existing checker passes populate these records while validating recursion

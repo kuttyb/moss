@@ -51,19 +51,21 @@ bench "bare functional pipeline":
 All three forms are accepted by the current compiler and are exercised by
 [`examples/projects/phase7_demo`](../examples/projects/phase7_demo).
 
-## Discovery and compilation units
+## Discovery and temporary uber-module
 
-Moss discovers benchmarks in:
+Moss discovers benchmarks in every regular `.moss` file recursively below the
+configured application source root and `benches/`.
 
-- the configured application source (`src/main.moss` by convention); and
-- every regular `.moss` file recursively below `benches/`.
+The `benches/` directory is optional. Until modules/imports exist, the target
+is one logical global compilation unit:
 
-The `benches/` directory is optional. Each external benchmark file is a
-separate compilation unit. Because Moss does not yet have modules or imports,
-a benchmark in `benches/arithmetic.moss` cannot use declarations defined only
-in `src/main.moss`; define its helpers in the benchmark file. A benchmark that
-needs application-local declarations may live in the configured application
-source.
+```text
+src/**/*.moss + benches/**/*.moss
+```
+
+A benchmark in `benches/arithmetic.moss` can therefore use declarations from
+any application source file without imports. Sorted paths are only a loading
+detail; duplicate top-level names are rejected globally.
 
 Each project benchmark has a deterministic identity:
 

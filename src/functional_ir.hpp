@@ -143,6 +143,9 @@ struct FunctionalPipeline {
   // Exact compilation-local plan handle carried by the checked AST.
   std::size_t transient_id = 0;
   std::string semantic_identity;
+  // Physical source file for Phase 5/6 provenance.  This is not part of the
+  // semantic identity and may differ between otherwise identical pipelines.
+  std::string source_file;
   int line = 0;
   std::string context;
   std::string expression;
@@ -191,6 +194,7 @@ struct FunctionalTraversalConsumer {
 struct FunctionalTraversalGroup {
   std::size_t transient_id = 0;
   std::string semantic_identity;
+  std::string source_file;
   std::string context;
   int line = 0;
   std::string source_expression;

@@ -80,6 +80,12 @@ baselines, artifact locations, JSON output, and troubleshooting. The detailed
 references are [the build system](docs/BUILD_SYSTEM.md), [unit
 testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
 
+Until Moss has explicit modules/imports, each target is compiled as one
+temporary global compilation unit: `build` combines `src/**/*.moss`, `test`
+combines `src/**/*.moss` with `tests/**/*.moss`, and `bench` combines `src/**/*.moss`
+with `benches/**/*.moss`. Paths remain attached to diagnostics and provenance;
+directories do not create namespaces.
+
 Automation and coding agents can discover the structured protocol first with
 `moss agent bootstrap --json`.
 

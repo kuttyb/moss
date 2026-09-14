@@ -113,9 +113,9 @@ The manifest deliberately supports only these fields:
 
 All values are quoted strings. `#` comments are accepted outside strings.
 Unknown sections or keys are errors. `build.source` cannot be absolute, empty,
-or contain a `..` path component. If it names a directory, Moss builds exactly
-`<directory>/main.moss`; it does not concatenate every source file in that
-directory. It may instead name one file directly:
+or contain a `..` path component. If it names a directory, Moss recursively
+discovers every `.moss` file below it in canonical path order. It may instead
+name one file directly:
 
 ```toml
 [build]
@@ -123,10 +123,11 @@ source = "application.moss"
 ```
 
 Phase 7 intentionally has no package manager, dependency resolution, module
-system, or imports. Files discovered below `tests/` and `benches/` are separate
-compilation units, so their helpers must currently be declared in the same
-file. A test or benchmark that needs declarations from the application source
-can be placed at top level in the configured application file.
+system, or imports. Each target is a temporary uber-module: `build` uses
+`src/**/*.moss`, `test` uses `src/**/*.moss + tests/**/*.moss`, and `bench` uses
+`src/**/*.moss + benches/**/*.moss`. All participating declarations share one
+global namespace; directory names do not create namespaces. Original physical
+paths remain in diagnostics and tooling metadata.
 
 ## Everyday workflow
 
@@ -354,8 +355,8 @@ build/
     my_project.rs
     my_project.mossmap
     my_project.mossbuild
-  test/                     # per-source generated test artifacts
-  bench/                    # per-source generated benchmark artifacts
+  test/                     # combined generated test artifact (my_project_tests.*)
+  bench/                    # combined generated benchmark artifact (my_project_benches.*)
 
 .moss/
   benchmarks/

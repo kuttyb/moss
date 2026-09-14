@@ -47,9 +47,9 @@ project/
   benches/
 ```
 
-Only `moss.toml` and the configured application source are needed for
-`moss build`. `tests/` and `benches/` are conventional optional discovery
-directories for `moss test` and `moss bench`.
+Only `moss.toml` and at least one `.moss` file below the configured source
+root are needed for `moss build`. `tests/` and `benches/` are conventional
+optional discovery directories for `moss test` and `moss bench`.
 
 ## Manifest reference
 
@@ -70,7 +70,7 @@ source = "src"
 | --- | --- | --- | --- |
 | `[project].name` | Yes | None | Project reports and sanitized application artifact name. |
 | `[project].version` | Yes | None | Required project version metadata. |
-| `[build].source` | No | `src` | Application `.moss` file or directory relative to the project root. |
+| `[build].source` | No | `src` | Application `.moss` file or recursive source directory relative to the project root. |
 
 `[build]` may therefore be omitted when the entry point is `src/main.moss`:
 
@@ -85,15 +85,17 @@ strings are accepted. Unknown sections and unknown keys are rejected rather
 than ignored, so misspellings do not silently change a build.
 
 `build.source` must be nonempty, project-relative, and contain no `..` path
-component. When it names a directory, Moss selects exactly its `main.moss`:
+component. When it names a directory, Moss recursively discovers all `.moss`
+files below it in canonical relative-path order:
 
 ```text
-source = "src"       -> <project>/src/main.moss
+source = "src"       -> every <project>/src/**/*.moss
 source = "app.moss"  -> <project>/app.moss
 ```
 
-The application source must exist as a regular file. Moss does not recursively
-combine files under the source directory.
+The source root must contain at least one regular `.moss` file. Files are
+parsed as one logical global compilation unit; sorted file order is only a
+deterministic loading order, not a declaration-order language rule.
 
 ### Project discovery
 
@@ -121,9 +123,33 @@ Phase 7 intentionally does not implement:
 - custom test/benchmark directory settings;
 - arbitrary profile configuration in `moss.toml`.
 
-In particular, files recursively discovered under `tests/` and `benches/` are
-independent compilation units. They cannot currently import declarations from
-`src/main.moss` or from one another.
+Until explicit modules/imports exist, Moss uses a temporary uber-module model:
+
+```text
+moss build -> all src/**/*.moss
+moss test  -> all src/**/*.moss + all tests/**/*.moss
+moss bench -> all src/**/*.moss + all benches/**/*.moss
+```
+
+Each target is one logical compilation unit with one global namespace. There
+are no implicit directory namespaces; duplicate top-level names are ordinary
+Moss duplicate-symbol errors. Physical source paths remain attached to
+diagnostics, `.mossmap` entries, tests, and benchmarks.
+
+For example:
+
+```text
+my-project/
+  moss.toml
+  src/math.moss
+  src/pricing.moss
+  tests/pricing_test.moss
+  benches/pricing_bench.moss
+```
+
+`moss build` links `math.moss` and `pricing.moss`; `moss test` additionally
+links `pricing_test.moss`; and `moss bench` additionally links
+`pricing_bench.moss`. No import is needed between these files.
 
 ## Build commands
 
@@ -141,8 +167,8 @@ rejected with `BUILD_PROFILE_ERROR`.
 `moss build`:
 
 1. loads the nearest project manifest;
-2. selects the configured application source;
-3. parses and statically checks it;
+2. discovers all application `.moss` files under `build.source`;
+3. parses and statically checks them as one unit;
 4. uses Moss's `-O0` reference plan;
 5. emits generated Rust and a `.mossmap` provenance map;
 6. compiles a native executable with Rust debug information.
@@ -215,22 +241,22 @@ build/
     phase7_demo.mossmap
     phase7_demo.mossbuild
   test/
-    <source-stem>_<path-hash>
-    <source-stem>_<path-hash>.rs
-    <source-stem>_<path-hash>.mossmap
-    <source-stem>_<path-hash>.mossbuild
+    phase7_demo_tests
+    phase7_demo_tests.rs
+    phase7_demo_tests.mossmap
+    phase7_demo_tests.mossbuild
   bench/
-    <source-stem>_<path-hash>
-    <source-stem>_<path-hash>.rs
-    <source-stem>_<path-hash>.mossmap
-    <source-stem>_<path-hash>.mossbuild
+    phase7_demo_benches
+    phase7_demo_benches.rs
+    phase7_demo_benches.mossmap
+    phase7_demo_benches.mossbuild
 ```
 
 Application filenames use a sanitized project name: characters other than
 letters, digits, and `_` become `_`, trailing underscores are removed, and an
-otherwise empty name becomes `anonymous`. Test and benchmark artifacts use a
-readable source stem plus a deterministic hash of the project-relative source
-path, avoiding collisions between equal filenames in different directories.
+otherwise empty name becomes `anonymous`. Test and benchmark targets use one
+combined artifact per target; the exact sanitized names are reported by
+`--json`.
 
 | Artifact | Purpose | Usually user-facing? |
 | --- | --- | --- |
@@ -248,6 +274,7 @@ application executable.
 
 Caching is small and content-based. Before backend compilation, Moss compares:
 
+- the complete ordered project source set (relative paths and contents);
 - the complete generated Rust file;
 - the complete generated `.mossmap`;
 - existence of the native executable;

@@ -33,11 +33,22 @@ Tests can appear in:
 The configured application source is always considered during test discovery.
 The `tests/` directory itself is optional.
 
-### Compilation-unit boundary
+### Temporary uber-module compilation
 
-Every external test file is compiled independently. Moss does not yet have a
-module or import system, so `tests/arithmetic.moss` cannot call a function
-defined only in `src/main.moss`. Put helpers in the same external file:
+Moss does not yet have a module or import system. For `moss test`, all
+application files and all recursively discovered test files are parsed as one
+logical global compilation unit:
+
+```text
+src/**/*.moss + tests/**/*.moss
+```
+
+Therefore `tests/arithmetic.moss` can call a function defined in any `src` file
+without an import. Files are loaded in deterministic path order, but ordinary
+declarations are resolved across the complete set and do not depend on that
+order. Duplicate global names remain errors.
+
+For a self-contained example, helpers may still be declared in the test file:
 
 ```moss
 fn doubled(value: int) -> int:
@@ -51,9 +62,9 @@ If a test needs application-local declarations, place that test in the
 configured application source beside those declarations. This is a current
 project-model limitation, not a requirement to duplicate generated Rust.
 
-Ordinary `moss build` and `moss build --release` do not generate or execute the
-test harness. Test declarations are included only when `moss test` builds its
-per-source artifacts under `build/test/`.
+Ordinary `moss build` and `moss build --release` do not include test files or
+generate a test harness. Test declarations are included only when `moss test`
+builds its combined target under `build/test/`.
 
 ## Assertions
 
@@ -116,9 +127,9 @@ Run all tests from the project root or a subdirectory:
 moss test
 ```
 
-Moss collects the configured application source and every regular `.moss` file
-recursively below `tests/`, sorts/deduplicates source paths, checks each source,
-and builds one native test unit per source containing selected declarations.
+Moss collects every regular `.moss` file recursively below the configured
+source root and `tests/`, sorts/deduplicates source paths, checks the combined
+set, and builds one native test unit containing selected declarations.
 
 Each project test has an ID:
 
