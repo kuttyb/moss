@@ -16,6 +16,12 @@ materialization explicitly, simplifies exact counts, short-circuits safe `any`/`
 virtualizes single-use immutable pipeline bindings, and represents compatible terminal
 consumers as a shared-source dataflow DAG. This adds no Moss syntax or lazy runtime.
 
+Phase 4.6 adds a bounded semantic-space optimizer over that same authoritative IR. It
+composes adjacent maps and filters, pushes a predicate only through a proven identity
+map, removes safe dead maps before `count`, collapses single-use temporaries, and uses
+terminal/cardinality facts before ordinary lowering. These are Moss-to-Moss rewrites,
+not Rust iterator tricks or hardware-specific optimization.
+
 Phase 5 adds tooling without changing those frozen semantics. Every compilation emits
 one deterministic `.mossmap` provenance artifact shared by Emacs navigation, LLDB/DAP
 source breakpoints, and symbol-targeted native disassembly. A dependency-light
@@ -88,6 +94,7 @@ The showcase programs are executable syntax guides:
 - [functional scope fusion](examples/functional_scope_fusion.moss) keeps a source-level immutable binding while removing its physical intermediate collection.
 - [functional shared traversal](examples/functional_shared_traversal.moss) gives three independent terminals one stable-source traversal.
 - [functional materialization](examples/functional_materialization.moss) shows a second consumer forcing a collection to exist before its terminal traversal is shared.
+- [functional semantic optimization](examples/functional_semantic_optimization.moss) shows map/filter composition, a virtual named intermediate, dead-map removal, known-size count, and safe short circuiting.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
 - [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
 
@@ -172,6 +179,24 @@ containing `while`, or transitively calling one that does, is conservatively mar
 that skip invocations, but does not by itself block ordered fusion that preserves the
 eager program's callback work.
 
+Phase 4.6 makes the pre-lowering rewrite boundary explicit. Moss semantic-space
+optimization is a Moss-to-Moss rewrite phase: it preserves a functional computation in
+semantic form long enough to replace it with an equivalent Moss computation that asks
+for less work. Adjacent pure maps become one composed map; adjacent pure filters become
+one left-to-right, short-circuiting predicate; a safe trailing map whose values are
+ignored by `count` disappears; and inert literal counts can become constants. A filter
+may move through `map(_)` only for a trivial element type, where the existing typed IR
+proves the map is identity. General predicate pushdown and algebraic rewriting remain
+deferred because the compiler cannot yet prove them.
+
+This is not lazy language semantics. Moss retains eager reference behavior under `-O0`;
+the optimized plan merely avoids materialization or callback work when effects,
+ownership, failure, and termination facts prove that difference unobservable. If an
+optimization can be described as “this equivalent Moss computation asks for less
+work,” it belongs here. SIMD, threading, GPUs, loop tiling, instruction selection, and
+the existing domain-placement/locking choices belong downstream. Phase 4.6 adds no
+MLIR or generic rewrite framework.
+
 Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
 code generation does not infer a plan again from matching source text. Numeric IR IDs are
 transient compilation handles, while deterministic source/provenance identities carry
@@ -253,6 +278,8 @@ deriving a returned new value.
 - Effect-aware functional fusion and explicit-loop allocation elimination under `-O`
 - Explicit functional materialization plans, count/short-circuit simplification,
   conservative cross-binding fusion, and shared-source terminal DAGs under `-O`
+- Bounded Phase 4.6 semantic-stage rewrites for adjacent map/filter composition,
+  identity-only predicate pushdown, terminal-aware dead work, and inert known-size count
 - Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
 - `spawn` from `main`
@@ -396,7 +423,7 @@ Await-cycle rejection is a language rule applied before backend placement, so th
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, and Phase 4.5 scope-level materialization and shared-traversal planning, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
+This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 

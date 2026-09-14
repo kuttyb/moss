@@ -215,6 +215,9 @@ run_phase4_differential functional_shared_traversal_showcase \
   examples/functional_shared_traversal.moss 'shared traversal: 6 4 3'
 run_phase4_differential functional_materialization_showcase \
   examples/functional_materialization.moss 'materialized and shared: 12 3'
+run_phase4_differential functional_semantic_optimization_showcase \
+  examples/functional_semantic_optimization.moss \
+  'semantic space: 68 5 34 3 4 true'
 run_phase4_differential phase4_functional tests/phase4_functional.moss \
   "$(printf '6 -1 5 11 16\n12 36 6 2 true true\ntrue false\n60 10 -2\n0 0 false true 7\n-9223372036854775808\n7')"
 run_phase4_differential phase4_fusion tests/phase4_fusion.moss '36'
@@ -292,6 +295,14 @@ run_phase4_differential phase45_divergence_fusion \
   tests/phase45_divergence_fusion.moss '6'
 run_phase4_differential phase45_divergence_method \
   tests/phase45_divergence_method.moss '2'
+run_phase4_differential phase46_semantic_rewrites \
+  tests/phase46_semantic_rewrites.moss \
+  'semantic 22 4 9 3 4 true true false true 3'
+run_phase4_differential phase46_semantic_barriers \
+  tests/phase46_semantic_barriers.moss \
+  "$(printf 'map 1\nmap 2\nmap 3\nfilter 1\nfilter 2\nfilter 3\nmap 1\nmap 2\nmap 3\nmap 1\nmap 2\nmap 3\nmap 1\nmap 2\nmap 3\nresults 3 3 2 2 2 2 6 9 true true true')"
+run_phase4_differential phase46_scope_rewrites \
+  tests/phase46_scope_rewrites.moss 'scope 14 3 20 4'
 
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_fusion_o0.rs" >/dev/null ||
@@ -615,6 +626,111 @@ grep -F 'decision: source traversal shared; consumers: sum count count' \
 grep -F 'provenance: main@3:expression:0:source' \
   "$test_build/phase45_shared_traversal.first" >/dev/null ||
   fail 'shared traversal discarded source provenance'
+
+# Phase 4.6 bounded Moss-to-Moss semantic rewrites.
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase46_semantic_rewrites.moss \
+  >"$test_build/phase46_semantic_rewrites.first"
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase46_semantic_rewrites.moss \
+  >"$test_build/phase46_semantic_rewrites.second"
+cmp "$test_build/phase46_semantic_rewrites.first" \
+    "$test_build/phase46_semantic_rewrites.second" >/dev/null ||
+  fail 'Phase 4.6 semantic rewrite plan was not deterministic'
+grep -F 'ComposedMap origins=main@7:expression:0:stage:1,main@7:expression:0:stage:2' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'adjacent maps were not composed in functional semantic IR'
+grep -F 'ComposedFilter origins=main@8:expression:0:stage:1,main@8:expression:0:stage:2' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'adjacent filters were not composed in functional semantic IR'
+grep -F 'semantic-opt: predicate-pushdown; filter moved to the earlier value through map(_)' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'proven identity-map predicate pushdown was not recorded'
+grep -F 'semantic-opt: dead-map; mapped values are unused by terminal count' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'terminal count did not remove a safe trailing map'
+grep -F 'semantic-opt: terminal-filter-count; count matching elements without materializing filter output' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'filter/count terminal plan was not represented semantically'
+grep -F 'semantic-opt: short-circuit-any' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'any short-circuit fact was not represented as a semantic rewrite'
+grep -F 'semantic-opt: short-circuit-all' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'all short-circuit fact was not represented as a semantic rewrite'
+grep -F 'semantic-opt: known-size-count; inert vector literal has 3 elements' \
+  "$test_build/phase46_semantic_rewrites.first" >/dev/null ||
+  fail 'known literal cardinality was not simplified in semantic IR'
+grep -F 'Moss backend: COUNT -> KNOWN SIZE' \
+  "$test_build/phase46_semantic_rewrites_optimized.rs" >/dev/null ||
+  fail 'known-size count did not reach generated Rust'
+if grep -F 'Moss backend: COUNT -> KNOWN SIZE' \
+    "$test_build/phase46_semantic_rewrites_o0.rs" >/dev/null; then
+  fail '-O0 used a Phase 4.6 known-size rewrite'
+fi
+if grep -F 'vec![10_i64, 20_i64, 30_i64]' \
+    "$test_build/phase46_semantic_rewrites_optimized.rs" >/dev/null; then
+  fail 'known-size count retained its inert source literal allocation'
+fi
+grep -F ' && ' "$test_build/phase46_semantic_rewrites_optimized.rs" >/dev/null ||
+  fail 'composed filters did not lower with left-to-right short circuiting'
+[ "$(grep -c 'double(__moss_shared_value_' \
+    "$test_build/phase46_semantic_rewrites_optimized.rs")" -eq 1 ] ||
+  fail 'terminal-aware dead-map elimination retained an unused double callback'
+
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase46_semantic_barriers.moss \
+  >"$test_build/phase46_semantic_barriers.ir"
+grep -F 'semantic-opt: compose-filter disabled; reason: observable callback effect' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'observable filter-composition barrier was not explained'
+grep -F 'semantic-opt: compose-map disabled; reason: observable callback effect' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'observable map-composition barrier was not explained'
+grep -F 'semantic-opt: compose-map; composed 2 adjacent maps' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'potential divergence unnecessarily blocked invocation-preserving map composition'
+[ "$(grep -c 'predicate-pushdown disabled; reason: map is not a proven identity' \
+    "$test_build/phase46_semantic_barriers.ir")" -ge 2 ] ||
+  fail 'non-identity predicate-pushdown barriers were not retained'
+grep -F 'predicate-pushdown disabled; reason: pipeline has observable callback effect' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'effectful predicate-pushdown barrier was not explained'
+grep -F 'map elimination: disabled; reason: callback may diverge' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'divergence did not block Phase 4.6 dead-map elimination'
+grep -F 'short-circuit any disabled; reason: skipped callback may diverge' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'divergence did not block Phase 4.6 any short circuiting'
+grep -F 'short-circuit all disabled; reason: skipped callback may diverge' \
+  "$test_build/phase46_semantic_barriers.ir" >/dev/null ||
+  fail 'divergence did not block Phase 4.6 all short circuiting'
+[ "$(grep -c 'spin(__moss' \
+    "$test_build/phase46_semantic_barriers_optimized.rs")" -eq 4 ] ||
+  fail 'optimized divergence barriers skipped a required callback invocation path'
+
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase46_scope_rewrites.moss \
+  >"$test_build/phase46_scope_rewrites.ir"
+grep -F "semantic-opt: collapse-single-use-temporary; binding 'selected'" \
+  "$test_build/phase46_scope_rewrites.ir" >/dev/null ||
+  fail 'single-use Phase 4.6 temporary was not collapsed semantically'
+grep -F 'mapped values are unused by downstream terminal count' \
+  "$test_build/phase46_scope_rewrites.ir" >/dev/null ||
+  fail 'cross-binding terminal count retained a dead trailing map'
+grep -F 'intermediate materialized: materialized; reason: multiple consumers' \
+  "$test_build/phase46_scope_rewrites.ir" >/dev/null ||
+  fail 'Phase 4.6 collapsed a multiple-use temporary'
+grep -F "FUNCTIONAL INTERMEDIATE 'selected' VIRTUALIZED" \
+  "$test_build/phase46_scope_rewrites_optimized.rs" >/dev/null ||
+  fail 'single-use semantic collapse did not reach lowering'
+grep -F "FUNCTIONAL INTERMEDIATE 'materialized' MATERIALIZED; reason: multiple consumers" \
+  "$test_build/phase46_scope_rewrites_optimized.rs" >/dev/null ||
+  fail 'multiple-use semantic boundary disappeared during lowering'
+[ "$(grep -c 'double(__moss_value_' \
+    "$test_build/phase46_scope_rewrites_optimized.rs")" -eq 2 ] ||
+  fail 'cross-binding count did not remove only its dead map callback'
+
 grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
   "$test_build/phase4_hof_optimized.rs" >/dev/null ||
   fail 'static higher-order helper did not erase its compile-time callable parameter'

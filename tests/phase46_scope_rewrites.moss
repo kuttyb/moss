@@ -1,0 +1,17 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [1, 2, 3, 4]
+
+  parsed = values |> map(double)
+  total = parsed |> filter(_ > 4) |> sum
+
+  selected = values |> filter(_ > 1) |> map(double)
+  selected_count = selected |> count
+
+  materialized = values |> map(double)
+  shared_total = materialized |> sum
+  shared_count = materialized |> count
+
+  echo "scope", total, selected_count, shared_total, shared_count

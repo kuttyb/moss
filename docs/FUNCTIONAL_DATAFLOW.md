@@ -243,6 +243,72 @@ does not reorder stages, push predicates, duplicate work, or apply a general
 profitability model. Each DAG retains the semantic identities and provenance of all
 consumer pipelines.
 
+## Phase 4.6 semantic-space optimization
+
+Moss semantic-space optimization is a Moss-to-Moss rewrite phase. It preserves a
+functional computation in semantic form long enough to replace it with an equivalent
+Moss computation that performs less semantic work before normal compilation and
+lowering.
+
+The checked Phase 4 nodes remain authoritative for types, callable identities,
+ownership, effects, failure, divergence, and source provenance. Phase 4.6 adds a small
+post-analysis `semantic_steps` sequence. A step points back to one or more original
+nodes, so adjacent maps or filters can be represented as a composed Moss operation
+without discarding their individual source identities. Rust generation consumes this
+exact sequence from the checked pipeline ID. It never reconstructs a rewrite by
+matching source text.
+
+The bounded pass order is:
+
+1. normalize one semantic step per checked functional node;
+2. remove a trivial identity map when that proves predicate pushdown;
+3. compose adjacent safe maps and adjacent safe filters;
+4. apply terminal dead-work, cardinality, and `any`/`all` plans;
+5. link already-proven single-use lexical producers and consumers;
+6. revalidate terminal work skipping across those links;
+7. form compatible shared-source DAGs;
+8. finalize materialization and provenance plans.
+
+The implementation performs one structurally bounded sequence rather than an unbounded
+fixed point or a generic rewrite engine. `--dump-functional-ir` shows both the optimized
+semantic plan (`ComposedMap`, `ComposedFilter`, and remaining stages) and deterministic
+`semantic-opt:` records. Original nodes remain visible and identify eliminated semantic
+work.
+
+Map composition retains the original callable order. Filter composition lowers as
+left-to-right short-circuit conjunction, so the second predicate still runs only for
+values accepted by the first. Potential divergence alone does not prohibit these
+invocation-preserving rewrites when all otherwise observable effects and failures are
+absent. In contrast, dead-map removal and terminal short circuiting execute fewer
+callbacks and therefore require `safe_to_skip`: no observable effect, failure, or
+potential divergence.
+
+Predicate pushdown is deliberately proof-bounded. The current IR can prove that
+`map(_)` over a trivial element type is identity, so a following filter may consume the
+earlier value and the redundant map may disappear. Moss does not assume a named
+identity function is identity and does not move a predicate across an arbitrary or
+type-changing map. General algebraic predicate rewriting remains deferred.
+
+Terminal-aware plans retain only computation needed for the result. In particular,
+`filter |> map(pure) |> count` removes the trailing map but retains the cardinality-
+changing filter, while a map-only count becomes source length. A count over an inert
+scalar vector literal can become its constant cardinality without constructing the
+literal. Runtime-empty collections continue to observe the defined identities for
+`sum`, `count`, `any`, `all`, and initialized `reduce`; Phase 4.6 does not add an
+untyped-empty-literal exception to collection inference.
+
+This phase is distinct from lazy evaluation. Logical Moss source semantics remain eager
+and `-O0` remains the stage-at-a-time reference. The optimizer changes which equivalent
+computation is required only after proving that omitted materialization or callback work
+is unobservable.
+
+The architectural boundary is simple: if an optimization can be described as “this
+equivalent Moss computation asks for less work,” it belongs in semantic-space
+optimization. Decisions about SIMD, threads, GPUs, loop tiling, caches, instruction
+selection, LLVM, domain clustering, mailboxes, atomics, or locks belong downstream.
+Phase 4.6 introduces neither MLIR nor a general optimizer/plugin framework; the focused
+semantic IR remains sufficient for this bounded pass set.
+
 ## Executable examples
 
 The examples directory separates the main ideas into small programs:
@@ -265,14 +331,18 @@ The examples directory separates the main ideas into small programs:
 - `functional_shared_traversal.moss` demonstrates a shared-source terminal DAG.
 - `functional_materialization.moss` demonstrates a multiple-consumer materialization
   followed by a legal shared terminal traversal.
+- `functional_semantic_optimization.moss` demonstrates composed maps and filters,
+  identity-only predicate pushdown, a virtual named intermediate, terminal dead-map
+  removal, literal cardinality, and safe short circuiting.
 
 Each program is compiled and executed through both `-O0` and `-O` by the regression
 suite. Their observable output must agree.
 
 ## Deliberately deferred
 
-Phase 4/4.5 do not add automatic parallelism, SIMD, GPU code generation, a dynamic
+Phase 4/4.5/4.6 do not add automatic parallelism, SIMD, GPU code generation, a dynamic
 callable runtime, general lambda syntax, source effect annotations, initializer-free
-reduction, generic stage reordering, predicate pushdown, or new failure semantics. The
-IR preserves the topology, concrete element types, captures, reductions, independence,
-materialization, and consumer-graph facts that later optimizers will need.
+reduction, generic stage reordering, algebraic predicate pushdown, or new failure
+semantics. Phase 4.6 supports only identity-proven pushdown. The IR preserves the
+topology, concrete element types, captures, reductions, independence, materialization,
+semantic rewrite provenance, and consumer-graph facts that later optimizers will need.

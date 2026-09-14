@@ -1,0 +1,21 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+proc main():
+  values = [-2, 1, 3, 5]
+
+  composed_maps = values |> map(_ + 1) |> map(double) |> sum
+  composed_filters = values |> filter(_ > 0) |> filter(_ < 4) |> sum
+  pushed_identity = values |> map(_) |> filter(_ > 0) |> sum
+  filtered_mapped_count = values |> filter(_ > 0) |> map(double) |> count
+  mapped_count = values |> map(double) |> count
+
+  found = values |> map(_ + 3) |> any(_ == 4)
+  all_shifted_positive = values |> map(_ + 3) |> all(_ > 0)
+
+  empty = values |> filter(_ > 100)
+  empty_any = empty |> any(_ > 0)
+  empty_all = empty |> all(_ > 0)
+  literal_count = [10, 20, 30] |> count
+
+  echo "semantic", composed_maps, composed_filters, pushed_identity, filtered_mapped_count, mapped_count, found, all_shifted_positive, empty_any, empty_all, literal_count

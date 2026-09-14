@@ -186,6 +186,15 @@ collection. Likewise, adjacent independent terminals over the same unchanged loc
 source may share one traversal. Neither transformation changes source syntax or permits
 a compiler-internal pipeline value to escape.
 
+Phase 4.6 performs bounded Moss-to-Moss semantic rewrites before ordinary lowering.
+Adjacent proven-safe maps and filters may compose; safe trailing maps disappear when a
+terminal `count` cannot observe their values; inert literal cardinality may become a
+constant; and a filter may move through trivial `map(_)`, whose identity is statically
+proven. General map/filter reordering is not implied. Any rewrite that skips callback
+work requires that work to have no observable effect, failure, or conservative
+`may_diverge` fact. This optimizer does not make Moss lazy and introduces no source
+syntax.
+
 A stage callable may be a named function, a statically bound instance method such as
 `scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
 `_.score()`. A bound method captures one concrete receiver and must only READ it;

@@ -301,6 +301,20 @@ struct ParsedFunctionalPipeline {
   vector<ParsedFunctionalStage> stages;
 };
 
+// The code generator receives this post-rewrite form from the exact
+// FunctionalPipeline plan. A composed step owns several original operations;
+// this preserves callable/type/provenance identities while making the
+// Moss-level composition explicit before loop lowering.
+struct LoweredFunctionalStage {
+  FunctionalNodeKind kind = FunctionalNodeKind::Source;
+  vector<ParsedFunctionalStage> operations;
+};
+
+struct LoweredFunctionalPipeline {
+  string source;
+  vector<LoweredFunctionalStage> stages;
+};
+
 static std::optional<FunctionalNodeKind> functional_stage_kind(const string& name) {
   if (name == "map") return FunctionalNodeKind::Map;
   if (name == "filter") return FunctionalNodeKind::Filter;
@@ -5843,8 +5857,10 @@ class Checker {
 // This is a Moss-level optimization plan over the authoritative typed
 // functional/dataflow IR. Phase 4.5 augments those semantic nodes with
 // terminal, liveness/materialization, cross-binding, and shared-source DAG
-// facts. Rust generation consumes exact plan IDs and never asks an iterator
-// library to recover the source structure.
+// facts. Phase 4.6 then performs a bounded sequence of Moss-to-Moss rewrites
+// over explicit semantic_steps. Rust generation consumes exact plan IDs and
+// that rewritten sequence; it never asks an iterator library or source-text
+// matcher to recover the semantic structure.
 class FunctionalOptimizer {
  public:
   explicit FunctionalOptimizer(Program& program) : program_(program) {}
@@ -5853,6 +5869,8 @@ class FunctionalOptimizer {
     program_.functional_traversal_groups.clear();
     for (auto& pipeline : program_.functional_pipelines) {
       pipeline.count_uses_exact_length = false;
+      pipeline.count_uses_known_size = false;
+      pipeline.known_source_size = 0;
       pipeline.short_circuit_terminal = false;
       pipeline.virtual_upstream_pipeline_id = 0;
       pipeline.virtualized_into_pipeline_id = 0;
@@ -5862,6 +5880,7 @@ class FunctionalOptimizer {
       pipeline.binding_use_count = 0;
       pipeline.binding_materialization_reason.clear();
       pipeline.optimization_notes.clear();
+      pipeline.semantic_rewrites.clear();
       pipeline.fused = enabled && pipeline.fusion_eligible;
       pipeline.lowered_provenance.clear();
       for (auto& node : pipeline.nodes) {
@@ -5871,8 +5890,11 @@ class FunctionalOptimizer {
         node.multiple_consumers = false;
         node.barrier_required = false;
         node.dead_stage_eliminated = false;
+        node.semantic_work_eliminated = false;
+        node.semantic_elimination_reason.clear();
         node.materialization_reason.clear();
       }
+      initialize_semantic_plan(pipeline);
       if (pipeline.fused)
         pipeline.decision = "fused stages 1-" +
             std::to_string(pipeline.nodes.size() - 1) +
@@ -5881,7 +5903,18 @@ class FunctionalOptimizer {
         pipeline.decision =
             "eager reference lowering (-O0); logical intermediates retained";
 
+      // This deliberately bounded sequence is the Phase 4.6 semantic-space
+      // optimizer. Each pass either reduces the number of semantic steps or
+      // groups adjacent steps once, so no general fixed point is required.
+      if (enabled) {
+        rewrite_identity_map_filter(pipeline);
+        compose_adjacent_steps(pipeline, FunctionalNodeKind::Map,
+                               "compose-map");
+        compose_adjacent_steps(pipeline, FunctionalNodeKind::Filter,
+                               "compose-filter");
+      }
       plan_terminal_lowering(pipeline, enabled);
+      if (enabled) plan_terminal_aware_semantics(pipeline);
     }
 
     if (enabled) {
@@ -5957,6 +5990,193 @@ class FunctionalOptimizer {
     return found == program_.functional_pipelines.end() ? nullptr : &*found;
   }
 
+  static void initialize_semantic_plan(FunctionalPipeline& pipeline) {
+    pipeline.semantic_steps.clear();
+    for (size_t node_index = 1; node_index < pipeline.nodes.size();
+         ++node_index) {
+      FunctionalSemanticStep step;
+      step.kind = pipeline.nodes[node_index].kind;
+      step.source_node_indices.push_back(node_index);
+      step.provenance = pipeline.nodes[node_index].provenance;
+      pipeline.semantic_steps.push_back(std::move(step));
+    }
+  }
+
+  static void record_semantic_rewrite(
+      FunctionalPipeline& pipeline, string name, string detail,
+      vector<string> provenance) {
+    FunctionalSemanticRewrite rewrite;
+    rewrite.name = std::move(name);
+    rewrite.detail = std::move(detail);
+    rewrite.provenance = std::move(provenance);
+    pipeline.semantic_rewrites.push_back(std::move(rewrite));
+  }
+
+  static bool step_nodes_satisfy(
+      const FunctionalPipeline& pipeline,
+      const FunctionalSemanticStep& step,
+      const std::function<bool(const FunctionalNode&)>& predicate) {
+    if (step.source_node_indices.empty()) return false;
+    for (size_t node_index : step.source_node_indices) {
+      if (node_index == 0 || node_index >= pipeline.nodes.size() ||
+          !predicate(pipeline.nodes[node_index]))
+        return false;
+    }
+    return true;
+  }
+
+  static bool trivial_pipeline_element_type(const string& collection_type) {
+    string type = canonical_type_name(collection_type);
+    string element;
+    if (starts_with(type, "vector[") && ends_with(type, "]"))
+      element = trim(type.substr(7, type.size() - 8));
+    else if (starts_with(type, "seq[") && ends_with(type, "]"))
+      element = trim(type.substr(4, type.size() - 5));
+    return element == "int" || element == "float" || element == "bool";
+  }
+
+  static bool identity_map_step(const FunctionalPipeline& pipeline,
+                                const FunctionalSemanticStep& step) {
+    if (step.kind != FunctionalNodeKind::Map ||
+        step.source_node_indices.size() != 1)
+      return false;
+    size_t node_index = step.source_node_indices.front();
+    if (node_index == 0 || node_index >= pipeline.nodes.size()) return false;
+    const FunctionalNode& node = pipeline.nodes[node_index];
+    return trim(node.callable_expression) == "_" &&
+        canonical_type_name(node.input_type) ==
+            canonical_type_name(node.output_type) &&
+        trivial_pipeline_element_type(node.input_type) &&
+        node.ownership == Effect::Read && node.effects.fusion_safe();
+  }
+
+  // Predicate pushdown is intentionally limited to a proof the current IR
+  // can make without algebra: a trivial-element `map(_)` is the identity. The
+  // following predicate can therefore consume the earlier value unchanged,
+  // and the redundant map can disappear. All non-identity maps remain in
+  // source order.
+  static void rewrite_identity_map_filter(FunctionalPipeline& pipeline) {
+    for (size_t index = 0; index + 1 < pipeline.semantic_steps.size();) {
+      FunctionalSemanticStep& map_step = pipeline.semantic_steps[index];
+      const FunctionalSemanticStep& filter_step =
+          pipeline.semantic_steps[index + 1];
+      if (map_step.kind != FunctionalNodeKind::Map ||
+          filter_step.kind != FunctionalNodeKind::Filter) {
+        ++index;
+        continue;
+      }
+
+      string disabled_reason;
+      if (!pipeline.fusion_eligible)
+        disabled_reason = "pipeline has " + barrier_reason(pipeline);
+      else if (!identity_map_step(pipeline, map_step))
+        disabled_reason = "map is not a proven identity";
+      else if (!step_nodes_satisfy(
+                   pipeline, filter_step,
+                   [](const FunctionalNode& node) {
+                     return node.effects.fusion_safe() &&
+                         node.ownership == Effect::Read;
+                   }))
+        disabled_reason = "predicate has an observable or ownership barrier";
+
+      if (!disabled_reason.empty()) {
+        pipeline.optimization_notes.push_back(
+            "semantic-opt: predicate-pushdown disabled; reason: " +
+            disabled_reason);
+        ++index;
+        continue;
+      }
+
+      vector<string> provenance = map_step.provenance;
+      provenance.insert(provenance.end(), filter_step.provenance.begin(),
+                        filter_step.provenance.end());
+      for (size_t node_index : map_step.source_node_indices) {
+        FunctionalNode& node = pipeline.nodes[node_index];
+        node.semantic_work_eliminated = true;
+        node.semantic_elimination_reason =
+            "predicate moved through a proven identity map";
+      }
+      record_semantic_rewrite(
+          pipeline, "predicate-pushdown",
+          "filter moved to the earlier value through map(_)", provenance);
+      pipeline.optimization_notes.push_back(
+          "semantic-opt: predicate-pushdown through proven identity map");
+      pipeline.semantic_steps.erase(
+          pipeline.semantic_steps.begin() +
+          static_cast<std::ptrdiff_t>(index));
+      // Keep the same index so another immediately preceding identity map can
+      // be considered against the now-earlier filter.
+    }
+  }
+
+  static void compose_adjacent_steps(FunctionalPipeline& pipeline,
+                                     FunctionalNodeKind kind,
+                                     const string& rewrite_name) {
+    if (!pipeline.fusion_eligible) {
+      for (size_t index = 0; index + 1 < pipeline.semantic_steps.size();
+           ++index) {
+        if (pipeline.semantic_steps[index].kind == kind &&
+            pipeline.semantic_steps[index + 1].kind == kind) {
+          pipeline.optimization_notes.push_back(
+              "semantic-opt: " + rewrite_name +
+              " disabled; reason: " + barrier_reason(pipeline));
+          break;
+        }
+      }
+      return;
+    }
+
+    for (size_t index = 0; index < pipeline.semantic_steps.size();) {
+      if (pipeline.semantic_steps[index].kind != kind) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < pipeline.semantic_steps.size() &&
+             pipeline.semantic_steps[end].kind == kind &&
+             step_nodes_satisfy(
+                 pipeline, pipeline.semantic_steps[end],
+                 [](const FunctionalNode& node) {
+                   return node.effects.fusion_safe();
+                 }))
+        ++end;
+      if (end == index + 1) {
+        ++index;
+        continue;
+      }
+
+      FunctionalSemanticStep composed = pipeline.semantic_steps[index];
+      for (size_t part = index + 1; part < end; ++part) {
+        const auto& step = pipeline.semantic_steps[part];
+        composed.source_node_indices.insert(
+            composed.source_node_indices.end(),
+            step.source_node_indices.begin(), step.source_node_indices.end());
+        composed.provenance.insert(composed.provenance.end(),
+                                   step.provenance.begin(),
+                                   step.provenance.end());
+      }
+      record_semantic_rewrite(
+          pipeline, rewrite_name,
+          "composed " + std::to_string(end - index) +
+              " adjacent " +
+              string(kind == FunctionalNodeKind::Map ? "maps" : "filters"),
+          composed.provenance);
+      pipeline.optimization_notes.push_back(
+          "semantic-opt: " + rewrite_name + " (" +
+          std::to_string(end - index) + " stages)");
+      pipeline.semantic_steps.erase(
+          pipeline.semantic_steps.begin() +
+              static_cast<std::ptrdiff_t>(index),
+          pipeline.semantic_steps.begin() +
+              static_cast<std::ptrdiff_t>(end));
+      pipeline.semantic_steps.insert(
+          pipeline.semantic_steps.begin() +
+              static_cast<std::ptrdiff_t>(index),
+          std::move(composed));
+      ++index;
+    }
+  }
+
   static size_t result_pipeline_id(
       const std::unordered_map<string,size_t>& ids, const string& context) {
     auto found = ids.find(context);
@@ -6015,18 +6235,6 @@ class FunctionalOptimizer {
     return pipeline.nodes.size() > 1 && !terminal_pipeline(pipeline);
   }
 
-  static bool exact_count_candidate(const FunctionalPipeline& pipeline) {
-    if (pipeline.nodes.size() < 2 ||
-        pipeline.nodes.back().kind != FunctionalNodeKind::Count)
-      return false;
-    return std::all_of(
-        pipeline.nodes.begin() + 1, pipeline.nodes.end() - 1,
-        [](const FunctionalNode& node) {
-          return node.kind == FunctionalNodeKind::Map &&
-              node.effects.safe_to_skip();
-        });
-  }
-
   // Sharing a traversal and omitting work have deliberately different proof
   // obligations. Potential divergence does not prevent ordinary ordered
   // fusion, but it does prevent an optimization from dropping an invocation.
@@ -6066,7 +6274,6 @@ class FunctionalOptimizer {
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
       if (effects.may_fail) return "callback may fail";
-      if (effects.may_diverge) return "callback may diverge";
       if (effects.unresolved) return "unresolved callback effect";
     }
     return "eager semantics required";
@@ -6114,13 +6321,29 @@ class FunctionalOptimizer {
                                         const string& reason,
                                         bool mapped_work) {
     pipeline.count_uses_exact_length = false;
-    for (auto& node : pipeline.nodes) node.dead_stage_eliminated = false;
+    pipeline.count_uses_known_size = false;
+    pipeline.known_source_size = 0;
     erase_notes_with_prefix(pipeline, "count -> len");
-    erase_notes_with_prefix(pipeline, "map stage eliminated");
+    erase_notes_with_prefix(pipeline, "count -> constant");
     erase_notes_with_prefix(pipeline, "map elimination:");
+    pipeline.semantic_rewrites.erase(
+        std::remove_if(
+            pipeline.semantic_rewrites.begin(),
+            pipeline.semantic_rewrites.end(),
+            [](const FunctionalSemanticRewrite& rewrite) {
+              return rewrite.name == "terminal-count" ||
+                  rewrite.name == "known-size-count";
+            }),
+        pipeline.semantic_rewrites.end());
     pipeline.optimization_notes.push_back(
         "count -> len disabled; reason: " + reason);
-    if (mapped_work)
+    bool map_was_eliminated = std::any_of(
+        pipeline.nodes.begin(), pipeline.nodes.end(),
+        [](const FunctionalNode& node) {
+          return node.kind == FunctionalNodeKind::Map &&
+              node.dead_stage_eliminated;
+        });
+    if (mapped_work && !map_was_eliminated)
       pipeline.optimization_notes.push_back(
           "map elimination: disabled; reason: " + reason);
   }
@@ -6149,33 +6372,203 @@ class FunctionalOptimizer {
     return !pipeline.count_uses_exact_length;
   }
 
-  void plan_terminal_lowering(FunctionalPipeline& pipeline, bool enabled) {
-    bool count_shape = pipeline.nodes.size() >= 2 &&
-        pipeline.nodes.back().kind == FunctionalNodeKind::Count &&
-        std::all_of(pipeline.nodes.begin() + 1, pipeline.nodes.end() - 1,
-                    [](const FunctionalNode& node) {
-                      return node.kind == FunctionalNodeKind::Map;
-                    });
-    if (enabled && pipeline.fusion_eligible &&
-        exact_count_candidate(pipeline)) {
-      pipeline.count_uses_exact_length = true;
-      for (auto& node : pipeline.nodes)
-        if (node.kind == FunctionalNodeKind::Map)
-          node.dead_stage_eliminated = true;
+  static bool semantic_step_safe_to_skip(
+      const FunctionalPipeline& pipeline,
+      const FunctionalSemanticStep& step) {
+    return step_nodes_satisfy(
+        pipeline, step,
+        [](const FunctionalNode& node) {
+          return node.effects.safe_to_skip();
+        });
+  }
+
+  static string semantic_step_skip_barrier(
+      const FunctionalPipeline& pipeline,
+      const FunctionalSemanticStep& step) {
+    for (size_t node_index : step.source_node_indices) {
+      if (node_index == 0 || node_index >= pipeline.nodes.size())
+        return "invalid semantic stage";
+      const auto& effects = pipeline.nodes[node_index].effects;
+      if (effects.domain_write) return "observable domain WRITE";
+      if (effects.domain_read) return "observable domain READ";
+      if (effects.message) return "message send";
+      if (effects.await) return "await";
+      if (effects.external_io) return "observable callback effect";
+      if (effects.local_mutation) return "observable local mutation";
+      if (effects.may_fail) return "callback may fail";
+      if (effects.may_diverge) return "callback may diverge";
+      if (effects.unresolved) return "unresolved callback effect";
+    }
+    return "ownership or eager-ordering barrier";
+  }
+
+  static bool inert_literal(string value) {
+    value = trim(std::move(value));
+    if (value == "true" || value == "false") return true;
+    size_t index = 0;
+    if (!value.empty() && (value.front() == '+' || value.front() == '-'))
+      ++index;
+    bool digit = false;
+    bool dot = false;
+    for (; index < value.size(); ++index) {
+      char ch = value[index];
+      if (std::isdigit(static_cast<unsigned char>(ch))) {
+        digit = true;
+        continue;
+      }
+      if (ch == '.' && !dot) {
+        dot = true;
+        continue;
+      }
+      return false;
+    }
+    if (!digit) return false;
+    try {
+      size_t consumed = 0;
+      if (dot)
+        (void)std::stod(value, &consumed);
+      else
+        (void)std::stoll(value, &consumed);
+      return consumed == value.size();
+    } catch (const std::exception&) {
+      // Do not let an optimization hide an invalid/out-of-range literal that
+      // ordinary Rust lowering would reject.
+      return false;
+    }
+  }
+
+  static std::optional<size_t> inert_literal_vector_size(
+      const string& expression) {
+    string value = trim(expression);
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']')
+      return std::nullopt;
+    auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
+    if (elements.size() == 1 && trim(elements.front()).empty())
+      return size_t{0};
+    if (!std::all_of(elements.begin(), elements.end(),
+                     [](const string& element) {
+                       return inert_literal(element);
+                     }))
+      return std::nullopt;
+    return elements.size();
+  }
+
+  static void eliminate_semantic_step(
+      FunctionalPipeline& pipeline, size_t step_index, const string& reason,
+      const string& rewrite_name) {
+    FunctionalSemanticStep step = pipeline.semantic_steps[step_index];
+    for (size_t node_index : step.source_node_indices) {
+      FunctionalNode& node = pipeline.nodes[node_index];
+      node.dead_stage_eliminated = true;
+      node.semantic_work_eliminated = true;
+      node.semantic_elimination_reason = reason;
+    }
+    record_semantic_rewrite(pipeline, rewrite_name, reason, step.provenance);
+    pipeline.semantic_steps.erase(
+        pipeline.semantic_steps.begin() +
+        static_cast<std::ptrdiff_t>(step_index));
+  }
+
+  static bool eliminate_trailing_maps_before_count(
+      FunctionalPipeline& pipeline) {
+    if (pipeline.semantic_steps.empty() ||
+        pipeline.semantic_steps.back().kind != FunctionalNodeKind::Count)
+      return false;
+    bool eliminated = false;
+    while (pipeline.semantic_steps.size() >= 2) {
+      size_t map_index = pipeline.semantic_steps.size() - 2;
+      const auto& step = pipeline.semantic_steps[map_index];
+      if (step.kind != FunctionalNodeKind::Map) break;
+      if (!semantic_step_safe_to_skip(pipeline, step)) break;
+      eliminate_semantic_step(
+          pipeline, map_index,
+          "mapped values are unused by terminal count and the callback is "
+          "pure/non-failing/non-divergent",
+          "dead-map");
+      eliminated = true;
+    }
+    if (eliminated)
       pipeline.optimization_notes.push_back(
-          "count -> len; reason: exact source cardinality known");
-      if (pipeline.nodes.size() > 2)
-        pipeline.optimization_notes.push_back(
-            "map stage eliminated; reason: output unused and callback is "
-            "pure/non-failing/non-divergent");
-    } else if (enabled && count_shape) {
-      disable_count_elimination(
-          pipeline, count_elimination_barrier_reason(pipeline),
-          has_map_stage(pipeline));
+          "map stage eliminated; reason: output unused and callback is "
+          "pure/non-failing/non-divergent");
+    return eliminated;
+  }
+
+  static bool eliminate_trailing_maps_for_downstream_count(
+      FunctionalPipeline& pipeline) {
+    bool eliminated = false;
+    while (!pipeline.semantic_steps.empty()) {
+      size_t map_index = pipeline.semantic_steps.size() - 1;
+      const auto& step = pipeline.semantic_steps[map_index];
+      if (step.kind != FunctionalNodeKind::Map ||
+          !semantic_step_safe_to_skip(pipeline, step))
+        break;
+      eliminate_semantic_step(
+          pipeline, map_index,
+          "mapped values are unused by downstream terminal count and the "
+          "callback is pure/non-failing/non-divergent",
+          "dead-map");
+      eliminated = true;
+    }
+    if (eliminated)
+      pipeline.optimization_notes.push_back(
+          "map stage eliminated; reason: downstream count uses only "
+          "cardinality");
+    return eliminated;
+  }
+
+  void plan_terminal_lowering(FunctionalPipeline& pipeline, bool enabled) {
+    bool count_terminal = !pipeline.semantic_steps.empty() &&
+        pipeline.semantic_steps.back().kind == FunctionalNodeKind::Count;
+    bool mapped_count = count_terminal && has_map_stage(pipeline);
+    if (enabled && count_terminal) {
+      if (pipeline.fusion_eligible) {
+        bool eliminated = eliminate_trailing_maps_before_count(pipeline);
+        bool blocked_trailing_map = pipeline.semantic_steps.size() >= 2 &&
+            pipeline.semantic_steps[pipeline.semantic_steps.size() - 2].kind ==
+                FunctionalNodeKind::Map;
+        if (blocked_trailing_map) {
+          const auto& blocked =
+              pipeline.semantic_steps[pipeline.semantic_steps.size() - 2];
+          disable_count_elimination(
+              pipeline, semantic_step_skip_barrier(pipeline, blocked),
+              mapped_count);
+        } else if (pipeline.semantic_steps.size() == 1) {
+          pipeline.count_uses_exact_length = true;
+          vector<string> provenance;
+          for (const auto& node : pipeline.nodes)
+            provenance.insert(provenance.end(), node.provenance.begin(),
+                              node.provenance.end());
+          record_semantic_rewrite(
+              pipeline, "terminal-count",
+              "replaced traversal with exact source cardinality", provenance);
+          pipeline.optimization_notes.push_back(
+              "count -> len; reason: exact source cardinality known");
+          if (auto size = inert_literal_vector_size(
+                  pipeline.source_expression)) {
+            pipeline.count_uses_known_size = true;
+            pipeline.known_source_size = *size;
+            record_semantic_rewrite(
+                pipeline, "known-size-count",
+                "inert vector literal has " + std::to_string(*size) +
+                    " elements",
+                pipeline.nodes.front().provenance);
+            pipeline.optimization_notes.push_back(
+                "count -> constant " + std::to_string(*size) +
+                "; reason: inert literal cardinality known");
+          }
+        } else if (eliminated) {
+          pipeline.optimization_notes.push_back(
+              "terminal count retains only cardinality-changing stages");
+        }
+      } else if (mapped_count) {
+        disable_count_elimination(
+            pipeline, count_elimination_barrier_reason(pipeline), true);
+      }
     }
 
-    if (pipeline.nodes.empty()) return;
-    FunctionalNodeKind terminal = pipeline.nodes.back().kind;
+    if (pipeline.semantic_steps.empty()) return;
+    FunctionalNodeKind terminal = pipeline.semantic_steps.back().kind;
     if (terminal != FunctionalNodeKind::Any &&
         terminal != FunctionalNodeKind::All)
       return;
@@ -6183,6 +6576,10 @@ class FunctionalOptimizer {
     if (enabled && pipeline.fusion_eligible &&
         callbacks_safe_to_skip(pipeline)) {
       pipeline.short_circuit_terminal = true;
+      record_semantic_rewrite(
+          pipeline, "short-circuit-" + name,
+          "later callback invocations are safe to skip",
+          pipeline.semantic_steps.back().provenance);
       pipeline.optimization_notes.push_back(
           "short-circuit " + name + " enabled");
     } else {
@@ -6190,6 +6587,33 @@ class FunctionalOptimizer {
           pipeline, enabled
               ? skipped_callback_barrier_reason(pipeline)
               : "eager -O0 reference traversal");
+    }
+  }
+
+  static void plan_terminal_aware_semantics(FunctionalPipeline& pipeline) {
+    if (!pipeline.fused || pipeline.semantic_steps.empty()) return;
+    FunctionalNodeKind terminal = pipeline.semantic_steps.back().kind;
+    if (terminal == FunctionalNodeKind::Count &&
+        !pipeline.count_uses_exact_length) {
+      bool has_filter = std::any_of(
+          pipeline.semantic_steps.begin(), pipeline.semantic_steps.end(),
+          [](const FunctionalSemanticStep& step) {
+            return step.kind == FunctionalNodeKind::Filter;
+          });
+      if (has_filter)
+        record_semantic_rewrite(
+            pipeline, "terminal-filter-count",
+            "count matching elements without materializing filter output",
+            pipeline.semantic_steps.back().provenance);
+    } else if (terminal == FunctionalNodeKind::Sum ||
+               terminal == FunctionalNodeKind::Reduce) {
+      record_semantic_rewrite(
+          pipeline,
+          terminal == FunctionalNodeKind::Sum ? "terminal-sum"
+                                               : "terminal-reduce",
+          "terminal accumulator consumes upstream values without an "
+          "intermediate collection",
+          pipeline.semantic_steps.back().provenance);
     }
   }
 
@@ -6373,20 +6797,28 @@ class FunctionalOptimizer {
       producer->binding_materialization_reason.clear();
       consumer->fused = true;
 
+      vector<string> collapsed_provenance = producer->lowered_provenance;
+      if (collapsed_provenance.empty()) {
+        for (const auto& node : producer->nodes)
+          collapsed_provenance.insert(collapsed_provenance.end(),
+                                      node.provenance.begin(),
+                                      node.provenance.end());
+      }
+      record_semantic_rewrite(
+          *producer, "collapse-single-use-temporary",
+          "binding '" + binding +
+              "' remains semantic but needs no physical collection",
+          collapsed_provenance);
+
       // Terminal plans were formed before lexical graphs were linked. Recheck
       // any transform that can now omit upstream callback executions against
       // the combined graph rather than just the terminal statement.
       if (consumer->count_uses_exact_length) {
-        bool upstream_preserves_exact_count = std::all_of(
-            producer->nodes.begin() + 1, producer->nodes.end(),
-            [](const FunctionalNode& node) {
-              return node.kind == FunctionalNodeKind::Map &&
-                  node.effects.safe_to_skip();
-            });
+        if (producer->fusion_eligible)
+          eliminate_trailing_maps_for_downstream_count(*producer);
+        bool upstream_preserves_exact_count =
+            producer->semantic_steps.empty();
         if (upstream_preserves_exact_count) {
-          for (auto& node : producer->nodes)
-            if (node.kind == FunctionalNodeKind::Map)
-              node.dead_stage_eliminated = true;
           if (has_map_stage(*producer) &&
               std::none_of(
                   consumer->optimization_notes.begin(),
@@ -6397,15 +6829,28 @@ class FunctionalOptimizer {
             consumer->optimization_notes.push_back(
                 "map stage eliminated; reason: output unused and callback is "
                 "pure/non-failing/non-divergent");
+          if (auto size = inert_literal_vector_size(
+                  producer->source_expression)) {
+            consumer->count_uses_known_size = true;
+            consumer->known_source_size = *size;
+            record_semantic_rewrite(
+                *consumer, "known-size-count",
+                "virtual upstream has inert literal cardinality " +
+                    std::to_string(*size),
+                producer->nodes.front().provenance);
+          }
         } else {
           string reason = callback_may_diverge(*producer)
               ? "callback may diverge"
               : "upstream stage changes cardinality";
-          for (auto& node : producer->nodes)
-            node.dead_stage_eliminated = false;
           disable_count_elimination(
               *consumer, reason,
-              has_map_stage(*producer) || has_map_stage(*consumer));
+              std::any_of(
+                  producer->semantic_steps.begin(),
+                  producer->semantic_steps.end(),
+                  [](const FunctionalSemanticStep& step) {
+                    return step.kind == FunctionalNodeKind::Map;
+                  }) || has_map_stage(*consumer));
         }
       }
       if (consumer->short_circuit_terminal &&
@@ -6418,6 +6863,10 @@ class FunctionalOptimizer {
           ": virtualized across immutable binding");
       consumer->optimization_notes.push_back(
           "cross-binding fusion source: " + binding);
+      record_semantic_rewrite(
+          *consumer, "consume-virtual-temporary",
+          "continued pipeline through single-use binding '" + binding + "'",
+          collapsed_provenance);
       consumer->decision = "fused across immutable binding '" + binding +
           "'; intermediates eliminated";
     }
@@ -6579,10 +7028,9 @@ class FunctionalOptimizer {
       for (size_t position = 0; position < logical_nodes.size(); ++position) {
         FunctionalNode& node = pipeline.nodes[logical_nodes[position]];
         bool last = position + 1 == logical_nodes.size();
-        if (node.dead_stage_eliminated) {
+        if (node.semantic_work_eliminated) {
           node.materialization = FunctionalMaterializationKind::Virtual;
-          node.materialization_reason =
-              "mapped output is dead before exact-length count";
+          node.materialization_reason = node.semantic_elimination_reason;
         } else if (pipeline.virtualized_into_pipeline_id) {
           node.materialization = FunctionalMaterializationKind::Virtual;
           node.materialization_reason =
@@ -6686,6 +7134,11 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
               << functional_materialization_name(node.materialization);
         }
         if (node.dead_stage_eliminated) out << " dead-stage=eliminated";
+        if (node.semantic_work_eliminated) {
+          out << " semantic-work=eliminated";
+          if (!node.semantic_elimination_reason.empty())
+            out << " semantic-reason=" << node.semantic_elimination_reason;
+        }
         if (node.escapes) out << " escapes=yes";
         if (node.multiple_consumers) out << " multiple-consumers=yes";
         if (node.barrier_required) out << " barrier-required=yes";
@@ -6698,6 +7151,36 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
           << " deterministic=" << (pipeline.deterministic ? "yes" : "no")
           << " reduction-compatible="
           << (pipeline.reduction_compatible ? "yes" : "no") << "\n";
+      out << "  semantic-plan:";
+      if (pipeline.semantic_steps.empty()) out << " <no element work>";
+      out << "\n";
+      for (const auto& step : pipeline.semantic_steps) {
+        string name = functional_node_name(step.kind);
+        if (step.source_node_indices.size() > 1 &&
+            step.kind == FunctionalNodeKind::Map)
+          name = "ComposedMap";
+        else if (step.source_node_indices.size() > 1 &&
+                 step.kind == FunctionalNodeKind::Filter)
+          name = "ComposedFilter";
+        out << "    " << name << " origins=";
+        for (size_t index = 0; index < step.provenance.size(); ++index) {
+          if (index) out << ",";
+          out << step.provenance[index];
+        }
+        out << "\n";
+      }
+    }
+    for (const auto& rewrite : pipeline.semantic_rewrites) {
+      out << "  semantic-opt: " << rewrite.name;
+      if (!rewrite.detail.empty()) out << "; " << rewrite.detail;
+      if (!decisions_only && !rewrite.provenance.empty()) {
+        out << "; provenance=";
+        for (size_t index = 0; index < rewrite.provenance.size(); ++index) {
+          if (index) out << ",";
+          out << rewrite.provenance[index];
+        }
+      }
+      out << "\n";
     }
     for (const auto& note : pipeline.optimization_notes)
       out << "  note: " << note << "\n";
@@ -8489,6 +8972,46 @@ class Generator {
     return &*found;
   }
 
+  static LoweredFunctionalPipeline lower_functional_semantic_plan(
+      const ParsedFunctionalPipeline& parsed,
+      const FunctionalPipeline& planned) {
+    LoweredFunctionalPipeline lowered;
+    lowered.source = parsed.source;
+    for (const auto& semantic_step : planned.semantic_steps) {
+      if (semantic_step.kind == FunctionalNodeKind::Source ||
+          semantic_step.source_node_indices.empty())
+        throw std::runtime_error(
+            "internal error: invalid functional semantic step");
+      LoweredFunctionalStage stage;
+      stage.kind = semantic_step.kind;
+      for (size_t node_index : semantic_step.source_node_indices) {
+        if (node_index == 0 || node_index > parsed.stages.size() ||
+            node_index >= planned.nodes.size())
+          throw std::runtime_error(
+              "internal error: functional semantic step has stale source node");
+        const ParsedFunctionalStage& operation =
+            parsed.stages[node_index - 1];
+        if (operation.kind != semantic_step.kind ||
+            planned.nodes[node_index].kind != semantic_step.kind)
+          throw std::runtime_error(
+              "internal error: functional semantic rewrite changed operator kind");
+        stage.operations.push_back(operation);
+      }
+      lowered.stages.push_back(std::move(stage));
+    }
+    return lowered;
+  }
+
+  static const ParsedFunctionalStage& terminal_operation(
+      const LoweredFunctionalPipeline& pipeline) {
+    if (pipeline.stages.empty() ||
+        pipeline.stages.back().operations.size() != 1 ||
+        !functional_terminal_kind(pipeline.stages.back().kind))
+      throw std::runtime_error(
+          "internal error: lowered functional pipeline has no terminal");
+    return pipeline.stages.back().operations.front();
+  }
+
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
@@ -8626,7 +9149,7 @@ class Generator {
           "internal error: invalid shared functional traversal region");
 
     vector<const FunctionalPipeline*> plans;
-    vector<ParsedFunctionalPipeline> pipelines;
+    vector<LoweredFunctionalPipeline> pipelines;
     vector<string> final_element_types;
     plans.reserve(group.consumers.size());
     pipelines.reserve(group.consumers.size());
@@ -8650,17 +9173,25 @@ class Generator {
       if (element_type.empty())
         throw std::runtime_error(
             "internal error: untyped shared functional source");
-      for (const auto& stage : parsed->stages) {
+      LoweredFunctionalPipeline lowered =
+          lower_functional_semantic_plan(*parsed, *plan);
+      if (lowered.stages.empty() ||
+          !functional_terminal_kind(lowered.stages.back().kind))
+        throw std::runtime_error(
+            "internal error: rewritten shared functional consumer lost terminal");
+      for (const auto& stage : lowered.stages) {
         if (stage.kind != FunctionalNodeKind::Map) continue;
-        auto result = generated_callable_result(
-            stage.arguments.front(), {element_type}, &types);
-        if (!result)
-          throw std::runtime_error(
-              "internal error: untyped shared functional map");
-        element_type = *result;
+        for (const auto& operation : stage.operations) {
+          auto result = generated_callable_result(
+              operation.arguments.front(), {element_type}, &types);
+          if (!result)
+            throw std::runtime_error(
+                "internal error: untyped shared functional map");
+          element_type = *result;
+        }
       }
       plans.push_back(plan);
-      pipelines.push_back(std::move(*parsed));
+      pipelines.push_back(std::move(lowered));
       final_element_types.push_back(std::move(element_type));
     }
 
@@ -8690,7 +9221,7 @@ class Generator {
         << ");\n";
 
     for (size_t index = 0; index < group.consumers.size(); ++index) {
-      const auto& terminal = pipelines[index].stages.back();
+      const auto& terminal = terminal_operation(pipelines[index]);
       out << inner << "let mut __moss_shared_result_" << group.transient_id
           << "_" << index << " = ";
       if (plans[index]->count_uses_exact_length)
@@ -8718,7 +9249,7 @@ class Generator {
            consumer_index < group.consumers.size(); ++consumer_index) {
         if (plans[consumer_index]->count_uses_exact_length) continue;
         const auto& pipeline = pipelines[consumer_index];
-        const auto& terminal = pipeline.stages.back();
+        const auto& terminal = terminal_operation(pipeline);
         string result = "__moss_shared_result_" +
             std::to_string(group.transient_id) + "_" +
             std::to_string(consumer_index);
@@ -8754,36 +9285,46 @@ class Generator {
         for (const auto& stage : pipeline.stages) {
           switch (stage.kind) {
             case FunctionalNodeKind::Map: {
-              string next = "__moss_shared_value_" +
-                  std::to_string(group.transient_id) + "_" +
-                  std::to_string(consumer_index) + "_" +
-                  std::to_string(++map_number);
-              out << statement_indent << "let " << next << " = "
-                  << render_functional_callable(stage.arguments.front(),
-                                                {current}, domain, locals,
-                                                &types)
-                  << ";\n";
-              auto mapped_type = generated_callable_result(
-                  stage.arguments.front(), {current.type}, &types);
-              if (!mapped_type)
-                throw std::runtime_error(
-                    "internal error: untyped shared functional map result");
-              current = {next, *mapped_type, false};
+              for (const auto& operation : stage.operations) {
+                string next = "__moss_shared_value_" +
+                    std::to_string(group.transient_id) + "_" +
+                    std::to_string(consumer_index) + "_" +
+                    std::to_string(++map_number);
+                out << statement_indent << "let " << next << " = "
+                    << render_functional_callable(
+                           operation.arguments.front(), {current}, domain,
+                           locals, &types)
+                    << ";\n";
+                auto mapped_type = generated_callable_result(
+                    operation.arguments.front(), {current.type}, &types);
+                if (!mapped_type)
+                  throw std::runtime_error(
+                      "internal error: untyped shared functional map result");
+                current = {next, *mapped_type, false};
+              }
               break;
             }
-            case FunctionalNodeKind::Filter:
-              out << statement_indent << "if !("
-                  << render_functional_callable(stage.arguments.front(),
-                                                {current}, domain, locals,
-                                                &types)
-                  << ") { break " << label << "; }\n";
+            case FunctionalNodeKind::Filter: {
+              out << statement_indent << "if !(";
+              for (size_t predicate = 0;
+                   predicate < stage.operations.size(); ++predicate) {
+                if (predicate) out << " && ";
+                out << "("
+                    << render_functional_callable(
+                           stage.operations[predicate].arguments.front(),
+                           {current}, domain, locals, &types)
+                    << ")";
+              }
+              out << ") { break " << label << "; }\n";
               break;
+            }
             case FunctionalNodeKind::Reduce: {
+              const auto& operation = stage.operations.front();
               auto accumulator_type = generated_expr_type(
-                  stage.arguments.front(), &types).value_or(current.type);
+                  operation.arguments.front(), &types).value_or(current.type);
               out << statement_indent << result << " = "
                   << render_functional_callable(
-                         stage.arguments[1],
+                         operation.arguments[1],
                          {{result, accumulator_type, false}, current},
                          domain, locals, &types)
                   << ";\n";
@@ -8802,21 +9343,23 @@ class Generator {
                   << ".wrapping_add(1_i64);\n";
               break;
             case FunctionalNodeKind::Any: {
-              string predicate = stage.arguments.empty()
+              const auto& operation = stage.operations.front();
+              string predicate = operation.arguments.empty()
                   ? current.expression
-                  : render_functional_callable(stage.arguments.front(),
-                                               {current}, domain, locals,
-                                               &types);
+                  : render_functional_callable(
+                        operation.arguments.front(), {current}, domain,
+                        locals, &types);
               out << statement_indent << "if " << predicate << " { "
                   << result << " = true; }\n";
               break;
             }
             case FunctionalNodeKind::All: {
-              string predicate = stage.arguments.empty()
+              const auto& operation = stage.operations.front();
+              string predicate = operation.arguments.empty()
                   ? current.expression
-                  : render_functional_callable(stage.arguments.front(),
-                                               {current}, domain, locals,
-                                               &types);
+                  : render_functional_callable(
+                        operation.arguments.front(), {current}, domain,
+                        locals, &types);
               out << statement_indent << "if !(" << predicate << ") { "
                   << result << " = false; }\n";
               break;
@@ -8980,7 +9523,7 @@ class Generator {
   }
 
   string gen_fused_functional_pipeline(
-      const ParsedFunctionalPipeline& pipeline, const Domain* domain,
+      const LoweredFunctionalPipeline& pipeline, const Domain* domain,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       const FunctionalPipeline* planned) const {
@@ -8993,18 +9536,19 @@ class Generator {
     string final_element_type = current_type;
     for (const auto& stage : pipeline.stages) {
       if (stage.kind != FunctionalNodeKind::Map) continue;
-      auto result = generated_callable_result(stage.arguments.front(),
-                                              {final_element_type}, types);
-      if (!result)
-        throw std::runtime_error("internal error: untyped fused map result");
-      final_element_type = *result;
+      for (const auto& operation : stage.operations) {
+        auto result = generated_callable_result(
+            operation.arguments.front(), {final_element_type}, types);
+        if (!result)
+          throw std::runtime_error("internal error: untyped fused map result");
+        final_element_type = *result;
+      }
     }
-    const auto& last = pipeline.stages.back();
-    bool terminal = last.kind == FunctionalNodeKind::Reduce ||
-        last.kind == FunctionalNodeKind::Sum ||
-        last.kind == FunctionalNodeKind::Count ||
-        last.kind == FunctionalNodeKind::Any ||
-        last.kind == FunctionalNodeKind::All;
+    FunctionalNodeKind last_kind = pipeline.stages.empty()
+        ? FunctionalNodeKind::Source : pipeline.stages.back().kind;
+    bool terminal = functional_terminal_kind(last_kind);
+    const ParsedFunctionalStage* last = terminal
+        ? &terminal_operation(pipeline) : nullptr;
     std::ostringstream out;
     out << "{\n        // Moss backend: FUSED FUNCTIONAL PIPELINE; one explicit loop, intermediates eliminated";
     if (planned) {
@@ -9018,17 +9562,18 @@ class Generator {
         << expr(pipeline.source, domain, locals, types) << ");\n";
     if (!terminal)
       out << "        let mut __moss_result = Vec::new();\n";
-    else if (last.kind == FunctionalNodeKind::Reduce)
+    else if (last_kind == FunctionalNodeKind::Reduce)
       out << "        let mut __moss_result = "
-          << expr(last.arguments.front(), domain, locals, types) << ";\n";
-    else if (last.kind == FunctionalNodeKind::Sum)
+          << expr(last->arguments.front(), domain, locals, types) << ";\n";
+    else if (last_kind == FunctionalNodeKind::Sum)
       out << "        let mut __moss_result = "
           << functional_zero(final_element_type) << ";\n";
-    else if (last.kind == FunctionalNodeKind::Count)
+    else if (last_kind == FunctionalNodeKind::Count)
       out << "        let mut __moss_result = 0_i64;\n";
     else
       out << "        let mut __moss_result = "
-          << (last.kind == FunctionalNodeKind::All ? "true" : "false") << ";\n";
+          << (last_kind == FunctionalNodeKind::All ? "true" : "false")
+          << ";\n";
     bool source_copy = copy_type(current_type);
     out << "        for __moss_item_ref in __moss_pipeline_source.iter() {\n"
         << "            let __moss_value_0 = "
@@ -9038,30 +9583,43 @@ class Generator {
     for (const auto& stage : pipeline.stages) {
       switch (stage.kind) {
         case FunctionalNodeKind::Map: {
-          string next = "__moss_value_" + std::to_string(++map_number);
-          out << "            let " << next << " = "
-              << render_functional_callable(stage.arguments.front(), {current},
-                                             domain, locals, types)
-              << ";\n";
-          auto result = generated_callable_result(stage.arguments.front(),
-                                                  {current.type}, types);
-          if (!result)
-            throw std::runtime_error("internal error: untyped fused map result");
-          current = {next, *result, false};
+          for (const auto& operation : stage.operations) {
+            string next = "__moss_value_" + std::to_string(++map_number);
+            out << "            let " << next << " = "
+                << render_functional_callable(
+                       operation.arguments.front(), {current}, domain,
+                       locals, types)
+                << ";\n";
+            auto result = generated_callable_result(
+                operation.arguments.front(), {current.type}, types);
+            if (!result)
+              throw std::runtime_error(
+                  "internal error: untyped fused map result");
+            current = {next, *result, false};
+          }
           break;
         }
-        case FunctionalNodeKind::Filter:
-          out << "            if !("
-              << render_functional_callable(stage.arguments.front(), {current},
-                                             domain, locals, types)
-              << ") { continue; }\n";
+        case FunctionalNodeKind::Filter: {
+          out << "            if !(";
+          for (size_t predicate = 0;
+               predicate < stage.operations.size(); ++predicate) {
+            if (predicate) out << " && ";
+            out << "("
+                << render_functional_callable(
+                       stage.operations[predicate].arguments.front(),
+                       {current}, domain, locals, types)
+                << ")";
+          }
+          out << ") { continue; }\n";
           break;
+        }
         case FunctionalNodeKind::Reduce: {
-          auto accumulator_type = generated_expr_type(stage.arguments.front(), types)
-              .value_or(current.type);
+          const auto& operation = stage.operations.front();
+          auto accumulator_type = generated_expr_type(
+              operation.arguments.front(), types).value_or(current.type);
           out << "            __moss_result = "
               << render_functional_callable(
-                     stage.arguments[1],
+                     operation.arguments[1],
                      {{"__moss_result", accumulator_type, false}, current},
                      domain, locals, types)
               << ";\n";
@@ -9078,10 +9636,12 @@ class Generator {
           out << "            __moss_result = __moss_result.wrapping_add(1_i64);\n";
           break;
         case FunctionalNodeKind::Any: {
-          string predicate = stage.arguments.empty()
+          const auto& operation = stage.operations.front();
+          string predicate = operation.arguments.empty()
               ? current.expression
-              : render_functional_callable(stage.arguments.front(), {current},
-                                           domain, locals, types);
+              : render_functional_callable(
+                    operation.arguments.front(), {current}, domain, locals,
+                    types);
           out << "            if " << predicate
               << " { __moss_result = true;";
           if (planned && planned->short_circuit_terminal) out << " break;";
@@ -9089,10 +9649,12 @@ class Generator {
           break;
         }
         case FunctionalNodeKind::All: {
-          string predicate = stage.arguments.empty()
+          const auto& operation = stage.operations.front();
+          string predicate = operation.arguments.empty()
               ? current.expression
-              : render_functional_callable(stage.arguments.front(), {current},
-                                           domain, locals, types);
+              : render_functional_callable(
+                    operation.arguments.front(), {current}, domain, locals,
+                    types);
           out << "            if !(" << predicate
               << ") { __moss_result = false;";
           if (planned && planned->short_circuit_terminal) out << " break;";
@@ -9125,7 +9687,8 @@ class Generator {
       throw std::runtime_error(
           "internal error: typed functional pipeline reached Rust generation "
           "without its exact functional_pipeline_id");
-    ParsedFunctionalPipeline lowered = *pipeline;
+    LoweredFunctionalPipeline lowered =
+        lower_functional_semantic_plan(*pipeline, *planned);
     if (planned->virtual_upstream_pipeline_id) {
       const FunctionalPipeline* upstream = planned_functional_pipeline(
           planned->virtual_upstream_pipeline_id);
@@ -9135,28 +9698,37 @@ class Generator {
           functional_terminal_kind(upstream_parsed->stages.back().kind))
         throw std::runtime_error(
             "internal error: invalid virtual functional upstream plan");
-      vector<ParsedFunctionalStage> stages = upstream_parsed->stages;
+      LoweredFunctionalPipeline upstream_lowered =
+          lower_functional_semantic_plan(*upstream_parsed, *upstream);
+      vector<LoweredFunctionalStage> stages =
+          std::move(upstream_lowered.stages);
       stages.insert(stages.end(), lowered.stages.begin(), lowered.stages.end());
       lowered.source = upstream_parsed->source;
       lowered.stages = std::move(stages);
     }
     if (planned->count_uses_exact_length) {
       std::ostringstream out;
-      out << "{\n        // Moss backend: COUNT -> EXACT LENGTH; mapped outputs are dead";
+      if (planned->count_uses_known_size)
+        out << "{\n        // Moss backend: COUNT -> KNOWN SIZE; inert literal work eliminated";
+      else
+        out << "{\n        // Moss backend: COUNT -> EXACT LENGTH; mapped outputs are dead";
       out << "; plan %" << planned->transient_id << ", semantic "
           << planned->semantic_identity << "; provenance";
       for (const auto& origin : planned->lowered_provenance)
         out << " " << origin;
-      out << "\n"
-          << "        let __moss_pipeline_source = &("
-          << expr(lowered.source, domain, locals, types) << ");\n"
-          << "        __moss_pipeline_source.len() as i64\n    }";
+      if (planned->count_uses_known_size)
+        out << "\n        " << planned->known_source_size << "_i64\n    }";
+      else
+        out << "\n"
+            << "        let __moss_pipeline_source = &("
+            << expr(lowered.source, domain, locals, types) << ");\n"
+            << "        __moss_pipeline_source.len() as i64\n    }";
       return out.str();
     }
     if (planned && planned->fused)
       return gen_fused_functional_pipeline(lowered, domain, locals, types,
                                            planned);
-    return gen_eager_functional_pipeline(lowered, domain, locals, types,
+    return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
                                          planned);
   }
 
@@ -11712,9 +12284,9 @@ static void usage() {
             << "  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
-            << "  -O, -Oshared-memory    fuse safe functional pipelines and plan optimized domain lowering\n"
+            << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
-            << "  --dump-functional-ir   print typed functional/dataflow nodes and optimization decisions\n"
+            << "  --dump-functional-ir   print typed nodes, semantic rewrites, and lowering decisions\n"
             << "  --explain-fusion       print deterministic functional optimization decisions\n\n"
             << "  --debug                 emit -O0 Rust with stable native symbols for source debugging\n"
             << "  --emit-debug-map FILE   write the shared Moss provenance map to FILE\n"

@@ -232,6 +232,31 @@ conservative: consumers are adjacent, results are new locals, paths cannot fail 
 effects, and no terminal depends on another terminal's result. Phase 4.5 performs no
 generic stage reordering or predicate pushdown.
 
+Phase 4.6 is a bounded semantic-space optimization pass over the same typed functional
+IR. “Semantic-space optimization” means a Moss-to-Moss rewrite: preserve the functional
+computation as Moss semantics long enough to replace it with an equivalent Moss
+computation that asks for less work before ordinary lowering. It is not lazy evaluation
+and does not change the eager `-O0` reference contract.
+
+The optimized semantic-stage sequence can compose adjacent safe maps, compose adjacent
+safe filters with left-to-right short circuiting, eliminate safe trailing maps whose
+values are unused by `count`, retain only cardinality-changing work for terminal count,
+and preserve/consume single-use virtual bindings. An inert scalar vector literal may
+supply a constant count without construction. `any`/`all` continue to use Phase 4.5's
+strict work-skipping rule.
+
+Predicate pushdown is initially limited to the proof already expressible by the IR:
+`map(_)` over a trivial element is identity, so a following filter may operate on the
+earlier value and the map may disappear. A named or non-identity map is not speculatively
+rewritten. General predicate algebra is deferred.
+
+Every rewrite uses the existing ownership, observable-effect, `may_fail`, and
+`may_diverge` facts. Invocation-preserving composition may retain potentially divergent
+callbacks; a rewrite that executes fewer callbacks requires them to be safe to skip.
+Original source nodes and provenance remain intact even when their semantic work is
+removed. The pass is a small explicit sequence, not MLIR or a general optimization
+framework.
+
 ## Rust lowering
 
 This section describes the current v0.2 backend. It is not a source-language contract unless the same rule is stated above.
@@ -282,6 +307,10 @@ This section describes the current v0.2 backend. It is not a source-language con
   `FunctionalTraversalGroup` whose one source has several terminal consumer edges.
   Generated Rust executes these exact plan IDs as one ordinary loop and retains all
   contributing semantic identities as provenance.
+- Phase 4.6 gives each pipeline a post-analysis semantic-stage sequence. Composed steps
+  refer back to all original nodes, eliminated steps remain in provenance, and terminal
+  rewrites are selected before Rust emission. The emitter executes this exact optimized
+  semantic sequence rather than rediscovering it from source text.
 
 The current compiler enforces direct-assignment and nontrivial-projection transfer, conflicting call-access rejection, branch/join consumption, and explicit communication-boundary copying with a Moss-level ownership/effect pass. It does not yet implement `deepCopy()` or general reference/alias facilities.
 
@@ -308,12 +337,12 @@ Read-only parameters do not consume the caller's value; `var` parameters permit 
 
 ## Deferred future work
 
-- Automatic SIMD, threading, and GPU/accelerator lowering are deferred. Phase 4/4.5 record
+- Automatic SIMD, threading, and GPU/accelerator lowering are deferred. Phase 4/4.5/4.6 record
   element independence, determinism, captures, reduction compatibility, and topology so
   later planners can prove such choices without changing the functional source contract.
 - General lambdas, runtime function values, user-facing effect annotations, initializer-
-  free reduction, generic stage reordering/predicate pushdown, and a functional cost
-  model are deferred. Phase 4/4.5 do not add a
+  free reduction, generic stage reordering/algebraic predicate pushdown, and a functional
+  cost model are deferred. Phase 4/4.5/4.6 do not add a
   dynamic callable runtime or exception/failure semantics.
 - General immutable cross-domain sharing (`share`, `freeze`, or source-level reference counting) is deferred because of memory retention and leak concerns.
 - Arena handles and `ref object` identity semantics are deferred because unreachable graphs, cycles, and small handles retaining large graphs need a clear reclamation model.

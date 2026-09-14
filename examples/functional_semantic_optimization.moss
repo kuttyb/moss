@@ -1,0 +1,34 @@
+# Phase 4.6 keeps these pipelines as Moss semantic computations before Rust
+# lowering. The optimizer asks for less work while preserving eager results.
+
+fn parse(value: Int) -> Int:
+  return value * 2
+
+fn score(value: Int) -> Int:
+  return value + 10
+
+proc main():
+  values = [-3, 1, 4, 12]
+
+  # Adjacent maps compose into one semantic transformation/traversal.
+  scored_total = values |> map(parse) |> map(score) |> sum
+
+  # Adjacent predicates compose left-to-right with short circuiting.
+  narrow_total = values |> filter(_ > 0) |> filter(_ < 10) |> sum
+
+  # The source binding still exists, but its single-use collection can remain
+  # virtual and feed the next pipeline directly.
+  parsed = values |> map(parse)
+  parsed_total = parsed |> filter(_ > 0) |> sum
+
+  # score is pure, non-failing, and non-divergent. Count needs only the
+  # filter's cardinality, so the trailing map callback is dead semantic work.
+  accepted_count = values |> filter(_ > 0) |> map(score) |> count
+
+  # The literal cardinality is known without constructing or traversing it.
+  known_count = [7, 8, 9, 10] |> count
+
+  # Once true is known, later parse/match work is safe to skip.
+  found = values |> map(parse) |> any(_ == 8)
+
+  echo "semantic space:", scored_total, narrow_total, parsed_total, accepted_count, known_count, found

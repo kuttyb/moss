@@ -109,7 +109,33 @@ struct FunctionalNode {
   bool multiple_consumers = false;
   bool barrier_required = false;
   bool dead_stage_eliminated = false;
+  // Phase 4.6 semantic rewrites may remove a stage before ordinary lowering
+  // (for example, an identity map immediately before a filter).  Keep this
+  // distinct from transient IR identity: the original node and provenance
+  // remain available to diagnostics and source tooling even when its work is
+  // absent from the optimized semantic computation.
+  bool semantic_work_eliminated = false;
+  std::string semantic_elimination_reason;
   std::string materialization_reason;
+  std::vector<std::string> provenance;
+};
+
+// One operation in the post-analysis, pre-lowering Moss semantic plan.  The
+// source node indices refer into FunctionalPipeline::nodes (index zero is the
+// Source node).  Several adjacent Map or Filter nodes can therefore become one
+// composed semantic step without discarding any original source identity.
+struct FunctionalSemanticStep {
+  FunctionalNodeKind kind = FunctionalNodeKind::Source;
+  std::vector<std::size_t> source_node_indices;
+  std::vector<std::string> provenance;
+};
+
+// A deterministic development record of a successful Moss-to-Moss rewrite.
+// This is intentionally small and specific to functional pipelines rather
+// than a generic compiler rewrite framework.
+struct FunctionalSemanticRewrite {
+  std::string name;
+  std::string detail;
   std::vector<std::string> provenance;
 };
 
@@ -124,12 +150,19 @@ struct FunctionalPipeline {
   std::string source_type;
   std::string output_type;
   std::vector<FunctionalNode> nodes;
+  // Phase 4.6 consumes the authoritative typed/effect-checked nodes above and
+  // produces this bounded semantic-stage sequence. Rust lowering executes
+  // this exact sequence; it does not rediscover rewrites from source text.
+  std::vector<FunctionalSemanticStep> semantic_steps;
+  std::vector<FunctionalSemanticRewrite> semantic_rewrites;
   bool fusion_eligible = false;
   bool element_independent = false;
   bool deterministic = false;
   bool reduction_compatible = false;
   bool fused = false;
   bool count_uses_exact_length = false;
+  bool count_uses_known_size = false;
+  std::size_t known_source_size = 0;
   bool short_circuit_terminal = false;
   // Scope-level dataflow links. A producer virtualized into one consumer is
   // omitted physically, while the consumer lowers the combined pipeline.

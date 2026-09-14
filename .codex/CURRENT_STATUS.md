@@ -34,7 +34,13 @@ Updated: 2026-09-13
   exact-count/dead-map simplification, effect-safe `any`/`all` short-circuit plans,
   single-use immutable cross-binding fusion, and shared-source terminal DAGs. It adds no
   source syntax and keeps `-O0` as the complete eager reference traversal.
-- Phase 5 tooling is implemented without changing the frozen semantic phases. The
+- Phase 4.6 adds a bounded Moss-to-Moss semantic rewrite sequence over the same IR.
+  Optimized plans explicitly compose adjacent maps/filters, perform identity-proven
+  predicate pushdown, eliminate safe trailing maps before `count`, propagate terminal
+  facts, preserve single-use virtual bindings, and fold inert literal cardinality. It
+  adds no syntax, lazy runtime, MLIR, hardware optimizer, or domain/backend policy.
+- Phase 5 tooling is frozen at closeout checkpoint `92d0953` without changing the
+  frozen semantic phases. The
   compiler emits a deterministic shared `.mossmap`; debug generation retains stable
   native symbols; `editors/emacs/moss-mode.el` provides editing, compilation, map-based
   navigation, `dape`/`lldb-dap` launch support, and objdump integration; optional native
@@ -156,8 +162,18 @@ Updated: 2026-09-13
   and `any`/`all` can share one explicit loop; dependent results and source mutation are
   conservative barriers. Group plans and generated comments retain every consumer's
   semantic provenance.
+- `FunctionalPipeline::semantic_steps` is the Phase 4.6 post-analysis Moss semantic
+  computation consumed by exact-plan codegen. A composed step references every original
+  node; eliminated work retains its source identity and provenance. The bounded pass
+  sequence does not reconstruct types/effects or use a generic rewrite framework.
+- Phase 4.6 composes adjacent safe maps and left-to-right short-circuit filters. Its only
+  predicate pushdown is through trivial `map(_)`, which the existing IR proves to be
+  identity. Terminal `count` removes safe trailing maps even after a cardinality-changing
+  filter, and inert scalar literal counts become constants. Effects, failure,
+  `may_diverge`, ownership, multiple uses, and escapes remain conservative barriers.
 - Deterministic `--dump-functional-ir` and `--explain-fusion` output exposes stage types,
-  effects, spans, materialization decisions, retained provenance, and fusion barriers.
+  effects, spans, materialization decisions, retained provenance, fusion barriers, the
+  optimized semantic-stage sequence, and successful `semantic-opt` rewrites.
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
   constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
@@ -211,13 +227,15 @@ Updated: 2026-09-13
   implementations, inferred Vector/Map/Queue use, an executable optimized functional
   dataflow pipeline, and a small static job-scheduler application with domains, messages,
   and awaits.
-- Six focused functional showcases additionally cover named and placeholder stages,
+- The focused functional showcases additionally cover named and placeholder stages,
   immutable captures and source reuse, every reduction terminal and empty-input identity,
   bound methods and static higher-order specialization, observable eager effect order,
   wrapping reduction arithmetic, read-only pipelines over user-defined values, and an
   awaited domain callback that remains an eager fusion barrier.
 - Four Phase 4.5 showcases cover terminal simplification, a virtual cross-binding
   intermediate, a shared terminal traversal, and multiple-consumer materialization.
+- The Phase 4.6 showcase covers semantic map/filter composition, a virtual named
+  intermediate, dead-map removal, known literal cardinality, and safe short circuiting.
 
 ## Partially implemented or unimplemented
 
@@ -247,9 +265,10 @@ Updated: 2026-09-13
 - Functional fusion uses correctness-first effect rules rather than profitability data.
   Phase 4.5 scope reconstruction is deliberately lexical and adjacent rather than a
   general SSA optimizer. Automatic SIMD, threading, GPU lowering, generic stage
-  reordering/predicate pushdown, layout/storage reuse, general lambdas, runtime callable
-  values, user effect annotations, initializer-free reduction, and sophisticated
-  profitability modeling are not implemented.
+  reordering/algebraic predicate pushdown beyond Phase 4.6's proven identity case,
+  layout/storage reuse, general lambdas, runtime callable values, user effect
+  annotations, initializer-free reduction, and sophisticated profitability modeling
+  are not implemented.
 
 ## Known bugs and limitations
 
@@ -280,7 +299,7 @@ Updated: 2026-09-13
 
 ## Tests run and results
 
-`make check` passes with Phase 4.5 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
+`make check` passes with Phase 4.6 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
 Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
 `rustc -D warnings`; rejects any generated
 `std::sync::mpsc` use; checks local implementations for the expected synchronization
@@ -301,7 +320,7 @@ conflicting method-result expectations, unresolved collection element types,
 heterogeneous collections, and naked cross-domain calls. The showcase suite also executes
 under the regression harness: static duck typing, named traits, inferred collections and
 methods, the `map |> filter |> map |> sum` dataflow shape, the domain-backed mini
-application, and six focused functional examples.
+application, and the focused functional examples through Phase 4.6.
 
 Await regressions additionally accept same-concrete-domain branch joins, reject
 different-domain joins and one-branch-only targets, validate an await helper reached
@@ -360,6 +379,15 @@ control flow, absent virtual collections, present required collections, and one 
 source loop. Deterministic IR checks assert materialization reasons, DAG edges, stable
 group identity, and combined provenance.
 
+Phase 4.6 differentials cover adjacent map and filter composition, identity-only legal
+predicate pushdown plus non-identity/effectful rejection, safe and divergent/effectful
+dead-map cases, filter/map/count terminal simplification, safe and divergence-blocked
+`any`/`all`, known literal cardinality, runtime-empty terminal identities, single-use
+cross-binding collapse, downstream dead work, and multiple-use materialization. The
+suite inspects the semantic plan and generated Rust, including composed predicate
+short circuiting, eliminated callbacks/literal allocation, retained barrier callbacks,
+deterministic rewrite output, and exact `-O0`/`-O` result parity.
+
 Phase 5 regressions build the tooling fixture twice at identical paths and require
 byte-identical maps; compare `-O0`, optimized, and explicit debug maps; verify deterministic
 source/provenance identities, real function/method/handler lines, readable native symbols,
@@ -385,7 +413,7 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phase 2, Phase 2.5, Phase 4, Phase 4.5, and Phase 5 are frozen at their respective checkpoints;
+Phase 2, Phase 2.5, Phase 4, Phase 4.5, Phase 4.6, and Phase 5 are frozen at their respective checkpoints;
 none of the following is implicitly authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
