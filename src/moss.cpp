@@ -1,7 +1,12 @@
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -17,6 +22,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <sys/types.h>
+#include <sys/utsname.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include "ast.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
@@ -421,6 +430,9 @@ class Parser {
       if (starts_with(L.text, "domain ")) p.domains.push_back(parse_domain());
       else if (starts_with(L.text, "type ")) p.objects.push_back(parse_object());
       else if (starts_with(L.text, "trait ")) p.traits.push_back(parse_trait());
+      else if (starts_with(L.text, "test ")) p.tests.push_back(parse_test());
+      else if (starts_with(L.text, "bench "))
+        p.benchmarks.push_back(parse_benchmark());
       else if (L.text == "proc main()" || L.text == "proc main():") {
         if (p.main) fail(L, "duplicate proc main()");
         p.main = parse_main();
@@ -457,7 +469,7 @@ class Parser {
           p.functions.push_back(std::move(function));
         }
       } else {
-        fail(L, "expected 'domain', 'type Name:', 'fn', or 'proc main()'");
+        fail(L, "expected 'domain', 'type Name:', 'trait', 'fn', 'test', 'bench', or 'proc main()'");
       }
     }
     return p;
@@ -751,6 +763,46 @@ class Parser {
     return m;
   }
 
+  string parse_named_block_name(const Line& head, const string& keyword) {
+    string rest = trim(head.text.substr(keyword.size()));
+    if (!ends_with(rest, ":"))
+      fail(head, keyword + " declaration must end with ':'");
+    rest = trim(rest.substr(0, rest.size() - 1));
+    if (rest.size() < 2 || rest.front() != '"' || rest.back() != '"')
+      fail(head, keyword + " declaration requires a quoted name");
+    string name = rest.substr(1, rest.size() - 2);
+    if (name.empty()) fail(head, keyword + " name may not be empty");
+    if (name.find('"') != string::npos || name.find('\t') != string::npos)
+      fail(head, keyword + " name contains an unsupported character");
+    return name;
+  }
+
+  TestDecl parse_test() {
+    Line head = lines_[i_++];
+    TestDecl test;
+    test.name = parse_named_block_name(head, "test");
+    test.header = head.text;
+    test.line = head.no;
+    test.semantic_identity = "test:" + test.name + "@" +
+        std::to_string(test.line);
+    test.body = parse_stmt_block(head.indent + indent_unit_);
+    if (test.body.empty()) fail(head, "test body may not be empty");
+    return test;
+  }
+
+  BenchDecl parse_benchmark() {
+    Line head = lines_[i_++];
+    BenchDecl benchmark;
+    benchmark.name = parse_named_block_name(head, "bench");
+    benchmark.header = head.text;
+    benchmark.line = head.no;
+    benchmark.semantic_identity = "bench:" + benchmark.name + "@" +
+        std::to_string(benchmark.line);
+    benchmark.body = parse_stmt_block(head.indent + indent_unit_);
+    if (benchmark.body.empty()) fail(head, "benchmark body may not be empty");
+    return benchmark;
+  }
+
   vector<Stmt> parse_stmt_block(int base_indent) {
     vector<Stmt> out;
     while (i_ < lines_.size()) {
@@ -998,6 +1050,9 @@ class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
     for (auto& f : p_.functions) {
+      if (f.name == "assert" || f.name == "assertEqual")
+        err(f.line, "function name '" + f.name +
+                        "' is reserved by Moss test assertions");
       if (!functions_.emplace(f.name, &f).second)
         err(f.line, "duplicate function: " + f.name);
     }
@@ -1037,6 +1092,7 @@ class Checker {
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
+    check_test_and_benchmark_declarations();
     // Await boundedness is an ordinary well-formedness rule checked for every
     // executable body above. Graph construction below only records domain edges.
     check_global_await_cycles();
@@ -1505,6 +1561,30 @@ class Checker {
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
   }
 
+  void check_test_and_benchmark_declarations() {
+    std::set<string> test_names;
+    for (const auto& test : p_.tests) {
+      if (!test_names.insert(test.name).second)
+        err(test.line, "duplicate test name '" + test.name + "'");
+      TypeEnv env;
+      check_stmts(test.body, env, nullptr, nullptr);
+      OwnershipEnv ownership;
+      ownership.types = std::move(env);
+      check_ownership(test.body, std::move(ownership), nullptr, nullptr);
+    }
+    std::set<string> benchmark_names;
+    for (const auto& benchmark : p_.benchmarks) {
+      if (!benchmark_names.insert(benchmark.name).second)
+        err(benchmark.line,
+            "duplicate benchmark name '" + benchmark.name + "'");
+      TypeEnv env;
+      check_stmts(benchmark.body, env, nullptr, nullptr);
+      OwnershipEnv ownership;
+      ownership.types = std::move(env);
+      check_ownership(benchmark.body, std::move(ownership), nullptr, nullptr);
+    }
+  }
+
   void check_function(const Function& f) {
     std::unordered_map<string,string> env;
     std::set<string> names;
@@ -1904,6 +1984,8 @@ class Checker {
       vector<string> args;
       if (!parse_simple_call(e, callee, args)) return std::nullopt;
       if (objects_.count(callee)) return callee;
+      if (callee == "assert" || callee == "assertEqual")
+        return string("unit");
       if (callee == "sqrt") return string("float");
       if (callee == "sum" && args.size() == 1) {
         auto argument_type = inferred_expr_type(args.front(), env);
@@ -2499,6 +2581,14 @@ class Checker {
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
       }
+      for (const auto& test : p_.tests) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(test.body, env);
+      }
+      for (const auto& benchmark : p_.benchmarks) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(benchmark.body, env);
+      }
     }
     for (const auto& object : p_.objects) {
       for (const auto& field : object.fields) {
@@ -2717,6 +2807,14 @@ class Checker {
       if (p_.main) {
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
+      }
+      for (const auto& test : p_.tests) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(test.body, env);
+      }
+      for (const auto& benchmark : p_.benchmarks) {
+        std::unordered_map<string,string> env;
+        infer_statement_expressions(benchmark.body, env);
       }
     }
     if (!finalize) return;
@@ -3616,6 +3714,18 @@ class Checker {
       collect_callable_edges(p_.main->body, std::nullopt, 0, {}, nullptr,
                              "main", graph, edge_lines);
     }
+    for (const auto& test : p_.tests) {
+      string source = "test:" + test.name;
+      graph[source];
+      collect_callable_edges(test.body, std::nullopt, 0, {}, nullptr, source,
+                             graph, edge_lines);
+    }
+    for (const auto& benchmark : p_.benchmarks) {
+      string source = "bench:" + benchmark.name;
+      graph[source];
+      collect_callable_edges(benchmark.body, std::nullopt, 0, {}, nullptr,
+                             source, graph, edge_lines);
+    }
 
     std::sort(p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
               [](const SemanticCallEdge& left,
@@ -3810,6 +3920,12 @@ class Checker {
     // bounded traversal and memoization as handler analysis.
     if (p_.main)
       visit_body(p_.main->body, std::nullopt, 0, {}, nullptr, "", "main");
+    for (const auto& test : p_.tests)
+      visit_body(test.body, std::nullopt, 0, {}, nullptr, "",
+                 "test:" + test.name);
+    for (const auto& benchmark : p_.benchmarks)
+      visit_body(benchmark.body, std::nullopt, 0, {}, nullptr, "",
+                 "bench:" + benchmark.name);
     for (const auto& function : p_.functions) {
       TypeEnv env;
       for (const auto& parameter : function.params)
@@ -4106,6 +4222,10 @@ class Checker {
           effects.merge(resolved->observable_effects);
           return effects;
         }
+      }
+      if (callee == "assert" || callee == "assertEqual") {
+        effects.may_fail = true;
+        return effects;
       }
       if (objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
           callee == "Map" || callee == "Queue")
@@ -4638,6 +4758,15 @@ class Checker {
       collect_functional_ir_from_body(
           p_.main->body, std::nullopt, 0, {}, nullptr, {}, "main", nullptr,
           next_pipeline_id, next_node_id);
+    for (const auto& test : p_.tests)
+      collect_functional_ir_from_body(
+          test.body, std::nullopt, 0, {}, nullptr, {},
+          "test:" + test.name, nullptr, next_pipeline_id, next_node_id);
+    for (const auto& benchmark : p_.benchmarks)
+      collect_functional_ir_from_body(
+          benchmark.body, std::nullopt, 0, {}, nullptr, {},
+          "bench:" + benchmark.name, nullptr, next_pipeline_id,
+          next_node_id);
   }
 
   void check_method_ownership() {
@@ -5347,6 +5476,33 @@ class Checker {
 
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env) {
+    if (name == "assert") {
+      if (args.size() != 1)
+        err(line, "assert expects 1 argument, got " +
+            std::to_string(args.size()));
+      auto condition = inferred_expr_type(args.front(), env);
+      if (!condition || canonical_type_name(*condition) != "bool")
+        err(line, "assert condition must have type 'bool'");
+      return;
+    }
+    if (name == "assertEqual") {
+      if (args.size() != 2)
+        err(line, "assertEqual expects 2 arguments, got " +
+            std::to_string(args.size()));
+      auto actual = inferred_expr_type(args[0], env);
+      auto expected = inferred_expr_type(args[1], env);
+      if (!actual || !expected)
+        err(line, "cannot infer assertEqual operand types");
+      if (!same_type(*actual, *expected))
+        err(line, "assertEqual operands have types '" + *actual +
+            "' and '" + *expected + "'");
+      string type = canonical_type_name(*actual);
+      bool printable = type == "int" || type == "float" || type == "bool" ||
+          type == "string" || starts_with(type, "vector[");
+      if (!printable)
+        err(line, "assertEqual currently supports scalar, string, and Vector values; compare a field for other values");
+      return;
+    }
     auto function = functions_.find(name);
     if (function == functions_.end()) {
       if (name == "sqrt" || name == "sum") return;
@@ -6083,6 +6239,11 @@ class FunctionalOptimizer {
       }
       if (program_.main)
         plan_scope(program_.main->body, "main", {}, 0, std::nullopt);
+      for (auto& test : program_.tests)
+        plan_scope(test.body, "test:" + test.name, {}, 0, std::nullopt);
+      for (auto& benchmark : program_.benchmarks)
+        plan_scope(benchmark.body, "bench:" + benchmark.name, {}, 0,
+                   std::nullopt);
     }
 
     rebuild_provenance();
@@ -7481,6 +7642,15 @@ class BackendOptimizer {
       std::unordered_map<string, string> types;
       scan_calls(program_.main->body, types, asynchronously_called, call_graph_complete);
     }
+    for (const auto& test : program_.tests) {
+      std::unordered_map<string, string> types;
+      scan_calls(test.body, types, asynchronously_called, call_graph_complete);
+    }
+    for (const auto& benchmark : program_.benchmarks) {
+      std::unordered_map<string, string> types;
+      scan_calls(benchmark.body, types, asynchronously_called,
+                 call_graph_complete);
+    }
     // Local functions can contain domain communication even though their calls are
     // ordinary Moss calls. Scan their bodies as part of the whole-program plan so a
     // message hidden behind a function cannot accidentally be promoted to direct
@@ -8355,12 +8525,15 @@ class BackendOptimizer {
   }
 };
 
+enum class ProgramGenerationMode { Application, Tests, Benchmarks };
+
 class Generator {
  public:
   Generator(const Program& p, const OptimizationPlan& plan,
-            bool await_error_handling = true, bool debug_build = false)
+            bool await_error_handling = true, bool debug_build = false,
+            ProgramGenerationMode mode = ProgramGenerationMode::Application)
       : p_(p), plan_(plan), await_error_handling_(await_error_handling),
-        debug_build_(debug_build) {
+        debug_build_(debug_build), mode_(mode) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& f : p.functions) functions_[f.name] = &f;
@@ -8439,8 +8612,14 @@ class Generator {
     for (const auto& d : p_.domains) gen_domain(o, d);
     for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
       gen_cluster(o, index, plan_.domain_clusters[index]);
-    if (p_.main) gen_main(o, *p_.main);
-    else o << "fn main() {}\n";
+    if (mode_ == ProgramGenerationMode::Tests)
+      gen_test_harness(o);
+    else if (mode_ == ProgramGenerationMode::Benchmarks)
+      gen_benchmark_harness(o);
+    else if (p_.main)
+      gen_main(o, *p_.main);
+    else
+      o << "fn main() {}\n";
     return o.str();
   }
 
@@ -8449,10 +8628,13 @@ class Generator {
   const OptimizationPlan& plan_;
   bool await_error_handling_ = true;
   bool debug_build_ = false;
+  ProgramGenerationMode mode_ = ProgramGenerationMode::Application;
+  bool benchmark_body_ = false;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Function*> functions_;
   size_t reply_temp_ = 0;
+  size_t assertion_temp_ = 0;
 
   static string comment_text(string text) {
     string out;
@@ -11241,6 +11423,132 @@ class Generator {
     o << "}\n\n";
   }
 
+  static string rust_string_literal(const string& value) {
+    return "\"" + debug_json_escape(value) + "\"";
+  }
+
+  static string test_or_benchmark_function_name(
+      const string& prefix, const string& semantic_identity) {
+    return "__moss_" + prefix + "_" +
+        stable_hash(semantic_identity).substr(0, 12);
+  }
+
+  static void gen_protocol_hex_helper(std::ostringstream& o) {
+    o << "fn __moss_protocol_hex(value: &str) -> String {\n";
+    o << "    let mut output = String::with_capacity(value.len() * 2);\n";
+    o << "    for byte in value.as_bytes() { use std::fmt::Write as _; let _ = write!(&mut output, \"{:02x}\", byte); }\n";
+    o << "    output\n}\n\n";
+  }
+
+  void gen_test_harness(std::ostringstream& o) {
+    gen_protocol_hex_helper(o);
+    for (const auto& test : p_.tests) {
+      string function_name = test_or_benchmark_function_name(
+          "test", test.semantic_identity);
+      tooling_begin(o, 0, "test", test.semantic_identity, function_name);
+      source_comment(o, 0, test.line, test.header);
+      o << "#[inline(never)]\nfn " << function_name << "() {\n";
+      o << "    let __tracker = Arc::new(MossTracker::new());\n";
+      std::set<string> locals;
+      std::unordered_map<string,string> types;
+      gen_stmts(o, test.body, nullptr, nullptr, "", locals, types, 1,
+                false, false, std::nullopt, false,
+                "test:" + test.name);
+      o << "    let _ = __tracker.wait_zero();\n";
+      o << "}\n";
+      tooling_end(o, 0, test.semantic_identity);
+      o << "\n";
+    }
+
+    o << "fn main() {\n";
+    o << "    let previous_hook = std::panic::take_hook();\n";
+    o << "    std::panic::set_hook(Box::new(|_| {}));\n";
+    o << "    let mut failures = 0_usize;\n";
+    for (const auto& test : p_.tests) {
+      string function_name = test_or_benchmark_function_name(
+          "test", test.semantic_identity);
+      o << "    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| "
+        << function_name << "()));\n";
+      o << "    match outcome {\n";
+      o << "        Ok(()) => println!(\"MOSS_TEST|PASS|{}|{}|\", "
+        << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
+        << "), __moss_protocol_hex(" << rust_string_literal(test.name)
+        << ")),\n";
+      o << "        Err(payload) => {\n";
+      o << "            failures += 1;\n";
+      o << "            let detail = if let Some(value) = payload.downcast_ref::<String>() { value.clone() } else if let Some(value) = payload.downcast_ref::<&str>() { (*value).to_string() } else { \"test panicked without a Moss assertion message\".to_string() };\n";
+      o << "            println!(\"MOSS_TEST|FAIL|{}|{}|{}\", "
+        << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
+        << "), __moss_protocol_hex(" << rust_string_literal(test.name)
+        << "), __moss_protocol_hex(&detail));\n";
+      o << "        }\n";
+      o << "    }\n";
+    }
+    o << "    std::panic::set_hook(previous_hook);\n";
+    o << "    if failures != 0 { std::process::exit(1); }\n";
+    o << "}\n";
+  }
+
+  void gen_benchmark_harness(std::ostringstream& o) {
+    gen_protocol_hex_helper(o);
+    for (const auto& benchmark : p_.benchmarks) {
+      string function_name = test_or_benchmark_function_name(
+          "bench", benchmark.semantic_identity);
+      tooling_begin(o, 0, "benchmark", benchmark.semantic_identity,
+                    function_name);
+      source_comment(o, 0, benchmark.line, benchmark.header);
+      o << "#[inline(never)]\nfn " << function_name
+        << "(__tracker: &Arc<MossTracker>) {\n";
+      std::set<string> locals;
+      std::unordered_map<string,string> types;
+      bool previous_benchmark_body = benchmark_body_;
+      benchmark_body_ = true;
+      gen_stmts(o, benchmark.body, nullptr, nullptr, "", locals, types, 1,
+                false, false, std::nullopt, false,
+                "bench:" + benchmark.name);
+      benchmark_body_ = previous_benchmark_body;
+      for (const auto& local : locals)
+        o << "    std::hint::black_box(&" << local << ");\n";
+      o << "    let _ = __tracker.wait_zero();\n";
+      o << "}\n";
+      tooling_end(o, 0, benchmark.semantic_identity);
+      o << "\n";
+    }
+
+    o << "fn main() {\n";
+    o << "    const WARMUP: usize = 5;\n";
+    o << "    const SAMPLES: usize = 31;\n";
+    o << "    const ITERATIONS: usize = 1000;\n";
+    o << "    let previous_hook = std::panic::take_hook();\n";
+    o << "    std::panic::set_hook(Box::new(|_| {}));\n";
+    o << "    let __tracker = Arc::new(MossTracker::new());\n";
+    for (const auto& benchmark : p_.benchmarks) {
+      string function_name = test_or_benchmark_function_name(
+          "bench", benchmark.semantic_identity);
+      o << "    for _ in 0..WARMUP { for _ in 0..ITERATIONS { std::hint::black_box("
+        << function_name << "(&__tracker)); } }\n";
+      o << "    let mut samples: Vec<u128> = Vec::with_capacity(SAMPLES);\n";
+      o << "    for _ in 0..SAMPLES {\n";
+      o << "        let started = std::time::Instant::now();\n";
+      o << "        for _ in 0..ITERATIONS { std::hint::black_box("
+        << function_name << "(&__tracker)); }\n";
+      o << "        let elapsed = started.elapsed().as_nanos();\n";
+      o << "        samples.push((elapsed + ITERATIONS as u128 - 1) / ITERATIONS as u128);\n";
+      o << "    }\n";
+      o << "    samples.sort_unstable();\n";
+      o << "    let p25 = samples[SAMPLES / 4];\n";
+      o << "    let median = samples[SAMPLES / 2];\n";
+      o << "    let p75 = samples[(SAMPLES * 3) / 4];\n";
+      o << "    let sample_text = samples.iter().map(|value| value.to_string()).collect::<Vec<_>>().join(\",\");\n";
+      o << "    println!(\"MOSS_BENCH|{}|{}|{}|{}|{}|{}|{}|{}|{}\", "
+        << "__moss_protocol_hex(" << rust_string_literal(benchmark.semantic_identity)
+        << "), __moss_protocol_hex(" << rust_string_literal(benchmark.name)
+        << "), median, p25, p75, SAMPLES, WARMUP, ITERATIONS, sample_text);\n";
+    }
+    o << "    std::panic::set_hook(previous_hook);\n";
+    o << "}\n";
+  }
+
   void gen_main(std::ostringstream& o, const MainProc& m) {
     string semantic_identity = "main@" + std::to_string(m.line);
     tooling_begin(o, 0, "main", semantic_identity, "main",
@@ -11508,10 +11816,48 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
+          if (s.b.empty() && s.a == "assert") {
+            o << indent(level) << "if !("
+              << expr(s.args.front(), d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0))
+              << ") { panic!("
+              << rust_string_literal(
+                     "Moss assertion failed at line " +
+                     std::to_string(s.line) + ": " + s.text)
+              << "); }\n";
+            ++i;
+            break;
+          }
+          if (s.b.empty() && s.a == "assertEqual") {
+            size_t id = assertion_temp_++;
+            string actual = "__moss_assert_actual_" + std::to_string(id);
+            string expected = "__moss_assert_expected_" + std::to_string(id);
+            o << indent(level) << "let " << actual << " = &("
+              << expr(s.args[0], d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 0))
+              << ");\n";
+            o << indent(level) << "let " << expected << " = &("
+              << expr(s.args[1], d, locals, &types,
+                      statement_functional_pipeline_id(
+                          s, functional_context, 1))
+              << ");\n";
+            string message = "Moss assertion failed at line " +
+                std::to_string(s.line) + ": " + s.text +
+                "; actual={:?}, expected={:?}";
+            o << indent(level) << "if " << actual << " != " << expected
+              << " { panic!(" << rust_string_literal(message) << ", "
+              << actual << ", " << expected << "); }\n";
+            ++i;
+            break;
+          }
           bool known_function = functions_.count(s.a);
           bool implicit_method = in_function && d && objects_.count(d->name) &&
               s.b.empty() && !known_function;
-          o << indent(level) << (implicit_method ? "self." : "")
+          o << indent(level);
+          if (benchmark_body_) o << "std::hint::black_box(";
+          o << (implicit_method ? "self." : "")
             << (s.b.empty() && known_function
                     ? emitted_function_name(s.a, s.args, &types)
                     : expr(s.a, d, locals, &types));
@@ -11529,6 +11875,7 @@ class Generator {
                             "callable:");
             if (compile_time_callable) continue;
             if (emitted_arguments++) o << ", ";
+            if (benchmark_body_) o << "std::hint::black_box(";
             if (known_function) {
               o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
                                           locals, &types,
@@ -11561,8 +11908,11 @@ class Generator {
                         statement_functional_pipeline_id(
                             s, functional_context, k));
             }
+            if (benchmark_body_) o << ")";
           }
-          o << ");\n";
+          o << ")";
+          if (benchmark_body_) o << ")";
+          o << ";\n";
           ++i;
           break;
         }
@@ -12647,6 +12997,35 @@ static vector<SemanticTargetFact> semantic_target_facts(
     }
   }
 
+  for (const auto& test : program.tests) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = test.semantic_identity;
+    fact.context = "test:" + test.name;
+    fact.kind = "test";
+    fact.name = test.name;
+    fact.type = "unit";
+    fact.line = test.line;
+    fact.provenance.push_back(fact.semantic_identity);
+    fact.explanations.push_back(
+        "Moss-native test discovered from its project source declaration");
+    targets.push_back(fact);
+    append_statement_targets(targets, test.body, fact.context, nullptr);
+  }
+  for (const auto& benchmark : program.benchmarks) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = benchmark.semantic_identity;
+    fact.context = "bench:" + benchmark.name;
+    fact.kind = "benchmark";
+    fact.name = benchmark.name;
+    fact.type = "unit";
+    fact.line = benchmark.line;
+    fact.provenance.push_back(fact.semantic_identity);
+    fact.explanations.push_back(
+        "Moss-native benchmark uses the release/highest-optimization profile");
+    targets.push_back(fact);
+    append_statement_targets(targets, benchmark.body, fact.context, nullptr);
+  }
+
   if (program.main) {
     SemanticTargetFact fact;
     fact.semantic_identity = "main@" + std::to_string(program.main->line);
@@ -12893,6 +13272,14 @@ static vector<string> transitive_await_targets(const Program& program,
 }
 
 static string diagnostic_code_for_message(const string& message) {
+  if (message.find("duplicate test name") != string::npos)
+    return "TEST_DISCOVERY_ERROR";
+  if (message.find("duplicate benchmark name") != string::npos)
+    return "BENCHMARK_CONFIGURATION_ERROR";
+  if (starts_with(message, "assert") ||
+      message.find("assertEqual") != string::npos ||
+      message.find("test assertions") != string::npos)
+    return "TEST_ASSERTION_CONFIGURATION_ERROR";
   if (message.find("await cycle detected") != string::npos)
     return "AWAIT_CYCLE";
   if (message.find("recursive local call cycle") != string::npos)
@@ -12949,6 +13336,10 @@ static string semantic_identity_near_line(const Program* program, int line) {
       consider(handler.line, "handler:" + domain.name + "." + handler.name +
                                 "@" + std::to_string(handler.line));
   }
+  for (const auto& test : program->tests)
+    consider(test.line, test.semantic_identity);
+  for (const auto& benchmark : program->benchmarks)
+    consider(benchmark.line, benchmark.semantic_identity);
   if (program->main)
     consider(program->main->line,
              "main@" + std::to_string(program->main->line));
@@ -13024,7 +13415,8 @@ static void write_bootstrap_json(std::ostream& out,
             "static_call_graph", "static_await_graph",
             "ownership_effects", "observable_effects",
             "functional_optimization_explanations",
-            "backend_lowering_explanations"});
+            "backend_lowering_explanations", "project_builds",
+            "native_tests", "native_benchmarks", "benchmark_baselines"});
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",
@@ -13034,11 +13426,15 @@ static void write_bootstrap_json(std::ostream& out,
             "moss ownership <target> --source <source> --json",
             "moss calls <target> --source <source> --json",
             "moss awaits <target> --source <source> --json",
-            "moss why <target> --source <source> --json"});
+            "moss why <target> --source <source> --json",
+            "moss build [--release] [--json]",
+            "moss test [filter] [--json]",
+            "moss bench [filter] [--json]"});
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
       out, {"Run moss agent bootstrap --json before modifying Moss source.",
             "Use moss check --json and semantic queries before inspecting backend output.",
+            "Use moss build, moss test, and moss bench inside a Moss project.",
             "Edit Moss source, never generated Rust.",
             "Prefer structured --json output for automation.",
             "Run moss fmt when a formatter becomes available."});
@@ -13060,6 +13456,12 @@ static void write_bootstrap_json(std::ostream& out,
     out << ", \"target_selectors\": ";
     write_agent_string_array(
         out, {"semantic identity", "construct name", "line:<number>"});
+    out << ", \"project_result_kinds\": ";
+    write_agent_string_array(out, {"build", "test", "bench"});
+    out << ", \"stable_project_identities\": ";
+    write_agent_string_array(
+        out, {"test:<relative-source>:<name>",
+              "bench:<relative-source>:<name>"});
     out << ", \"diagnostic_codes_are_stable\": true}";
   }
   out << "\n  }\n}\n";
@@ -13200,6 +13602,1243 @@ static bool write_semantic_query_json(
   return true;
 }
 
+// Phase 7 project commands deliberately reuse the ordinary compiler pipeline.
+// Tests and benchmarks change only the generated entry harness; parsing,
+// typing, effects, ownership, functional optimization, backend planning, and
+// debug provenance remain the same compiler-owned facts used by applications.
+struct ProjectError : std::runtime_error {
+  string code;
+  string source_file;
+  int line = 0;
+
+  ProjectError(string error_code, string message, string source = {},
+               int source_line = 0)
+      : std::runtime_error(std::move(message)), code(std::move(error_code)),
+        source_file(std::move(source)), line(source_line) {}
+};
+
+struct ProjectManifest {
+  std::filesystem::path root;
+  std::filesystem::path manifest_file;
+  string name;
+  string version;
+  std::filesystem::path source = "src";
+};
+
+static std::optional<std::filesystem::path> find_project_root(
+    std::filesystem::path start) {
+  std::error_code error;
+  start = std::filesystem::absolute(start, error).lexically_normal();
+  if (error) return std::nullopt;
+  if (!std::filesystem::is_directory(start, error)) start = start.parent_path();
+  while (!start.empty()) {
+    if (std::filesystem::is_regular_file(start / "moss.toml", error))
+      return start;
+    std::filesystem::path parent = start.parent_path();
+    if (parent == start) break;
+    start = std::move(parent);
+  }
+  return std::nullopt;
+}
+
+static string manifest_string_value(const string& text, int line,
+                                    const std::filesystem::path& file) {
+  string value = trim(text);
+  if (value.size() < 2 || value.front() != '"' || value.back() != '"')
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR",
+        "manifest values must be quoted strings", file.string(), line);
+  value = value.substr(1, value.size() - 2);
+  if (value.find('"') != string::npos)
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR",
+        "manifest string contains an unsupported quote", file.string(), line);
+  return value;
+}
+
+static ProjectManifest load_project_manifest(
+    const std::filesystem::path& start) {
+  auto root = find_project_root(start);
+  if (!root)
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR",
+        "no moss.toml was found in this directory or any parent");
+  ProjectManifest manifest;
+  manifest.root = *root;
+  manifest.manifest_file = manifest.root / "moss.toml";
+  std::ifstream input(manifest.manifest_file);
+  if (!input)
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR", "cannot read moss.toml",
+        manifest.manifest_file.string());
+  string section;
+  string line;
+  int line_number = 0;
+  while (std::getline(input, line)) {
+    ++line_number;
+    bool in_string = false;
+    size_t comment = string::npos;
+    for (size_t index = 0; index < line.size(); ++index) {
+      if (line[index] == '"') in_string = !in_string;
+      else if (line[index] == '#' && !in_string) {
+        comment = index;
+        break;
+      }
+    }
+    if (comment != string::npos) line.erase(comment);
+    line = trim(std::move(line));
+    if (line.empty()) continue;
+    if (line.front() == '[' && line.back() == ']') {
+      section = trim(line.substr(1, line.size() - 2));
+      if (section != "project" && section != "build")
+        throw ProjectError(
+            "PROJECT_MANIFEST_ERROR",
+            "unknown manifest section '[" + section + "]'",
+            manifest.manifest_file.string(), line_number);
+      continue;
+    }
+    size_t equals = line.find('=');
+    if (equals == string::npos || section.empty())
+      throw ProjectError(
+          "PROJECT_MANIFEST_ERROR",
+          "expected a key = \"value\" inside a manifest section",
+          manifest.manifest_file.string(), line_number);
+    string key = trim(line.substr(0, equals));
+    string value = manifest_string_value(
+        line.substr(equals + 1), line_number, manifest.manifest_file);
+    if (section == "project" && key == "name") manifest.name = value;
+    else if (section == "project" && key == "version")
+      manifest.version = value;
+    else if (section == "build" && key == "source")
+      manifest.source = value;
+    else
+      throw ProjectError(
+          "PROJECT_MANIFEST_ERROR",
+          "unknown manifest key '" + section + "." + key + "'",
+          manifest.manifest_file.string(), line_number);
+  }
+  if (manifest.name.empty())
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR", "[project].name is required",
+        manifest.manifest_file.string());
+  if (manifest.version.empty())
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR", "[project].version is required",
+        manifest.manifest_file.string());
+  if (manifest.source.empty() || manifest.source.is_absolute())
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR",
+        "[build].source must be a non-empty project-relative path",
+        manifest.manifest_file.string());
+  if (std::find(manifest.source.begin(), manifest.source.end(), "..") !=
+      manifest.source.end())
+    throw ProjectError(
+        "PROJECT_MANIFEST_ERROR",
+        "[build].source may not escape the project root",
+        manifest.manifest_file.string());
+  return manifest;
+}
+
+static std::filesystem::path project_source_file(
+    const ProjectManifest& manifest) {
+  std::filesystem::path source = manifest.root / manifest.source;
+  std::error_code error;
+  if (std::filesystem::is_directory(source, error)) source /= "main.moss";
+  if (!std::filesystem::is_regular_file(source, error))
+    throw ProjectError(
+        "PROJECT_SOURCE_NOT_FOUND",
+        "project source was not found at '" + source.string() + "'",
+        source.string());
+  return source.lexically_normal();
+}
+
+struct ProcessResult {
+  int exit_code = -1;
+  string output;
+};
+
+static ProcessResult run_process(const vector<string>& arguments) {
+  if (arguments.empty())
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot launch an empty command");
+  int descriptors[2];
+  if (::pipe(descriptors) != 0)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot create child-process pipe: " +
+                           string(std::strerror(errno)));
+  pid_t child = ::fork();
+  if (child < 0) {
+    ::close(descriptors[0]);
+    ::close(descriptors[1]);
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot launch child process: " +
+                           string(std::strerror(errno)));
+  }
+  if (child == 0) {
+    ::close(descriptors[0]);
+    if (::dup2(descriptors[1], STDOUT_FILENO) < 0 ||
+        ::dup2(descriptors[1], STDERR_FILENO) < 0)
+      _exit(126);
+    ::close(descriptors[1]);
+    vector<char*> command;
+    command.reserve(arguments.size() + 1);
+    for (const auto& argument : arguments)
+      command.push_back(const_cast<char*>(argument.c_str()));
+    command.push_back(nullptr);
+    ::execvp(command.front(), command.data());
+    _exit(127);
+  }
+  ::close(descriptors[1]);
+  ProcessResult result;
+  char buffer[4096];
+  while (true) {
+    ssize_t count = ::read(descriptors[0], buffer, sizeof(buffer));
+    if (count > 0) result.output.append(buffer, static_cast<size_t>(count));
+    else if (count == 0) break;
+    else if (errno != EINTR) {
+      ::close(descriptors[0]);
+      (void)::waitpid(child, nullptr, 0);
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "cannot read child-process output: " +
+                             string(std::strerror(errno)));
+    }
+  }
+  ::close(descriptors[0]);
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0) {
+    if (errno != EINTR)
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "cannot wait for child process: " +
+                             string(std::strerror(errno)));
+  }
+  if (WIFEXITED(status)) result.exit_code = WEXITSTATUS(status);
+  else if (WIFSIGNALED(status)) result.exit_code = 128 + WTERMSIG(status);
+  return result;
+}
+
+static string project_relative_path(const ProjectManifest& manifest,
+                                    const std::filesystem::path& source) {
+  std::error_code error;
+  auto relative = std::filesystem::relative(source, manifest.root, error);
+  return error ? source.filename().generic_string() : relative.generic_string();
+}
+
+static void assign_project_declaration_identities(
+    Program& program, const string& relative_source) {
+  for (auto& test : program.tests)
+    test.semantic_identity = "test:" + relative_source + ":" + test.name;
+  for (auto& benchmark : program.benchmarks)
+    benchmark.semantic_identity =
+        "bench:" + relative_source + ":" + benchmark.name;
+}
+
+struct CompiledProjectUnit {
+  Program program;
+  OptimizationPlan plan;
+  vector<Warning> warnings;
+  string rust;
+};
+
+static CompiledProjectUnit analyze_project_source(
+    const ProjectManifest& manifest, const std::filesystem::path& source,
+    bool optimized, bool debug_build, ProgramGenerationMode mode,
+    const string& declaration_filter = {}) {
+  std::ifstream input(source);
+  if (!input)
+    throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                       "cannot read Moss source '" + source.string() + "'",
+                       source.string());
+  try {
+    Program program = Parser(lex_lines(input)).parse();
+    assign_project_declaration_identities(
+        program, project_relative_path(manifest, source));
+    Checker checker(program);
+    checker.run();
+    vector<Warning> warnings = checker.warnings();
+    if (!declaration_filter.empty()) {
+      if (mode == ProgramGenerationMode::Tests) {
+        program.tests.erase(
+            std::remove_if(
+                program.tests.begin(), program.tests.end(),
+                [&](const TestDecl& test) {
+                  return test.name.find(declaration_filter) == string::npos &&
+                      test.semantic_identity.find(declaration_filter) ==
+                          string::npos;
+                }),
+            program.tests.end());
+      } else if (mode == ProgramGenerationMode::Benchmarks) {
+        program.benchmarks.erase(
+            std::remove_if(
+                program.benchmarks.begin(), program.benchmarks.end(),
+                [&](const BenchDecl& benchmark) {
+                  return benchmark.name.find(declaration_filter) ==
+                             string::npos &&
+                      benchmark.semantic_identity.find(declaration_filter) ==
+                          string::npos;
+                }),
+            program.benchmarks.end());
+      }
+    }
+    FunctionalOptimizer(program).run(optimized);
+    OptimizationPlan plan = BackendOptimizer(program).run(optimized);
+    string rust = Generator(program, plan, true, debug_build, mode).generate();
+    return {std::move(program), std::move(plan), std::move(warnings),
+            std::move(rust)};
+  } catch (const CompileError& error) {
+    throw ProjectError(
+        error.code.empty() ? diagnostic_code_for_message(error.what())
+                           : error.code,
+        error.what(), source.string(), error.line);
+  }
+}
+
+struct NativeArtifact {
+  std::filesystem::path rust;
+  std::filesystem::path debug_map;
+  std::filesystem::path executable;
+  vector<TestDecl> tests;
+  vector<BenchDecl> benchmarks;
+  bool reused = false;
+};
+
+static string artifact_stem(const ProjectManifest& manifest,
+                            const std::filesystem::path& source) {
+  string relative = project_relative_path(manifest, source);
+  string readable = tooling_name(source.stem().string());
+  return readable + "_" + stable_hash(relative).substr(0, 10);
+}
+
+static NativeArtifact compile_native_artifact(
+    const ProjectManifest& manifest, const std::filesystem::path& source,
+    const std::filesystem::path& directory, bool optimized,
+    bool debug_build, ProgramGenerationMode mode,
+    const std::optional<string>& name_override = std::nullopt,
+    const string& declaration_filter = {}) {
+  CompiledProjectUnit unit = analyze_project_source(
+      manifest, source, optimized, debug_build, mode, declaration_filter);
+  std::error_code error;
+  std::filesystem::create_directories(directory, error);
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot create artifact directory '" +
+                           directory.string() + "': " + error.message());
+  string stem = name_override.value_or(artifact_stem(manifest, source));
+  NativeArtifact artifact{directory / (stem + ".rs"),
+                          directory / (stem + ".mossmap"),
+                          directory / stem,
+                          unit.program.tests,
+                          unit.program.benchmarks,
+                          false};
+  std::ostringstream map_stream;
+  write_debug_map(
+      map_stream,
+      build_debug_map(
+          unit.program, unit.rust,
+          std::filesystem::absolute(source).lexically_normal().string(),
+          std::filesystem::absolute(artifact.rust).lexically_normal().string(),
+          std::filesystem::absolute(artifact.executable)
+              .lexically_normal()
+              .string(),
+          debug_build, optimized));
+  string map_text = map_stream.str();
+  auto update_file = [](const std::filesystem::path& path,
+                        const string& content) {
+    std::ifstream prior(path, std::ios::binary);
+    if (prior) {
+      std::ostringstream buffer;
+      buffer << prior.rdbuf();
+      if (buffer.str() == content) return false;
+    }
+    std::ofstream output(path, std::ios::binary);
+    if (!output)
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "cannot write generated artifact '" +
+                             path.string() + "'");
+    output << content;
+    return true;
+  };
+  bool rust_changed = update_file(artifact.rust, unit.rust);
+  bool map_changed = update_file(artifact.debug_map, map_text);
+  if (!rust_changed && !map_changed &&
+      std::filesystem::is_regular_file(artifact.executable)) {
+    artifact.reused = true;
+    return artifact;
+  }
+
+  std::filesystem::remove(artifact.executable, error);
+  if (error)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "cannot replace native artifact '" +
+                           artifact.executable.string() + "': " +
+                           error.message());
+
+  const char* configured_rustc = std::getenv("RUSTC");
+  string rustc = configured_rustc && *configured_rustc
+      ? configured_rustc : "rustc";
+  vector<string> command = {rustc, "--edition=2021", "-D", "warnings"};
+  if (optimized) {
+    command.push_back("-O");
+    command.push_back("-C");
+    command.push_back("debuginfo=1");
+  } else {
+    command.push_back("-g");
+    command.push_back("-C");
+    command.push_back("opt-level=0");
+  }
+  command.push_back(artifact.rust.string());
+  command.push_back("-o");
+  command.push_back(artifact.executable.string());
+  ProcessResult compiled = run_process(command);
+  if (compiled.exit_code == 127)
+    throw ProjectError("BUILD_TOOL_NOT_FOUND",
+                       "rustc was not found; install Rust or set RUSTC");
+  if (compiled.exit_code != 0)
+    throw ProjectError(
+        "BUILD_BACKEND_ERROR",
+        "native compilation failed for '" +
+            project_relative_path(manifest, source) + "'\n" +
+            trim(compiled.output),
+        source.string());
+  return artifact;
+}
+
+static vector<std::filesystem::path> project_declaration_sources(
+    const ProjectManifest& manifest, const string& directory_name) {
+  vector<std::filesystem::path> sources;
+  sources.push_back(project_source_file(manifest));
+  std::filesystem::path directory = manifest.root / directory_name;
+  std::error_code error;
+  bool exists = std::filesystem::exists(directory, error);
+  if (!error && exists && std::filesystem::is_directory(directory, error)) {
+    for (std::filesystem::recursive_directory_iterator iterator(directory, error),
+         end;
+         !error && iterator != end; iterator.increment(error)) {
+      if (iterator->is_regular_file(error) &&
+          iterator->path().extension() == ".moss")
+        sources.push_back(iterator->path().lexically_normal());
+    }
+  }
+  if (error)
+    throw ProjectError(
+        directory_name == "tests" ? "TEST_DISCOVERY_ERROR"
+                                  : "BENCHMARK_CONFIGURATION_ERROR",
+        "cannot scan project directory '" + directory.string() + "': " +
+            error.message(),
+        directory.string());
+  std::sort(sources.begin(), sources.end());
+  sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
+  return sources;
+}
+
+static int hex_digit_value(char value) {
+  if (value >= '0' && value <= '9') return value - '0';
+  if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+  if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+  return -1;
+}
+
+static string decode_protocol_hex(const string& value) {
+  if (value.size() % 2 != 0)
+    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                       "malformed generated harness record");
+  string result;
+  result.reserve(value.size() / 2);
+  for (size_t index = 0; index < value.size(); index += 2) {
+    int high = hex_digit_value(value[index]);
+    int low = hex_digit_value(value[index + 1]);
+    if (high < 0 || low < 0)
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "malformed generated harness record");
+    result.push_back(static_cast<char>((high << 4) | low));
+  }
+  return result;
+}
+
+static void write_project_error_json(std::ostream& out,
+                                     const string& command,
+                                     const ProjectError& error) {
+  write_structured_error(out, command, error.code, error.what(),
+                         error.source_file, error.line);
+}
+
+static int run_project_build(const ProjectManifest& manifest, bool release,
+                             bool json) {
+  std::filesystem::path source = project_source_file(manifest);
+  string profile = release ? "release" : "debug";
+  NativeArtifact artifact = compile_native_artifact(
+      manifest, source, manifest.root / "build" / profile, release,
+      !release, ProgramGenerationMode::Application,
+      tooling_name(manifest.name));
+  if (json) {
+    write_agent_envelope_begin(std::cout, "build", true);
+    std::cout << "  \"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"profile\": ";
+    write_debug_json_string(std::cout, profile);
+    std::cout << ", \"source\": ";
+    write_debug_json_string(std::cout, source.string());
+    std::cout << ", \"artifacts\": {\"executable\": ";
+    write_debug_json_string(std::cout, artifact.executable.string());
+    std::cout << ", \"generated_rust\": ";
+    write_debug_json_string(std::cout, artifact.rust.string());
+    std::cout << ", \"debug_map\": ";
+    write_debug_json_string(std::cout, artifact.debug_map.string());
+    std::cout << "}, \"reused\": "
+              << (artifact.reused ? "true" : "false") << "}\n}\n";
+  } else {
+    std::cout << "Built " << manifest.name << " (" << profile << ")\n"
+              << "  " << artifact.executable.string() << "\n";
+  }
+  return 0;
+}
+
+struct ProjectTestResult {
+  string id;
+  string name;
+  string source_file;
+  int line = 0;
+  bool passed = false;
+  string detail;
+  string expression;
+  std::optional<string> actual;
+  std::optional<string> expected;
+};
+
+static void parse_test_failure_detail(ProjectTestResult& result) {
+  static const string prefix = "Moss assertion failed at line ";
+  if (!starts_with(result.detail, prefix)) return;
+  size_t line_begin = prefix.size();
+  size_t line_end = line_begin;
+  while (line_end < result.detail.size() &&
+         std::isdigit(static_cast<unsigned char>(result.detail[line_end])))
+    ++line_end;
+  if (line_end == line_begin ||
+      result.detail.compare(line_end, 2, ": ") != 0)
+    return;
+  result.line = std::stoi(result.detail.substr(
+      line_begin, line_end - line_begin));
+  size_t expression_begin = line_end + 2;
+  size_t actual_marker = result.detail.find("; actual=", expression_begin);
+  if (actual_marker == string::npos) {
+    result.expression = result.detail.substr(expression_begin);
+    return;
+  }
+  result.expression = result.detail.substr(
+      expression_begin, actual_marker - expression_begin);
+  size_t expected_marker = result.detail.rfind(", expected=");
+  if (expected_marker == string::npos || expected_marker < actual_marker) return;
+  size_t actual_begin = actual_marker + string("; actual=").size();
+  result.actual = result.detail.substr(
+      actual_begin, expected_marker - actual_begin);
+  result.expected = result.detail.substr(
+      expected_marker + string(", expected=").size());
+}
+
+static vector<ProjectTestResult> run_project_tests(
+    const ProjectManifest& manifest, const string& filter) {
+  vector<ProjectTestResult> results;
+  auto sources = project_declaration_sources(manifest, "tests");
+  std::filesystem::path directory = manifest.root / "build" / "test";
+  for (const auto& source : sources) {
+    NativeArtifact artifact = compile_native_artifact(
+        manifest, source, directory, false, true,
+        ProgramGenerationMode::Tests, std::nullopt, filter);
+    if (artifact.tests.empty()) continue;
+    std::unordered_map<string, const TestDecl*> declarations;
+    for (const auto& test : artifact.tests)
+      declarations[test.semantic_identity] = &test;
+    ProcessResult process = run_process({artifact.executable.string()});
+    std::istringstream lines(process.output);
+    string line;
+    size_t records = 0;
+    while (std::getline(lines, line)) {
+      if (!starts_with(line, "MOSS_TEST|")) continue;
+      auto fields = debug_split_fields(line);
+      if (fields.size() != 5 ||
+          (fields[1] != "PASS" && fields[1] != "FAIL"))
+        throw ProjectError("TEST_RUNTIME_ERROR",
+                           "test harness emitted a malformed result",
+                           source.string());
+      ProjectTestResult result;
+      result.id = decode_protocol_hex(fields[2]);
+      result.name = decode_protocol_hex(fields[3]);
+      result.passed = fields[1] == "PASS";
+      result.detail = decode_protocol_hex(fields[4]);
+      result.source_file = source.string();
+      auto declaration = declarations.find(result.id);
+      if (declaration == declarations.end())
+        throw ProjectError("TEST_RUNTIME_ERROR",
+                           "test harness returned an unknown test identity",
+                           source.string());
+      result.line = declaration->second->line;
+      if (!result.passed) parse_test_failure_detail(result);
+      results.push_back(std::move(result));
+      ++records;
+    }
+    if (records != artifact.tests.size())
+      throw ProjectError(
+          "TEST_RUNTIME_ERROR",
+          "test process ended before reporting every discovered test" +
+              (process.output.empty() ? string() : "\n" + trim(process.output)),
+          source.string());
+    bool has_failure = std::any_of(
+        results.end() - static_cast<std::ptrdiff_t>(records), results.end(),
+        [](const ProjectTestResult& result) { return !result.passed; });
+    if (process.exit_code != (has_failure ? 1 : 0))
+      throw ProjectError(
+          "TEST_RUNTIME_ERROR",
+          "test executable exited unexpectedly with status " +
+              std::to_string(process.exit_code),
+          source.string());
+  }
+  if (results.empty())
+    throw ProjectError(
+        "TEST_DISCOVERY_ERROR",
+        filter.empty() ? "no Moss tests were found"
+                       : "no Moss tests matched filter '" + filter + "'");
+  std::sort(results.begin(), results.end(),
+            [](const ProjectTestResult& left,
+               const ProjectTestResult& right) { return left.id < right.id; });
+  return results;
+}
+
+static int report_project_tests(const ProjectManifest& manifest,
+                                const string& filter, bool json) {
+  vector<ProjectTestResult> results = run_project_tests(manifest, filter);
+  size_t passed = static_cast<size_t>(std::count_if(
+      results.begin(), results.end(),
+      [](const ProjectTestResult& result) { return result.passed; }));
+  size_t failed = results.size() - passed;
+  if (json) {
+    write_agent_envelope_begin(std::cout, "test", failed == 0);
+    std::cout << "  \"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"filter\": ";
+    if (filter.empty()) std::cout << "null";
+    else write_debug_json_string(std::cout, filter);
+    std::cout << ", \"tests\": [";
+    for (size_t index = 0; index < results.size(); ++index) {
+      if (index) std::cout << ", ";
+      const auto& result = results[index];
+      std::cout << "{\"id\": ";
+      write_debug_json_string(std::cout, result.id);
+      std::cout << ", \"name\": ";
+      write_debug_json_string(std::cout, result.name);
+      std::cout << ", \"status\": \""
+                << (result.passed ? "pass" : "fail")
+                << "\", \"source_file\": ";
+      write_debug_json_string(std::cout, result.source_file);
+      std::cout << ", \"line\": " << result.line
+                << ", \"diagnostic\": ";
+      if (result.passed) std::cout << "null";
+      else {
+        std::cout << "{\"code\": \"TEST_ASSERTION_FAILED\", "
+                     "\"severity\": \"error\", \"message\": ";
+        write_debug_json_string(std::cout, result.detail);
+        std::cout << ", \"details\": {\"expression\": ";
+        if (result.expression.empty()) std::cout << "null";
+        else write_debug_json_string(std::cout, result.expression);
+        std::cout << ", \"actual\": ";
+        if (result.actual) write_debug_json_string(std::cout, *result.actual);
+        else std::cout << "null";
+        std::cout << ", \"expected\": ";
+        if (result.expected)
+          write_debug_json_string(std::cout, *result.expected);
+        else
+          std::cout << "null";
+        std::cout << "}}";
+      }
+      std::cout << "}";
+    }
+    std::cout << "], \"summary\": {\"passed\": " << passed
+              << ", \"failed\": " << failed << ", \"total\": "
+              << results.size() << "}}\n}\n";
+  } else {
+    for (const auto& result : results) {
+      string display = starts_with(result.id, "test:")
+          ? result.id.substr(5) : result.id;
+      std::cout << (result.passed ? "PASS " : "FAIL ") << display
+                << "\n";
+      if (!result.passed)
+        std::cout << "  " << result.source_file << ":" << result.line
+                  << ": " << result.detail << "\n";
+    }
+    std::cout << "\n" << passed << " passed\n" << failed << " failed\n";
+  }
+  return failed == 0 ? 0 : 1;
+}
+
+struct ProjectBenchmarkResult {
+  string id;
+  string name;
+  string source_file;
+  int line = 0;
+  std::uint64_t median_ns = 0;
+  std::uint64_t p25_ns = 0;
+  std::uint64_t p75_ns = 0;
+  size_t samples = 0;
+  size_t warmup = 0;
+  size_t iterations = 0;
+  vector<std::uint64_t> sample_values;
+};
+
+static std::uint64_t parse_unsigned_record_field(
+    const string& value, const string& field,
+    const std::filesystem::path& source) {
+  try {
+    size_t used = 0;
+    unsigned long long parsed = std::stoull(value, &used);
+    if (used != value.size()) throw std::invalid_argument("trailing data");
+    return static_cast<std::uint64_t>(parsed);
+  } catch (const std::exception&) {
+    throw ProjectError(
+        "BENCHMARK_RUNTIME_ERROR",
+        "benchmark harness emitted an invalid " + field,
+        source.string());
+  }
+}
+
+static vector<ProjectBenchmarkResult> run_project_benchmarks(
+    const ProjectManifest& manifest, const string& filter) {
+  vector<ProjectBenchmarkResult> results;
+  auto sources = project_declaration_sources(manifest, "benches");
+  std::filesystem::path directory = manifest.root / "build" / "bench";
+  for (const auto& source : sources) {
+    NativeArtifact artifact = compile_native_artifact(
+        manifest, source, directory, true, false,
+        ProgramGenerationMode::Benchmarks, std::nullopt, filter);
+    if (artifact.benchmarks.empty()) continue;
+    std::unordered_map<string, const BenchDecl*> declarations;
+    for (const auto& benchmark : artifact.benchmarks)
+      declarations[benchmark.semantic_identity] = &benchmark;
+    ProcessResult process = run_process({artifact.executable.string()});
+    if (process.exit_code != 0)
+      throw ProjectError(
+          "BENCHMARK_RUNTIME_ERROR",
+          "benchmark executable failed with status " +
+              std::to_string(process.exit_code) +
+              (process.output.empty() ? string() : "\n" + trim(process.output)),
+          source.string());
+    std::istringstream lines(process.output);
+    string line;
+    size_t records = 0;
+    while (std::getline(lines, line)) {
+      if (!starts_with(line, "MOSS_BENCH|")) continue;
+      auto fields = debug_split_fields(line);
+      if (fields.size() != 10)
+        throw ProjectError("BENCHMARK_RUNTIME_ERROR",
+                           "benchmark harness emitted a malformed result",
+                           source.string());
+      ProjectBenchmarkResult result;
+      result.id = decode_protocol_hex(fields[1]);
+      result.name = decode_protocol_hex(fields[2]);
+      result.source_file = source.string();
+      auto declaration = declarations.find(result.id);
+      if (declaration == declarations.end())
+        throw ProjectError(
+            "BENCHMARK_RUNTIME_ERROR",
+            "benchmark harness returned an unknown benchmark identity",
+            source.string());
+      result.line = declaration->second->line;
+      result.median_ns = parse_unsigned_record_field(
+          fields[3], "median", source);
+      result.p25_ns = parse_unsigned_record_field(fields[4], "p25", source);
+      result.p75_ns = parse_unsigned_record_field(fields[5], "p75", source);
+      result.samples = static_cast<size_t>(parse_unsigned_record_field(
+          fields[6], "sample count", source));
+      result.warmup = static_cast<size_t>(parse_unsigned_record_field(
+          fields[7], "warmup count", source));
+      result.iterations = static_cast<size_t>(parse_unsigned_record_field(
+          fields[8], "iteration count", source));
+      for (const auto& sample : split_top_level(fields[9], ',')) {
+        if (sample.empty()) continue;
+        result.sample_values.push_back(parse_unsigned_record_field(
+            sample, "sample value", source));
+      }
+      if (result.sample_values.size() != result.samples)
+        throw ProjectError(
+            "BENCHMARK_RUNTIME_ERROR",
+            "benchmark sample count does not match its result record",
+            source.string());
+      results.push_back(std::move(result));
+      ++records;
+    }
+    if (records != artifact.benchmarks.size())
+      throw ProjectError(
+          "BENCHMARK_RUNTIME_ERROR",
+          "benchmark process ended before reporting every discovered benchmark",
+          source.string());
+  }
+  if (results.empty())
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        filter.empty() ? "no Moss benchmarks were found"
+                       : "no Moss benchmarks matched filter '" + filter + "'");
+  std::sort(results.begin(), results.end(),
+            [](const ProjectBenchmarkResult& left,
+               const ProjectBenchmarkResult& right) {
+              return left.id < right.id;
+            });
+  return results;
+}
+
+static string encode_protocol_hex(const string& value) {
+  static constexpr char digits[] = "0123456789abcdef";
+  string result;
+  result.reserve(value.size() * 2);
+  for (unsigned char byte : value) {
+    result.push_back(digits[(byte >> 4) & 0x0f]);
+    result.push_back(digits[byte & 0x0f]);
+  }
+  return result;
+}
+
+static string benchmark_platform() {
+  struct utsname information {};
+  if (::uname(&information) != 0) return "unknown";
+  return string(information.sysname) + " " + information.release + " " +
+      information.machine;
+}
+
+static string utc_timestamp() {
+  auto now = std::chrono::system_clock::now();
+  std::time_t time = std::chrono::system_clock::to_time_t(now);
+  std::tm value {};
+  if (::gmtime_r(&time, &value) == nullptr) return "unknown";
+  char buffer[32];
+  if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &value) ==
+      0)
+    return "unknown";
+  return buffer;
+}
+
+static void validate_baseline_name(const string& name) {
+  if (name.empty() ||
+      !std::all_of(name.begin(), name.end(), [](unsigned char character) {
+        return std::isalnum(character) || character == '-' ||
+            character == '_' || character == '.';
+      }))
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        "baseline name must contain only letters, numbers, '.', '-', or '_'");
+}
+
+struct BenchmarkBaseline {
+  string compiler_version;
+  string profile;
+  string platform;
+  std::unordered_map<string, ProjectBenchmarkResult> benchmarks;
+};
+
+static std::filesystem::path baseline_file(
+    const ProjectManifest& manifest, const string& name) {
+  validate_baseline_name(name);
+  return manifest.root / ".moss" / "benchmarks" / (name + ".json");
+}
+
+static void save_benchmark_baseline(
+    const ProjectManifest& manifest, const string& name,
+    const vector<ProjectBenchmarkResult>& results) {
+  std::filesystem::path file = baseline_file(manifest, name);
+  std::error_code error;
+  std::filesystem::create_directories(file.parent_path(), error);
+  if (error)
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        "cannot create benchmark baseline directory: " + error.message(),
+        file.string());
+  std::ofstream output(file);
+  if (!output)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "cannot write benchmark baseline '" + file.string() +
+                           "'",
+                       file.string());
+  output << "{\n  \"format\": \"moss-benchmark-baseline\",\n"
+         << "  \"version\": 1,\n"
+         << "  \"compiler_version\": \"" << kCompilerVersion << "\",\n"
+         << "  \"profile\": \"release\",\n"
+         << "  \"platform_hex\": \""
+         << encode_protocol_hex(benchmark_platform()) << "\",\n"
+         << "  \"timestamp_utc\": \"" << utc_timestamp() << "\",\n"
+         << "  \"benchmarks\": [\n";
+  for (size_t index = 0; index < results.size(); ++index) {
+    const auto& result = results[index];
+    output << "    {\"id_hex\": \"" << encode_protocol_hex(result.id)
+           << "\", \"name_hex\": \"" << encode_protocol_hex(result.name)
+           << "\", \"median_ns\": " << result.median_ns
+           << ", \"p25_ns\": " << result.p25_ns
+           << ", \"p75_ns\": " << result.p75_ns
+           << ", \"samples\": " << result.samples
+           << ", \"warmup\": " << result.warmup
+           << ", \"iterations\": " << result.iterations
+           << ", \"sample_values_ns\": [";
+    for (size_t sample = 0; sample < result.sample_values.size(); ++sample) {
+      if (sample) output << ", ";
+      output << result.sample_values[sample];
+    }
+    output << "]}" << (index + 1 == results.size() ? "\n" : ",\n");
+  }
+  output << "  ]\n}\n";
+}
+
+static string baseline_string_field(const string& text, const string& key,
+                                    const std::filesystem::path& file) {
+  string marker = "\"" + key + "\": \"";
+  size_t begin = text.find(marker);
+  if (begin == string::npos)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "benchmark baseline is missing '" + key + "'",
+                       file.string());
+  begin += marker.size();
+  size_t end = text.find('"', begin);
+  if (end == string::npos)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "benchmark baseline has an invalid '" + key + "'",
+                       file.string());
+  return text.substr(begin, end - begin);
+}
+
+static std::uint64_t baseline_integer_field(
+    const string& text, const string& key,
+    const std::filesystem::path& file) {
+  string marker = "\"" + key + "\": ";
+  size_t begin = text.find(marker);
+  if (begin == string::npos)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "benchmark baseline is missing '" + key + "'",
+                       file.string());
+  begin += marker.size();
+  size_t end = begin;
+  while (end < text.size() &&
+         std::isdigit(static_cast<unsigned char>(text[end])))
+    ++end;
+  if (end == begin)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "benchmark baseline has an invalid '" + key + "'",
+                       file.string());
+  try {
+    return static_cast<std::uint64_t>(
+        std::stoull(text.substr(begin, end - begin)));
+  } catch (const std::exception&) {
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "benchmark baseline has an invalid '" + key + "'",
+                       file.string());
+  }
+}
+
+static BenchmarkBaseline load_benchmark_baseline(
+    const ProjectManifest& manifest, const string& name) {
+  std::filesystem::path file = baseline_file(manifest, name);
+  std::ifstream input(file);
+  if (!input)
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        "benchmark baseline '" + name + "' does not exist", file.string());
+  std::ostringstream buffer;
+  buffer << input.rdbuf();
+  string text = buffer.str();
+  if (baseline_string_field(text, "format", file) !=
+      "moss-benchmark-baseline")
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "file is not a Moss benchmark baseline",
+                       file.string());
+  if (baseline_integer_field(text, "version", file) != 1)
+    throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                       "unsupported benchmark baseline version",
+                       file.string());
+  BenchmarkBaseline baseline;
+  baseline.compiler_version = baseline_string_field(
+      text, "compiler_version", file);
+  baseline.profile = baseline_string_field(text, "profile", file);
+  baseline.platform = decode_protocol_hex(
+      baseline_string_field(text, "platform_hex", file));
+  size_t position = 0;
+  while ((position = text.find("{\"id_hex\": \"", position)) !=
+         string::npos) {
+    size_t end = text.find('}', position);
+    if (end == string::npos)
+      throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
+                         "benchmark baseline contains a malformed entry",
+                         file.string());
+    string entry = text.substr(position, end - position + 1);
+    ProjectBenchmarkResult result;
+    result.id = decode_protocol_hex(
+        baseline_string_field(entry, "id_hex", file));
+    result.name = decode_protocol_hex(
+        baseline_string_field(entry, "name_hex", file));
+    result.median_ns = baseline_integer_field(entry, "median_ns", file);
+    result.p25_ns = baseline_integer_field(entry, "p25_ns", file);
+    result.p75_ns = baseline_integer_field(entry, "p75_ns", file);
+    result.samples = static_cast<size_t>(
+        baseline_integer_field(entry, "samples", file));
+    result.warmup = static_cast<size_t>(
+        baseline_integer_field(entry, "warmup", file));
+    result.iterations = static_cast<size_t>(
+        baseline_integer_field(entry, "iterations", file));
+    baseline.benchmarks[result.id] = std::move(result);
+    position = end + 1;
+  }
+  return baseline;
+}
+
+struct BenchmarkComparison {
+  const ProjectBenchmarkResult* current = nullptr;
+  const ProjectBenchmarkResult* baseline = nullptr;
+  double change_percent = 0.0;
+};
+
+static vector<BenchmarkComparison> compare_benchmarks(
+    const vector<ProjectBenchmarkResult>& results,
+    const BenchmarkBaseline& baseline) {
+  vector<BenchmarkComparison> comparisons;
+  for (const auto& result : results) {
+    auto prior = baseline.benchmarks.find(result.id);
+    if (prior == baseline.benchmarks.end()) continue;
+    double change = prior->second.median_ns == 0
+        ? 0.0
+        : (static_cast<double>(result.median_ns) /
+               static_cast<double>(prior->second.median_ns) -
+           1.0) * 100.0;
+    comparisons.push_back({&result, &prior->second, change});
+  }
+  return comparisons;
+}
+
+static int report_project_benchmarks(
+    const ProjectManifest& manifest, const string& filter, bool json,
+    const string& save_name, const string& compare_name,
+    const std::optional<double>& fail_over) {
+  vector<ProjectBenchmarkResult> results = run_project_benchmarks(
+      manifest, filter);
+  if (!save_name.empty()) save_benchmark_baseline(manifest, save_name, results);
+  std::optional<BenchmarkBaseline> baseline;
+  vector<BenchmarkComparison> comparisons;
+  vector<string> warnings;
+  if (!compare_name.empty()) {
+    baseline = load_benchmark_baseline(manifest, compare_name);
+    if (baseline->compiler_version != kCompilerVersion ||
+        baseline->profile != "release" ||
+        baseline->platform != benchmark_platform())
+      warnings.push_back(
+          "baseline compiler, profile, or platform differs from the current "
+          "benchmark environment");
+    comparisons = compare_benchmarks(results, *baseline);
+    if (comparisons.empty())
+      warnings.push_back(
+          "no current benchmark IDs exist in the selected baseline");
+  }
+  bool regression = fail_over && std::any_of(
+      comparisons.begin(), comparisons.end(),
+      [&](const BenchmarkComparison& comparison) {
+        return comparison.change_percent > *fail_over;
+      });
+  if (json) {
+    write_agent_envelope_begin(std::cout, "bench", !regression);
+    std::cout << "  \"result\": {\"project\": ";
+    write_debug_json_string(std::cout, manifest.name);
+    std::cout << ", \"profile\": \"release\", \"filter\": ";
+    if (filter.empty()) std::cout << "null";
+    else write_debug_json_string(std::cout, filter);
+    std::cout << ", \"benchmarks\": [";
+    for (size_t index = 0; index < results.size(); ++index) {
+      if (index) std::cout << ", ";
+      const auto& result = results[index];
+      std::cout << "{\"id\": ";
+      write_debug_json_string(std::cout, result.id);
+      std::cout << ", \"name\": ";
+      write_debug_json_string(std::cout, result.name);
+      std::cout << ", \"source_file\": ";
+      write_debug_json_string(std::cout, result.source_file);
+      std::cout << ", \"line\": " << result.line
+                << ", \"median_ns\": " << result.median_ns
+                << ", \"p25_ns\": " << result.p25_ns
+                << ", \"p75_ns\": " << result.p75_ns
+                << ", \"samples\": " << result.samples
+                << ", \"warmup\": " << result.warmup
+                << ", \"iterations\": " << result.iterations << "}";
+    }
+    std::cout << "], \"comparisons\": [";
+    for (size_t index = 0; index < comparisons.size(); ++index) {
+      if (index) std::cout << ", ";
+      const auto& comparison = comparisons[index];
+      std::cout << "{\"id\": ";
+      write_debug_json_string(std::cout, comparison.current->id);
+      std::cout << ", \"baseline_ns\": "
+                << comparison.baseline->median_ns
+                << ", \"current_ns\": " << comparison.current->median_ns
+                << ", \"change_percent\": " << std::fixed
+                << std::setprecision(3) << comparison.change_percent << "}";
+    }
+    std::cout << "], \"warnings\": [";
+    for (size_t index = 0; index < warnings.size(); ++index) {
+      if (index) std::cout << ", ";
+      std::cout << "{\"code\": \"BASELINE_INCOMPATIBLE\", "
+                   "\"severity\": \"warning\", \"message\": ";
+      write_debug_json_string(std::cout, warnings[index]);
+      std::cout << "}";
+    }
+    std::cout << "], \"saved_baseline\": ";
+    if (save_name.empty()) std::cout << "null";
+    else write_debug_json_string(std::cout, save_name);
+    std::cout << ", \"regression\": "
+              << (regression ? "true" : "false")
+              << ", \"diagnostic\": ";
+    if (!regression) std::cout << "null";
+    else
+      std::cout << "{\"code\": \"BENCHMARK_REGRESSION\", "
+                   "\"severity\": \"error\", \"message\": "
+                   "\"benchmark change exceeded --fail-over\"}";
+    std::cout << "}\n}\n";
+  } else {
+    for (const auto& result : results) {
+      std::cout << result.name << "\n\n"
+                << "median: " << result.median_ns << " ns\n"
+                << "p25: " << result.p25_ns << " ns\n"
+                << "p75: " << result.p75_ns << " ns\n"
+                << "samples: " << result.samples << "\n\n";
+    }
+    if (!save_name.empty())
+      std::cout << "Saved baseline '" << save_name << "'.\n";
+    for (const auto& warning : warnings)
+      std::cerr << "warning[BASELINE_INCOMPATIBLE]: " << warning << "\n";
+    for (const auto& comparison : comparisons) {
+      std::cout << comparison.current->name << "\n"
+                << "baseline: " << comparison.baseline->median_ns << " ns\n"
+                << "current: " << comparison.current->median_ns << " ns\n"
+                << "change: " << std::showpos << std::fixed
+                << std::setprecision(1) << comparison.change_percent
+                << "%" << std::noshowpos << "\n";
+    }
+    if (regression)
+      std::cerr << "error[BENCHMARK_REGRESSION]: benchmark change exceeded "
+                   "--fail-over\n";
+  }
+  return regression ? 1 : 0;
+}
+
+static double parse_fail_over(const string& value) {
+  try {
+    string numeric = value;
+    if (!numeric.empty() && numeric.back() == '%') numeric.pop_back();
+    size_t used = 0;
+    double result = std::stod(numeric, &used);
+    if (used != numeric.size() || !std::isfinite(result) || result < 0.0)
+      throw std::invalid_argument("invalid threshold");
+    return result;
+  } catch (const std::exception&) {
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        "--fail-over requires a non-negative percentage");
+  }
+}
+
+static int run_project_command(int argc, char** argv) {
+  string command = argv[1];
+  bool json = false;
+  for (int index = 2; index < argc; ++index)
+    if (string(argv[index]) == "--json") json = true;
+  try {
+    ProjectManifest manifest = load_project_manifest(
+        std::filesystem::current_path());
+    if (command == "build") {
+      bool release = false;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--release") release = true;
+        else if (argument != "--json")
+          throw ProjectError("BUILD_PROFILE_ERROR",
+                             "unexpected build argument '" + argument + "'");
+      }
+      return run_project_build(manifest, release, json);
+    }
+    if (command == "clean") {
+      for (int index = 2; index < argc; ++index)
+        if (string(argv[index]) != "--json")
+          throw ProjectError("BUILD_PROFILE_ERROR",
+                             "unexpected clean argument '" +
+                                 string(argv[index]) + "'");
+      std::filesystem::path build = manifest.root / "build";
+      std::error_code error;
+      std::filesystem::remove_all(build, error);
+      if (error)
+        throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                           "cannot clean project build directory: " +
+                               error.message(),
+                           build.string());
+      if (json) {
+        write_agent_envelope_begin(std::cout, "clean", true);
+        std::cout << "  \"result\": {\"project\": ";
+        write_debug_json_string(std::cout, manifest.name);
+        std::cout << ", \"removed\": ";
+        write_debug_json_string(std::cout, build.string());
+        std::cout << "}\n}\n";
+      } else {
+        std::cout << "Cleaned " << manifest.name << ".\n";
+      }
+      return 0;
+    }
+    if (command == "test") {
+      string filter;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--json") continue;
+        if (!filter.empty())
+          throw ProjectError("TEST_DISCOVERY_ERROR",
+                             "moss test accepts at most one filter");
+        filter = argument;
+      }
+      return report_project_tests(manifest, filter, json);
+    }
+    if (command == "bench") {
+      string filter;
+      string save_name;
+      string compare_name;
+      std::optional<double> fail_over;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--json") continue;
+        if (argument == "--save" || argument == "--compare" ||
+            argument == "--fail-over") {
+          if (++index >= argc)
+            throw ProjectError(
+                "BENCHMARK_CONFIGURATION_ERROR",
+                argument + " requires a value");
+          string value = argv[index];
+          if (argument == "--save") save_name = value;
+          else if (argument == "--compare") compare_name = value;
+          else fail_over = parse_fail_over(value);
+          continue;
+        }
+        if (!filter.empty())
+          throw ProjectError(
+              "BENCHMARK_CONFIGURATION_ERROR",
+              "moss bench accepts at most one filter");
+        filter = argument;
+      }
+      if (fail_over && compare_name.empty())
+        throw ProjectError(
+            "BENCHMARK_CONFIGURATION_ERROR",
+            "--fail-over requires --compare <baseline>");
+      return report_project_benchmarks(
+          manifest, filter, json, save_name, compare_name, fail_over);
+    }
+    throw ProjectError("PROJECT_COMMAND_ERROR",
+                       "unknown project command '" + command + "'");
+  } catch (const ProjectError& error) {
+    if (json) write_project_error_json(std::cout, command, error);
+    else {
+      if (!error.source_file.empty())
+        std::cerr << error.source_file;
+      else
+        std::cerr << "moss";
+      if (error.line > 0) std::cerr << ":" << error.line;
+      std::cerr << ": error[" << error.code << "]: " << error.what()
+                << "\n";
+    }
+    return 1;
+  }
+}
+
 } // namespace moss
 
 static std::optional<string> nearest_moss_project_root(
@@ -13225,7 +14864,11 @@ static void usage() {
             << "  moss --check <input.moss>\n"
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
-            << "  moss inspect|type|effects|ownership|calls|awaits|why <target> --source <input.moss> --json\n\n"
+            << "  moss inspect|type|effects|ownership|calls|awaits|why <target> --source <input.moss> --json\n"
+            << "  moss build [--release] [--json]\n"
+            << "  moss clean [--json]\n"
+            << "  moss test [filter] [--json]\n"
+            << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
@@ -13254,6 +14897,11 @@ int main(int argc, char** argv) {
   std::optional<moss::Program> active_program;
   try {
     if (argc < 2) { usage(); return 2; }
+
+    static const std::set<string> project_commands = {
+        "build", "clean", "test", "bench"};
+    if (project_commands.count(argv[1]))
+      return moss::run_project_command(argc, argv);
 
     if (string(argv[1]) == "agent") {
       if (argc < 3) {

@@ -87,6 +87,25 @@ optimization analysis.
 Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`; Moss
 does not guess a nearby semantic entity or invent a dynamic target.
 
+## Project, test, and benchmark results
+
+Phase 7 reuses the same protocol rather than defining a second automation format:
+
+```sh
+moss build --json
+moss build --release --json
+moss test parser --json
+moss bench normalize --json
+```
+
+Build results identify the profile and deterministic artifact paths. Test and benchmark
+records include stable project/source identities. Test assertions use
+`TEST_ASSERTION_FAILED`; project and benchmark failures use the stable categories
+documented in the build/testing/benchmark guides. Benchmark baseline compatibility is a
+structured warning. These commands share the normal compiler pipeline and semantic
+identities; they do not introduce affected-test analysis or performance facts into the
+semantic query layer.
+
 ## Minimal AGENTS.md onboarding
 
 Repositories may use this intentionally short snippet:

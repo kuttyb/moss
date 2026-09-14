@@ -77,6 +77,25 @@
     (should (eq (get-text-property (1- (point)) 'face)
                 'font-lock-builtin-face))))
 
+(ert-deftest moss-mode-phase7-declarations ()
+  (with-temp-buffer
+    (insert "test \"addition\":\n  assert(true)\n\nbench \"addition\":\n  add(2, 3)\n")
+    (moss-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "test")
+    (should (eq (get-text-property (1- (point)) 'face)
+                'font-lock-keyword-face))
+    (search-forward "addition")
+    (should (eq (get-text-property (1- (point)) 'face)
+                'font-lock-function-name-face))
+    (search-forward "assert")
+    (should (eq (get-text-property (1- (point)) 'face)
+                'font-lock-builtin-face))
+    (let ((index (moss-imenu-create-index)))
+      (should (assoc "addition" (cdr (assoc "Tests" index))))
+      (should (assoc "addition" (cdr (assoc "Benchmarks" index)))))))
+
 (ert-deftest moss-mode-imenu-classifies-members ()
   (with-temp-buffer
     (insert "fn helper(x):\n  return x\n\ntype Box:\n  value: Int\n  fn Read():\n    return value\n\ndomain Worker:\n  fn Ping() -> Int:\n    reply 1\n  on Stop():\n    return\n")

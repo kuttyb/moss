@@ -51,6 +51,12 @@ Updated: 2026-09-13
   read-only views over the ordinary compiler pipeline. Semantic editing, durable
   cross-edit identity, MCP, daemon operation, and other broader Phase 6 work remain
   deferred.
+- Phase 7 adds a conventional `moss.toml` project layer and the `moss build`,
+  `moss clean`, `moss test`, and `moss bench` workflows. Debug/release builds,
+  native test/benchmark harnesses, stable project/source IDs, filtered discovery,
+  benchmark sampling/baselines, and all structured results reuse the ordinary
+  compiler pipeline and `moss-agent-1` envelope. It adds no package resolver,
+  module system, affected-test analysis, or new optimizer semantics.
 
 ## Approved semantics
 
@@ -66,6 +72,26 @@ Updated: 2026-09-13
 
 ## Implemented features
 
+- A minimal project manifest names the project/version and configured source directory
+  or file. Commands locate the nearest project root, use deterministic profile artifact
+  paths, hide direct Rust invocation, compile with warnings denied, and reuse unchanged
+  generated Rust/debug maps/native artifacts. `moss clean` removes build products while
+  retaining saved benchmark evidence.
+- Top-level `test "name":` declarations support statically checked `assert(bool)` and
+  `assertEqual(actual, expected)`. Project source and recursive `tests/*.moss` discovery,
+  substring filtering, per-test panic containment, stable
+  `test:<relative-source>:<name>` identities, Moss source diagnostics, human summaries,
+  and versioned JSON output are implemented.
+- Top-level `bench "name":` declarations compile only through the release/highest-
+  optimization profile. The safe generated harness uses backend black boxes, warmup,
+  31 repeated samples, 1,000 invocations per sample, and median/p25/p75 reporting.
+  Stable-ID JSON baselines retain compiler/profile/platform/time/methodology/sample data;
+  comparison, compatibility warnings, optional regression thresholds, and filtering are
+  implemented without fragile thresholds in the compiler regression suite.
+- Build, test, and benchmark generation share the parser, checker, ownership/effect
+  passes, functional/dataflow optimizer, backend plan, generator, `.mossmap` contract,
+  profiles, artifact directories, and Phase 6A JSON envelope. Test and benchmark code is
+  absent from ordinary application artifacts.
 - `moss agent bootstrap|capabilities|schema --json` provides vendor-independent protocol
   discovery and workflow/safety guidance. `moss check --json` uses stable diagnostic
   categories and a uniform source/span/identity/details shape. Semantic queries accept
@@ -251,6 +277,12 @@ Updated: 2026-09-13
 
 ## Partially implemented or unimplemented
 
+- Phase 7 deliberately has no package, dependency, or module/import system. Discovered
+  `tests/` and `benches/` files are independent compilation units; declarations that
+  directly exercise application-local helpers currently live in the configured source.
+  Assertion panics are isolated per test in one process, but process aborts and failures
+  on spawned threads can still terminate that unit. Benchmark warmup/sample counts are a
+  fixed conservative first methodology rather than adaptive statistical calibration.
 - Phase 5 does not invent one-to-one stepping for fused code. Several Moss nodes may
   resolve to one Rust/native location, and reverse assembly navigation is currently
   symbol/provenance-oriented rather than an exact address-level UI. Generic Rust
@@ -405,7 +437,7 @@ byte-identical maps; compare `-O0`, optimized, and explicit debug maps; verify d
 source/provenance identities, real function/method/handler lines, readable native symbols,
 bidirectional exact line resolution, and many-to-one fused provenance; and compile and
 run both generated programs with warnings denied. Python map/LLDB helper checks pass,
-all 18 batch ERT tests pass under Emacs 30.1, and `llvm-objdump` resolves both an ordinary
+all 19 batch ERT tests pass under Emacs 30.1, and `llvm-objdump` resolves both an ordinary
 debug function and an optimized fused-pipeline symbol. Live LLDB 19.1.7 and
 `lldb-dap-19` regressions load the shared helper/map, resolve exact breakpoints for main,
 a method, ordinary functions, and a handler, step between two exact Moss lines, map user
@@ -421,6 +453,15 @@ trait, dataflow, reduction, callable, effect-order, and object-pipeline showcase
 `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build and `sh -n tests/run.sh` also
 passed for this checkpoint.
 
+Phase 7 validation additionally builds the example project in debug and release modes,
+checks byte-stable map/artifact reuse, executes and filters passing/failing native tests,
+inspects Moss assertion values/locations, executes and filters release benchmarks,
+validates black-box/sampling structure, saves and compares a metadata/sample baseline,
+checks structured project errors, and runs `moss clean`. The full `make check` suite,
+`make examples`, strict C++17 warnings-as-errors build, generated Rust `-D warnings`,
+Phase 4/4.5/4.6 differentials, Phase 5 map/Emacs/objdump/LLDB/DAP integrations, Phase 6A
+API regressions, 19 ERT tests, `sh -n tests/run.sh`, and `git diff --check` all pass.
+
 Two local smoke samples of the contention program completed 20 baseline runs in approximately 0.20–0.25 seconds and 20 direct shared-memory runs in approximately 0.02–0.03 seconds. This is evidence that transport elimination works for the intended request/reply shape, not a general performance claim.
 
 ## Immediate next tasks
@@ -430,13 +471,15 @@ none of the following is implicitly authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
    representative workloads.
-2. Evaluate later profitability, SIMD, threading, and GPU plans using the preserved
+2. Design modules/imports and package dependencies before allowing independently
+   discovered test/benchmark files to import application declarations.
+3. Evaluate later profitability, SIMD, threading, and GPU plans using the preserved
    independence, reduction, capture, effect, materialization, and DAG facts without
    changing eager semantics.
-3. Extend cluster placement from one instance per domain type to a static per-spawn
+4. Extend cluster placement from one instance per domain type to a static per-spawn
    identity plan.
-4. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
-5. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
+5. Implement explicit `deepCopy()` with type checking, deep lowering, and approved cost diagnostics.
+6. Expand ownership analysis beyond the Phase 2 call/projection/control-flow slice when future reference facilities are designed.
 
 ## Open design questions requiring Kutty's decision
 

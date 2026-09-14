@@ -1,0 +1,5 @@
+fn mixed(value: int) -> int:
+  value * 7 - 3
+
+bench "external arithmetic":
+  mixed(1234)

@@ -1,0 +1,6 @@
+[project]
+name = "phase7-failing-test"
+version = "0.1.0"
+
+[build]
+source = "src"

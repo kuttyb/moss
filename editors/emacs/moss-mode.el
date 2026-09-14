@@ -68,7 +68,8 @@ or range-only optimized locations are not presented as precise Moss steps."
   :type '(choice (const :tag "Find automatically" nil) file))
 
 (defconst moss--declaration-keywords
-  '("fn" "proc" "type" "trait" "domain" "on" "let" "var"))
+  '("fn" "proc" "type" "trait" "domain" "on" "test" "bench"
+    "let" "var"))
 
 (defconst moss--control-keywords
   '("if" "else" "while" "return" "and" "or" "not"))
@@ -83,6 +84,9 @@ or range-only optimized locations are not presented as precise Moss steps."
 
 (defconst moss--functional-operations
   '("map" "filter" "reduce" "sum" "count" "any" "all"))
+
+(defconst moss--test-builtins
+  '("assert" "assertEqual"))
 
 (defvar moss-mode-syntax-table
   (let ((table (make-syntax-table)))
@@ -100,13 +104,16 @@ or range-only optimized locations are not presented as precise Moss steps."
                           moss--concurrency-keywords)
                   'symbols)
      . font-lock-keyword-face)
-    (,(regexp-opt moss--functional-operations 'symbols)
+    (,(regexp-opt (append moss--functional-operations moss--test-builtins)
+                  'symbols)
      . font-lock-builtin-face)
     (,(regexp-opt moss--builtin-types 'symbols) . font-lock-type-face)
     ("^[[:space:]]*\\(?:fn\\|proc\\)[[:space:]]+\\([[:word:]_]+\\)"
      1 font-lock-function-name-face)
     ("^[[:space:]]*on[[:space:]]+\\([[:word:]_]+\\)"
      1 font-lock-function-name-face)
+    ("^[[:space:]]*\\(?:test\\|bench\\)[[:space:]]+\"\\([^\"]+\\)\""
+     1 font-lock-function-name-face t)
     ("^[[:space:]]*\\(?:type\\|trait\\|domain\\)[[:space:]]+\\([[:word:]_]+\\)"
      1 font-lock-type-face)
     ("\\_<\\(?:true\\|false\\)\\_>" . font-lock-constant-face)
@@ -114,7 +121,7 @@ or range-only optimized locations are not presented as precise Moss steps."
   "Font-lock rules for Moss source.")
 
 (defconst moss--definition-regexp
-  "^[[:space:]]*\\(?:fn\\|proc\\|on\\|type\\|trait\\|domain\\)\\_>")
+  "^[[:space:]]*\\(?:fn\\|proc\\|on\\|type\\|trait\\|domain\\|test\\|bench\\)\\_>")
 
 (defun moss--line-indentation ()
   "Return the indentation of the current line without moving point."
@@ -140,7 +147,7 @@ Return non-nil when such a line exists."
           (top-level-declaration
            (and (= (current-indentation) 0)
                 (looking-at-p
-                 "\\(?:fn\\|proc\\|type\\|trait\\|domain\\)\\_>")))
+                 "\\(?:fn\\|proc\\|type\\|trait\\|domain\\|test\\|bench\\)\\_>")))
           (existing (current-indentation)))
       (if (not (moss--previous-code-line))
           0
@@ -170,7 +177,7 @@ Return non-nil when such a line exists."
     (puthash category (cons (cons name position) items) table)))
 
 (defun moss-imenu-create-index ()
-  "Build an Imenu index for Moss functions, types, domains, and handlers."
+  "Build an Imenu index for Moss declarations."
   (let ((table (make-hash-table :test #'equal))
         (containers nil))
     (save-excursion
@@ -200,10 +207,19 @@ Return non-nil when such a line exists."
                 (cond ((equal parent "domain") "Handlers")
                       ((member parent '("type" "trait")) "Methods")
                       (t "Functions"))
-                name position)))))))
+                name position))))))
+      (goto-char (point-min))
+      (while (re-search-forward
+              "^[ ]*\\(test\\|bench\\)[ ]+\"\\([^\"]+\\)\"" nil t)
+        (moss--imenu-add
+         table
+         (if (equal (match-string-no-properties 1) "test")
+             "Tests" "Benchmarks")
+         (match-string-no-properties 2)
+         (copy-marker (match-beginning 0)))))
     (let (index)
       (dolist (category '("Functions" "Types and Traits" "Domains"
-                          "Methods" "Handlers"))
+                          "Methods" "Handlers" "Tests" "Benchmarks"))
         (when-let ((items (gethash category table)))
           (push (cons category (nreverse items)) index)))
       (nreverse index))))

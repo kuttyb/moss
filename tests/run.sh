@@ -1551,6 +1551,7 @@ grep -F '"command": "check"' "$test_build/phase6_check.json" >/dev/null ||
 if command -v python3 >/dev/null 2>&1; then
   export PYTHONDONTWRITEBYTECODE=1
   python3 tests/tooling/check_agent_api.py "$compiler"
+  python3 tests/tooling/check_project_workflow.py "$compiler" "$test_build"
   python3 tests/tooling/check_debug_map.py \
     "$tooling_o0_map" "$tooling_opt_map" \
     "$test_build/phase5_tooling_debug.mossmap" \

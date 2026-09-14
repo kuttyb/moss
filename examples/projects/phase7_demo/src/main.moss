@@ -1,0 +1,19 @@
+# A complete Moss project can keep its executable, unit tests, and small
+# benchmarks together while it is young. Larger projects may use tests/ and
+# benches/ for independently compiled suites.
+
+fn add(left: int, right: int) -> int:
+  left + right
+
+fn score(value: int) -> int:
+  value * 3 + 1
+
+test "addition":
+  assert(add(2, 3) == 5)
+  assertEqual(add(-2, 5), 3)
+
+bench "score":
+  score(42)
+
+proc main():
+  echo add(20, 22)

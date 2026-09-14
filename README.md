@@ -33,6 +33,12 @@ can discover capabilities, receive structured diagnostics, and query the compile
 existing type, ownership, effect, call, await, functional, and backend facts through one
 versioned JSON envelope. It adds no editing service or duplicate semantic analysis.
 
+Phase 7 adds the practical project layer: `moss build`, `moss test`, and `moss bench`
+share one manifest, compiler pipeline, profile model, semantic identity scheme, artifact
+layout, and Phase 6A JSON protocol. Tests report Moss assertions at Moss locations;
+benchmarks use release compilation, robust sampling, and saved comparisons without
+leaking Rust tooling into the normal workflow.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
@@ -48,6 +54,20 @@ make
 ```
 
 This creates `./moss`.
+
+For a Moss project, the normal workflow is:
+
+```sh
+moss agent bootstrap --json
+moss build
+moss test
+moss build --release
+moss bench
+```
+
+Projects use `moss.toml` with conventional `src/`, `tests/`, and `benches/`
+directories. See [the build system](docs/BUILD_SYSTEM.md), [unit
+testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
 
 ## Use
 
@@ -115,6 +135,8 @@ The showcase programs are executable syntax guides:
 - [functional semantic optimization](examples/functional_semantic_optimization.moss) shows map/filter composition, a virtual named intermediate, dead-map removal, known-size count, and safe short circuiting.
 - [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
 - [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
+- [Phase 7 project](examples/projects/phase7_demo) demonstrates a manifest, debug/release builds, in-source and external tests, filtered benchmarks, and baselines.
+- [failing Phase 7 test](examples/projects/phase7_failing_test) demonstrates Moss-level assertion details and continued test reporting.
 
 Every valid showcase compiles to standalone Rust with `make examples`; the generated
 programs contain concrete calls rather than runtime trait objects or vtables.

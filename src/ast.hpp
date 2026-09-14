@@ -87,6 +87,22 @@ struct Function {
 };
 struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
 
+struct TestDecl {
+  string name;
+  string header;
+  string semantic_identity;
+  vector<Stmt> body;
+  int line = 0;
+};
+
+struct BenchDecl {
+  string name;
+  string header;
+  string semantic_identity;
+  vector<Stmt> body;
+  int line = 0;
+};
+
 // Existing checker passes populate these records while validating recursion
 // and await boundedness.  They are retained so tooling can inspect the exact
 // facts used by the compiler without walking the AST a second time.
@@ -114,6 +130,8 @@ struct Program {
   vector<Trait> traits;
   vector<ObjectType> objects;
   vector<Domain> domains;
+  vector<TestDecl> tests;
+  vector<BenchDecl> benchmarks;
   std::optional<MainProc> main;
   vector<FunctionalPipeline> functional_pipelines;
   vector<FunctionalTraversalGroup> functional_traversal_groups;

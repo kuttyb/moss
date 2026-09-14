@@ -1,0 +1,5 @@
+fn doubled(value: int) -> int:
+  value * 2
+
+test "external arithmetic":
+  assertEqual(doubled(21), 42)

@@ -5,3 +5,5 @@ examples/*.rs
 __pycache__/
 moss
 build/**
+examples/projects/*/build/
+examples/projects/*/.moss/

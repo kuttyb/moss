@@ -1,0 +1,8 @@
+test "reports actual and expected":
+  assertEqual(2 + 2, 5)
+
+test "continues after a failure":
+  assert(true)
+
+proc main():
+  echo "run moss test to see the intentional failure"

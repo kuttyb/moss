@@ -142,6 +142,21 @@ annotation is inferred as one-way when it has no `reply`; when it contains typed
 expressions, their common type becomes the handler's reply type. Conflicting reply paths
 are compile-time errors, and an explicit `-> Type` remains an optional constraint.
 
+Top-level unit tests and benchmarks use quoted names and ordinary indented Moss bodies:
+
+```moss
+test "addition":
+  assertEqual(add(2, 3), 5)
+
+bench "addition":
+  add(2, 3)
+```
+
+They are project tooling declarations rather than runtime reflection or macros. Normal
+application generation omits both. `assert` requires a boolean; `assertEqual` requires
+compatible statically resolved values. See [unit testing](TESTING.md) and
+[benchmarking](BENCHMARKING.md).
+
 ### Functional pipelines
 
 Pipelines are typed expressions. The Phase 4 functional operations are `map`, `filter`,
