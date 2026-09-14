@@ -20,6 +20,14 @@ Inside a project, `moss build`, `moss test`, and `moss bench` reuse the same man
 compiler facts, durable project IDs, artifact cache, and JSON envelope. `moss test
 --affected` is a development accelerator; the full suite remains authoritative.
 
+Semantic queries and edits use the same temporary uber-module context as the target
+containing `--source`: `src` queries include all application files, test queries
+include `src + tests`, and benchmark queries include `src + benches`. A source outside
+a project is analyzed as one standalone file. Physical paths remain part of every
+result, so agents should pass `--source` when a line or local construct needs
+disambiguation. Rename scope follows that context and expression edits are validated
+transactionally against every participating file.
+
 ## Queries and identity
 
 Use `inspect`, `type`, `effects`, `ownership`, `calls`, `awaits`, `why`, and `cost` to

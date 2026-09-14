@@ -3640,7 +3640,7 @@ class Checker {
       const vector<Stmt>& body, const std::optional<string>& result_expression,
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
-      std::map<string,int>& edge_lines) {
+      std::map<string,int>& edge_lines, const string& physical_source) {
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
       for (const auto& expression : statement_expressions(statement)) {
@@ -3651,7 +3651,10 @@ class Checker {
           graph[source].insert(call.target);
           edge_lines.emplace(source + "\n" + call.target, statement.line);
           SemanticCallEdge edge{source, call.target, statement.line,
-                                call.argument_types};
+                                call.argument_types,
+                                statement.source_file.empty()
+                                    ? physical_source
+                                    : statement.source_file};
           if (std::find_if(
                   p_.semantic_call_edges.begin(),
                   p_.semantic_call_edges.end(),
@@ -3659,7 +3662,8 @@ class Checker {
                     return existing.source == edge.source &&
                         existing.target == edge.target &&
                         existing.line == edge.line &&
-                        existing.argument_types == edge.argument_types;
+                        existing.argument_types == edge.argument_types &&
+                        existing.source_file == edge.source_file;
                   }) == p_.semantic_call_edges.end())
             p_.semantic_call_edges.push_back(std::move(edge));
         }
@@ -3677,7 +3681,7 @@ class Checker {
         graph[source].insert(call.target);
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
-                              call.argument_types};
+                              call.argument_types, physical_source};
         if (std::find_if(
                 p_.semantic_call_edges.begin(),
                 p_.semantic_call_edges.end(),
@@ -3685,7 +3689,8 @@ class Checker {
                   return existing.source == edge.source &&
                       existing.target == edge.target &&
                       existing.line == edge.line &&
-                      existing.argument_types == edge.argument_types;
+                        existing.argument_types == edge.argument_types &&
+                        existing.source_file == edge.source_file;
                 }) == p_.semantic_call_edges.end())
           p_.semantic_call_edges.push_back(std::move(edge));
       }
@@ -3704,7 +3709,8 @@ class Checker {
             ? "_generic:" + parameter.name : parameter.type;
       collect_callable_edges(function.body, function.result_expression,
                              function.result_line, std::move(env), nullptr,
-                             "fn:" + function.name, graph, edge_lines);
+                             "fn:" + function.name, graph, edge_lines,
+                             function.source_file);
     }
     for (const auto& object : p_.objects) {
       for (const auto& method : object.methods) {
@@ -3716,7 +3722,7 @@ class Checker {
         collect_callable_edges(method.body, method.result_expression,
                                method.result_line, std::move(env), &object,
                                "method:" + object.name + "." + method.name,
-                               graph, edge_lines);
+                               graph, edge_lines, method.source_file);
       }
     }
     for (const auto& domain : p_.domains) {
@@ -3729,25 +3735,26 @@ class Checker {
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
         collect_callable_edges(handler.body, std::nullopt, 0, std::move(env),
-                               nullptr, source, graph, edge_lines);
+                               nullptr, source, graph, edge_lines,
+                               handler.source_file);
       }
     }
     if (p_.main) {
       graph["main"];
       collect_callable_edges(p_.main->body, std::nullopt, 0, {}, nullptr,
-                             "main", graph, edge_lines);
+                             "main", graph, edge_lines, p_.main->source_file);
     }
     for (const auto& test : p_.tests) {
       string source = "test:" + test.name;
       graph[source];
       collect_callable_edges(test.body, std::nullopt, 0, {}, nullptr, source,
-                             graph, edge_lines);
+                             graph, edge_lines, test.source_file);
     }
     for (const auto& benchmark : p_.benchmarks) {
       string source = "bench:" + benchmark.name;
       graph[source];
       collect_callable_edges(benchmark.body, std::nullopt, 0, {}, nullptr,
-                             source, graph, edge_lines);
+                             source, graph, edge_lines, benchmark.source_file);
     }
 
     std::sort(p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
@@ -3758,7 +3765,9 @@ class Checker {
                 if (left.line != right.line) return left.line < right.line;
                 if (left.target != right.target)
                   return left.target < right.target;
-                return left.argument_types < right.argument_types;
+                if (left.argument_types != right.argument_types)
+                  return left.argument_types < right.argument_types;
+                return left.source_file < right.source_file;
               });
 
     std::map<string,int> state;
@@ -13438,6 +13447,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.kind = "call";
     fact.name = call.target;
     fact.line = call.line;
+    fact.source_file = call.source_file;
     fact.provenance.push_back(fact.semantic_identity);
     fact.explanations.push_back(
         "call target was resolved statically by the Moss checker");
@@ -13510,7 +13520,8 @@ static int semantic_target_rank(const SemanticTargetFact& fact) {
 }
 
 static const SemanticTargetFact* resolve_semantic_target(
-    const vector<SemanticTargetFact>& targets, string selector) {
+    const vector<SemanticTargetFact>& targets, string selector,
+    const string& source_file = {}) {
   selector = trim(std::move(selector));
   if (starts_with(selector, "line:")) selector = selector.substr(5);
   bool numeric = !selector.empty() &&
@@ -13522,6 +13533,8 @@ static const SemanticTargetFact* resolve_semantic_target(
     const SemanticTargetFact* best = nullptr;
     for (const auto& target : targets) {
       if (target.line != line) continue;
+      if (!source_file.empty() && !target.source_file.empty() &&
+          target.source_file != source_file) continue;
       if (!best || semantic_target_rank(target) < semantic_target_rank(*best) ||
           (semantic_target_rank(target) == semantic_target_rank(*best) &&
            target.semantic_identity < best->semantic_identity))
@@ -13535,6 +13548,16 @@ static const SemanticTargetFact* resolve_semantic_target(
                                   target.durable_identity == selector;
                             });
   if (exact != targets.end()) return &*exact;
+  if (!source_file.empty()) {
+    auto scoped = std::find_if(
+        targets.begin(), targets.end(), [&](const SemanticTargetFact& target) {
+          return (target.source_file.empty() ||
+                  target.source_file == source_file) &&
+              (target.context == selector || target.name == selector ||
+               target.kind + ":" + target.name == selector);
+        });
+    if (scoped != targets.end()) return &*scoped;
+  }
   auto named = std::find_if(targets.begin(), targets.end(),
                             [&](const SemanticTargetFact& target) {
                               return target.context == selector ||
@@ -14007,7 +14030,9 @@ static void write_calls_result(std::ostream& out, const Program& program,
     out << "{\"target\": ";
     write_debug_json_string(out, calls[index]->target);
     out << ", \"line\": " << calls[index]->line
-        << ", \"argument_types\": ";
+        << ", \"source_file\": ";
+    write_debug_json_string(out, calls[index]->source_file);
+    out << ", \"argument_types\": ";
     write_agent_string_array(out, calls[index]->argument_types);
     out << "}";
   }
@@ -14171,7 +14196,8 @@ static bool write_semantic_query_json(
     const string& source_file, const Program& program,
     const OptimizationPlan& plan, const vector<Warning>& warnings) {
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
-  const SemanticTargetFact* target = resolve_semantic_target(targets, selector);
+  const SemanticTargetFact* target = resolve_semantic_target(
+      targets, selector, source_file);
   if (!target) {
     write_structured_error(
         out, command, "QUERY_TARGET_NOT_FOUND",
@@ -15106,6 +15132,39 @@ static CompiledProjectUnit analyze_project_sources(
   }
 }
 
+static CompiledProjectUnit analyze_project_texts(
+    const ProjectManifest& manifest,
+    const vector<std::pair<std::filesystem::path, string>>& files,
+    bool optimized, bool debug_build, ProgramGenerationMode mode) {
+  try {
+    Program program;
+    for (const auto& entry : files) {
+      const auto& source = entry.first;
+      std::istringstream input(entry.second);
+      Program parsed = Parser(lex_lines(input, source.string())).parse();
+      assign_project_declaration_identities(
+          parsed, project_relative_path(manifest, source));
+      merge_project_program(program, std::move(parsed), source.string());
+    }
+    Checker checker(program);
+    checker.run();
+    vector<Warning> warnings = checker.warnings();
+    FunctionalOptimizer(program).run(optimized);
+    OptimizationPlan plan = BackendOptimizer(program).run(optimized);
+    string rust = Generator(program, plan, true, debug_build, mode).generate();
+    return {std::move(program), std::move(plan), std::move(warnings),
+            std::move(rust)};
+  } catch (const CompileError& error) {
+    throw ProjectError(
+        error.code.empty() ? diagnostic_code_for_message(error.what())
+                           : error.code,
+        error.what(), error.source_file.empty()
+            ? (files.empty() ? string() : files.front().first.string())
+            : error.source_file,
+        error.line);
+  }
+}
+
 static CompiledProjectUnit analyze_project_source(
     const ProjectManifest& manifest, const std::filesystem::path& source,
     bool optimized, bool debug_build, ProgramGenerationMode mode,
@@ -15353,14 +15412,23 @@ static void write_impact_unit_json(std::ostream& out,
   out << "}";
 }
 
+static bool path_within(const std::filesystem::path& path,
+                        const std::filesystem::path& root);
+static vector<std::filesystem::path> project_declaration_sources(
+    const ProjectManifest& manifest, const string& directory_name);
+
 static int run_project_impact(const ProjectManifest& manifest,
                               const std::filesystem::path& source,
                               const string& selector, bool json) {
   vector<std::filesystem::path> sources;
-  std::error_code relative_error;
-  auto relative = std::filesystem::relative(source, manifest.root / manifest.source,
-                                             relative_error);
-  if (!relative_error && relative.native().find("..") != 0)
+  auto source_root = manifest.root / manifest.source;
+  auto tests_root = manifest.root / "tests";
+  auto benches_root = manifest.root / "benches";
+  if (path_within(source, tests_root))
+    sources = project_declaration_sources(manifest, "tests");
+  else if (path_within(source, benches_root))
+    sources = project_declaration_sources(manifest, "benches");
+  else if (path_within(source, source_root))
     sources = project_source_files(manifest);
   else
     sources = {source};
@@ -15572,6 +15640,60 @@ static vector<std::filesystem::path> project_declaration_sources(
   std::sort(sources.begin(), sources.end());
   sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
   return sources;
+}
+
+// The semantic oracle and semantic edits use the same logical source universe
+// as project build/test/bench.  Physical paths remain selectors and are never
+// replaced by a synthetic concatenated source file.
+struct SourceCompilationContext {
+  bool project = false;
+  ProjectManifest manifest;
+  std::filesystem::path requested_source;
+  vector<std::filesystem::path> sources;
+  ProgramGenerationMode mode = ProgramGenerationMode::Application;
+};
+
+static bool path_within(const std::filesystem::path& path,
+                        const std::filesystem::path& root) {
+  std::error_code error;
+  auto relative = std::filesystem::relative(path, root, error);
+  if (error || relative.empty()) return false;
+  auto text = relative.generic_string();
+  return text != ".." && !starts_with(text, "../");
+}
+
+static SourceCompilationContext analyze_source_context(
+    const std::filesystem::path& requested) {
+  SourceCompilationContext context;
+  context.requested_source = std::filesystem::absolute(requested)
+                                 .lexically_normal();
+  auto root = find_project_root(context.requested_source);
+  if (!root) {
+    context.sources = {context.requested_source};
+    return context;
+  }
+  context.manifest = load_project_manifest(*root);
+  auto source_root = context.manifest.root / context.manifest.source;
+  auto tests_root = context.manifest.root / "tests";
+  auto benches_root = context.manifest.root / "benches";
+  if (path_within(context.requested_source, tests_root)) {
+    context.project = true;
+    context.mode = ProgramGenerationMode::Tests;
+    context.sources = project_declaration_sources(context.manifest, "tests");
+  } else if (path_within(context.requested_source, benches_root)) {
+    context.project = true;
+    context.mode = ProgramGenerationMode::Benchmarks;
+    context.sources = project_declaration_sources(context.manifest, "benches");
+  } else if (path_within(context.requested_source, source_root)) {
+    context.project = true;
+    context.mode = ProgramGenerationMode::Application;
+    context.sources = project_source_files(context.manifest);
+  } else {
+    // A file near a project but outside a participating target remains a
+    // standalone source, matching the pre-project query/edit behavior.
+    context.sources = {context.requested_source};
+  }
+  return context;
 }
 
 static int hex_digit_value(char value) {
@@ -17088,18 +17210,39 @@ static int run_semantic_edit(
       ? project_source_file(manifest) : requested_source;
   if (source.is_relative()) source = manifest.root / source;
   source = std::filesystem::absolute(source).lexically_normal();
-  CompiledProjectUnit unit = analyze_project_source(
-      manifest, source, true, false, ProgramGenerationMode::Application);
+  SourceCompilationContext context = analyze_source_context(source);
+  if (!context.project) {
+    context.manifest = manifest;
+    context.sources = {source};
+  }
+  CompiledProjectUnit unit = analyze_project_sources(
+      context.manifest, context.sources, true, false, context.mode);
   vector<SemanticTargetFact> facts = semantic_target_facts(
       unit.program, unit.plan);
   const SemanticTargetFact* target = resolve_edit_target(facts, selector);
-  string original = read_text_file(source, "EDIT_SOURCE_NOT_FOUND");
-  vector<string> lines = split_source_lines(original);
+  std::filesystem::path target_source = target->source_file.empty()
+      ? source : std::filesystem::path(target->source_file);
+  target_source = std::filesystem::absolute(target_source).lexically_normal();
+  std::map<std::filesystem::path, vector<string>> edited_lines;
+  std::map<std::filesystem::path, string> original_text;
+  for (const auto& file : context.sources) {
+    auto normalized = std::filesystem::absolute(file).lexically_normal();
+    original_text[normalized] = read_text_file(normalized,
+                                               "EDIT_SOURCE_NOT_FOUND");
+    edited_lines[normalized] = split_source_lines(original_text[normalized]);
+  }
+  auto target_it = edited_lines.find(target_source);
+  if (target_it == edited_lines.end())
+    throw ProjectError("EDIT_TARGET_STALE",
+                       "semantic target source is not in the logical project context",
+                       target_source.string());
+  vector<string>& lines = target_it->second;
   if (target->line <= 0 || static_cast<size_t>(target->line) > lines.size())
     throw ProjectError("EDIT_TARGET_STALE",
                        "semantic target no longer has an exact source range",
                        source.string());
   string resulting_selector = target->durable_identity;
+  std::map<std::filesystem::path, std::set<int>> changed_line_numbers;
   if (operation == "rename") {
     if (operands.size() != 1 || !plain_identifier(operands[0]))
       throw ProjectError("EDIT_ARGUMENT_INVALID",
@@ -17110,19 +17253,40 @@ static int run_semantic_edit(
           "rename currently supports exact function entities only");
     string old_name = target->name;
     string new_name = operands[0];
-    std::set<int> edit_lines{target->line};
+    changed_line_numbers[target_source].insert(target->line);
     for (const auto& edge : unit.program.semantic_call_edges)
-      if (edge.target == target->context) edit_lines.insert(edge.line);
-    size_t replacements = 0;
-    for (int line_number : edit_lines) {
-      if (line_number <= 0 || static_cast<size_t>(line_number) > lines.size())
-        throw ProjectError("EDIT_TARGET_STALE",
-                           "a resolved reference has no exact source range",
-                           source.string(), line_number);
-      replacements += replace_identifier_on_line(
-          lines[static_cast<size_t>(line_number - 1)], old_name, new_name);
+      if (edge.target == target->context && !edge.source_file.empty())
+        changed_line_numbers[std::filesystem::absolute(edge.source_file)
+                                 .lexically_normal()].insert(edge.line);
+    for (const auto& pipeline : unit.program.functional_pipelines) {
+      bool references_target = std::any_of(
+          pipeline.nodes.begin(), pipeline.nodes.end(), [&](const FunctionalNode& node) {
+            return node.callable_identity == target->context;
+          });
+      if (references_target && !pipeline.source_file.empty())
+        changed_line_numbers[std::filesystem::absolute(pipeline.source_file)
+                                 .lexically_normal()].insert(pipeline.line);
     }
-    if (replacements != edit_lines.size())
+    size_t replacements = 0;
+    size_t expected = 0;
+    for (const auto& file_lines : changed_line_numbers) {
+      auto file_it = edited_lines.find(file_lines.first);
+      if (file_it == edited_lines.end())
+        throw ProjectError("EDIT_TARGET_STALE",
+                           "a resolved reference is outside the logical project context",
+                           file_lines.first.string());
+      expected += file_lines.second.size();
+      for (int line_number : file_lines.second) {
+        if (line_number <= 0 || static_cast<size_t>(line_number) > file_it->second.size())
+          throw ProjectError("EDIT_TARGET_STALE",
+                             "a resolved reference has no exact source range",
+                             file_lines.first.string(), line_number);
+        replacements += replace_identifier_on_line(
+            file_it->second[static_cast<size_t>(line_number - 1)], old_name,
+            new_name);
+      }
+    }
+    if (replacements != expected)
       throw ProjectError(
           "EDIT_TARGET_AMBIGUOUS",
           "rename could not map every semantic reference to one exact token",
@@ -17148,6 +17312,7 @@ static int run_semantic_edit(
         ? string() : "  " + trim(edit_line.substr(comment));
     edit_line = rtrim(edit_line.substr(0, equals + 1)) + " " + operands[0] +
         suffix;
+    changed_line_numbers[target_source].insert(target->line);
   } else if (operation == "change-argument") {
     if (operands.size() != 2)
       throw ProjectError(
@@ -17173,22 +17338,39 @@ static int run_semantic_edit(
           "EDIT_TARGET_AMBIGUOUS",
           "call source line does not contain one exact target invocation",
           source.string(), target->line);
+    changed_line_numbers[target_source].insert(target->line);
   } else {
     throw ProjectError("EDIT_OPERATION_INVALID",
                        "unknown semantic edit operation '" + operation + "'");
   }
 
-  string formatted = canonical_format_moss(join_source_lines(lines));
-  validate_formatted_source(formatted, source);
-  std::ofstream output(source, std::ios::binary);
-  if (!output)
-    throw ProjectError("EDIT_WRITE_ERROR", "cannot write edited Moss source",
-                       source.string());
-  output << formatted;
-  output.close();
-
-  CompiledProjectUnit updated = analyze_project_source(
-      manifest, source, true, false, ProgramGenerationMode::Application);
+  std::map<std::filesystem::path, string> candidate_text;
+  vector<std::filesystem::path> changed_files;
+  for (auto& entry : edited_lines) {
+    string candidate = original_text[entry.first];
+    if (changed_line_numbers.count(entry.first))
+      candidate = canonical_format_moss(join_source_lines(entry.second));
+    candidate_text[entry.first] = candidate;
+    if (candidate != original_text[entry.first]) changed_files.push_back(entry.first);
+  }
+  if (changed_files.empty())
+    throw ProjectError("EDIT_TARGET_STALE", "semantic edit made no source change",
+                       target_source.string(), target->line);
+  vector<std::pair<std::filesystem::path, string>> candidate_files;
+  for (const auto& file : context.sources) {
+    auto normalized = std::filesystem::absolute(file).lexically_normal();
+    candidate_files.push_back({normalized, candidate_text[normalized]});
+  }
+  // Validate the complete logical target before touching any physical file.
+  CompiledProjectUnit updated = analyze_project_texts(
+      context.manifest, candidate_files, true, false, context.mode);
+  for (const auto& file : changed_files) {
+    std::ofstream output(file, std::ios::binary);
+    if (!output)
+      throw ProjectError("EDIT_WRITE_ERROR", "cannot write edited Moss source",
+                         file.string());
+    output << candidate_text[file];
+  }
   vector<SemanticTargetFact> updated_facts = semantic_target_facts(
       updated.program, updated.plan);
   const SemanticTargetFact* resulting = nullptr;
@@ -17203,14 +17385,27 @@ static int run_semantic_edit(
   std::cout << ", \"target\": ";
   write_debug_json_string(std::cout, selector);
   std::cout << ", \"changed_files\": [";
-  write_debug_json_string(std::cout, source.string());
-  std::cout << "], \"changed_ranges\": [{\"source_file\": ";
-  write_debug_json_string(std::cout, source.string());
-  std::cout << ", \"start_line\": " << target->line
-            << ", \"end_line\": " << target->line << "}]"
-            << ", \"resulting_target\": ";
+  for (size_t index = 0; index < changed_files.size(); ++index) {
+    if (index) std::cout << ", ";
+    write_debug_json_string(std::cout, changed_files[index].string());
+  }
+  std::cout << "], \"changed_ranges\": [";
+  bool first_range = true;
+  for (const auto& file_lines : changed_line_numbers) {
+    if (std::find(changed_files.begin(), changed_files.end(),
+                  file_lines.first) == changed_files.end()) continue;
+    for (int line : file_lines.second) {
+      if (!first_range) std::cout << ", ";
+      first_range = false;
+      std::cout << "{\"source_file\": ";
+      write_debug_json_string(std::cout, file_lines.first.string());
+      std::cout << ", \"start_line\": " << line
+                << ", \"end_line\": " << line << "}";
+    }
+  }
+  std::cout << "], \"resulting_target\": ";
   if (resulting) write_semantic_target_json(std::cout, *resulting,
-                                             source.string());
+                                             target_source.string());
   else std::cout << "null";
   std::cout << ", \"formatted\": true}\n}\n";
   return 0;
@@ -17645,35 +17840,67 @@ int main(int argc, char** argv) {
       }
     }
 
-    std::ifstream f(input);
-    if (!f) {
-      if (json_output)
-        moss::write_structured_error(
-            std::cout, active_command, "SOURCE_NOT_FOUND",
-            "cannot open Moss source '" + input + "'", input);
-      else
-        std::cerr << "moss: cannot open " << input << "\n";
-      return 1;
+    moss::OptimizationPlan plan;
+    vector<moss::Warning> warnings;
+    bool project_query = false;
+    if (!query_command.empty()) {
+      try {
+        auto context = moss::analyze_source_context(input);
+        if (context.project) {
+          auto unit = moss::analyze_project_sources(
+              context.manifest, context.sources, optimize_shared_memory,
+              debug_build, context.mode);
+          active_program = std::move(unit.program);
+          plan = std::move(unit.plan);
+          warnings = std::move(unit.warnings);
+          project_query = true;
+        }
+      } catch (const moss::ProjectError& error) {
+        if (json_output) moss::write_project_error_json(
+            std::cout, query_command, error);
+        else std::cerr << (error.source_file.empty() ? diagnostic_source
+                                                     : error.source_file)
+                          << (error.line > 0 ? ":" + std::to_string(error.line)
+                                             : "")
+                          << ": error: " << error.what() << "\n";
+        return 1;
+      }
     }
-    auto lines = moss::lex_lines(f);
-    moss::Parser parser(std::move(lines));
-    active_program = parser.parse();
+    if (!project_query) {
+      std::ifstream f(input);
+      if (!f) {
+        if (json_output)
+          moss::write_structured_error(
+              std::cout, active_command, "SOURCE_NOT_FOUND",
+              "cannot open Moss source '" + input + "'", input);
+        else
+          std::cerr << "moss: cannot open " << input << "\n";
+        return 1;
+      }
+      auto lines = moss::lex_lines(
+          f, std::filesystem::absolute(input).lexically_normal().string());
+      moss::Parser parser(std::move(lines));
+      active_program = parser.parse();
+      auto& standalone_program = *active_program;
+      moss::Checker checker(standalone_program);
+      checker.run();
+      warnings = checker.warnings();
+      if (!json_output) {
+        for (const auto& warning : warnings)
+          std::cerr << diagnostic_source << ":" << warning.line
+                    << ": warning: " << warning.message << "\n";
+      }
+      moss::FunctionalOptimizer(standalone_program).run(optimize_shared_memory);
+      plan = moss::BackendOptimizer(standalone_program).run(
+          optimize_shared_memory, requested_clusters);
+    }
     auto& program = *active_program;
-    moss::Checker checker(program);
-    checker.run();
-    if (!json_output) {
-      for (const auto& warning : checker.warnings())
-        std::cerr << diagnostic_source << ":" << warning.line
-                  << ": warning: " << warning.message << "\n";
-    }
-
-    moss::FunctionalOptimizer(program).run(optimize_shared_memory);
-    if (dump_functional || explain_fusion)
+    if (!project_query && (dump_functional || explain_fusion))
       moss::dump_functional_ir(std::cout, program,
                                explain_fusion && !dump_functional);
-
-    auto plan = moss::BackendOptimizer(program).run(
-        optimize_shared_memory, requested_clusters);
+    if (project_query && (dump_functional || explain_fusion))
+      moss::dump_functional_ir(std::cout, program,
+                               explain_fusion && !dump_functional);
 
     // A successful project check seeds the semantic snapshot used by the
     // later impact/affected-test commands.  Query and standalone compilation
@@ -17707,7 +17934,7 @@ int main(int argc, char** argv) {
       return moss::write_semantic_query_json(
                  std::cout, query_command, query_target,
                  std::filesystem::absolute(input).lexically_normal().string(),
-                 program, plan, checker.warnings())
+                 program, plan, warnings)
           ? 0 : 1;
 
     if (check_only) {
@@ -17715,7 +17942,7 @@ int main(int argc, char** argv) {
         moss::write_check_json(
             std::cout,
             std::filesystem::absolute(input).lexically_normal().string(),
-            checker.warnings(), &program);
+            warnings, &program);
       else
         std::cout << input << ": ok\n";
       return 0;

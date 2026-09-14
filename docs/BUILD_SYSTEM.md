@@ -136,6 +136,11 @@ are no implicit directory namespaces; duplicate top-level names are ordinary
 Moss duplicate-symbol errors. Physical source paths remain attached to
 diagnostics, `.mossmap` entries, tests, and benchmarks.
 
+The compiler oracle follows this same target composition: semantic queries and
+edits against a `src` file analyze all application sources, while queries against
+`tests` or `benches` analyze the corresponding source plus that target directory.
+This temporary linkage is not an import/module system.
+
 For example:
 
 ```text

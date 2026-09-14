@@ -614,3 +614,11 @@ global compilation unit with deterministic path discovery, order-independent
 declaration resolution, duplicate-symbol diagnostics, and original physical
 source provenance in diagnostics, semantic queries, generated maps, tests, and
 benchmarks. Native artifact fingerprints include the complete source set.
+
+Semantic query/edit context hardening: Phase 6A queries and edits now consume the
+same temporary uber-module source sets as project build/test/bench. `src` selectors
+analyze all application files, test selectors use `src + tests`, and benchmark
+selectors use `src + benches`; standalone files remain single-file. Cross-file
+renames are transactional within the selected context, and expression/argument edits
+are validated against the complete logical program before writing. Physical source
+paths remain in query results and diagnostics.

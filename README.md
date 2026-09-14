@@ -86,6 +86,10 @@ combines `src/**/*.moss` with `tests/**/*.moss`, and `bench` combines `src/**/*.
 with `benches/**/*.moss`. Paths remain attached to diagnostics and provenance;
 directories do not create namespaces.
 
+Semantic queries and edits use that same temporary project context. A `src` source
+queries all application files, a `tests` source queries `src + tests`, and a `benches`
+source queries `src + benches`; standalone files outside a project remain single-file.
+
 Automation and coding agents can discover the structured protocol first with
 `moss agent bootstrap --json`.
 

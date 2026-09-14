@@ -120,6 +120,9 @@ struct SemanticCallEdge {
   string target;
   int line = 0;
   vector<string> argument_types;
+  // Physical source provenance for cross-file project tooling.  The callable
+  // context above remains the semantic identity used by the checker.
+  string source_file;
 };
 
 struct SemanticAwaitSite {

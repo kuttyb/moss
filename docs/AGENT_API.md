@@ -117,6 +117,16 @@ normal compiler pipeline and semantic identities. Incremental work is available 
 tests whose semantic dependency cone reaches a changed unit and reports skipped tests
 with reasons. A missing snapshot is handled conservatively by selecting all tests.
 
+### Project semantic context
+
+When `--source` names a file inside a Moss project, every semantic query and edit
+uses the same temporary uber-module as the corresponding project target. A source
+under `src/` sees all `src/**/*.moss`; a source under `tests/` sees `src` plus
+`tests`; and a source under `benches/` sees `src` plus `benches`. The requested
+physical path still disambiguates the result and is returned in `source.file`.
+Files outside a project retain standalone single-file behavior. There is no implicit
+module or directory namespace.
+
 ## Durable identities, hashes, and cost facts
 
 Query results include an `entity-v1` durable semantic identity, an implementation hash,
@@ -151,6 +161,13 @@ unsupported targets are structured errors; edits are formatted and rechecked bef
 they are written. It never edits generated Rust. Diagnostics always carry `fixes` and
 `legal_alternatives` arrays. A fix is present only for a high-confidence mechanical
 action; alternatives describe choices without silently selecting program intent.
+
+Renames are transactional. In an application (`src`) context they update the
+definition and statically resolved references in all participating `src` files. A
+rename selected from a test file uses `src + tests`, and one selected from a benchmark
+file uses `src + benches`; only files in that logical context are rewritten. Expression
+and argument edits change one physical file, then recheck the complete context before
+committing any file, so a cross-file type error leaves the project untouched.
 
 ## Minimal AGENTS.md onboarding
 

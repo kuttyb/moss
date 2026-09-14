@@ -129,6 +129,13 @@ system, or imports. Each target is a temporary uber-module: `build` uses
 global namespace; directory names do not create namespaces. Original physical
 paths remain in diagnostics and tooling metadata.
 
+Semantic queries and edits use the same logical source set as the selected file:
+queries from `src` use all application files, queries from `tests` use `src + tests`,
+and queries from `benches` use `src + benches`. A rename only rewrites files in that
+context; expression and argument edits are rechecked across the complete context
+before any file is committed. A standalone `.moss` file outside a project remains a
+single-file compilation unit.
+
 ## Everyday workflow
 
 From anywhere inside the project:
