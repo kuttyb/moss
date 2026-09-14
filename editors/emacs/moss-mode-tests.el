@@ -3,6 +3,26 @@
 (require 'ert)
 (require 'moss-mode)
 
+(defun moss-test--write-debug-map (filename source generated exact-line)
+  "Write a minimal valid map to FILENAME for SOURCE and GENERATED."
+  (let* ((mappings
+          (vector `((moss_line . ,exact-line)
+                    (generated_rust_line . 11))))
+         (entry
+          `((semantic_identity . "main@1")
+            (construct_kind . "main")
+            (source . ((file . ,source)
+                       (start_line . 1) (end_line . 3)))
+            (generated . ((file . ,generated)
+                          (start_line . 10) (end_line . 12)))
+            (line_mappings . ,mappings)))
+         (document
+          `((format . "moss-debug-map")
+            (version . 1)
+            (entries . ,(vector entry)))))
+    (with-temp-file filename
+      (insert (json-encode document)))))
+
 (ert-deftest moss-mode-auto-mode-association ()
   (with-temp-buffer
     (setq buffer-file-name "/tmp/example.moss")
@@ -100,6 +120,161 @@
       (should (string-match-p
                (regexp-quote "force-frame-pointers\\=yes") command))
       (should (string-match-p "rustc -D warnings" command)))))
+
+(ert-deftest moss-mode-finds-versioned-debian-lldb-dap ()
+  (cl-letf (((symbol-function 'file-directory-p) (lambda (_) t))
+            ((symbol-function 'directory-files)
+             (lambda (&rest _)
+               '("/usr/bin/lldb-dap-18" "/usr/bin/lldb-dap-19")))
+            ((symbol-function 'file-executable-p) (lambda (_) t)))
+    (should (equal "/usr/bin/lldb-dap-19"
+                   (moss--versioned-executable "lldb-dap")))))
+
+(ert-deftest moss-mode-reports-nonexecutable-lldb-dap ()
+  (let ((moss-lldb-dap-command "/tmp/moss-nonexecutable-lldb-dap"))
+    (cl-letf (((symbol-function 'file-executable-p) (lambda (_) nil)))
+      (let ((error-data (should-error (moss--lldb-dap) :type 'user-error)))
+        (should
+         (string-match-p "lldb-dap is not executable"
+                         (error-message-string error-data)))))))
+
+(ert-deftest moss-mode-debug-emits-validated-dape-configuration ()
+  (let* ((source (make-temp-file "moss-dape-" nil ".moss"))
+         (generated (make-temp-file "moss-dape-" nil ".rs"))
+         (map-file (make-temp-file "moss-dape-" nil ".mossmap"))
+         (executable (make-temp-file "moss-dape-program-"))
+         (script (make-temp-file "moss-dape-helper-" nil ".py"))
+         (adapter "/usr/bin/lldb-dap-19")
+         (root (file-name-directory source))
+         (artifacts `((executable . ,executable)
+                      (map . ,map-file)
+                      (root . ,root)))
+         captured-config)
+    (unwind-protect
+        (progn
+          (with-temp-file source
+            (insert "fn main():\n  echo 1\n"))
+          (set-file-modes executable #o700)
+          (moss-test--write-debug-map map-file source generated 2)
+          (with-current-buffer (find-file-noselect source)
+            (moss-mode)
+            (goto-char (point-min))
+            (forward-line 1)
+            (setq moss--breakpoint-overlays
+                  (list (make-overlay (line-beginning-position)
+                                      (line-beginning-position 2))))
+            (cl-letf (((symbol-function 'require)
+                       (lambda (feature &optional _filename _noerror)
+                         (eq feature 'dape)))
+                      ((symbol-function 'moss--artifact-alist)
+                         (lambda (_source) artifacts))
+                        ((symbol-function 'moss--lldb-script)
+                         (lambda () script))
+                        ((symbol-function 'moss--lldb-dap)
+                         (lambda () adapter))
+                        ((symbol-function 'add-hook)
+                         (lambda (&rest _arguments) nil))
+                        ((symbol-function 'dape)
+                         (lambda (config &optional _skip-compile)
+                           (setq captured-config config))))
+              (moss-debug)))
+          (should (equal adapter (plist-get captured-config 'command)))
+          (should (equal root (plist-get captured-config 'command-cwd)))
+          (should (equal "lldb-dap" (plist-get captured-config :type)))
+          (should (equal "launch" (plist-get captured-config :request)))
+          (should (equal executable (plist-get captured-config :program)))
+          (should (equal root (plist-get captured-config :cwd)))
+          (should
+           (equal
+            (vector (format "command script import %S" script)
+                    (format "moss-map-load %S" map-file))
+            (plist-get captured-config :initCommands)))
+          (should
+           (equal
+            (vector (format "moss-break %S" (format "%s:2" source)))
+            (plist-get captured-config :preRunCommands)))
+          (should-not (plist-get captured-config :stopOnEntry)))
+      (when-let ((buffer (get-file-buffer source)))
+        (kill-buffer buffer))
+      (mapc (lambda (filename)
+              (when (file-exists-p filename) (delete-file filename)))
+            (list source generated map-file executable script)))))
+
+(ert-deftest moss-mode-debug-rejects-range-only-breakpoint ()
+  (let* ((source (make-temp-file "moss-dape-inexact-" nil ".moss"))
+         (generated (make-temp-file "moss-dape-inexact-" nil ".rs"))
+         (map-file (make-temp-file "moss-dape-inexact-" nil ".mossmap"))
+         (executable (make-temp-file "moss-dape-inexact-program-"))
+         (script (make-temp-file "moss-dape-inexact-helper-" nil ".py"))
+         (artifacts `((executable . ,executable)
+                      (map . ,map-file)
+                      (root . ,(file-name-directory source)))))
+    (unwind-protect
+        (progn
+          (with-temp-file source
+            (insert "fn main():\n\n  echo 1\n"))
+          (set-file-modes executable #o700)
+          (moss-test--write-debug-map map-file source generated 3)
+          (with-current-buffer (find-file-noselect source)
+            (moss-mode)
+            (goto-char (point-min))
+            (forward-line 1)
+            (setq moss--breakpoint-overlays
+                  (list (make-overlay (line-beginning-position)
+                                      (line-beginning-position 2))))
+            (cl-letf (((symbol-function 'require)
+                       (lambda (feature &optional _filename _noerror)
+                         (eq feature 'dape)))
+                      ((symbol-function 'moss--artifact-alist)
+                         (lambda (_source) artifacts))
+                        ((symbol-function 'moss--lldb-script)
+                         (lambda () script))
+                        ((symbol-function 'moss--lldb-dap)
+                         (lambda () "/usr/bin/lldb-dap-19")))
+                (let ((error-data (should-error
+                                   (moss-debug)
+                                   :type 'user-error)))
+                  (should
+                   (string-match-p
+                    "breakpoint has no exact generated mapping"
+                    (error-message-string error-data)))))))
+      (when-let ((buffer (get-file-buffer source)))
+        (kill-buffer buffer))
+      (mapc (lambda (filename)
+              (when (file-exists-p filename) (delete-file filename)))
+            (list source generated map-file executable script)))))
+
+(ert-deftest moss-mode-debug-distinguishes-missing-artifacts ()
+  (let* ((source (make-temp-file "moss-dape-missing-" nil ".moss"))
+         (executable (concat source ".missing-executable"))
+         (map-file (concat source ".missing-map"))
+         (artifacts `((executable . ,executable)
+                      (map . ,map-file)
+                      (root . ,(file-name-directory source)))))
+    (unwind-protect
+        (progn
+          (with-temp-file source (insert "fn main():\n  echo 1\n"))
+          (with-current-buffer (find-file-noselect source)
+            (moss-mode)
+            (cl-letf (((symbol-function 'require)
+                       (lambda (feature &optional _filename _noerror)
+                         (eq feature 'dape)))
+                      ((symbol-function 'moss--artifact-alist)
+                       (lambda (_source) artifacts)))
+              (let ((error-data (should-error (moss-debug) :type 'user-error)))
+                (should
+                 (string-match-p "debug executable not found"
+                                 (error-message-string error-data))))
+              (with-temp-file executable (insert "debug fixture"))
+              (set-file-modes executable #o700)
+              (let ((error-data (should-error (moss-debug) :type 'user-error)))
+                (should
+                 (string-match-p "debug map not found"
+                                 (error-message-string error-data)))))))
+      (when-let ((buffer (get-file-buffer source)))
+        (kill-buffer buffer))
+      (dolist (filename (list source executable map-file))
+        (when (file-exists-p filename) (delete-file filename))))))
 
 (ert-deftest moss-mode-artifacts-are-derived-not-guessed-by-user ()
   (let ((default-directory (moss--repo-root default-directory)))

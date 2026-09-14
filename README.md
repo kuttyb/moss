@@ -49,8 +49,10 @@ rustc build/checkout.rs -o build/checkout
 ./build/checkout
 ```
 
-Compilation also writes `build/checkout.mossmap`. It contains stable Moss identities,
-generated Rust ranges, concrete native symbols, and functional fusion provenance.
+Compilation also writes `build/checkout.mossmap`. It contains deterministic Moss
+source/provenance identities, generated Rust ranges, concrete native symbols, and
+functional fusion provenance. These Phase 5 identities are repeatable for an unchanged
+source layout; durable identity across edits is separate Phase 6 work.
 
 Expected output:
 
@@ -172,7 +174,7 @@ eager program's callback work.
 
 Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
 code generation does not infer a plan again from matching source text. Numeric IR IDs are
-transient compilation handles, while source-derived semantic identities carry
+transient compilation handles, while deterministic source/provenance identities carry
 function/method context, real Moss lines, stage identity, and fusion provenance. Non-Copy
 placeholder identity/projection maps are rejected at Moss level when they would move out
 of the READ-only source, and capture mutation remains forbidden even when hidden behind

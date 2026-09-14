@@ -62,7 +62,11 @@ class MossDebugMap:
         return _path(value) if value else ""
 
     def _entry_locations(
-        self, entry: dict[str, Any], source_file: str, line: int
+        self,
+        entry: dict[str, Any],
+        source_file: str,
+        line: int,
+        exact_only: bool,
     ) -> Iterable[MossLocation]:
         source = entry.get("source", {})
         if _path(str(source.get("file", ""))) != source_file:
@@ -71,6 +75,8 @@ class MossDebugMap:
         exact = [mapping for mapping in mappings if mapping.get("moss_line") == line]
         if exact:
             generated_lines = [int(mapping["generated_rust_line"]) for mapping in exact]
+        elif exact_only:
+            return
         elif int(source.get("start_line", 0)) <= line <= int(
             source.get("end_line", 0)
         ):
@@ -92,12 +98,22 @@ class MossDebugMap:
                     provenance=tuple(str(item) for item in entry.get("provenance", [])),
                 )
 
-    def resolve(self, source_file: str, line: int) -> list[MossLocation]:
+    def resolve(
+        self, source_file: str, line: int, exact_only: bool = False
+    ) -> list[MossLocation]:
+        """Resolve a Moss line, optionally requiring an exact line mapping.
+
+        Range fallback is useful for source navigation and symbol lookup.  It
+        must never be used for a debugger breakpoint because doing so would
+        claim source precision that the compiler did not emit.
+        """
         wanted = _path(source_file)
         locations = [
             location
             for entry in self.entries
-            for location in self._entry_locations(entry, wanted, line)
+            for location in self._entry_locations(
+                entry, wanted, line, exact_only
+            )
         ]
         kind_order = {
             "functional_node": 0,
@@ -126,6 +142,10 @@ class MossDebugMap:
                 unique.append(location)
         return unique
 
+    def resolve_exact(self, source_file: str, line: int) -> list[MossLocation]:
+        """Resolve only compiler-emitted exact Moss-to-generated mappings."""
+        return self.resolve(source_file, line, exact_only=True)
+
     def entry_at(self, source_file: str, line: int) -> Optional[dict[str, Any]]:
         wanted = _path(source_file)
         candidates = []
@@ -140,7 +160,10 @@ class MossDebugMap:
         candidates.sort(key=lambda item: item[:3])
         return candidates[0][3] if candidates else None
 
-    def reverse(self, generated_file: str, line: int) -> list[MossLocation]:
+    def reverse(
+        self, generated_file: str, line: int, exact_only: bool = False
+    ) -> list[MossLocation]:
+        """Reverse a generated line, optionally rejecting range-only origins."""
         wanted = _path(generated_file)
         locations: list[MossLocation] = []
         for entry in self.entries:
@@ -152,11 +175,11 @@ class MossDebugMap:
                 for mapping in entry.get("line_mappings", [])
                 if int(mapping.get("generated_rust_line", 0)) == line
             ]
-            if not mappings and not (
+            if not mappings and (exact_only or not (
                 int(generated.get("start_line", 0))
                 <= line
                 <= int(generated.get("end_line", 0))
-            ):
+            )):
                 continue
             moss_lines = [int(item["moss_line"]) for item in mappings]
             if not moss_lines:
@@ -183,6 +206,10 @@ class MossDebugMap:
         locations.sort(key=lambda item: (item.moss_line, item.semantic_identity))
         return locations
 
+    def reverse_exact(self, generated_file: str, line: int) -> list[MossLocation]:
+        """Return only compiler-emitted exact generated-to-Moss mappings."""
+        return self.reverse(generated_file, line, exact_only=True)
+
 
 _active_map: Optional[MossDebugMap] = None
 
@@ -204,6 +231,8 @@ def moss_map_load(debugger: Any, command: str, result: Any, _internal: Any) -> N
             raise ValueError("usage: moss-map-load PROGRAM.mossmap")
         _active_map = MossDebugMap.load(arguments[0])
         result.AppendMessage(f"loaded Moss debug map: {_active_map.filename}")
+    except FileNotFoundError as error:
+        _lldb_error(result, f"Moss debug map not found: {error.filename}")
     except (OSError, ValueError, json.JSONDecodeError) as error:
         _lldb_error(result, str(error))
 
@@ -214,22 +243,35 @@ def moss_break(debugger: Any, command: str, result: Any, _internal: Any) -> None
         _lldb_error(result, "load a Moss map first with moss-map-load")
         return
     try:
-        location, separator, line_text = command.strip().rpartition(":")
+        arguments = shlex.split(command)
+        if len(arguments) != 1:
+            raise ValueError("usage: moss-break FILE.moss:LINE")
+        location, separator, line_text = arguments[0].rpartition(":")
         if not separator or not location:
             raise ValueError("usage: moss-break FILE.moss:LINE")
         line = int(line_text)
-        matches = _active_map.resolve(location, line)
+        matches = _active_map.resolve_exact(location, line)
         if not matches:
-            raise ValueError(f"no generated location for {location}:{line}")
+            raise ValueError(
+                f"breakpoint has no exact Moss mapping: {location}:{line}"
+            )
         selected = matches[0]
         target = debugger.GetSelectedTarget()
         breakpoint = target.BreakpointCreateByLocation(
             selected.generated_file, selected.generated_line
         )
+        location_count = breakpoint.GetNumLocations()
+        if location_count == 0:
+            raise ValueError(
+                "exact Moss mapping has no native breakpoint location: "
+                f"{location}:{line}"
+            )
         result.AppendMessage(
             f"Moss breakpoint {location}:{line} -> "
             f"{selected.generated_file}:{selected.generated_line} "
-            f"(breakpoint {breakpoint.GetID()}, {selected.semantic_identity})"
+            f"(breakpoint {breakpoint.GetID()}, {location_count} native "
+            f"location{'s' if location_count != 1 else ''}, "
+            f"{selected.semantic_identity})"
         )
         if len(matches) > 1:
             result.AppendMessage(
@@ -247,6 +289,22 @@ def _selected_frame(debugger: Any) -> Any:
     return thread.GetSelectedFrame()
 
 
+def _lldb_file_spec_path(file_spec: Any) -> str:
+    """Return an SBFileSpec path across LLDB Python binding versions.
+
+    Some bindings expose GetPath() as a convenient zero-argument method, while
+    Debian's LLDB 19 binding retains the underlying destination-buffer
+    signature.  GetDirectory()/GetFilename() are stable in both forms.
+    """
+    directory = file_spec.GetDirectory() or ""
+    filename = file_spec.GetFilename() or ""
+    if directory and filename:
+        return os.path.join(str(directory), str(filename))
+    if filename:
+        return str(filename)
+    return str(file_spec)
+
+
 def moss_where(debugger: Any, _command: str, result: Any, _internal: Any) -> None:
     """LLDB command: display the Moss origins for the selected native frame."""
     if _active_map is None:
@@ -255,8 +313,8 @@ def moss_where(debugger: Any, _command: str, result: Any, _internal: Any) -> Non
     frame = _selected_frame(debugger)
     line_entry = frame.GetLineEntry()
     file_spec = line_entry.GetFileSpec()
-    filename = file_spec.GetPath()
-    matches = _active_map.reverse(filename, line_entry.GetLine())
+    filename = _lldb_file_spec_path(file_spec)
+    matches = _active_map.reverse_exact(filename, line_entry.GetLine())
     if not matches:
         result.AppendMessage("selected frame has no Moss provenance")
         return
@@ -280,8 +338,8 @@ def moss_stack(debugger: Any, command: str, result: Any, _internal: Any) -> None
     for index in range(thread.GetNumFrames()):
         frame = thread.GetFrameAtIndex(index)
         line_entry = frame.GetLineEntry()
-        filename = line_entry.GetFileSpec().GetPath()
-        matches = _active_map.reverse(filename, line_entry.GetLine())
+        filename = _lldb_file_spec_path(line_entry.GetFileSpec())
+        matches = _active_map.reverse_exact(filename, line_entry.GetLine())
         if matches:
             match = matches[0]
             result.AppendMessage(
@@ -326,10 +384,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     resolve.add_argument("map")
     resolve.add_argument("source")
     resolve.add_argument("line", type=int)
+    resolve.add_argument(
+        "--exact", action="store_true", help="reject range-only source mappings"
+    )
     reverse = subparsers.add_parser("reverse", help="translate generated Rust to Moss")
     reverse.add_argument("map")
     reverse.add_argument("generated")
     reverse.add_argument("line", type=int)
+    reverse.add_argument(
+        "--exact", action="store_true", help="reject range-only source mappings"
+    )
     symbol = subparsers.add_parser("symbol", help="find the native symbol at Moss source")
     symbol.add_argument("map")
     symbol.add_argument("source")
@@ -337,11 +401,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     arguments = parser.parse_args(argv)
     debug_map = MossDebugMap.load(arguments.map)
     if arguments.command == "resolve":
-        values = debug_map.resolve(arguments.source, arguments.line)
+        values = debug_map.resolve(
+            arguments.source, arguments.line, exact_only=arguments.exact
+        )
         print(json.dumps([_location_json(item) for item in values], indent=2))
         return 0 if values else 1
     if arguments.command == "reverse":
-        values = debug_map.reverse(arguments.generated, arguments.line)
+        values = debug_map.reverse(
+            arguments.generated, arguments.line, exact_only=arguments.exact
+        )
         print(json.dumps([_location_json(item) for item in values], indent=2))
         return 0 if values else 1
     entry = debug_map.entry_at(arguments.source, arguments.line)

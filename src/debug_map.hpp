@@ -8,8 +8,9 @@ namespace moss {
 
 // The .mossmap format is the shared, compiler-owned provenance contract used by
 // editor, debugger, and native-code inspection tools.  Numeric compiler IR IDs
-// are intentionally absent: every identity below is derived from Moss source
-// and semantic context.
+// are intentionally absent: every identity below is derived deterministically
+// from Moss source and semantic context.  These are Phase 5 provenance IDs for
+// one source layout, not the durable cross-edit entity IDs planned for Phase 6.
 struct DebugGeneratedRange {
   std::string file;
   int start_line = 0;

@@ -21,11 +21,22 @@ domain Counter:
     total = total + amount
     reply total
 
+fn step_probe(value: Int) -> Int:
+  first = value + 1
+  second = first + 1
+  return second
+
 fn main():
   meter = Meter(value = 3)
-  echo meter.doubled()
-
+  enabled = true
+  label = "ready"
   values = [1, 2, 3]
+
+  if not enabled:
+    echo label
+
+  echo meter.doubled()
+  step_probe(1)
   echo summarize(values)
 
   counter = spawn Counter()

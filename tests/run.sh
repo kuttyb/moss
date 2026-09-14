@@ -1390,7 +1390,7 @@ for tooling_map in "$tooling_o0_map" "$tooling_opt_map"; do
   grep -F '"construct_kind": "functional_pipeline"' "$tooling_map" >/dev/null ||
     fail "tooling map omitted functional pipeline provenance"
   grep -F '"semantic_identity": "fn:normalize@7"' "$tooling_map" >/dev/null ||
-    fail "tooling map did not retain a stable source-derived function identity"
+    fail "tooling map did not retain a deterministic source/provenance identity"
   grep -F '"start_line": 7' "$tooling_map" >/dev/null ||
     fail "tooling map omitted real Moss source lines"
   if grep -Eq 'transient_id|"ir_id"|"pipeline_id"' "$tooling_map"; then
@@ -1424,7 +1424,9 @@ if command -v python3 >/dev/null 2>&1; then
   python3 tests/tooling/check_debug_map.py \
     "$tooling_o0_map" "$tooling_opt_map" \
     "$test_build/phase5_tooling_debug.mossmap" \
-    tests/phase5_tooling.moss
+    tests/phase5_tooling.moss \
+    "$test_build/phase45_shared_traversal_optimized.mossmap" \
+    tests/phase45_shared_traversal.moss
   python3 tools/moss_lldb.py resolve \
     "$test_build/phase5_tooling_debug.mossmap" \
     tests/phase5_tooling.moss 8 >"$test_build/phase5_resolve.json"
@@ -1487,23 +1489,83 @@ else
   echo 'skipping optional Moss disassembly test (objdump or nm not found)'
 fi
 
-if command -v lldb >/dev/null 2>&1 && command -v lldb-dap >/dev/null 2>&1; then
-  lldb --batch \
+tooling_lldb_dap=""
+if command -v lldb-dap >/dev/null 2>&1; then
+  tooling_lldb_dap=$(command -v lldb-dap)
+else
+  tooling_lldb_dap_version=-1
+  for tooling_lldb_dap_candidate in /usr/bin/lldb-dap-*; do
+    if [ -x "$tooling_lldb_dap_candidate" ]; then
+      tooling_lldb_dap_candidate_version=${tooling_lldb_dap_candidate##*-}
+      case "$tooling_lldb_dap_candidate_version" in
+        ''|*[!0-9]*) continue ;;
+      esac
+      if [ "$tooling_lldb_dap_candidate_version" -gt "$tooling_lldb_dap_version" ]; then
+        tooling_lldb_dap=$tooling_lldb_dap_candidate
+        tooling_lldb_dap_version=$tooling_lldb_dap_candidate_version
+      fi
+    fi
+  done
+fi
+
+tooling_process_tracing_denied() {
+  grep -E \
+    'Connection shut down by remote side while waiting for reply to initial handshake packet|Operation not permitted|ptrace' \
+    "$@" >/dev/null
+}
+
+if command -v lldb >/dev/null 2>&1; then
+  if lldb --batch \
     -o "command script import tools/moss_lldb.py" \
     -o "target create $test_build/phase5_tooling_debug" \
     -o "moss-map-load $test_build/phase5_tooling_debug.mossmap" \
     -o "moss-break $(pwd)/tests/phase5_tooling.moss:8" \
-    -o run -o "frame variable value" -o moss-where \
+    -o run -o "frame variable value" -o moss-where -o moss-stack \
+    -o "moss-stack --all" \
     >"$test_build/phase5_lldb.stdout" \
-    2>"$test_build/phase5_lldb.stderr"
-  grep -F 'stop reason = breakpoint' "$test_build/phase5_lldb.stdout" >/dev/null ||
-    fail "LLDB did not stop at the translated Moss breakpoint"
-  grep -F 'phase5_tooling.moss:8' "$test_build/phase5_lldb.stdout" >/dev/null ||
-    fail "LLDB did not present the mapped Moss source location"
-  grep -F 'value' "$test_build/phase5_lldb.stdout" >/dev/null ||
-    fail "LLDB could not inspect the ordinary Moss function local"
+    2>"$test_build/phase5_lldb.stderr"; then
+    grep -F 'stop reason = breakpoint' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "LLDB did not stop at the translated Moss breakpoint"
+    grep -F 'phase5_tooling.moss:8' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "LLDB did not present the mapped Moss source location"
+    grep -F 'value' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "LLDB could not inspect the ordinary Moss function local"
+    grep -F '[function] fn:normalize@7' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "moss-where did not translate the selected native frame"
+    grep -F '#0 fn:normalize@7 at ' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "moss-stack did not present the mapped Moss frame"
+    grep -F 'std::rt::lang_start' "$test_build/phase5_lldb.stdout" >/dev/null ||
+      fail "moss-stack --all did not expose runtime helper frames"
+  elif tooling_process_tracing_denied \
+    "$test_build/phase5_lldb.stdout" "$test_build/phase5_lldb.stderr"; then
+    echo 'skipping optional live Moss LLDB CLI test (process tracing unavailable)'
+  else
+    fail "LLDB is installed but the live Moss command-bridge integration failed"
+  fi
 else
-  echo 'skipping optional Moss LLDB/DAP test (lldb or lldb-dap not found)'
+  echo 'skipping optional Moss LLDB CLI test (lldb not found)'
+fi
+
+if command -v python3 >/dev/null 2>&1 && [ -n "$tooling_lldb_dap" ]; then
+  if PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_lldb_dap.py \
+      "$tooling_lldb_dap" \
+      "$test_build/phase5_tooling_debug" \
+      "$test_build/phase5_tooling_debug.mossmap" \
+      tests/phase5_tooling.moss \
+      >"$test_build/phase5_lldb_dap.stdout" \
+      2>"$test_build/phase5_lldb_dap.stderr"; then
+    grep -F 'lldb-dap Moss debugging passed:' \
+      "$test_build/phase5_lldb_dap.stdout" >/dev/null ||
+      fail "lldb-dap closeout test did not reach clean process termination"
+  elif tooling_process_tracing_denied \
+    "$test_build/phase5_lldb_dap.stdout" \
+    "$test_build/phase5_lldb_dap.stderr"; then
+    echo 'skipping optional live Moss lldb-dap test (process tracing unavailable)'
+  else
+    fail "lldb-dap is installed but the real Moss DAP integration failed"
+  fi
+else
+  echo 'skipping optional real Moss DAP test (lldb-dap or python3 not found)'
 fi
 
 echo 'all Moss v0.2 tests passed'

@@ -425,6 +425,19 @@ When RUN is non-nil, execute the resulting program too."
                return (moss--json-get 'generated_rust_line mapping))
       (moss--json-get 'start_line (moss--json-get 'generated entry))))
 
+(defun moss--exact-source-mapping-p (document source line)
+  "Return non-nil when DOCUMENT maps SOURCE LINE exactly.
+Range-only provenance remains useful for navigation, but is insufficient for
+a source breakpoint because it cannot promise an exact Moss stop."
+  (cl-some
+   (lambda (entry)
+     (and (moss--source-entry-p entry source line)
+          (cl-some
+           (lambda (mapping)
+             (= (moss--json-get 'moss_line mapping) line))
+           (moss--json-get 'line_mappings entry))))
+   (moss--json-get 'entries document)))
+
 (defun moss--entries-at-source (document source line)
   "Return deterministic DOCUMENT entries covering SOURCE at LINE."
   (sort (cl-remove-if-not
@@ -618,17 +631,66 @@ Breakpoints are translated through the .mossmap when `moss-debug' starts."
 
 (defun moss--lldb-dap ()
   "Return an lldb-dap executable or report a useful error."
-  (or moss-lldb-dap-command
-      (executable-find "lldb-dap")
-      (user-error "lldb-dap is not installed or not on PATH")))
+  (let ((program (or moss-lldb-dap-command
+                     (executable-find "lldb-dap")
+                     (moss--versioned-executable "lldb-dap"))))
+    (unless program
+      (user-error "lldb-dap not found; install LLDB's DAP adapter"))
+    (unless (file-executable-p program)
+      (user-error "lldb-dap is not executable: %s" program))
+    program))
+
+(defun moss--versioned-executable (name)
+  "Return the newest executable /usr/bin/NAME-VERSION, if one exists."
+  (when (file-directory-p "/usr/bin")
+    (car
+     (sort
+      (cl-remove-if-not
+       #'file-executable-p
+      (directory-files
+        "/usr/bin" t
+        (concat "\\`" (regexp-quote name) "-[0-9]+\\'") t))
+      (lambda (left right)
+        (> (string-to-number
+            (substring (file-name-nondirectory left) (1+ (length name))))
+           (string-to-number
+            (substring (file-name-nondirectory right) (1+ (length name))))))))))
 
 (defun moss--lldb-script ()
   "Return the configured or installation-local Moss LLDB bridge."
-  (or moss-lldb-script
-      (let ((candidate (expand-file-name "tools/moss_lldb.py"
-                                         moss--installation-root)))
-        (and (file-readable-p candidate) candidate))
-      (user-error "Cannot find tools/moss_lldb.py; customize `moss-lldb-script'")))
+  (let ((script
+         (or moss-lldb-script
+             (expand-file-name "tools/moss_lldb.py"
+                               moss--installation-root))))
+    (unless (file-readable-p script)
+      (user-error
+       "Moss LLDB Python helper not found: %s" script))
+    script))
+
+(defun moss--make-debug-config (source artifacts script adapter breakpoint-lines)
+  "Build the Dape launch configuration validated by the raw DAP test.
+ARTIFACTS supplies the native executable, map, and working directory.  SCRIPT
+is the shared LLDB bridge, ADAPTER is lldb-dap, and BREAKPOINT-LINES contains
+exact Moss source lines in deterministic order."
+  (let ((executable (alist-get 'executable artifacts))
+        (map-file (alist-get 'map artifacts))
+        (root (alist-get 'root artifacts)))
+    (list 'command adapter
+          'command-cwd root
+          :type "lldb-dap"
+          :request "launch"
+          :program executable
+          :cwd root
+          :initCommands
+          (vector (format "command script import %S" script)
+                  (format "moss-map-load %S" map-file))
+          :preRunCommands
+          (vconcat
+           (mapcar
+            (lambda (line)
+              (format "moss-break %S" (format "%s:%d" source line)))
+            breakpoint-lines))
+          :stopOnEntry nil)))
 
 ;;;###autoload
 (defun moss-debug ()
@@ -641,37 +703,42 @@ to generated Rust locations by the shared compiler map before execution."
   (let* ((source (moss--source-file))
          (artifacts (moss--artifact-alist source))
          (executable (alist-get 'executable artifacts))
-         (map-file (alist-get 'map artifacts))
-         (root (alist-get 'root artifacts))
-         (script (moss--lldb-script)))
-    (unless (and (file-executable-p executable) (file-readable-p map-file))
-      (user-error "Run M-x moss-build-debug-buffer and wait for it to finish"))
-    (let* ((init-commands
-            (vector (format "command script import %S" script)
-                    (format "moss-map-load %S" map-file)))
-           (break-commands
-            (vconcat
-             (mapcar
-              (lambda (overlay)
-                (format "moss-break %S"
-                        (format "%s:%d" source
-                                (line-number-at-pos (overlay-start overlay)))))
-              (sort (copy-sequence moss--breakpoint-overlays)
-                    (lambda (left right)
-                      (< (overlay-start left) (overlay-start right)))))))
-           (config
-            (list 'command (moss--lldb-dap)
-                  'command-cwd root
-                  :type "lldb-dap"
-                  :request "launch"
-                  :program executable
-                  :cwd root
-                  :initCommands init-commands
-                  :preRunCommands break-commands
-                  :stopOnEntry nil)))
-      (setq moss--active-debug-map map-file)
-      (add-hook 'dape-display-source-hook #'moss--dape-display-moss-source)
-      (dape config))))
+         (map-file (alist-get 'map artifacts)))
+    (unless (file-executable-p executable)
+      (user-error
+       "Moss debug executable not found: %s; run M-x moss-build-debug-buffer"
+       executable))
+    (unless (file-readable-p map-file)
+      (user-error
+       "Moss debug map not found: %s; run M-x moss-build-debug-buffer"
+       map-file))
+    (let* ((document (moss--read-map map-file))
+           (script (moss--lldb-script))
+           (adapter (moss--lldb-dap))
+           (breakpoint-lines
+            (mapcar
+             (lambda (overlay)
+               (line-number-at-pos (overlay-start overlay)))
+             (sort (copy-sequence moss--breakpoint-overlays)
+                   (lambda (left right)
+                     (< (overlay-start left) (overlay-start right)))))))
+      (dolist (line breakpoint-lines)
+        (unless (moss--exact-source-mapping-p document source line)
+          (user-error
+           "Moss breakpoint has no exact generated mapping: %s:%d"
+           source line)))
+      (let ((config (moss--make-debug-config
+                     source artifacts script adapter breakpoint-lines)))
+        (setq moss--active-debug-map map-file)
+        (add-hook 'dape-display-source-hook #'moss--dape-display-moss-source)
+        (condition-case error-data
+            (dape config)
+          (error
+           (setq moss--active-debug-map nil)
+           (remove-hook 'dape-display-source-hook
+                        #'moss--dape-display-moss-source)
+           (user-error "Moss DAP launch failed: %s"
+                       (error-message-string error-data))))))))
 
 (defun moss--objdump ()
   "Return the preferred native disassembler executable."

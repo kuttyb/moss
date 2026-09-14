@@ -41,7 +41,8 @@ The version-1 map records:
 
 - absolute Moss and generated-Rust paths;
 - one-based Moss source spans and generated Rust ranges;
-- stable semantic identities derived from source context and location;
+- deterministic source/provenance identities derived from source context and
+  location;
 - construct kinds for functions, methods, handlers, domains, types, `main`,
   functional pipelines, functional nodes, and shared dataflow groups;
 - deterministic generated and native symbol names where a concrete native
@@ -53,6 +54,14 @@ Dense numeric pipeline/node IDs are compiler-local handles and never appear in
 the map. Repeating an identical build at the same paths produces byte-identical
 metadata. A generic implementation without a concrete specialization may not
 have a native symbol; its generated symbol and source mapping remain available.
+
+The JSON field remains named `semantic_identity`, but its Phase 5 contract is
+deliberately narrower than a durable entity ID: it is deterministic for an
+unchanged source layout and across that build's lowering modes. Moving a
+declaration or functional stage can change its line-derived identity. Phase 6
+may add durable semantic entity identities that survive ordinary source edits;
+debuggers and editors must not assume the Phase 5 value already has that
+property.
 
 Many-to-one entries are intentional. When `map`, `filter`, and `sum` become one
 loop, each semantic node points to the same generated range and each entry lists
@@ -153,6 +162,32 @@ either tool. The supported transport is:
 Emacs moss-mode -> dape -> lldb-dap -> native Moss executable
 ```
 
+Install `dape` with the Emacs package manager of your choice; the only mode-side
+requirement is that this succeeds before debugging:
+
+```elisp
+(require 'dape)
+```
+
+`moss-mode` loads it lazily when `M-x moss-debug` is invoked.
+
+On Debian, the adapter is commonly installed under a versioned name such as
+`/usr/bin/lldb-dap-19`; `moss-mode` discovers that form automatically. The
+`moss-lldb-dap-command` customization remains available for other layouts.
+For Debian 13 (trixie), the tested setup is LLDB 19.1.7 with `lldb` and
+`lldb-dap-19` from the `lldb-19` package:
+
+```sh
+sudo apt install lldb-19
+command -v lldb
+command -v lldb-dap-19
+```
+
+An unversioned `lldb-dap` on `PATH` takes priority. Otherwise Moss selects the
+highest numeric `/usr/bin/lldb-dap-N` deterministically. It does not fall back
+to `lldb`, GDB, or another debug adapter. Customize
+`moss-lldb-dap-command` when the intended compatible adapter lives elsewhere.
+
 From a Moss buffer:
 
 1. Run `M-x moss-build-debug-buffer` and wait for compilation to finish.
@@ -168,9 +203,18 @@ locations in generated source rather than presenting them as precise Moss
 steps. No editor-specific mapping is embedded in the compiler.
 
 When one Moss line maps to several native locations, the integration selects
-the first location in deterministic generated-file/line order and reports that
-choice. Scalar locals and ordinary structs use LLDB's DWARF variable support;
-collection presentation is whatever the installed Rust/LLDB toolchain exposes.
+the first generated file/line in deterministic order; LLDB may resolve that
+generated line to several honest machine locations. Breakpoints require an
+exact `.mossmap` line mapping. A blank, comment-only, or range-only location is
+rejected with `Moss breakpoint has no exact generated mapping` rather than
+being moved silently to a nearby statement.
+
+Scalar locals and ordinary structs use LLDB's DWARF variable support. The live
+Debian regression inspects an integer, boolean, user type, `String`, and
+`Vector`. This LLDB build has no Rust language presentation plugin, so `String`
+and `Vector` are inspectable as raw Rust storage (including their lengths) but
+are not rendered as polished Moss values. No custom pretty-printer is promised
+in Phase 5.
 
 The LLDB bridge can also be used outside Emacs:
 
@@ -192,6 +236,17 @@ Rust locations, and the map translates meaningful stops back to Moss. Fused
 nodes or several source operations on one generated statement cannot honestly
 offer distinct machine-code steps; the tooling reports their shared provenance
 instead of inventing fake stops.
+
+The end-to-end DAP regression verifies `next` from one ordinary Moss assignment
+to the following exact Moss assignment in `--debug` mode. A step may also land
+on generated code with no exact Moss origin; in that case Emacs deliberately
+leaves the generated source visible. Phase 5 does not promise statement-level
+stepping through optimized or fused code.
+
+Startup failures are reported at the Moss tooling boundary: missing debug
+executable, missing `.mossmap`, missing/non-executable `lldb-dap`, missing LLDB
+Python helper, a non-exact breakpoint, or a synchronous DAP launch failure.
+The DAP console remains available for lower-level LLDB details when useful.
 
 ## Disassembly and navigation
 
@@ -228,8 +283,19 @@ runs:
 - ERT tests when Emacs is installed;
 - map/LLDB helper tests when Python 3 is installed;
 - native symbol disassembly when llvm-objdump or GNU objdump is installed;
-- a live source-breakpoint/local inspection test when both LLDB and `lldb-dap`
-  are installed.
+- a live LLDB command-bridge breakpoint/stack test when the `lldb` CLI is
+  installed;
+- a separate real DAP source-breakpoint, stepping, stack, and local-inspection
+  test whenever `lldb-dap` and Python 3 are installed. The DAP test does not
+  depend on the separate `lldb` CLI executable.
+
+The real DAP test performs `initialize`, launches with the same
+`initCommands`/`preRunCommands` as `moss-debug`, confirms helper/map loading and
+native breakpoint resolution, exercises function/method/handler stops and
+exact step-over, inspects locals, correlates user and runtime stack frames, and
+lets the debuggee exit with status zero before disconnecting.
 
 Missing optional tooling prints a skip message and does not make the compiler
-suite fail.
+suite fail. The live debugger test also reports a capability skip when an OS or
+container explicitly denies process tracing; installed tooling that can launch
+the fixture but fails the Moss integration remains a test failure.

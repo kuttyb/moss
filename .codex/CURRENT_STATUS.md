@@ -55,7 +55,7 @@ Updated: 2026-09-13
 ## Implemented features
 
 - Every Rust emission has an adjacent versioned JSON `.mossmap` with absolute source and
-  output paths, real one-based source spans, stable source-derived semantic identities,
+  output paths, real one-based source spans, deterministic source/provenance identities,
   generated ranges, line mappings, generated/native symbols, and provenance. Transient
   functional IR IDs are excluded. Fused functional nodes deliberately share one
   generated range while retaining all contributing origins.
@@ -361,14 +361,19 @@ source loop. Deterministic IR checks assert materialization reasons, DAG edges, 
 group identity, and combined provenance.
 
 Phase 5 regressions build the tooling fixture twice at identical paths and require
-byte-identical maps; compare `-O0`, optimized, and explicit debug maps; verify stable
-source-derived identities, real function/method/handler lines, readable native symbols,
+byte-identical maps; compare `-O0`, optimized, and explicit debug maps; verify deterministic
+source/provenance identities, real function/method/handler lines, readable native symbols,
 bidirectional exact line resolution, and many-to-one fused provenance; and compile and
 run both generated programs with warnings denied. Python map/LLDB helper checks pass,
-all 13 batch ERT tests pass under Emacs 30.1, and GNU objdump resolves both an ordinary
-debug function and an optimized fused-pipeline symbol. The capability-gated live
-breakpoint/local-inspection test was skipped on this machine because neither `lldb` nor
-`lldb-dap` is installed; no compiler functionality depends on them.
+all 18 batch ERT tests pass under Emacs 30.1, and `llvm-objdump` resolves both an ordinary
+debug function and an optimized fused-pipeline symbol. Live LLDB 19.1.7 and
+`lldb-dap-19` regressions load the shared helper/map, resolve exact breakpoints for main,
+a method, ordinary functions, and a handler, step between two exact Moss lines, map user
+and runtime stack frames, inspect integer/boolean/user-type/raw String/raw Vector locals,
+and terminate cleanly. Debian's LLDB build warns that Rust-specific value presentation is
+limited, so collection/string inspection remains structural. Phase 5 provenance IDs are
+repeatable for an unchanged source layout but are not the durable cross-edit semantic IDs
+planned for Phase 6. No compiler functionality depends on optional debugger tools.
 
 `make examples` passed, compiling every valid example (including the executable static
 trait, dataflow, reduction, callable, effect-order, and object-pipeline showcases) with
