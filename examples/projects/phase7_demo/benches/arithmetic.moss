@@ -3,3 +3,10 @@ fn mixed(value: int) -> int:
 
 bench "external arithmetic":
   mixed(1234)
+
+bench "bare arithmetic value":
+  1234 * 7 - 3
+
+bench "bare functional pipeline":
+  values = [1, 2, 3, 4]
+  values |> map(_ * 2) |> sum

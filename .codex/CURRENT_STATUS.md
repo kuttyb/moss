@@ -45,18 +45,22 @@ Updated: 2026-09-13
   native symbols; `editors/emacs/moss-mode.el` provides editing, compilation, map-based
   navigation, `dape`/`lldb-dap` launch support, and objdump integration; optional native
   tools remain capability-gated.
-- Phase 6A exposes those already-computed facts through the deterministic
+- Phase 6A is frozen. It exposes those already-computed facts through the deterministic
   `moss-agent-1` JSON protocol. Bootstrap/schema/capability discovery, structured checks,
   and `inspect`, `type`, `effects`, `ownership`, `calls`, `awaits`, and `why` queries are
   read-only views over the ordinary compiler pipeline. Semantic editing, durable
   cross-edit identity, MCP, daemon operation, and other broader Phase 6 work remain
-  deferred.
-- Phase 7 adds a conventional `moss.toml` project layer and the `moss build`,
+  deferred. Statement/binding queries do not borrow the enclosing callable's effect
+  summary: exact effects remain null when no precise target summary exists, with the
+  callable summary exposed separately as context.
+- Phase 7 is frozen. It adds a conventional `moss.toml` project layer and the `moss build`,
   `moss clean`, `moss test`, and `moss bench` workflows. Debug/release builds,
   native test/benchmark harnesses, stable project/source IDs, filtered discovery,
   benchmark sampling/baselines, and all structured results reuse the ordinary
   compiler pipeline and `moss-agent-1` envelope. It adds no package resolver,
-  module system, affected-test analysis, or new optimizer semantics.
+  module system, affected-test analysis, or new optimizer semantics. Native cache reuse
+  includes the resolved Rust compiler, verbose backend version, profile, and flags;
+  benchmark baselines use the same fingerprint for compatibility.
 
 ## Approved semantics
 
@@ -75,7 +79,8 @@ Updated: 2026-09-13
 - A minimal project manifest names the project/version and configured source directory
   or file. Commands locate the nearest project root, use deterministic profile artifact
   paths, hide direct Rust invocation, compile with warnings denied, and reuse unchanged
-  generated Rust/debug maps/native artifacts. `moss clean` removes build products while
+  generated Rust/debug maps/native artifacts only under the same backend-toolchain
+  fingerprint. `moss clean` removes build products while
   retaining saved benchmark evidence.
 - Top-level `test "name":` declarations support statically checked `assert(bool)` and
   `assertEqual(actual, expected)`. Project source and recursive `tests/*.moss` discovery,
@@ -83,10 +88,12 @@ Updated: 2026-09-13
   `test:<relative-source>:<name>` identities, Moss source diagnostics, human summaries,
   and versioned JSON output are implemented.
 - Top-level `bench "name":` declarations compile only through the release/highest-
-  optimization profile. The safe generated harness uses backend black boxes, warmup,
+  optimization profile. The safe generated harness black-boxes every discarded
+  value-producing expression (calls, arithmetic, and functional pipelines), uses warmup,
   31 repeated samples, 1,000 invocations per sample, and median/p25/p75 reporting.
-  Stable-ID JSON baselines retain compiler/profile/platform/time/methodology/sample data;
-  comparison, compatibility warnings, optional regression thresholds, and filtering are
+  Stable-ID JSON baselines retain compiler/profile/platform/backend-toolchain/time/
+  methodology/sample data. Incompatible backend fingerprints suppress both comparison
+  and optional regression-threshold enforcement; compatible comparison and filtering are
   implemented without fragile thresholds in the compiler regression suite.
 - Build, test, and benchmark generation share the parser, checker, ownership/effect
   passes, functional/dataflow optimizer, backend plan, generator, `.mossmap` contract,
@@ -96,7 +103,9 @@ Updated: 2026-09-13
   discovery and workflow/safety guidance. `moss check --json` uses stable diagnostic
   categories and a uniform source/span/identity/details shape. Semantic queries accept
   exact source locations or retained semantic identities and reuse the compiler's static
-  call/await graphs, ownership/effect summaries, and optimization explanations.
+  call/await graphs, ownership/effect summaries, and optimization explanations. A
+  statement with no precise retained effect summary reports null rather than inheriting
+  all effects from its enclosing callable.
 
 - Every Rust emission has an adjacent versioned JSON `.mossmap` with absolute source and
   output paths, real one-based source spans, deterministic source/provenance identities,
@@ -454,10 +463,15 @@ trait, dataflow, reduction, callable, effect-order, and object-pipeline showcase
 passed for this checkpoint.
 
 Phase 7 validation additionally builds the example project in debug and release modes,
-checks byte-stable map/artifact reuse, executes and filters passing/failing native tests,
+checks byte-stable map/artifact reuse under one Rust toolchain, forces rebuilds for a
+changed/fake Rust identity, executes and filters passing/failing native tests,
 inspects Moss assertion values/locations, executes and filters release benchmarks,
-validates black-box/sampling structure, saves and compares a metadata/sample baseline,
-checks structured project errors, and runs `moss clean`. The full `make check` suite,
+validates call/arithmetic/pipeline black-box and sampling structure, saves and compares
+a toolchain-identified metadata/sample baseline, suppresses incompatible baseline
+threshold enforcement, checks structured project errors, and runs `moss clean`.
+Phase 6A validation also proves target-local statement effects remain unknown rather
+than inheriting callable-wide I/O while the enclosing, callable, and pipeline summaries
+remain available. The full `make check` suite,
 `make examples`, strict C++17 warnings-as-errors build, generated Rust `-D warnings`,
 Phase 4/4.5/4.6 differentials, Phase 5 map/Emacs/objdump/LLDB/DAP integrations, Phase 6A
 API regressions, 19 ERT tests, `sh -n tests/run.sh`, and `git diff --check` all pass.
@@ -466,8 +480,9 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phase 2, Phase 2.5, Phase 4, Phase 4.5, Phase 4.6, and Phase 5 are frozen at their respective checkpoints;
-none of the following is implicitly authorized by this status record.
+Phase 2, Phase 2.5, Phase 4, Phase 4.5, Phase 4.6, Phase 5, Phase 6A, and
+Phase 7 are frozen at their respective checkpoints; none of the following is implicitly
+authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on
    representative workloads.

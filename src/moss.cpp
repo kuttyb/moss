@@ -12380,11 +12380,16 @@ class Generator {
           ++i;
           break;
         case Stmt::Kind::Raw:
-          o << indent(level)
-            << expr(s.text, d, locals, &types,
+          o << indent(level);
+          // A bare expression is a valid benchmark body.  Protect its value
+          // just like an ordinary call result; otherwise rustc may erase the
+          // very arithmetic or functional pipeline being measured.
+          if (benchmark_body_) o << "std::hint::black_box(";
+          o << expr(s.text, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, 0))
-            << ";\n";
+                        s, functional_context, 0));
+          if (benchmark_body_) o << ")";
+          o << ";\n";
           ++i;
           break;
         case Stmt::Kind::Else:
@@ -12769,6 +12774,8 @@ struct SemanticTargetFact {
   vector<SemanticParameterFact> parameters;
   ObservableEffects observable_effects;
   bool has_observable_effects = false;
+  ObservableEffects enclosing_callable_effects;
+  bool has_enclosing_callable_effects = false;
   vector<string> provenance;
   vector<string> explanations;
 };
@@ -12815,8 +12822,11 @@ static void append_statement_targets(
     fact.type = statement.semantic_type;
     fact.line = statement.line;
     if (enclosing_effects) {
-      fact.observable_effects = *enclosing_effects;
-      fact.has_observable_effects = true;
+      // A callable's transitive summary is useful context, but it is not a
+      // precise summary for each statement in that callable.  Phase 6A is a
+      // serialization layer, so it must not manufacture target-local facts.
+      fact.enclosing_callable_effects = *enclosing_effects;
+      fact.has_enclosing_callable_effects = true;
     }
     fact.provenance.push_back(fact.semantic_identity);
     if (fact.kind == "binding" && !fact.type.empty())
@@ -13578,6 +13588,11 @@ static bool write_semantic_query_json(
     if (target->has_observable_effects)
       write_observable_effects_json(out, target->observable_effects);
     else out << "null";
+    out << ", \"enclosing_callable_effects\": ";
+    if (target->has_enclosing_callable_effects)
+      write_observable_effects_json(
+          out, target->enclosing_callable_effects);
+    else out << "null";
   }
   if (command == "ownership") {
     out << ", \"parameters_and_values\": ";
@@ -13816,6 +13831,141 @@ static ProcessResult run_process(const vector<string>& arguments) {
   return result;
 }
 
+struct BackendToolchainIdentity {
+  string rustc_executable;
+  string version_verbose;
+  string profile;
+  vector<string> compile_flags;
+  string fingerprint;
+};
+
+static std::optional<std::filesystem::path> resolve_executable(
+    const string& configured) {
+  vector<std::filesystem::path> candidates;
+  if (configured.find('/') != string::npos) {
+    candidates.emplace_back(configured);
+  } else {
+    const char* path_environment = std::getenv("PATH");
+    string search = path_environment ? path_environment : "/usr/bin:/bin";
+    size_t begin = 0;
+    while (begin <= search.size()) {
+      size_t end = search.find(':', begin);
+      string directory = search.substr(
+          begin, end == string::npos ? string::npos : end - begin);
+      candidates.push_back(
+          (directory.empty() ? std::filesystem::path(".")
+                             : std::filesystem::path(directory)) /
+          configured);
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
+  }
+  for (const auto& candidate : candidates) {
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(candidate, error) || error ||
+        ::access(candidate.c_str(), X_OK) != 0)
+      continue;
+    auto absolute = std::filesystem::absolute(candidate, error);
+    if (error) continue;
+    // Preserve the resolved executable's symlink name.  rustup dispatches by
+    // argv[0], so canonicalizing `rustc` to the `rustup` binary changes the
+    // program being invoked.
+    return absolute.lexically_normal();
+  }
+  return std::nullopt;
+}
+
+static string backend_flags_text(const vector<string>& flags) {
+  std::ostringstream out;
+  for (size_t index = 0; index < flags.size(); ++index) {
+    if (index) out << "\n";
+    out << flags[index];
+  }
+  return out.str();
+}
+
+static string backend_identity_payload(
+    const BackendToolchainIdentity& identity) {
+  std::ostringstream out;
+  out << "resolved-rustc\n" << identity.rustc_executable
+      << "\nversion-verbose-bytes\n" << identity.version_verbose.size()
+      << "\n" << identity.version_verbose
+      << "\nprofile\n" << identity.profile
+      << "\ncompile-flags\n" << backend_flags_text(identity.compile_flags)
+      << "\n";
+  return out.str();
+}
+
+static BackendToolchainIdentity inspect_backend_toolchain(
+    bool optimized, bool debug_build, ProgramGenerationMode mode) {
+  const char* configured_environment = std::getenv("RUSTC");
+  string configured = configured_environment && *configured_environment
+      ? configured_environment : "rustc";
+  auto executable = resolve_executable(configured);
+  if (!executable)
+    throw ProjectError(
+        "BUILD_TOOL_NOT_FOUND",
+        "rustc was not found; install Rust or set RUSTC to an executable");
+
+  ProcessResult version = run_process(
+      {executable->string(), "--version", "--verbose"});
+  if (version.exit_code != 0 || trim(version.output).empty())
+    throw ProjectError(
+        "BUILD_BACKEND_ERROR",
+        "could not identify the configured Rust compiler with "
+        "'rustc --version --verbose'");
+
+  BackendToolchainIdentity identity;
+  identity.rustc_executable = executable->string();
+  identity.version_verbose = trim(version.output);
+  if (optimized) identity.profile = "release";
+  else if (mode == ProgramGenerationMode::Tests)
+    identity.profile = "test-debug";
+  else
+    identity.profile = debug_build ? "debug" : "reference";
+  identity.compile_flags = {"--edition=2021", "-D", "warnings"};
+  if (optimized) {
+    identity.compile_flags.insert(
+        identity.compile_flags.end(), {"-O", "-C", "debuginfo=1"});
+  } else {
+    identity.compile_flags.insert(
+        identity.compile_flags.end(), {"-g", "-C", "opt-level=0"});
+  }
+  identity.fingerprint = stable_hash(backend_identity_payload(identity));
+  return identity;
+}
+
+static bool same_backend_toolchain(
+    const BackendToolchainIdentity& left,
+    const BackendToolchainIdentity& right) {
+  return left.fingerprint == right.fingerprint &&
+      left.rustc_executable == right.rustc_executable &&
+      left.version_verbose == right.version_verbose &&
+      left.profile == right.profile &&
+      left.compile_flags == right.compile_flags;
+}
+
+static string backend_cache_metadata(
+    const BackendToolchainIdentity& identity) {
+  return "moss-native-cache-v1\nfingerprint\n" + identity.fingerprint +
+      "\n" + backend_identity_payload(identity);
+}
+
+static void write_backend_toolchain_json(
+    std::ostream& out, const BackendToolchainIdentity& identity) {
+  out << "{\"fingerprint\": ";
+  write_debug_json_string(out, identity.fingerprint);
+  out << ", \"resolved_rustc\": ";
+  write_debug_json_string(out, identity.rustc_executable);
+  out << ", \"version_verbose\": ";
+  write_debug_json_string(out, identity.version_verbose);
+  out << ", \"profile\": ";
+  write_debug_json_string(out, identity.profile);
+  out << ", \"compile_flags\": ";
+  write_agent_string_array(out, identity.compile_flags);
+  out << "}";
+}
+
 static string project_relative_path(const ProjectManifest& manifest,
                                     const std::filesystem::path& source) {
   std::error_code error;
@@ -13896,6 +14046,8 @@ struct NativeArtifact {
   std::filesystem::path rust;
   std::filesystem::path debug_map;
   std::filesystem::path executable;
+  std::filesystem::path cache_metadata;
+  BackendToolchainIdentity backend_toolchain;
   vector<TestDecl> tests;
   vector<BenchDecl> benchmarks;
   bool reused = false;
@@ -13923,12 +14075,15 @@ static NativeArtifact compile_native_artifact(
                        "cannot create artifact directory '" +
                            directory.string() + "': " + error.message());
   string stem = name_override.value_or(artifact_stem(manifest, source));
-  NativeArtifact artifact{directory / (stem + ".rs"),
-                          directory / (stem + ".mossmap"),
-                          directory / stem,
-                          unit.program.tests,
-                          unit.program.benchmarks,
-                          false};
+  NativeArtifact artifact;
+  artifact.rust = directory / (stem + ".rs");
+  artifact.debug_map = directory / (stem + ".mossmap");
+  artifact.executable = directory / stem;
+  artifact.cache_metadata = directory / (stem + ".mossbuild");
+  artifact.backend_toolchain = inspect_backend_toolchain(
+      optimized, debug_build, mode);
+  artifact.tests = unit.program.tests;
+  artifact.benchmarks = unit.program.benchmarks;
   std::ostringstream map_stream;
   write_debug_map(
       map_stream,
@@ -13959,7 +14114,12 @@ static NativeArtifact compile_native_artifact(
   };
   bool rust_changed = update_file(artifact.rust, unit.rust);
   bool map_changed = update_file(artifact.debug_map, map_text);
-  if (!rust_changed && !map_changed &&
+  string cache_text = backend_cache_metadata(artifact.backend_toolchain);
+  std::ifstream prior_cache(artifact.cache_metadata, std::ios::binary);
+  std::ostringstream prior_cache_stream;
+  if (prior_cache) prior_cache_stream << prior_cache.rdbuf();
+  bool backend_matches = prior_cache && prior_cache_stream.str() == cache_text;
+  if (!rust_changed && !map_changed && backend_matches &&
       std::filesystem::is_regular_file(artifact.executable)) {
     artifact.reused = true;
     return artifact;
@@ -13972,26 +14132,13 @@ static NativeArtifact compile_native_artifact(
                            artifact.executable.string() + "': " +
                            error.message());
 
-  const char* configured_rustc = std::getenv("RUSTC");
-  string rustc = configured_rustc && *configured_rustc
-      ? configured_rustc : "rustc";
-  vector<string> command = {rustc, "--edition=2021", "-D", "warnings"};
-  if (optimized) {
-    command.push_back("-O");
-    command.push_back("-C");
-    command.push_back("debuginfo=1");
-  } else {
-    command.push_back("-g");
-    command.push_back("-C");
-    command.push_back("opt-level=0");
-  }
+  vector<string> command = {artifact.backend_toolchain.rustc_executable};
+  command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
+                 artifact.backend_toolchain.compile_flags.end());
   command.push_back(artifact.rust.string());
   command.push_back("-o");
   command.push_back(artifact.executable.string());
   ProcessResult compiled = run_process(command);
-  if (compiled.exit_code == 127)
-    throw ProjectError("BUILD_TOOL_NOT_FOUND",
-                       "rustc was not found; install Rust or set RUSTC");
   if (compiled.exit_code != 0)
     throw ProjectError(
         "BUILD_BACKEND_ERROR",
@@ -13999,6 +14146,7 @@ static NativeArtifact compile_native_artifact(
             project_relative_path(manifest, source) + "'\n" +
             trim(compiled.output),
         source.string());
+  (void)update_file(artifact.cache_metadata, cache_text);
   return artifact;
 }
 
@@ -14083,7 +14231,11 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
     write_debug_json_string(std::cout, artifact.rust.string());
     std::cout << ", \"debug_map\": ";
     write_debug_json_string(std::cout, artifact.debug_map.string());
-    std::cout << "}, \"reused\": "
+    std::cout << ", \"cache_metadata\": ";
+    write_debug_json_string(std::cout, artifact.cache_metadata.string());
+    std::cout << "}, \"backend_toolchain\": ";
+    write_backend_toolchain_json(std::cout, artifact.backend_toolchain);
+    std::cout << ", \"reused\": "
               << (artifact.reused ? "true" : "false") << "}\n}\n";
   } else {
     std::cout << "Built " << manifest.name << " (" << profile << ")\n"
@@ -14282,6 +14434,11 @@ struct ProjectBenchmarkResult {
   vector<std::uint64_t> sample_values;
 };
 
+struct ProjectBenchmarkRun {
+  vector<ProjectBenchmarkResult> results;
+  BackendToolchainIdentity backend_toolchain;
+};
+
 static std::uint64_t parse_unsigned_record_field(
     const string& value, const string& field,
     const std::filesystem::path& source) {
@@ -14298,15 +14455,24 @@ static std::uint64_t parse_unsigned_record_field(
   }
 }
 
-static vector<ProjectBenchmarkResult> run_project_benchmarks(
+static ProjectBenchmarkRun run_project_benchmarks(
     const ProjectManifest& manifest, const string& filter) {
   vector<ProjectBenchmarkResult> results;
+  std::optional<BackendToolchainIdentity> backend_toolchain;
   auto sources = project_declaration_sources(manifest, "benches");
   std::filesystem::path directory = manifest.root / "build" / "bench";
   for (const auto& source : sources) {
     NativeArtifact artifact = compile_native_artifact(
         manifest, source, directory, true, false,
         ProgramGenerationMode::Benchmarks, std::nullopt, filter);
+    if (!backend_toolchain) {
+      backend_toolchain = artifact.backend_toolchain;
+    } else if (!same_backend_toolchain(
+                   *backend_toolchain, artifact.backend_toolchain)) {
+      throw ProjectError(
+          "BENCHMARK_CONFIGURATION_ERROR",
+          "benchmark units were compiled with inconsistent Rust toolchains");
+    }
     if (artifact.benchmarks.empty()) continue;
     std::unordered_map<string, const BenchDecl*> declarations;
     for (const auto& benchmark : artifact.benchmarks)
@@ -14379,7 +14545,11 @@ static vector<ProjectBenchmarkResult> run_project_benchmarks(
                const ProjectBenchmarkResult& right) {
               return left.id < right.id;
             });
-  return results;
+  if (!backend_toolchain)
+    throw ProjectError(
+        "BENCHMARK_CONFIGURATION_ERROR",
+        "no backend toolchain was selected for the benchmark run");
+  return {std::move(results), std::move(*backend_toolchain)};
 }
 
 static string encode_protocol_hex(const string& value) {
@@ -14427,6 +14597,8 @@ struct BenchmarkBaseline {
   string compiler_version;
   string profile;
   string platform;
+  BackendToolchainIdentity backend_toolchain;
+  bool has_backend_toolchain = false;
   std::unordered_map<string, ProjectBenchmarkResult> benchmarks;
 };
 
@@ -14438,7 +14610,8 @@ static std::filesystem::path baseline_file(
 
 static void save_benchmark_baseline(
     const ProjectManifest& manifest, const string& name,
-    const vector<ProjectBenchmarkResult>& results) {
+    const vector<ProjectBenchmarkResult>& results,
+    const BackendToolchainIdentity& backend_toolchain) {
   std::filesystem::path file = baseline_file(manifest, name);
   std::error_code error;
   std::filesystem::create_directories(file.parent_path(), error);
@@ -14454,11 +14627,26 @@ static void save_benchmark_baseline(
                            "'",
                        file.string());
   output << "{\n  \"format\": \"moss-benchmark-baseline\",\n"
-         << "  \"version\": 1,\n"
+         << "  \"version\": 2,\n"
          << "  \"compiler_version\": \"" << kCompilerVersion << "\",\n"
          << "  \"profile\": \"release\",\n"
          << "  \"platform_hex\": \""
          << encode_protocol_hex(benchmark_platform()) << "\",\n"
+         << "  \"backend_toolchain\": {\n"
+         << "    \"fingerprint\": \"" << backend_toolchain.fingerprint
+         << "\",\n"
+         << "    \"resolved_rustc_hex\": \""
+         << encode_protocol_hex(backend_toolchain.rustc_executable)
+         << "\",\n"
+         << "    \"version_verbose_hex\": \""
+         << encode_protocol_hex(backend_toolchain.version_verbose)
+         << "\",\n"
+         << "    \"backend_profile\": \"" << backend_toolchain.profile
+         << "\",\n"
+         << "    \"compile_flags_hex\": \""
+         << encode_protocol_hex(
+                backend_flags_text(backend_toolchain.compile_flags))
+         << "\"\n  },\n"
          << "  \"timestamp_utc\": \"" << utc_timestamp() << "\",\n"
          << "  \"benchmarks\": [\n";
   for (size_t index = 0; index < results.size(); ++index) {
@@ -14542,7 +14730,8 @@ static BenchmarkBaseline load_benchmark_baseline(
     throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
                        "file is not a Moss benchmark baseline",
                        file.string());
-  if (baseline_integer_field(text, "version", file) != 1)
+  std::uint64_t version = baseline_integer_field(text, "version", file);
+  if (version != 1 && version != 2)
     throw ProjectError("BENCHMARK_CONFIGURATION_ERROR",
                        "unsupported benchmark baseline version",
                        file.string());
@@ -14552,6 +14741,23 @@ static BenchmarkBaseline load_benchmark_baseline(
   baseline.profile = baseline_string_field(text, "profile", file);
   baseline.platform = decode_protocol_hex(
       baseline_string_field(text, "platform_hex", file));
+  if (version >= 2) {
+    baseline.backend_toolchain.fingerprint = baseline_string_field(
+        text, "fingerprint", file);
+    baseline.backend_toolchain.rustc_executable = decode_protocol_hex(
+        baseline_string_field(text, "resolved_rustc_hex", file));
+    baseline.backend_toolchain.version_verbose = decode_protocol_hex(
+        baseline_string_field(text, "version_verbose_hex", file));
+    baseline.backend_toolchain.profile = baseline_string_field(
+        text, "backend_profile", file);
+    string flags = decode_protocol_hex(
+        baseline_string_field(text, "compile_flags_hex", file));
+    std::istringstream flag_lines(flags);
+    string flag;
+    while (std::getline(flag_lines, flag))
+      baseline.backend_toolchain.compile_flags.push_back(flag);
+    baseline.has_backend_toolchain = true;
+  }
   size_t position = 0;
   while ((position = text.find("{\"id_hex\": \"", position)) !=
          string::npos) {
@@ -14608,26 +14814,41 @@ static int report_project_benchmarks(
     const ProjectManifest& manifest, const string& filter, bool json,
     const string& save_name, const string& compare_name,
     const std::optional<double>& fail_over) {
-  vector<ProjectBenchmarkResult> results = run_project_benchmarks(
-      manifest, filter);
-  if (!save_name.empty()) save_benchmark_baseline(manifest, save_name, results);
+  ProjectBenchmarkRun run = run_project_benchmarks(manifest, filter);
+  const vector<ProjectBenchmarkResult>& results = run.results;
+  if (!save_name.empty())
+    save_benchmark_baseline(
+        manifest, save_name, results, run.backend_toolchain);
   std::optional<BenchmarkBaseline> baseline;
   vector<BenchmarkComparison> comparisons;
   vector<string> warnings;
+  bool baseline_compatible = true;
   if (!compare_name.empty()) {
     baseline = load_benchmark_baseline(manifest, compare_name);
     if (baseline->compiler_version != kCompilerVersion ||
         baseline->profile != "release" ||
-        baseline->platform != benchmark_platform())
+        baseline->platform != benchmark_platform()) {
       warnings.push_back(
-          "baseline compiler, profile, or platform differs from the current "
-          "benchmark environment");
-    comparisons = compare_benchmarks(results, *baseline);
-    if (comparisons.empty())
+          "baseline Moss compiler, profile, or platform differs from the "
+          "current benchmark environment; comparison and --fail-over "
+          "enforcement were skipped");
+      baseline_compatible = false;
+    }
+    if (!baseline->has_backend_toolchain ||
+        !same_backend_toolchain(
+            baseline->backend_toolchain, run.backend_toolchain)) {
+      warnings.push_back(
+          "baseline backend Rust toolchain differs from the current "
+          "toolchain; comparison and --fail-over enforcement were skipped");
+      baseline_compatible = false;
+    }
+    if (baseline_compatible)
+      comparisons = compare_benchmarks(results, *baseline);
+    if (baseline_compatible && comparisons.empty())
       warnings.push_back(
           "no current benchmark IDs exist in the selected baseline");
   }
-  bool regression = fail_over && std::any_of(
+  bool regression = baseline_compatible && fail_over && std::any_of(
       comparisons.begin(), comparisons.end(),
       [&](const BenchmarkComparison& comparison) {
         return comparison.change_percent > *fail_over;
@@ -14657,7 +14878,12 @@ static int report_project_benchmarks(
                 << ", \"warmup\": " << result.warmup
                 << ", \"iterations\": " << result.iterations << "}";
     }
-    std::cout << "], \"comparisons\": [";
+    std::cout << "], \"backend_toolchain\": ";
+    write_backend_toolchain_json(std::cout, run.backend_toolchain);
+    std::cout << ", \"baseline_compatible\": ";
+    if (compare_name.empty()) std::cout << "null";
+    else std::cout << (baseline_compatible ? "true" : "false");
+    std::cout << ", \"comparisons\": [";
     for (size_t index = 0; index < comparisons.size(); ++index) {
       if (index) std::cout << ", ";
       const auto& comparison = comparisons[index];

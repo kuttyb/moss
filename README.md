@@ -28,16 +28,18 @@ source breakpoints, and symbol-targeted native disassembly. A dependency-light
 `moss-mode` provides editing, checking, building, running, debugging, and generated-code
 inspection from Moss source.
 
-Phase 6A adds a small, vendor-independent compiler semantic API. Agents and shell tools
-can discover capabilities, receive structured diagnostics, and query the compiler's
-existing type, ownership, effect, call, await, functional, and backend facts through one
-versioned JSON envelope. It adds no editing service or duplicate semantic analysis.
+Phase 6A is frozen with a small, vendor-independent compiler semantic API. Agents and
+shell tools can discover capabilities, receive structured diagnostics, and query the
+compiler's existing type, ownership, effect, call, await, functional, and backend facts
+through one versioned JSON envelope. It adds no editing service or duplicate semantic
+analysis.
 
-Phase 7 adds the practical project layer: `moss build`, `moss test`, and `moss bench`
-share one manifest, compiler pipeline, profile model, semantic identity scheme, artifact
-layout, and Phase 6A JSON protocol. Tests report Moss assertions at Moss locations;
-benchmarks use release compilation, robust sampling, and saved comparisons without
-leaking Rust tooling into the normal workflow.
+Phase 7 is frozen with the practical project layer: `moss build`, `moss test`, and
+`moss bench` share one manifest, compiler pipeline, profile model, semantic identity
+scheme, artifact layout, and Phase 6A JSON protocol. Tests report Moss assertions at
+Moss locations; benchmarks use release compilation, robust sampling,
+toolchain-compatible saved comparisons, and complete discarded-value black boxing
+without leaking Rust tooling into the normal workflow.
 
 ## Requirements
 

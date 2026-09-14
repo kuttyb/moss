@@ -44,3 +44,8 @@ proc main():
   direct = wait_for(worker)
   routed = await router.Route(worker)
   echo observed_count, observed, direct, routed
+
+fn locally_pure_statement(value: Int) -> Int:
+  local = value + 1
+  echo local
+  return local

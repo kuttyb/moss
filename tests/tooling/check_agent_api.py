@@ -120,6 +120,27 @@ if not effects["observable_effects"]["external_io"]:
 if effects["ownership"][0]["effect"] != "READ":
     fail("effects query conflated ownership and observable effects")
 
+statement_effects = query("effects", "line:49")
+if statement_effects["target"]["construct_kind"] != "binding":
+    fail("statement-effect regression did not resolve the binding target")
+if statement_effects["observable_effects"] is not None:
+    fail("a binding inherited effects from elsewhere in its callable")
+enclosing = statement_effects["enclosing_callable_effects"]
+if not enclosing or not enclosing["external_io"]:
+    fail("statement query omitted separately labelled enclosing-callable effects")
+
+contextual_callable = query("effects", "fn:locally_pure_statement")
+if not contextual_callable["observable_effects"]["external_io"]:
+    fail("callable effect summaries changed while fixing statement precision")
+if contextual_callable["enclosing_callable_effects"] is not None:
+    fail("callable target incorrectly reports itself as an enclosing callable")
+
+pipeline_effects = query("effects", "main@39:expression:0", optimized=True)
+if not pipeline_effects["observable_effects"]["external_io"]:
+    fail("precise pipeline effect summaries changed")
+if pipeline_effects["enclosing_callable_effects"] is not None:
+    fail("pipeline target incorrectly inherited a callable effect summary")
+
 ownership = query("ownership", "fn:transfer")
 if ownership["parameters_and_values"][0]["effect"] != "CONSUME":
     fail("ownership query omitted inferred consume behavior")

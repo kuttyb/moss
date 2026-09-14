@@ -78,6 +78,14 @@ existing compiler explanations. The focused commands return the same authoritati
 subsets. Ownership (`READ`, `WRITE`, `CONSUME`) remains separate from observable effects
 such as local mutation, domain access, message, await, I/O, failure, and divergence.
 
+Effect precision follows the selected target. Callable targets expose their transitive
+callable summary, and functional pipeline/node targets expose the precise summaries
+already retained by functional analysis. An ordinary statement or binding has
+`observable_effects: null` when Moss has no exact statement-level summary; it never
+inherits unrelated effects from the rest of its function. In that case,
+`enclosing_callable_effects` provides the separately labelled callable context when one
+exists. Phase 6A does not run a new statement-effect analysis to answer a query.
+
 `calls` reports only statically resolved targets retained by recursion validation.
 `awaits` reports validated await sites and the global domain dependency edges, including
 their Moss source lines. `why` reuses existing functional materialization/fusion/semantic
@@ -98,13 +106,14 @@ moss test parser --json
 moss bench normalize --json
 ```
 
-Build results identify the profile and deterministic artifact paths. Test and benchmark
+Build results identify the profile, deterministic artifact paths, and the resolved Rust
+backend toolchain fingerprint used for native cache validation. Test and benchmark
 records include stable project/source identities. Test assertions use
 `TEST_ASSERTION_FAILED`; project and benchmark failures use the stable categories
-documented in the build/testing/benchmark guides. Benchmark baseline compatibility is a
-structured warning. These commands share the normal compiler pipeline and semantic
-identities; they do not introduce affected-test analysis or performance facts into the
-semantic query layer.
+documented in the build/testing/benchmark guides. Benchmark baseline compatibility,
+including the Rust backend identity, is a structured warning. These commands share the
+normal compiler pipeline and semantic identities; they do not introduce affected-test
+analysis or performance facts into the semantic query layer.
 
 ## Minimal AGENTS.md onboarding
 

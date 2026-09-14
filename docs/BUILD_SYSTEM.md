@@ -55,15 +55,22 @@ Artifacts have deterministic locations:
 build/debug/<project>
 build/debug/<project>.rs
 build/debug/<project>.mossmap
+build/debug/<project>.mossbuild
 build/release/<project>
 build/release/<project>.rs
 build/release/<project>.mossmap
+build/release/<project>.mossbuild
 build/test/...
 build/bench/...
 ```
 
-If generated Rust and provenance are byte-identical and the native artifact still
-exists, Moss reuses it. This is intentionally only a small content-based reuse rule,
+Before invoking the backend, Moss resolves the configured `rustc`, records its complete
+`rustc --version --verbose` response, and combines that with the effective profile and
+compile flags into a deterministic fingerprint. The `.mossbuild` sidecar retains this
+identity. Moss reuses a native executable only when generated Rust and provenance are
+byte-identical, the executable exists, and the sidecar matches the current backend
+fingerprint. Changing the `RUSTC` executable, its reported version, profile, or flags
+therefore forces native recompilation. This remains a small content-based reuse rule,
 not a package-level incremental build system. `moss clean` removes `build/` but retains
 saved benchmark baselines under `.moss/benchmarks/`.
 

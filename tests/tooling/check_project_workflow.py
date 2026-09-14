@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 
@@ -16,6 +17,7 @@ def run(
     project: Path,
     *arguments: str,
     expected: int = 0,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         [str(compiler), *arguments],
@@ -24,7 +26,7 @@ def run(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        env={**os.environ, "RUST_BACKTRACE": "0"},
+        env={**os.environ, "RUST_BACKTRACE": "0", **(extra_env or {})},
     )
     if result.returncode != expected:
         raise AssertionError(
@@ -40,6 +42,21 @@ def envelope(result: subprocess.CompletedProcess[str], command: str) -> dict:
     assert value["schema_version"] == "moss-agent-1"
     assert value["command"] == command
     return value
+
+
+def write_rustc_wrapper(path: Path, rustc: Path, identity: str) -> None:
+    path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$#" -eq 2 ] && [ "$1" = "--version" ] && '
+        '[ "$2" = "--verbose" ]; then\n'
+        f"  printf '%s\\n' 'rustc 1.99.0-moss-test ({identity})' "
+        f"'binary: rustc' 'host: moss-test' 'LLVM version: test-{identity}'\n"
+        "  exit 0\n"
+        "fi\n"
+        f"exec {shlex.quote(str(rustc))} \"$@\"\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
 
 
 def main() -> int:
@@ -74,9 +91,26 @@ def main() -> int:
     executable = Path(artifacts["executable"])
     assert executable.is_file()
     assert Path(artifacts["generated_rust"]).is_file()
+    assert Path(artifacts["cache_metadata"]).is_file()
+    backend = first_build["result"]["backend_toolchain"]
+    assert Path(backend["resolved_rustc"]).is_absolute()
+    assert backend["version_verbose"].startswith("rustc ")
+    assert backend["compile_flags"] == [
+        "--edition=2021",
+        "-D",
+        "warnings",
+        "-g",
+        "-C",
+        "opt-level=0",
+    ]
+    assert backend["fingerprint"]
     application_rust = Path(artifacts["generated_rust"]).read_text(encoding="utf-8")
     assert "MOSS_TEST|" not in application_rust
     assert "MOSS_BENCH|" not in application_rust
+    assert "std::hint::black_box" not in application_rust
+    cache_text = Path(artifacts["cache_metadata"]).read_text(encoding="utf-8")
+    assert backend["fingerprint"] in cache_text
+    assert backend["resolved_rustc"] in cache_text
     debug_map = Path(artifacts["debug_map"])
     first_map = debug_map.read_bytes()
     program = subprocess.run(
@@ -87,7 +121,59 @@ def main() -> int:
     second_build = envelope(run(compiler, demo / "src", "build", "--json"), "build")
     assert second_build["result"]["artifacts"] == artifacts
     assert second_build["result"]["reused"] is True
+    assert second_build["result"]["backend_toolchain"] == backend
     assert debug_map.read_bytes() == first_map
+
+    configured_rustc = os.environ.get("RUSTC", "rustc")
+    resolved_rustc = shutil.which(configured_rustc)
+    assert resolved_rustc, "the workflow test requires the same rustc as Moss"
+    rustc_wrapper = scratch / "rustc-identity-wrapper"
+    write_rustc_wrapper(rustc_wrapper, Path(resolved_rustc), "identity-a")
+    fake_environment = {"RUSTC": str(rustc_wrapper)}
+    changed_toolchain = envelope(
+        run(compiler, demo, "build", "--json", extra_env=fake_environment),
+        "build",
+    )
+    assert changed_toolchain["result"]["reused"] is False
+    assert (
+        changed_toolchain["result"]["backend_toolchain"]["fingerprint"]
+        != backend["fingerprint"]
+    )
+    same_fake_toolchain = envelope(
+        run(compiler, demo, "build", "--json", extra_env=fake_environment),
+        "build",
+    )
+    assert same_fake_toolchain["result"]["reused"] is True
+    write_rustc_wrapper(rustc_wrapper, Path(resolved_rustc), "identity-b")
+    changed_identity = envelope(
+        run(compiler, demo, "build", "--json", extra_env=fake_environment),
+        "build",
+    )
+    assert changed_identity["result"]["reused"] is False
+    assert (
+        changed_identity["result"]["backend_toolchain"]["fingerprint"]
+        != same_fake_toolchain["result"]["backend_toolchain"]["fingerprint"]
+    )
+    assert "identity-b" in Path(
+        changed_identity["result"]["artifacts"]["cache_metadata"]
+    ).read_text(encoding="utf-8")
+
+    ordinary_source = scratch / "ordinary-value-expression.moss"
+    ordinary_rust = scratch / "ordinary-value-expression.rs"
+    ordinary_source.write_text(
+        "proc main():\n  value = 40\n  value + 2\n", encoding="utf-8"
+    )
+    run(
+        compiler,
+        demo,
+        str(ordinary_source),
+        "-O",
+        "-o",
+        str(ordinary_rust),
+    )
+    ordinary_text = ordinary_rust.read_text(encoding="utf-8")
+    assert "(value).wrapping_add(2_i64);" in ordinary_text
+    assert "std::hint::black_box" not in ordinary_text
 
     inspected_test = envelope(
         run(
@@ -154,12 +240,29 @@ def main() -> int:
     benchmarks = envelope(run(compiler, demo, "bench", "--json"), "bench")
     assert benchmarks["ok"] is True
     assert benchmarks["result"]["profile"] == "release"
-    assert len(benchmarks["result"]["benchmarks"]) == 2
+    assert len(benchmarks["result"]["benchmarks"]) == 4
     for benchmark in benchmarks["result"]["benchmarks"]:
         assert benchmark["samples"] == 31
         assert benchmark["warmup"] == 5
         assert benchmark["iterations"] == 1000
         assert benchmark["p25_ns"] <= benchmark["median_ns"] <= benchmark["p75_ns"]
+
+    arithmetic_rust = next(
+        path.read_text(encoding="utf-8")
+        for path in (demo / "build/bench").glob("*.rs")
+        if "bench:benches/arithmetic.moss:bare arithmetic value"
+        in path.read_text(encoding="utf-8")
+    )
+    assert (
+        "std::hint::black_box(((1234_i64).wrapping_mul(7_i64)).wrapping_sub(3_i64));"
+        in arithmetic_rust
+    )
+    assert "std::hint::black_box({\n" in arithmetic_rust
+    assert "FUSED FUNCTIONAL PIPELINE" in arithmetic_rust
+    assert (
+        "std::hint::black_box(mixed(std::hint::black_box(1234_i64)));"
+        in arithmetic_rust
+    )
 
     filtered_bench = envelope(
         run(compiler, demo, "bench", "score", "--json"), "bench"
@@ -184,10 +287,16 @@ def main() -> int:
     baseline_file = demo / ".moss/benchmarks/phase7.json"
     baseline = json.loads(baseline_file.read_text(encoding="utf-8"))
     assert baseline["format"] == "moss-benchmark-baseline"
+    assert baseline["version"] == 2
     assert baseline["profile"] == "release"
     assert baseline["compiler_version"]
     assert baseline["platform_hex"]
     assert baseline["timestamp_utc"].endswith("Z")
+    baseline_backend = baseline["backend_toolchain"]
+    assert baseline_backend["fingerprint"] == saved["result"]["backend_toolchain"]["fingerprint"]
+    assert baseline_backend["resolved_rustc_hex"]
+    assert baseline_backend["version_verbose_hex"]
+    assert baseline_backend["compile_flags_hex"]
     assert len(baseline["benchmarks"][0]["sample_values_ns"]) == 31
 
     compared = envelope(
@@ -206,7 +315,34 @@ def main() -> int:
     )
     assert len(compared["result"]["comparisons"]) == 1
     assert compared["result"]["comparisons"][0]["id"] == "bench:src/main.moss:score"
+    assert compared["result"]["baseline_compatible"] is True
     assert compared["result"]["regression"] is False
+
+    incompatible = envelope(
+        run(
+            compiler,
+            demo,
+            "bench",
+            "score",
+            "--compare",
+            "phase7",
+            "--fail-over",
+            "0%",
+            "--json",
+            extra_env=fake_environment,
+        ),
+        "bench",
+    )
+    assert incompatible["ok"] is True
+    assert incompatible["result"]["baseline_compatible"] is False
+    assert incompatible["result"]["comparisons"] == []
+    assert incompatible["result"]["regression"] is False
+    assert any(
+        warning["code"] == "BASELINE_INCOMPATIBLE"
+        and "backend Rust toolchain differs" in warning["message"]
+        and "--fail-over enforcement were skipped" in warning["message"]
+        for warning in incompatible["result"]["warnings"]
+    )
 
     missing = envelope(
         run(compiler, demo, "test", "does-not-exist", "--json", expected=1),
