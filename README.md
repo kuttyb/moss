@@ -49,7 +49,7 @@ without leaking Rust tooling into the normal workflow.
 - Optional: Emacs 29+, LLDB with `lldb-dap`, Python 3, and `llvm-objdump` or
   GNU `objdump` for the corresponding Phase 5 integrations
 
-## Build
+## Install and project workflow
 
 ```sh
 make
@@ -57,10 +57,13 @@ make
 
 This creates `./moss`.
 
+For the commands below, put the checkout on `PATH` with
+`export PATH="$PWD:$PATH"` or replace `moss` with the absolute path to that
+binary. Phase 7 does not yet provide an installer.
+
 For a Moss project, the normal workflow is:
 
 ```sh
-moss agent bootstrap --json
 moss build
 moss test
 moss build --release
@@ -68,8 +71,15 @@ moss bench
 ```
 
 Projects use `moss.toml` with conventional `src/`, `tests/`, and `benches/`
-directories. See [the build system](docs/BUILD_SYSTEM.md), [unit
+directories. Start with the practical [Moss project
+workflow](docs/PROJECT_WORKFLOW.md): it provides a complete working project,
+debug and release builds, cleaning and cache behavior, tests, benchmarks,
+baselines, artifact locations, JSON output, and troubleshooting. The detailed
+references are [the build system](docs/BUILD_SYSTEM.md), [unit
 testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
+
+Automation and coding agents can discover the structured protocol first with
+`moss agent bootstrap --json`.
 
 ## Use
 
