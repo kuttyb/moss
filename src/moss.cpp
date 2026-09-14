@@ -12981,6 +12981,42 @@ static void finalize_semantic_target_facts(
                          << observable_effect_fingerprint(
                                 target.observable_effects)
                          << "\n";
+    if (target.kind == "type") {
+      auto object = std::find_if(
+          program.objects.begin(), program.objects.end(),
+          [&](const ObjectType& candidate) { return candidate.name == target.name; });
+      if (object != program.objects.end()) {
+        for (const auto& field : object->fields)
+          interface_material << "field:" << field.name << ":" << field.type
+                             << "\n";
+        for (const auto& method : object->methods)
+          interface_material << "method:" << method.name << ":"
+                             << method.return_type.value_or("unit") << ":"
+                             << method.params.size() << "\n";
+      }
+    } else if (target.kind == "trait") {
+      auto trait = std::find_if(
+          program.traits.begin(), program.traits.end(),
+          [&](const Trait& candidate) { return candidate.name == target.name; });
+      if (trait != program.traits.end())
+        for (const auto& method : trait->methods)
+          interface_material << "trait-method:" << method.name << ":"
+                             << method.return_type.value_or("unit") << ":"
+                             << method.params.size() << "\n";
+    } else if (target.kind == "domain") {
+      auto domain = std::find_if(
+          program.domains.begin(), program.domains.end(),
+          [&](const Domain& candidate) { return candidate.name == target.name; });
+      if (domain != program.domains.end()) {
+        for (const auto& field : domain->state)
+          interface_material << "state:" << field.name << ":" << field.type
+                             << "\n";
+        for (const auto& handler : domain->handlers)
+          interface_material << "handler:" << handler.name << ":"
+                             << handler.reply_type.value_or("unit") << ":"
+                             << handler.params.size() << "\n";
+      }
+    }
     for (const auto& edge : program.semantic_await_sites)
       if (edge.source == target.context)
         interface_material << "await:" << edge.target_domain << "\n";
@@ -13672,7 +13708,7 @@ static void write_structured_error(
     out << ", \"line\": " << line << "}}";
     has_fix = true;
   }
-  out << "], \"legal_alternatives\": [";
+  out << "], \"legal_alternatives\": ";
   vector<string> alternatives;
   if (code == "OWNERSHIP_USE_AFTER_CONSUME")
     alternatives = {
@@ -13712,7 +13748,7 @@ static void write_bootstrap_json(std::ostream& out,
             "native_tests", "native_benchmarks", "benchmark_baselines",
             "durable_semantic_identities", "semantic_hashing",
             "impact_analysis", "incremental_verification",
-            "affected_tests", "canonical_formatter", "semantic_edits",
+            "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
             "repair_actions", "static_cost_facts"});
   out << ",\n    \"capability_flags\": {"
          "\"impact_analysis\": true, "
@@ -13780,7 +13816,8 @@ static void write_bootstrap_json(std::ostream& out,
         out, {"durable entity-v1 identity", "debug/source provenance identity",
               "construct name", "line:<number>"});
     out << ", \"project_result_kinds\": ";
-    write_agent_string_array(out, {"build", "test", "bench"});
+    write_agent_string_array(out, {"build", "test", "bench", "impact",
+                                   "fmt", "edit", "cost"});
     out << ", \"stable_project_identities\": ";
     write_agent_string_array(
         out, {"test:<relative-source>:<name>",
@@ -13828,7 +13865,8 @@ static void write_check_json(std::ostream& out, const string& source_file,
     string identity = semantic_identity_near_line(program, warning.line);
     if (identity.empty()) out << "null";
     else write_debug_json_string(out, identity);
-    out << ", \"symbol\": null, \"details\": {}}";
+    out << ", \"symbol\": null, \"details\": {}, \"fixes\": [], "
+           "\"legal_alternatives\": []}";
   }
   out << "]}\n}\n";
 }
@@ -14835,8 +14873,22 @@ static SemanticImpact compute_semantic_impact(
       impact.affected_benchmarks.push_back(identity);
     if (unit.kind == "specialization")
       impact.affected_specializations.push_back(identity);
-    if (unit.kind == "domain" || unit.kind == "handler")
+    if (unit.kind == "domain")
       impact.affected_domains.push_back(identity);
+    if (unit.kind == "handler") {
+      impact.affected_domains.push_back(identity);
+      // A handler is the executable member of a domain.  Report both
+      // identities so callers can invalidate the concrete operation while
+      // still selecting domain-level await/backend facts.
+      size_t dot = unit.name.find('.');
+      if (dot != string::npos) {
+        string domain_name = unit.name.substr(0, dot);
+        for (const auto& candidate : units)
+          if (candidate.second->kind == "domain" &&
+              candidate.second->name == domain_name)
+            impact.affected_domains.push_back(candidate.second->durable_identity);
+      }
+    }
   }
   if ((current_target && current_target->kind == "function") ||
       (previous_target && previous_target->kind == "function")) {
@@ -15569,7 +15621,7 @@ static int report_project_tests(const ProjectManifest& manifest,
           write_debug_json_string(std::cout, *result.expected);
         else
           std::cout << "null";
-        std::cout << "}}";
+        std::cout << "}, \"fixes\": [], \"legal_alternatives\": []}";
       }
       std::cout << "}";
     }
@@ -15622,7 +15674,7 @@ static int report_project_tests(const ProjectManifest& manifest,
     }
     std::cout << "\n" << passed << " passed\n" << failed << " failed\n";
   }
-  if (failed == 0) {
+  if (failed == 0 && filter.empty()) {
     if (affected) {
       for (const auto& entry : affected->current_snapshots) {
         std::filesystem::path source(entry.first);
@@ -16033,6 +16085,9 @@ static int report_project_benchmarks(
     const std::optional<double>& fail_over) {
   ProjectBenchmarkRun run = run_project_benchmarks(manifest, filter);
   const vector<ProjectBenchmarkResult>& results = run.results;
+  for (const auto& source : project_declaration_sources(manifest, "benches"))
+    write_semantic_snapshot(
+        manifest, source, analyze_project_snapshot(manifest, source));
   if (!save_name.empty())
     save_benchmark_baseline(
         manifest, save_name, results, run.backend_toolchain);
@@ -16955,10 +17010,14 @@ static void usage() {
             << "  moss --check <input.moss>\n"
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
-            << "  moss inspect|type|effects|ownership|calls|awaits|why <target> --source <input.moss> --json\n"
+            << "  moss agent session-report-template --json\n"
+            << "  moss inspect|type|effects|ownership|calls|awaits|why|cost <target> --source <input.moss> --json\n"
+            << "  moss impact <target> [--source <input.moss>] --json\n"
+            << "  moss fmt [--check] [--json]\n"
+            << "  moss edit rename|replace-expression|change-argument ... --json\n"
             << "  moss build [--release] [--json]\n"
             << "  moss clean [--json]\n"
-            << "  moss test [filter] [--json]\n"
+            << "  moss test [filter] [--affected] [--json]\n"
             << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
@@ -16988,6 +17047,38 @@ int main(int argc, char** argv) {
   std::optional<moss::Program> active_program;
   try {
     if (argc < 2) { usage(); return 2; }
+
+    // Formatting is useful for a standalone source file as well as a
+    // manifest-backed project.  Project mode below discovers every convention
+    // directory; this small path keeps `moss fmt file.moss` dependency-free.
+    if (string(argv[1]) == "fmt" &&
+        !nearest_moss_project_root(std::filesystem::current_path())) {
+      bool check = false;
+      bool json = false;
+      vector<std::filesystem::path> requested;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--check") check = true;
+        else if (argument == "--json") json = true;
+        else requested.emplace_back(argument);
+      }
+      if (requested.empty()) {
+        moss::write_structured_error(
+            std::cout, "fmt", "FORMAT_SOURCE_REQUIRED",
+            "standalone moss fmt requires a .moss source path");
+        return 2;
+      }
+      moss::ProjectManifest manifest;
+      manifest.root = std::filesystem::current_path();
+      try {
+        return moss::run_project_format(manifest, requested, check, json);
+      } catch (const moss::ProjectError& error) {
+        if (json) moss::write_project_error_json(std::cout, "fmt", error);
+        else std::cerr << "moss: error[" << error.code << "]: "
+                        << error.what() << "\n";
+        return 1;
+      }
+    }
 
     static const std::set<string> project_commands = {
         "build", "clean", "test", "bench", "impact", "fmt", "edit"};
@@ -17182,6 +17273,34 @@ int main(int argc, char** argv) {
 
     auto plan = moss::BackendOptimizer(program).run(
         optimize_shared_memory, requested_clusters);
+
+    // A successful project check seeds the semantic snapshot used by the
+    // later impact/affected-test commands.  Query and standalone compilation
+    // remain read-only; a malformed or unrelated manifest never masks the
+    // ordinary Moss check result.
+    if (check_only && query_command.empty()) {
+      auto project_root = nearest_moss_project_root(
+          std::filesystem::path(active_input));
+      if (project_root) {
+        try {
+          moss::ProjectManifest manifest = moss::load_project_manifest(
+              std::filesystem::path(*project_root));
+          std::filesystem::path source_path =
+              std::filesystem::absolute(input).lexically_normal();
+          std::error_code path_error;
+          std::filesystem::path relative =
+              std::filesystem::relative(source_path, manifest.root,
+                                         path_error);
+          if (!path_error && !relative.empty() && relative.native()[0] != '.')
+            moss::write_semantic_snapshot(
+                manifest, source_path,
+                moss::analyze_project_snapshot(manifest, source_path));
+        } catch (const std::exception&) {
+          // Project snapshots are an accelerator, never part of language
+          // validity.  The checked program and its diagnostics remain valid.
+        }
+      }
+    }
 
     if (!query_command.empty())
       return moss::write_semantic_query_json(

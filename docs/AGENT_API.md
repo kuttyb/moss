@@ -1,9 +1,9 @@
 # Moss Agent Semantic API
 
-Phase 6A exposes compiler facts through one deterministic, vendor-independent JSON
-protocol. It is a read-only interface over the analyses already used for Moss type,
-ownership, effect, await, functional, and backend decisions. It is not an editing API,
-daemon, MCP server, or replacement compiler pipeline.
+Phase 6 exposes compiler facts and bounded development actions through one deterministic,
+vendor-independent JSON protocol. It is a view over the analyses already used for Moss
+type, ownership, effect, await, functional, and backend decisions; edits remain exact and
+validated. It is not a daemon, MCP server, or replacement compiler pipeline.
 
 ## Bootstrap and discovery
 
@@ -112,8 +112,45 @@ records include stable project/source identities. Test assertions use
 `TEST_ASSERTION_FAILED`; project and benchmark failures use the stable categories
 documented in the build/testing/benchmark guides. Benchmark baseline compatibility,
 including the Rust backend identity, is a structured warning. These commands share the
-normal compiler pipeline and semantic identities; they do not introduce affected-test
-analysis or performance facts into the semantic query layer.
+normal compiler pipeline and semantic identities. Incremental work is available through
+`moss impact <target> --json`; during iteration, `moss test --affected --json` selects
+tests whose semantic dependency cone reaches a changed unit and reports skipped tests
+with reasons. A missing snapshot is handled conservatively by selecting all tests.
+
+## Durable identities, hashes, and cost facts
+
+Query results include an `entity-v1` durable semantic identity, an implementation hash,
+and a semantic-interface hash. These are distinct from Phase 5 `.mossmap` debug/source
+identities, which are scoped to one source layout and build. An implementation-only body
+change can stop compiler invalidation at the unchanged interface; verification still
+selects dependent tests. Snapshots live below `.moss/semantic-cache-v1/` and are an
+accelerator, not source-of-truth input.
+
+`moss cost <target> --source file.moss --json` exposes factual costs already known to
+the compiler: functional materialization/traversals, semantic work eliminated, static
+message-copy sizes, specialization counts, and selected domain backend/lock facts. It
+does not predict runtime performance.
+
+## Canonical formatting and semantic edits
+
+`moss fmt` formats all project Moss files with two-space indentation and canonical
+spacing. `moss fmt --check --json` reports whether a write would be needed. Formatting
+validates source before and after rewriting and is idempotent.
+
+Exact semantic edits are available in JSON mode:
+
+```sh
+moss edit rename entity-v1:function:normalize normalize_value --json
+moss edit replace-expression entity-v1:binding:fn:main:total 'sum(values)' --json
+moss edit change-argument entity-v1:call:fn:main:add 0 new_value --json
+```
+
+The initial implementation supports exact function renames, binding expression
+replacement, and statically resolved call-argument replacement. Stale, ambiguous, or
+unsupported targets are structured errors; edits are formatted and rechecked before
+they are written. It never edits generated Rust. Diagnostics always carry `fixes` and
+`legal_alternatives` arrays. A fix is present only for a high-confidence mechanical
+action; alternatives describe choices without silently selecting program intent.
 
 ## Minimal AGENTS.md onboarding
 
@@ -132,8 +169,7 @@ reverse-engineering or editing generated Rust.
 
 ## Deliberately deferred
 
-Phase 6A does not add semantic edits or repairs, cross-edit durable semantic hashing,
-deep impact analysis, incremental dependency cones, affected-test selection, performance
-facts, MCP, a daemon/server, an AI benchmark harness, or a substantial formatter. Phase
-5 source/provenance identities remain deterministic for one source layout; stronger
-durable identities across edits remain future work.
+Phase 6 intentionally keeps the protocol CLI-based. It does not add MCP, a daemon/server,
+telemetry, package management, or new language syntax. Phase 6 durable IDs are
+deterministic and reasonably stable for ordinary edits, but remain versioned separately
+from any stronger cross-edit identity model that may be needed in a future release.

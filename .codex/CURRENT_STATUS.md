@@ -1,6 +1,6 @@
 # Moss current status
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 ## Version and commits
 
@@ -48,17 +48,26 @@ Updated: 2026-09-13
 - Phase 6A is frozen. It exposes those already-computed facts through the deterministic
   `moss-agent-1` JSON protocol. Bootstrap/schema/capability discovery, structured checks,
   and `inspect`, `type`, `effects`, `ownership`, `calls`, `awaits`, and `why` queries are
-  read-only views over the ordinary compiler pipeline. Semantic editing, durable
-  cross-edit identity, MCP, daemon operation, and other broader Phase 6 work remain
-  deferred. Statement/binding queries do not borrow the enclosing callable's effect
-  summary: exact effects remain null when no precise target summary exists, with the
-  callable summary exposed separately as context.
+  read-only views over the ordinary compiler pipeline. Statement/binding queries do not
+  borrow the enclosing callable's effect summary: exact effects remain null when no
+  precise target summary exists, with the callable summary exposed separately as context.
+- The remaining AI-native Phase 6 work is implemented and frozen. `entity-v1` durable
+  semantic identities carry deterministic implementation/interface hashes; project
+  snapshots power `impact` and conservative `test --affected` selection with dependency
+  paths and reuse counters. `fmt` is canonical and idempotent; exact semantic rename,
+  binding-expression, and call-argument edits validate and format before writing.
+  Structured diagnostics expose stable `fixes` and `legal_alternatives`, while `cost`
+  reports factual materialization, traversal, copy, specialization, and backend facts.
+  Bootstrap advertises the complete workflow and a deterministic session-report template.
+  Phase 5 `.mossmap` source identities remain build/source-layout provenance and are not
+  silently redefined as durable edit identities. MCP, a daemon, package management, new
+  syntax, and AI telemetry remain deferred.
 - Phase 7 is frozen. It adds a conventional `moss.toml` project layer and the `moss build`,
   `moss clean`, `moss test`, and `moss bench` workflows. Debug/release builds,
   native test/benchmark harnesses, stable project/source IDs, filtered discovery,
   benchmark sampling/baselines, and all structured results reuse the ordinary
   compiler pipeline and `moss-agent-1` envelope. It adds no package resolver,
-  module system, affected-test analysis, or new optimizer semantics. Native cache reuse
+  module system, or new optimizer semantics. Native cache reuse
   includes the resolved Rust compiler, verbose backend version, profile, and flags;
   benchmark baselines use the same fingerprint for compatibility.
 
@@ -106,6 +115,23 @@ Updated: 2026-09-13
   call/await graphs, ownership/effect summaries, and optimization explanations. A
   statement with no precise retained effect summary reports null rather than inheriting
   all effects from its enclosing callable.
+- Successful project checks/builds/tests/benchmarks persist a compact semantic snapshot
+  under `.moss/semantic-cache-v1/`. `moss impact <target> --json` distinguishes unchanged,
+  implementation-only, and semantic-interface changes and reports direct/transitive
+  dependents, affected tests/benchmarks/domains/await edges, specializations, and reuse
+  counts. `moss test --affected` uses that cone during iteration and conservatively runs
+  all tests when no baseline exists.
+- `moss fmt` and `moss fmt --check` provide canonical two-space Moss formatting after
+  parse/check validation. `moss edit` applies only exact durable semantic targets for
+  initial rename/replace-expression/change-argument operations; stale or ambiguous
+  targets are rejected. `moss cost <target> --json` exposes compiler-known cost facts,
+  and every structured diagnostic includes `fixes` plus `legal_alternatives`.
+
+- A representative Phase 6 agent session used bootstrap, structured checks and
+  semantic queries, exact edits, formatting, impact analysis, and affected tests.
+  The structured repair for a missing block colon and the dependency path reported
+  by `impact` avoided guesswork and an unrelated test run; ownership intent remains
+  deliberately agent-selected from compiler-provided alternatives.
 
 - Every Rust emission has an adjacent versioned JSON `.mossmap` with absolute source and
   output paths, real one-based source spans, deterministic source/provenance identities,

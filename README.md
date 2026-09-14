@@ -28,11 +28,13 @@ source breakpoints, and symbol-targeted native disassembly. A dependency-light
 `moss-mode` provides editing, checking, building, running, debugging, and generated-code
 inspection from Moss source.
 
-Phase 6A is frozen with a small, vendor-independent compiler semantic API. Agents and
-shell tools can discover capabilities, receive structured diagnostics, and query the
-compiler's existing type, ownership, effect, call, await, functional, and backend facts
-through one versioned JSON envelope. It adds no editing service or duplicate semantic
-analysis.
+Phase 6 is frozen with a small, vendor-independent AI-native compiler workflow. Agents
+can discover capabilities, receive structured diagnostics and repair alternatives, query
+existing semantic/cost facts, compare durable semantic snapshots with `moss impact`,
+make exact edits, format canonical Moss, and run only affected tests during iteration.
+All of this is one versioned JSON envelope over the ordinary compiler truth; it adds no
+duplicate semantic analysis or new language syntax. Start with
+`moss agent bootstrap --json` and read [AI-native development](docs/AI_NATIVE_DEVELOPMENT.md).
 
 Phase 7 is frozen with the practical project layer: `moss build`, `moss test`, and
 `moss bench` share one manifest, compiler pipeline, profile model, semantic identity
@@ -81,6 +83,19 @@ testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
 Automation and coding agents can discover the structured protocol first with
 `moss agent bootstrap --json`.
 
+The short agent loop is:
+
+```sh
+moss agent bootstrap --json
+moss check src/main.moss --json
+moss fmt
+moss impact fn:changed --json
+moss test --affected
+```
+
+See [the agent API](docs/AGENT_API.md) for durable IDs, semantic edits, repair actions,
+cost facts, and structured output.
+
 ## Use
 
 ```sh
@@ -95,7 +110,8 @@ rustc build/checkout.rs -o build/checkout
 Compilation also writes `build/checkout.mossmap`. It contains deterministic Moss
 source/provenance identities, generated Rust ranges, concrete native symbols, and
 functional fusion provenance. These Phase 5 identities are repeatable for an unchanged
-source layout; durable identity across edits is separate Phase 6 work.
+source layout; Phase 6 exposes separate `entity-v1` durable semantic identities for
+incremental analysis and exact edits.
 
 Expected output:
 
