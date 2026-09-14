@@ -1,4 +1,7 @@
 
 examples/*.rs
+*.mossmap
+*.elc
+__pycache__/
 moss
 build/**

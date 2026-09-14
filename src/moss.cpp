@@ -2,8 +2,10 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <numeric>
@@ -16,6 +18,7 @@
 #include <utility>
 #include <vector>
 #include "ast.hpp"
+#include "debug_map.hpp"
 #include "diagnostics.hpp"
 
 using std::string;
@@ -36,6 +39,31 @@ static string trim(string s) { return rtrim(ltrim(std::move(s))); }
 static bool starts_with(const string& s, const string& p) { return s.rfind(p, 0) == 0; }
 static bool ends_with(const string& s, const string& p) {
   return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
+}
+
+static string stable_hash(const string& value) {
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (unsigned char byte : value) {
+    hash ^= byte;
+    hash *= 1099511628211ULL;
+  }
+  std::ostringstream out;
+  out << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return out.str();
+}
+
+static string tooling_name(string value) {
+  for (char& c : value) {
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
+  }
+  while (!value.empty() && value.back() == '_') value.pop_back();
+  return value.empty() ? "anonymous" : value;
+}
+
+static string tooling_native_symbol(const string& kind, const string& name,
+                                    const string& semantic_identity) {
+  return "moss__" + tooling_name(kind) + "__" + tooling_name(name) + "__" +
+      stable_hash(semantic_identity);
 }
 
 static vector<string> split_top_level(const string& s, char delim) {
@@ -7724,8 +7752,9 @@ class BackendOptimizer {
 class Generator {
  public:
   Generator(const Program& p, const OptimizationPlan& plan,
-            bool await_error_handling = true)
-      : p_(p), plan_(plan), await_error_handling_(await_error_handling) {
+            bool await_error_handling = true, bool debug_build = false)
+      : p_(p), plan_(plan), await_error_handling_(await_error_handling),
+        debug_build_(debug_build) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& f : p.functions) functions_[f.name] = &f;
@@ -7813,6 +7842,7 @@ class Generator {
   const Program& p_;
   const OptimizationPlan& plan_;
   bool await_error_handling_ = true;
+  bool debug_build_ = false;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Function*> functions_;
@@ -7864,6 +7894,49 @@ class Generator {
 
   static void backend_comment(std::ostringstream& o, int spaces, const string& text) {
     o << string(spaces, ' ') << "// Moss backend: " << comment_text(text) << "\n";
+  }
+
+  static void tooling_begin(std::ostringstream& o, int spaces,
+                            const string& kind, const string& semantic_identity,
+                            const string& generated_symbol,
+                            const string& native_symbol = "") {
+    o << string(spaces, ' ') << "// Moss tooling begin|" << kind << "|"
+      << semantic_identity << "|" << generated_symbol << "|" << native_symbol
+      << "\n";
+  }
+
+  static void tooling_end(std::ostringstream& o, int spaces,
+                          const string& semantic_identity) {
+    o << string(spaces, ' ') << "// Moss tooling end|" << semantic_identity
+      << "\n";
+  }
+
+  void debug_symbol_attributes(std::ostringstream& o, int spaces,
+                               const string& native_symbol,
+                               bool can_export = true) const {
+    if (debug_build_) o << string(spaces, ' ') << "#[inline(never)]\n";
+    if (can_export)
+      o << string(spaces, ' ') << "#[export_name = \"" << native_symbol
+        << "\"]\n";
+  }
+
+  static string function_semantic_identity(
+      const Function& function,
+      const FunctionSpecialization* specialization = nullptr) {
+    return functional_function_context(function, specialization) + "@" +
+        std::to_string(function.line);
+  }
+
+  static string method_semantic_identity(const ObjectType& object,
+                                         const Method& method) {
+    return functional_method_context(object, method) + "@" +
+        std::to_string(method.line);
+  }
+
+  static string handler_semantic_identity(const Domain& domain,
+                                          const Handler& handler) {
+    return functional_handler_context(domain, handler) + "@" +
+        std::to_string(handler.line);
   }
 
   bool direct_shared_memory(const Domain& domain) const {
@@ -8785,17 +8858,27 @@ class Generator {
     string current_collection = "__moss_pipeline_source";
     std::ostringstream out;
     out << "{\n        // Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics";
-    if (planned) out << " (plan %" << planned->transient_id
-                     << ", semantic " << planned->semantic_identity << ")";
-    out << "\n"
-        << "        let __moss_pipeline_source = &("
+    if (planned) {
+      out << " (plan %" << planned->transient_id
+          << ", semantic " << planned->semantic_identity << ")";
+    }
+    out << "\n";
+    if (planned && !planned->nodes.empty())
+      out << "        // Moss functional origin|"
+          << planned->nodes.front().semantic_identity << "\n";
+    out << "        let __moss_pipeline_source = &("
         << expr(pipeline.source, domain, locals, types) << ");\n";
 
     size_t stage_number = 0;
-    for (const auto& stage : pipeline.stages) {
+    for (size_t pipeline_stage = 0; pipeline_stage < pipeline.stages.size();
+         ++pipeline_stage) {
+      const auto& stage = pipeline.stages[pipeline_stage];
       if (stage.kind != FunctionalNodeKind::Map &&
           stage.kind != FunctionalNodeKind::Filter)
         continue;
+      if (planned && pipeline_stage + 1 < planned->nodes.size())
+        out << "        // Moss functional origin|"
+            << planned->nodes[pipeline_stage + 1].semantic_identity << "\n";
       string output = "__moss_stage_" + std::to_string(stage_number);
       string item_ref = "__moss_item_ref_" + std::to_string(stage_number);
       string value = "__moss_value_" + std::to_string(stage_number);
@@ -8838,6 +8921,9 @@ class Generator {
     }
 
     string accumulator = "__moss_result";
+    if (planned && pipeline.stages.size() < planned->nodes.size())
+      out << "        // Moss functional origin|"
+          << planned->nodes[pipeline.stages.size()].semantic_identity << "\n";
     if (terminal.kind == FunctionalNodeKind::Reduce)
       out << "        let mut " << accumulator << " = "
           << expr(terminal.arguments.front(), domain, locals, types) << ";\n";
@@ -9058,7 +9144,10 @@ class Generator {
       std::ostringstream out;
       out << "{\n        // Moss backend: COUNT -> EXACT LENGTH; mapped outputs are dead";
       out << "; plan %" << planned->transient_id << ", semantic "
-          << planned->semantic_identity << "\n"
+          << planned->semantic_identity << "; provenance";
+      for (const auto& origin : planned->lowered_provenance)
+        out << " " << origin;
+      out << "\n"
           << "        let __moss_pipeline_source = &("
           << expr(lowered.source, domain, locals, types) << ");\n"
           << "        __moss_pipeline_source.len() as i64\n    }";
@@ -9522,6 +9611,8 @@ class Generator {
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
+    string type_identity = "type:" + t.name + "@" + std::to_string(t.line);
+    tooling_begin(o, 0, "type", type_identity, t.name);
     source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
     o << "#[derive(Clone, Debug)]\nstruct " << t.name << " {\n";
@@ -9530,8 +9621,19 @@ class Generator {
       o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
+    tooling_end(o, 0, type_identity);
     for (const auto& method : t.methods) {
-      o << "impl " << t.name << " {\n    fn " << method.name;
+      string semantic_identity = method_semantic_identity(t, method);
+      string generated_symbol = t.name + "::" + method.name;
+      string native_symbol = tooling_native_symbol(
+          "method", t.name + "__" + method.name, semantic_identity);
+      tooling_begin(o, 0, "method", semantic_identity, generated_symbol,
+                    native_symbol);
+      o << "impl " << t.name << " {\n";
+      source_comment(o, 4, method.line,
+                     "fn " + method.name);
+      debug_symbol_attributes(o, 4, native_symbol);
+      o << "    fn " << method.name;
       if (method.receiver_effect == Effect::Consume) o << "(self";
       else if (method.receiver_effect == Effect::Write) o << "(&mut self";
       else o << "(&self";
@@ -9572,6 +9674,7 @@ class Generator {
       }
       o << "    }\n";
       o << "}\n\n";
+      tooling_end(o, 0, semantic_identity);
     }
   }
 
@@ -9581,11 +9684,19 @@ class Generator {
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
           return p.type == "vector" || p.type == "queue" || p.type == "map";
         });
+    string semantic_identity = function_semantic_identity(f, specialization);
+    string generated_symbol = specialization ? specialization->generated_name : f.name;
+    bool can_export = specialization || (!f.generic && !container_generic);
+    string native_symbol = tooling_native_symbol(
+        "function", f.name, semantic_identity);
+    tooling_begin(o, 0, "function", semantic_identity, generated_symbol,
+                  can_export ? native_symbol : "");
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
     backend_comment(o, 0, specialization
         ? "STATIC specialization: concrete local function selected before Rust generation"
         : "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
-    o << "fn " << (specialization ? specialization->generated_name : f.name);
+    debug_symbol_attributes(o, 0, native_symbol, can_export);
+    o << "fn " << generated_symbol;
     if (!specialization && (f.generic || container_generic)) {
       o << "<";
       size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") { if (gi++) o << ", "; o << "T_" << p.name; }
@@ -9664,6 +9775,7 @@ class Generator {
         << "\n";
     }
     o << "}\n\n";
+    tooling_end(o, 0, semantic_identity);
   }
 
   void gen_function(std::ostringstream& o, const Function& f) {
@@ -9746,10 +9858,17 @@ class Generator {
         throw std::runtime_error("internal error: one-way handler reached direct shared-memory generation");
       string result_name = reply_binding(d, h);
       bool read_only = rwlock && handler_effects(d, h).state_effect == Effect::Read;
+      string semantic_identity = handler_semantic_identity(d, h);
+      string generated_symbol = d.name + "Ref::" + h.name + "_locked";
+      string native_symbol = tooling_native_symbol(
+          "handler", d.name + "__" + h.name, semantic_identity);
+      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
+                    native_symbol);
       source_comment(o, 4, h.line, handler_signature(h));
       backend_comment(o, 4, read_only
           ? "READ-SHARED RwLock handler body; locking is separated from implementation"
           : "SHARED-MEMORY DIRECT handler body; locking is separated from implementation");
+      debug_symbol_attributes(o, 4, native_symbol);
       o << "    fn " << h.name << "_locked(&self, state: "
         << (read_only ? "&" : "&mut ") << d.name << "State";
       for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
@@ -9773,6 +9892,7 @@ class Generator {
       o << "        }\n";
       o << "        " << result_name << "\n";
       o << "    }\n";
+      tooling_end(o, 4, semantic_identity);
 
       backend_comment(o, 4, read_only
           ? "READ-SHARED RwLock handler wrapper"
@@ -9823,8 +9943,15 @@ class Generator {
     o << "impl " << d.name << "Ref {\n";
     for (const auto& h : d.handlers) {
       const AtomicHandlerPlan& action = atomic_handler(d, h);
+      string semantic_identity = handler_semantic_identity(d, h);
+      string generated_symbol = d.name + "Ref::" + h.name + "_shared";
+      string native_symbol = tooling_native_symbol(
+          "handler", d.name + "__" + h.name, semantic_identity);
+      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
+                    native_symbol);
       source_comment(o, 4, h.line, handler_signature(h));
       backend_comment(o, 4, "ATOMIC DOMAIN handler; no worker, mailbox, or state lock");
+      debug_symbol_attributes(o, 4, native_symbol);
       o << "    fn " << h.name << "_shared(&self";
       for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
       if (h.reply_type) o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
@@ -9893,6 +10020,7 @@ class Generator {
                                               nullptr, locals, &types) << ")\n";
       }
       o << "    }\n";
+      tooling_end(o, 4, semantic_identity);
     }
     o << "}\n\n";
 
@@ -9919,6 +10047,9 @@ class Generator {
   }
 
   void gen_domain(std::ostringstream& o, const Domain& d) {
+    string domain_identity = "domain:" + d.name + "@" +
+        std::to_string(d.line);
+    tooling_begin(o, 0, "domain", domain_identity, d.name + "State");
     source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
     if (cluster_for(d)) {
       backend_comment(o, 0, "CLUSTER-LOCAL state representation for domain " + d.name + " (RefCell on the cluster worker)");
@@ -9938,6 +10069,7 @@ class Generator {
         o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
+    tooling_end(o, 0, domain_identity);
 
     if (cluster_for(d)) return;
 
@@ -9998,6 +10130,47 @@ class Generator {
       }
       o << ").is_err() { self.tracker.end(); }\n    }\n";
     }
+    for (const auto& h : d.handlers) {
+      string reply_name = reply_binding(d, h);
+      string semantic_identity = handler_semantic_identity(d, h);
+      string implementation = "__moss_handler_" + h.name + "_mailbox";
+      string generated_symbol = d.name + "Ref::" + implementation;
+      string native_symbol = tooling_native_symbol(
+          "handler", d.name + "__" + h.name, semantic_identity);
+      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
+                    native_symbol);
+      source_comment(o, 4, h.line, handler_signature(h));
+      backend_comment(o, 4,
+                      "MESSAGE/MAILBOX handler implementation; transport and body are separated for tooling");
+      debug_symbol_attributes(o, 4, native_symbol);
+      o << "    fn " << implementation << "(&self, state: &mut "
+        << d.name << "State";
+      for (const auto& p : h.params)
+        o << ", " << p.name << ": " << rust_type(p.type);
+      if (h.reply_type)
+        o << ", " << reply_name << ": MossSender<"
+          << rust_type(*h.reply_type) << ">";
+      o << ") {\n";
+      o << "        let self_ref = self.clone();\n";
+      o << "        ";
+      if (handler_needs_label(h)) o << "'handler: ";
+      o << "{\n";
+      std::set<string> locals;
+      std::unordered_map<string,string> types;
+      types["self"] = d.name;
+      for (const auto& f : d.state) types[f.name] = f.type;
+      for (const auto& p : h.params) {
+        locals.insert(p.name);
+        types[p.name] = p.type;
+      }
+      locals.insert("self_ref");
+      if (h.reply_type) locals.insert(reply_name);
+      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 3, true, false,
+                std::nullopt, false, functional_handler_context(d, h));
+      o << "        }\n";
+      o << "    }\n";
+      tooling_end(o, 4, semantic_identity);
+    }
     backend_comment(o, 4, "BATCHED MAILBOX SEND helper: one tracker update and one queue lock");
     o << "    fn __moss_send_batch(&self, messages: Vec<" << d.name << "Msg>) {\n";
     o << "        let count = messages.len();\n";
@@ -10045,20 +10218,11 @@ class Generator {
         o << ")";
       }
       o << " => {\n";
-      o << "                    ";
-      if (handler_needs_label(h)) o << "'handler: ";
-      o << "{\n";
-      std::set<string> locals;
-      std::unordered_map<string,string> types;
-      types["self"] = d.name;
-      for (const auto& f : d.state) types[f.name] = f.type;
-      for (const auto& p : h.params) locals.insert(p.name);
-      for (const auto& p : h.params) types[p.name] = p.type;
-      locals.insert("self_ref");
-      if (h.reply_type) locals.insert(reply_name);
-      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 6, true, false,
-                std::nullopt, false, functional_handler_context(d, h));
-      o << "                    }\n";
+      o << "                    self_ref.__moss_handler_" << h.name
+        << "_mailbox(&mut state";
+      for (const auto& p : h.params) o << ", " << p.name;
+      if (h.reply_type) o << ", " << reply_name;
+      o << ");\n";
       o << "                }\n";
     }
     o << "            }\n";
@@ -10169,8 +10333,17 @@ class Generator {
     for (const Domain* domain : members) {
       for (const auto& handler : domain->handlers) {
         string result_name = reply_binding(*domain, handler);
+        string semantic_identity = handler_semantic_identity(*domain, handler);
+        string generated_symbol = prefix + "Runtime::" + domain->name + "_" +
+            handler.name + "_local";
+        string native_symbol = tooling_native_symbol(
+            "handler", domain->name + "__" + handler.name,
+            semantic_identity);
+        tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
+                      native_symbol);
         source_comment(o, 4, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
         backend_comment(o, 4, "CLUSTER-LOCAL version: invoke this Moss handler directly on the cluster thread");
+        debug_symbol_attributes(o, 4, native_symbol);
         o << "    fn " << domain->name << "_" << handler.name << "_local(&self";
         for (const auto& param : handler.params)
           o << ", " << param.name << ": " << local_rust_type(param.type, cluster_index);
@@ -10203,6 +10376,7 @@ class Generator {
         o << "        }\n";
         if (handler.reply_type) o << "        " << result_name << "\n";
         o << "    }\n";
+        tooling_end(o, 4, semantic_identity);
       }
     }
 
@@ -10373,8 +10547,12 @@ class Generator {
   }
 
   void gen_main(std::ostringstream& o, const MainProc& m) {
+    string semantic_identity = "main@" + std::to_string(m.line);
+    tooling_begin(o, 0, "main", semantic_identity, "main",
+                  "moss__main");
     source_comment(o, 0, m.line, m.header.empty() ? "proc main()" : m.header);
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
+    debug_symbol_attributes(o, 0, "moss__main");
     o << "fn main() {\n";
     o << "    let __tracker = Arc::new(MossTracker::new());\n";
     for (size_t index = 0; index < plan_.domain_clusters.size(); ++index) {
@@ -10391,6 +10569,7 @@ class Generator {
               std::nullopt, false, "main");
     o << "    __tracker.wait_zero();\n";
     o << "}\n";
+    tooling_end(o, 0, semantic_identity);
   }
 
   static size_t statement_functional_pipeline_id(
@@ -11186,18 +11365,361 @@ class Generator {
 
 };
 
+static vector<string> debug_split_fields(const string& value) {
+  vector<string> fields;
+  size_t begin = 0;
+  while (true) {
+    size_t delimiter = value.find('|', begin);
+    if (delimiter == string::npos) {
+      fields.push_back(value.substr(begin));
+      return fields;
+    }
+    fields.push_back(value.substr(begin, delimiter - begin));
+    begin = delimiter + 1;
+  }
+}
+
+static vector<string> generated_lines(const string& rust) {
+  vector<string> lines;
+  std::istringstream input(rust);
+  string line;
+  while (std::getline(input, line)) lines.push_back(line);
+  if (lines.empty()) lines.push_back("");
+  return lines;
+}
+
+static bool generated_noncode_line(const string& line) {
+  string value = trim(line);
+  return value.empty() || starts_with(value, "//") ||
+      starts_with(value, "#[");
+}
+
+static int next_generated_code_line(const vector<string>& lines, int line,
+                                    int limit) {
+  int candidate = std::max(1, line);
+  int end = std::min(limit, static_cast<int>(lines.size()));
+  while (candidate <= end &&
+         generated_noncode_line(lines[static_cast<size_t>(candidate - 1)]))
+    ++candidate;
+  return candidate <= end ? candidate : std::max(1, std::min(line, end));
+}
+
+static int previous_generated_code_line(const vector<string>& lines, int line,
+                                        int limit) {
+  int candidate = std::min(line, static_cast<int>(lines.size()));
+  while (candidate >= limit && trim(lines[static_cast<size_t>(candidate - 1)]).empty())
+    --candidate;
+  return candidate >= limit ? candidate : limit;
+}
+
+static std::optional<int> moss_comment_line(const string& line) {
+  string value = trim(line);
+  static const string prefix = "// Moss line ";
+  if (!starts_with(value, prefix)) return std::nullopt;
+  size_t begin = prefix.size();
+  size_t end = begin;
+  while (end < value.size() &&
+         std::isdigit(static_cast<unsigned char>(value[end])))
+    ++end;
+  if (end == begin) return std::nullopt;
+  return std::stoi(value.substr(begin, end - begin));
+}
+
+struct DebugMarkerRegion {
+  string kind;
+  string semantic_identity;
+  string generated_symbol;
+  string native_symbol;
+  int begin_line = 0;
+  int end_line = 0;
+};
+
+static vector<DebugMarkerRegion> collect_debug_regions(
+    const vector<string>& lines) {
+  static const string begin_prefix = "// Moss tooling begin|";
+  static const string end_prefix = "// Moss tooling end|";
+  vector<DebugMarkerRegion> regions;
+  std::unordered_map<string, size_t> open;
+  for (size_t index = 0; index < lines.size(); ++index) {
+    string value = trim(lines[index]);
+    if (starts_with(value, begin_prefix)) {
+      auto fields = debug_split_fields(value.substr(begin_prefix.size()));
+      if (fields.size() != 4)
+        throw std::runtime_error("internal error: malformed Moss tooling marker");
+      DebugMarkerRegion region;
+      region.kind = fields[0];
+      region.semantic_identity = fields[1];
+      region.generated_symbol = fields[2];
+      region.native_symbol = fields[3];
+      region.begin_line = static_cast<int>(index + 1);
+      if (!open.emplace(region.semantic_identity, regions.size()).second)
+        throw std::runtime_error(
+            "internal error: duplicate open Moss tooling identity: " +
+            region.semantic_identity);
+      regions.push_back(std::move(region));
+      continue;
+    }
+    if (starts_with(value, end_prefix)) {
+      string identity = value.substr(end_prefix.size());
+      auto found = open.find(identity);
+      if (found == open.end())
+        throw std::runtime_error(
+            "internal error: unmatched Moss tooling end marker: " + identity);
+      regions[found->second].end_line = static_cast<int>(index + 1);
+      open.erase(found);
+    }
+  }
+  if (!open.empty())
+    throw std::runtime_error("internal error: unclosed Moss tooling marker");
+  return regions;
+}
+
+static DebugMapEntry debug_entry_from_region(
+    const DebugMarkerRegion& region, const vector<string>& lines,
+    const string& source_file, const string& generated_file) {
+  DebugMapEntry entry;
+  entry.semantic_identity = region.semantic_identity;
+  entry.construct_kind = region.kind;
+  entry.generated_symbol = region.generated_symbol;
+  entry.native_symbol = region.native_symbol;
+  entry.provenance.push_back(region.semantic_identity);
+  entry.source.file = source_file;
+  entry.generated.file = generated_file;
+  entry.generated.start_line = next_generated_code_line(
+      lines, region.begin_line + 1, region.end_line - 1);
+  entry.generated.end_line = previous_generated_code_line(
+      lines, region.end_line - 1, entry.generated.start_line);
+
+  std::set<int> mapped_source_lines;
+  for (int line = region.begin_line + 1; line < region.end_line; ++line) {
+    auto moss_line = moss_comment_line(lines[static_cast<size_t>(line - 1)]);
+    if (!moss_line) continue;
+    entry.source.start_line = entry.source.start_line == 0
+        ? *moss_line : std::min(entry.source.start_line, *moss_line);
+    entry.source.end_line = std::max(entry.source.end_line, *moss_line);
+    if (mapped_source_lines.insert(*moss_line).second) {
+      entry.line_mappings.push_back({
+          *moss_line,
+          next_generated_code_line(lines, line + 1, region.end_line - 1)});
+    }
+  }
+  if (entry.source.start_line == 0) {
+    entry.source.start_line = 1;
+    entry.source.end_line = 1;
+  }
+  return entry;
+}
+
+static const DebugMapEntry* debug_parent_for_context(
+    const vector<DebugMapEntry>& entries, const string& context) {
+  string prefix;
+  if (context == "main") prefix = "main@";
+  else prefix = context + "@";
+  auto found = std::find_if(
+      entries.begin(), entries.end(), [&](const DebugMapEntry& entry) {
+        return starts_with(entry.semantic_identity, prefix) &&
+            (entry.construct_kind == "function" ||
+             entry.construct_kind == "method" ||
+             entry.construct_kind == "handler" ||
+             entry.construct_kind == "main");
+      });
+  return found == entries.end() ? nullptr : &*found;
+}
+
+static int find_generated_identity_line(const vector<string>& lines,
+                                        const string& identity,
+                                        const DebugMapEntry* parent) {
+  int begin = parent ? parent->generated.start_line : 1;
+  int end = parent ? parent->generated.end_line
+                   : static_cast<int>(lines.size());
+  for (int line = begin; line <= end; ++line)
+    if (lines[static_cast<size_t>(line - 1)].find(identity) != string::npos)
+      return line;
+  return 0;
+}
+
+static int functional_generated_end_line(const vector<string>& lines,
+                                         int marker_line, int limit) {
+  if (marker_line <= 0 || marker_line > static_cast<int>(lines.size()))
+    return marker_line;
+  const string& marker = lines[static_cast<size_t>(marker_line - 1)];
+  bool origin_marker = starts_with(trim(marker), "// Moss functional origin|");
+  size_t marker_indent = marker.find_first_not_of(" \t");
+  if (marker_indent == string::npos) marker_indent = 0;
+  for (int line = marker_line + 1;
+       line <= limit && line <= static_cast<int>(lines.size()); ++line) {
+    const string& candidate = lines[static_cast<size_t>(line - 1)];
+    if (trim(candidate).empty()) continue;
+    if (origin_marker &&
+        starts_with(trim(candidate), "// Moss functional origin|"))
+      return previous_generated_code_line(lines, line - 1, marker_line + 1);
+    size_t candidate_indent = candidate.find_first_not_of(" \t");
+    if (candidate_indent == string::npos) continue;
+    if (candidate_indent < marker_indent) return line;
+  }
+  return std::max(marker_line, limit);
+}
+
+static vector<string> pipeline_provenance(const FunctionalPipeline& pipeline) {
+  if (!pipeline.lowered_provenance.empty()) return pipeline.lowered_provenance;
+  vector<string> provenance;
+  for (const auto& node : pipeline.nodes)
+    provenance.push_back(node.semantic_identity);
+  return provenance;
+}
+
+static DebugMap build_debug_map(const Program& program, const string& rust,
+                                const string& source_file,
+                                const string& generated_file,
+                                const string& native_executable,
+                                bool debug_build, bool optimized) {
+  DebugMap map;
+  map.source_file = source_file;
+  map.generated_rust_file = generated_file;
+  map.native_executable = native_executable;
+  map.debug_build = debug_build;
+  map.optimized = optimized;
+  vector<string> lines = generated_lines(rust);
+  for (const auto& region : collect_debug_regions(lines))
+    map.entries.push_back(debug_entry_from_region(
+        region, lines, source_file, generated_file));
+
+  // Traits are erased through static specialization, but retain source-only
+  // entries so editor navigation can explain that they have no runtime object.
+  for (const auto& trait : program.traits) {
+    DebugMapEntry entry;
+    entry.semantic_identity = "trait:" + trait.name + "@" +
+        std::to_string(trait.line);
+    entry.construct_kind = "trait";
+    entry.source = {source_file, trait.line, 1, trait.line, 1};
+    entry.generated.file = generated_file;
+    entry.generated_symbol = trait.name;
+    entry.provenance.push_back(entry.semantic_identity);
+    map.entries.push_back(std::move(entry));
+  }
+
+  size_t functional_entry_count = program.functional_traversal_groups.size();
+  for (const auto& pipeline : program.functional_pipelines)
+    functional_entry_count += 1 + pipeline.nodes.size();
+  // Parent lookups below return pointers into this vector. Reserve every
+  // functional entry up front so adding child provenance cannot invalidate the
+  // containing function/method/handler entry.
+  map.entries.reserve(map.entries.size() + functional_entry_count);
+
+  // Functional nodes are many-to-one by design.  Every node in a fused plan
+  // therefore points at the same generated region and records every origin
+  // contributing to that region.
+  for (const auto& pipeline : program.functional_pipelines) {
+    const DebugMapEntry* parent = debug_parent_for_context(
+        map.entries, pipeline.context);
+    int marker_line = find_generated_identity_line(
+        lines, pipeline.semantic_identity, parent);
+    if (marker_line == 0 && !pipeline.nodes.empty())
+      marker_line = find_generated_identity_line(
+          lines, pipeline.nodes.front().semantic_identity, parent);
+    if (marker_line == 0)
+      marker_line = parent ? parent->generated.start_line : 1;
+    int generated_line = next_generated_code_line(
+        lines, marker_line + 1,
+        parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+    int generated_end = functional_generated_end_line(
+        lines, marker_line,
+        parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+    vector<string> provenance = pipeline_provenance(pipeline);
+
+    DebugMapEntry pipeline_entry;
+    pipeline_entry.semantic_identity = pipeline.semantic_identity;
+    pipeline_entry.construct_kind = "functional_pipeline";
+    pipeline_entry.source = {source_file, pipeline.line, 1, pipeline.line, 1};
+    pipeline_entry.generated = {
+        generated_file, generated_line, 1, generated_end, 1};
+    if (parent) {
+      pipeline_entry.generated_symbol = parent->generated_symbol;
+      pipeline_entry.native_symbol = parent->native_symbol;
+    }
+    pipeline_entry.provenance = provenance;
+    pipeline_entry.line_mappings.push_back({pipeline.line, generated_line});
+    map.entries.push_back(pipeline_entry);
+
+    for (const auto& node : pipeline.nodes) {
+      int node_marker_line = find_generated_identity_line(
+          lines, node.semantic_identity, parent);
+      if (node_marker_line == 0) node_marker_line = marker_line;
+      int node_generated_line = next_generated_code_line(
+          lines, node_marker_line + 1,
+          parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+      int node_generated_end = functional_generated_end_line(
+          lines, node_marker_line,
+          parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+      DebugMapEntry node_entry;
+      node_entry.semantic_identity = node.semantic_identity;
+      node_entry.construct_kind = "functional_node";
+      node_entry.source = {
+          source_file, node.span.line, 1, node.span.line, 1};
+      node_entry.generated = {
+          generated_file, node_generated_line, 1, node_generated_end, 1};
+      node_entry.generated_symbol = pipeline_entry.generated_symbol;
+      node_entry.native_symbol = pipeline_entry.native_symbol;
+      node_entry.provenance = provenance;
+      node_entry.line_mappings.push_back({node.span.line, node_generated_line});
+      map.entries.push_back(std::move(node_entry));
+    }
+  }
+
+  for (const auto& group : program.functional_traversal_groups) {
+    const DebugMapEntry* parent = debug_parent_for_context(map.entries,
+                                                           group.context);
+    int marker_line = find_generated_identity_line(lines, group.semantic_identity,
+                                                   parent);
+    if (marker_line == 0)
+      marker_line = parent ? parent->generated.start_line : 1;
+    int generated_line = next_generated_code_line(
+        lines, marker_line + 1,
+        parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+    int generated_end = functional_generated_end_line(
+        lines, marker_line,
+        parent ? parent->generated.end_line : static_cast<int>(lines.size()));
+    DebugMapEntry entry;
+    entry.semantic_identity = group.semantic_identity;
+    entry.construct_kind = "functional_dataflow_group";
+    entry.source = {source_file, group.line, 1, group.line, 1};
+    entry.generated = {generated_file, generated_line, 1, generated_end, 1};
+    if (parent) {
+      entry.generated_symbol = parent->generated_symbol;
+      entry.native_symbol = parent->native_symbol;
+    }
+    entry.provenance = group.provenance;
+    entry.line_mappings.push_back({group.line, generated_line});
+    map.entries.push_back(std::move(entry));
+  }
+
+  std::sort(map.entries.begin(), map.entries.end(),
+            [](const DebugMapEntry& left, const DebugMapEntry& right) {
+    if (left.source.start_line != right.source.start_line)
+      return left.source.start_line < right.source.start_line;
+    if (left.construct_kind != right.construct_kind)
+      return left.construct_kind < right.construct_kind;
+    return left.semantic_identity < right.semantic_identity;
+  });
+  return map;
+}
+
 } // namespace moss
 
 static void usage() {
   std::cerr << "Moss v0.2 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
-            << "  moss <input.moss> [-Oshared-memory] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
+            << "  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
             << "  moss --check <input.moss>\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    fuse safe functional pipelines and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
             << "  --dump-functional-ir   print typed functional/dataflow nodes and optimization decisions\n"
             << "  --explain-fusion       print deterministic functional optimization decisions\n\n"
+            << "  --debug                 emit -O0 Rust with stable native symbols for source debugging\n"
+            << "  --emit-debug-map FILE   write the shared Moss provenance map to FILE\n"
+            << "  --native-output FILE    record the intended native executable in the debug map\n"
+            << "  --diagnostic-paths      prefix diagnostics with the Moss source path\n\n"
             << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
@@ -11210,6 +11732,7 @@ static void usage() {
 }
 
 int main(int argc, char** argv) {
+  string diagnostic_source = "moss";
   try {
     if (argc < 2) { usage(); return 2; }
     bool check_only = false;
@@ -11217,13 +11740,25 @@ int main(int argc, char** argv) {
     bool await_error_handling = true;
     bool dump_functional = false;
     bool explain_fusion = false;
-    string input, output;
+    bool debug_build = false;
+    bool diagnostic_paths = false;
+    string input, output, debug_map_output, native_output;
     vector<vector<string>> requested_clusters;
     for (int i = 1; i < argc; ++i) {
       string a = argv[i];
       if (a == "--check") check_only = true;
       else if (a == "--dump-functional-ir") dump_functional = true;
       else if (a == "--explain-fusion") explain_fusion = true;
+      else if (a == "--debug") debug_build = true;
+      else if (a == "--diagnostic-paths") diagnostic_paths = true;
+      else if (a == "--emit-debug-map") {
+        if (++i >= argc) { usage(); return 2; }
+        debug_map_output = argv[i];
+      }
+      else if (a == "--native-output") {
+        if (++i >= argc) { usage(); return 2; }
+        native_output = argv[i];
+      }
       else if (a == "-O" || a == "-Oshared-memory" || a == "--optimize-shared-memory")
         optimize_shared_memory = true;
       else if (a == "-O0") optimize_shared_memory = false;
@@ -11253,6 +11788,18 @@ int main(int argc, char** argv) {
       else { std::cerr << "unexpected argument: " << a << "\n"; return 2; }
     }
     if (input.empty()) { usage(); return 2; }
+    diagnostic_source = diagnostic_paths
+        ? std::filesystem::absolute(input).lexically_normal().string()
+        : "moss";
+    if (debug_build) {
+      optimize_shared_memory = false;
+      if (!requested_clusters.empty()) {
+        std::cerr << diagnostic_source
+                  << ": error: --debug cannot be combined with --cluster; "
+                     "debug builds use the -O0 reference lowering\n";
+        return 2;
+      }
+    }
 
     std::ifstream f(input);
     if (!f) { std::cerr << "moss: cannot open " << input << "\n"; return 1; }
@@ -11262,7 +11809,8 @@ int main(int argc, char** argv) {
     moss::Checker checker(program);
     checker.run();
     for (const auto& warning : checker.warnings())
-      std::cerr << "moss:" << warning.line << ": warning: " << warning.message << "\n";
+      std::cerr << diagnostic_source << ":" << warning.line
+                << ": warning: " << warning.message << "\n";
 
     moss::FunctionalOptimizer(program).run(optimize_shared_memory);
     if (dump_functional || explain_fusion)
@@ -11277,19 +11825,43 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    moss::Generator gen(program, plan, await_error_handling);
-    string rust = gen.generate();
     if (output.empty()) {
       auto pos = input.find_last_of('.');
       output = (pos == string::npos ? input : input.substr(0, pos)) + ".rs";
     }
+    if (debug_map_output.empty()) {
+      std::filesystem::path map_path(output);
+      map_path.replace_extension(".mossmap");
+      debug_map_output = map_path.string();
+    }
+    string absolute_input = std::filesystem::absolute(input).lexically_normal().string();
+    string absolute_output = std::filesystem::absolute(output).lexically_normal().string();
+    string absolute_native = native_output.empty()
+        ? string()
+        : std::filesystem::absolute(native_output).lexically_normal().string();
+
+    moss::Generator gen(program, plan, await_error_handling, debug_build);
+    string rust = gen.generate();
     std::ofstream out(output);
     if (!out) { std::cerr << "moss: cannot write " << output << "\n"; return 1; }
     out << rust;
+    out.close();
+    std::ofstream map_out(debug_map_output);
+    if (!map_out) {
+      std::cerr << "moss: cannot write " << debug_map_output << "\n";
+      return 1;
+    }
+    moss::write_debug_map(
+        map_out,
+        moss::build_debug_map(program, rust, absolute_input, absolute_output,
+                              absolute_native, debug_build,
+                              optimize_shared_memory));
     std::cout << "generated " << output << "\n";
+    std::cout << "generated " << debug_map_output << "\n";
     return 0;
   } catch (const moss::CompileError& e) {
-    std::cerr << "moss:" << e.line << ": error: " << e.what() << "\n";
+    std::cerr << diagnostic_source << ":" << e.line
+              << ": error: " << e.what() << "\n";
     return 1;
   } catch (const std::exception& e) {
     std::cerr << "moss: error: " << e.what() << "\n";

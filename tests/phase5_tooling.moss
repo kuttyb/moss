@@ -1,0 +1,33 @@
+type Meter:
+  value: Int
+
+  fn doubled() -> Int:
+    return value * 2
+
+fn normalize(value: Int) -> Int:
+  adjusted = value + 1
+  return adjusted
+
+fn summarize(values: Vector) -> Int:
+  return values
+    |> map(normalize)
+    |> filter(_ > 2)
+    |> sum
+
+domain Counter:
+  total = 0
+
+  fn Add(amount: Int) -> Int:
+    total = total + amount
+    reply total
+
+fn main():
+  meter = Meter(value = 3)
+  echo meter.doubled()
+
+  values = [1, 2, 3]
+  echo summarize(values)
+
+  counter = spawn Counter()
+  result = await counter.Add(5)
+  echo result

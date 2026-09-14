@@ -16,11 +16,19 @@ materialization explicitly, simplifies exact counts, short-circuits safe `any`/`
 virtualizes single-use immutable pipeline bindings, and represents compatible terminal
 consumers as a shared-source dataflow DAG. This adds no Moss syntax or lazy runtime.
 
+Phase 5 adds tooling without changing those frozen semantics. Every compilation emits
+one deterministic `.mossmap` provenance artifact shared by Emacs navigation, LLDB/DAP
+source breakpoints, and symbol-targeted native disassembly. A dependency-light
+`moss-mode` provides editing, checking, building, running, debugging, and generated-code
+inspection from Moss source.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
 - `make`
 - Rust (`rustc`) to compile the generated program
+- Optional: Emacs 29+, LLDB with `lldb-dap`, Python 3, and `llvm-objdump` or
+  GNU `objdump` for the corresponding Phase 5 integrations
 
 ## Build
 
@@ -40,6 +48,9 @@ mkdir -p build
 rustc build/checkout.rs -o build/checkout
 ./build/checkout
 ```
+
+Compilation also writes `build/checkout.mossmap`. It contains stable Moss identities,
+generated Rust ranges, concrete native symbols, and functional fusion provenance.
 
 Expected output:
 
@@ -80,6 +91,28 @@ The showcase programs are executable syntax guides:
 
 Every valid showcase compiles to standalone Rust with `make examples`; the generated
 programs contain concrete calls rather than runtime trait objects or vtables.
+
+## Emacs, debugging, and disassembly
+
+Load the bundled major mode directly from the repository:
+
+```elisp
+(add-to-list 'load-path "/path/to/moss/editors/emacs")
+(require 'moss-mode)
+```
+
+From a `.moss` buffer, `M-x moss-check-buffer`, `moss-compile-buffer`, and
+`moss-run-buffer` use Emacs compilation buffers with clickable Moss diagnostics.
+`moss-show-generated-rust` and `moss-show-debug-map` open generated artifacts without
+requiring their paths to be known.
+
+For source debugging, run `M-x moss-build-debug-buffer`, add Moss breakpoints with
+`M-x moss-toggle-breakpoint`, then launch `M-x moss-debug` through optional `dape` and
+`lldb-dap`. Exact debug stops are mirrored back into Moss source through the shared map.
+`M-x moss-disassemble-at-point` resolves the native symbol from that map and invokes
+`llvm-objdump` or GNU `objdump`. See [Moss tooling and source
+provenance](docs/TOOLING.md) for setup, LLDB commands, metadata format, and optimized
+debugging limitations.
 
 ## Functional pipelines
 

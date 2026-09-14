@@ -34,6 +34,11 @@ Updated: 2026-09-13
   exact-count/dead-map simplification, effect-safe `any`/`all` short-circuit plans,
   single-use immutable cross-binding fusion, and shared-source terminal DAGs. It adds no
   source syntax and keeps `-O0` as the complete eager reference traversal.
+- Phase 5 tooling is implemented without changing the frozen semantic phases. The
+  compiler emits a deterministic shared `.mossmap`; debug generation retains stable
+  native symbols; `editors/emacs/moss-mode.el` provides editing, compilation, map-based
+  navigation, `dape`/`lldb-dap` launch support, and objdump integration; optional native
+  tools remain capability-gated.
 
 ## Approved semantics
 
@@ -48,6 +53,30 @@ Updated: 2026-09-13
   not observable Moss semantics.
 
 ## Implemented features
+
+- Every Rust emission has an adjacent versioned JSON `.mossmap` with absolute source and
+  output paths, real one-based source spans, stable source-derived semantic identities,
+  generated ranges, line mappings, generated/native symbols, and provenance. Transient
+  functional IR IDs are excluded. Fused functional nodes deliberately share one
+  generated range while retaining all contributing origins.
+- `--debug` selects the unoptimized eager/mailbox reference lowering and adds stable
+  function boundaries. `tools/moss-build-debug` compiles that Rust with DWARF, frame
+  pointers, no stripping, and warnings denied. Concrete functions, methods, handlers,
+  and main have deterministic readable exported symbol names; mailbox transport and
+  handler implementation are separated so handler bodies also have a toolable symbol.
+- The dependency-light Emacs `moss-mode` includes comment/string syntax, centralized
+  font-lock definitions, tab-free two-space indentation, `else` dedenting, Imenu and
+  defun navigation, compilation-mode check/build/run commands, read-only artifact views,
+  and bidirectional Moss/generated-Rust navigation through the shared map.
+- Optional debugging uses Emacs `dape` with `lldb-dap`. Pending Moss source breakpoints
+  translate deterministically after LLDB creates the native target;
+  `tools/moss_lldb.py` also supplies standalone `moss-map-load`, `moss-break`,
+  `moss-where`, and filtered `moss-stack` commands. Ordinary variable inspection stays
+  in LLDB/DWARF rather than a custom debugger runtime.
+- Emacs disassembly commands resolve a concrete symbol through `.mossmap`, prefer
+  `llvm-objdump`, fall back to GNU `objdump`, use `asm-mode`, and display all fused
+  provenance origins. Compiler operation never depends on editor/debugger/disassembler
+  availability.
 
 - The compiler now has extracted `src/ast.hpp`, `src/constraints.hpp`,
   `src/diagnostics.hpp`, and `src/functional_ir.hpp` modules. `moss.cpp` still contains
@@ -192,6 +221,14 @@ Updated: 2026-09-13
 
 ## Partially implemented or unimplemented
 
+- Phase 5 does not invent one-to-one stepping for fused code. Several Moss nodes may
+  resolve to one Rust/native location, and reverse assembly navigation is currently
+  symbol/provenance-oriented rather than an exact address-level UI. Generic Rust
+  implementations without a concrete Moss specialization have no stable native symbol.
+- Emacs, Python, LLDB/`lldb-dap`, `dape`, and objdump are optional integrations. The
+  corresponding regression runs only when each capability is installed; there is no
+  VS Code extension, LSP, performance model, or Rust interoperability in Phase 5.
+
 - Ownership analysis remains conservative around arbitrary raw expressions and indirect aliases outside the statically represented projection/call slice.
 - `deepCopy()` and its cost warnings are approved but not implemented; no implicit copy is inserted.
 - The future ordinary `proc` parameter model is not implemented; top-level `fn` local functions are implemented. `self.Message(...)` remains queued communication.
@@ -323,6 +360,16 @@ control flow, absent virtual collections, present required collections, and one 
 source loop. Deterministic IR checks assert materialization reasons, DAG edges, stable
 group identity, and combined provenance.
 
+Phase 5 regressions build the tooling fixture twice at identical paths and require
+byte-identical maps; compare `-O0`, optimized, and explicit debug maps; verify stable
+source-derived identities, real function/method/handler lines, readable native symbols,
+bidirectional exact line resolution, and many-to-one fused provenance; and compile and
+run both generated programs with warnings denied. Python map/LLDB helper checks pass,
+all 13 batch ERT tests pass under Emacs 30.1, and GNU objdump resolves both an ordinary
+debug function and an optimized fused-pipeline symbol. The capability-gated live
+breakpoint/local-inspection test was skipped on this machine because neither `lldb` nor
+`lldb-dap` is installed; no compiler functionality depends on them.
+
 `make examples` passed, compiling every valid example (including the executable static
 trait, dataflow, reduction, callable, effect-order, and object-pipeline showcases) with
 `-Oshared-memory`; the intentional `use_after_transfer.moss` negative example was skipped. A strict
@@ -333,7 +380,7 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phase 2, Phase 2.5, Phase 4, and Phase 4.5 are frozen at their respective checkpoints;
+Phase 2, Phase 2.5, Phase 4, Phase 4.5, and Phase 5 are frozen at their respective checkpoints;
 none of the following is implicitly authorized by this status record.
 
 1. Benchmark mailboxes, batching, Mutex/RwLock, atomics, and clusters on

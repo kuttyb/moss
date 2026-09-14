@@ -1,0 +1,53 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo "usage: moss-build-debug SOURCE.moss [-o EXECUTABLE]" >&2
+  exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+source_file=$1
+shift
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      [ "$#" -ge 2 ] || usage
+      output=$2
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      echo "moss-build-debug: unexpected argument: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+compiler=${MOSS_COMPILER:-$repo_dir/moss}
+rustc_bin=${RUSTC:-rustc}
+
+if [ -z "$output" ]; then
+  stem=$(basename -- "$source_file" .moss)
+  output=$repo_dir/build/debug/$stem
+fi
+
+output_dir=$(dirname -- "$output")
+mkdir -p "$output_dir"
+rust_file=$output.rs
+map_file=$output.mossmap
+
+"$compiler" --debug --diagnostic-paths \
+  --emit-debug-map "$map_file" --native-output "$output" \
+  "$source_file" -o "$rust_file"
+
+"$rustc_bin" -D warnings -g -C debuginfo=2 -C opt-level=0 \
+  -C strip=none -C force-frame-pointers=yes "$rust_file" -o "$output"
+
+echo "debug executable $output"
+echo "debug map $map_file"
