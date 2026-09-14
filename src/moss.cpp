@@ -26,6 +26,10 @@ using std::vector;
 
 namespace moss {
 
+static constexpr const char* kCompilerVersion = "0.2.0";
+static constexpr int kAgentProtocolVersion = 1;
+static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
+
 static string ltrim(string s) {
   size_t i = 0;
   while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
@@ -3515,7 +3519,7 @@ class Checker {
       const vector<Stmt>& body, const std::optional<string>& result_expression,
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
-      std::map<string,int>& edge_lines) const {
+      std::map<string,int>& edge_lines) {
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
       for (const auto& expression : statement_expressions(statement)) {
@@ -3525,6 +3529,18 @@ class Checker {
         for (const auto& call : calls) {
           graph[source].insert(call.target);
           edge_lines.emplace(source + "\n" + call.target, statement.line);
+          SemanticCallEdge edge{source, call.target, statement.line,
+                                call.argument_types};
+          if (std::find_if(
+                  p_.semantic_call_edges.begin(),
+                  p_.semantic_call_edges.end(),
+                  [&](const SemanticCallEdge& existing) {
+                    return existing.source == edge.source &&
+                        existing.target == edge.target &&
+                        existing.line == edge.line &&
+                        existing.argument_types == edge.argument_types;
+                  }) == p_.semantic_call_edges.end())
+            p_.semantic_call_edges.push_back(std::move(edge));
         }
       }
     };
@@ -3539,13 +3555,26 @@ class Checker {
       for (const auto& call : calls) {
         graph[source].insert(call.target);
         edge_lines.emplace(source + "\n" + call.target, result_line);
+        SemanticCallEdge edge{source, call.target, result_line,
+                              call.argument_types};
+        if (std::find_if(
+                p_.semantic_call_edges.begin(),
+                p_.semantic_call_edges.end(),
+                [&](const SemanticCallEdge& existing) {
+                  return existing.source == edge.source &&
+                      existing.target == edge.target &&
+                      existing.line == edge.line &&
+                      existing.argument_types == edge.argument_types;
+                }) == p_.semantic_call_edges.end())
+          p_.semantic_call_edges.push_back(std::move(edge));
       }
     }
   }
 
-  void check_local_call_cycles() const {
+  void check_local_call_cycles() {
     std::map<string,std::set<string>> graph;
     std::map<string,int> edge_lines;
+    p_.semantic_call_edges.clear();
     for (const auto& function : p_.functions) {
       graph["fn:" + function.name];
       TypeEnv env;
@@ -3569,6 +3598,35 @@ class Checker {
                                graph, edge_lines);
       }
     }
+    for (const auto& domain : p_.domains) {
+      for (const auto& handler : domain.handlers) {
+        string source = "handler:" + domain.name + "." + handler.name;
+        graph[source];
+        TypeEnv env;
+        env["self"] = domain.name;
+        for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& parameter : handler.params)
+          env[parameter.name] = parameter.type;
+        collect_callable_edges(handler.body, std::nullopt, 0, std::move(env),
+                               nullptr, source, graph, edge_lines);
+      }
+    }
+    if (p_.main) {
+      graph["main"];
+      collect_callable_edges(p_.main->body, std::nullopt, 0, {}, nullptr,
+                             "main", graph, edge_lines);
+    }
+
+    std::sort(p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+              [](const SemanticCallEdge& left,
+                 const SemanticCallEdge& right) {
+                if (left.source != right.source)
+                  return left.source < right.source;
+                if (left.line != right.line) return left.line < right.line;
+                if (left.target != right.target)
+                  return left.target < right.target;
+                return left.argument_types < right.argument_types;
+              });
 
     std::map<string,int> state;
     vector<string> stack;
@@ -3605,7 +3663,7 @@ class Checker {
       if (state[node] == 0) visit(node);
   }
 
-  void check_global_await_cycles() const {
+  void check_global_await_cycles() {
     struct AwaitDependency {
       string target;
       int line = 0;
@@ -3613,7 +3671,8 @@ class Checker {
     std::map<string,vector<AwaitDependency>> graph;
     std::set<string> visited;
     std::function<void(const vector<Stmt>&, const std::optional<string>&, int,
-                       TypeEnv, const ObjectType*, const string&)> visit_body;
+                       TypeEnv, const ObjectType*, const string&,
+                       const string&)> visit_body;
     std::function<void(int, const string&, const TypeEnv&,
                        const ObjectType*, const string&)> visit_expression;
     std::function<void(const LocalCallSite&, const string&)> visit_callable;
@@ -3648,7 +3707,7 @@ class Checker {
         }
         visit_body(function->second->body, function->second->result_expression,
                    function->second->result_line, std::move(env), nullptr,
-                   source_domain);
+                   source_domain, call.target);
         return;
       }
 
@@ -3665,14 +3724,15 @@ class Checker {
             !actual.empty() ? actual : method->params[index].type;
       }
       visit_body(method->body, method->result_expression, method->result_line,
-                 std::move(env), owner, source_domain);
+                 std::move(env), owner, source_domain, call.target);
     };
 
     visit_body = [&](const vector<Stmt>& body,
                      const std::optional<string>& result_expression,
                      int result_line, TypeEnv env,
                      const ObjectType* implicit_owner,
-                     const string& source_domain) {
+                     const string& source_domain,
+                     const string& callable_context) {
       TypeEnvVisitor visit_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
         if (statement.kind == Stmt::Kind::AwaitMessage) {
@@ -3680,6 +3740,17 @@ class Checker {
           if (!target)
             throw std::runtime_error(
                 "internal error: unvalidated await target reached cycle construction");
+          SemanticAwaitSite site{callable_context, target->name,
+                                 statement.line};
+          if (std::find_if(
+                  p_.semantic_await_sites.begin(),
+                  p_.semantic_await_sites.end(),
+                  [&](const SemanticAwaitSite& existing) {
+                    return existing.source == site.source &&
+                        existing.target_domain == site.target_domain &&
+                        existing.line == site.line;
+                  }) == p_.semantic_await_sites.end())
+            p_.semantic_await_sites.push_back(std::move(site));
           if (!source_domain.empty()) {
             auto& dependencies = graph[source_domain];
             bool duplicate = std::any_of(
@@ -3688,8 +3759,11 @@ class Checker {
                   return dependency.target == target->name &&
                          dependency.line == statement.line;
                 });
-            if (!duplicate)
+            if (!duplicate) {
               dependencies.push_back({target->name, statement.line});
+              p_.semantic_await_edges.push_back(
+                  {source_domain, target->name, statement.line});
+            }
           }
         }
         for (const auto& expression : statement_expressions(statement))
@@ -3705,6 +3779,9 @@ class Checker {
                          source_domain);
       }
     };
+
+    p_.semantic_await_sites.clear();
+    p_.semantic_await_edges.clear();
 
     // Local-call cycles are rejected before this pass. That keeps transitive
     // await discovery finite and simple; `visited` still memoizes repeated
@@ -3723,9 +3800,54 @@ class Checker {
         for (const auto& field : domain.state) env[field.name] = field.type;
         for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
         visit_body(handler.body, std::nullopt, 0, std::move(env), nullptr,
-                   domain.name);
+                   domain.name,
+                   "handler:" + domain.name + "." + handler.name);
       }
     }
+
+    // Retain direct await sites for executable roots that contribute no
+    // source-domain graph edge. Calls reached from these bodies reuse the same
+    // bounded traversal and memoization as handler analysis.
+    if (p_.main)
+      visit_body(p_.main->body, std::nullopt, 0, {}, nullptr, "", "main");
+    for (const auto& function : p_.functions) {
+      TypeEnv env;
+      for (const auto& parameter : function.params)
+        env[parameter.name] = parameter.type.empty()
+            ? "_generic:" + parameter.name : parameter.type;
+      visit_body(function.body, function.result_expression,
+                 function.result_line, std::move(env), nullptr, "",
+                 "fn:" + function.name);
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& method : object.methods) {
+        TypeEnv env;
+        env["self"] = object.name;
+        for (const auto& field : object.fields) env[field.name] = field.type;
+        for (const auto& parameter : method.params)
+          env[parameter.name] = parameter.type;
+        visit_body(method.body, method.result_expression, method.result_line,
+                   std::move(env), &object, "",
+                   "method:" + object.name + "." + method.name);
+      }
+    }
+
+    std::sort(p_.semantic_await_sites.begin(), p_.semantic_await_sites.end(),
+              [](const SemanticAwaitSite& left,
+                 const SemanticAwaitSite& right) {
+                if (left.source != right.source)
+                  return left.source < right.source;
+                if (left.line != right.line) return left.line < right.line;
+                return left.target_domain < right.target_domain;
+              });
+    std::sort(p_.semantic_await_edges.begin(), p_.semantic_await_edges.end(),
+              [](const SemanticAwaitEdge& left,
+                 const SemanticAwaitEdge& right) {
+                if (left.source_domain != right.source_domain)
+                  return left.source_domain < right.source_domain;
+                if (left.line != right.line) return left.line < right.line;
+                return left.target_domain < right.target_domain;
+              });
 
     std::map<string,int> state;
     vector<string> stack;
@@ -4572,7 +4694,8 @@ class Checker {
     if (std::any_of(warnings_.begin(), warnings_.end(), [&](const Warning& warning) {
           return warning.line == line && warning.message == message;
         })) return;
-    warnings_.push_back(Warning{line, std::move(message)});
+    warnings_.push_back(
+        Warning{line, std::move(message), "MESSAGE_PAYLOAD_COPY_LARGE"});
   }
 
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
@@ -12276,13 +12399,833 @@ static DebugMap build_debug_map(const Program& program, const string& rust,
   return map;
 }
 
+// Phase 6A exposes the compiler's retained semantic facts.  This layer is
+// deliberately serialization and lookup only: it consumes Program,
+// FunctionalPipeline, and OptimizationPlan records produced by the ordinary
+// compiler passes and never performs a second type/effect analysis.
+struct SemanticParameterFact {
+  string name;
+  string type;
+  Effect ownership = Effect::Read;
+};
+
+struct SemanticTargetFact {
+  string semantic_identity;
+  string context;
+  string kind;
+  string name;
+  string type;
+  int line = 0;
+  vector<SemanticParameterFact> parameters;
+  ObservableEffects observable_effects;
+  bool has_observable_effects = false;
+  vector<string> provenance;
+  vector<string> explanations;
+};
+
+static string ownership_effect_name(Effect effect) {
+  switch (effect) {
+    case Effect::Read: return "READ";
+    case Effect::Write: return "WRITE";
+    case Effect::Consume: return "CONSUME";
+  }
+  return "READ";
+}
+
+static string domain_lowering_name(DomainLowering lowering) {
+  switch (lowering) {
+    case DomainLowering::Mailbox: return "Mailbox";
+    case DomainLowering::DirectMutex: return "DirectMutex";
+    case DomainLowering::DirectRwLock: return "DirectRwLock";
+    case DomainLowering::DirectAtomic: return "DirectAtomic";
+    case DomainLowering::ClusterLocal: return "ClusterLocal";
+  }
+  return "Mailbox";
+}
+
+static ObservableEffects resolved_empty_effects() {
+  ObservableEffects effects;
+  effects.unresolved = false;
+  return effects;
+}
+
+static void append_statement_targets(
+    vector<SemanticTargetFact>& targets, const vector<Stmt>& body,
+    const string& context, const ObservableEffects* enclosing_effects) {
+  for (const auto& statement : body) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = context + "@" + std::to_string(statement.line) +
+        ":statement";
+    fact.context = context;
+    fact.kind = (statement.kind == Stmt::Kind::Let ||
+                 statement.kind == Stmt::Kind::Var ||
+                 statement.kind == Stmt::Kind::Assign)
+        ? "binding" : "statement";
+    fact.name = fact.kind == "binding" ? statement.a : statement.text;
+    fact.type = statement.semantic_type;
+    fact.line = statement.line;
+    if (enclosing_effects) {
+      fact.observable_effects = *enclosing_effects;
+      fact.has_observable_effects = true;
+    }
+    fact.provenance.push_back(fact.semantic_identity);
+    if (fact.kind == "binding" && !fact.type.empty())
+      fact.explanations.push_back(
+          "binding type was resolved by the control-flow-aware type environment");
+    targets.push_back(std::move(fact));
+  }
+}
+
+static vector<SemanticTargetFact> semantic_target_facts(
+    const Program& program, const OptimizationPlan& plan) {
+  vector<SemanticTargetFact> targets;
+  for (const auto& function : program.functions) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "fn:" + function.name + "@" +
+        std::to_string(function.line);
+    fact.context = "fn:" + function.name;
+    fact.kind = "function";
+    fact.name = function.name;
+    fact.type = function.return_type.value_or("unit");
+    fact.line = function.line;
+    fact.observable_effects = function.observable_effects;
+    fact.has_observable_effects = true;
+    fact.provenance.push_back(fact.semantic_identity);
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      Effect effect = index < function.parameter_effects.size()
+          ? function.parameter_effects[index] : Effect::Read;
+      fact.parameters.push_back(
+          {function.params[index].name, function.params[index].type, effect});
+    }
+    fact.explanations.push_back(
+        "parameter ownership and observable effects were inferred bottom-up over the static call graph");
+    targets.push_back(fact);
+    append_statement_targets(targets, function.body, fact.context,
+                             &function.observable_effects);
+
+    for (const auto& specialization : function.specializations) {
+      SemanticTargetFact specialized = fact;
+      std::ostringstream context;
+      context << "fn:" << function.name << "<";
+      for (size_t index = 0;
+           index < specialization.parameter_types.size(); ++index) {
+        if (index) context << ",";
+        context << specialization.parameter_types[index];
+        if (index < specialized.parameters.size())
+          specialized.parameters[index].type =
+              specialization.parameter_types[index];
+      }
+      context << ">";
+      specialized.context = context.str();
+      specialized.semantic_identity = specialized.context + "@" +
+          std::to_string(function.line);
+      specialized.type = specialization.return_type;
+      specialized.provenance = {specialized.semantic_identity,
+                                fact.semantic_identity};
+      targets.push_back(std::move(specialized));
+    }
+  }
+
+  for (const auto& object : program.objects) {
+    SemanticTargetFact object_fact;
+    object_fact.semantic_identity = "type:" + object.name + "@" +
+        std::to_string(object.line);
+    object_fact.context = "type:" + object.name;
+    object_fact.kind = "type";
+    object_fact.name = object.name;
+    object_fact.type = object.name;
+    object_fact.line = object.line;
+    object_fact.provenance.push_back(object_fact.semantic_identity);
+    targets.push_back(std::move(object_fact));
+    for (const auto& field : object.fields) {
+      SemanticTargetFact field_fact;
+      field_fact.semantic_identity = "field:" + object.name + "." +
+          field.name + "@" + std::to_string(field.line);
+      field_fact.context = "type:" + object.name;
+      field_fact.kind = "field";
+      field_fact.name = object.name + "." + field.name;
+      field_fact.type = field.type;
+      field_fact.line = field.line;
+      field_fact.provenance.push_back(field_fact.semantic_identity);
+      targets.push_back(std::move(field_fact));
+    }
+    for (const auto& method : object.methods) {
+      SemanticTargetFact method_fact;
+      method_fact.semantic_identity = "method:" + object.name + "." +
+          method.name + "@" + std::to_string(method.line);
+      method_fact.context = "method:" + object.name + "." + method.name;
+      method_fact.kind = "method";
+      method_fact.name = object.name + "." + method.name;
+      method_fact.type = method.return_type.value_or("unit");
+      method_fact.line = method.line;
+      method_fact.observable_effects = method.observable_effects;
+      method_fact.has_observable_effects = true;
+      method_fact.parameters.push_back(
+          {"self", object.name, method.receiver_effect});
+      for (size_t index = 0; index < method.params.size(); ++index) {
+        Effect effect = index < method.parameter_effects.size()
+            ? method.parameter_effects[index] : Effect::Read;
+        method_fact.parameters.push_back(
+            {method.params[index].name, method.params[index].type, effect});
+      }
+      method_fact.provenance.push_back(method_fact.semantic_identity);
+      method_fact.explanations.push_back(
+          "receiver and parameter ownership were inferred from the method body and static callees");
+      targets.push_back(method_fact);
+      append_statement_targets(targets, method.body, method_fact.context,
+                               &method.observable_effects);
+    }
+  }
+
+  for (const auto& trait : program.traits) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "trait:" + trait.name + "@" +
+        std::to_string(trait.line);
+    fact.context = "trait:" + trait.name;
+    fact.kind = "trait";
+    fact.name = trait.name;
+    fact.type = trait.name;
+    fact.line = trait.line;
+    fact.provenance.push_back(fact.semantic_identity);
+    fact.explanations.push_back(
+        "named trait conformance is resolved statically through concrete methods");
+    targets.push_back(std::move(fact));
+  }
+
+  for (const auto& domain : program.domains) {
+    SemanticTargetFact domain_fact;
+    domain_fact.semantic_identity = "domain:" + domain.name + "@" +
+        std::to_string(domain.line);
+    domain_fact.context = "domain:" + domain.name;
+    domain_fact.kind = "domain";
+    domain_fact.name = domain.name;
+    domain_fact.type = domain.name;
+    domain_fact.line = domain.line;
+    domain_fact.provenance.push_back(domain_fact.semantic_identity);
+    DomainLowering lowering = plan.lowering_for(domain);
+    domain_fact.explanations.push_back(
+        "backend lowering selected: " + domain_lowering_name(lowering));
+    if (lowering == DomainLowering::Mailbox)
+      domain_fact.explanations.push_back(
+          "DirectAtomic was not selected because the complete domain did not match the conservative single scalar-action plan");
+    targets.push_back(std::move(domain_fact));
+    for (const auto& field : domain.state) {
+      SemanticTargetFact field_fact;
+      field_fact.semantic_identity = "state:" + domain.name + "." +
+          field.name + "@" + std::to_string(field.line);
+      field_fact.context = "domain:" + domain.name;
+      field_fact.kind = "domain_state";
+      field_fact.name = domain.name + "." + field.name;
+      field_fact.type = field.type;
+      field_fact.line = field.line;
+      field_fact.provenance.push_back(field_fact.semantic_identity);
+      targets.push_back(std::move(field_fact));
+    }
+    for (const auto& handler : domain.handlers) {
+      SemanticTargetFact handler_fact;
+      handler_fact.semantic_identity = "handler:" + domain.name + "." +
+          handler.name + "@" + std::to_string(handler.line);
+      handler_fact.context = "handler:" + domain.name + "." + handler.name;
+      handler_fact.kind = "handler";
+      handler_fact.name = domain.name + "." + handler.name;
+      handler_fact.type = handler.reply_type.value_or("unit");
+      handler_fact.line = handler.line;
+      handler_fact.observable_effects = handler.observable_effects;
+      handler_fact.has_observable_effects = true;
+      for (const auto& parameter : handler.params)
+        handler_fact.parameters.push_back(
+            {parameter.name, parameter.type, Effect::Read});
+      handler_fact.provenance.push_back(handler_fact.semantic_identity);
+      auto summary = plan.handler_effects.find(domain.name + "." + handler.name);
+      if (summary != plan.handler_effects.end())
+        handler_fact.explanations.push_back(
+            "domain state effect: " +
+            ownership_effect_name(summary->second.state_effect));
+      targets.push_back(handler_fact);
+      append_statement_targets(targets, handler.body, handler_fact.context,
+                               &handler.observable_effects);
+    }
+  }
+
+  if (program.main) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "main@" + std::to_string(program.main->line);
+    fact.context = "main";
+    fact.kind = "main";
+    fact.name = "main";
+    fact.type = "unit";
+    fact.line = program.main->line;
+    fact.provenance.push_back(fact.semantic_identity);
+    targets.push_back(fact);
+    append_statement_targets(targets, program.main->body, "main", nullptr);
+  }
+
+  for (const auto& pipeline : program.functional_pipelines) {
+    ObservableEffects aggregate = resolved_empty_effects();
+    for (const auto& node : pipeline.nodes) aggregate.merge(node.effects);
+    SemanticTargetFact fact;
+    fact.semantic_identity = pipeline.semantic_identity;
+    fact.context = pipeline.context;
+    fact.kind = "functional_pipeline";
+    fact.name = pipeline.semantic_identity;
+    fact.type = pipeline.output_type;
+    fact.line = pipeline.line;
+    fact.observable_effects = aggregate;
+    fact.has_observable_effects = true;
+    fact.provenance = pipeline_provenance(pipeline);
+    fact.explanations.push_back(pipeline.decision);
+    fact.explanations.insert(fact.explanations.end(),
+                             pipeline.optimization_notes.begin(),
+                             pipeline.optimization_notes.end());
+    for (const auto& rewrite : pipeline.semantic_rewrites)
+      fact.explanations.push_back(
+          "semantic rewrite " + rewrite.name + ": " + rewrite.detail);
+    targets.push_back(fact);
+    for (const auto& node : pipeline.nodes) {
+      SemanticTargetFact node_fact;
+      node_fact.semantic_identity = node.semantic_identity;
+      node_fact.context = pipeline.context;
+      node_fact.kind = "functional_node";
+      node_fact.name = functional_node_name(node.kind);
+      node_fact.type = node.output_type;
+      node_fact.line = node.span.line;
+      node_fact.observable_effects = node.effects;
+      node_fact.has_observable_effects = true;
+      node_fact.parameters.push_back(
+          {"element", node.input_type, node.ownership});
+      node_fact.provenance = node.provenance;
+      if (!node.materialization_reason.empty())
+        node_fact.explanations.push_back(
+            string("materialization: ") +
+            functional_materialization_name(node.materialization) +
+            "; reason: " + node.materialization_reason);
+      if (node.semantic_work_eliminated)
+        node_fact.explanations.push_back(
+            "semantic work eliminated: " +
+            node.semantic_elimination_reason);
+      targets.push_back(std::move(node_fact));
+    }
+  }
+
+  std::sort(targets.begin(), targets.end(),
+            [](const SemanticTargetFact& left,
+               const SemanticTargetFact& right) {
+              if (left.line != right.line) return left.line < right.line;
+              if (left.kind != right.kind) return left.kind < right.kind;
+              return left.semantic_identity < right.semantic_identity;
+            });
+  return targets;
+}
+
+static int semantic_target_rank(const SemanticTargetFact& fact) {
+  if (fact.kind == "functional_pipeline") return 0;
+  if (fact.kind == "functional_node") return 1;
+  if (fact.kind == "binding") return 2;
+  if (fact.kind == "statement") return 3;
+  return 4;
+}
+
+static const SemanticTargetFact* resolve_semantic_target(
+    const vector<SemanticTargetFact>& targets, string selector) {
+  selector = trim(std::move(selector));
+  if (starts_with(selector, "line:")) selector = selector.substr(5);
+  bool numeric = !selector.empty() &&
+      std::all_of(selector.begin(), selector.end(), [](unsigned char ch) {
+        return std::isdigit(ch);
+      });
+  if (numeric) {
+    int line = std::stoi(selector);
+    const SemanticTargetFact* best = nullptr;
+    for (const auto& target : targets) {
+      if (target.line != line) continue;
+      if (!best || semantic_target_rank(target) < semantic_target_rank(*best) ||
+          (semantic_target_rank(target) == semantic_target_rank(*best) &&
+           target.semantic_identity < best->semantic_identity))
+        best = &target;
+    }
+    return best;
+  }
+  auto exact = std::find_if(targets.begin(), targets.end(),
+                            [&](const SemanticTargetFact& target) {
+                              return target.semantic_identity == selector;
+                            });
+  if (exact != targets.end()) return &*exact;
+  auto named = std::find_if(targets.begin(), targets.end(),
+                            [&](const SemanticTargetFact& target) {
+                              return target.context == selector ||
+                                  target.name == selector ||
+                                  target.kind + ":" + target.name == selector;
+                            });
+  return named == targets.end() ? nullptr : &*named;
+}
+
+static void write_agent_envelope_begin(std::ostream& out,
+                                       const string& command, bool ok) {
+  out << "{\n  \"protocol_version\": " << kAgentProtocolVersion
+      << ",\n  \"schema_version\": ";
+  write_debug_json_string(out, kAgentSchemaVersion);
+  out << ",\n  \"compiler_version\": ";
+  write_debug_json_string(out, kCompilerVersion);
+  out << ",\n  \"command\": ";
+  write_debug_json_string(out, command);
+  out << ",\n  \"ok\": " << (ok ? "true" : "false") << ",\n";
+}
+
+static void write_agent_string_array(std::ostream& out,
+                                     const vector<string>& values) {
+  out << "[";
+  for (size_t index = 0; index < values.size(); ++index) {
+    if (index) out << ", ";
+    write_debug_json_string(out, values[index]);
+  }
+  out << "]";
+}
+
+static void write_observable_effects_json(
+    std::ostream& out, const ObservableEffects& effects) {
+  out << "{\"local_capture_read\": "
+      << (effects.local_capture_read ? "true" : "false")
+      << ", \"local_mutation\": "
+      << (effects.local_mutation ? "true" : "false")
+      << ", \"domain_read\": "
+      << (effects.domain_read ? "true" : "false")
+      << ", \"domain_write\": "
+      << (effects.domain_write ? "true" : "false")
+      << ", \"message\": " << (effects.message ? "true" : "false")
+      << ", \"await\": " << (effects.await ? "true" : "false")
+      << ", \"external_io\": "
+      << (effects.external_io ? "true" : "false")
+      << ", \"may_fail\": " << (effects.may_fail ? "true" : "false")
+      << ", \"may_diverge\": "
+      << (effects.may_diverge ? "true" : "false")
+      << ", \"unresolved\": "
+      << (effects.unresolved ? "true" : "false") << "}";
+}
+
+static void write_semantic_target_json(std::ostream& out,
+                                       const SemanticTargetFact& target,
+                                       const string& source_file) {
+  out << "{\"semantic_identity\": ";
+  write_debug_json_string(out, target.semantic_identity);
+  out << ", \"construct_kind\": ";
+  write_debug_json_string(out, target.kind);
+  out << ", \"name\": ";
+  write_debug_json_string(out, target.name);
+  out << ", \"source\": {\"file\": ";
+  write_debug_json_string(out, source_file);
+  out << ", \"line\": " << target.line
+      << ", \"column\": 1, \"span\": {\"start_line\": "
+      << target.line << ", \"start_column\": 1, \"end_line\": "
+      << target.line << ", \"end_column\": 1}}, \"type\": ";
+  if (target.type.empty()) out << "null";
+  else write_debug_json_string(out, target.type);
+  out << ", \"provenance\": ";
+  write_agent_string_array(out, target.provenance);
+  out << "}";
+}
+
+static void write_parameters_json(std::ostream& out,
+                                  const SemanticTargetFact& target) {
+  out << "[";
+  for (size_t index = 0; index < target.parameters.size(); ++index) {
+    if (index) out << ", ";
+    const auto& parameter = target.parameters[index];
+    out << "{\"name\": ";
+    write_debug_json_string(out, parameter.name);
+    out << ", \"type\": ";
+    if (parameter.type.empty()) out << "null";
+    else write_debug_json_string(out, parameter.type);
+    out << ", \"effect\": ";
+    write_debug_json_string(out, ownership_effect_name(parameter.ownership));
+    out << "}";
+  }
+  out << "]";
+}
+
+static vector<const SemanticCallEdge*> calls_for_target(
+    const Program& program, const SemanticTargetFact& target) {
+  vector<const SemanticCallEdge*> result;
+  for (const auto& edge : program.semantic_call_edges)
+    if (edge.source == target.context) result.push_back(&edge);
+  return result;
+}
+
+static vector<const SemanticAwaitSite*> awaits_for_context(
+    const Program& program, const string& context) {
+  std::set<string> pending{context};
+  std::set<string> visited;
+  vector<const SemanticAwaitSite*> result;
+  while (!pending.empty()) {
+    string current = *pending.begin();
+    pending.erase(pending.begin());
+    if (!visited.insert(current).second) continue;
+    for (const auto& site : program.semantic_await_sites)
+      if (site.source == current) result.push_back(&site);
+    for (const auto& call : program.semantic_call_edges)
+      if (call.source == current) pending.insert(call.target);
+  }
+  std::sort(result.begin(), result.end(),
+            [](const SemanticAwaitSite* left,
+               const SemanticAwaitSite* right) {
+              if (left->source != right->source)
+                return left->source < right->source;
+              if (left->line != right->line) return left->line < right->line;
+              return left->target_domain < right->target_domain;
+            });
+  return result;
+}
+
+static vector<string> transitive_await_targets(const Program& program,
+                                               const string& source_domain) {
+  std::set<string> reached;
+  std::set<string> pending{source_domain};
+  while (!pending.empty()) {
+    string current = *pending.begin();
+    pending.erase(pending.begin());
+    for (const auto& edge : program.semantic_await_edges) {
+      if (edge.source_domain != current) continue;
+      if (reached.insert(edge.target_domain).second)
+        pending.insert(edge.target_domain);
+    }
+  }
+  reached.erase(source_domain);
+  return vector<string>(reached.begin(), reached.end());
+}
+
+static string diagnostic_code_for_message(const string& message) {
+  if (message.find("await cycle detected") != string::npos)
+    return "AWAIT_CYCLE";
+  if (message.find("recursive local call cycle") != string::npos)
+    return "RECURSION_CYCLE";
+  if (message.find("cannot be statically and conservatively bounded") !=
+      string::npos)
+    return "AWAIT_TARGET_UNBOUNDED";
+  if (message.find("conflicting domain types across control-flow paths") !=
+      string::npos)
+    return "TYPE_BRANCH_CONFLICT";
+  if (message.find("was transferred") != string::npos ||
+      message.find("was consumed") != string::npos)
+    return "OWNERSHIP_USE_AFTER_CONSUME";
+  if (message.find("conflicting") != string::npos &&
+      message.find("access") != string::npos)
+    return "OWNERSHIP_CONFLICTING_ACCESS";
+  if (message.find("cannot infer") != string::npos)
+    return "TYPE_INFERENCE_FAILED";
+  if (message.find("unknown") != string::npos)
+    return "UNKNOWN_SYMBOL_OR_TYPE";
+  if (message.find("expects") != string::npos ||
+      message.find("type mismatch") != string::npos ||
+      message.find("has type") != string::npos)
+    return "TYPE_MISMATCH";
+  if (message.find("functional") != string::npos)
+    return "FUNCTIONAL_SEMANTIC_ERROR";
+  return "MOSS_COMPILE_ERROR";
+}
+
+static string semantic_identity_near_line(const Program* program, int line) {
+  if (!program) return {};
+  string best;
+  int best_line = -1;
+  auto consider = [&](int candidate_line, const string& identity) {
+    if (candidate_line <= line && candidate_line >= best_line) {
+      best_line = candidate_line;
+      best = identity;
+    }
+  };
+  for (const auto& function : program->functions)
+    consider(function.line,
+             "fn:" + function.name + "@" + std::to_string(function.line));
+  for (const auto& object : program->objects) {
+    consider(object.line,
+             "type:" + object.name + "@" + std::to_string(object.line));
+    for (const auto& method : object.methods)
+      consider(method.line, "method:" + object.name + "." + method.name +
+                               "@" + std::to_string(method.line));
+  }
+  for (const auto& domain : program->domains) {
+    consider(domain.line,
+             "domain:" + domain.name + "@" + std::to_string(domain.line));
+    for (const auto& handler : domain.handlers)
+      consider(handler.line, "handler:" + domain.name + "." + handler.name +
+                                "@" + std::to_string(handler.line));
+  }
+  if (program->main)
+    consider(program->main->line,
+             "main@" + std::to_string(program->main->line));
+  for (const auto& pipeline : program->functional_pipelines)
+    consider(pipeline.line, pipeline.semantic_identity);
+  return best;
+}
+
+static void write_structured_error(
+    std::ostream& out, const string& command, const string& code,
+    const string& message, const string& source_file = {}, int line = 0,
+    const string& semantic_identity = {}, const string& symbol = {}) {
+  write_agent_envelope_begin(out, command, false);
+  out << "  \"error\": {\"code\": ";
+  write_debug_json_string(out, code);
+  out << ", \"severity\": \"error\", \"message\": ";
+  write_debug_json_string(out, message);
+  out << ", \"source_file\": ";
+  if (source_file.empty()) out << "null";
+  else write_debug_json_string(out, source_file);
+  out << ", \"line\": " << line << ", \"column\": 1, \"span\": ";
+  if (line <= 0) out << "null";
+  else
+    out << "{\"start_line\": " << line
+        << ", \"start_column\": 1, \"end_line\": " << line
+        << ", \"end_column\": 1}";
+  out << ", \"semantic_identity\": ";
+  if (semantic_identity.empty()) out << "null";
+  else write_debug_json_string(out, semantic_identity);
+  out << ", \"symbol\": ";
+  if (symbol.empty()) out << "null";
+  else write_debug_json_string(out, symbol);
+  out << ", \"details\": {\"ownership_expected\": ";
+  if (code == "OWNERSHIP_USE_AFTER_CONSUME")
+    write_debug_json_string(out, "AVAILABLE");
+  else out << "null";
+  out << ", \"ownership_actual\": ";
+  if (code == "OWNERSHIP_USE_AFTER_CONSUME")
+    write_debug_json_string(out, "CONSUMED");
+  else out << "null";
+  out << ", \"consume_line\": ";
+  size_t consume_marker = message.find(" at line ");
+  if (code == "OWNERSHIP_USE_AFTER_CONSUME" &&
+      consume_marker != string::npos) {
+    consume_marker += string(" at line ").size();
+    size_t end = consume_marker;
+    while (end < message.size() &&
+           std::isdigit(static_cast<unsigned char>(message[end])))
+      ++end;
+    out << message.substr(consume_marker, end - consume_marker);
+  } else {
+    out << "null";
+  }
+  out << ", \"await_dependency_witness\": ";
+  if (code == "AWAIT_CYCLE") write_debug_json_string(out, message);
+  else out << "null";
+  out << ", \"recursion_witness\": ";
+  if (code == "RECURSION_CYCLE") write_debug_json_string(out, message);
+  else out << "null";
+  out << "}}\n}\n";
+}
+
+static void write_bootstrap_json(std::ostream& out,
+                                 const string& command,
+                                 const std::optional<string>& project_root) {
+  write_agent_envelope_begin(out, "agent " + command, true);
+  out << "  \"result\": {\n    \"project_root\": ";
+  if (project_root) write_debug_json_string(out, *project_root);
+  else out << "null";
+  out << ",\n    \"capabilities\": ";
+  write_agent_string_array(
+      out, {"structured_diagnostics", "semantic_inspection",
+            "static_call_graph", "static_await_graph",
+            "ownership_effects", "observable_effects",
+            "functional_optimization_explanations",
+            "backend_lowering_explanations"});
+  out << ",\n    \"commands\": ";
+  write_agent_string_array(
+      out, {"moss check <source> --json",
+            "moss inspect <target> --source <source> --json",
+            "moss type <target> --source <source> --json",
+            "moss effects <target> --source <source> --json",
+            "moss ownership <target> --source <source> --json",
+            "moss calls <target> --source <source> --json",
+            "moss awaits <target> --source <source> --json",
+            "moss why <target> --source <source> --json"});
+  out << ",\n    \"recommended_workflow\": ";
+  write_agent_string_array(
+      out, {"Run moss agent bootstrap --json before modifying Moss source.",
+            "Use moss check --json and semantic queries before inspecting backend output.",
+            "Edit Moss source, never generated Rust.",
+            "Prefer structured --json output for automation.",
+            "Run moss fmt when a formatter becomes available."});
+  out << ",\n    \"safety_rules\": ";
+  write_agent_string_array(
+      out, {"Do not edit generated Rust.",
+            "Do not infer dynamic targets; Moss dispatch is statically closed.",
+            "Treat message and await as explicit domain copy boundaries.",
+            "Preserve Moss diagnostics and source provenance."});
+  if (command == "capabilities") {
+    out << ",\n    \"discovery\": {\"schema_command\": "
+        << "\"moss agent schema --json\", \"protocol_vendor\": "
+        << "\"Moss\"}";
+  } else if (command == "schema") {
+    out << ",\n    \"schema\": {\"envelope_fields\": ";
+    write_agent_string_array(
+        out, {"protocol_version", "schema_version", "compiler_version",
+              "command", "ok", "result", "error"});
+    out << ", \"target_selectors\": ";
+    write_agent_string_array(
+        out, {"semantic identity", "construct name", "line:<number>"});
+    out << ", \"diagnostic_codes_are_stable\": true}";
+  }
+  out << "\n  }\n}\n";
+}
+
+static void write_check_json(std::ostream& out, const string& source_file,
+                             const vector<Warning>& warnings,
+                             const Program* program) {
+  write_agent_envelope_begin(out, "check", true);
+  out << "  \"result\": {\"source_file\": ";
+  write_debug_json_string(out, source_file);
+  out << ", \"diagnostics\": [";
+  for (size_t index = 0; index < warnings.size(); ++index) {
+    if (index) out << ", ";
+    const auto& warning = warnings[index];
+    out << "{\"code\": ";
+    write_debug_json_string(out, warning.code);
+    out << ", \"severity\": \"warning\", \"message\": ";
+    write_debug_json_string(out, warning.message);
+    out << ", \"source_file\": ";
+    write_debug_json_string(out, source_file);
+    out << ", \"line\": " << warning.line
+        << ", \"column\": 1, \"span\": {\"start_line\": "
+        << warning.line
+        << ", \"start_column\": 1, \"end_line\": " << warning.line
+        << ", \"end_column\": 1}, \"semantic_identity\": ";
+    string identity = semantic_identity_near_line(program, warning.line);
+    if (identity.empty()) out << "null";
+    else write_debug_json_string(out, identity);
+    out << ", \"symbol\": null, \"details\": {}}";
+  }
+  out << "]}\n}\n";
+}
+
+static void write_calls_result(std::ostream& out, const Program& program,
+                               const SemanticTargetFact& target) {
+  auto calls = calls_for_target(program, target);
+  out << "[";
+  for (size_t index = 0; index < calls.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"target\": ";
+    write_debug_json_string(out, calls[index]->target);
+    out << ", \"line\": " << calls[index]->line
+        << ", \"argument_types\": ";
+    write_agent_string_array(out, calls[index]->argument_types);
+    out << "}";
+  }
+  out << "]";
+}
+
+static void write_awaits_result(std::ostream& out, const Program& program,
+                                const SemanticTargetFact& target) {
+  auto sites = awaits_for_context(program, target.context);
+  out << "{\"direct_or_called_sites\": [";
+  for (size_t index = 0; index < sites.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"source\": ";
+    write_debug_json_string(out, sites[index]->source);
+    out << ", \"target_domain\": ";
+    write_debug_json_string(out, sites[index]->target_domain);
+    out << ", \"line\": " << sites[index]->line << "}";
+  }
+  out << "], \"domain_edges\": [";
+  bool first = true;
+  string domain_name = target.kind == "domain" ? target.name : "";
+  if (target.kind == "handler") {
+    auto dot = target.name.find('.');
+    domain_name = dot == string::npos ? "" : target.name.substr(0, dot);
+  }
+  for (const auto& edge : program.semantic_await_edges) {
+    if (domain_name.empty()) continue;
+    if (!domain_name.empty() && edge.source_domain != domain_name) continue;
+    if (!first) out << ", ";
+    first = false;
+    out << "{\"source_domain\": ";
+    write_debug_json_string(out, edge.source_domain);
+    out << ", \"target_domain\": ";
+    write_debug_json_string(out, edge.target_domain);
+    out << ", \"line\": " << edge.line << "}";
+  }
+  out << "], \"transitive_targets\": ";
+  write_agent_string_array(
+      out, domain_name.empty()
+          ? vector<string>{}
+          : transitive_await_targets(program, domain_name));
+  out << "}";
+}
+
+static bool write_semantic_query_json(
+    std::ostream& out, const string& command, const string& selector,
+    const string& source_file, const Program& program,
+    const OptimizationPlan& plan) {
+  vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
+  const SemanticTargetFact* target = resolve_semantic_target(targets, selector);
+  if (!target) {
+    write_structured_error(
+        out, command, "QUERY_TARGET_NOT_FOUND",
+        "no exact Moss semantic target matches '" + selector + "'",
+        source_file);
+    return false;
+  }
+  write_agent_envelope_begin(out, command, true);
+  out << "  \"result\": {\"target\": ";
+  write_semantic_target_json(out, *target, source_file);
+  if (command == "inspect" || command == "type") {
+    out << ", \"resolved_type\": ";
+    if (target->type.empty()) out << "null";
+    else write_debug_json_string(out, target->type);
+  }
+  if (command == "inspect" || command == "effects") {
+    out << ", \"ownership\": ";
+    write_parameters_json(out, *target);
+    out << ", \"observable_effects\": ";
+    if (target->has_observable_effects)
+      write_observable_effects_json(out, target->observable_effects);
+    else out << "null";
+  }
+  if (command == "ownership") {
+    out << ", \"parameters_and_values\": ";
+    write_parameters_json(out, *target);
+    out << ", \"reason\": ";
+    write_debug_json_string(
+        out, "effects are inferred from the checked body and its statically resolved callees");
+  }
+  if (command == "inspect" || command == "calls") {
+    out << ", \"direct_calls\": ";
+    write_calls_result(out, program, *target);
+  }
+  if (command == "inspect" || command == "awaits") {
+    out << ", \"awaits\": ";
+    write_awaits_result(out, program, *target);
+  }
+  if (command == "inspect" || command == "why") {
+    out << ", \"explanations\": ";
+    write_agent_string_array(out, target->explanations);
+  }
+  out << "}\n}\n";
+  return true;
+}
+
 } // namespace moss
+
+static std::optional<string> nearest_moss_project_root(
+    std::filesystem::path start) {
+  std::error_code error;
+  start = std::filesystem::absolute(start, error).lexically_normal();
+  if (error) return std::nullopt;
+  if (!std::filesystem::is_directory(start, error)) start = start.parent_path();
+  while (!start.empty()) {
+    if (std::filesystem::is_regular_file(start / "moss.toml", error))
+      return start.string();
+    std::filesystem::path parent = start.parent_path();
+    if (parent == start) break;
+    start = std::move(parent);
+  }
+  return std::nullopt;
+}
 
 static void usage() {
   std::cerr << "Moss v0.2 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
             << "  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
-            << "  moss --check <input.moss>\n\n"
+            << "  moss --check <input.moss>\n"
+            << "  moss check <input.moss> [--json]\n"
+            << "  moss agent bootstrap|capabilities|schema --json\n"
+            << "  moss inspect|type|effects|ownership|calls|awaits|why <target> --source <input.moss> --json\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
@@ -12305,8 +13248,49 @@ static void usage() {
 
 int main(int argc, char** argv) {
   string diagnostic_source = "moss";
+  string active_command = "compile";
+  string active_input;
+  bool json_output = false;
+  std::optional<moss::Program> active_program;
   try {
     if (argc < 2) { usage(); return 2; }
+
+    if (string(argv[1]) == "agent") {
+      if (argc < 3) {
+        moss::write_structured_error(
+            std::cout, "agent", "AGENT_COMMAND_INVALID",
+            "expected bootstrap, capabilities, or schema");
+        return 2;
+      }
+      string agent_command = argv[2];
+      bool requested_json = false;
+      for (int index = 3; index < argc; ++index) {
+        if (string(argv[index]) == "--json") requested_json = true;
+        else {
+          moss::write_structured_error(
+              std::cout, "agent " + agent_command,
+              "AGENT_ARGUMENT_INVALID",
+              "unexpected agent argument '" + string(argv[index]) + "'");
+          return 2;
+        }
+      }
+      if (agent_command != "bootstrap" && agent_command != "capabilities" &&
+          agent_command != "schema") {
+        moss::write_structured_error(
+            std::cout, "agent " + agent_command, "AGENT_COMMAND_INVALID",
+            "unknown Moss agent command '" + agent_command + "'");
+        return 2;
+      }
+      if (!requested_json) {
+        std::cerr << "moss: agent commands require --json\n";
+        return 2;
+      }
+      moss::write_bootstrap_json(
+          std::cout, agent_command,
+          nearest_moss_project_root(std::filesystem::current_path()));
+      return 0;
+    }
+
     bool check_only = false;
     bool optimize_shared_memory = false;
     bool await_error_handling = true;
@@ -12315,10 +13299,30 @@ int main(int argc, char** argv) {
     bool debug_build = false;
     bool diagnostic_paths = false;
     string input, output, debug_map_output, native_output;
+    string query_command, query_target, query_source;
     vector<vector<string>> requested_clusters;
-    for (int i = 1; i < argc; ++i) {
+    int first_argument = 1;
+    static const std::set<string> semantic_commands = {
+        "inspect", "type", "effects", "ownership", "calls", "awaits",
+        "why"};
+    if (string(argv[1]) == "check") {
+      check_only = true;
+      active_command = "check";
+      first_argument = 2;
+    } else if (semantic_commands.count(argv[1])) {
+      query_command = argv[1];
+      active_command = query_command;
+      check_only = true;
+      first_argument = 2;
+    }
+    for (int i = first_argument; i < argc; ++i) {
       string a = argv[i];
       if (a == "--check") check_only = true;
+      else if (a == "--json") json_output = true;
+      else if (a == "--source") {
+        if (++i >= argc) { usage(); return 2; }
+        query_source = argv[i];
+      }
       else if (a == "--dump-functional-ir") dump_functional = true;
       else if (a == "--explain-fusion") explain_fusion = true;
       else if (a == "--debug") debug_build = true;
@@ -12356,10 +13360,46 @@ int main(int argc, char** argv) {
         if (++i >= argc) { usage(); return 2; }
         output = argv[i];
       } else if (a == "-h" || a == "--help") { usage(); return 0; }
+      else if (!query_command.empty() && query_target.empty()) query_target = a;
       else if (input.empty()) input = a;
       else { std::cerr << "unexpected argument: " << a << "\n"; return 2; }
     }
+    if (!query_command.empty()) {
+      if (!json_output) {
+        std::cerr << "moss: semantic query commands require --json\n";
+        return 2;
+      }
+      if (query_target.empty()) {
+        moss::write_structured_error(
+            std::cout, query_command, "QUERY_TARGET_INVALID",
+            "semantic query requires a target");
+        return 2;
+      }
+      input = query_source;
+      if (input.empty()) {
+        size_t marker = query_target.rfind(".moss:");
+        if (marker != string::npos) {
+          size_t separator = marker + string(".moss").size();
+          string possible_line = query_target.substr(separator + 1);
+          if (!possible_line.empty() &&
+              std::all_of(possible_line.begin(), possible_line.end(),
+                          [](unsigned char ch) { return std::isdigit(ch); })) {
+            input = query_target.substr(0, separator);
+            query_target = "line:" + possible_line;
+          }
+        }
+      }
+      if (input.empty()) {
+        moss::write_structured_error(
+            std::cout, query_command, "QUERY_SOURCE_REQUIRED",
+            "provide --source <input.moss> or use <input.moss>:<line>");
+        return 2;
+      }
+    }
     if (input.empty()) { usage(); return 2; }
+    active_input =
+        std::filesystem::absolute(input).lexically_normal().string();
+    if (active_command == "compile" && check_only) active_command = "check";
     diagnostic_source = diagnostic_paths
         ? std::filesystem::absolute(input).lexically_normal().string()
         : "moss";
@@ -12374,15 +13414,26 @@ int main(int argc, char** argv) {
     }
 
     std::ifstream f(input);
-    if (!f) { std::cerr << "moss: cannot open " << input << "\n"; return 1; }
+    if (!f) {
+      if (json_output)
+        moss::write_structured_error(
+            std::cout, active_command, "SOURCE_NOT_FOUND",
+            "cannot open Moss source '" + input + "'", input);
+      else
+        std::cerr << "moss: cannot open " << input << "\n";
+      return 1;
+    }
     auto lines = moss::lex_lines(f);
     moss::Parser parser(std::move(lines));
-    auto program = parser.parse();
+    active_program = parser.parse();
+    auto& program = *active_program;
     moss::Checker checker(program);
     checker.run();
-    for (const auto& warning : checker.warnings())
-      std::cerr << diagnostic_source << ":" << warning.line
-                << ": warning: " << warning.message << "\n";
+    if (!json_output) {
+      for (const auto& warning : checker.warnings())
+        std::cerr << diagnostic_source << ":" << warning.line
+                  << ": warning: " << warning.message << "\n";
+    }
 
     moss::FunctionalOptimizer(program).run(optimize_shared_memory);
     if (dump_functional || explain_fusion)
@@ -12392,8 +13443,21 @@ int main(int argc, char** argv) {
     auto plan = moss::BackendOptimizer(program).run(
         optimize_shared_memory, requested_clusters);
 
+    if (!query_command.empty())
+      return moss::write_semantic_query_json(
+                 std::cout, query_command, query_target,
+                 std::filesystem::absolute(input).lexically_normal().string(),
+                 program, plan)
+          ? 0 : 1;
+
     if (check_only) {
-      std::cout << input << ": ok\n";
+      if (json_output)
+        moss::write_check_json(
+            std::cout,
+            std::filesystem::absolute(input).lexically_normal().string(),
+            checker.warnings(), &program);
+      else
+        std::cout << input << ": ok\n";
       return 0;
     }
 
@@ -12432,11 +13496,27 @@ int main(int argc, char** argv) {
     std::cout << "generated " << debug_map_output << "\n";
     return 0;
   } catch (const moss::CompileError& e) {
-    std::cerr << diagnostic_source << ":" << e.line
-              << ": error: " << e.what() << "\n";
+    if (json_output) {
+      string identity = !e.semantic_identity.empty()
+          ? e.semantic_identity
+          : moss::semantic_identity_near_line(
+                active_program ? &*active_program : nullptr, e.line);
+      moss::write_structured_error(
+          std::cout, active_command,
+          e.code.empty() ? moss::diagnostic_code_for_message(e.what()) : e.code,
+          e.what(), active_input, e.line, identity, e.symbol);
+    } else {
+      std::cerr << diagnostic_source << ":" << e.line
+                << ": error: " << e.what() << "\n";
+    }
     return 1;
   } catch (const std::exception& e) {
-    std::cerr << "moss: error: " << e.what() << "\n";
+    if (json_output)
+      moss::write_structured_error(
+          std::cout, active_command, "MOSS_INTERNAL_OR_IO_ERROR", e.what(),
+          active_input);
+    else
+      std::cerr << "moss: error: " << e.what() << "\n";
     return 1;
   }
 }

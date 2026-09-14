@@ -86,6 +86,29 @@ struct Function {
   vector<Effect> parameter_effects;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; };
+
+// Existing checker passes populate these records while validating recursion
+// and await boundedness.  They are retained so tooling can inspect the exact
+// facts used by the compiler without walking the AST a second time.
+struct SemanticCallEdge {
+  string source;
+  string target;
+  int line = 0;
+  vector<string> argument_types;
+};
+
+struct SemanticAwaitSite {
+  string source;
+  string target_domain;
+  int line = 0;
+};
+
+struct SemanticAwaitEdge {
+  string source_domain;
+  string target_domain;
+  int line = 0;
+};
+
 struct Program {
   vector<Function> functions;
   vector<Trait> traits;
@@ -94,6 +117,9 @@ struct Program {
   std::optional<MainProc> main;
   vector<FunctionalPipeline> functional_pipelines;
   vector<FunctionalTraversalGroup> functional_traversal_groups;
+  vector<SemanticCallEdge> semantic_call_edges;
+  vector<SemanticAwaitSite> semantic_await_sites;
+  vector<SemanticAwaitEdge> semantic_await_edges;
 };
 
 } // namespace moss

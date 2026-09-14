@@ -45,6 +45,12 @@ Updated: 2026-09-13
   native symbols; `editors/emacs/moss-mode.el` provides editing, compilation, map-based
   navigation, `dape`/`lldb-dap` launch support, and objdump integration; optional native
   tools remain capability-gated.
+- Phase 6A exposes those already-computed facts through the deterministic
+  `moss-agent-1` JSON protocol. Bootstrap/schema/capability discovery, structured checks,
+  and `inspect`, `type`, `effects`, `ownership`, `calls`, `awaits`, and `why` queries are
+  read-only views over the ordinary compiler pipeline. Semantic editing, durable
+  cross-edit identity, MCP, daemon operation, and other broader Phase 6 work remain
+  deferred.
 
 ## Approved semantics
 
@@ -59,6 +65,12 @@ Updated: 2026-09-13
   not observable Moss semantics.
 
 ## Implemented features
+
+- `moss agent bootstrap|capabilities|schema --json` provides vendor-independent protocol
+  discovery and workflow/safety guidance. `moss check --json` uses stable diagnostic
+  categories and a uniform source/span/identity/details shape. Semantic queries accept
+  exact source locations or retained semantic identities and reuse the compiler's static
+  call/await graphs, ownership/effect summaries, and optimization explanations.
 
 - Every Rust emission has an adjacent versioned JSON `.mossmap` with absolute source and
   output paths, real one-based source spans, deterministic source/provenance identities,

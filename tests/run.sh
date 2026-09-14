@@ -1535,8 +1535,22 @@ if command -v nm >/dev/null 2>&1; then
     fail "debug build omitted the stable native function symbol"
 fi
 
+"$compiler" agent bootstrap --json >"$test_build/phase6_bootstrap.first"
+"$compiler" agent bootstrap --json >"$test_build/phase6_bootstrap.second"
+cmp "$test_build/phase6_bootstrap.first" \
+    "$test_build/phase6_bootstrap.second" >/dev/null ||
+  fail "Phase 6A agent bootstrap was not deterministic"
+grep -F '"protocol_version": 1' \
+  "$test_build/phase6_bootstrap.first" >/dev/null ||
+  fail "Phase 6A bootstrap omitted the versioned protocol envelope"
+"$compiler" check tests/phase6_agent_api.moss --json \
+  >"$test_build/phase6_check.json"
+grep -F '"command": "check"' "$test_build/phase6_check.json" >/dev/null ||
+  fail "Phase 6A structured check command did not execute"
+
 if command -v python3 >/dev/null 2>&1; then
   export PYTHONDONTWRITEBYTECODE=1
+  python3 tests/tooling/check_agent_api.py "$compiler"
   python3 tests/tooling/check_debug_map.py \
     "$tooling_o0_map" "$tooling_opt_map" \
     "$test_build/phase5_tooling_debug.mossmap" \

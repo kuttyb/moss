@@ -28,6 +28,11 @@ source breakpoints, and symbol-targeted native disassembly. A dependency-light
 `moss-mode` provides editing, checking, building, running, debugging, and generated-code
 inspection from Moss source.
 
+Phase 6A adds a small, vendor-independent compiler semantic API. Agents and shell tools
+can discover capabilities, receive structured diagnostics, and query the compiler's
+existing type, ownership, effect, call, await, functional, and backend facts through one
+versioned JSON envelope. It adds no editing service or duplicate semantic analysis.
+
 ## Requirements
 
 - A C++17 compiler (`g++`, `clang++`, or Apple Clang)
@@ -69,6 +74,19 @@ order rejected: insufficient inventory
 ```
 
 Run the complete smoke test with `make check`.
+
+For machine-readable compiler facts, bootstrap the Phase 6A protocol and use structured
+checks or focused semantic queries:
+
+```sh
+./moss agent bootstrap --json
+./moss check examples/functional_dataflow.moss --json
+./moss effects fn:normalize --source examples/functional_dataflow.moss --json
+./moss why main@12:expression:0 --source examples/functional_dataflow.moss --json -O
+```
+
+See [the agent semantic API](docs/AGENT_API.md) for selectors, diagnostic codes, and the
+minimal recommended `AGENTS.md` onboarding snippet.
 
 Compile every valid top-level example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped. Additional diagnostic examples live under `examples/errors` and are not part of this build target.
 
@@ -280,6 +298,8 @@ deriving a returned new value.
   conservative cross-binding fusion, and shared-source terminal DAGs under `-O`
 - Bounded Phase 4.6 semantic-stage rewrites for adjacent map/filter composition,
   identity-only predicate pushdown, terminal-aware dead work, and inert known-size count
+- Versioned Phase 6A JSON bootstrap, structured diagnostics, and read-only semantic
+  queries over existing compiler facts
 - Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
 - `spawn` from `main`

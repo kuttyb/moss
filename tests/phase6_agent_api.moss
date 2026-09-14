@@ -1,0 +1,46 @@
+type Sample:
+  value: Int
+
+  fn read() -> Int:
+    return value
+
+  fn replace(next: Int):
+    value = next
+
+fn inspect(sample: Sample) -> Int:
+  return sample.read()
+
+fn transfer(sample: Sample) -> Int:
+  moved = sample
+  return moved.value
+
+fn noisy(value: Int) -> Int:
+  echo "seen", value
+  return value
+
+fn wait_for(worker: Worker) -> Int:
+  value = await worker.Add(1)
+  return value
+
+domain Worker:
+  total = 0
+
+  fn Add(delta: Int) -> Int:
+    total = total + delta
+    reply total
+
+domain Router:
+  fn Route(worker: Worker) -> Int:
+    value = await worker.Add(2)
+    reply value
+
+proc main():
+  values = [1, 2, 3]
+  observed_count = values |> map(noisy) |> count
+  sample = Sample(value: 7)
+  observed = inspect(sample)
+  worker = spawn Worker()
+  router = spawn Router()
+  direct = wait_for(worker)
+  routed = await router.Route(worker)
+  echo observed_count, observed, direct, routed
