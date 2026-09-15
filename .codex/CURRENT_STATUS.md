@@ -622,6 +622,14 @@ selectors use `src + benches`; standalone files remain single-file. Cross-file
 renames are transactional within the selected context, and expression/argument edits
 are validated against the complete logical program before writing. Physical source
 paths remain in query results and diagnostics.
+## Implicit domain specialization hardening
+
+Each declared instance of an implicit-state domain now has one monotonic concrete
+specialization. Compatible repeated calls remain valid; an incompatible state,
+handler-parameter, or reply constraint is rejected with both constraint lines rather
+than overwriting the layout. Separate instances of the same source domain continue to
+specialize independently, and exact-instance await identities are unchanged.
+
 ## Phase 8
 
 Modules/imports/exports are supported with qualified namespace resolution.
