@@ -22,8 +22,20 @@ struct Line {
   // project compilation unit.
   string source_file;
 };
-struct Field { string name, type, init, header; int line = 0; string source_file; };
-struct Param { string name, type; };
+struct Field {
+  string name, type, init, header;
+  int line = 0;
+  string source_file;
+  // True when the concrete type was inferred from an untyped declaration.
+  // The source declaration remains the specialization template; this bit
+  // lets semantic consumers distinguish it from an explicitly typed field.
+  bool inferred = false;
+};
+struct Param {
+  string name, type;
+  // True when the concrete type was inferred from an untyped parameter.
+  bool inferred = false;
+};
 struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
@@ -80,6 +92,13 @@ struct AwaitBoundary {
   string handler;
   string domain;
   int line = 0;
+};
+struct DomainSpecialization {
+  string source_domain;
+  string instance;
+  std::unordered_map<string,string> state_types;
+  std::unordered_map<string,vector<string>> handler_parameter_types;
+  std::unordered_map<string,string> handler_reply_types;
 };
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
@@ -177,6 +196,9 @@ struct Program {
   vector<SemanticCallEdge> semantic_call_edges;
   vector<SemanticAwaitSite> semantic_await_sites;
   vector<SemanticAwaitEdge> semantic_await_edges;
+  // Per-declared-instance facts for source domains whose untyped state and
+  // handler parameters were inferred at concrete call sites.
+  vector<DomainSpecialization> domain_specializations;
 };
 
 } // namespace moss

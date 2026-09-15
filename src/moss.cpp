@@ -1165,6 +1165,7 @@ class Checker {
       infer_function_signatures(false);
       infer_handler_reply_types(false);
     }
+    infer_domain_specializations();
     infer_domain_state_fields(true);
     infer_handler_reply_types(true);
     infer_function_signatures(true);
@@ -1764,7 +1765,8 @@ class Checker {
         err(line, "functional pipeline must be materialized in a local binding "
                   "before crossing a domain boundary");
       auto actual = inferred_expr_type(args[index], env);
-      if (actual && !same_type(h->params[index].type, *actual))
+      if (actual && !h->params[index].inferred &&
+          !same_type(h->params[index].type, *actual))
         err(line, "argument " + std::to_string(index + 1) + " to message " +
             dit->second->name + "." + message + " has type '" + *actual +
             "', expected '" + h->params[index].type + "'");
@@ -2442,6 +2444,26 @@ class Checker {
     return merged;
   }
 
+  const DomainSpecialization* domain_specialization_for(
+      const string& receiver, const TypeEnv& env) const {
+    auto source = env.find(receiver);
+    if (source == env.end()) return nullptr;
+    for (const auto& specialization : p_.domain_specializations)
+      if (specialization.instance == receiver &&
+          same_type(specialization.source_domain, source->second))
+        return &specialization;
+    return nullptr;
+  }
+
+  std::optional<string> specialized_handler_reply_type(
+      const string& receiver, const string& handler, const TypeEnv& env) const {
+    auto specialization = domain_specialization_for(receiver, env);
+    if (specialization == nullptr) return std::nullopt;
+    auto reply = specialization->handler_reply_types.find(handler);
+    if (reply == specialization->handler_reply_types.end()) return std::nullopt;
+    return reply->second;
+  }
+
   void advance_type_environment(const Stmt& statement, TypeEnv& env,
                                 const vector<Stmt>& statements,
                                 bool record_semantic_types) const {
@@ -2488,7 +2510,9 @@ class Checker {
         auto domain = domains_.find(canonical_type_name(receiver->second));
         if (domain != domains_.end())
           if (const Handler* handler = find_handler(*domain->second, statement.c))
-            if (handler->reply_type) env[statement.a] = *handler->reply_type;
+            if (handler->reply_type)
+              env[statement.a] = specialized_handler_reply_type(
+                  statement.b, statement.c, env).value_or(*handler->reply_type);
       }
       return;
     }
@@ -2643,9 +2667,11 @@ class Checker {
                       (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
                       (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
                       (parameter.type == "map" && starts_with(*actual, "map["));
-                  if (parameter.type.empty() || inferred_container)
+                  bool untyped_parameter = parameter.type.empty();
+                  if (untyped_parameter || inferred_container) {
                     parameter.type = *actual;
-                  else if (!same_type(parameter.type, *actual))
+                    parameter.inferred = parameter.inferred || untyped_parameter;
+                  } else if (!parameter.inferred && !same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
                         " to message " + receiver->second + "." + handler_name +
                         " has type '" + *actual + "', expected '" + parameter.type + "'");
@@ -2738,6 +2764,164 @@ class Checker {
     }
   }
 
+  void infer_domain_specializations() {
+    p_.domain_specializations.clear();
+    if (!p_.main) return;
+    bool has_implicit_domain = std::any_of(
+        p_.domains.begin(), p_.domains.end(), [](const Domain& domain) {
+          if (std::any_of(domain.state.begin(), domain.state.end(),
+                          [](const Field& field) { return field.inferred; }))
+            return true;
+          return std::any_of(
+              domain.handlers.begin(), domain.handlers.end(),
+              [](const Handler& handler) {
+                return std::any_of(handler.params.begin(), handler.params.end(),
+                                   [](const Param& parameter) {
+                                     return parameter.inferred;
+                                   });
+              });
+        });
+    if (!has_implicit_domain) return;
+
+    TypeEnv main_env;
+    std::unordered_map<string,const Domain*> bindings;
+    auto find_specialization = [&](const string& instance,
+                                   const string& source_domain) -> DomainSpecialization& {
+      for (auto& specialization : p_.domain_specializations)
+        if (specialization.instance == instance &&
+            specialization.source_domain == source_domain)
+          return specialization;
+      DomainSpecialization specialization;
+      specialization.instance = instance;
+      specialization.source_domain = source_domain;
+      p_.domain_specializations.push_back(std::move(specialization));
+      return p_.domain_specializations.back();
+    };
+
+    for (const auto& statement : p_.main->body) {
+      if (auto spawned = spawn_domain(statement.b)) {
+        auto domain = domains_.find(*spawned);
+        if (domain != domains_.end()) {
+          bindings[statement.a] = domain->second;
+          main_env[statement.a] = domain->second->name;
+          bool implicit_domain = std::any_of(
+              domain->second->state.begin(), domain->second->state.end(),
+              [](const Field& field) { return field.inferred; });
+          implicit_domain = implicit_domain || std::any_of(
+              domain->second->handlers.begin(), domain->second->handlers.end(),
+              [](const Handler& handler) {
+                return std::any_of(handler.params.begin(), handler.params.end(),
+                                   [](const Param& parameter) {
+                                     return parameter.inferred;
+                                   });
+              });
+          if (implicit_domain)
+            find_specialization(statement.a, domain->second->name);
+        }
+      }
+
+      if (statement.kind == Stmt::Kind::Message ||
+          statement.kind == Stmt::Kind::AwaitMessage) {
+        const string& receiver = statement.kind == Stmt::Kind::Message
+            ? statement.a : statement.b;
+        auto binding = bindings.find(receiver);
+        if (binding != bindings.end()) {
+          const Domain& domain = *binding->second;
+          const string& handler_name = statement.kind == Stmt::Kind::Message
+              ? statement.b : statement.c;
+          const Handler* handler = find_handler(domain, handler_name);
+          if (handler) {
+            bool implicit_domain = std::any_of(
+                domain.state.begin(), domain.state.end(),
+                [](const Field& field) { return field.inferred; });
+            implicit_domain = implicit_domain || std::any_of(
+                domain.handlers.begin(), domain.handlers.end(),
+                [](const Handler& candidate) {
+                  return std::any_of(candidate.params.begin(), candidate.params.end(),
+                                     [](const Param& parameter) {
+                                       return parameter.inferred;
+                                     });
+                });
+            if (!implicit_domain) {
+              advance_type_environment(statement, main_env, p_.main->body, false);
+              continue;
+            }
+            auto& specialization = find_specialization(receiver, domain.name);
+            vector<string> actual_types;
+            for (const auto& argument : statement.args)
+              actual_types.push_back(
+                  inferred_expr_type(argument, main_env).value_or(""));
+            for (size_t index = 0;
+                 index < handler->params.size() && index < actual_types.size();
+                 ++index) {
+              const auto& parameter = handler->params[index];
+              string type = parameter.inferred && !actual_types[index].empty()
+                  ? actual_types[index] : parameter.type;
+              if (domains_.count(canonical_type_name(parameter.type)) &&
+                  index < statement.args.size() &&
+                  plain_identifier(trim(statement.args[index]))) {
+                auto target_instance = bindings.find(trim(statement.args[index]));
+                if (target_instance != bindings.end())
+                  type = target_instance->second->name + "__" +
+                      trim(statement.args[index]);
+              }
+              specialization.handler_parameter_types[handler_name].push_back(type);
+            }
+
+            TypeEnv handler_env;
+            handler_env["self"] = domain.name;
+            for (size_t index = 0; index < handler->params.size(); ++index) {
+              const auto& parameter = handler->params[index];
+              string type = parameter.type;
+              if (parameter.inferred && index < actual_types.size() &&
+                  !actual_types[index].empty())
+                type = actual_types[index];
+              handler_env[parameter.name] = type;
+            }
+            for (const auto& field : domain.state) {
+              auto prior = specialization.state_types.find(field.name);
+              handler_env[field.name] = prior != specialization.state_types.end()
+                  ? prior->second
+                  : field.inferred ? "_value" : field.type;
+            }
+            for (const auto& body_statement : handler->body) {
+              for (const auto& expression : statement_expressions(body_statement)) {
+                string callee;
+                vector<string> arguments;
+                if (!parse_simple_call(expression, callee, arguments)) continue;
+                auto function = functions_.find(callee);
+                if (function == functions_.end() || !function->second->static_dispatch)
+                  continue;
+                vector<string> argument_types;
+                for (const auto& argument : arguments)
+                  argument_types.push_back(
+                      inferred_expr_type(argument, handler_env).value_or(""));
+                register_static_specialization(body_statement.line, *function->second,
+                                               argument_types);
+              }
+            }
+            infer_statement_expressions(handler->body, handler_env);
+            for (const auto& field : domain.state) {
+              auto inferred = handler_env.find(field.name);
+              if (inferred != handler_env.end() &&
+                  concrete_environment_type(inferred->second))
+                specialization.state_types[field.name] =
+                    canonical_type_name(inferred->second);
+            }
+            for (const auto& body_statement : handler->body) {
+              if (body_statement.kind != Stmt::Kind::Reply) continue;
+              if (auto reply = inferred_expr_type(body_statement.a, handler_env))
+                specialization.handler_reply_types[handler_name] =
+                    canonical_type_name(*reply);
+            }
+          }
+        }
+      }
+
+      advance_type_environment(statement, main_env, p_.main->body, false);
+    }
+  }
+
   void infer_domain_state_fields(bool finalize) {
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
@@ -2751,7 +2935,13 @@ class Checker {
           if (!field.init.empty()) {
             constrain_constructor_fields(field.line, field.init, initializer_env);
             if (auto actual = inferred_expr_type(field.init, initializer_env)) {
-              if (field.type.empty()) field.type = *actual;
+              if (field.type.empty()) {
+                field.type = *actual;
+                // An initializer fixes one source-domain layout.  Only a
+                // field inferred from an untyped handler assignment is
+                // eligible for per-instance specialization.
+                field.inferred = field.init.empty();
+              }
               else if (!same_type(field.type, *actual))
                 err(field.line, "state field '" + domain.name + "." + field.name +
                     "' is annotated '" + field.type + "' but its initializer has type '" +
@@ -2770,8 +2960,10 @@ class Checker {
           for (auto& field : domain.state) {
             auto inferred = env.find(field.name);
             if (inferred == env.end() || inferred->second.empty() || inferred->second == "_value") continue;
-            if (field.type.empty()) field.type = inferred->second;
-            else if (!same_type(field.type, inferred->second))
+            if (field.type.empty()) {
+              field.type = inferred->second;
+              field.inferred = true;
+            } else if (!field.inferred && !same_type(field.type, inferred->second))
               err(field.line, "state field '" + domain.name + "." + field.name +
                   "' has conflicting inferred types '" + field.type + "' and '" +
                   inferred->second + "'");
@@ -2830,6 +3022,29 @@ class Checker {
 
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
+      // An untyped identity helper is a statically specialized generic.  It
+      // must be recognized before domain inference reaches its first call;
+      // otherwise the first domain instance would permanently type the
+      // helper and poison later domain specializations.
+      for (const auto& parameter : function.params) {
+        bool identity_result = function.result_expression &&
+            trim(*function.result_expression) == parameter.name;
+        if (!identity_result) {
+          identity_result = std::any_of(
+              function.body.begin(), function.body.end(),
+              [&](const Stmt& statement) {
+                return statement.kind == Stmt::Kind::Return &&
+                    trim(statement.a) == parameter.name;
+              });
+        }
+        if (parameter.type.empty() && identity_result) {
+          function.generic = true;
+          function.static_dispatch = true;
+          function.generic_results[parameter.name] = parameter.name;
+          function.return_type = "_generic:" + parameter.name;
+          break;
+        }
+      }
       for (const auto& parameter : function.params)
         if (!parameter.type.empty() && traits_.count(parameter.type))
           function.static_dispatch = true;
@@ -2997,6 +3212,27 @@ class Checker {
             function.generic_results[p.name] = p.name;
             function.return_type = "_generic:" + p.name;
           }
+      }
+      if (!function.generic) {
+        for (const auto& parameter : function.params) {
+          bool identity_result = function.result_expression &&
+              trim(*function.result_expression) == parameter.name;
+          if (!identity_result) {
+            identity_result = std::any_of(
+                function.body.begin(), function.body.end(),
+                [&](const Stmt& statement) {
+                  return statement.kind == Stmt::Kind::Return &&
+                      trim(statement.a) == parameter.name;
+                });
+          }
+          if (parameter.type.empty() && identity_result) {
+            function.generic = true;
+            function.static_dispatch = true;
+            function.generic_results[parameter.name] = parameter.name;
+            function.return_type = "_generic:" + parameter.name;
+            break;
+          }
+        }
       }
       for (const auto& parameter : function.params) {
         if (parameter.type.empty() && !function.generic)
@@ -5857,7 +6093,8 @@ class Checker {
           if (auto receiver = env.types.find(s.b); receiver != env.types.end()) {
             if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
               if (const Handler* handler = find_handler(*domain->second, s.c); handler && handler->reply_type)
-                env.types[s.a] = *handler->reply_type;
+                env.types[s.a] = specialized_handler_reply_type(
+                    s.b, s.c, env.types).value_or(*handler->reply_type);
             }
           }
           if (!env.types.count(s.a)) env.types[s.a] = "_value";
@@ -9200,6 +9437,39 @@ class Generator {
         emit_static_specializations_(emit_static_specializations),
         public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
+    for (const auto& specialization : p.domain_specializations) {
+      auto source = std::find_if(
+          p.domains.begin(), p.domains.end(),
+          [&](const Domain& domain) {
+            return domain.name == specialization.source_domain;
+          });
+      if (source == p.domains.end()) continue;
+      Domain specialized = *source;
+      specialized.name = specialization.source_domain + "__" +
+          specialization.instance;
+      for (auto& field : specialized.state) {
+        auto type = specialization.state_types.find(field.name);
+        if (type != specialization.state_types.end()) field.type = type->second;
+      }
+      for (auto& handler : specialized.handlers) {
+        auto parameters = specialization.handler_parameter_types.find(handler.name);
+        if (parameters != specialization.handler_parameter_types.end()) {
+          for (size_t index = 0;
+               index < handler.params.size() && index < parameters->second.size();
+               ++index)
+            if (!parameters->second[index].empty())
+              handler.params[index].type = parameters->second[index];
+        }
+        auto reply = specialization.handler_reply_types.find(handler.name);
+        if (reply != specialization.handler_reply_types.end())
+          handler.reply_type = reply->second;
+      }
+      specialized_domains_.push_back(std::move(specialized));
+      specialization_names_[specialization.source_domain + "\n" +
+                            specialization.instance] =
+          specialized_domains_.back().name;
+    }
+    for (const auto& d : specialized_domains_) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& f : p.functions) functions_[f.name] = &f;
     if (resolution_program) {
@@ -9293,7 +9563,9 @@ class Generator {
     for (const auto& f : p_.functions) gen_function(o, f);
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
+    for (const auto& d : specialized_domains_) gen_ref_decl(o, d);
     for (const auto& d : p_.domains) gen_domain(o, d);
+    for (const auto& d : specialized_domains_) gen_domain(o, d);
     for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
       gen_cluster(o, index, plan_.domain_clusters[index]);
     if (mode_ == ProgramGenerationMode::Tests)
@@ -9318,6 +9590,8 @@ class Generator {
   bool public_specializations_ = false;
   bool benchmark_body_ = false;
   std::unordered_map<string, const Domain*> domains_;
+  vector<Domain> specialized_domains_;
+  std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Function*> functions_;
   size_t reply_temp_ = 0;
@@ -12553,6 +12827,8 @@ class Generator {
         }
         case Stmt::Kind::Assign: {
           if (auto sd = CheckerSpawn(s.b)) {
+            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+            if (specialized != specialization_names_.end()) *sd = specialized->second;
             bool existing_binding = locals.count(s.a);
             if (auto cluster = plan_.cluster_for(*sd)) {
               backend_comment(o, (base + level) * 4,
@@ -12734,6 +13010,8 @@ class Generator {
           bool joined_assignment = join_assignments.erase(s.a) != 0;
           auto sd = CheckerSpawn(s.b);
           if (sd) {
+            auto specialized = specialization_names_.find(*sd + "\n" + s.a);
+            if (specialized != specialization_names_.end()) *sd = specialized->second;
             if (auto cluster = plan_.cluster_for(*sd)) {
               backend_comment(o, (base + level) * 4,
                               "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
@@ -13638,6 +13916,7 @@ struct SemanticTargetFact {
   string type;
   int line = 0;
   vector<SemanticParameterFact> parameters;
+  vector<std::pair<string,string>> specialization_fields;
   ObservableEffects observable_effects;
   bool has_observable_effects = false;
   ObservableEffects enclosing_callable_effects;
@@ -13755,6 +14034,8 @@ static string durable_identity_base(const SemanticTargetFact& fact) {
   if (fact.kind == "trait") return prefix + "trait:" + fact.name;
   if (fact.kind == "domain") return prefix + "domain:" + fact.name;
   if (fact.kind == "domain_state") return prefix + "state:" + fact.name;
+  if (fact.kind == "domain_specialization")
+    return prefix + "domain-specialization:" + fact.name;
   if (fact.kind == "handler") return prefix + "handler:" + fact.name;
   if (fact.kind == "test") {
     string identity = fact.semantic_identity;
@@ -14149,6 +14430,37 @@ static vector<SemanticTargetFact> semantic_target_facts(
     }
   }
 
+  for (const auto& specialization : program.domain_specializations) {
+    auto source = std::find_if(
+        program.domains.begin(), program.domains.end(),
+        [&](const Domain& domain) {
+          return domain.name == specialization.source_domain;
+        });
+    if (source == program.domains.end()) continue;
+    SemanticTargetFact fact;
+    fact.semantic_identity = "domain-specialization:" +
+        specialization.source_domain + ":" + specialization.instance;
+    fact.context = fact.semantic_identity;
+    fact.kind = "domain_specialization";
+    fact.name = specialization.source_domain + "." + specialization.instance;
+    fact.type = specialization.source_domain;
+    fact.line = source->line;
+    fact.source_file = source->source_file;
+    fact.provenance.push_back("domain:" + specialization.source_domain + "@" +
+                              std::to_string(source->line));
+    for (const auto& field : source->state) {
+      auto type = specialization.state_types.find(field.name);
+      if (type != specialization.state_types.end())
+        fact.specialization_fields.push_back({field.name, type->second});
+    }
+    std::sort(fact.specialization_fields.begin(),
+              fact.specialization_fields.end());
+    fact.explanations.push_back(
+        "declared instance specializes source domain " +
+        specialization.source_domain + " without runtime dynamic typing");
+    targets.push_back(std::move(fact));
+  }
+
   for (const auto& test : program.tests) {
     SemanticTargetFact fact;
     fact.semantic_identity = test.semantic_identity;
@@ -14439,6 +14751,16 @@ static void write_semantic_target_json(std::ostream& out,
       << target.line << ", \"end_column\": 1}}, \"type\": ";
   if (target.type.empty()) out << "null";
   else write_debug_json_string(out, target.type);
+  out << ", \"specialization_fields\": [";
+  for (size_t index = 0; index < target.specialization_fields.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"name\": ";
+    write_debug_json_string(out, target.specialization_fields[index].first);
+    out << ", \"type\": ";
+    write_debug_json_string(out, target.specialization_fields[index].second);
+    out << "}";
+  }
+  out << "]";
   out << ", \"provenance\": ";
   write_agent_string_array(out, target.provenance);
   out << ", \"implementation_hash\": ";

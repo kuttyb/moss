@@ -1222,6 +1222,86 @@ phase47_element_effects_json="$test_build/phase47_element_effects.json"
 grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
   "$phase47_element_effects_json" >/dev/null ||
   fail 'for-loop effect analysis did not resolve the iterator element method effect'
+
+# One source domain may be inferred independently for each declared instance.
+# These semantic facts are compiler-owned and keep the source free of explicit
+# generic type syntax or a dynamic value fallback.
+implicit_domain_specialization_json="$test_build/implicit_domain_specialization.json"
+run_case implicit_domain_specialization tests/implicit_domain_specialization.moss \
+  "$(printf '10\n3.5')"
+"$compiler" inspect 'domain-specialization:Box:intBox' \
+  --source tests/implicit_domain_specialization.moss --json \
+  >"$implicit_domain_specialization_json"
+grep -F '"semantic_identity": "domain-specialization:Box:intBox"' \
+  "$implicit_domain_specialization_json" >/dev/null ||
+  fail 'implicit Box Int specialization was not retained'
+grep -F '"name": "value", "type": "int"' \
+  "$implicit_domain_specialization_json" >/dev/null ||
+  fail 'implicit Box Int specialization did not infer value: int'
+"$compiler" inspect 'domain-specialization:Box:floatBox' \
+  --source tests/implicit_domain_specialization.moss --json \
+  >"$test_build/implicit_domain_specialization_float.json"
+grep -F '"semantic_identity": "domain-specialization:Box:floatBox"' \
+  "$test_build/implicit_domain_specialization_float.json" >/dev/null ||
+  fail 'implicit Box Float specialization was not retained'
+grep -F '"name": "value", "type": "float"' \
+  "$test_build/implicit_domain_specialization_float.json" >/dev/null ||
+  fail 'implicit Box Float specialization did not infer value: float'
+grep -F 'struct Box__intBoxState' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+  fail 'implicit Box Int specialization did not get a concrete Rust layout'
+grep -F 'value: i64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+  fail 'implicit Box Int layout was not statically concrete'
+grep -F 'struct Box__floatBoxState' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+  fail 'implicit Box Float specialization did not get a concrete Rust layout'
+grep -F 'value: f64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+  fail 'implicit Box Float layout was not statically concrete'
+if grep -Eq 'Any|Box<dyn|type_id|TypeId' \
+  "$test_build/implicit_domain_specialization.rs"; then
+  fail 'implicit domain specialization introduced a dynamic Rust value representation'
+fi
+"$compiler" effects 'handler:Box.Set' \
+  --source tests/implicit_domain_specialization.moss --json \
+  >"$test_build/implicit_domain_specialization_effects.json"
+grep -F '"domain_write": true' \
+  "$test_build/implicit_domain_specialization_effects.json" >/dev/null ||
+  fail 'implicit Box Set did not retain its WRITE effect summary'
+
+# Await edges use exact declared instances, not the shared Worker source name.
+implicit_domain_specialization_await_json="$test_build/implicit_domain_specialization_await.json"
+run_case implicit_domain_specialization_await \
+  tests/implicit_domain_specialization_await.moss ''
+"$compiler" awaits 'domain:Worker' \
+  --source tests/implicit_domain_specialization_await.moss --json \
+  >"$implicit_domain_specialization_await_json"
+grep -F '"source_instance": "intWorker", "target_instance": "floatWorker"' \
+  "$implicit_domain_specialization_await_json" >/dev/null ||
+  fail 'exact-instance await query collapsed the positive Worker edge'
+"$compiler" inspect 'domain-specialization:Worker:intWorker' \
+  --source tests/implicit_domain_specialization_await.moss --json \
+  >"$test_build/implicit_domain_specialization_await_int.json"
+grep -F '"name": "payload", "type": "int"' \
+  "$test_build/implicit_domain_specialization_await_int.json" >/dev/null ||
+  fail 'implicit intWorker specialization did not infer payload: int'
+"$compiler" inspect 'domain-specialization:Worker:floatWorker' \
+  --source tests/implicit_domain_specialization_await.moss --json \
+  >"$test_build/implicit_domain_specialization_await_float.json"
+grep -F '"name": "payload", "type": "float"' \
+  "$test_build/implicit_domain_specialization_await_float.json" >/dev/null ||
+  fail 'implicit floatWorker specialization did not infer payload: float'
+grep -F 'struct Worker__intWorkerState' \
+  "$test_build/implicit_domain_specialization_await.rs" >/dev/null ||
+  fail 'implicit intWorker specialization did not get a concrete Rust layout'
+grep -F 'struct Worker__floatWorkerState' \
+  "$test_build/implicit_domain_specialization_await.rs" >/dev/null ||
+  fail 'implicit floatWorker specialization did not get a concrete Rust layout'
+reject_source implicit_domain_specialization_await_cycle \
+  tests/negative/implicit_domain_specialization_await_cycle.moss \
+  'await cycle detected:'
+grep -F 'intWorker' "$test_build/implicit_domain_specialization_await_cycle.stderr" >/dev/null ||
+  fail 'exact-instance await cycle omitted intWorker'
+grep -F 'floatWorker' "$test_build/implicit_domain_specialization_await_cycle.stderr" >/dev/null ||
+  fail 'exact-instance await cycle omitted floatWorker'
+
 reject_case phase47_mutation_during_for \
   "cannot structurally mutate collection 'values' during an active READ traversal"
 reject_case phase47_missing_iterator \

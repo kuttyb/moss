@@ -1,0 +1,21 @@
+fn normalize(x):
+  return x
+
+domain Box:
+  value
+
+  fn Set(x):
+    value = normalize(x)
+
+  fn Get():
+    reply value
+
+fn main():
+  intBox = spawn Box()
+  floatBox = spawn Box()
+  message intBox.Set(10)
+  message floatBox.Set(3.5)
+  intValue = await intBox.Get()
+  floatValue = await floatBox.Get()
+  echo intValue
+  echo floatValue
