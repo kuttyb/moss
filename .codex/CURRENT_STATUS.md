@@ -636,9 +636,13 @@ Rust crate. Legacy implicit-module projects remain supported.
 
 ## Phase 4.7 — Static Iteration and `for` Loops
 
+**Phase 4.7 — Static Iteration and For Loops: complete and frozen.**
+
 Phase 4.7 is implemented additively on the frozen Phase 4–4.6 semantics. `for binding
 in source:` has scoped bindings and participates in the existing type, effect, and
 ownership walkers. `range(start, end)` is half-open; vectors use READ traversal; and
 custom traversal resolves statically through the structural `Iterator` contract
 (`next() -> Option[element]`). Collection mutation during an active READ traversal is
-rejected. No runtime iterator dispatch or vtable is emitted.
+rejected. Effect analysis reuses the canonical iterator-element resolver for loop
+bindings, so method and ownership/effect summaries agree with ordinary type analysis.
+No runtime iterator dispatch or vtable is emitted.

@@ -1,0 +1,16 @@
+type Payload:
+  value: Int
+
+  fn mutate():
+    value = value + 1
+
+type Widget:
+  fn apply(payload: Payload):
+    payload.mutate()
+
+fn updateAll(values: vector[Widget], payload: Payload):
+  for x in values:
+    x.apply(payload)
+
+fn main():
+  echo "element effects"

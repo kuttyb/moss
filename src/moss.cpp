@@ -2564,8 +2564,11 @@ class Checker {
         TypeEnv incoming = env;
         ++index;
         TypeEnv body_env = incoming;
-        body_env[statement.a] = iterator_element_type(
+        string element_type = iterator_element_type(
             statement.line, statement.b, incoming).value_or("_value");
+        body_env[statement.a] = element_type;
+        if (record_semantic_types)
+          const_cast<Stmt&>(statement).semantic_type = element_type;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types);
@@ -3393,7 +3396,8 @@ class Checker {
         auto child_env = env;
         if (statement.kind == Stmt::Kind::For)
           child_env[statement.a] =
-              inferred_expr_type(statement.b, env).value_or("_value");
+              iterator_element_type(statement.line, statement.b, env)
+                  .value_or("_value");
         analyze_effect_block(statements, index, level + 1, child_env, params,
                              parameter_effects, receiver_effect, receiver_fields);
         if (is_if && index < statements.size() && statements[index].indent == level &&
@@ -9128,7 +9132,8 @@ class BackendOptimizer {
         ++index;
         auto child_types = types;
         if (statement.kind == Stmt::Kind::For)
-          child_types[statement.a] = "_value";
+          child_types[statement.a] = statement.semantic_type.empty()
+              ? "_value" : statement.semantic_type;
         scan_call_block(statements, index, level + 1, child_types,
                         asynchronously_called, complete);
         if (is_if && index < statements.size() && statements[index].indent == level &&

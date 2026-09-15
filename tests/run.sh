@@ -1214,6 +1214,14 @@ run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
 run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
 run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
+run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'
+phase47_element_effects_json="$test_build/phase47_element_effects.json"
+"$compiler" effects fn:updateAll \
+  --source tests/phase47_element_effects.moss --json \
+  >"$phase47_element_effects_json"
+grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
+  "$phase47_element_effects_json" >/dev/null ||
+  fail 'for-loop effect analysis did not resolve the iterator element method effect'
 reject_case phase47_mutation_during_for \
   "cannot structurally mutate collection 'values' during an active READ traversal"
 reject_case phase47_missing_iterator \
