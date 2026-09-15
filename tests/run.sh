@@ -1231,6 +1231,10 @@ run_case implicit_domain_specialization tests/implicit_domain_specialization.mos
   "$(printf '10\n3.5')"
 run_case implicit_domain_specialization_same_instance \
   tests/implicit_domain_specialization_same_instance.moss '20'
+run_case implicit_domain_parameter_specialization \
+  tests/implicit_domain_parameter_specialization.moss "$(printf '10\n20')"
+run_case implicit_domain_parameter_multiple_instances \
+  tests/implicit_domain_parameter_multiple_instances.moss "$(printf '10\n2.5')"
 "$compiler" inspect 'domain-specialization:Box:intBox' \
   --source tests/implicit_domain_specialization.moss --json \
   >"$implicit_domain_specialization_json"
@@ -1539,6 +1543,10 @@ reject_case implicit_domain_specialization_conflict \
   "conflicting domain specialization for instance 'box'"
 reject_case implicit_domain_specialization_conflict_transitive \
   "conflicting domain specialization for instance 'box'"
+reject_case implicit_domain_parameter_conflict_zero \
+  "handler 'Set' parameter 0"
+reject_case implicit_domain_parameter_conflict_one \
+  "handler 'Set' parameter 1"
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"

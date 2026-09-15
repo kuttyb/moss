@@ -97,6 +97,8 @@ struct DomainSpecialization {
   string source_domain;
   string instance;
   std::unordered_map<string,string> state_types;
+  // Handler parameter specializations are indexed by parameter slot, not by a
+  // flat history of calls: handler_parameter_types[handler][index].
   std::unordered_map<string,vector<string>> handler_parameter_types;
   std::unordered_map<string,string> handler_reply_types;
 };

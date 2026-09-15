@@ -2889,25 +2889,33 @@ class Checker {
               }
               auto& parameter_types =
                   specialization.handler_parameter_types[handler_name];
-              for (const auto& prior : parameter_types)
-                if (!prior.empty() && !type.empty() && !same_type(prior, type)) {
-                  bool reported_state_conflict = false;
-                  for (const auto& field : domain.state) {
-                    auto state = specialization.state_types.find(field.name);
-                    if (field.inferred && state != specialization.state_types.end() &&
-                        !same_type(state->second, type)) {
-                      specialization_conflict(
-                          receiver, "field '" + field.name + "'", state->second,
-                          type, statement.line);
-                      reported_state_conflict = true;
-                    }
-                  }
-                  if (!reported_state_conflict)
+              if (parameter_types.size() <= index)
+                parameter_types.resize(index + 1);
+              string& existing = parameter_types[index];
+              if (existing.empty() && !type.empty()) {
+                existing = type;
+                specialization_sites[
+                    receiver + "\nhandler '" + handler_name + "' parameter " +
+                    std::to_string(index)] = {statement.line, type};
+              } else if (!existing.empty() && !type.empty() &&
+                         !same_type(existing, type)) {
+                bool reported_state_conflict = false;
+                for (const auto& field : domain.state) {
+                  auto state = specialization.state_types.find(field.name);
+                  if (field.inferred && state != specialization.state_types.end() &&
+                      !same_type(state->second, type)) {
                     specialization_conflict(
-                        receiver, "handler '" + handler_name + "' parameter " +
-                            std::to_string(index), prior, type, statement.line);
+                        receiver, "field '" + field.name + "'", state->second,
+                        type, statement.line);
+                    reported_state_conflict = true;
+                  }
                 }
-              parameter_types.push_back(type);
+                if (!reported_state_conflict)
+                  specialization_conflict(
+                      receiver, "handler '" + handler_name + "' parameter " +
+                          std::to_string(index), existing, type,
+                      statement.line);
+              }
             }
 
             TypeEnv handler_env;

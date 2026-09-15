@@ -1,0 +1,11 @@
+fn normalize(x):
+  return x
+
+domain Pair:
+  fn Set(a, b):
+    echo normalize(a)
+
+fn main():
+  p = spawn Pair()
+  message p.Set(10, 3.5)
+  message p.Set(20, 4.5)

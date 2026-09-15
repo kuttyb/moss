@@ -1,0 +1,8 @@
+domain Pair:
+  fn Set(a, b):
+    echo a
+
+fn main():
+  p = spawn Pair()
+  message p.Set(10, 3.5)
+  message p.Set(2.5, 4.5)

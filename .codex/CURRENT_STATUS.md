@@ -630,6 +630,10 @@ handler-parameter, or reply constraint is rejected with both constraint lines ra
 than overwriting the layout. Separate instances of the same source domain continue to
 specialize independently, and exact-instance await identities are unchanged.
 
+Handler parameter constraints are indexed by handler and parameter slot. Multi-parameter
+handlers can therefore specialize as tuples such as `Set[0] -> Int, Set[1] -> Float`; only
+an incompatible constraint for the same slot is rejected.
+
 ## Phase 8
 
 Modules/imports/exports are supported with qualified namespace resolution.
