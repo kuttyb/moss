@@ -636,8 +636,9 @@ an incompatible constraint for the same slot is rejected.
 
 Typed domain-handle parameters remain specialized by their declared nominal domain type;
 the exact spawned instance is retained only for await-graph substitution (and, where
-needed, backend instance plumbing). Thus one handler may receive multiple instances of
-the same domain type without splitting its source-level specialization.
+needed, backend instance plumbing). Generated code uses a uniform nominal handle wrapper
+to route calls to independently materialized instance layouts. Thus one handler may receive
+multiple instances of the same domain type without splitting its source-level specialization.
 
 ## Phase 8
 

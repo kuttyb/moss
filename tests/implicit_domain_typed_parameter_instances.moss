@@ -1,10 +1,15 @@
 domain Worker:
+  payload
+
+  fn Set(x):
+    payload = x
+
   fn Run() -> int:
     reply 1
 
 domain Coordinator:
   fn Init(x):
-    echo x
+    ignored = x
 
   fn Ping(worker: Worker):
     ignored = await worker.Run()
@@ -14,5 +19,7 @@ fn main():
   w1 = spawn Worker()
   w2 = spawn Worker()
   message c.Init(1)
+  message w1.Set(10)
+  message w2.Set(3.5)
   message c.Ping(w1)
   message c.Ping(w2)

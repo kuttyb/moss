@@ -18,4 +18,4 @@ fn main():
   w2 = spawn Worker()
   message c.Ping(w1)
   message c.Ping(w2)
-  message w1.Back(c)
+  message w2.Back(c)

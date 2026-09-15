@@ -2888,20 +2888,6 @@ class Checker {
                   specialization.handler_parameter_types[handler_name];
               if (parameter_types.size() <= index)
                 parameter_types.resize(index + 1);
-              if (domains_.count(canonical_type_name(parameter.type)) &&
-                  index < statement.args.size() &&
-                  plain_identifier(trim(statement.args[index]))) {
-                auto target_instance = bindings.find(trim(statement.args[index]));
-                if (target_instance != bindings.end()) {
-                  auto& instance_types = specialization.handler_parameter_instance_types[
-                      handler_name];
-                  if (instance_types.size() <= index)
-                    instance_types.resize(index + 1);
-                  if (instance_types[index].empty())
-                    instance_types[index] = target_instance->second->name + "__" +
-                        trim(statement.args[index]);
-                }
-              }
               string& existing = parameter_types[index];
               if (existing.empty() && !type.empty()) {
                 existing = type;
@@ -9518,14 +9504,6 @@ class Generator {
         emit_static_specializations_(emit_static_specializations),
         public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
-    auto has_generated_specialization = [&](const string& backend_type) {
-      return std::any_of(
-          p.domain_specializations.begin(), p.domain_specializations.end(),
-          [&](const DomainSpecialization& candidate) {
-            return candidate.source_domain + "__" + candidate.instance ==
-                backend_type;
-          });
-    };
     for (const auto& specialization : p.domain_specializations) {
       auto source = std::find_if(
           p.domains.begin(), p.domains.end(),
@@ -9548,22 +9526,6 @@ class Generator {
                ++index)
             if (!parameters->second[index].empty())
               handler.params[index].type = parameters->second[index];
-        }
-        // Keep source specialization nominal while using a concrete backend
-        // reference when this invocation targets a generated specialized
-        // domain instance.  Exact instance identity is never compared as a
-        // source-level parameter type.
-        auto backend_parameters =
-            specialization.handler_parameter_instance_types.find(handler.name);
-        if (backend_parameters !=
-                specialization.handler_parameter_instance_types.end()) {
-          for (size_t index = 0;
-               index < handler.params.size() &&
-               index < backend_parameters->second.size(); ++index) {
-            const string& backend_type = backend_parameters->second[index];
-            if (!backend_type.empty() && has_generated_specialization(backend_type))
-              handler.params[index].type = backend_type;
-          }
         }
         auto reply = specialization.handler_reply_types.find(handler.name);
         if (reply != specialization.handler_reply_types.end())
@@ -9669,6 +9631,7 @@ class Generator {
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
     for (const auto& d : specialized_domains_) gen_ref_decl(o, d);
+    for (const auto& d : p_.domains) gen_nominal_handle(o, d);
     for (const auto& d : p_.domains) gen_domain(o, d);
     for (const auto& d : specialized_domains_) gen_domain(o, d);
     for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
@@ -9701,6 +9664,14 @@ class Generator {
   std::unordered_map<string, const Function*> functions_;
   size_t reply_temp_ = 0;
   size_t assertion_temp_ = 0;
+
+  bool has_domain_specializations(const string& domain) const {
+    return std::any_of(
+        p_.domain_specializations.begin(), p_.domain_specializations.end(),
+        [&](const DomainSpecialization& specialization) {
+          return specialization.source_domain == domain;
+        });
+  }
 
   static string comment_text(string text) {
     string out;
@@ -9831,7 +9802,8 @@ class Generator {
     if (x == "map") return "HashMap<K, V>";
     if (x == "queue") return "VecDeque<T>";
     if (x == "unit") return "()";
-    if (domains_.count(x)) return x + "Ref";
+    if (domains_.count(x))
+      return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
     if (objects_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
@@ -9920,12 +9892,29 @@ class Generator {
     return borrowable_type(candidate);
   }
 
+  string nominal_domain_handle_argument(
+      const string& expression, const string& type, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      size_t functional_pipeline_id = 0) const {
+    string rendered = expr(expression, d, locals, types, functional_pipeline_id);
+    string nominal = canonical_type_name(type);
+    if (types && domains_.count(nominal) && has_domain_specializations(nominal)) {
+      auto actual = generated_expr_type(expression, types);
+      if (actual && starts_with(canonical_type_name(*actual), nominal + "__"))
+        rendered = nominal + "Handle::from(" + rendered + ")";
+    }
+    return rendered;
+  }
+
   string function_call_argument(const Function& function, size_t index,
                                 const string& argument, const Domain* d,
                                 const std::set<string>& locals,
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0) const {
-    string rendered = expr(argument, d, locals, types, functional_pipeline_id);
+    string rendered = nominal_domain_handle_argument(
+        argument, index < function.params.size() ? function.params[index].type : "",
+        d, locals, types, functional_pipeline_id);
     if (index >= function.params.size()) return rendered;
     Effect effect = function_effect(function, index);
     string parameter_type = function.params[index].type;
@@ -9941,7 +9930,9 @@ class Generator {
                               const std::set<string>& locals,
                               const std::unordered_map<string,string>* types,
                               size_t functional_pipeline_id = 0) const {
-    string rendered = expr(argument, d, locals, types, functional_pipeline_id);
+    string rendered = nominal_domain_handle_argument(
+        argument, index < method.params.size() ? method.params[index].type : "",
+        d, locals, types, functional_pipeline_id);
     if (index >= method.params.size()) return rendered;
     Effect effect = method_effect(method, index);
     string type = method.params[index].type;
@@ -11431,7 +11422,8 @@ class Generator {
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
                      size_t functional_pipeline_id = 0) const {
-    string r = expr(e, d, locals, types, functional_pipeline_id);
+    string r = nominal_domain_handle_argument(
+        e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (copy_type(t) || t == "_") return r;
     // Messages are the explicit Moss semantic copy boundary.  A payload is
@@ -12009,6 +12001,122 @@ class Generator {
         << "::new(" << init << "),\n";
     }
     o << "    }) }\n";
+    o << "}\n\n";
+  }
+
+  static string nominal_handle_variant(const string& domain) {
+    return "Specialized_" + stable_hash(domain).substr(0, 12);
+  }
+
+  void gen_nominal_handle(std::ostringstream& o, const Domain& source) {
+    if (!has_domain_specializations(source.name)) return;
+    vector<const Domain*> routes{&source};
+    for (const auto& specialized : specialized_domains_) {
+      // Match materialized layouts by their specialization record rather
+      // than by a name prefix.  Prefix matching would conflate a source
+      // domain such as `A` with an unrelated domain named `A__helper`.
+      bool belongs_to_source = false;
+      for (const auto& specialization : p_.domain_specializations) {
+        if (specialization.source_domain == source.name &&
+            specialization.source_domain + "__" + specialization.instance ==
+                specialized.name) {
+          belongs_to_source = true;
+          break;
+        }
+      }
+      if (belongs_to_source) routes.push_back(&specialized);
+    }
+    if (routes.size() < 2) return;
+
+    const string handle = source.name + "Handle";
+    const string route = handle + "Route";
+    o << "// Moss backend: nominal " << source.name
+      << " handle routes statically to each materialized instance\n";
+    o << "#[derive(Clone)]\n" << "enum " << route << " {\n";
+    o << "    Base(" << source.name << "Ref),\n";
+    for (size_t index = 1; index < routes.size(); ++index)
+      o << "    " << nominal_handle_variant(routes[index]->name) << "("
+        << routes[index]->name << "Ref),\n";
+    o << "}\n";
+    o << "#[derive(Clone)]\nstruct " << handle << " { route: " << route << " }\n\n";
+    o << "impl From<" << source.name << "Ref> for " << handle << " {\n"
+      << "    fn from(value: " << source.name << "Ref) -> Self { Self { route: "
+      << route << "::Base(value) } }\n}\n";
+    for (size_t index = 1; index < routes.size(); ++index) {
+      o << "impl From<" << routes[index]->name << "Ref> for " << handle << " {\n"
+        << "    fn from(value: " << routes[index]->name << "Ref) -> Self { Self { route: "
+        << route << "::" << nominal_handle_variant(routes[index]->name)
+        << "(value) } }\n}\n";
+    }
+    o << "\nimpl " << handle << " {\n";
+    for (const auto& handler : source.handlers) {
+      const Handler* route_handler = find_handler(*routes.front(), handler.name);
+      if (!route_handler) continue;
+      bool compatible = true;
+      for (size_t index = 0; index < handler.params.size(); ++index) {
+        string expected = rust_type(handler.params[index].type);
+        for (size_t route_index = 1; route_index < routes.size(); ++route_index) {
+          const Handler* candidate = find_handler(*routes[route_index], handler.name);
+          if (!candidate || index >= candidate->params.size() ||
+              rust_type(candidate->params[index].type) != expected)
+            compatible = false;
+        }
+      }
+      for (size_t route_index = 1; route_index < routes.size(); ++route_index) {
+        const Handler* candidate = find_handler(*routes[route_index], handler.name);
+        if (!candidate || candidate->reply_type.has_value() !=
+                handler.reply_type.has_value() ||
+            (candidate->reply_type && handler.reply_type &&
+             rust_type(*candidate->reply_type) != rust_type(*handler.reply_type)))
+          compatible = false;
+      }
+      if (!compatible) continue;
+      bool direct = direct_shared_memory(*routes.front());
+      for (const auto* route_domain : routes)
+        if (direct_shared_memory(*route_domain) != direct)
+          compatible = false;
+      if (!compatible) continue;
+      o << "    fn " << handler.name << "_shared(&self";
+      for (const auto& parameter : handler.params)
+        o << ", " << parameter.name << ": " << rust_type(parameter.type);
+      string reply_name = reply_binding(source, handler);
+      if (handler.reply_type)
+        o << ", " << reply_name << ": MossSender<"
+          << rust_type(*handler.reply_type) << ">";
+      if (direct) o << ") -> Option<" << rust_type(*handler.reply_type) << "> {\n";
+      else o << ") {\n";
+      o << "        match &self.route {\n";
+      o << "            " << route << "::Base(inner) => inner."
+        << handler.name << "_shared(";
+      bool first = true;
+      for (const auto& parameter : handler.params) {
+        if (!first) o << ", ";
+        first = false;
+        o << parameter.name;
+      }
+      if (handler.reply_type) {
+        if (!first) o << ", ";
+        o << reply_name;
+      }
+      o << "),\n";
+      for (size_t route_index = 1; route_index < routes.size(); ++route_index) {
+        o << "            " << route << "::"
+          << nominal_handle_variant(routes[route_index]->name) << "(inner) => inner."
+          << handler.name << "_shared(";
+        first = true;
+        for (const auto& parameter : handler.params) {
+          if (!first) o << ", ";
+          first = false;
+          o << parameter.name;
+        }
+        if (handler.reply_type) {
+          if (!first) o << ", ";
+          o << reply_name;
+        }
+        o << "),\n";
+      }
+      o << "        }\n    }\n";
+    }
     o << "}\n\n";
   }
 

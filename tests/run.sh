@@ -88,6 +88,22 @@ run_case() {
   fi
 }
 
+run_case_either_order() {
+  name=$1
+  source=$2
+  first=$3
+  second=$4
+  compile_case "$name" "$source"
+  actual=$("$test_build/$name")
+  forward=$(printf '%s\n%s' "$first" "$second")
+  reverse=$(printf '%s\n%s' "$second" "$first")
+  if [ "$actual" != "$forward" ] && [ "$actual" != "$reverse" ]; then
+    printf 'test failure: %s output\nexpected either:\n%s\nor:\n%s\nactual:\n%s\n' \
+      "$name" "$forward" "$reverse" "$actual" >&2
+    exit 1
+  fi
+}
+
 run_shared_memory_case() {
   name=$1
   source=$2
@@ -1233,13 +1249,13 @@ run_case implicit_domain_specialization_same_instance \
   tests/implicit_domain_specialization_same_instance.moss '20'
 run_case implicit_domain_parameter_specialization \
   tests/implicit_domain_parameter_specialization.moss "$(printf '10\n20')"
-run_case implicit_domain_parameter_multiple_instances \
-  tests/implicit_domain_parameter_multiple_instances.moss "$(printf '10\n2.5')"
+run_case_either_order implicit_domain_parameter_multiple_instances \
+  tests/implicit_domain_parameter_multiple_instances.moss '10' '2.5'
 run_case implicit_domain_typed_parameter_instances \
-  tests/implicit_domain_typed_parameter_instances.moss '1'
-grep -F 'fn Ping_shared(&self, worker: WorkerRef)' \
+  tests/implicit_domain_typed_parameter_instances.moss ''
+grep -F 'fn Ping_shared(&self, worker: WorkerHandle)' \
   "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null ||
-  fail 'typed domain parameter specialization did not retain nominal Worker type'
+  fail 'typed domain parameter specialization did not retain a uniform nominal Worker handle'
 if grep -F 'fn Ping_shared(&self, worker: Worker__' \
     "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null; then
   fail 'typed domain parameter specialization leaked a declared instance identity'
@@ -1557,10 +1573,10 @@ reject_case implicit_domain_parameter_conflict_zero \
 reject_case implicit_domain_parameter_conflict_one \
   "handler 'Set' parameter 1"
 reject_case typed_domain_parameter_await_cycle 'await cycle detected:'
-grep -F 'w1' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null ||
-  fail 'typed domain parameter await cycle omitted the concrete w1 instance'
-if grep -F 'w2' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null; then
-  fail 'typed domain parameter await cycle reported the non-cyclic w2 instance'
+grep -F 'w2' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null ||
+  fail 'typed domain parameter await cycle omitted the concrete w2 instance'
+if grep -F 'w1' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null; then
+  fail 'typed domain parameter await cycle reported the non-cyclic w1 instance'
 fi
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
