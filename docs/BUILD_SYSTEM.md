@@ -404,3 +404,11 @@ error envelope.
 If a native artifact is unexpectedly missing or damaged, `moss clean` followed
 by the desired build is the supported recovery. Do not repair the generated
 `.rs` or `.mossbuild` manually.
+## Phase 8 modules
+
+Explicit modules are checked as logical units and composed in import-DAG order.
+The Rust backend remains the materialized-code boundary; Moss does not persist
+rustc MIR. Builds emit versioned `.mossi` semantic interfaces containing public
+signatures, ownership/effect/await contracts, and generic semantic artifacts.
+Optimization and the Rust toolchain fingerprint affect native artifact caches,
+not semantic module identity.

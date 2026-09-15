@@ -67,8 +67,8 @@ struct Handler {
   int line = 0;
   string source_file;
 };
-struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; int line = 0; string source_file; };
-struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; int line = 0; string source_file; };
+struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
+struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct FunctionSpecialization {
   string generated_name;
@@ -87,12 +87,13 @@ struct Function {
   // Concrete callable specializations referenced by functional code.  This is
   // retained as semantic dependency information for later incremental work.
   vector<string> callable_dependencies;
+  bool exported = false;
   ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
   string source_file;
 };
-struct Trait { string name, header; vector<TraitMethod> methods; int line = 0; string source_file; };
+struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
 struct TestDecl {
   string name;
@@ -129,15 +130,29 @@ struct SemanticAwaitSite {
   string source;
   string target_domain;
   int line = 0;
+  string source_instance;
+  string target_instance;
 };
 
 struct SemanticAwaitEdge {
   string source_domain;
   string target_domain;
   int line = 0;
+  string source_instance;
+  string target_instance;
+};
+
+struct ModuleImport {
+  string name;
+  string owner_module;
+  int line = 0;
+  string source_file;
 };
 
 struct Program {
+  string module_name;
+  bool explicit_module = false;
+  vector<ModuleImport> imports;
   vector<Function> functions;
   vector<Trait> traits;
   vector<ObjectType> objects;

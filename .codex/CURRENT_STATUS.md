@@ -622,3 +622,10 @@ selectors use `src + benches`; standalone files remain single-file. Cross-file
 renames are transactional within the selected context, and expression/argument edits
 are validated against the complete logical program before writing. Physical source
 paths remain in query results and diagnostics.
+## Phase 8
+
+Modules/imports/exports are supported with qualified namespace resolution.
+Typed exports are materialized contracts; untyped exports are compile-time Moss
+generics represented in versioned `.mossi` interfaces. Await graph identities
+are exact declared domain instances (`module::binding`), with composition-time
+DFS over those edges. Legacy implicit-module projects remain supported.

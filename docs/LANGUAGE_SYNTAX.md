@@ -369,3 +369,19 @@ materialization. The larger
 [`mini_application.moss`](../examples/mini_application.moss) combines those static
 features with domains, `message`, and `await`. These are ordinary source programs:
 Moss resolves calls before Rust generation and does not create runtime trait objects.
+## Modules
+
+`module name` declares a logical module; multiple physical files may declare
+the same module. `import name` introduces a qualified module name. Declarations
+are private unless marked `export`:
+
+```moss
+module pricing
+export fn notional(x: Int) -> Int:
+  x * 2
+```
+
+Use `pricing.notional(value)` from an importing module. Typed exports are
+materialized ABI. Untyped exported parameters are compile-time Moss generics,
+shipped as semantic IR and specialized by concrete use. Existing projects
+without explicit module declarations remain implicit single-module projects.

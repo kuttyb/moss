@@ -479,3 +479,10 @@ The cache is content- and backend-aware, so an unchanged executable normally
 means the generated program and toolchain identity were unchanged. To force a
 fresh native build, run `moss clean` and build again. Never edit generated Rust
 or `.mossbuild` to work around a cache issue.
+## Modules
+
+Use `module`, `import`, and explicit `export` declarations for Phase 8 projects.
+Imports are qualified and acyclic. Typed exports are fully checked and
+materialized; untyped exports are compile-time Moss generics. See
+[`MODULES.md`](MODULES.md) for source rules and [`MODULE_ABI.md`](MODULE_ABI.md)
+for interface/cache behavior.

@@ -512,3 +512,10 @@ Messages, awaits, and replies are explicit value-copy boundaries: an object, col
 ## Platforms
 
 The source builds on Linux and macOS with a C++17 compiler. Build the compiler locally with `make`.
+# Modules and separate compilation
+
+Phase 8 adds first-class modules, qualified imports/exports, materialized typed
+exports, semantic-IR generic exports, and `.mossi` module interfaces. See
+[`docs/MODULES.md`](docs/MODULES.md) and
+[`docs/MODULE_ABI.md`](docs/MODULE_ABI.md). Await analysis is keyed by declared
+domain instances, never by domain type.

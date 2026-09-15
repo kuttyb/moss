@@ -428,50 +428,77 @@ class Parser {
     while (i_ < lines_.size()) {
       const auto& L = lines_[i_];
       if (L.indent != 0) fail(L, "top-level declaration must start at indentation 0");
-      if (starts_with(L.text, "domain ")) p.domains.push_back(parse_domain());
-      else if (starts_with(L.text, "type ")) p.objects.push_back(parse_object());
-      else if (starts_with(L.text, "trait ")) p.traits.push_back(parse_trait());
-      else if (starts_with(L.text, "test ")) p.tests.push_back(parse_test());
-      else if (starts_with(L.text, "bench "))
-        p.benchmarks.push_back(parse_benchmark());
-      else if (L.text == "proc main()" || L.text == "proc main():") {
-        if (p.main) fail(L, "duplicate proc main()");
-        p.main = parse_main();
-      } else if (starts_with(L.text, "fn ")) {
-        auto function = parse_function();
-        if (function.name == "main") {
-          if (p.main) fail(L, "duplicate main function");
-          if (function.expression_body)
-            fail(L, "main must use an indented statement body");
-          if (function.result_expression) {
-            Stmt statement;
-            statement.line = function.result_line;
-            statement.indent = 0;
-            statement.text = *function.result_expression;
-            statement.continuation_lines = function.result_continuation_lines;
-            if (parse_message_call(statement.text, statement.a, statement.b, statement.args))
-              statement.kind = Stmt::Kind::Call;
-            else {
-              string callee;
-              if (parse_simple_call(statement.text, callee, statement.args)) {
-                statement.kind = Stmt::Kind::Call;
-                statement.a = callee;
-              } else {
-                statement.kind = Stmt::Kind::Raw;
-              }
-            }
-            function.body.push_back(std::move(statement));
-            function.result_expression.reset();
-          }
-          if (!function.body.size())
-            fail(L, "main must use an indented statement body");
-          p.main = MainProc{std::move(function.body), function.line,
-                            function.header, function.source_file};
-        } else {
-          p.functions.push_back(std::move(function));
-        }
+      if (starts_with(L.text, "module ")) {
+        string name = trim(L.text.substr(7));
+        if (!plain_identifier(name)) fail(L, "module name must be an identifier");
+        if (p.explicit_module && p.module_name != name)
+          fail(L, "a source file may declare only one module");
+        p.module_name = name;
+        p.explicit_module = true;
+        ++i_;
+      } else if (starts_with(L.text, "import ")) {
+        string name = trim(L.text.substr(7));
+        if (!plain_identifier(name)) fail(L, "import name must be an identifier");
+        p.imports.push_back(ModuleImport{name, {}, L.no, L.source_file});
+        ++i_;
       } else {
-        fail(L, "expected 'domain', 'type Name:', 'trait', 'fn', 'test', 'bench', or 'proc main()'");
+        bool exported = false;
+        string declaration = L.text;
+        if (starts_with(declaration, "export ")) {
+          exported = true;
+          declaration = trim(declaration.substr(7));
+          if (declaration.empty()) fail(L, "export requires a declaration");
+        }
+        if (starts_with(declaration, "domain ")) p.domains.push_back(parse_domain(exported));
+        else if (starts_with(declaration, "type ")) p.objects.push_back(parse_object(exported));
+        else if (starts_with(declaration, "trait ")) p.traits.push_back(parse_trait(exported));
+        else if (starts_with(declaration, "fn ")) {
+          auto function = parse_function(exported);
+          if (function.name == "main") {
+            if (p.main) fail(L, "duplicate main function");
+            if (function.expression_body)
+              fail(L, "main must use an indented statement body");
+            if (function.result_expression) {
+              Stmt statement;
+              statement.line = function.result_line;
+              statement.indent = 0;
+              statement.text = *function.result_expression;
+              statement.continuation_lines = function.result_continuation_lines;
+              if (parse_message_call(statement.text, statement.a, statement.b, statement.args))
+                statement.kind = Stmt::Kind::Call;
+              else {
+                string callee;
+                if (parse_simple_call(statement.text, callee, statement.args)) {
+                  statement.kind = Stmt::Kind::Call;
+                  statement.a = callee;
+                } else {
+                  statement.kind = Stmt::Kind::Raw;
+                }
+              }
+              function.body.push_back(std::move(statement));
+              function.result_expression.reset();
+            }
+            if (!function.body.size())
+              fail(L, "main must use an indented statement body");
+            p.main = MainProc{std::move(function.body), function.line,
+                              function.header, function.source_file};
+          } else {
+            p.functions.push_back(std::move(function));
+          }
+        } else if (starts_with(declaration, "test ")) {
+          if (exported) fail(L, "tests cannot be exported");
+          p.tests.push_back(parse_test());
+        } else if (starts_with(declaration, "bench ")) {
+          if (exported) fail(L, "benchmarks cannot be exported");
+          p.benchmarks.push_back(parse_benchmark());
+        }
+        else if (declaration == "proc main()" || declaration == "proc main():") {
+          if (exported) fail(L, "main cannot be exported");
+          if (p.main) fail(L, "duplicate proc main()");
+          p.main = parse_main();
+        } else {
+          fail(L, "expected 'module', 'import', 'domain', 'type Name:', 'trait', 'fn', 'export', 'test', 'bench', or 'proc main()'");
+        }
       }
     }
     return p;
@@ -539,8 +566,9 @@ class Parser {
     return ps;
   }
 
-  ObjectType parse_object() {
+  ObjectType parse_object(bool exported = false) {
     Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
     // Legacy: type User = object. Preferred: type User:
     string rest = trim(head.text.substr(5));
     auto eq = rest.find('=');
@@ -556,6 +584,7 @@ class Parser {
     o.name = legacy ? trim(rest.substr(0, eq)) : trim(rest.substr(0, rest.size() - 1));
     if (!identifier(o.name)) fail(head, "invalid type name '" + o.name + "'");
     o.line = head.no;
+    o.exported = exported;
     while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
       auto L = lines_[i_++];
       if (L.indent != head.indent + indent_unit_)
@@ -593,11 +622,12 @@ class Parser {
     return o;
   }
 
-  Trait parse_trait() {
+  Trait parse_trait(bool exported = false) {
     Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
     string rest = trim(head.text.substr(6));
     if (ends_with(rest, ":")) rest.pop_back();
-    Trait t; t.name = trim(rest); t.header = head.text; t.line = head.no;
+    Trait t; t.name = trim(rest); t.header = head.text; t.line = head.no; t.exported = exported;
     if (!identifier(t.name)) fail(head, "invalid trait name '" + t.name + "'");
     while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
       Line L = lines_[i_++];
@@ -622,13 +652,15 @@ class Parser {
     return t;
   }
 
-  Domain parse_domain() {
+  Domain parse_domain(bool exported = false) {
     Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
     Domain d;
     d.header = head.text;
     d.name = trim(head.text.substr(7));
     if (ends_with(d.name, ":")) d.name = trim(d.name.substr(0, d.name.size() - 1));
     d.line = head.no;
+    d.exported = exported;
     if (d.name.empty()) fail(head, "domain name is required");
 
     while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
@@ -711,8 +743,9 @@ class Parser {
     return h;
   }
 
-  Function parse_function() {
+  Function parse_function(bool exported = false) {
     Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
     string sig = trim(head.text.substr(3));
     auto lp = sig.find('('), rp = matching_paren(sig, lp);
     if (lp == string::npos || rp == string::npos || rp < lp)
@@ -735,6 +768,7 @@ class Parser {
       suffix = trim(suffix.substr(end));
     }
     f.line = head.no;
+    f.exported = exported;
     if (starts_with(suffix, "=")) {
       string expression = trim(suffix.substr(1));
       if (expression.empty()) fail(head, "expression-bodied function requires an expression after '='");
@@ -3882,8 +3916,10 @@ class Checker {
           if (!target)
             throw std::runtime_error(
                 "internal error: unvalidated await target reached cycle construction");
-          SemanticAwaitSite site{callable_context, target->name,
-                                 statement.line};
+          SemanticAwaitSite site;
+          site.source = callable_context;
+          site.target_domain = target->name;
+          site.line = statement.line;
           if (std::find_if(
                   p_.semantic_await_sites.begin(),
                   p_.semantic_await_sites.end(),
@@ -3903,8 +3939,11 @@ class Checker {
                 });
             if (!duplicate) {
               dependencies.push_back({target->name, statement.line});
-              p_.semantic_await_edges.push_back(
-                  {source_domain, target->name, statement.line});
+              SemanticAwaitEdge edge;
+              edge.source_domain = source_domain;
+              edge.target_domain = target->name;
+              edge.line = statement.line;
+              p_.semantic_await_edges.push_back(std::move(edge));
             }
           }
         }
@@ -3977,6 +4016,278 @@ class Checker {
         visit_body(method.body, method.result_expression, method.result_line,
                    std::move(env), &object, "",
                    "method:" + object.name + "." + method.name);
+      }
+    }
+
+    // A project main body gives every statically declared domain binding a
+    // stable instance identity.  Refine the existing await traversal with
+    // those identities before running the same DFS below.  This keeps the
+    // language rule (finite, statically declared domains) and the semantic
+    // await-edge representation intact while avoiding the unsound type-keyed
+    // collapse of two `spawn Worker()` bindings.
+    if (p_.main) {
+      using InstanceEnv = std::unordered_map<string,string>;
+      std::unordered_map<string,string> binding_types;
+      std::unordered_map<string,string> binding_instances;
+      std::unordered_map<string,string> instance_types;
+      std::unordered_map<string,vector<string>> instances_by_type;
+      auto module_instance = [](const string& domain, const string& binding) {
+        auto separator = domain.find("__");
+        string module = separator == string::npos ? string() : domain.substr(0, separator);
+        return module.empty() ? binding : module + "::" + binding;
+      };
+      for (const auto& statement : p_.main->body) {
+        if (auto spawned = spawn_domain(statement.b)) {
+          string instance = module_instance(*spawned, statement.a);
+          binding_types[statement.a] = *spawned;
+          binding_instances[statement.a] = instance;
+          instance_types[instance] = *spawned;
+          instances_by_type[*spawned].push_back(instance);
+        }
+      }
+      if (!binding_instances.empty()) {
+        std::map<string,vector<AwaitDependency>> exact_graph;
+        std::set<string> exact_nodes;
+        std::set<string> exact_visited;
+        p_.semantic_await_sites.clear();
+        p_.semantic_await_edges.clear();
+
+        auto instance_for = [&](const string& binding, const InstanceEnv& env) {
+          auto found = env.find(binding);
+          if (found != env.end()) return found->second;
+          auto type = binding_types.find(binding);
+          if (type != binding_types.end() && instances_by_type[type->second].size() == 1)
+            return instances_by_type[type->second].front();
+          return string();
+        };
+        auto type_for_instance = [&](const string& instance) {
+          auto direct = instance_types.find(instance);
+          if (direct != instance_types.end()) return direct->second;
+          for (const auto& entry : instances_by_type)
+            if (std::find(entry.second.begin(), entry.second.end(), instance) != entry.second.end())
+              return entry.first;
+          return string();
+        };
+        auto display_instance = [&](const string& instance) {
+          string type = type_for_instance(instance);
+          auto found = instances_by_type.find(type);
+          // Preserve the established diagnostic spelling for the common
+          // one-instance-per-domain case; disambiguate only when a nominal
+          // domain actually has multiple declared instances.
+          return found != instances_by_type.end() && found->second.size() == 1
+              ? type : instance;
+        };
+        std::function<void(const vector<Stmt>&, const string&, const string&,
+                           TypeEnv, InstanceEnv, const string&)> walk_body;
+        std::function<void(const Domain&, const Handler&, const string&,
+                           const vector<string>&, const string&)> walk_handler;
+        std::function<void(const Function&, const string&, const vector<string>&,
+                           const InstanceEnv&)> walk_function;
+
+        auto add_edge = [&](const string& source_instance, const string& target_instance,
+                            const string& source_domain, const string& target_domain,
+                            const string& source, int line) {
+          if (source_instance.empty() || target_instance.empty()) return;
+          exact_nodes.insert(source_instance);
+          exact_nodes.insert(target_instance);
+          auto& dependencies = exact_graph[source_instance];
+          bool duplicate = std::any_of(
+              dependencies.begin(), dependencies.end(),
+              [&](const AwaitDependency& dependency) {
+                return dependency.target == target_instance && dependency.line == line;
+              });
+          if (duplicate) return;
+          dependencies.push_back({target_instance, line});
+          p_.semantic_await_edges.push_back(
+              {source_domain, target_domain, line, source_instance, target_instance});
+          p_.semantic_await_sites.push_back(
+              {source, target_domain, line, source_instance, target_instance});
+        };
+
+        walk_function = [&](const Function& function, const string& source_instance,
+                            const vector<string>& arguments, const InstanceEnv& caller_instances) {
+          string key = source_instance + "\nfn:" + function.name;
+          for (const auto& argument : arguments) key += "\n" + instance_for(argument, caller_instances);
+          if (!exact_visited.insert(key).second) return;
+          TypeEnv types;
+          InstanceEnv instances;
+          for (size_t index = 0; index < function.params.size(); ++index) {
+            const auto& parameter = function.params[index];
+            types[parameter.name] = parameter.type;
+            if (index < arguments.size()) {
+              string actual = instance_for(arguments[index], caller_instances);
+              if (!actual.empty()) instances[parameter.name] = actual;
+            }
+          }
+          vector<Stmt> executable = function.body;
+          if (function.result_expression) {
+            Stmt result;
+            result.kind = Stmt::Kind::Raw;
+            result.line = function.result_line;
+            result.text = *function.result_expression;
+            executable.push_back(std::move(result));
+          }
+          walk_body(executable, source_instance, type_for_instance(source_instance), std::move(types),
+                    std::move(instances), "fn:" + function.name);
+        };
+
+        walk_handler = [&](const Domain& domain, const Handler& handler,
+                           const string& source_instance,
+                           const vector<string>& arguments,
+                           const string& invocation_key) {
+          string key = invocation_key + "\nhandler:" + domain.name + "." + handler.name;
+          for (const auto& argument : arguments) key += "\n" + argument;
+          if (!exact_visited.insert(key).second) return;
+          TypeEnv types;
+          InstanceEnv instances;
+          types["self"] = domain.name;
+          instances["self"] = source_instance;
+          for (const auto& field : domain.state) types[field.name] = field.type;
+          for (size_t index = 0; index < handler.params.size(); ++index) {
+            types[handler.params[index].name] = handler.params[index].type;
+            if (index < arguments.size()) {
+              string actual = arguments[index];
+              auto bound = binding_instances.find(actual);
+              if (bound != binding_instances.end()) instances[handler.params[index].name] = bound->second;
+              else if (actual.find("::") != string::npos)
+                instances[handler.params[index].name] = actual;
+            }
+          }
+          walk_body(handler.body, source_instance, domain.name, std::move(types),
+                    std::move(instances), "handler:" + domain.name + "." + handler.name);
+        };
+
+        walk_body = [&](const vector<Stmt>& body, const string& source_instance,
+                        const string& source_domain, TypeEnv types,
+                        InstanceEnv instances, const string& context) {
+          exact_nodes.insert(source_instance);
+          for (const auto& statement : body) {
+            if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+                statement.kind == Stmt::Kind::Assign) {
+              if (auto spawned = spawn_domain(statement.b)) {
+                types[statement.a] = *spawned;
+                string exact = module_instance(*spawned, statement.a);
+                instances[statement.a] = exact;
+              } else {
+                auto alias = instances.find(trim(statement.b));
+                if (alias != instances.end()) instances[statement.a] = alias->second;
+              }
+            }
+            if (statement.kind == Stmt::Kind::Message ||
+                statement.kind == Stmt::Kind::AwaitMessage) {
+              string receiver = statement.kind == Stmt::Kind::Message
+                  ? statement.a : statement.b;
+              string target_instance = receiver == "self"
+                  ? source_instance : instance_for(receiver, instances);
+              string target_type;
+              auto receiver_type = types.find(receiver);
+              if (receiver == "self") target_type = source_domain;
+              else if (receiver_type != types.end()) target_type = receiver_type->second;
+              if (target_type.empty() && !target_instance.empty()) {
+                for (const auto& type_entry : instances_by_type)
+                  if (std::find(type_entry.second.begin(), type_entry.second.end(), target_instance) != type_entry.second.end())
+                    target_type = type_entry.first;
+              }
+              auto target = domains_.find(canonical_type_name(target_type));
+              if (target != domains_.end() && !target_instance.empty()) {
+                auto handler = find_handler(*target->second,
+                    statement.kind == Stmt::Kind::Message ? statement.b : statement.c);
+                vector<string> invocation_arguments;
+                for (const auto& argument : statement.args) {
+                  string exact = instance_for(trim(argument), instances);
+                  invocation_arguments.push_back(exact.empty() ? argument : exact);
+                }
+                if (handler)
+                  walk_handler(*target->second, *handler, target_instance,
+                               invocation_arguments, source_instance + "\n" + std::to_string(statement.line));
+              }
+              if (statement.kind == Stmt::Kind::AwaitMessage) {
+                string target_domain = target != domains_.end()
+                    ? target->second->name : target_type;
+                add_edge(source_instance, target_instance, source_domain,
+                         target_domain, context, statement.line);
+              }
+            }
+            for (const auto& expression : statement_expressions(statement)) {
+              vector<LocalCallSite> calls;
+              collect_local_call_sites(statement.line, expression, types, nullptr, calls);
+              for (const auto& call : calls) {
+                if (!starts_with(call.target, "fn:")) continue;
+                auto function = functions_.find(call.target.substr(3));
+                if (function != functions_.end())
+                  walk_function(*function->second, source_instance,
+                                call.arguments, instances);
+              }
+            }
+          }
+        };
+
+        // Begin with executable main dispatches. The exact declared binding
+        // becomes the source instance once a message is sent to it.
+        for (const auto& statement : p_.main->body) {
+          if (statement.kind != Stmt::Kind::Message &&
+              statement.kind != Stmt::Kind::AwaitMessage) continue;
+          string target_instance = instance_for(
+              statement.kind == Stmt::Kind::Message ? statement.a : statement.b,
+              binding_instances);
+          string target_type = binding_types[statement.kind == Stmt::Kind::Message
+              ? statement.a : statement.b];
+          auto target = domains_.find(canonical_type_name(target_type));
+          if (target == domains_.end() || target_instance.empty()) continue;
+          auto handler = find_handler(*target->second,
+              statement.kind == Stmt::Kind::Message ? statement.b : statement.c);
+          if (handler)
+            walk_handler(*target->second, *handler, target_instance,
+                         statement.args, "main\n" + std::to_string(statement.line));
+        }
+
+        std::sort(p_.semantic_await_edges.begin(), p_.semantic_await_edges.end(),
+                  [](const SemanticAwaitEdge& left, const SemanticAwaitEdge& right) {
+                    if (left.source_instance != right.source_instance)
+                      return left.source_instance < right.source_instance;
+                    if (left.line != right.line) return left.line < right.line;
+                    return left.target_instance < right.target_instance;
+                  });
+        std::sort(p_.semantic_await_sites.begin(), p_.semantic_await_sites.end(),
+                  [](const SemanticAwaitSite& left, const SemanticAwaitSite& right) {
+                    if (left.source_instance != right.source_instance)
+                      return left.source_instance < right.source_instance;
+                    if (left.line != right.line) return left.line < right.line;
+                    return left.target_instance < right.target_instance;
+                  });
+        std::map<string,int> exact_state;
+        vector<string> exact_stack;
+        vector<int> exact_lines;
+        std::function<void(const string&, int)> visit_exact = [&](const string& node, int incoming_line) {
+          exact_state[node] = 1;
+          exact_stack.push_back(node);
+          exact_lines.push_back(incoming_line);
+          auto dependencies = exact_graph.find(node);
+          if (dependencies != exact_graph.end()) {
+            for (const auto& dependency : dependencies->second) {
+              if (exact_state[dependency.target] == 0) visit_exact(dependency.target, dependency.line);
+              else if (exact_state[dependency.target] == 1) {
+                auto begin = std::find(exact_stack.begin(), exact_stack.end(), dependency.target);
+                size_t first = static_cast<size_t>(std::distance(exact_stack.begin(), begin));
+                std::ostringstream witness;
+                witness << "await cycle detected:";
+                for (size_t index = first; index + 1 < exact_stack.size(); ++index)
+                  witness << "\n  " << display_instance(exact_stack[index])
+                          << " --await line " << exact_lines[index + 1] << "--> "
+                          << display_instance(exact_stack[index + 1]);
+                witness << "\n  " << display_instance(node) << " --await line "
+                        << dependency.line << "--> " << display_instance(dependency.target);
+                err(dependency.line, witness.str());
+              }
+            }
+          }
+          exact_lines.pop_back();
+          exact_stack.pop_back();
+          exact_state[node] = 2;
+        };
+        for (const auto& node : exact_nodes)
+          if (exact_state[node] == 0) visit_exact(node, 0);
+        return;
       }
     }
 
@@ -12868,7 +13179,15 @@ struct SemanticTargetFact {
   vector<string> explanations;
   string implementation_hash;
   string semantic_interface_hash;
+  string module_identity;
+  string export_visibility;
+  string export_kind;
 };
+
+static string semantic_module_name(const string& name) {
+  auto separator = name.find("__");
+  return separator == string::npos ? string() : name.substr(0, separator);
+}
 
 static string ownership_effect_name(Effect effect) {
   switch (effect) {
@@ -13190,6 +13509,10 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = function.name;
     fact.type = function.return_type.value_or("unit");
     fact.line = function.line;
+    fact.module_identity = semantic_module_name(function.name);
+    fact.export_visibility = function.exported ? "exported" : "private";
+    fact.export_kind = function.exported
+        ? (function.generic ? "generic" : "concrete") : "private";
     fact.observable_effects = function.observable_effects;
     fact.has_observable_effects = true;
     fact.provenance.push_back(fact.semantic_identity);
@@ -13238,6 +13561,9 @@ static vector<SemanticTargetFact> semantic_target_facts(
     object_fact.name = object.name;
     object_fact.type = object.name;
     object_fact.line = object.line;
+    object_fact.module_identity = semantic_module_name(object.name);
+    object_fact.export_visibility = object.exported ? "exported" : "private";
+    object_fact.export_kind = object.exported ? "nominal_type" : "private";
     object_fact.provenance.push_back(object_fact.semantic_identity);
     targets.push_back(std::move(object_fact));
     for (const auto& field : object.fields) {
@@ -13289,6 +13615,9 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = trait.name;
     fact.type = trait.name;
     fact.line = trait.line;
+    fact.module_identity = semantic_module_name(trait.name);
+    fact.export_visibility = trait.exported ? "exported" : "private";
+    fact.export_kind = trait.exported ? "trait" : "private";
     fact.provenance.push_back(fact.semantic_identity);
     fact.explanations.push_back(
         "named trait conformance is resolved statically through concrete methods");
@@ -13304,6 +13633,9 @@ static vector<SemanticTargetFact> semantic_target_facts(
     domain_fact.name = domain.name;
     domain_fact.type = domain.name;
     domain_fact.line = domain.line;
+    domain_fact.module_identity = semantic_module_name(domain.name);
+    domain_fact.export_visibility = domain.exported ? "exported" : "private";
+    domain_fact.export_kind = domain.exported ? "domain" : "private";
     domain_fact.provenance.push_back(domain_fact.semantic_identity);
     DomainLowering lowering = plan.lowering_for(domain);
     domain_fact.explanations.push_back(
@@ -13622,6 +13954,15 @@ static void write_semantic_target_json(std::ostream& out,
   write_debug_json_string(out, target.kind);
   out << ", \"name\": ";
   write_debug_json_string(out, target.name);
+  out << ", \"module_identity\": ";
+  if (target.module_identity.empty()) out << "null";
+  else write_debug_json_string(out, target.module_identity);
+  out << ", \"export_visibility\": ";
+  if (target.export_visibility.empty()) out << "null";
+  else write_debug_json_string(out, target.export_visibility);
+  out << ", \"export_kind\": ";
+  if (target.export_kind.empty()) out << "null";
+  else write_debug_json_string(out, target.export_kind);
   out << ", \"source\": {\"file\": ";
   write_debug_json_string(out, target.source_file.empty()
       ? source_file : target.source_file);
@@ -13712,7 +14053,8 @@ static string diagnostic_code_for_message(const string& message) {
   if (message.find("duplicate function") != string::npos ||
       message.find("duplicate domain") != string::npos ||
       message.find("duplicate object type") != string::npos ||
-      message.find("duplicate trait") != string::npos)
+      message.find("duplicate trait") != string::npos ||
+      message.find("duplicate exported name") != string::npos)
     return "DUPLICATE_SYMBOL";
   if (message.find("duplicate test name") != string::npos)
     return "TEST_DISCOVERY_ERROR";
@@ -13898,6 +14240,8 @@ static void write_bootstrap_json(std::ostream& out,
             "native_tests", "native_benchmarks", "benchmark_baselines",
             "durable_semantic_identities", "semantic_hashing",
             "impact_analysis", "incremental_verification",
+            "modules", "qualified_imports", "module_interfaces",
+            "generic_specialization_identity", "instance_keyed_awaits",
             "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
             "repair_actions", "static_cost_facts"});
   out << ",\n    \"capability_flags\": {"
@@ -13925,6 +14269,7 @@ static void write_bootstrap_json(std::ostream& out,
             "moss edit change-argument <call-id> <index> <expression> --json",
             "moss fmt [--check] [--json]",
             "moss build [--release] [--json]",
+            "module-qualified imports and versioned .mossi interfaces",
             "moss test [filter] [--affected] [--json]",
             "moss bench [filter] [--json]"});
   out << ",\n    \"recommended_workflow\": ";
@@ -13969,9 +14314,11 @@ static void write_bootstrap_json(std::ostream& out,
     write_agent_string_array(out, {"build", "test", "bench", "impact",
                                    "fmt", "edit", "cost"});
     out << ", \"stable_project_identities\": ";
-    write_agent_string_array(
-        out, {"test:<relative-source>:<name>",
-              "bench:<relative-source>:<name>"});
+      write_agent_string_array(
+      out, {"test:<relative-source>:<name>",
+              "bench:<relative-source>:<name>",
+              "module:<project>::<module>",
+              "specialization:<module>:<generic>:<type-tuple>"});
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
            "\"legal_alternatives\"], "
@@ -14049,6 +14396,10 @@ static void write_awaits_result(std::ostream& out, const Program& program,
     write_debug_json_string(out, sites[index]->source);
     out << ", \"target_domain\": ";
     write_debug_json_string(out, sites[index]->target_domain);
+    out << ", \"source_instance\": ";
+    write_debug_json_string(out, sites[index]->source_instance);
+    out << ", \"target_instance\": ";
+    write_debug_json_string(out, sites[index]->target_instance);
     out << ", \"line\": " << sites[index]->line << "}";
   }
   out << "], \"domain_edges\": [";
@@ -14067,6 +14418,10 @@ static void write_awaits_result(std::ostream& out, const Program& program,
     write_debug_json_string(out, edge.source_domain);
     out << ", \"target_domain\": ";
     write_debug_json_string(out, edge.target_domain);
+    out << ", \"source_instance\": ";
+    write_debug_json_string(out, edge.source_instance);
+    out << ", \"target_instance\": ";
+    write_debug_json_string(out, edge.target_instance);
     out << ", \"line\": " << edge.line << "}";
   }
   out << "], \"transitive_targets\": ";
@@ -14730,6 +15085,8 @@ static void merge_project_program(Program& destination, Program source,
   // explicit modules/imports; no synthetic source file or implicit namespace
   // is introduced.
   annotate_program_source(source, source_file);
+  destination.imports.insert(destination.imports.end(), source.imports.begin(),
+                             source.imports.end());
   destination.functions.insert(destination.functions.end(),
                                std::make_move_iterator(source.functions.begin()),
                                std::make_move_iterator(source.functions.end()));
@@ -14778,6 +15135,8 @@ struct SemanticSnapshotAwaitEdge {
   string source_domain;
   string target_domain;
   int line = 0;
+  string source_instance;
+  string target_instance;
 };
 
 struct SemanticSnapshot {
@@ -14902,7 +15261,8 @@ static SemanticSnapshot make_semantic_snapshot(
             });
   for (const auto& edge : program.semantic_await_edges)
     snapshot.await_edges.push_back(
-        {edge.source_domain, edge.target_domain, edge.line});
+        {edge.source_domain, edge.target_domain, edge.line,
+         edge.source_instance, edge.target_instance});
   std::sort(snapshot.await_edges.begin(), snapshot.await_edges.end(),
             [](const SemanticSnapshotAwaitEdge& left,
                const SemanticSnapshotAwaitEdge& right) {
@@ -14910,6 +15270,10 @@ static SemanticSnapshot make_semantic_snapshot(
                 return left.source_domain < right.source_domain;
               if (left.target_domain != right.target_domain)
                 return left.target_domain < right.target_domain;
+              if (left.source_instance != right.source_instance)
+                return left.source_instance < right.source_instance;
+              if (left.target_instance != right.target_instance)
+                return left.target_instance < right.target_instance;
               return left.line < right.line;
             });
   return snapshot;
@@ -14956,7 +15320,9 @@ static void write_semantic_snapshot(const ProjectManifest& manifest,
   }
   for (const auto& edge : snapshot.await_edges)
     content << "await " << std::quoted(edge.source_domain) << " "
-            << std::quoted(edge.target_domain) << " " << edge.line << "\n";
+            << std::quoted(edge.target_domain) << " " << edge.line << " "
+            << std::quoted(edge.source_instance) << " "
+            << std::quoted(edge.target_instance) << "\n";
   string text = content.str();
   std::ifstream prior(file, std::ios::binary);
   if (prior) {
@@ -15002,7 +15368,9 @@ static void write_semantic_snapshot(
   }
   for (const auto& edge : snapshot.await_edges)
     content << "await " << std::quoted(edge.source_domain) << " "
-            << std::quoted(edge.target_domain) << " " << edge.line << "\n";
+            << std::quoted(edge.target_domain) << " " << edge.line << " "
+            << std::quoted(edge.source_instance) << " "
+            << std::quoted(edge.target_instance) << "\n";
   string text = content.str();
   std::ifstream prior(file, std::ios::binary);
   if (prior) {
@@ -15051,7 +15419,9 @@ static std::optional<SemanticSnapshot> read_semantic_snapshot(
     } else if (record == "await") {
       SemanticSnapshotAwaitEdge edge;
       if (!(input >> std::quoted(edge.source_domain) >>
-            std::quoted(edge.target_domain) >> edge.line)) return std::nullopt;
+            std::quoted(edge.target_domain) >> edge.line >>
+            std::quoted(edge.source_instance) >>
+            std::quoted(edge.target_instance))) return std::nullopt;
       snapshot.await_edges.push_back(std::move(edge));
     } else return std::nullopt;
   }
@@ -15065,6 +15435,360 @@ struct CompiledProjectUnit {
   string rust;
 };
 
+// Explicit modules are lowered into the existing whole-program semantic
+// pipeline.  The namespace pass below is deliberately source-level: it keeps
+// Moss's checker, ownership analysis, await analysis, and Rust generator as
+// the single semantic authority while giving declarations stable qualified
+// identities during project composition.
+struct ParsedModuleUnit {
+  string name;
+  bool explicit_module = false;
+  vector<std::pair<Program,string>> files;
+  vector<ModuleImport> imports;
+};
+
+static string module_symbol(const string& module, const string& name) {
+  return module + "__" + name;
+}
+
+static std::set<string> module_function_names(const ParsedModuleUnit& unit) {
+  std::set<string> result;
+  for (const auto& file : unit.files)
+    for (const auto& function : file.first.functions) result.insert(function.name);
+  return result;
+}
+
+static std::set<string> module_type_names(const ParsedModuleUnit& unit) {
+  std::set<string> result;
+  for (const auto& file : unit.files) {
+    for (const auto& object : file.first.objects) result.insert(object.name);
+    for (const auto& domain : file.first.domains) result.insert(domain.name);
+    for (const auto& trait : file.first.traits) result.insert(trait.name);
+  }
+  return result;
+}
+
+static std::set<string> module_export_names(const ParsedModuleUnit& unit) {
+  std::set<string> result;
+  for (const auto& file : unit.files) {
+    for (const auto& function : file.first.functions)
+      if (function.exported) result.insert(function.name);
+    for (const auto& object : file.first.objects)
+      if (object.exported) result.insert(object.name);
+    for (const auto& domain : file.first.domains)
+      if (domain.exported) result.insert(domain.name);
+    for (const auto& trait : file.first.traits)
+      if (trait.exported) result.insert(trait.name);
+  }
+  return result;
+}
+
+static string rewrite_module_type(string type, const string& module,
+                                  const std::map<string,ParsedModuleUnit>& modules,
+                                  const std::map<string,std::set<string>>& public_exports) {
+  type = trim(std::move(type));
+  if (type.empty()) return type;
+  // Nominal names nested in Vector[T], Map[K,V], and the other existing
+  // container spellings are rewritten token-by-token. Primitive/container
+  // words are unaffected because they are not module declarations.
+  string result;
+  for (size_t i = 0; i < type.size();) {
+    if (!(std::isalpha(static_cast<unsigned char>(type[i])) || type[i] == '_')) {
+      result.push_back(type[i++]);
+      continue;
+    }
+    size_t end = i + 1;
+    while (end < type.size() &&
+           (std::isalnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
+    string token = type.substr(i, end - i);
+    size_t dot = end;
+    while (dot < type.size() && std::isspace(static_cast<unsigned char>(type[dot]))) ++dot;
+    if (dot < type.size() && type[dot] == '.') {
+      size_t member = dot + 1;
+      while (member < type.size() && std::isspace(static_cast<unsigned char>(type[member]))) ++member;
+      size_t member_end = member;
+      while (member_end < type.size() &&
+             (std::isalnum(static_cast<unsigned char>(type[member_end])) || type[member_end] == '_')) ++member_end;
+      string name = type.substr(member, member_end - member);
+      auto imported = public_exports.find(token);
+      if (imported != public_exports.end() && imported->second.count(name)) {
+        result += module_symbol(token, name);
+        i = member_end;
+        continue;
+      }
+      if (imported != public_exports.end()) {
+        // Keep the diagnostic in Moss's ordinary unknown-symbol path while
+        // preventing a private declaration from becoming a qualified escape
+        // hatch.
+        result += "__moss_private__" + token + "__" + name;
+        i = member_end;
+        continue;
+      }
+    }
+    auto local_types = module_type_names(modules.at(module));
+    if (local_types.count(token)) result += module_symbol(module, token);
+    else result += token;
+    i = end;
+  }
+  return result;
+}
+
+static string rewrite_module_expression(
+    string expression, const string& module,
+    const std::map<string,ParsedModuleUnit>& modules,
+    const std::map<string,std::set<string>>& public_exports) {
+  std::set<string> functions = module_function_names(modules.at(module));
+  std::set<string> types = module_type_names(modules.at(module));
+  string result;
+  bool in_string = false;
+  for (size_t i = 0; i < expression.size();) {
+    char c = expression[i];
+    if (in_string) {
+      result.push_back(c);
+      if (c == '"' && (i == 0 || expression[i - 1] != '\\')) in_string = false;
+      ++i;
+      continue;
+    }
+    if (c == '"') { in_string = true; result.push_back(c); ++i; continue; }
+    if (!(std::isalpha(static_cast<unsigned char>(c)) || c == '_')) {
+      result.push_back(c); ++i; continue;
+    }
+    size_t end = i + 1;
+    while (end < expression.size() &&
+           (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
+    string token = expression.substr(i, end - i);
+    size_t cursor = end;
+    while (cursor < expression.size() && std::isspace(static_cast<unsigned char>(expression[cursor]))) ++cursor;
+    if (cursor < expression.size() && expression[cursor] == '.') {
+      size_t member = cursor + 1;
+      while (member < expression.size() && std::isspace(static_cast<unsigned char>(expression[member]))) ++member;
+      size_t member_end = member;
+      while (member_end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[member_end])) || expression[member_end] == '_')) ++member_end;
+      string name = expression.substr(member, member_end - member);
+      auto imported = public_exports.find(token);
+      if (imported != public_exports.end() && imported->second.count(name)) {
+        result += module_symbol(token, name);
+        i = member_end;
+        continue;
+      }
+      if (imported != public_exports.end()) {
+        result += "__moss_private__" + token + "__" + name;
+        i = member_end;
+        continue;
+      }
+    }
+    size_t after = end;
+    while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
+    if ((functions.count(token) || types.count(token)) && after < expression.size() &&
+        expression[after] == '(')
+      result += module_symbol(module, token);
+    else
+      result += token;
+    i = end;
+  }
+  return result;
+}
+
+static void rewrite_module_program(
+    Program& program, const string& module,
+    const std::map<string,ParsedModuleUnit>& modules,
+    const std::map<string,std::set<string>>& public_exports) {
+  auto type = [&](string value) {
+    return rewrite_module_type(std::move(value), module, modules, public_exports);
+  };
+  auto expression = [&](string value) {
+    return rewrite_module_expression(std::move(value), module, modules, public_exports);
+  };
+  auto params = [&](vector<Param>& values) {
+    for (auto& param : values) param.type = type(param.type);
+  };
+  auto body = [&](vector<Stmt>& statements) {
+    for (auto& statement : statements) {
+      statement.a = expression(statement.a);
+      statement.b = expression(statement.b);
+      statement.c = expression(statement.c);
+      for (auto& argument : statement.args) argument = expression(argument);
+      if (!statement.text.empty()) statement.text = expression(statement.text);
+    }
+  };
+  for (auto& function : program.functions) {
+    string old = function.name;
+    function.name = module_symbol(module, old);
+    params(function.params);
+    if (function.return_type) *function.return_type = type(*function.return_type);
+    body(function.body);
+    if (function.result_expression) *function.result_expression = expression(*function.result_expression);
+  }
+  for (auto& object : program.objects) {
+    string old = object.name;
+    object.name = module_symbol(module, old);
+    for (auto& field : object.fields) field.type = type(field.type);
+    for (auto& method : object.methods) {
+      method.owner = object.name;
+      params(method.params);
+      if (method.return_type) *method.return_type = type(*method.return_type);
+      body(method.body);
+      if (method.result_expression) *method.result_expression = expression(*method.result_expression);
+    }
+  }
+  for (auto& trait : program.traits) {
+    trait.name = module_symbol(module, trait.name);
+    for (auto& method : trait.methods) {
+      params(method.params);
+      if (method.return_type) *method.return_type = type(*method.return_type);
+    }
+  }
+  for (auto& domain : program.domains) {
+    domain.name = module_symbol(module, domain.name);
+    for (auto& field : domain.state) field.type = type(field.type);
+    for (auto& handler : domain.handlers) {
+      params(handler.params);
+      if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
+      body(handler.body);
+    }
+  }
+  if (program.main) body(program.main->body);
+  for (auto& test : program.tests) body(test.body);
+  for (auto& benchmark : program.benchmarks) body(benchmark.body);
+}
+
+static void validate_module_exports(const std::map<string,ParsedModuleUnit>& modules,
+                                    const std::map<string,std::set<string>>& public_exports) {
+  for (const auto& entry : modules) {
+    const string& module = entry.first;
+    std::map<string,int> export_counts;
+    for (const auto& file : entry.second.files) {
+      for (const auto& function : file.first.functions)
+        if (function.exported) ++export_counts[function.name];
+      for (const auto& object : file.first.objects)
+        if (object.exported) ++export_counts[object.name];
+      for (const auto& trait : file.first.traits)
+        if (trait.exported) ++export_counts[trait.name];
+      for (const auto& domain : file.first.domains)
+        if (domain.exported) ++export_counts[domain.name];
+    }
+    for (const auto& exported : export_counts) {
+      if (exported.second > 1)
+        throw CompileError(1, "duplicate exported name '" + exported.first +
+                           "' in module '" + module + "'");
+    }
+    for (const auto& import : entry.second.imports) {
+      if (!modules.count(import.name)) {
+        CompileError error(import.line, "imported module '" + import.name + "' was not found");
+        error.source_file = import.source_file;
+        throw error;
+      }
+      if (import.name == module) {
+        CompileError error(import.line, "module import cycle detected: " + module + " -> " + module);
+        error.source_file = import.source_file;
+        throw error;
+      }
+    }
+  }
+  std::map<string,int> state;
+  vector<string> stack;
+  std::function<void(const string&)> visit = [&](const string& module) {
+    state[module] = 1;
+    stack.push_back(module);
+    for (const auto& import : modules.at(module).imports) {
+      if (state[import.name] == 0) visit(import.name);
+      else if (state[import.name] == 1) {
+        auto begin = std::find(stack.begin(), stack.end(), import.name);
+        std::ostringstream cycle;
+        cycle << "module import cycle detected: ";
+        for (auto at = begin; at != stack.end(); ++at) {
+          if (at != begin) cycle << " -> ";
+          cycle << *at;
+        }
+        cycle << " -> " << import.name;
+        CompileError error(import.line, cycle.str());
+        error.source_file = import.source_file;
+        throw error;
+      }
+    }
+    stack.pop_back();
+    state[module] = 2;
+  };
+  for (const auto& entry : modules) if (state[entry.first] == 0) visit(entry.first);
+  (void)public_exports;
+}
+
+static bool type_contains_domain(const string& type,
+                                 const std::set<string>& domains) {
+  string value = canonical_type_name(type);
+  for (const auto& domain : domains) {
+    if (value == domain) return true;
+    if (value.find("[" + domain + "]") != string::npos ||
+        value.find("," + domain + "]") != string::npos ||
+        value.find("[" + domain + ",") != string::npos ||
+        value.find(", " + domain) != string::npos)
+      return true;
+  }
+  return false;
+}
+
+static void prepare_and_validate_module_exports(Program& program,
+                                                bool finalize = true) {
+  std::set<string> domains;
+  for (const auto& domain : program.domains) domains.insert(domain.name);
+  for (auto& function : program.functions) {
+    if (!function.exported) continue;
+    bool open = function.generic || std::any_of(
+        function.params.begin(), function.params.end(),
+        [](const Param& parameter) { return parameter.type.empty(); });
+    // An explicitly untyped exported parameter is a Moss generic even when
+    // its body happens not to exercise a structural operation.
+    if (open) {
+      function.generic = true;
+      function.static_dispatch = true;
+      if (!function.return_type) {
+        string source_parameter;
+        for (const auto& parameter : function.params)
+          if (parameter.type.empty()) { source_parameter = parameter.name; break; }
+        bool has_value_result = function.result_expression.has_value() ||
+            std::any_of(function.body.begin(), function.body.end(),
+                        [](const Stmt& statement) {
+                          return statement.kind == Stmt::Kind::Return &&
+                              !statement.a.empty();
+                        });
+        if (has_value_result && !source_parameter.empty()) {
+          function.generic_results[source_parameter] = source_parameter;
+          function.return_type = "_generic:" + source_parameter;
+        }
+      }
+      for (const auto& parameter : function.params)
+        if (type_contains_domain(parameter.type, domains)) {
+          CompileError error(function.line,
+              "generic exported function '" + function.name +
+              "' may not accept domain-typed parameters");
+          error.source_file = function.source_file;
+          throw error;
+        }
+      if (!finalize) continue;
+      continue;
+    }
+    if (!finalize) continue;
+    for (const auto& parameter : function.params) {
+      if (parameter.type == "vector" || parameter.type == "map" ||
+          parameter.type == "queue" || starts_with(parameter.type, "_")) {
+        CompileError error(function.line,
+            "typed export '" + function.name + "' has an unresolved parameter type");
+        error.source_file = function.source_file;
+        throw error;
+      }
+    }
+    if (!function.return_type || starts_with(*function.return_type, "_") ||
+        *function.return_type == "vector" || *function.return_type == "map" ||
+        *function.return_type == "queue") {
+      CompileError error(function.line,
+          "typed export '" + function.name + "' must have a closed concrete return type");
+      error.source_file = function.source_file;
+      throw error;
+    }
+  }
+}
+
 static CompiledProjectUnit analyze_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -15073,6 +15797,8 @@ static CompiledProjectUnit analyze_project_sources(
     const std::set<string>* declaration_ids = nullptr) {
   try {
     Program program;
+    std::map<string,ParsedModuleUnit> modules;
+    bool has_explicit_modules = false;
     for (const auto& source : sources) {
       std::ifstream input(source);
       if (!input)
@@ -15082,10 +15808,38 @@ static CompiledProjectUnit analyze_project_sources(
       Program parsed = Parser(lex_lines(input, source.string())).parse();
       assign_project_declaration_identities(
           parsed, project_relative_path(manifest, source));
-      merge_project_program(program, std::move(parsed), source.string());
+      has_explicit_modules = has_explicit_modules || parsed.explicit_module;
+      string module = parsed.explicit_module && !parsed.module_name.empty()
+          ? parsed.module_name : manifest.name;
+      auto& unit = modules[module];
+      unit.name = module;
+      unit.explicit_module = unit.explicit_module || parsed.explicit_module;
+      unit.imports.insert(unit.imports.end(), parsed.imports.begin(), parsed.imports.end());
+      unit.files.push_back({std::move(parsed), source.string()});
     }
+    if (has_explicit_modules) {
+      std::map<string,std::set<string>> public_exports;
+      for (const auto& entry : modules)
+        public_exports[entry.first] = module_export_names(entry.second);
+      validate_module_exports(modules, public_exports);
+      for (auto& entry : modules) {
+        for (auto& file : entry.second.files) {
+          for (auto& import : file.first.imports) import.owner_module = entry.first;
+          rewrite_module_program(file.first, entry.first, modules, public_exports);
+          merge_project_program(program, std::move(file.first), file.second);
+        }
+      }
+    } else {
+      // Legacy projects remain one implicit module and retain their existing
+      // source order-independent whole-project semantics.
+      for (auto& entry : modules)
+        for (auto& file : entry.second.files)
+          merge_project_program(program, std::move(file.first), file.second);
+    }
+    prepare_and_validate_module_exports(program, false);
     Checker checker(program);
     checker.run();
+    prepare_and_validate_module_exports(program, true);
     vector<Warning> warnings = checker.warnings();
     if (!declaration_filter.empty() || declaration_ids) {
       if (mode == ProgramGenerationMode::Tests) {
@@ -15483,11 +16237,178 @@ static int run_project_impact(const ProjectManifest& manifest,
   return 0;
 }
 
+static string module_name_from_symbol(const string& symbol) {
+  auto separator = symbol.find("__");
+  return separator == string::npos ? string() : symbol.substr(0, separator);
+}
+
+static string interface_effects_text(const ObservableEffects& effects) {
+  std::ostringstream out;
+  out << "local_capture_read=" << (effects.local_capture_read ? 1 : 0)
+      << ";local_mutation=" << (effects.local_mutation ? 1 : 0)
+      << ";domain_read=" << (effects.domain_read ? 1 : 0)
+      << ";domain_write=" << (effects.domain_write ? 1 : 0)
+      << ";message=" << (effects.message ? 1 : 0)
+      << ";await=" << (effects.await ? 1 : 0)
+      << ";external_io=" << (effects.external_io ? 1 : 0)
+      << ";may_fail=" << (effects.may_fail ? 1 : 0)
+      << ";may_diverge=" << (effects.may_diverge ? 1 : 0)
+      << ";unresolved=" << (effects.unresolved ? 1 : 0);
+  return out.str();
+}
+
+static vector<std::filesystem::path> write_module_interfaces(
+    const ProjectManifest& manifest, const Program& program,
+    const std::filesystem::path& directory,
+    const BackendToolchainIdentity& backend) {
+  std::map<string,std::ostringstream> contents;
+  std::map<string,std::ostringstream> interface_contents;
+  std::set<string> module_names;
+  for (const auto& function : program.functions)
+    if (!module_name_from_symbol(function.name).empty())
+      module_names.insert(module_name_from_symbol(function.name));
+  for (const auto& object : program.objects)
+    if (!module_name_from_symbol(object.name).empty())
+      module_names.insert(module_name_from_symbol(object.name));
+  for (const auto& domain : program.domains)
+    if (!module_name_from_symbol(domain.name).empty())
+      module_names.insert(module_name_from_symbol(domain.name));
+  for (const auto& import : program.imports)
+    if (!import.owner_module.empty()) module_names.insert(import.owner_module);
+  for (const auto& module : module_names) {
+    (void)contents[module];
+    (void)interface_contents[module];
+  }
+  for (const auto& function : program.functions) {
+    if (!function.exported) continue;
+    string module = module_name_from_symbol(function.name);
+    if (module.empty()) continue;
+    auto& out = contents[module];
+    auto& abi = interface_contents[module];
+    string public_name = function.name.substr(module.size() + 2);
+    string symbol = tooling_native_symbol(
+        "function", function.name,
+        "fn:" + function.name + "@" + std::to_string(function.line));
+    abi << "fn " << public_name << " kind="
+        << (function.generic ? "generic" : "concrete")
+        << " return=" << function.return_type.value_or("unit")
+        << " effects=" << interface_effects_text(function.observable_effects)
+        << " symbol=" << symbol << "\n";
+    out << "export fn " << function.name.substr(module.size() + 2)
+        << " kind=" << (function.generic ? "generic" : "concrete")
+        << " semantic_hash=";
+    std::ostringstream body;
+    body << function.header << "\n";
+    for (const auto& statement : function.body) body << statement.text << "\n";
+    if (function.result_expression) body << *function.result_expression << "\n";
+    string semantic_hash = stable_hash(body.str());
+    out << semantic_hash << " return=" << function.return_type.value_or("unit")
+        << " effects=" << interface_effects_text(function.observable_effects) << "\n";
+    for (size_t index = 0; index < function.params.size(); ++index) {
+      Effect effect = index < function.parameter_effects.size()
+          ? function.parameter_effects[index] : Effect::Read;
+      out << "  param " << index << " " << function.params[index].type
+          << " mode=" << ownership_effect_name(effect) << "\n";
+      abi << "  param " << index << " " << function.params[index].type
+          << " mode=" << ownership_effect_name(effect) << "\n";
+    }
+    if (function.generic) {
+      out << "  open_parameters";
+      for (size_t index = 0; index < function.params.size(); ++index)
+        if (function.params[index].type.empty()) out << " " << index;
+      out << "\n  requirements\n";
+      for (const auto& constraint : function.constraints)
+        out << "    " << static_cast<int>(constraint.kind) << " "
+            << constraint.subject << " " << constraint.detail << "\n";
+      out << "  specialization_dependencies\n";
+      for (const auto& edge : program.semantic_call_edges)
+        if (edge.source == "fn:" + function.name)
+          out << "    " << edge.target << "\n";
+      out << "  semantic_ir_body_hash=" << semantic_hash << "\n";
+      abi << "  semantic_ir_body_hash=" << semantic_hash << "\n";
+    }
+  }
+  for (const auto& object : program.objects) {
+    if (!object.exported) continue;
+    string module = module_name_from_symbol(object.name);
+    if (module.empty()) continue;
+    auto& out = contents[module];
+    interface_contents[module] << "type " << object.name.substr(module.size() + 2)
+                               << " nominal\n";
+    out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
+    for (const auto& field : object.fields)
+      out << "  public_representation field " << field.name << " " << field.type << "\n";
+  }
+  for (const auto& trait : program.traits) {
+    if (!trait.exported) continue;
+    string module = module_name_from_symbol(trait.name);
+    if (module.empty()) continue;
+    contents[module] << "export trait " << trait.name.substr(module.size() + 2) << "\n";
+  }
+  for (const auto& domain : program.domains) {
+    if (!domain.exported) continue;
+    string module = module_name_from_symbol(domain.name);
+    if (module.empty()) continue;
+    auto& out = contents[module];
+    interface_contents[module] << "domain " << domain.name.substr(module.size() + 2)
+                               << " opaque\n";
+    out << "export domain " << domain.name.substr(module.size() + 2) << " opaque\n";
+    for (const auto& handler : domain.handlers) {
+      out << "  handler " << handler.name << " reply="
+          << handler.reply_type.value_or("unit") << " effects="
+          << interface_effects_text(handler.observable_effects) << "\n";
+      for (const auto& site : program.semantic_await_sites)
+        if (site.source == "handler:" + domain.name + "." + handler.name)
+          out << "  await target=" << site.target_domain
+              << " source_instance=" << site.source_instance
+              << " target_instance=" << site.target_instance << "\n";
+    }
+  }
+  vector<std::filesystem::path> result;
+  for (auto& entry : contents) {
+    std::ostringstream header;
+    header << "moss-module-interface-v1\n"
+           << "module_id " << manifest.name << "::" << entry.first << "\n"
+           << "compiler " << kCompilerVersion << "\n"
+           << "backend_fingerprint " << backend.fingerprint << "\n"
+           << "backend_rustc " << backend.version_verbose << "\n"
+           << "concrete_interface_hash "
+           << stable_hash(interface_contents[entry.first].str()) << "\n"
+           << "generic_semantic_hash "
+           << stable_hash(entry.second.str()) << "\n"
+           << "interface_hash "
+           << stable_hash(interface_contents[entry.first].str()) << "\n"
+           << "imports\n";
+    for (const auto& import : program.imports)
+      if (import.owner_module == entry.first)
+        header << "  " << import.name << "\n";
+    header << "contract\n" << interface_contents[entry.first].str()
+           << "semantic_exports\n" << entry.second.str();
+    std::filesystem::path file = directory / (tooling_name(entry.first) + ".mossi");
+    std::ifstream prior(file, std::ios::binary);
+    std::ostringstream prior_text;
+    if (prior) prior_text << prior.rdbuf();
+    string text = header.str();
+    if (!prior || prior_text.str() != text) {
+      std::ofstream output(file, std::ios::binary);
+      if (!output)
+        throw ProjectError("MOSS_INTERFACE_ERROR",
+                           "cannot write Moss module interface '" + file.string() + "'",
+                           file.string());
+      output << text;
+    }
+    result.push_back(file);
+  }
+  return result;
+}
+
 struct NativeArtifact {
   std::filesystem::path rust;
   std::filesystem::path debug_map;
   std::filesystem::path executable;
   std::filesystem::path cache_metadata;
+  vector<std::filesystem::path> module_interfaces;
+  vector<std::filesystem::path> module_rlibs;
   BackendToolchainIdentity backend_toolchain;
   vector<TestDecl> tests;
   vector<BenchDecl> benchmarks;
@@ -15527,6 +16448,22 @@ static NativeArtifact compile_native_artifact(
   artifact.debug_map = directory / (stem + ".mossmap");
   artifact.executable = directory / stem;
   artifact.cache_metadata = directory / (stem + ".mossbuild");
+  {
+    std::error_code interface_error;
+    if (std::filesystem::is_directory(directory, interface_error)) {
+      for (const auto& entry : std::filesystem::directory_iterator(directory, interface_error))
+        if (!interface_error && entry.is_regular_file() &&
+            entry.path().extension() == ".mossi")
+          artifact.module_interfaces.push_back(entry.path());
+      std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
+      for (const auto& interface_file : artifact.module_interfaces) {
+        std::filesystem::path rlib = interface_file;
+        rlib.replace_extension(".rlib");
+        if (std::filesystem::is_regular_file(rlib, interface_error))
+          artifact.module_rlibs.push_back(std::move(rlib));
+      }
+    }
+  }
   artifact.backend_toolchain = inspect_backend_toolchain(
       optimized, debug_build, mode);
   std::ostringstream source_key;
@@ -15551,7 +16488,8 @@ static NativeArtifact compile_native_artifact(
       early_cache_stream.str() == cache_text &&
       std::filesystem::is_regular_file(artifact.rust) &&
       std::filesystem::is_regular_file(artifact.debug_map) &&
-      std::filesystem::is_regular_file(artifact.executable)) {
+      std::filesystem::is_regular_file(artifact.executable) &&
+      artifact.module_rlibs.size() == artifact.module_interfaces.size()) {
     artifact.reused = true;
     artifact.semantic_analysis_reused = true;
     return artifact;
@@ -15560,6 +16498,8 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  artifact.module_interfaces = write_module_interfaces(
+      manifest, unit.program, directory, artifact.backend_toolchain);
   artifact.tests = unit.program.tests;
   artifact.benchmarks = unit.program.benchmarks;
   std::ostringstream map_stream;
@@ -15592,6 +16532,29 @@ static NativeArtifact compile_native_artifact(
   };
   bool rust_changed = update_file(artifact.rust, unit.rust);
   artifact.generated_rust_rewritten = rust_changed;
+  artifact.module_rlibs.clear();
+  for (const auto& interface_file : artifact.module_interfaces) {
+    std::filesystem::path rlib = interface_file;
+    rlib.replace_extension(".rlib");
+    vector<string> module_command = {artifact.backend_toolchain.rustc_executable};
+    module_command.insert(module_command.end(),
+                          artifact.backend_toolchain.compile_flags.begin(),
+                          artifact.backend_toolchain.compile_flags.end());
+    module_command.push_back("--crate-type=rlib");
+    module_command.push_back("--crate-name");
+    module_command.push_back(tooling_name("moss_" + interface_file.stem().string()));
+    module_command.push_back(artifact.rust.string());
+    module_command.push_back("-o");
+    module_command.push_back(rlib.string());
+    ProcessResult module_compiled = run_process(module_command);
+    if (module_compiled.exit_code != 0)
+      throw ProjectError(
+          "BUILD_BACKEND_ERROR",
+          "module Rust rlib compilation failed for '" +
+              interface_file.string() + "'\n" + trim(module_compiled.output),
+          interface_file.string());
+    artifact.module_rlibs.push_back(std::move(rlib));
+  }
   bool map_changed = update_file(artifact.debug_map, map_text);
   std::ifstream prior_cache(artifact.cache_metadata, std::ios::binary);
   std::ostringstream prior_cache_stream;
@@ -15780,7 +16743,17 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
     write_debug_json_string(std::cout, artifact.rust.string());
     std::cout << ", \"debug_map\": ";
     write_debug_json_string(std::cout, artifact.debug_map.string());
-    std::cout << ", \"cache_metadata\": ";
+    std::cout << ", \"module_interfaces\": [";
+    for (size_t index = 0; index < artifact.module_interfaces.size(); ++index) {
+      if (index) std::cout << ", ";
+      write_debug_json_string(std::cout, artifact.module_interfaces[index].string());
+    }
+    std::cout << "], \"module_rlibs\": [";
+    for (size_t index = 0; index < artifact.module_rlibs.size(); ++index) {
+      if (index) std::cout << ", ";
+      write_debug_json_string(std::cout, artifact.module_rlibs[index].string());
+    }
+    std::cout << "], \"cache_metadata\": ";
     write_debug_json_string(std::cout, artifact.cache_metadata.string());
     std::cout << "}, \"backend_toolchain\": ";
     write_backend_toolchain_json(std::cout, artifact.backend_toolchain);
@@ -17791,19 +18764,21 @@ int main(int argc, char** argv) {
       else if (input.empty()) input = a;
       else { std::cerr << "unexpected argument: " << a << "\n"; return 2; }
     }
-    if (!query_command.empty()) {
+    if (!query_command.empty() || check_only) {
       if (!json_output) {
-        std::cerr << "moss: semantic query commands require --json\n";
-        return 2;
+        if (!query_command.empty()) {
+          std::cerr << "moss: semantic query commands require --json\n";
+          return 2;
+        }
       }
-      if (query_target.empty()) {
+      if (!query_command.empty() && query_target.empty()) {
         moss::write_structured_error(
             std::cout, query_command, "QUERY_TARGET_INVALID",
             "semantic query requires a target");
         return 2;
       }
-      input = query_source;
-      if (input.empty()) {
+      if (!query_command.empty()) input = query_source;
+      if (!query_command.empty() && input.empty()) {
         size_t marker = query_target.rfind(".moss:");
         if (marker != string::npos) {
           size_t separator = marker + string(".moss").size();
@@ -17816,7 +18791,7 @@ int main(int argc, char** argv) {
           }
         }
       }
-      if (input.empty()) {
+      if (!query_command.empty() && input.empty()) {
         moss::write_structured_error(
             std::cout, query_command, "QUERY_SOURCE_REQUIRED",
             "provide --source <input.moss> or use <input.moss>:<line>");
@@ -17843,7 +18818,7 @@ int main(int argc, char** argv) {
     moss::OptimizationPlan plan;
     vector<moss::Warning> warnings;
     bool project_query = false;
-    if (!query_command.empty()) {
+    if (!query_command.empty() || check_only) {
       try {
         auto context = moss::analyze_source_context(input);
         if (context.project) {
@@ -17857,7 +18832,7 @@ int main(int argc, char** argv) {
         }
       } catch (const moss::ProjectError& error) {
         if (json_output) moss::write_project_error_json(
-            std::cout, query_command, error);
+            std::cout, query_command.empty() ? active_command : query_command, error);
         else std::cerr << (error.source_file.empty() ? diagnostic_source
                                                      : error.source_file)
                           << (error.line > 0 ? ":" + std::to_string(error.line)

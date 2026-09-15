@@ -190,3 +190,11 @@ Phase 6 intentionally keeps the protocol CLI-based. It does not add MCP, a daemo
 telemetry, package management, or new language syntax. Phase 6 durable IDs are
 deterministic and reasonably stable for ordinary edits, but remain versioned separately
 from any stronger cross-edit identity model that may be needed in a future release.
+## Module-aware results
+
+Project builds expose emitted `.mossi` paths in `artifacts.module_interfaces`.
+Semantic records use module-qualified declaration identities, distinguish
+concrete and generic exports, and report exact declared domain-instance await
+identities when available. `moss impact` continues to use compiler-owned
+semantic dependencies and invalidates generic users when their semantic body
+hash changes.

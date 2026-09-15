@@ -79,3 +79,7 @@ The current implementation intentionally remains a deterministic CLI. It does no
 MCP, a network service, telemetry, or an automatic replacement for full validation. A
 persistent compiler process is deferred until startup/analysis timings show that it
 materially improves the edit loop.
+Module boundaries are compiler-owned semantic contracts. Agents should inspect
+`.mossi` interfaces and semantic queries for exports, ownership modes, effects,
+specialization identity, and await instances rather than reverse-engineering
+generated Rust.
