@@ -9673,6 +9673,18 @@ class Generator {
         });
   }
 
+  bool is_domain_specialization_type(const string& actual,
+                                     const string& source_domain) const {
+    const string canonical_actual = canonical_type_name(actual);
+    return std::any_of(
+        p_.domain_specializations.begin(), p_.domain_specializations.end(),
+        [&](const DomainSpecialization& specialization) {
+          return specialization.source_domain == source_domain &&
+              canonical_actual == specialization.source_domain + "__" +
+                  specialization.instance;
+        });
+  }
+
   static string comment_text(string text) {
     string out;
     out.reserve(text.size());
@@ -9901,7 +9913,7 @@ class Generator {
     string nominal = canonical_type_name(type);
     if (types && domains_.count(nominal) && has_domain_specializations(nominal)) {
       auto actual = generated_expr_type(expression, types);
-      if (actual && starts_with(canonical_type_name(*actual), nominal + "__"))
+      if (actual && is_domain_specialization_type(*actual, nominal))
         rendered = nominal + "Handle::from(" + rendered + ")";
     }
     return rendered;

@@ -1,0 +1,14 @@
+domain A:
+  fn Run() -> int:
+    reply 1
+
+domain A__helper:
+  fn Run() -> int:
+    reply 1
+
+fn take(worker: A):
+  echo 1
+
+fn main():
+  helper = spawn A__helper()
+  take(helper)

@@ -1,0 +1,16 @@
+domain A:
+  fn Run() -> int:
+    reply 1
+
+domain A__helper:
+  fn Run() -> int:
+    reply 1
+
+domain Receiver:
+  fn Send(worker: A):
+    ignored = await worker.Run()
+
+fn main():
+  receiver = spawn Receiver()
+  helper = spawn A__helper()
+  message receiver.Send(helper)

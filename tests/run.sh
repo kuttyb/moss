@@ -1578,6 +1578,9 @@ grep -F 'w2' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null 
 if grep -F 'w1' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null; then
   fail 'typed domain parameter await cycle reported the non-cyclic w1 instance'
 fi
+reject_case domain_handle_prefix_collision_message "argument 1 to message Receiver.Send has type 'A__helper', expected 'A'"
+reject_case domain_handle_prefix_collision_function "argument 1 to function 'take' has type 'A__helper', expected 'A'"
+reject_case domain_handle_prefix_collision_method "no matching method 'Receiver.Send' for supplied arguments"
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"
