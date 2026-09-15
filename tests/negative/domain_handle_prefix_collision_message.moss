@@ -1,4 +1,9 @@
 domain A:
+  value
+
+  fn Set(x):
+    value = x
+
   fn Run() -> int:
     reply 1
 
@@ -11,6 +16,8 @@ domain Receiver:
     ignored = await worker.Run()
 
 fn main():
+  helper = spawn A()
+  message helper.Set(10)
   receiver = spawn Receiver()
-  helper = spawn A__helper()
-  message receiver.Send(helper)
+  other = spawn A__helper()
+  message receiver.Send(other)

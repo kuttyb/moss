@@ -1260,6 +1260,20 @@ if grep -F 'fn Ping_shared(&self, worker: Worker__' \
     "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null; then
   fail 'typed domain parameter specialization leaked a declared instance identity'
 fi
+run_case nominal_handle_conversion_paths \
+  tests/nominal_handle_conversion_paths.moss "$(printf '1\n2')"
+grep -F 'fn take(worker: AHandle)' \
+  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  fail 'ordinary function domain parameter did not use nominal handle representation'
+grep -E 'fn Send\(&self, (mut )?worker: AHandle\)' \
+  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  fail 'method domain parameter did not use nominal handle representation'
+grep -F 'fn Send_shared(&self, worker: AHandle)' \
+  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  fail 'message handler domain parameter did not use nominal handle representation'
+grep -F 'struct A__helper__specialized_' \
+  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  fail 'specialized A/helper backend layout was not disambiguated from nominal A__helper'
 "$compiler" inspect 'domain-specialization:Box:intBox' \
   --source tests/implicit_domain_specialization.moss --json \
   >"$implicit_domain_specialization_json"

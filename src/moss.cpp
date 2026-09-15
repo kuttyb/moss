@@ -9504,6 +9504,8 @@ class Generator {
         emit_static_specializations_(emit_static_specializations),
         public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
+    std::set<string> used_domain_names;
+    for (const auto& domain : p.domains) used_domain_names.insert(domain.name);
     for (const auto& specialization : p.domain_specializations) {
       auto source = std::find_if(
           p.domains.begin(), p.domains.end(),
@@ -9512,8 +9514,20 @@ class Generator {
           });
       if (source == p.domains.end()) continue;
       Domain specialized = *source;
-      specialized.name = specialization.source_domain + "__" +
+      string backend_name = specialization.source_domain + "__" +
           specialization.instance;
+      if (used_domain_names.count(backend_name)) {
+        backend_name += "__specialized_" +
+            stable_hash(specialization.source_domain + "\n" +
+                        specialization.instance).substr(0, 12);
+        size_t suffix = 0;
+        string candidate = backend_name;
+        while (used_domain_names.count(candidate))
+          candidate = backend_name + "_" + std::to_string(++suffix);
+        backend_name = std::move(candidate);
+      }
+      specialized.name = backend_name;
+      used_domain_names.insert(specialized.name);
       for (auto& field : specialized.state) {
         auto type = specialization.state_types.find(field.name);
         if (type != specialization.state_types.end()) field.type = type->second;
@@ -9662,6 +9676,14 @@ class Generator {
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Function*> functions_;
+  struct DomainInstanceBinding {
+    // This is the semantic specialization key carried by a source binding;
+    // it is intentionally independent of the generated Rust type name.
+    string source_domain;
+    string instance;
+  };
+  std::unordered_map<string, DomainInstanceBinding> domain_instance_bindings_;
+  std::set<string> ambiguous_domain_instance_bindings_;
   size_t reply_temp_ = 0;
   size_t assertion_temp_ = 0;
 
@@ -9673,16 +9695,46 @@ class Generator {
         });
   }
 
-  bool is_domain_specialization_type(const string& actual,
-                                     const string& source_domain) const {
-    const string canonical_actual = canonical_type_name(actual);
+  bool is_domain_specialization_instance(const string& source_domain,
+                                         const string& instance) const {
     return std::any_of(
         p_.domain_specializations.begin(), p_.domain_specializations.end(),
         [&](const DomainSpecialization& specialization) {
           return specialization.source_domain == source_domain &&
-              canonical_actual == specialization.source_domain + "__" +
-                  specialization.instance;
+              specialization.instance == instance;
         });
+  }
+
+  string nominalized_generated_argument_type(
+      const string& expression, const string& inferred) const {
+    string binding = trim(expression);
+    auto identity = domain_instance_bindings_.find(binding);
+    if (plain_identifier(binding) && identity != domain_instance_bindings_.end() &&
+        is_domain_specialization_instance(identity->second.source_domain,
+                                          identity->second.instance))
+      return identity->second.source_domain;
+    return inferred;
+  }
+
+  void remember_domain_instance_binding(const string& binding,
+                                        const string& source_domain,
+                                        const string& instance) {
+    if (ambiguous_domain_instance_bindings_.count(binding)) return;
+    auto found = domain_instance_bindings_.find(binding);
+    if (found == domain_instance_bindings_.end()) {
+      domain_instance_bindings_[binding] = {source_domain, instance};
+      return;
+    }
+    if (found->second.source_domain != source_domain ||
+        found->second.instance != instance) {
+      domain_instance_bindings_.erase(found);
+      ambiguous_domain_instance_bindings_.insert(binding);
+    }
+  }
+
+  void forget_domain_instance_binding(const string& binding) {
+    domain_instance_bindings_.erase(binding);
+    ambiguous_domain_instance_bindings_.erase(binding);
   }
 
   static string comment_text(string text) {
@@ -9911,10 +9963,13 @@ class Generator {
       size_t functional_pipeline_id = 0) const {
     string rendered = expr(expression, d, locals, types, functional_pipeline_id);
     string nominal = canonical_type_name(type);
-    if (types && domains_.count(nominal) && has_domain_specializations(nominal)) {
-      auto actual = generated_expr_type(expression, types);
-      if (actual && is_domain_specialization_type(*actual, nominal))
-        rendered = nominal + "Handle::from(" + rendered + ")";
+    string binding = trim(expression);
+    auto identity = domain_instance_bindings_.find(binding);
+    if (types && plain_identifier(binding) && domains_.count(nominal) &&
+        identity != domain_instance_bindings_.end() &&
+        identity->second.source_domain == nominal &&
+        is_domain_specialization_instance(nominal, identity->second.instance)) {
+      rendered = nominal + "Handle::from(" + rendered + ")";
     }
     return rendered;
   }
@@ -10210,7 +10265,8 @@ class Generator {
       if (receiver_type) {
         vector<string> argument_types;
         for (const auto& argument : method_args)
-          argument_types.push_back(generated_expr_type(argument, types).value_or(""));
+          argument_types.push_back(nominalized_generated_argument_type(
+              argument, generated_expr_type(argument, types).value_or("")));
         auto match = resolve_object_method(objects_, *receiver_type, method_name,
                                            argument_types, false, nullptr);
         if (match && match->return_type)
@@ -12023,21 +12079,19 @@ class Generator {
   void gen_nominal_handle(std::ostringstream& o, const Domain& source) {
     if (!has_domain_specializations(source.name)) return;
     vector<const Domain*> routes{&source};
-    for (const auto& specialized : specialized_domains_) {
-      // Match materialized layouts by their specialization record rather
-      // than by a name prefix.  Prefix matching would conflate a source
-      // domain such as `A` with an unrelated domain named `A__helper`.
-      bool belongs_to_source = false;
-      for (const auto& specialization : p_.domain_specializations) {
-        if (specialization.source_domain == source.name &&
-            specialization.source_domain + "__" + specialization.instance ==
-                specialized.name) {
-          belongs_to_source = true;
-          break;
-        }
-      }
-      if (belongs_to_source) routes.push_back(&specialized);
+    for (const auto& specialization : p_.domain_specializations) {
+      if (specialization.source_domain != source.name) continue;
+      auto generated = specialization_names_.find(
+          specialization.source_domain + "\n" + specialization.instance);
+      if (generated == specialization_names_.end()) continue;
+      auto specialized = std::find_if(
+          specialized_domains_.begin(), specialized_domains_.end(),
+          [&](const Domain& domain) { return domain.name == generated->second; });
+      if (specialized != specialized_domains_.end()) routes.push_back(&*specialized);
     }
+    // The route list above is keyed by semantic specialization records. It
+    // deliberately does not infer membership from generated Rust names: a
+    // source domain may collide with a would-be specialized layout spelling.
     if (routes.size() < 2) return;
 
     const string handle = source.name + "Handle";
@@ -12804,6 +12858,11 @@ class Generator {
                  std::optional<size_t> cluster_context = std::nullopt,
                  bool in_function = false,
                  const string& functional_context = "") {
+    // Binding metadata is lexical to this generated Moss body.  Keeping it
+    // separate from Rust type strings prevents a local/backend name collision
+    // from being mistaken for a specialization relationship.
+    domain_instance_bindings_.clear();
+    ambiguous_domain_instance_bindings_.clear();
     size_t i = 0;
     gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base,
               in_handler, direct_reply, cluster_context, in_function, {},
@@ -13052,6 +13111,8 @@ class Generator {
         }
         case Stmt::Kind::Assign: {
           if (auto sd = CheckerSpawn(s.b)) {
+            const string source_domain = *sd;
+            remember_domain_instance_binding(s.a, source_domain, s.a);
             auto specialized = specialization_names_.find(*sd + "\n" + s.a);
             if (specialized != specialization_names_.end()) *sd = specialized->second;
             bool existing_binding = locals.count(s.a);
@@ -13119,12 +13180,20 @@ class Generator {
                 : s.b == "Map()" ? "map"
                 : s.b == "Queue()" ? "queue"
                 : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
+            auto source_binding = domain_instance_bindings_.find(trim(s.b));
+            if (source_binding != domain_instance_bindings_.end())
+              remember_domain_instance_binding(
+                  s.a, source_binding->second.source_domain,
+                  source_binding->second.instance);
+            else
+              forget_domain_instance_binding(s.a);
           } else {
             string mb, mi;
             if (parse_index(s.a, mb, mi) && types.count(mb) &&
                 (types.at(mb) == "map" || starts_with(types.at(mb), "map[")))
               o << indent(level) << expr(mb, d, locals, &types) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
             else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
+            if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
           ++i;
           break;
@@ -13205,7 +13274,8 @@ class Generator {
                                                implicit_method ? s.a : s.b, [&]() {
                                                  vector<string> result;
                                                  for (const auto& argument : s.args)
-                                                   result.push_back(generated_expr_type(argument, &types).value_or(""));
+                                                   result.push_back(nominalized_generated_argument_type(
+                                                       argument, generated_expr_type(argument, &types).value_or("")));
                                                  return result;
                                                }(), true, nullptr);
               if (method)
@@ -13235,6 +13305,8 @@ class Generator {
           bool joined_assignment = join_assignments.erase(s.a) != 0;
           auto sd = CheckerSpawn(s.b);
           if (sd) {
+            const string source_domain = *sd;
+            remember_domain_instance_binding(s.a, source_domain, s.a);
             auto specialized = specialization_names_.find(*sd + "\n" + s.a);
             if (specialized != specialization_names_.end()) *sd = specialized->second;
             if (auto cluster = plan_.cluster_for(*sd)) {
@@ -13280,6 +13352,17 @@ class Generator {
             types[s.a] = domain_capability ? source->second
                 : generated_type ? *generated_type
                 : !s.semantic_type.empty() ? s.semantic_type : "_value";
+            if (domain_capability) {
+              auto source_binding = domain_instance_bindings_.find(trim(s.b));
+              if (source_binding != domain_instance_bindings_.end())
+                remember_domain_instance_binding(
+                    s.a, source_binding->second.source_domain,
+                    source_binding->second.instance);
+              else
+                forget_domain_instance_binding(s.a);
+            } else {
+              forget_domain_instance_binding(s.a);
+            }
           }
           locals.insert(s.a);
           ++i;

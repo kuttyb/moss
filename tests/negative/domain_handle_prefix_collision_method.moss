@@ -1,4 +1,9 @@
 domain A:
+  value
+
+  fn Set(x):
+    value = x
+
   fn Run() -> int:
     reply 1
 
@@ -11,6 +16,8 @@ type Receiver:
     echo 1
 
 fn main():
-  helper = spawn A__helper()
+  helper = spawn A()
+  message helper.Set(10)
+  other = spawn A__helper()
   receiver = Receiver()
-  receiver.Send(helper)
+  receiver.Send(other)

@@ -1,0 +1,37 @@
+domain A:
+  value
+
+  fn Set(x):
+    value = x
+
+  fn Run() -> int:
+    reply 1
+
+domain A__helper:
+  fn Ping():
+    echo 3
+
+domain Receiver:
+  fn Send(worker: A):
+    ignored = await worker.Run()
+
+type Holder:
+  fn Send(worker: A):
+    echo 2
+
+fn take(worker: A):
+  echo 1
+
+fn main():
+  helper = spawn A()
+  a2 = spawn A()
+  a3 = spawn A()
+  message helper.Set(10)
+  message a2.Set(20)
+  message a3.Set(30)
+  other = spawn A__helper()
+  receiver = spawn Receiver()
+  holder = Holder()
+  message receiver.Send(helper)
+  take(a2)
+  holder.Send(a3)
