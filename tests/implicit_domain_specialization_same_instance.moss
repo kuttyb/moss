@@ -1,0 +1,15 @@
+domain Box:
+  value
+
+  fn Set(x):
+    value = x
+
+  fn Get():
+    reply value
+
+fn main():
+  singleBox = spawn Box()
+  message singleBox.Set(10)
+  message singleBox.Set(20)
+  result = await singleBox.Get()
+  echo result

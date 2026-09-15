@@ -1,0 +1,13 @@
+fn normalize(x):
+  return x
+
+domain Box:
+  value
+
+  fn Set(x):
+    value = normalize(x)
+
+fn main():
+  box = spawn Box()
+  message box.Set(10)
+  message box.Set(3.5)

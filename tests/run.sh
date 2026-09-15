@@ -1229,6 +1229,8 @@ grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
 implicit_domain_specialization_json="$test_build/implicit_domain_specialization.json"
 run_case implicit_domain_specialization tests/implicit_domain_specialization.moss \
   "$(printf '10\n3.5')"
+run_case implicit_domain_specialization_same_instance \
+  tests/implicit_domain_specialization_same_instance.moss '20'
 "$compiler" inspect 'domain-specialization:Box:intBox' \
   --source tests/implicit_domain_specialization.moss --json \
   >"$implicit_domain_specialization_json"
@@ -1533,6 +1535,10 @@ reject_case duck_incompatible_method_argument "method 'draw' is incompatible wit
 reject_case trait_missing_method "missing required trait method 'area'"
 reject_case trait_incompatible_method_signature "trait method 'draw' has an incompatible parameter signature"
 reject_case conflicting_method_results "conflicting result expectations for required method 'current'"
+reject_case implicit_domain_specialization_conflict \
+  "conflicting domain specialization for instance 'box'"
+reject_case implicit_domain_specialization_conflict_transitive \
+  "conflicting domain specialization for instance 'box'"
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"

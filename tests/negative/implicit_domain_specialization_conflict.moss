@@ -1,0 +1,10 @@
+domain Box:
+  value
+
+  fn Set(x):
+    value = x
+
+fn main():
+  box = spawn Box()
+  message box.Set(10)
+  message box.Set(3.5)

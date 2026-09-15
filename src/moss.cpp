@@ -2785,6 +2785,28 @@ class Checker {
 
     TypeEnv main_env;
     std::unordered_map<string,const Domain*> bindings;
+    // A specialization belongs to one declared instance, not to the source
+    // domain declaration.  Remember the first concrete constraint so a later
+    // call cannot silently replace that instance's layout.
+    std::unordered_map<string,std::pair<int,string>> specialization_sites;
+    auto specialization_conflict = [&](const string& instance,
+                                       const string& member,
+                                       const string& existing,
+                                       const string& incoming,
+                                       int line) -> void {
+      string key = instance + "\n" + member;
+      auto prior = specialization_sites.find(key);
+      std::ostringstream message;
+      message << "conflicting domain specialization for instance '" << instance
+              << "'\n\n" << member << " inferred as:\n  " << existing;
+      if (prior != specialization_sites.end())
+        message << " from line " << prior->second.first;
+      message << "\n  " << incoming << " from line " << line
+              << "\n\neach declared domain instance must have one concrete state layout";
+      CompileError error(line, message.str());
+      error.source_file = p_.main->source_file;
+      throw error;
+    };
     auto find_specialization = [&](const string& instance,
                                    const string& source_domain) -> DomainSpecialization& {
       for (auto& specialization : p_.domain_specializations)
@@ -2865,7 +2887,27 @@ class Checker {
                   type = target_instance->second->name + "__" +
                       trim(statement.args[index]);
               }
-              specialization.handler_parameter_types[handler_name].push_back(type);
+              auto& parameter_types =
+                  specialization.handler_parameter_types[handler_name];
+              for (const auto& prior : parameter_types)
+                if (!prior.empty() && !type.empty() && !same_type(prior, type)) {
+                  bool reported_state_conflict = false;
+                  for (const auto& field : domain.state) {
+                    auto state = specialization.state_types.find(field.name);
+                    if (field.inferred && state != specialization.state_types.end() &&
+                        !same_type(state->second, type)) {
+                      specialization_conflict(
+                          receiver, "field '" + field.name + "'", state->second,
+                          type, statement.line);
+                      reported_state_conflict = true;
+                    }
+                  }
+                  if (!reported_state_conflict)
+                    specialization_conflict(
+                        receiver, "handler '" + handler_name + "' parameter " +
+                            std::to_string(index), prior, type, statement.line);
+                }
+              parameter_types.push_back(type);
             }
 
             TypeEnv handler_env;
@@ -2904,15 +2946,35 @@ class Checker {
             for (const auto& field : domain.state) {
               auto inferred = handler_env.find(field.name);
               if (inferred != handler_env.end() &&
-                  concrete_environment_type(inferred->second))
-                specialization.state_types[field.name] =
-                    canonical_type_name(inferred->second);
+                  concrete_environment_type(inferred->second)) {
+                string incoming = canonical_type_name(inferred->second);
+                auto prior = specialization.state_types.find(field.name);
+                if (prior == specialization.state_types.end()) {
+                  specialization.state_types[field.name] = incoming;
+                  specialization_sites[receiver + "\nfield '" + field.name +
+                                      "'"] = {statement.line, incoming};
+                } else if (!same_type(prior->second, incoming)) {
+                  specialization_conflict(
+                      receiver, "field '" + field.name + "'", prior->second,
+                      incoming, statement.line);
+                }
+              }
             }
             for (const auto& body_statement : handler->body) {
               if (body_statement.kind != Stmt::Kind::Reply) continue;
-              if (auto reply = inferred_expr_type(body_statement.a, handler_env))
-                specialization.handler_reply_types[handler_name] =
-                    canonical_type_name(*reply);
+              if (auto reply = inferred_expr_type(body_statement.a, handler_env)) {
+                string incoming = canonical_type_name(*reply);
+                auto prior = specialization.handler_reply_types.find(handler_name);
+                if (prior == specialization.handler_reply_types.end()) {
+                  specialization.handler_reply_types[handler_name] = incoming;
+                  specialization_sites[receiver + "\nreply '" + handler_name +
+                                      "'"] = {statement.line, incoming};
+                } else if (!same_type(prior->second, incoming)) {
+                  specialization_conflict(
+                      receiver, "reply '" + handler_name + "'", prior->second,
+                      incoming, statement.line);
+                }
+              }
             }
           }
         }
