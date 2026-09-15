@@ -1213,6 +1213,12 @@ run_case await_payload_copy tests/negative/await_object_transfer.moss '7'
 run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
 run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
 run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
+run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
+reject_case phase47_mutation_during_for \
+  "cannot structurally mutate collection 'values' during an active READ traversal"
+reject_case phase47_missing_iterator \
+  "type 'NotAnIterator' does not satisfy Iterator: missing next() or iter()"
+reject_case phase47_zero_step "range step must be a positive non-zero Int literal"
 run_case read_alias tests/read_alias.moss "$(printf '7 7\n7')"
 run_case primitive_field_projection tests/primitive_field_projection.moss \
   "$(printf '42\n7')"

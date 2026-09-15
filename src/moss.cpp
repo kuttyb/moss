@@ -115,6 +115,21 @@ static string canonical_type_name(string type) {
   if (type == "Vector") return "vector";
   if (type == "Map") return "map";
   if (type == "Queue") return "queue";
+  auto bracket = type.find('[');
+  if (bracket != string::npos && ends_with(type, "]")) {
+    string head = canonical_type_name(type.substr(0, bracket));
+    auto arguments = split_top_level(type.substr(bracket + 1,
+                                                  type.size() - bracket - 2), ',');
+    for (auto& argument : arguments) argument = canonical_type_name(argument);
+    std::ostringstream normalized;
+    normalized << head << "[";
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      if (index) normalized << ",";
+      normalized << arguments[index];
+    }
+    normalized << "]";
+    return normalized.str();
+  }
   return type;
 }
 
@@ -1451,6 +1466,10 @@ class Checker {
   }
 
   static bool numeric_type(const string& t) { return t == "int" || t == "float"; }
+  static bool option_none_compatible(const string& actual, const string& expected) {
+    return canonical_type_name(actual) == "_none" &&
+        starts_with(canonical_type_name(expected), "option[");
+  }
   bool trait_conforms(const string& type, const string& trait,
                       string* reason = nullptr) const {
     auto it = traits_.find(trait);
@@ -1565,7 +1584,8 @@ class Checker {
             auto result = inferred_expr_type(s.a, inferred_env);
             if (result) {
               if (!method.return_type) method.return_type = *result;
-              else if (!same_type(*method.return_type, *result))
+              else if (!option_none_compatible(*result, *method.return_type) &&
+                       !same_type(*method.return_type, *result))
                 err(s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
                     "' but another return path has type '" + *method.return_type + "'");
             }
@@ -1575,7 +1595,8 @@ class Checker {
           auto result = inferred_expr_type(*method.result_expression, inferred_env);
           if (result) {
             if (!method.return_type) method.return_type = *result;
-            else if (!same_type(*method.return_type, *result))
+            else if (!option_none_compatible(*result, *method.return_type) &&
+                     !same_type(*method.return_type, *result))
               err(method.result_line ? method.result_line : method.line,
                   "method '" + object.name + "." + method.name + "' returns '" + *result +
                   "' but is annotated/inferred as '" + *method.return_type + "'");
@@ -1705,6 +1726,7 @@ class Checker {
         const_cast<Function&>(f).return_type = *actual;
       } else if (!starts_with(*f.return_type, "_") &&
                  !starts_with(*actual, "_method_") &&
+                 !option_none_compatible(*actual, *f.return_type) &&
                  canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
         err(f.result_line ? f.result_line : f.line,
             "function '" + f.name + "' returns '" + *actual +
@@ -1936,6 +1958,10 @@ class Checker {
   struct OwnershipEnv {
     std::unordered_map<string,string> types;
     std::set<string> state_fields;
+    // READ traversals remain active for the duration of their body.  This is
+    // a compile-time borrow marker used to reject structural mutation of the
+    // traversed collection.
+    std::set<string> active_read_traversals;
     std::map<string,MoveInfo> moved;
   };
 
@@ -2805,6 +2831,17 @@ class Checker {
         if (!parameter.type.empty() && traits_.count(parameter.type))
           function.static_dispatch = true;
       for (const auto& parameter : function.params) {
+        if (parameter.type != "Iterator") continue;
+        function.generic = true;
+        function.static_dispatch = true;
+        if (!has_structural_requirement(function, parameter.name,
+                                         ConstraintKind::Iterable,
+                                         "static iterator"))
+          function.constraints.push_back({ConstraintKind::Iterable,
+                                          parameter.name,
+                                          "static iterator", ""});
+      }
+      for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
           auto binary = split_binary(trim(expression), {"+", "-", "*", "/"});
@@ -2841,6 +2878,20 @@ class Checker {
         derive_expression_constraints(function, *function.result_expression,
                                       result_expectation());
       for (const auto& s : function.body) {
+        if (s.kind == Stmt::Kind::For) {
+          for (const auto& parameter : function.params) {
+            if (parameter.type.empty() && trim(s.b) == parameter.name) {
+              if (!has_structural_requirement(function, parameter.name,
+                                               ConstraintKind::Iterable,
+                                               "static iterator"))
+                function.constraints.push_back({ConstraintKind::Iterable,
+                                                parameter.name,
+                                                "static iterator", ""});
+              function.generic = true;
+              function.static_dispatch = true;
+            }
+          }
+        }
         derive_expression_constraints(function, s.a);
         derive_expression_constraints(function, s.b);
         for (const auto& arg : s.args) derive_expression_constraints(function, arg);
@@ -3323,10 +3374,20 @@ class Checker {
       if (statement.kind == Stmt::Kind::Else) return;
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For) {
+        Effect iteration_effect = Effect::Read;
+        if (statement.kind == Stmt::Kind::For) {
+          auto source_type = inferred_expr_type(statement.b, env);
+          if (source_type && objects_.count(canonical_type_name(*source_type))) {
+            if (const Method* next = resolve_method(
+                    canonical_type_name(*source_type), "next", {}, true, nullptr))
+              iteration_effect = next->receiver_effect;
+          }
+        }
         analyze_effect_expression(statement.kind == Stmt::Kind::For
                                       ? statement.b : statement.a,
                                   env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
+                                  receiver_effect, receiver_fields,
+                                  iteration_effect);
         bool is_if = statement.kind == Stmt::Kind::If;
         ++index;
         auto child_env = env;
@@ -3447,6 +3508,7 @@ class Checker {
         case Stmt::Kind::Else:
         case Stmt::Kind::If:
         case Stmt::Kind::While:
+        case Stmt::Kind::For:
           return;
       }
     }
@@ -3681,6 +3743,9 @@ class Checker {
       case Stmt::Kind::While:
         expressions.push_back(statement.a);
         break;
+      case Stmt::Kind::For:
+        expressions.push_back(statement.b);
+        break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
         if (!statement.a.empty()) expressions.push_back(statement.a);
@@ -3715,6 +3780,9 @@ class Checker {
       case Stmt::Kind::If:
       case Stmt::Kind::While:
         expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::For:
+        expressions.push_back(statement.b);
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
@@ -4445,6 +4513,23 @@ class Checker {
         if (function.result_expression)
           analyze_effect_expression(*function.result_expression, env, function.params,
                                     inferred, receiver, no_fields, Effect::Consume);
+        for (const auto& constraint : function.constraints) {
+          if (constraint.kind != ConstraintKind::Iterable ||
+              constraint.detail != "static iterator")
+            continue;
+          auto parameter = std::find_if(
+              function.params.begin(), function.params.end(),
+              [&](const Param& candidate) {
+                return candidate.name == constraint.subject;
+              });
+          if (parameter != function.params.end()) {
+            size_t parameter_index = static_cast<size_t>(
+                parameter - function.params.begin());
+            if (parameter_index < inferred.size())
+              inferred[parameter_index] = join_effect(
+                  inferred[parameter_index], Effect::Write);
+          }
+        }
         if (inferred != function.parameter_effects) {
           function.parameter_effects = std::move(inferred);
           changed = true;
@@ -4683,6 +4768,11 @@ class Checker {
       // Moss does not attempt a termination proof. A syntactic while is a
       // conservative divergence seed, including when nested in control flow.
       if (statement.kind == Stmt::Kind::While) effects.may_diverge = true;
+      if (statement.kind == Stmt::Kind::For &&
+          !(starts_with(trim(statement.b), "range(") ||
+            (starts_with(trim(statement.b), "[") &&
+             ends_with(trim(statement.b), "]"))))
+        effects.may_diverge = true;
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
       if (statement.kind == Stmt::Kind::AwaitMessage) effects.await = true;
@@ -5436,6 +5526,11 @@ class Checker {
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
+          auto location = storage_location(receiver, env.types);
+          if ((method == "push" || method == "pop") && location &&
+              env.active_read_traversals.count(location->root))
+            err(line, "cannot structurally mutate collection '" + location->root +
+                "' during an active READ traversal");
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{
               (method == "push" || method == "pop") ? Effect::Write : Effect::Read};
@@ -5654,6 +5749,32 @@ class Checker {
         continue;
       }
 
+      if (s.kind == Stmt::Kind::For) {
+        auto element = iterator_element_type(s.line, s.b, env.types);
+        string source_root;
+        if (auto location = storage_location(s.b, env.types))
+          source_root = location->root;
+        Effect source_effect = Effect::Read;
+        auto source_type = inferred_expr_type(s.b, env.types);
+        if (source_type && objects_.count(canonical_type_name(*source_type))) {
+          if (const Method* next = resolve_method(
+                  canonical_type_name(*source_type), "next", {}, true, nullptr))
+            source_effect = next->receiver_effect;
+        }
+        check_ownership_expression(s.line, s.b, env, source_effect);
+        OwnershipEnv body = env;
+        body.types[s.a] = element.value_or("_value");
+        if (!source_root.empty() && source_effect == Effect::Read)
+          body.active_read_traversals.insert(source_root);
+        ++index;
+        check_ownership_block(statements, index, level + 1, body,
+                              current_domain, current_handler);
+        body.types.erase(s.a);
+        body.moved.erase(s.a);
+        env = std::move(body);
+        continue;
+      }
+
       switch (s.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
@@ -5788,6 +5909,7 @@ class Checker {
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
+        case Stmt::Kind::For:
           return;
       }
     }
@@ -5906,8 +6028,17 @@ class Checker {
         if (!actual || canonical_type_name(*actual) != "int")
           err(line, "range arguments must have type 'Int'");
       }
-      if (args.size() == 3 && trim(args[2]) == "0")
-        err(line, "range step may not be zero");
+      if (args.size() == 3) {
+        string step = trim(args[2]);
+        size_t first_digit = !step.empty() && step.front() == '+' ? 1 : 0;
+        bool literal = first_digit < step.size() &&
+            std::all_of(step.begin() + static_cast<std::ptrdiff_t>(first_digit),
+                        step.end(), [](char value) {
+                          return std::isdigit(static_cast<unsigned char>(value));
+                        });
+        if (!literal || (step == "0" || step == "+0"))
+          err(line, "range step must be a positive non-zero Int literal");
+      }
       return;
     }
     if (name == "Some") {
@@ -5992,7 +6123,7 @@ class Checker {
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
           if (c.kind == ConstraintKind::Field && !type_has_field(actual_type, c.detail))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' has type '" + actual_type + "' missing required field '" + c.detail + "'");
-          if (c.kind == ConstraintKind::Iterable &&
+          if (c.kind == ConstraintKind::Iterable && c.detail != "static iterator" &&
               !starts_with(actual_type, "vector[") &&
               !starts_with(actual_type, "seq["))
             err(line, "argument " + std::to_string(index + 1) +
@@ -6374,9 +6505,15 @@ class Checker {
       return "int";
     }
     auto source_type = inferred_expr_type(source, env);
-    if (!source_type)
+    if (!source_type) {
+      auto local = env.find(trim(source));
+      if (local != env.end() && local->second.empty())
+        return "_iterator_element:" + trim(source);
       err(line, "cannot infer the static iterator source type");
+    }
     string type = canonical_type_name(*source_type);
+    if (starts_with(type, "_generic:"))
+      return "_iterator_element:" + type.substr(9);
     if (starts_with(type, "vector[") && ends_with(type, "]"))
       return trim(type.substr(7, type.size() - 8));
     if (starts_with(type, "seq[") && ends_with(type, "]"))
@@ -6406,7 +6543,9 @@ class Checker {
         return element;
       err(line, "type '" + type + "' iter() result does not satisfy Iterator");
     }
-    if (type == "Iterator" || traits_.count(type))
+    if (type == "Iterator")
+      return "_iterator_element:Iterator";
+    if (traits_.count(type))
       err(line, "for loop source has an open Iterator element type; use a concrete iterator type");
     err(line, "type '" + type + "' is not statically iterable; expected Vector, range, or Iterator");
     return std::nullopt;
@@ -6625,6 +6764,7 @@ class Checker {
         if (current_function->return_type &&
             !starts_with(*current_function->return_type, "_") &&
             !starts_with(*actual, "_method_") && !trait_result_match &&
+            !option_none_compatible(*actual, *current_function->return_type) &&
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
@@ -8409,8 +8549,11 @@ class BackendOptimizer {
         }
         case Stmt::Kind::If:
         case Stmt::Kind::While:
-          record_reads(statement.a, domain, summary);
-          if (!expression_is_obviously_pure(statement.a))
+        case Stmt::Kind::For:
+          record_reads(statement.kind == Stmt::Kind::For ? statement.b : statement.a,
+                       domain, summary);
+          if (!expression_is_obviously_pure(
+                  statement.kind == Stmt::Kind::For ? statement.b : statement.a))
             summary.externally_observable = true;
           break;
         case Stmt::Kind::Let:
@@ -8708,9 +8851,12 @@ class BackendOptimizer {
             expression_mentions(statement.b, binding.first))
           used_outside_receiver = true;
         if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+            statement.kind == Stmt::Kind::For ||
             statement.kind == Stmt::Kind::Reply || statement.kind == Stmt::Kind::Return ||
             statement.kind == Stmt::Kind::Raw)
-          used_outside_receiver = expression_mentions(statement.a, binding.first);
+          used_outside_receiver = expression_mentions(
+              statement.kind == Stmt::Kind::For ? statement.b : statement.a,
+              binding.first);
         if (statement.kind == Stmt::Kind::Call &&
             (expression_mentions(statement.a, binding.first) ||
              expression_mentions(statement.b, binding.first)))
@@ -8976,10 +9122,13 @@ class BackendOptimizer {
       }
       if (statement.kind == Stmt::Kind::Else) return;
 
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For) {
         bool is_if = statement.kind == Stmt::Kind::If;
         ++index;
         auto child_types = types;
+        if (statement.kind == Stmt::Kind::For)
+          child_types[statement.a] = "_value";
         scan_call_block(statements, index, level + 1, child_types,
                         asynchronously_called, complete);
         if (is_if && index < statements.size() && statements[index].indent == level &&
@@ -9632,6 +9781,7 @@ class Generator {
            matching_paren(value, 0) == value.size() - 1)
       value = trim(value.substr(1, value.size() - 2));
     if (value == "true" || value == "false") return string("bool");
+    if (value == "None") return string("_none");
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       return string("string");
     if (types) {
@@ -9685,6 +9835,12 @@ class Generator {
     vector<string> call_args;
     if (parse_simple_call(value, callee, call_args)) {
       if (objects_.count(callee)) return callee;
+      if (callee == "Some" && call_args.size() == 1) {
+        auto value_type = generated_expr_type(call_args.front(), types);
+        return value_type ? "option[" + *value_type + "]" : "option[_]";
+      }
+      if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
+        return "range[int]";
       auto function = functions_.find(callee);
       if (function != functions_.end() && function->second->return_type) {
         vector<string> argument_types;
@@ -10583,6 +10739,7 @@ class Generator {
     }
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
+    if (e == "None") return "None";
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
     if (generated_integer_literal(e)) {
       if (e.front() == '+') e.erase(e.begin());
@@ -10712,6 +10869,8 @@ class Generator {
     string builtin;
     vector<string> builtin_args;
     if (parse_simple_call(e, builtin, builtin_args)) {
+      if (builtin == "Some" && builtin_args.size() == 1)
+        return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
         return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
       if (builtin == "sum" && builtin_args.size() == 1) {
@@ -11144,7 +11303,8 @@ class Generator {
           !ops.empty() && !ops.count("[]");
       bool borrow = !generic_copy_value && effect != Effect::Consume &&
           borrowable_type(pt.empty() ? parameter_rust_type : pt);
-      o << f.params[index].name << ": "
+      o << (borrow && effect == Effect::Write ? "mut " : "")
+        << f.params[index].name << ": "
         << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
         << parameter_rust_type;
     }
@@ -12268,6 +12428,104 @@ class Generator {
                     child_locals, child_types, base, in_handler, direct_reply,
                     cluster_context, in_function, join_assignments,
                     functional_context);
+          o << indent(level) << "}\n";
+          break;
+        }
+        case Stmt::Kind::For: {
+          string source = trim(s.b);
+          string range_name;
+          vector<string> range_args;
+          bool is_range = parse_simple_call(source, range_name, range_args) &&
+              range_name == "range";
+          auto source_type = generated_expr_type(source, &types);
+          string element_type = source_type ? canonical_type_name(*source_type) : "";
+          if (is_range) {
+            o << indent(level) << "for " << s.a << " in "
+              << expr(range_args[0], d, locals, &types) << ".."
+              << expr(range_args[1], d, locals, &types);
+            if (range_args.size() == 3)
+              o << ".step_by((" << expr(range_args[2], d, locals, &types)
+                << ") as usize)";
+            o << " {\n";
+            auto child_locals = locals;
+            auto child_types = types;
+            child_locals.insert(s.a);
+            child_types[s.a] = "int";
+            ++i;
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                      child_locals, child_types, base, in_handler, direct_reply,
+                      cluster_context, in_function, join_assignments,
+                      functional_context);
+            o << indent(level) << "}\n";
+            break;
+          }
+
+          bool vector_source = source_type &&
+              (starts_with(element_type, "vector[") ||
+               starts_with(element_type, "seq["));
+          if (vector_source) {
+            string element = starts_with(element_type, "vector[")
+                ? trim(element_type.substr(7, element_type.size() - 8))
+                : trim(element_type.substr(4, element_type.size() - 5));
+            string collection_expression = expr(source, d, locals, &types);
+            string traversal = "(" + collection_expression + ").iter()";
+            if (copy_type(element)) traversal += ".copied()";
+            o << indent(level) << "for " << s.a << " in " << traversal
+              << " {\n";
+            auto child_locals = locals;
+            auto child_types = types;
+            child_locals.insert(s.a);
+            child_types[s.a] = element;
+            ++i;
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                      child_locals, child_types, base, in_handler, direct_reply,
+                      cluster_context, in_function, join_assignments,
+                      functional_context);
+            o << indent(level) << "}\n";
+            break;
+          }
+
+          if (!source_type)
+            throw std::runtime_error("internal error: unresolved static iterator source");
+          string concrete = canonical_type_name(*source_type);
+          const Method* next = resolve_object_method(objects_, concrete, "next", {}, true, nullptr);
+          bool direct_iterator = next != nullptr;
+          const Method* iterator_factory = nullptr;
+          if (!direct_iterator) {
+            iterator_factory = resolve_object_method(objects_, concrete, "iter", {}, true, nullptr);
+            if (iterator_factory && iterator_factory->return_type)
+              next = resolve_object_method(
+                  objects_, canonical_type_name(*iterator_factory->return_type),
+                  "next", {}, true, nullptr);
+          }
+          string iterator_expression;
+          if (direct_iterator && next->receiver_effect == Effect::Consume)
+            iterator_expression = expr(source, d, locals, &types);
+          else if (direct_iterator)
+            iterator_expression = "&mut " + expr(source, d, locals, &types);
+          else
+            iterator_expression = expr(source, d, locals, &types) + ".iter()";
+          o << indent(level) << "let mut __moss_iterator = "
+            << iterator_expression << ";\n";
+          o << indent(level) << "loop {\n";
+          o << indent(level + 1) << "match __moss_iterator.next() {\n";
+          o << indent(level + 2) << "Some(" << s.a << ") => {\n";
+          auto child_locals = locals;
+          auto child_types = types;
+          child_locals.insert(s.a);
+          string next_type = next && next->return_type
+              ? canonical_type_name(*next->return_type) : "option[_]";
+          string element = starts_with(next_type, "option[") && ends_with(next_type, "]")
+              ? trim(next_type.substr(7, next_type.size() - 8)) : "_value";
+          child_types[s.a] = element;
+          ++i;
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
+                    child_locals, child_types, base, in_handler, direct_reply,
+                    cluster_context, in_function, join_assignments,
+                    functional_context);
+          o << indent(level + 2) << "}\n";
+          o << indent(level + 2) << "None => break,\n";
+          o << indent(level + 1) << "}\n";
           o << indent(level) << "}\n";
           break;
         }

@@ -1,0 +1,3 @@
+fn main():
+  for i in range(0, 4, 0):
+    echo i

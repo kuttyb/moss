@@ -1,0 +1,7 @@
+type NotAnIterator:
+  value: Int
+
+fn main():
+  source = NotAnIterator(value = 1)
+  for x in source:
+    echo x

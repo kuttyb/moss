@@ -633,3 +633,12 @@ crate/rlib in import-DAG order; consumers link dependency rlibs with `--extern`.
 Generic semantic IR and private helper closure are re-instantiable without
 provider source, and final-build specializations are canonical in a dedicated
 Rust crate. Legacy implicit-module projects remain supported.
+
+## Phase 4.7 — Static Iteration and `for` Loops
+
+Phase 4.7 is implemented additively on the frozen Phase 4–4.6 semantics. `for binding
+in source:` has scoped bindings and participates in the existing type, effect, and
+ownership walkers. `range(start, end)` is half-open; vectors use READ traversal; and
+custom traversal resolves statically through the structural `Iterator` contract
+(`next() -> Option[element]`). Collection mutation during an active READ traversal is
+rejected. No runtime iterator dispatch or vtable is emitted.

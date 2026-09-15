@@ -22,6 +22,12 @@ map, removes safe dead maps before `count`, collapses single-use temporaries, an
 terminal/cardinality facts before ordinary lowering. These are Moss-to-Moss rewrites,
 not Rust iterator tricks or hardware-specific optimization.
 
+Phase 4.7 adds statically resolved `for` loops. Ranges and vectors receive native
+counted/indexed traversal, while user-defined iteration resolves to concrete
+`next() -> Option[element]` methods under the static `Iterator` contract. Iteration
+does not introduce runtime dispatch, vtables, boxing, or hidden copies; `while` remains
+the general arbitrary loop.
+
 Phase 5 adds tooling without changing those frozen semantics. Every compilation emits
 one deterministic `.mossmap` provenance artifact shared by Emacs navigation, LLDB/DAP
 source breakpoints, and symbol-targeted native disassembly. A dependency-light

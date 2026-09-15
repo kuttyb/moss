@@ -1,0 +1,4 @@
+fn main():
+  values = [1, 2]
+  for x in values:
+    values.push(x)

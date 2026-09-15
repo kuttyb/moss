@@ -309,6 +309,21 @@ selection, LLVM, domain clustering, mailboxes, atomics, or locks belong downstre
 Phase 4.6 introduces neither MLIR nor a general optimizer/plugin framework; the focused
 semantic IR remains sufficient for this bounded pass set.
 
+## Imperative static iteration
+
+Phase 4.7 adds imperative `for` loops without changing eager pipeline semantics:
+
+```moss
+for value in values:
+  process(value)
+```
+
+The compiler resolves iteration statically. `Vector` and `range(start, end)` use
+compiler-native Rust traversal; user-defined traversal resolves directly to a concrete
+`next() -> Option[element]` method. There is no runtime iterator dispatch or vtable.
+Pipelines remain the existing eager functional/dataflow form and are not silently
+converted into `for`-loop IR.
+
 ## Executable examples
 
 The examples directory separates the main ideas into small programs:

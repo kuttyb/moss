@@ -1,0 +1,44 @@
+type Countdown:
+  current: Int
+  fn next() -> option[Int]:
+    if current <= 0:
+      return None
+    value = current
+    current = current - 1
+    Some(value)
+
+fn first_positive(values: vector[Int]) -> Int:
+  for x in values:
+    if x > 0:
+      return x
+  return 0
+
+fn consume(values):
+  total = 0
+  for value in values:
+    total = total + value
+  total
+
+fn consume_typed(it: Iterator):
+  total = 0
+  for value in it:
+    total = total + value
+  total
+
+fn main():
+  values = [1, 2, 3]
+  total = 0
+  for x in values:
+    total = total + x
+  for i in range(0, 3):
+    total = total + i
+  counter = Countdown(current = 2)
+  for value in counter:
+    total = total + value
+  counter2 = Countdown(current = 2)
+  typed_counter = Countdown(current = 2)
+  nested = 0
+  for x in [1, 2]:
+    for y in [3, 4]:
+      nested = nested + x + y
+  echo total, first_positive(values), nested, consume(values), consume([4, 5]), consume(counter2), consume_typed(typed_counter)

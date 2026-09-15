@@ -310,6 +310,30 @@ source state lock while awaiting a mailbox-backed domain, so the lock can remain
 for the target's full request/reply latency. This is semantically correct and recorded
 as a future performance concern rather than changed by the current backend.
 
+## Static iteration
+
+`for` is the statically resolved iteration form. Its source is resolved at compile
+time to a compiler-native traversal for `Vector` and `range`, or to a concrete
+`Iterator` shape with `next() -> Option[element]`:
+
+```moss
+for value in values:
+  process(value)
+
+for index in range(0, 10):
+  process(index)
+```
+
+`range(start, end)` is half-open (`start` is included and `end` is excluded) and
+uses `Int`. A three-argument form with a statically known positive non-zero step is
+also accepted. `while` remains the general arbitrary imperative loop. Moss does not
+create runtime iterator objects, vtables, boxing, or dynamic iterator dispatch.
+
+Ordinary collection traversal is READ traversal. Structural collection mutation,
+such as `values.push(x)`, is rejected while that traversal is active. A user-defined
+iterator may mutate its own concrete iterator state through its statically resolved
+`next` method; that ownership effect is checked normally.
+
 ## Migration status and compatibility
 
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain
