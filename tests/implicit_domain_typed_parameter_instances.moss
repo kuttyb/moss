@@ -1,0 +1,18 @@
+domain Worker:
+  fn Run() -> int:
+    reply 1
+
+domain Coordinator:
+  fn Init(x):
+    echo x
+
+  fn Ping(worker: Worker):
+    ignored = await worker.Run()
+
+fn main():
+  c = spawn Coordinator()
+  w1 = spawn Worker()
+  w2 = spawn Worker()
+  message c.Init(1)
+  message c.Ping(w1)
+  message c.Ping(w2)

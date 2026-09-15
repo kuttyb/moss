@@ -1235,6 +1235,15 @@ run_case implicit_domain_parameter_specialization \
   tests/implicit_domain_parameter_specialization.moss "$(printf '10\n20')"
 run_case implicit_domain_parameter_multiple_instances \
   tests/implicit_domain_parameter_multiple_instances.moss "$(printf '10\n2.5')"
+run_case implicit_domain_typed_parameter_instances \
+  tests/implicit_domain_typed_parameter_instances.moss '1'
+grep -F 'fn Ping_shared(&self, worker: WorkerRef)' \
+  "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null ||
+  fail 'typed domain parameter specialization did not retain nominal Worker type'
+if grep -F 'fn Ping_shared(&self, worker: Worker__' \
+    "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null; then
+  fail 'typed domain parameter specialization leaked a declared instance identity'
+fi
 "$compiler" inspect 'domain-specialization:Box:intBox' \
   --source tests/implicit_domain_specialization.moss --json \
   >"$implicit_domain_specialization_json"
@@ -1547,6 +1556,12 @@ reject_case implicit_domain_parameter_conflict_zero \
   "handler 'Set' parameter 0"
 reject_case implicit_domain_parameter_conflict_one \
   "handler 'Set' parameter 1"
+reject_case typed_domain_parameter_await_cycle 'await cycle detected:'
+grep -F 'w1' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null ||
+  fail 'typed domain parameter await cycle omitted the concrete w1 instance'
+if grep -F 'w2' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null; then
+  fail 'typed domain parameter await cycle reported the non-cyclic w2 instance'
+fi
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"

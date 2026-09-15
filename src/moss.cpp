@@ -2879,18 +2879,29 @@ class Checker {
               const auto& parameter = handler->params[index];
               string type = parameter.inferred && !actual_types[index].empty()
                   ? actual_types[index] : parameter.type;
-              if (domains_.count(canonical_type_name(parameter.type)) &&
-                  index < statement.args.size() &&
-                  plain_identifier(trim(statement.args[index]))) {
-                auto target_instance = bindings.find(trim(statement.args[index]));
-                if (target_instance != bindings.end())
-                  type = target_instance->second->name + "__" +
-                      trim(statement.args[index]);
-              }
+              // Handler specialization is nominal: a typed domain-handle
+              // parameter is constrained by its declared domain type.  The
+              // exact spawned instance supplied at this call site is tracked
+              // separately by await analysis and must not split the handler
+              // layout (Worker__w1 versus Worker__w2).
               auto& parameter_types =
                   specialization.handler_parameter_types[handler_name];
               if (parameter_types.size() <= index)
                 parameter_types.resize(index + 1);
+              if (domains_.count(canonical_type_name(parameter.type)) &&
+                  index < statement.args.size() &&
+                  plain_identifier(trim(statement.args[index]))) {
+                auto target_instance = bindings.find(trim(statement.args[index]));
+                if (target_instance != bindings.end()) {
+                  auto& instance_types = specialization.handler_parameter_instance_types[
+                      handler_name];
+                  if (instance_types.size() <= index)
+                    instance_types.resize(index + 1);
+                  if (instance_types[index].empty())
+                    instance_types[index] = target_instance->second->name + "__" +
+                        trim(statement.args[index]);
+                }
+              }
               string& existing = parameter_types[index];
               if (existing.empty() && !type.empty()) {
                 existing = type;
@@ -9507,6 +9518,14 @@ class Generator {
         emit_static_specializations_(emit_static_specializations),
         public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
+    auto has_generated_specialization = [&](const string& backend_type) {
+      return std::any_of(
+          p.domain_specializations.begin(), p.domain_specializations.end(),
+          [&](const DomainSpecialization& candidate) {
+            return candidate.source_domain + "__" + candidate.instance ==
+                backend_type;
+          });
+    };
     for (const auto& specialization : p.domain_specializations) {
       auto source = std::find_if(
           p.domains.begin(), p.domains.end(),
@@ -9529,6 +9548,22 @@ class Generator {
                ++index)
             if (!parameters->second[index].empty())
               handler.params[index].type = parameters->second[index];
+        }
+        // Keep source specialization nominal while using a concrete backend
+        // reference when this invocation targets a generated specialized
+        // domain instance.  Exact instance identity is never compared as a
+        // source-level parameter type.
+        auto backend_parameters =
+            specialization.handler_parameter_instance_types.find(handler.name);
+        if (backend_parameters !=
+                specialization.handler_parameter_instance_types.end()) {
+          for (size_t index = 0;
+               index < handler.params.size() &&
+               index < backend_parameters->second.size(); ++index) {
+            const string& backend_type = backend_parameters->second[index];
+            if (!backend_type.empty() && has_generated_specialization(backend_type))
+              handler.params[index].type = backend_type;
+          }
         }
         auto reply = specialization.handler_reply_types.find(handler.name);
         if (reply != specialization.handler_reply_types.end())

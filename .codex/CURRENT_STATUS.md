@@ -634,6 +634,11 @@ Handler parameter constraints are indexed by handler and parameter slot. Multi-p
 handlers can therefore specialize as tuples such as `Set[0] -> Int, Set[1] -> Float`; only
 an incompatible constraint for the same slot is rejected.
 
+Typed domain-handle parameters remain specialized by their declared nominal domain type;
+the exact spawned instance is retained only for await-graph substitution (and, where
+needed, backend instance plumbing). Thus one handler may receive multiple instances of
+the same domain type without splitting its source-level specialization.
+
 ## Phase 8
 
 Modules/imports/exports are supported with qualified namespace resolution.
