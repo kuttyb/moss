@@ -1,10 +1,11 @@
 # Moss project and build system
 
-Phase 7 adds a small project layer around the existing compiler. It does not
-add packages, dependency resolution, modules, or a second compilation path.
+Phase 8 extends the Phase 7 project layer with first-class modules while
+retaining one semantic compiler pipeline.
 Project builds use the same parser, static checks, ownership/effect analysis,
 functional IR, backend plan, Rust generator, and `.mossmap` provenance as
-direct source compilation.
+direct source compilation. Explicit modules are then projected into separate
+Rust crates and compiled in import-DAG order.
 
 Start with the practical [project workflow](PROJECT_WORKFLOW.md) if you are
 creating your first project. This document is the build-system reference.
@@ -32,6 +33,14 @@ executable:
 ```sh
 RUSTC=/opt/rust/bin/rustc moss build --release
 ```
+
+For explicit modules, each module produces a generated Rust unit and ordinary
+`lib<module>.rlib`; consumers receive dependency paths through rustc
+`--extern`. The root crate links those rlibs and the graph-owned
+`libmoss_specializations.rlib`. `.mossi` is the Moss semantic interface:
+typed exports can be consumed from `.mossi` plus rlib without source, while
+generic exports carry versioned Moss semantic IR. rustc MIR/rmeta is not a
+Moss compatibility format.
 
 The selected compiler must execute `--version --verbose` successfully. Its
 resolved path and complete response become part of the native-cache identity.

@@ -1553,6 +1553,7 @@ if command -v python3 >/dev/null 2>&1; then
   python3 tests/tooling/check_agent_api.py "$compiler"
   python3 tests/tooling/check_project_workflow.py "$compiler" "$test_build"
   python3 tests/tooling/check_multifile_project.py "$compiler"
+  python3 tests/tooling/check_phase8_separate_compilation.py "$compiler"
   python3 tests/tooling/check_phase6_ai_native.py "$compiler" "$test_build"
   python3 tests/tooling/check_debug_map.py \
     "$tooling_o0_map" "$tooling_opt_map" \

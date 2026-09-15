@@ -43,3 +43,22 @@ details.
 
 Projects without `module` declarations continue to use the implicit project
 module used by earlier Moss phases.
+
+## Separate compilation
+
+An explicit module is compiled in import-DAG order to its own generated Rust
+crate and conventional `lib<module>.rlib`. A consumer crate receives the
+dependency with rustc `--extern`; dependency declarations are not regenerated
+in the consumer. The final executable is compiled from the root module and
+links those rlibs normally.
+
+The build also writes `<module>.mossi`. A typed export is consumable from that
+interface plus the provider rlib without provider source. Generic exports carry
+versioned structured Moss semantic IR and their private semantic dependency
+closure; they are specialized once in the final-build
+`libmoss_specializations.rlib`. Rustc MIR/rmeta is never Moss's interchange
+format.
+
+When a provider is source-independent, place its `.mossi` and rlib in the
+consumer build/dependency path (or `MOSS_MODULE_PATH`). Interface and provider
+artifact hashes participate in downstream invalidation.

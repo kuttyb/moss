@@ -886,6 +886,19 @@ class Parser {
       if (ends_with(s.a, ":")) s.a = trim(s.a.substr(0, s.a.size() - 1));
       return s;
     }
+    if (starts_with(L.text, "for ")) {
+      string rest = trim(L.text.substr(4));
+      if (ends_with(rest, ":")) rest = trim(rest.substr(0, rest.size() - 1));
+      auto in = rest.find(" in ");
+      if (in == string::npos)
+        fail(L, "for loop must be 'for binding in expression:'");
+      s.a = trim(rest.substr(0, in));
+      s.b = trim(rest.substr(in + 4));
+      if (!plain_identifier(s.a)) fail(L, "for loop binding must be an identifier");
+      if (s.b.empty()) fail(L, "for loop source may not be empty");
+      s.kind = Stmt::Kind::For;
+      return s;
+    }
     if (starts_with(L.text, "message ")) {
       string call = trim(L.text.substr(8));
       if (!parse_message_call(call, s.a, s.b, s.args))
@@ -1112,6 +1125,15 @@ class Checker {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
     }
+    iterator_trait_.name = "Iterator";
+    iterator_trait_.header = "trait Iterator";
+    TraitMethod next;
+    next.name = "next";
+    next.return_type = "option[_]";
+    iterator_trait_.methods.push_back(std::move(next));
+    if (!traits_.emplace(iterator_trait_.name, &iterator_trait_).second)
+      err(p_.traits.front().source_file, p_.traits.front().line,
+          "trait name 'Iterator' is reserved by the standard iteration contract");
   }
 
   void run() {
@@ -1154,6 +1176,7 @@ class Checker {
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
   std::unordered_map<string, Trait*> traits_;
+  Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
   vector<Warning> warnings_;
 
@@ -1459,8 +1482,12 @@ class Checker {
         }
         return false;
       }
-      if (method.return_type &&
-          (!found->return_type || !same_type(*method.return_type, *found->return_type))) {
+      if (method.return_type && *method.return_type == "option[_]" &&
+          found->return_type && starts_with(canonical_type_name(*found->return_type), "option[")) {
+        // The standard Iterator contract leaves the element type open.  The
+        // concrete next() result supplies it at the use site.
+      } else if (method.return_type &&
+                 (!found->return_type || !same_type(*method.return_type, *found->return_type))) {
         if (reason)
           *reason = "trait method '" + method.name + "' has incompatible result type";
         return false;
@@ -1726,6 +1753,7 @@ class Checker {
   static std::optional<string> obvious_expr_type(const string& expression,
                                                   const std::unordered_map<string,string>& env) {
     string e = trim(expression);
+    if (e == "None") return "_none";
     if (e == "true" || e == "false") return "bool";
     if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return "string";
     auto local = env.find(e);
@@ -2052,6 +2080,13 @@ class Checker {
           return trim(argument_type->substr(7, argument_type->size() - 8));
         return argument_type;
       }
+      if (callee == "Some" && args.size() == 1) {
+        auto value_type = inferred_expr_type(args.front(), env);
+        if (value_type) return "option[" + *value_type + "]";
+        return "option[_]";
+      }
+      if (callee == "range" && (args.size() == 2 || args.size() == 3))
+        return "range[int]";
       auto function = functions_.find(callee);
       if (function == functions_.end() && current_object_) {
         auto method = resolve_method(current_object_->name, callee, {});
@@ -2498,6 +2533,21 @@ class Checker {
         continue;
       }
 
+      if (statement.kind == Stmt::Kind::For) {
+        visitor(statement, env);
+        TypeEnv incoming = env;
+        ++index;
+        TypeEnv body_env = incoming;
+        body_env[statement.a] = iterator_element_type(
+            statement.line, statement.b, incoming).value_or("_value");
+        walk_type_environment_block(statements, index, level + 1, body_env,
+                                    visitor, reject_conflicts, record_join_types,
+                                    record_semantic_types);
+        body_env.erase(statement.a);
+        env = std::move(body_env);
+        continue;
+      }
+
       visitor(statement, env);
       advance_type_environment(statement, env, statements, record_semantic_types);
       ++index;
@@ -2525,6 +2575,9 @@ class Checker {
         case Stmt::Kind::If:
         case Stmt::Kind::While:
           constrain_constructor_fields(statement.line, statement.a, current_env);
+          break;
+        case Stmt::Kind::For:
+          constrain_constructor_fields(statement.line, statement.b, current_env);
           break;
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
@@ -3268,12 +3321,18 @@ class Checker {
       const Stmt& statement = statements[index];
       if (statement.indent < level || statement.indent > level) return;
       if (statement.kind == Stmt::Kind::Else) return;
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
-        analyze_effect_expression(statement.a, env, params, parameter_effects,
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For) {
+        analyze_effect_expression(statement.kind == Stmt::Kind::For
+                                      ? statement.b : statement.a,
+                                  env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         bool is_if = statement.kind == Stmt::Kind::If;
         ++index;
         auto child_env = env;
+        if (statement.kind == Stmt::Kind::For)
+          child_env[statement.a] =
+              inferred_expr_type(statement.b, env).value_or("_value");
         analyze_effect_block(statements, index, level + 1, child_env, params,
                              parameter_effects, receiver_effect, receiver_fields);
         if (is_if && index < statements.size() && statements[index].indent == level &&
@@ -4129,6 +4188,22 @@ class Checker {
           }
           walk_body(executable, source_instance, type_for_instance(source_instance), std::move(types),
                     std::move(instances), "fn:" + function.name);
+          for (const auto& boundary : function.await_boundaries) {
+            if (boundary.parameter_index >= arguments.size()) continue;
+            string target_instance = instance_for(
+                arguments[boundary.parameter_index], caller_instances);
+            string target_domain = boundary.domain;
+            auto target = domains_.find(canonical_type_name(target_domain));
+            if (target == domains_.end() || target_instance.empty()) continue;
+            auto handler = find_handler(*target->second, boundary.handler);
+            if (handler)
+              walk_handler(*target->second, *handler, target_instance, {},
+                           "fn:" + function.name + "\n" +
+                           std::to_string(boundary.line));
+            add_edge(source_instance, target_instance,
+                     type_for_instance(source_instance), target->second->name,
+                     "fn:" + function.name, boundary.line);
+          }
         };
 
         walk_handler = [&](const Domain& domain, const Handler& handler,
@@ -5823,6 +5898,22 @@ class Checker {
 
   void check_function_call(int line, const string& name, const vector<string>& args,
                            const std::unordered_map<string,string>& env) {
+    if (name == "range") {
+      if (args.size() != 2 && args.size() != 3)
+        err(line, "range expects range(start, end) or range(start, end, step)");
+      for (const auto& argument : args) {
+        auto actual = inferred_expr_type(argument, env);
+        if (!actual || canonical_type_name(*actual) != "int")
+          err(line, "range arguments must have type 'Int'");
+      }
+      if (args.size() == 3 && trim(args[2]) == "0")
+        err(line, "range step may not be zero");
+      return;
+    }
+    if (name == "Some") {
+      if (args.size() != 1) err(line, "Some expects one value");
+      return;
+    }
     if (name == "assert") {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
@@ -6273,6 +6364,66 @@ class Checker {
     return *domain;
   }
 
+  std::optional<string> iterator_element_type(int line, const string& source,
+                                              const TypeEnv& env) const {
+    string callee;
+    vector<string> arguments;
+    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+      if (arguments.size() != 2 && arguments.size() != 3)
+        err(line, "range expects range(start, end) or range(start, end, step)");
+      return "int";
+    }
+    auto source_type = inferred_expr_type(source, env);
+    if (!source_type)
+      err(line, "cannot infer the static iterator source type");
+    string type = canonical_type_name(*source_type);
+    if (starts_with(type, "vector[") && ends_with(type, "]"))
+      return trim(type.substr(7, type.size() - 8));
+    if (starts_with(type, "seq[") && ends_with(type, "]"))
+      return trim(type.substr(4, type.size() - 5));
+
+    auto next_element = [&](const string& iterator_type) -> std::optional<string> {
+      MethodResolutionFailure failure = MethodResolutionFailure::None;
+      const Method* next = resolve_method(iterator_type, "next", {}, true, &failure);
+      if (!next) return std::nullopt;
+      if (!next->return_type || !starts_with(canonical_type_name(*next->return_type), "option[") ||
+          !ends_with(canonical_type_name(*next->return_type), "]"))
+        err(line, "iterator type '" + iterator_type + "' has next() without an Option result");
+      string result = canonical_type_name(*next->return_type);
+      string element = trim(result.substr(7, result.size() - 8));
+      if (element.empty() || starts_with(element, "_"))
+        err(line, "iterator type '" + iterator_type + "' has an unresolved next() element type");
+      return element;
+    };
+
+    if (objects_.count(type)) {
+      if (auto element = next_element(type)) return element;
+      MethodResolutionFailure failure = MethodResolutionFailure::None;
+      const Method* iter = resolve_method(type, "iter", {}, true, &failure);
+      if (!iter || !iter->return_type)
+        err(line, "type '" + type + "' does not satisfy Iterator: missing next() or iter()");
+      if (auto element = next_element(canonical_type_name(*iter->return_type)))
+        return element;
+      err(line, "type '" + type + "' iter() result does not satisfy Iterator");
+    }
+    if (type == "Iterator" || traits_.count(type))
+      err(line, "for loop source has an open Iterator element type; use a concrete iterator type");
+    err(line, "type '" + type + "' is not statically iterable; expected Vector, range, or Iterator");
+    return std::nullopt;
+  }
+
+  void check_for_source(int line, const string& source, const TypeEnv& env) {
+    string callee;
+    vector<string> arguments;
+    if (parse_simple_call(trim(source), callee, arguments) && callee == "range") {
+      check_function_call(line, callee, arguments, env);
+      for (const auto& argument : arguments) check_expression(line, argument, env);
+    } else {
+      check_expression(line, source, env);
+    }
+    (void)iterator_element_type(line, source, env);
+  }
+
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
                       const Domain* current, const Handler* current_handler,
                       const Function* current_function = nullptr) {
@@ -6310,6 +6461,11 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
         check_expression(statement.line, statement.a, current_env);
+        return;
+      }
+
+      if (statement.kind == Stmt::Kind::For) {
+        check_for_source(statement.line, statement.b, current_env);
         return;
       }
 
@@ -8879,12 +9035,27 @@ class Generator {
  public:
   Generator(const Program& p, const OptimizationPlan& plan,
             bool await_error_handling = true, bool debug_build = false,
-            ProgramGenerationMode mode = ProgramGenerationMode::Application)
+            ProgramGenerationMode mode = ProgramGenerationMode::Application,
+            vector<string> rust_dependencies = {},
+            const Program* resolution_program = nullptr,
+            bool emit_static_specializations = true,
+            bool public_specializations = false)
       : p_(p), plan_(plan), await_error_handling_(await_error_handling),
-        debug_build_(debug_build), mode_(mode) {
+        debug_build_(debug_build), mode_(mode),
+        rust_dependencies_(std::move(rust_dependencies)),
+        emit_static_specializations_(emit_static_specializations),
+        public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& f : p.functions) functions_[f.name] = &f;
+    if (resolution_program) {
+      for (const auto& d : resolution_program->domains)
+        domains_.emplace(d.name, &d);
+      for (const auto& o : resolution_program->objects)
+        objects_.emplace(o.name, &o);
+      for (const auto& f : resolution_program->functions)
+        functions_.emplace(f.name, &f);
+    }
   }
 
   string generate() {
@@ -8938,6 +9109,17 @@ class Generator {
     }
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
+    for (const auto& dependency : rust_dependencies_) {
+      string crate = dependency == "__moss_specializations__"
+          ? "moss_specializations" : tooling_name("moss_" + dependency);
+      o << "extern crate " << crate << ";\n";
+      // Moss's namespace pass has already qualified imported names.  Bringing
+      // the dependency's public Rust surface into this crate keeps those
+      // generated expressions direct calls to the materialized dependency
+      // symbol; no dependency implementation is copied here.
+      o << "use " << crate << "::*;\n";
+    }
+    if (!rust_dependencies_.empty()) o << "\n";
     o << "use std::collections::{HashMap, VecDeque};\n";
     o << "use std::cell::RefCell;\n";
     o << "use std::rc::Rc;\n";
@@ -8977,6 +9159,9 @@ class Generator {
   bool await_error_handling_ = true;
   bool debug_build_ = false;
   ProgramGenerationMode mode_ = ProgramGenerationMode::Application;
+  vector<string> rust_dependencies_;
+  bool emit_static_specializations_ = true;
+  bool public_specializations_ = false;
   bool benchmark_body_ = false;
   std::unordered_map<string, const Domain*> domains_;
   std::unordered_map<string, const ObjectType*> objects_;
@@ -10840,7 +11025,8 @@ class Generator {
     tooling_begin(o, 0, "type", type_identity, t.name);
     source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
-    o << "#[derive(Clone, Debug)]\nstruct " << t.name << " {\n";
+    o << "#[derive(Clone, Debug)]\n"
+      << (t.exported ? "pub " : "") << "struct " << t.name << " {\n";
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
       o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
@@ -10921,7 +11107,10 @@ class Generator {
         ? "STATIC specialization: concrete local function selected before Rust generation"
         : "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
     debug_symbol_attributes(o, 0, native_symbol, can_export);
-    o << "fn " << generated_symbol;
+    bool materialized_export = f.exported && !specialization &&
+        !f.generic && !container_generic;
+    o << ((materialized_export || (specialization && public_specializations_)) ? "pub " : "")
+      << "fn " << generated_symbol;
     if (!specialization && (f.generic || container_generic)) {
       o << "<";
       size_t gi = 0; for (const auto& p : f.params) if (constraint_ops(f, p.name).size() || p.type == "vector" || p.type == "queue") { if (gi++) o << ", "; o << "T_" << p.name; }
@@ -11005,6 +11194,7 @@ class Generator {
 
   void gen_function(std::ostringstream& o, const Function& f) {
     if (f.static_dispatch) {
+      if (!emit_static_specializations_) return;
       for (const auto& specialization : f.specializations)
         gen_function_instance(o, f, &specialization);
       return;
@@ -11025,7 +11215,8 @@ class Generator {
     } else {
       backend_comment(o, 0, "MESSAGE/MAILBOX version of " + d.name + "Ref (shared-memory lock-backed queue)");
     }
-    o << "#[derive(Clone)]\nstruct " << d.name << "Ref {\n";
+    o << "#[derive(Clone)]\n" << (d.exported ? "pub " : "")
+      << "struct " << d.name << "Ref {\n";
     if (auto cluster = cluster_for(d)) {
       o << "    tx: MossSender<MossCluster" << *cluster << "SharedMsg>,\n";
       o << "    tracker: Arc<MossTracker>,\n";
@@ -11140,8 +11331,11 @@ class Generator {
     }
     o << "}\n\n";
 
-    o << "fn spawn_" << snake_case(d.name) << "(_tracker: Arc<MossTracker>) -> "
+    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
+      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>)") << " -> "
       << d.name << "Ref {\n";
+    if (d.exported)
+      o << "    let _tracker = Arc::new(MossTracker::new());\n";
     backend_comment(o, 4, "SHARED-MEMORY DIRECT state allocation for domain " + d.name);
     o << "    __moss_require_send::<" << d.name << "State>();\n";
     for (const auto& h : d.handlers) {
@@ -11249,8 +11443,11 @@ class Generator {
     }
     o << "}\n\n";
 
-    o << "fn spawn_" << snake_case(d.name) << "(_tracker: Arc<MossTracker>) -> "
+    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
+      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>)") << " -> "
       << d.name << "Ref {\n";
+    if (d.exported)
+      o << "    let _tracker = Arc::new(MossTracker::new());\n";
     backend_comment(o, 4, "ATOMIC DOMAIN allocation; no dedicated thread or mailbox");
     o << "    __moss_require_send::<" << d.name << "State>();\n";
     for (const auto& h : d.handlers) {
@@ -11407,7 +11604,11 @@ class Generator {
     o << "}\n\n";
 
     backend_comment(o, 0, "MESSAGE/MAILBOX worker for domain " + d.name + "; each dequeued Moss message runs to completion");
-    o << "fn spawn_" << snake_case(d.name) << "(tracker: Arc<MossTracker>) -> " << d.name << "Ref {\n";
+    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
+      << (d.exported ? "()" : "(tracker: Arc<MossTracker>)")
+      << " -> " << d.name << "Ref {\n";
+    if (d.exported)
+      o << "    let tracker = Arc::new(MossTracker::new());\n";
     o << "    __moss_require_send::<" << d.name << "Msg>();\n";
     o << "    let (tx, rx): (MossSender<" << d.name << "Msg>, MossReceiver<" << d.name
       << "Msg>) = moss_channel();\n";
@@ -12111,7 +12312,8 @@ class Generator {
                                 "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
               o << indent(level) << (existing_binding ? "" : "let ") << s.a
                 << " = spawn_" << snake_case(*sd)
-                << "(__tracker.clone());\n";
+                << (domains_.count(*sd) && domains_.at(*sd)->exported
+                        ? "();\n" : "(__tracker.clone());\n");
             }
             locals.insert(s.a);
             types[s.a] = *sd;
@@ -12292,7 +12494,9 @@ class Generator {
             if (auto cluster = plan_.cluster_for(*sd))
               o << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
             else
-              o << "spawn_" << snake_case(*sd) << "(__tracker.clone());\n";
+              o << "spawn_" << snake_case(*sd)
+                << (domains_.count(*sd) && domains_.at(*sd)->exported
+                        ? "();\n" : "(__tracker.clone());\n");
             types[s.a] = *sd;
           } else {
             auto source = types.find(trim(s.b));
@@ -15501,6 +15705,11 @@ static string rewrite_module_type(string type, const string& module,
     while (end < type.size() &&
            (std::isalnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
     string token = type.substr(i, end - i);
+    if (starts_with(token, module + "__")) {
+      result += token;
+      i = end;
+      continue;
+    }
     size_t dot = end;
     while (dot < type.size() && std::isspace(static_cast<unsigned char>(type[dot]))) ++dot;
     if (dot < type.size() && type[dot] == '.') {
@@ -15557,6 +15766,11 @@ static string rewrite_module_expression(
     while (end < expression.size() &&
            (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
     string token = expression.substr(i, end - i);
+    if (starts_with(token, module + "__")) {
+      result += token;
+      i = end;
+      continue;
+    }
     size_t cursor = end;
     while (cursor < expression.size() && std::isspace(static_cast<unsigned char>(expression[cursor]))) ++cursor;
     if (cursor < expression.size() && expression[cursor] == '.') {
@@ -15580,8 +15794,10 @@ static string rewrite_module_expression(
     }
     size_t after = end;
     while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
-    if ((functions.count(token) || types.count(token)) && after < expression.size() &&
-        expression[after] == '(')
+    if ((functions.count(token) || types.count(token) ||
+         (after < expression.size() && expression[after] == '(' &&
+          plain_identifier(token))) &&
+        after < expression.size() && expression[after] == '(')
       result += module_symbol(module, token);
     else
       result += token;
@@ -15605,6 +15821,17 @@ static void rewrite_module_program(
   };
   auto body = [&](vector<Stmt>& statements) {
     for (auto& statement : statements) {
+      if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
+        string callee = trim(statement.a);
+        if (callee.find('.') == string::npos && plain_identifier(callee) &&
+            !starts_with(callee, module + "__"))
+          statement.a = module_symbol(module, callee);
+        else {
+          string rewritten = expression(callee + "()");
+          if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
+          statement.a = std::move(rewritten);
+        }
+      }
       statement.a = expression(statement.a);
       statement.b = expression(statement.b);
       statement.c = expression(statement.c);
@@ -15789,6 +16016,372 @@ static void prepare_and_validate_module_exports(Program& program,
   }
 }
 
+static std::optional<Effect> interface_effect(const string& value) {
+  if (value == "READ") return Effect::Read;
+  if (value == "WRITE") return Effect::Write;
+  if (value == "CONSUME") return Effect::Consume;
+  return std::nullopt;
+}
+
+static string interface_field(const string& text, const string& key) {
+  string marker = key + "=";
+  size_t begin = text.find(marker);
+  if (begin == string::npos) return {};
+  begin += marker.size();
+  if (begin >= text.size()) return {};
+  if (text[begin] == '"') {
+    size_t end = text.find('"', begin + 1);
+    return end == string::npos ? string() : text.substr(begin + 1, end - begin - 1);
+  }
+  size_t end = text.find_first_of(" \t\r\n", begin);
+  return text.substr(begin, end == string::npos ? string::npos : end - begin);
+}
+
+static ObservableEffects interface_effects(const string& text) {
+  ObservableEffects effects;
+  auto flag = [&](const string& key) {
+    return interface_field(text, key) == "1";
+  };
+  effects.local_capture_read = flag("local_capture_read");
+  effects.local_mutation = flag("local_mutation");
+  effects.domain_read = flag("domain_read");
+  effects.domain_write = flag("domain_write");
+  effects.message = flag("message");
+  effects.await = flag("await");
+  effects.external_io = flag("external_io");
+  effects.may_fail = flag("may_fail");
+  effects.may_diverge = flag("may_diverge");
+  effects.unresolved = flag("unresolved");
+  return effects;
+}
+
+static string interface_module_name(const string& text,
+                                    const std::filesystem::path& file) {
+  std::istringstream input(text);
+  string record, value;
+  while (input >> record) {
+    if (record != "module_id") {
+      std::getline(input, value);
+      continue;
+    }
+    input >> value;
+    size_t separator = value.rfind("::");
+    return separator == string::npos ? value : value.substr(separator + 2);
+  }
+  return file.stem().string();
+}
+
+static void parse_generic_ir_line(const string& line, Function& function) {
+  std::istringstream input(line);
+  string record;
+  input >> record;
+  if (record == "generic_param") {
+    size_t index = 0;
+    string name, type;
+    if (input >> index >> std::quoted(name) >> std::quoted(type)) {
+      if (function.params.size() <= index) function.params.resize(index + 1);
+      function.params[index] = {std::move(name), std::move(type)};
+    }
+  } else if (record == "generic_constraint") {
+    int kind = 0;
+    string subject, detail, result;
+    if (input >> kind >> std::quoted(subject) >> std::quoted(detail) >>
+        std::quoted(result))
+      function.constraints.emplace_back(static_cast<ConstraintKind>(kind),
+                                        std::move(subject), std::move(detail),
+                                        std::move(result));
+  } else if (record == "generic_stmt") {
+    int kind = 0, mutable_flag = 0, declaration = 1;
+    Stmt statement;
+    size_t argument_count = 0;
+    if (!(input >> kind >> statement.line >> statement.indent >> mutable_flag >>
+          declaration >> std::quoted(statement.text) >>
+          std::quoted(statement.a) >> std::quoted(statement.b) >>
+          std::quoted(statement.c) >> std::quoted(statement.semantic_type) >>
+          argument_count)) return;
+    statement.kind = static_cast<Stmt::Kind>(kind);
+    statement.is_mutable = mutable_flag != 0;
+    statement.declaration = declaration != 0;
+    for (size_t index = 0; index < argument_count; ++index) {
+      string argument;
+      if (!(input >> std::quoted(argument))) return;
+      statement.args.push_back(std::move(argument));
+    }
+    function.body.push_back(std::move(statement));
+  } else if (record == "generic_result") {
+    if (input >> function.result_line) {
+      string expression;
+      if (input >> std::quoted(expression)) function.result_expression = std::move(expression);
+    }
+  }
+}
+
+static ParsedModuleUnit load_module_interface(
+    const std::filesystem::path& file) {
+  std::ifstream input(file, std::ios::binary);
+  std::ostringstream content;
+  content << input.rdbuf();
+  string text = content.str();
+  std::istringstream lines(text);
+  ParsedModuleUnit unit;
+  unit.name = interface_module_name(text, file);
+  unit.explicit_module = true;
+  Program provider;
+  provider.explicit_module = true;
+  provider.module_name = unit.name;
+  string line;
+  Function* current = nullptr;
+  ObjectType* current_object = nullptr;
+  Domain* current_domain = nullptr;
+  bool in_semantic_exports = false;
+  bool in_imports = false;
+  while (std::getline(lines, line)) {
+    line = trim(std::move(line));
+    if (line == "semantic_exports") {
+      in_semantic_exports = true;
+      in_imports = false;
+      current = nullptr;
+      current_object = nullptr;
+      current_domain = nullptr;
+      continue;
+    }
+    if (line == "imports") {
+      in_imports = true;
+      continue;
+    }
+    if (line == "contract") {
+      in_imports = false;
+      continue;
+    }
+    if (starts_with(line, "generic_dependency_begin ")) {
+      std::istringstream header(line.substr(25));
+      string name, rest;
+      header >> std::quoted(name);
+      std::getline(header, rest);
+      Function function;
+      function.name = name;
+      function.exported = false;
+      function.generic = interface_field(rest, "kind") == "generic";
+      function.static_dispatch = function.generic;
+      string return_type = interface_field(rest, "return");
+      if (!return_type.empty()) function.return_type = std::move(return_type);
+      function.observable_effects = interface_effects(rest);
+      provider.functions.push_back(std::move(function));
+      current = &provider.functions.back();
+      in_semantic_exports = true;
+      continue;
+    }
+    if (line == "generic_dependency_end") {
+      current = nullptr;
+      continue;
+    }
+    if (in_imports && !line.empty() && line.find(' ') == string::npos) {
+      ModuleImport import;
+      import.name = line;
+      import.owner_module = unit.name;
+      import.source_file = file.string();
+      unit.imports.push_back(std::move(import));
+      continue;
+    }
+    if (!in_semantic_exports) {
+      if (starts_with(line, "  ")) continue;
+      if (line.empty()) continue;
+      if (line[0] == ' ' || line[0] == '\t') continue;
+    }
+    if (starts_with(line, "  ")) line = trim(line);
+    if (starts_with(line, "  ")) continue;
+    if (starts_with(line, "export fn ")) {
+      std::istringstream header(line.substr(10));
+      string name, kind;
+      header >> name;
+      string rest;
+      std::getline(header, rest);
+      kind = interface_field(rest, "kind");
+      if (name.empty()) continue;
+      Function function;
+      // The normal module namespace pass qualifies declarations.  Keep the
+      // artifact-loaded declaration local here so the same pass can apply the
+      // exact identity once, just as it does for source providers.
+      function.name = name;
+      function.exported = true;
+      function.generic = kind.find("generic") != string::npos;
+      function.static_dispatch = function.generic;
+      string return_type = interface_field(rest, "return");
+      if (!return_type.empty()) function.return_type = std::move(return_type);
+      function.observable_effects = interface_effects(rest);
+      provider.functions.push_back(std::move(function));
+      current = &provider.functions.back();
+      current_object = nullptr;
+      current_domain = nullptr;
+      continue;
+    }
+    if (starts_with(line, "export type ")) {
+      std::istringstream header(line.substr(12));
+      string name;
+      header >> name;
+      ObjectType object;
+      object.name = name;
+      object.exported = true;
+      provider.objects.push_back(std::move(object));
+      current_object = &provider.objects.back();
+      current = nullptr;
+      current_domain = nullptr;
+      continue;
+    }
+    if (starts_with(line, "export domain ")) {
+      std::istringstream header(line.substr(14));
+      string name;
+      header >> name;
+      Domain domain;
+      domain.name = name;
+      domain.exported = true;
+      provider.domains.push_back(std::move(domain));
+      current_domain = &provider.domains.back();
+      current = nullptr;
+      current_object = nullptr;
+      continue;
+    }
+    if (starts_with(line, "export trait ")) {
+      std::istringstream header(line.substr(13));
+      string name;
+      header >> name;
+      Trait trait;
+      trait.name = name;
+      trait.exported = true;
+      provider.traits.push_back(std::move(trait));
+      current = nullptr;
+      current_object = nullptr;
+      current_domain = nullptr;
+      continue;
+    }
+    if (starts_with(line, "public_representation field ") && current_object) {
+      std::istringstream field(line.substr(29));
+      Field value;
+      field >> value.name >> value.type;
+      current_object->fields.push_back(std::move(value));
+      continue;
+    }
+    if (starts_with(line, "handler ") && current_domain) {
+      std::istringstream handler_line(line.substr(8));
+      string name;
+      handler_line >> name;
+      Handler handler;
+      handler.name = name;
+      string reply = interface_field(line, "reply");
+      if (!reply.empty() && reply != "unit") handler.reply_type = std::move(reply);
+      handler.observable_effects = interface_effects(line);
+      if (handler.reply_type) {
+        Stmt reply_statement;
+        reply_statement.kind = Stmt::Kind::Reply;
+        reply_statement.line = 0;
+        string type = canonical_type_name(*handler.reply_type);
+        reply_statement.a = type == "bool" ? "false"
+            : type == "float" ? "0.0"
+            : type == "string" ? "\"\"" : "0";
+        handler.body.push_back(std::move(reply_statement));
+      }
+      current_domain->handlers.push_back(std::move(handler));
+      continue;
+    }
+    if (starts_with(line, "param ") && current) {
+      std::istringstream parameter(line.substr(6));
+      size_t index = 0;
+      string type, mode_token, name_token;
+      parameter >> index >> type >> mode_token >> name_token;
+      if (starts_with(type, "mode=")) {
+        name_token = mode_token;
+        mode_token = type;
+        type.clear();
+      }
+      if (current->params.size() <= index) current->params.resize(index + 1);
+      current->params[index].type = type;
+      current->params[index].name = name_token;
+      if (starts_with(current->params[index].name, "name=\"")) {
+        current->params[index].name = current->params[index].name.substr(6);
+        if (!current->params[index].name.empty() && current->params[index].name.back() == '"')
+          current->params[index].name.pop_back();
+      }
+      if (starts_with(mode_token, "mode=")) {
+        auto effect = interface_effect(mode_token.substr(5));
+        if (current->parameter_effects.size() <= index)
+          current->parameter_effects.resize(index + 1, Effect::Read);
+        if (effect) current->parameter_effects[index] = *effect;
+      }
+      continue;
+    }
+    if (starts_with(line, "await target=parameter[") && current) {
+      size_t begin = string("await target=parameter[").size();
+      size_t end = line.find(']', begin);
+      if (end != string::npos) {
+        AwaitBoundary boundary;
+        boundary.parameter_index = static_cast<size_t>(
+            std::stoul(line.substr(begin, end - begin)));
+        boundary.handler = interface_field(line, "handler");
+        boundary.domain = interface_field(line, "domain");
+        string line_number = interface_field(line, "line");
+        boundary.line = line_number.empty() ? 0 : std::stoi(line_number);
+        current->await_boundaries.push_back(std::move(boundary));
+      }
+      continue;
+    }
+    if (starts_with(line, "open_parameters") && current) {
+      current->generic = true;
+      current->static_dispatch = true;
+      continue;
+    }
+    if (starts_with(line, "generic_ir_version") ||
+        starts_with(line, "generic_entity_id") ||
+        starts_with(line, "generic_param") ||
+        starts_with(line, "generic_constraint") ||
+        starts_with(line, "generic_stmt") ||
+        starts_with(line, "generic_result")) {
+      if (current) parse_generic_ir_line(line, *current);
+      continue;
+    }
+  }
+  for (auto& function : provider.functions) {
+    function.source_file = file.string();
+    function.header = "fn " + function.name;
+    // A generic interface records open parameters separately from its body;
+    // preserve the semantic marker used by normal Moss specialization.
+    if (function.generic && function.return_type &&
+        starts_with(*function.return_type, "_generic:"))
+      function.generic_results[function.return_type->substr(9)] =
+          function.return_type->substr(9);
+  }
+  unit.files.push_back({std::move(provider), file.string()});
+  return unit;
+}
+
+static vector<std::filesystem::path> compiled_interface_candidates(
+    const ProjectManifest& manifest) {
+  vector<std::filesystem::path> roots = {
+      manifest.root / "build" / "debug", manifest.root / "deps"};
+  if (const char* path = std::getenv("MOSS_MODULE_PATH")) {
+    string value = path;
+    size_t begin = 0;
+    while (begin <= value.size()) {
+      size_t end = value.find(':', begin);
+      roots.emplace_back(value.substr(begin, end == string::npos
+                                                ? string::npos : end - begin));
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
+  }
+  vector<std::filesystem::path> result;
+  std::error_code error;
+  for (const auto& root : roots) {
+    if (!std::filesystem::is_directory(root, error)) continue;
+    for (std::filesystem::recursive_directory_iterator it(root, error), end;
+         !error && it != end; it.increment(error))
+      if (it->is_regular_file(error) && it->path().extension() == ".mossi")
+        result.push_back(it->path());
+  }
+  std::sort(result.begin(), result.end());
+  result.erase(std::unique(result.begin(), result.end()), result.end());
+  return result;
+}
+
 static CompiledProjectUnit analyze_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -15798,6 +16391,8 @@ static CompiledProjectUnit analyze_project_sources(
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
+    std::set<string> requested_imports;
+    std::set<string> loaded_external_modules;
     bool has_explicit_modules = false;
     for (const auto& source : sources) {
       std::ifstream input(source);
@@ -15817,24 +16412,49 @@ static CompiledProjectUnit analyze_project_sources(
       unit.imports.insert(unit.imports.end(), parsed.imports.begin(), parsed.imports.end());
       unit.files.push_back({std::move(parsed), source.string()});
     }
+    // A dependency may be represented only by its compiled Moss interface.
+    // Load it into the semantic namespace, but keep it out of this build's
+    // declaration set so its Rust implementation is consumed from its rlib.
     if (has_explicit_modules) {
+      for (const auto& entry : modules)
+        for (const auto& import : entry.second.imports)
+          if (!modules.count(import.name)) requested_imports.insert(import.name);
+      for (const auto& interface_file : compiled_interface_candidates(manifest)) {
+        ParsedModuleUnit provider = load_module_interface(interface_file);
+        if (!requested_imports.count(provider.name) || modules.count(provider.name)) continue;
+        loaded_external_modules.insert(provider.name);
+        modules.emplace(provider.name, std::move(provider));
+      }
+      for (const auto& name : requested_imports)
+        if (!modules.count(name))
+          throw CompileError(1, "imported module '" + name +
+                             "' was not found in source or compiled interfaces");
+    }
+    if (has_explicit_modules) {
+      program.explicit_module = true;
       std::map<string,std::set<string>> public_exports;
       for (const auto& entry : modules)
         public_exports[entry.first] = module_export_names(entry.second);
       validate_module_exports(modules, public_exports);
       for (auto& entry : modules) {
+        bool external = loaded_external_modules.count(entry.first) != 0;
+        if (external) program.external_modules.insert(entry.first);
         for (auto& file : entry.second.files) {
           for (auto& import : file.first.imports) import.owner_module = entry.first;
           rewrite_module_program(file.first, entry.first, modules, public_exports);
+          if (file.first.main && !external) program.main_module = entry.first;
           merge_project_program(program, std::move(file.first), file.second);
         }
       }
     } else {
       // Legacy projects remain one implicit module and retain their existing
       // source order-independent whole-project semantics.
-      for (auto& entry : modules)
-        for (auto& file : entry.second.files)
+      for (auto& entry : modules) {
+        for (auto& file : entry.second.files) {
+          if (file.first.main) program.main_module = manifest.name;
           merge_project_program(program, std::move(file.first), file.second);
+        }
+      }
     }
     prepare_and_validate_module_exports(program, false);
     Checker checker(program);
@@ -16242,6 +16862,147 @@ static string module_name_from_symbol(const string& symbol) {
   return separator == string::npos ? string() : symbol.substr(0, separator);
 }
 
+static bool belongs_to_module(const string& qualified, const string& module) {
+  return qualified == module || starts_with(qualified, module + "__");
+}
+
+// The semantic checker still sees the composed project.  Once that single
+// authority has produced its facts, this projection is what gives rustc one
+// crate per Moss module.  It intentionally copies no declarations from an
+// imported module; imported names remain Rust crate references emitted by the
+// module generator.
+static Program module_program(const Program& whole, const string& module) {
+  Program result;
+  result.module_name = module;
+  result.explicit_module = true;
+  result.imports = whole.imports;
+  std::set<string> generic_support;
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (const auto& edge : whole.semantic_call_edges) {
+      bool source_is_generic = starts_with(edge.source, "fn:");
+      string source_name = source_is_generic ? edge.source.substr(3) : string();
+      auto source = std::find_if(whole.functions.begin(), whole.functions.end(),
+          [&](const Function& function) { return function.name == source_name; });
+      if (source == whole.functions.end() ||
+          !(source->generic || generic_support.count(source->name))) continue;
+      for (const auto& function : whole.functions)
+        if (!function.exported && edge.target.find(function.name) != string::npos &&
+            generic_support.insert(function.name).second)
+          changed = true;
+    }
+  }
+  for (const auto& function : whole.functions)
+    if (belongs_to_module(function.name, module) &&
+        !generic_support.count(function.name)) result.functions.push_back(function);
+  for (const auto& object : whole.objects)
+    if (belongs_to_module(object.name, module)) result.objects.push_back(object);
+  for (const auto& trait : whole.traits)
+    if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
+  for (const auto& domain : whole.domains)
+    if (belongs_to_module(domain.name, module)) result.domains.push_back(domain);
+  if (whole.main && whole.main_module == module) result.main = whole.main;
+  for (const auto& test : whole.tests)
+    if (whole.main_module.empty() || whole.main_module == module)
+      result.tests.push_back(test);
+  for (const auto& benchmark : whole.benchmarks)
+    if (whole.main_module.empty() || whole.main_module == module)
+      result.benchmarks.push_back(benchmark);
+  // Functional plans are compiler-owned IR referenced by statements.  They
+  // are cheap metadata and retaining the complete plan avoids re-analysis or
+  // source reconstruction in a module crate.
+  result.functional_pipelines = whole.functional_pipelines;
+  result.functional_traversal_groups = whole.functional_traversal_groups;
+  result.semantic_call_edges = whole.semantic_call_edges;
+  result.semantic_await_sites = whole.semantic_await_sites;
+  result.semantic_await_edges = whole.semantic_await_edges;
+  return result;
+}
+
+static OptimizationPlan module_plan(const OptimizationPlan& whole,
+                                    const Program& module_program_value) {
+  OptimizationPlan result = whole;
+  std::set<string> domains;
+  for (const auto& domain : module_program_value.domains) domains.insert(domain.name);
+  for (auto it = result.domain_lowerings.begin(); it != result.domain_lowerings.end();)
+    if (!domains.count(it->first)) it = result.domain_lowerings.erase(it);
+    else ++it;
+  for (auto it = result.handler_effects.begin(); it != result.handler_effects.end();) {
+    bool keep = false;
+    for (const auto& domain : domains)
+      if (starts_with(it->first, domain + ".")) keep = true;
+    if (!keep) it = result.handler_effects.erase(it);
+    else ++it;
+  }
+  for (auto it = result.atomic_handlers.begin(); it != result.atomic_handlers.end();) {
+    bool keep = false;
+    for (const auto& domain : domains)
+      if (starts_with(it->first, domain + ".")) keep = true;
+    if (!keep) it = result.atomic_handlers.erase(it);
+    else ++it;
+  }
+  vector<vector<string>> clusters;
+  for (const auto& cluster : result.domain_clusters) {
+    vector<string> local;
+    for (const auto& name : cluster) if (domains.count(name)) local.push_back(name);
+    if (!local.empty()) clusters.push_back(std::move(local));
+  }
+  result.domain_clusters = std::move(clusters);
+  return result;
+}
+
+static vector<string> module_names_for_program(const Program& program) {
+  std::set<string> names;
+  for (const auto& function : program.functions)
+    if (!module_name_from_symbol(function.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(function.name)))
+      names.insert(module_name_from_symbol(function.name));
+  for (const auto& object : program.objects)
+    if (!module_name_from_symbol(object.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(object.name)))
+      names.insert(module_name_from_symbol(object.name));
+  for (const auto& domain : program.domains)
+    if (!module_name_from_symbol(domain.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(domain.name)))
+      names.insert(module_name_from_symbol(domain.name));
+  if (!program.main_module.empty()) names.insert(program.main_module);
+  return vector<string>(names.begin(), names.end());
+}
+
+static vector<string> module_dependencies(const Program& program,
+                                          const string& module) {
+  std::set<string> result;
+  for (const auto& import : program.imports)
+    if (import.owner_module == module) result.insert(import.name);
+  return vector<string>(result.begin(), result.end());
+}
+
+static vector<string> module_topological_order(const Program& program) {
+  vector<string> names = module_names_for_program(program);
+  std::set<string> known(names.begin(), names.end());
+  known.insert(program.external_modules.begin(), program.external_modules.end());
+  std::map<string,int> state;
+  vector<string> order;
+  std::function<void(const string&)> visit = [&](const string& module) {
+    if (program.external_modules.count(module)) return;
+    if (state[module] == 2) return;
+    if (state[module] == 1)
+      throw ProjectError("MODULE_IMPORT_CYCLE", "module import cycle detected at '" + module + "'");
+    state[module] = 1;
+    for (const auto& dependency : module_dependencies(program, module)) {
+      if (!known.count(dependency))
+        throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
+                           "no provider for imported module '" + dependency + "'");
+      visit(dependency);
+    }
+    state[module] = 2;
+    order.push_back(module);
+  };
+  for (const auto& module : names) visit(module);
+  return order;
+}
+
 static string interface_effects_text(const ObservableEffects& effects) {
   std::ostringstream out;
   out << "local_capture_read=" << (effects.local_capture_read ? 1 : 0)
@@ -16265,13 +17026,16 @@ static vector<std::filesystem::path> write_module_interfaces(
   std::map<string,std::ostringstream> interface_contents;
   std::set<string> module_names;
   for (const auto& function : program.functions)
-    if (!module_name_from_symbol(function.name).empty())
+    if (!module_name_from_symbol(function.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(function.name)))
       module_names.insert(module_name_from_symbol(function.name));
   for (const auto& object : program.objects)
-    if (!module_name_from_symbol(object.name).empty())
+    if (!module_name_from_symbol(object.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
   for (const auto& domain : program.domains)
-    if (!module_name_from_symbol(domain.name).empty())
+    if (!module_name_from_symbol(domain.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(domain.name)))
       module_names.insert(module_name_from_symbol(domain.name));
   for (const auto& import : program.imports)
     if (!import.owner_module.empty()) module_names.insert(import.owner_module);
@@ -16282,7 +17046,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   for (const auto& function : program.functions) {
     if (!function.exported) continue;
     string module = module_name_from_symbol(function.name);
-    if (module.empty()) continue;
+    if (module.empty() || program.external_modules.count(module)) continue;
     auto& out = contents[module];
     auto& abi = interface_contents[module];
     string public_name = function.name.substr(module.size() + 2);
@@ -16308,9 +17072,30 @@ static vector<std::filesystem::path> write_module_interfaces(
       Effect effect = index < function.parameter_effects.size()
           ? function.parameter_effects[index] : Effect::Read;
       out << "  param " << index << " " << function.params[index].type
-          << " mode=" << ownership_effect_name(effect) << "\n";
+          << " mode=" << ownership_effect_name(effect)
+          << " name=" << std::quoted(function.params[index].name) << "\n";
       abi << "  param " << index << " " << function.params[index].type
-          << " mode=" << ownership_effect_name(effect) << "\n";
+          << " mode=" << ownership_effect_name(effect)
+          << " name=" << std::quoted(function.params[index].name) << "\n";
+    }
+    // Ordinary typed exports can cross a module boundary with a domain
+    // handle.  The exporting module cannot know the caller's instance, so
+    // publish the exact symbolic boundary used for link-time substitution.
+    for (const auto& statement : function.body) {
+      if (statement.kind != Stmt::Kind::AwaitMessage) continue;
+      string receiver = trim(statement.b);
+      auto parameter = std::find_if(
+          function.params.begin(), function.params.end(),
+          [&](const Param& candidate) { return candidate.name == receiver; });
+      if (parameter == function.params.end()) continue;
+      size_t index = static_cast<size_t>(parameter - function.params.begin());
+      string handler = statement.c;
+      abi << "  await target=parameter[" << index << "] handler="
+          << handler << " domain=" << parameter->type
+          << " line=" << statement.line << "\n";
+      out << "  await target=parameter[" << index << "] handler="
+          << handler << " domain=" << parameter->type
+          << " line=" << statement.line << "\n";
     }
     if (function.generic) {
       out << "  open_parameters";
@@ -16325,13 +17110,91 @@ static vector<std::filesystem::path> write_module_interfaces(
         if (edge.source == "fn:" + function.name)
           out << "    " << edge.target << "\n";
       out << "  semantic_ir_body_hash=" << semantic_hash << "\n";
+      out << "  generic_ir_version 1\n";
+      out << "  generic_entity_id " << std::quoted("fn:" + function.name +
+                                                    "@" + std::to_string(function.line)) << "\n";
+      for (size_t index = 0; index < function.params.size(); ++index)
+        out << "  generic_param " << index << " "
+            << std::quoted(function.params[index].name) << " "
+            << std::quoted(function.params[index].type) << "\n";
+      for (const auto& constraint : function.constraints) {
+        out << "  generic_constraint " << static_cast<int>(constraint.kind)
+            << " " << std::quoted(constraint.subject) << " "
+            << std::quoted(constraint.detail) << " "
+            << std::quoted(constraint.result) << "\n";
+      }
+      for (const auto& statement : function.body) {
+        out << "  generic_stmt " << static_cast<int>(statement.kind) << " "
+            << statement.line << " " << statement.indent << " "
+            << (statement.is_mutable ? 1 : 0) << " "
+            << (statement.declaration ? 1 : 0) << " "
+            << std::quoted(statement.text) << " "
+            << std::quoted(statement.a) << " "
+            << std::quoted(statement.b) << " "
+            << std::quoted(statement.c) << " "
+            << std::quoted(statement.semantic_type) << " "
+            << statement.args.size();
+        for (const auto& argument : statement.args)
+          out << " " << std::quoted(argument);
+        out << "\n";
+      }
+      if (function.result_expression)
+        out << "  generic_result " << function.result_line << " "
+            << std::quoted(*function.result_expression) << "\n";
+      out << "  generic_ir_end\n";
       abi << "  semantic_ir_body_hash=" << semantic_hash << "\n";
     }
+  }
+  // Exported generics close over private Moss helpers.  Preserve those
+  // helpers as semantic IR (not source text and not Rust MIR) so an importer
+  // can reconstruct the same Moss callable graph after the source tree is
+  // absent.  Keeping the closure private is enforced by the dependency
+  // record kind and by not adding these names to the module export set.
+  for (const auto& function : program.functions) {
+    if (function.exported || function.name.empty()) continue;
+    string module = module_name_from_symbol(function.name);
+    if (module.empty() || program.external_modules.count(module)) continue;
+    bool reachable = std::any_of(
+        program.functions.begin(), program.functions.end(),
+        [](const Function& exported) { return exported.exported && exported.generic; });
+    if (!reachable) continue;
+    auto& out = contents[module];
+    out << "  generic_dependency_begin "
+        << std::quoted(function.name.substr(module.size() + 2))
+        << " kind=" << (function.generic ? "generic" : "concrete")
+        << " return=" << function.return_type.value_or("unit")
+        << " effects=" << interface_effects_text(function.observable_effects)
+        << "\n";
+    for (size_t index = 0; index < function.params.size(); ++index)
+      out << "  generic_param " << index << " "
+          << std::quoted(function.params[index].name) << " "
+          << std::quoted(function.params[index].type) << "\n";
+    for (const auto& constraint : function.constraints)
+      out << "  generic_constraint " << static_cast<int>(constraint.kind)
+          << " " << std::quoted(constraint.subject) << " "
+          << std::quoted(constraint.detail) << " "
+          << std::quoted(constraint.result) << "\n";
+    for (const auto& statement : function.body) {
+      out << "  generic_stmt " << static_cast<int>(statement.kind) << " "
+          << statement.line << " " << statement.indent << " "
+          << (statement.is_mutable ? 1 : 0) << " "
+          << (statement.declaration ? 1 : 0) << " "
+          << std::quoted(statement.text) << " " << std::quoted(statement.a)
+          << " " << std::quoted(statement.b) << " " << std::quoted(statement.c)
+          << " " << std::quoted(statement.semantic_type) << " "
+          << statement.args.size();
+      for (const auto& argument : statement.args) out << " " << std::quoted(argument);
+      out << "\n";
+    }
+    if (function.result_expression)
+      out << "  generic_result " << function.result_line << " "
+          << std::quoted(*function.result_expression) << "\n";
+    out << "  generic_dependency_end\n";
   }
   for (const auto& object : program.objects) {
     if (!object.exported) continue;
     string module = module_name_from_symbol(object.name);
-    if (module.empty()) continue;
+    if (module.empty() || program.external_modules.count(module)) continue;
     auto& out = contents[module];
     interface_contents[module] << "type " << object.name.substr(module.size() + 2)
                                << " nominal\n";
@@ -16342,13 +17205,13 @@ static vector<std::filesystem::path> write_module_interfaces(
   for (const auto& trait : program.traits) {
     if (!trait.exported) continue;
     string module = module_name_from_symbol(trait.name);
-    if (module.empty()) continue;
+    if (module.empty() || program.external_modules.count(module)) continue;
     contents[module] << "export trait " << trait.name.substr(module.size() + 2) << "\n";
   }
   for (const auto& domain : program.domains) {
     if (!domain.exported) continue;
     string module = module_name_from_symbol(domain.name);
-    if (module.empty()) continue;
+    if (module.empty() || program.external_modules.count(module)) continue;
     auto& out = contents[module];
     interface_contents[module] << "domain " << domain.name.substr(module.size() + 2)
                                << " opaque\n";
@@ -16409,6 +17272,7 @@ struct NativeArtifact {
   std::filesystem::path cache_metadata;
   vector<std::filesystem::path> module_interfaces;
   vector<std::filesystem::path> module_rlibs;
+  std::filesystem::path specialization_rlib;
   BackendToolchainIdentity backend_toolchain;
   vector<TestDecl> tests;
   vector<BenchDecl> benchmarks;
@@ -16459,6 +17323,10 @@ static NativeArtifact compile_native_artifact(
       for (const auto& interface_file : artifact.module_interfaces) {
         std::filesystem::path rlib = interface_file;
         rlib.replace_extension(".rlib");
+        if (!std::filesystem::is_regular_file(rlib, interface_error)) {
+          rlib = interface_file.parent_path() /
+              ("lib" + interface_file.stem().string() + ".rlib");
+        }
         if (std::filesystem::is_regular_file(rlib, interface_error))
           artifact.module_rlibs.push_back(std::move(rlib));
       }
@@ -16472,6 +17340,28 @@ static NativeArtifact compile_native_artifact(
     source_key << project_relative_path(manifest, source) << "\n"
                << stable_hash(read_text_file(source, "PROJECT_SOURCE_NOT_FOUND"))
                << "\n";
+  // Compiled providers are semantic inputs too.  Their .mossi contract (and
+  // backend fingerprint below) must invalidate a consumer even when the
+  // consumer's Moss source is unchanged.
+  for (const auto& interface_file : artifact.module_interfaces) {
+    std::ifstream interface_input(interface_file, std::ios::binary);
+    std::ostringstream interface_text;
+    if (interface_input) interface_text << interface_input.rdbuf();
+    source_key << "provider-interface " << interface_file.string() << "\n"
+               << stable_hash(interface_text.str()) << "\n";
+    std::filesystem::path provider_rlib = interface_file;
+    provider_rlib.replace_extension(".rlib");
+    if (!std::filesystem::is_regular_file(provider_rlib))
+      provider_rlib = interface_file.parent_path() /
+          ("lib" + interface_file.stem().string() + ".rlib");
+    if (std::filesystem::is_regular_file(provider_rlib)) {
+      std::ifstream rlib_input(provider_rlib, std::ios::binary);
+      std::ostringstream rlib_text;
+      rlib_text << rlib_input.rdbuf();
+      source_key << "provider-rlib " << provider_rlib.string() << "\n"
+                 << stable_hash(rlib_text.str()) << "\n";
+    }
+  }
   source_key << "compiler\n" << kCompilerVersion << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
@@ -16498,22 +17388,21 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
+  vector<string> local_module_names = module_names_for_program(unit.program);
   artifact.module_interfaces = write_module_interfaces(
       manifest, unit.program, directory, artifact.backend_toolchain);
+  for (const auto& interface_file : preexisting_interfaces) {
+    string module = interface_file.stem().string();
+    if (std::find(local_module_names.begin(), local_module_names.end(), module) ==
+            local_module_names.end() &&
+        std::find(artifact.module_interfaces.begin(), artifact.module_interfaces.end(),
+                  interface_file) == artifact.module_interfaces.end())
+      artifact.module_interfaces.push_back(interface_file);
+  }
+  std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
   artifact.tests = unit.program.tests;
   artifact.benchmarks = unit.program.benchmarks;
-  std::ostringstream map_stream;
-  write_debug_map(
-      map_stream,
-      build_debug_map(
-          unit.program, unit.rust,
-          std::filesystem::absolute(primary_source).lexically_normal().string(),
-          std::filesystem::absolute(artifact.rust).lexically_normal().string(),
-          std::filesystem::absolute(artifact.executable)
-              .lexically_normal()
-              .string(),
-          debug_build, optimized));
-  string map_text = map_stream.str();
   auto update_file = [](const std::filesystem::path& path,
                         const string& content) {
     std::ifstream prior(path, std::ios::binary);
@@ -16530,30 +17419,230 @@ static NativeArtifact compile_native_artifact(
     output << content;
     return true;
   };
-  bool rust_changed = update_file(artifact.rust, unit.rust);
+
+  // Legacy projects retain the historical single Rust unit.  Explicit
+  // modules use the same semantic result, projected into one Rust crate per
+  // module.  The projection is deliberately after checking so no second Moss
+  // type/effect/ownership implementation can drift from the authoritative
+  // analysis.
+  bool rust_changed = false;
+  std::map<string,std::filesystem::path> module_rust;
+  std::map<string,std::filesystem::path> module_rlib;
+  vector<string> module_order;
+  string root_module;
+  bool has_specializations = false;
+  if (unit.program.explicit_module) {
+    module_order = module_topological_order(unit.program);
+    root_module = unit.program.main_module.empty()
+        ? (module_order.empty() ? string() : module_order.back())
+        : unit.program.main_module;
+    has_specializations = std::any_of(
+        unit.program.functions.begin(), unit.program.functions.end(),
+        [](const Function& function) {
+          return function.static_dispatch && !function.specializations.empty();
+        });
+    std::filesystem::path specialization_rust =
+        directory / "moss-specializations.rs";
+    artifact.specialization_rlib = directory / "libmoss_specializations.rlib";
+    if (has_specializations) {
+      Program specialization_program;
+      specialization_program.explicit_module = true;
+      specialization_program.functions.reserve(unit.program.functions.size());
+      bool has_exported_generic = std::any_of(
+          unit.program.functions.begin(), unit.program.functions.end(),
+          [](const Function& function) {
+            return function.exported && function.generic;
+          });
+      for (const auto& function : unit.program.functions)
+        if (function.static_dispatch && !function.specializations.empty())
+          specialization_program.functions.push_back(function);
+      // Concrete private helpers reachable from a deferred generic are
+      // compiler-generated internal support in the specialization crate.  A
+      // private helper never becomes a Moss export or an imported source
+      // symbol, but its Moss body must remain available after source removal.
+      if (has_exported_generic)
+        {
+          std::set<string> support;
+          bool changed = true;
+          while (changed) {
+            changed = false;
+            for (const auto& edge : unit.program.semantic_call_edges) {
+              string source_name = starts_with(edge.source, "fn:")
+                  ? edge.source.substr(3) : string();
+              auto source = std::find_if(
+                  unit.program.functions.begin(), unit.program.functions.end(),
+                  [&](const Function& function) {
+                    return function.name == source_name;
+                  });
+              if (source == unit.program.functions.end() ||
+                  !(source->generic || support.count(source->name))) continue;
+              for (const auto& function : unit.program.functions)
+                if (!function.exported &&
+                    edge.target.find(function.name) != string::npos &&
+                    support.insert(function.name).second)
+                  changed = true;
+            }
+          }
+          for (const auto& function : unit.program.functions)
+            if (!function.exported && !function.static_dispatch &&
+                support.count(function.name))
+              specialization_program.functions.push_back(function);
+        }
+      specialization_program.functional_pipelines = unit.program.functional_pipelines;
+      string generated = Generator(
+          specialization_program, unit.plan, true, debug_build, mode, {},
+          &unit.program, true, true).generate();
+      rust_changed = update_file(specialization_rust, generated) || rust_changed;
+      vector<string> specialization_command = {
+          artifact.backend_toolchain.rustc_executable};
+      specialization_command.insert(
+          specialization_command.end(), artifact.backend_toolchain.compile_flags.begin(),
+          artifact.backend_toolchain.compile_flags.end());
+      specialization_command.push_back("--crate-type=rlib");
+      specialization_command.push_back("--crate-name");
+      specialization_command.push_back("moss_specializations");
+      specialization_command.push_back(specialization_rust.string());
+      specialization_command.push_back("-o");
+      specialization_command.push_back(artifact.specialization_rlib.string());
+      ProcessResult specialization_compiled = run_process(specialization_command);
+      if (specialization_compiled.exit_code != 0)
+        throw ProjectError(
+            "BUILD_BACKEND_ERROR",
+            "Moss specialization crate compilation failed\n" +
+                trim(specialization_compiled.output), specialization_rust.string());
+    }
+    for (const auto& module : module_order) {
+      std::filesystem::path rust_file = directory / (tooling_name(module) + ".rs");
+      module_rust[module] = rust_file;
+      // rustc requires an rlib passed through --extern to use the conventional
+      // lib<crate>.rlib filename.  The Moss interface remains the stable
+      // module-named contract; this is ordinary Rust crate layout.
+      module_rlib[module] = directory /
+          ("lib" + tooling_name(module) + ".rlib");
+      Program projected = module_program(unit.program, module);
+      OptimizationPlan projected_plan = module_plan(unit.plan, projected);
+      vector<string> dependencies = module_dependencies(unit.program, module);
+      // The final/root crate owns the graph-wide specialization crate.  A
+      // dependency module is linked to it only when it actually needs to call
+      // a specialization; keeping ordinary module rlibs independent makes a
+      // generic provider consumable from just its .mossi + concrete rlib.
+      if (has_specializations && module == root_module)
+        dependencies.push_back("__moss_specializations__");
+      string generated = Generator(projected, projected_plan, true, debug_build,
+                                   mode, dependencies, &unit.program, false).generate();
+      rust_changed = update_file(rust_file, generated) || rust_changed;
+      if (module == root_module) artifact.rust = rust_file;
+    }
+    for (const auto& external : unit.program.external_modules) {
+      for (const auto& interface_file : artifact.module_interfaces) {
+        if (interface_file.stem().string() != external) continue;
+        std::filesystem::path rlib = interface_file;
+        rlib.replace_extension(".rlib");
+        if (!std::filesystem::is_regular_file(rlib))
+          rlib = interface_file.parent_path() /
+              ("lib" + interface_file.stem().string() + ".rlib");
+        if (std::filesystem::is_regular_file(rlib)) module_rlib[external] = rlib;
+      }
+    }
+  } else {
+    rust_changed = update_file(artifact.rust, unit.rust);
+    root_module = manifest.name;
+  }
   artifact.generated_rust_rewritten = rust_changed;
+
+  // Compile the Rust crates in the already validated Moss import order.  A
+  // consumer receives only dependency rlibs and public Rust declarations; it
+  // never receives or regenerates a dependency's Moss implementation.
   artifact.module_rlibs.clear();
-  for (const auto& interface_file : artifact.module_interfaces) {
-    std::filesystem::path rlib = interface_file;
-    rlib.replace_extension(".rlib");
-    vector<string> module_command = {artifact.backend_toolchain.rustc_executable};
-    module_command.insert(module_command.end(),
-                          artifact.backend_toolchain.compile_flags.begin(),
-                          artifact.backend_toolchain.compile_flags.end());
-    module_command.push_back("--crate-type=rlib");
-    module_command.push_back("--crate-name");
-    module_command.push_back(tooling_name("moss_" + interface_file.stem().string()));
-    module_command.push_back(artifact.rust.string());
-    module_command.push_back("-o");
-    module_command.push_back(rlib.string());
-    ProcessResult module_compiled = run_process(module_command);
-    if (module_compiled.exit_code != 0)
-      throw ProjectError(
-          "BUILD_BACKEND_ERROR",
-          "module Rust rlib compilation failed for '" +
-              interface_file.string() + "'\n" + trim(module_compiled.output),
-          interface_file.string());
-    artifact.module_rlibs.push_back(std::move(rlib));
+  if (unit.program.explicit_module) {
+    for (const auto& module : module_order) {
+      std::filesystem::path rlib = module_rlib.at(module);
+      vector<string> module_command = {artifact.backend_toolchain.rustc_executable};
+      module_command.insert(module_command.end(),
+                            artifact.backend_toolchain.compile_flags.begin(),
+                            artifact.backend_toolchain.compile_flags.end());
+      module_command.push_back("--crate-type=rlib");
+      module_command.push_back("--crate-name");
+      module_command.push_back(tooling_name("moss_" + module));
+      module_command.push_back(module_rust.at(module).string());
+      module_command.push_back("-o");
+      module_command.push_back(rlib.string());
+      module_command.push_back("-L");
+      module_command.push_back("dependency=" + directory.string());
+      for (const auto& dependency : module_dependencies(unit.program, module)) {
+        module_command.push_back("--extern");
+        module_command.push_back(tooling_name("moss_" + dependency) + "=" +
+                                 module_rlib.at(dependency).string());
+      }
+      if (has_specializations && module == root_module) {
+        module_command.push_back("--extern");
+        module_command.push_back("moss_specializations=" +
+                                 artifact.specialization_rlib.string());
+      }
+      ProcessResult module_compiled = run_process(module_command);
+      if (module_compiled.exit_code != 0)
+        throw ProjectError(
+            "BUILD_BACKEND_ERROR",
+            "module Rust crate compilation failed for '" + module + "'\n" +
+                trim(module_compiled.output),
+            module_rust.at(module).string());
+      artifact.module_rlibs.push_back(std::move(rlib));
+    }
+  }
+
+  std::ostringstream map_stream;
+  string root_rust = unit.program.explicit_module
+      ? [&]() {
+          std::ifstream input(artifact.rust, std::ios::binary);
+          std::ostringstream text;
+          text << input.rdbuf();
+          return text.str();
+        }()
+      : unit.rust;
+  write_debug_map(
+      map_stream,
+      build_debug_map(
+          unit.program, root_rust,
+          std::filesystem::absolute(primary_source).lexically_normal().string(),
+          std::filesystem::absolute(artifact.rust).lexically_normal().string(),
+          std::filesystem::absolute(artifact.executable)
+              .lexically_normal()
+              .string(),
+          debug_build, optimized));
+  string map_text = map_stream.str();
+
+  // The final executable is the root Moss module and links its dependency
+  // rlibs through ordinary rustc --extern options.
+  if (unit.program.explicit_module) {
+    std::filesystem::remove(artifact.executable, error);
+    if (error)
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "cannot replace native artifact '" +
+                             artifact.executable.string() + "': " + error.message());
+    vector<string> command = {artifact.backend_toolchain.rustc_executable};
+    command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
+                   artifact.backend_toolchain.compile_flags.end());
+    command.push_back(artifact.rust.string());
+    command.push_back("-o");
+    command.push_back(artifact.executable.string());
+    command.push_back("-L");
+    command.push_back("dependency=" + directory.string());
+    for (const auto& dependency : module_dependencies(unit.program, root_module)) {
+      command.push_back("--extern");
+      command.push_back(tooling_name("moss_" + dependency) + "=" +
+                        module_rlib.at(dependency).string());
+    }
+    if (std::filesystem::is_regular_file(artifact.specialization_rlib)) {
+      command.push_back("--extern");
+      command.push_back("moss_specializations=" +
+                        artifact.specialization_rlib.string());
+    }
+    ProcessResult compiled = run_process(command);
+    if (compiled.exit_code != 0)
+      throw ProjectError("BUILD_BACKEND_ERROR",
+                         "native compilation failed for '" +
+                             project_relative_path(manifest, primary_source) +
+                             "'\n" + trim(compiled.output), primary_source.string());
   }
   bool map_changed = update_file(artifact.debug_map, map_text);
   std::ifstream prior_cache(artifact.cache_metadata, std::ios::binary);
@@ -16566,27 +17655,29 @@ static NativeArtifact compile_native_artifact(
     return artifact;
   }
 
-  std::filesystem::remove(artifact.executable, error);
-  if (error)
-    throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
-                       "cannot replace native artifact '" +
-                           artifact.executable.string() + "': " +
-                           error.message());
+  if (!unit.program.explicit_module) {
+    std::filesystem::remove(artifact.executable, error);
+    if (error)
+      throw ProjectError("MOSS_INTERNAL_OR_IO_ERROR",
+                         "cannot replace native artifact '" +
+                             artifact.executable.string() + "': " +
+                             error.message());
 
-  vector<string> command = {artifact.backend_toolchain.rustc_executable};
-  command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
-                 artifact.backend_toolchain.compile_flags.end());
-  command.push_back(artifact.rust.string());
-  command.push_back("-o");
-  command.push_back(artifact.executable.string());
-  ProcessResult compiled = run_process(command);
-  if (compiled.exit_code != 0)
-    throw ProjectError(
-        "BUILD_BACKEND_ERROR",
-        "native compilation failed for '" +
-            project_relative_path(manifest, primary_source) + "'\n" +
-            trim(compiled.output),
-        primary_source.string());
+    vector<string> command = {artifact.backend_toolchain.rustc_executable};
+    command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
+                   artifact.backend_toolchain.compile_flags.end());
+    command.push_back(artifact.rust.string());
+    command.push_back("-o");
+    command.push_back(artifact.executable.string());
+    ProcessResult compiled = run_process(command);
+    if (compiled.exit_code != 0)
+      throw ProjectError(
+          "BUILD_BACKEND_ERROR",
+          "native compilation failed for '" +
+              project_relative_path(manifest, primary_source) + "'\n" +
+              trim(compiled.output),
+          primary_source.string());
+  }
   (void)update_file(artifact.cache_metadata, cache_text);
   return artifact;
 }
@@ -16753,7 +17844,10 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
       if (index) std::cout << ", ";
       write_debug_json_string(std::cout, artifact.module_rlibs[index].string());
     }
-    std::cout << "], \"cache_metadata\": ";
+    std::cout << "], \"specialization_rlib\": ";
+    if (artifact.specialization_rlib.empty()) std::cout << "null";
+    else write_debug_json_string(std::cout, artifact.specialization_rlib.string());
+    std::cout << ", \"cache_metadata\": ";
     write_debug_json_string(std::cout, artifact.cache_metadata.string());
     std::cout << "}, \"backend_toolchain\": ";
     write_backend_toolchain_json(std::cout, artifact.backend_toolchain);

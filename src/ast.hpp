@@ -25,7 +25,7 @@ struct Line {
 struct Field { string name, type, init, header; int line = 0; string source_file; };
 struct Param { string name, type; };
 struct Stmt {
-  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
+  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
   vector<int> continuation_lines;
   bool is_mutable = false; bool declaration = true; string semantic_type;
@@ -75,6 +75,12 @@ struct FunctionSpecialization {
   vector<string> parameter_types;
   string return_type;
 };
+struct AwaitBoundary {
+  size_t parameter_index = 0;
+  string handler;
+  string domain;
+  int line = 0;
+};
 struct Function {
   string name, header; vector<Param> params; std::optional<string> return_type; vector<Stmt> body;
   std::optional<string> result_expression; int result_line = 0; bool expression_body = false;
@@ -92,6 +98,7 @@ struct Function {
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
   string source_file;
+  vector<AwaitBoundary> await_boundaries;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
@@ -151,7 +158,12 @@ struct ModuleImport {
 
 struct Program {
   string module_name;
+  string main_module;
   bool explicit_module = false;
+  // Providers loaded from a compiled .mossi/.rlib pair.  Their declarations
+  // participate in Moss name/type checking, but are never regenerated into
+  // this build's Rust crates.
+  std::set<string> external_modules;
   vector<ModuleImport> imports;
   vector<Function> functions;
   vector<Trait> traits;

@@ -486,3 +486,8 @@ Imports are qualified and acyclic. Typed exports are fully checked and
 materialized; untyped exports are compile-time Moss generics. See
 [`MODULES.md`](MODULES.md) for source rules and [`MODULE_ABI.md`](MODULE_ABI.md)
 for interface/cache behavior.
+
+An explicit-module build is separately compiled in dependency order. A
+provider's source may be absent when a consumer is built if its `.mossi` and
+rlib are available in the build/dependency path; generic specialization uses
+the semantic IR in `.mossi`, not source text.

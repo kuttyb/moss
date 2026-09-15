@@ -80,11 +80,14 @@ baselines, artifact locations, JSON output, and troubleshooting. The detailed
 references are [the build system](docs/BUILD_SYSTEM.md), [unit
 testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
 
-Until Moss has explicit modules/imports, each target is compiled as one
-temporary global compilation unit: `build` combines `src/**/*.moss`, `test`
-combines `src/**/*.moss` with `tests/**/*.moss`, and `bench` combines `src/**/*.moss`
-with `benches/**/*.moss`. Paths remain attached to diagnostics and provenance;
-directories do not create namespaces.
+Projects without explicit modules retain the temporary global compilation unit:
+`build` combines `src/**/*.moss`, `test` combines `src/**/*.moss` with
+`tests/**/*.moss`, and `bench` combines `src/**/*.moss` with `benches/**/*.moss`.
+Explicit modules instead compile into separate Rust crates/rlibs in import-DAG
+order. Their `.mossi` interfaces carry Moss contracts and generic semantic IR;
+typed imports need `.mossi` plus rlib, while generic imports specialize from
+`.mossi` without provider source. Paths remain attached to diagnostics and
+provenance.
 
 Semantic queries and edits use that same temporary project context. A `src` source
 queries all application files, a `tests` source queries `src + tests`, and a `benches`

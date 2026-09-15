@@ -628,4 +628,8 @@ Modules/imports/exports are supported with qualified namespace resolution.
 Typed exports are materialized contracts; untyped exports are compile-time Moss
 generics represented in versioned `.mossi` interfaces. Await graph identities
 are exact declared domain instances (`module::binding`), with composition-time
-DFS over those edges. Legacy implicit-module projects remain supported.
+DFS over those edges. Each explicit module now emits its own generated Rust
+crate/rlib in import-DAG order; consumers link dependency rlibs with `--extern`.
+Generic semantic IR and private helper closure are re-instantiable without
+provider source, and final-build specializations are canonical in a dedicated
+Rust crate. Legacy implicit-module projects remain supported.
