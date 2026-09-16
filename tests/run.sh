@@ -1378,6 +1378,10 @@ printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
 interp_trace=$($compiler run --interp --trace tests/phase10_interpreter_basic.moss 2>&1 >/dev/null)
 printf '%s\n' "$interp_trace" | grep -F '"event":"FunctionEnter"' >/dev/null ||
   fail 'fast interpreter did not emit structured trace events'
+if command -v python3 >/dev/null 2>&1; then
+  python3 tests/tooling/check_phase10_fast_debug_project.py "$compiler" ||
+    fail 'fast interpreter did not execute the complete project source closure'
+fi
 
 # Phase 2.6: incoming message payloads are immutable READ snapshots. Direct
 # synchronous handlers may borrow non-Copy payloads, while mailbox sends keep

@@ -526,12 +526,16 @@ generating Rust:
 ```text
 moss run --interp program.moss
 moss test --interp tests/fast_debug.moss
+moss debug app
 ```
 
 Use `--trace` for newline-delimited structured execution events. The initial
 interpreter supports ordinary functions, arithmetic, locals, conditionals,
 loops, structs, methods, and assertions. Domain/message/await execution remains
-on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md).
+on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
+`moss debug` interprets the complete reachable Moss source closure (or the
+legacy project uber-module) as one checked program; it never mixes a native
+Moss module into that run.
 
 ## Platforms
 

@@ -8,7 +8,17 @@ need generated Rust or `rustc`.
 moss run --interp program.moss
 moss run --interp --trace program.moss
 moss test --interp tests/fast_debug.moss
+moss debug app
 ```
+
+For a project, `moss debug` accepts the project name (`app`, the manifest
+name, or `.`), a project directory, or an entry `.moss` file. It uses the
+same checked project analysis as native builds. Explicit-module projects
+execute the transitive source-module closure of the entry module; legacy
+projects use their complete `src/**/*.moss` uber-module. Every selected Moss
+module runs in the interpreter for that invocation. A compiled `.mossi` module
+or other native Moss dependency is not mixed into an interpreted run; include
+the reachable Moss source or use the native build instead.
 
 The interpreter shares Moss's parser, type/effect/ownership checks, call
 resolution, and other front-end validation. It is not a second type system and

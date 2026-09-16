@@ -18747,6 +18747,62 @@ static SourceCompilationContext analyze_source_context(
   return context;
 }
 
+// Fast Debug uses the same project source universe as the native compiler,
+// but explicit-module projects can narrow that universe to the transitive
+// source-module closure of the requested entry module.  This is a loading
+// decision only: the selected files still pass through analyze_project_sources
+// and therefore the ordinary Moss parser/checker remains authoritative.
+static vector<std::filesystem::path> fast_debug_source_closure(
+    const SourceCompilationContext& context) {
+  if (!context.project || context.mode != ProgramGenerationMode::Application)
+    return context.sources;
+
+  struct ModuleSources {
+    vector<std::filesystem::path> files;
+    vector<string> imports;
+  };
+  std::map<string, ModuleSources> modules;
+  string entry_module;
+  bool has_explicit_modules = false;
+  for (const auto& source : context.sources) {
+    std::ifstream input(source);
+    if (!input)
+      throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                         "cannot read Moss source '" + source.string() + "'",
+                         source.string());
+    Program parsed = Parser(lex_lines(input, source.string())).parse();
+    string module = parsed.explicit_module && !parsed.module_name.empty()
+        ? parsed.module_name : context.manifest.name;
+    auto& record = modules[module];
+    record.files.push_back(source);
+    for (const auto& import : parsed.imports)
+      record.imports.push_back(import.name);
+    has_explicit_modules = has_explicit_modules || parsed.explicit_module;
+    if (source == context.requested_source) entry_module = module;
+    if (entry_module.empty() && parsed.main) entry_module = module;
+  }
+  if (!has_explicit_modules || entry_module.empty()) return context.sources;
+
+  std::set<string> reachable;
+  std::function<void(const string&)> visit = [&](const string& module) {
+    if (!reachable.insert(module).second) return;
+    auto found = modules.find(module);
+    if (found == modules.end()) return;  // analyze_project_sources will
+                                         // validate an external interface.
+    for (const auto& imported : found->second.imports) visit(imported);
+  };
+  visit(entry_module);
+
+  vector<std::filesystem::path> result;
+  for (const auto& entry : modules)
+    if (reachable.count(entry.first))
+      result.insert(result.end(), entry.second.files.begin(),
+                    entry.second.files.end());
+  std::sort(result.begin(), result.end());
+  result.erase(std::unique(result.begin(), result.end()), result.end());
+  return result.empty() ? context.sources : result;
+}
+
 static int hex_digit_value(char value) {
   if (value >= '0' && value <= '9') return value - '0';
   if (value >= 'a' && value <= 'f') return value - 'a' + 10;
@@ -20680,6 +20736,7 @@ static void usage() {
             << "  moss test [filter] [--affected] [--json]\n"
             << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
             << "  moss run --interp <input.moss> [--trace]\n\n"
+            << "  moss debug <project-or-source> [--trace]\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
@@ -20700,21 +20757,75 @@ static void usage() {
             << "  type Quote:\n";
 }
 
-static moss::Program load_checked_interpreter_program(const std::filesystem::path& input) {
-  std::ifstream source(input);
-  if (!source) {
-    moss::CompileError error(0, "cannot open Moss source '" + input.string() + "'");
-    error.source_file = input.string();
-    throw error;
+static std::filesystem::path resolve_fast_debug_entry(const string& target) {
+  std::filesystem::path requested(target);
+  std::error_code error;
+  if (std::filesystem::is_regular_file(requested, error))
+    return requested.lexically_normal();
+  if (std::filesystem::is_directory(requested, error) &&
+      std::filesystem::is_regular_file(requested / "moss.toml", error)) {
+    return moss::project_source_file(moss::load_project_manifest(requested));
   }
-  auto lines = moss::lex_lines(
-      source, std::filesystem::absolute(input).lexically_normal().string());
-  moss::Parser parser(std::move(lines));
-  moss::Program program = parser.parse();
-  moss::Checker checker(program);
-  checker.run();
-  moss::FunctionalOptimizer(program).run(false);
-  return program;
+  if (requested.extension() != ".moss") {
+    std::filesystem::path with_extension = requested;
+    with_extension += ".moss";
+    if (std::filesystem::is_regular_file(with_extension, error))
+      return with_extension.lexically_normal();
+  }
+  auto root = nearest_moss_project_root(std::filesystem::current_path());
+  if (root) {
+    moss::ProjectManifest manifest = moss::load_project_manifest(*root);
+    if (target == "." || target == "app" || target == manifest.name)
+      return moss::project_source_file(manifest);
+    std::filesystem::path candidate = manifest.root / manifest.source / requested;
+    if (std::filesystem::is_regular_file(candidate, error))
+      return candidate.lexically_normal();
+    if (candidate.extension() != ".moss") {
+      candidate += ".moss";
+      if (std::filesystem::is_regular_file(candidate, error))
+        return candidate.lexically_normal();
+    }
+  }
+  return requested.lexically_normal();
+}
+
+static moss::Program load_checked_interpreter_program(const std::filesystem::path& input) {
+  try {
+    auto context = moss::analyze_source_context(input);
+    if (context.project) {
+      auto sources = moss::fast_debug_source_closure(context);
+      auto unit = moss::analyze_project_sources(
+          context.manifest, sources, false, true, context.mode);
+      if (!unit.program.external_modules.empty()) {
+        throw moss::ProjectError(
+            "FAST_DEBUG_NATIVE_DEPENDENCY",
+            "Fast Debug cannot mix interpreted Moss with compiled Moss module "
+            "dependencies; include every reachable Moss module in the source "
+            "project",
+            context.requested_source.string());
+      }
+      return std::move(unit.program);
+    }
+    std::ifstream source(input);
+    if (!source) {
+      moss::CompileError error(0, "cannot open Moss source '" + input.string() + "'");
+      error.source_file = input.string();
+      throw error;
+    }
+    auto lines = moss::lex_lines(
+        source, std::filesystem::absolute(input).lexically_normal().string());
+    moss::Parser parser(std::move(lines));
+    moss::Program program = parser.parse();
+    moss::Checker checker(program);
+    checker.run();
+    moss::FunctionalOptimizer(program).run(false);
+    return program;
+  } catch (const moss::ProjectError& error) {
+    moss::CompileError converted(error.line, error.what());
+    converted.source_file = error.source_file;
+    converted.code = error.code;
+    throw converted;
+  }
 }
 
 static int run_fast_interpreter_source(const std::filesystem::path& input,
@@ -20748,7 +20859,8 @@ int main(int argc, char** argv) {
   try {
     if (argc < 2) { usage(); return 2; }
 
-    if (string(argv[1]) == "run") {
+    if (string(argv[1]) == "run" || string(argv[1]) == "debug") {
+      const bool debug_command = string(argv[1]) == "debug";
       bool interpreter = false, trace = false;
       string input;
       for (int index = 2; index < argc; ++index) {
@@ -20756,24 +20868,28 @@ int main(int argc, char** argv) {
         if (argument == "--interp") interpreter = true;
         else if (argument == "--trace") trace = true;
         else if (argument == "--json") {
-          std::cerr << "moss: run --interp does not yet support --json\n";
+          std::cerr << "moss: " << argv[1]
+                    << " does not yet support --json\n";
           return 2;
         } else if (input.empty()) input = argument;
         else {
-          std::cerr << "moss: run accepts one Moss source path\n";
+          std::cerr << "moss: " << argv[1]
+                    << " accepts one Moss source or project path\n";
           return 2;
         }
       }
-      if (!interpreter) {
+      if (!debug_command && !interpreter) {
         std::cerr << "moss: run currently requires --interp\n";
         return 2;
       }
       if (input.empty()) {
-        std::cerr << "moss: run --interp requires a Moss source path\n";
+        std::cerr << "moss: " << argv[1]
+                  << " requires a Moss source or project path\n";
         return 2;
       }
       try {
-        return run_fast_interpreter_source(input, trace);
+        return run_fast_interpreter_source(
+            resolve_fast_debug_entry(input), trace);
       } catch (const moss::FastInterpreter::RuntimeError& error) {
         std::cerr << "moss:" << error.line() << ": interpreter error: "
                   << error.what() << "\n";
@@ -20812,7 +20928,8 @@ int main(int argc, char** argv) {
           return 2;
         }
         try {
-          return run_fast_interpreter_tests(input, filter, trace);
+          return run_fast_interpreter_tests(
+              resolve_fast_debug_entry(input), filter, trace);
         } catch (const moss::FastInterpreter::RuntimeError& error) {
           std::cerr << "moss:" << error.line() << ": interpreter error: "
                     << error.what() << "\n";

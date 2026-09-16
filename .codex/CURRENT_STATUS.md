@@ -690,3 +690,11 @@ invoking Rust tooling. `--trace` emits deterministic newline-delimited JSON
 semantic events. Domain scheduling, messages, and await/reply remain deferred
 to the next Phase 10 checkpoint; unsupported operations report an interpreter
 diagnostic rather than falling back to generated Rust.
+
+Fast Debug project entry points now reuse the project compiler's checked source
+loading. `moss debug app` (or a project directory/entry source) interprets the
+transitive source-module closure for explicit-module projects, and the complete
+legacy `src/**/*.moss` uber-module otherwise. All selected Moss code executes
+in one interpreter; compiled Moss interfaces/native modules are rejected rather
+than mixed into the run. Project closure regressions cover cross-file calls and
+verify that no Rust compiler is needed.
