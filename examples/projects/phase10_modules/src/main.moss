@@ -1,0 +1,8 @@
+module Second
+import First
+
+fn summarize(value: Int) -> Int:
+  First.add_bonus(value)
+
+fn main():
+  echo summarize(First.answer())

@@ -1,0 +1,7 @@
+module First
+
+export fn answer() -> Int:
+  40
+
+export fn add_bonus(value: Int) -> Int:
+  value + 2

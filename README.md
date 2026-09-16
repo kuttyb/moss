@@ -547,3 +547,8 @@ exports, semantic-IR generic exports, and `.mossi` module interfaces. See
 [`docs/MODULES.md`](docs/MODULES.md) and
 [`docs/MODULE_ABI.md`](docs/MODULE_ABI.md). Await analysis is keyed by declared
 domain instances, never by domain type.
+
+For a minimal two-module project, see
+[`examples/projects/phase10_modules`](examples/projects/phase10_modules):
+`Second` imports the exported functions from `First` and can be run with
+`moss debug .` or `moss build` from that directory.
