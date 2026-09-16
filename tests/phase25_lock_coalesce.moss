@@ -1,13 +1,13 @@
 domain Register:
   value: string = "initial"
 
-  fn Set(next: string) -> string:
-    value = next
+  fn Set() -> string:
+    value = "set"
     reply value
 
 fn main():
   register = spawn Register()
-  first = await register.Set("first")
-  second = await register.Set("second")
-  third = await register.Set("third")
+  first = await register.Set()
+  second = await register.Set()
+  third = await register.Set()
   echo first, second, third

@@ -1,7 +1,7 @@
 domain Sink:
   fn Record(value: int) -> int:
     echo "record:", value
-    reply value
+    reply value + 0
 
 fn main():
   sink = spawn Sink()

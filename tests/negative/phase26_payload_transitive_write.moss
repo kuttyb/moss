@@ -1,0 +1,17 @@
+type Buffer:
+  value: Int
+
+  fn clear():
+    value = 0
+
+fn mutate(buffer: Buffer):
+  buffer.clear()
+
+domain Worker:
+  fn Process(payload: Buffer):
+    mutate(payload)
+
+fn main():
+  worker = spawn Worker()
+  buffer = Buffer(value = 1)
+  message worker.Process(buffer)

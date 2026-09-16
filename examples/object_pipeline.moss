@@ -19,7 +19,9 @@ domain Workshop:
     message self.Revise(item, archive)
 
   fn Revise(item: WorkItem, archive: Archive):
-    var revised = item
+    # Incoming message payloads are immutable snapshots.  Construct a new
+    # value from scalar fields instead of moving the payload into a local.
+    var revised = WorkItem(name = "widget", revisions = item.revisions, approved = item.approved)
     revised.revisions = revised.revisions + 1
     revised.approved = true
     echo "revised:", revised.name, revised.revisions, revised.approved

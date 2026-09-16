@@ -1,0 +1,14 @@
+type Payload:
+  value: Int
+
+fn store(value: Payload) -> Payload:
+  return value
+
+domain Worker:
+  fn Process(payload: Payload):
+    saved = store(payload)
+
+fn main():
+  worker = spawn Worker()
+  data = Payload(value = 1)
+  message worker.Process(data)

@@ -1,0 +1,16 @@
+type Payload:
+  value: Int
+
+domain Sink:
+  fn Process(payload: Payload):
+    echo payload.value
+
+domain Router:
+  fn Route(payload: Payload, sink: Sink):
+    message sink.Process(payload)
+
+fn main():
+  sink = spawn Sink()
+  router = spawn Router()
+  data = Payload(value = 11)
+  message router.Route(data, sink)

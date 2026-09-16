@@ -987,7 +987,7 @@ if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
 fi
 
 run_optimized_case phase25_lock_coalesce tests/phase25_lock_coalesce.moss \
-  'first second third'
+  'set set set'
 grep -F '// Moss backend: COALESCED LOCK REGION (3 operations)' \
   "$test_build/phase25_lock_coalesce.rs" >/dev/null ||
   fail "exclusive adjacent awaits did not form a coalesced lock region"
@@ -1137,12 +1137,16 @@ grep -F '.swap(__moss_next, Ordering::SeqCst)' \
   fail "scalar exchange did not lower to SeqCst swap"
 
 run_optimized_case phase25_atomic_copy_boundary \
-  tests/phase25_atomic_copy_boundary.moss 'original original'
+  tests/phase25_atomic_copy_boundary.moss 'original true'
 grep -F '// Moss backend plan: Gate = DirectAtomic.' \
   "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null ||
   fail "copy-boundary fixture did not select atomic lowering"
-[ "$(grep -c '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs")" -ge 2 ] ||
-  fail "atomic request/reply path did not retain both semantic copy boundaries"
+if grep -F '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null; then
+  fail "synchronous atomic payload path retained an unnecessary clone"
+fi
+grep -F 'Remember_shared(true, &(token))' \
+  "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null ||
+  fail "atomic request did not pass its non-Copy payload by immutable reference"
 
 run_optimized_case phase25_atomic_multi_field tests/phase25_atomic_multi_field.moss \
   '1 true'
@@ -1360,6 +1364,43 @@ run_case method_receiver_effects tests/method_receiver_effects.moss \
 run_case generic_method_effects tests/generic_method_effects.moss '12 5'
 run_case phase2_safety examples/phase2_safety.moss \
   "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter await copy: 7 7\ntransferred payload: original')"
+
+# Phase 2.6: incoming message payloads are immutable READ snapshots. Direct
+# synchronous handlers may borrow non-Copy payloads, while mailbox sends keep
+# an owned snapshot at the queue boundary.
+run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8'
+grep -F 'fn Process_locked(&self, state: &mut WorkerState, payload: &Payload)' \
+  "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'direct handler did not receive a non-Copy payload by immutable reference'
+grep -F 'worker.Process_shared(&(data))' "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'direct call did not pass the payload by immutable reference'
+if grep -F '(data).clone()' "$test_build/phase26_direct_payload.rs" >/dev/null; then
+  fail 'direct synchronous payload boundary inserted an unnecessary clone'
+fi
+run_optimized_case phase26_lock_payload tests/phase26_lock_payload.moss '7 8'
+grep -F 'COALESCED LOCK REGION' "$test_build/phase26_lock_payload.rs" >/dev/null ||
+  fail 'payload lock-coalescing fixture did not form one lock region'
+if grep -F 'First_locked(&mut' "$test_build/phase26_lock_payload.rs" | grep -F '.clone()' >/dev/null ||
+   grep -F 'Second_locked(&mut' "$test_build/phase26_lock_payload.rs" | grep -F '.clone()' >/dev/null; then
+  fail 'coalesced synchronous payload calls retained an unnecessary clone'
+fi
+run_case phase26_mailbox_payload tests/phase26_mailbox_payload.moss '9'
+grep -F '(data).clone()' "$test_build/phase26_mailbox_payload.rs" >/dev/null ||
+  fail 'mailbox payload did not retain an owned snapshot copy'
+run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
+
+reject_case phase26_payload_write \
+  "cannot WRITE incoming message payload 'payload'"
+reject_case phase26_payload_transitive_write \
+  "cannot WRITE incoming message payload 'payload'"
+reject_case phase26_payload_consume \
+  "cannot CONSUME incoming message payload 'payload'"
+reject_case phase26_payload_state_store \
+  "cannot CONSUME incoming message payload 'payload'"
+reject_case phase26_payload_reply \
+  "cannot reply with incoming message payload 'payload'"
+reject_case phase26_payload_alias_reply \
+  "cannot CONSUME incoming message payload 'payload'"
 grep -F 'fn read_code(&self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
   fail "copyable field read did not retain a READ receiver"
 grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/null ||

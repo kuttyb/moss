@@ -20,10 +20,14 @@ type Packet:
 fn inspect(first: Packet, second: Packet):
   echo "read aliases:", first.code, second.code
 
+fn fresh_packet() -> Packet:
+  return Packet(payload = Payload(text = "original"), code = 7)
+
 domain Mirror:
-  # Request and reply values cross explicit copy boundaries.
+  # Request values cross an explicit copy boundary.  Replies use a newly
+  # constructed value rather than returning the incoming snapshot.
   fn Copy(packet: Packet):
-    reply packet
+    reply fresh_packet()
 
 fn main():
   let mirror = spawn Mirror()

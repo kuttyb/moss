@@ -4,12 +4,12 @@ type Token:
 domain Gate:
   enabled = false
 
-  fn Remember(next: bool, token: Token) -> Token:
+  fn Remember(next: bool, token: Token) -> bool:
     enabled = next
-    reply token
+    reply enabled
 
 fn main():
   gate = spawn Gate()
   token = Token(label = "original")
   returned = await gate.Remember(true, token)
-  echo token.label, returned.label
+  echo token.label, returned

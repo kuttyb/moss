@@ -23,6 +23,13 @@ For concrete exports it records:
 - await/domain contract;
 - the materialized semantic identity.
 
+Exported domain handlers also retain the message-payload contract: every
+incoming payload parameter has READ-only capability. It may be inspected or
+forwarded through another explicit message, but cannot be mutated, consumed,
+stored by move, or returned as the original nontrivial snapshot. This contract
+is preserved when a module is specialized and is independent of whether the
+final backend uses a mailbox or a synchronous shared-memory reference.
+
 For generic exports it records the semantic body hash, open parameter positions,
 inferred structural requirements, and dependencies needed for specialization.
 The current IR records parameter identities, constraints, statement/expression

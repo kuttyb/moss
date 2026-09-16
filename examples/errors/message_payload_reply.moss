@@ -1,0 +1,6 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  fn Echo(payload: Payload) -> Payload:
+    reply payload  # reply with a derived value instead

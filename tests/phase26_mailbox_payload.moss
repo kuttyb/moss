@@ -1,0 +1,11 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  fn Process(payload: Payload):
+    echo payload.value
+
+fn main():
+  worker = spawn Worker()
+  data = Payload(value = 9)
+  message worker.Process(data)

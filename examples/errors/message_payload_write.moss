@@ -1,0 +1,9 @@
+type Buffer:
+  value: Int
+
+  fn clear():
+    value = 0
+
+domain Worker:
+  fn Process(payload: Buffer):
+    payload.clear()  # incoming message payloads are READ-only

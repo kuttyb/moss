@@ -1,0 +1,9 @@
+type Payload:
+  value: Int
+
+fn store(payload: Payload) -> Payload:
+  return payload
+
+domain Worker:
+  fn Process(payload: Payload):
+    saved = store(payload)  # CONSUME is not allowed for an incoming payload

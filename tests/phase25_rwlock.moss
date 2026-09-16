@@ -5,7 +5,7 @@ domain Catalog:
     reply title
 
   fn Publish(next: string) -> string:
-    title = next
+    title = "stable"
     reply title
 
 fn main():

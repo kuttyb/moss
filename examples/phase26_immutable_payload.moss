@@ -1,0 +1,25 @@
+# Message arguments are immutable value snapshots. Handlers can inspect an
+# incoming payload, call READ-only helpers, and forward it across another
+# explicit message boundary, but never move or mutate the snapshot.
+type Record:
+  id: Int
+
+fn checksum(record: Record) -> Int:
+  return record.id * 2
+
+domain Sink:
+  fn Process(record: Record):
+    echo "sink:", record.id
+
+domain Router:
+  fn Route(record: Record, sink: Sink) -> Int:
+    value = checksum(record)
+    message sink.Process(record)
+    reply value
+
+fn main():
+  sink = spawn Sink()
+  router = spawn Router()
+  payload = Record(id = 21)
+  result = await router.Route(payload, sink)
+  echo "checksum:", result

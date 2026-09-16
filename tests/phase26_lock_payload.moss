@@ -1,0 +1,20 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  total: Int = 0
+
+  fn First(payload: Payload) -> Int:
+    total = payload.value
+    reply total
+
+  fn Second(payload: Payload) -> Int:
+    total = payload.value + 1
+    reply total
+
+fn main():
+  worker = spawn Worker()
+  data = Payload(value = 7)
+  first = await worker.First(data)
+  second = await worker.Second(data)
+  echo first, second

@@ -516,7 +516,7 @@ This is an early v0.2 prototype, not the compiler for the complete language we s
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
-Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. The compiler emits the required payload clone only at that explicit communication boundary, never for an ordinary local assignment or call. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
+Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots: handlers may read or forward them, but may not mutate, consume, move them into state, or reply with the same nontrivial payload. The compiler emits an owned clone for mailbox transport; a proven synchronous shared-memory call may pass a temporary immutable reference instead. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 
 ## Platforms
 

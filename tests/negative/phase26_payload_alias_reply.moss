@@ -1,0 +1,13 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  fn Echo(payload: Payload) -> Payload:
+    alias = payload
+    reply alias
+
+fn main():
+  worker = spawn Worker()
+  data = Payload(value = 1)
+  result = await worker.Echo(data)
+  echo result.value

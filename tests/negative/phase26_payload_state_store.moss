@@ -1,0 +1,13 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  saved: Payload
+
+  fn Process(payload: Payload):
+    saved = payload
+
+fn main():
+  worker = spawn Worker()
+  data = Payload(value = 1)
+  message worker.Process(data)

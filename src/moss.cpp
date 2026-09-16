@@ -1654,6 +1654,8 @@ class Checker {
       OwnershipEnv ownership;
       ownership.types = env;
       for (const auto& f : d.state) ownership.state_fields.insert(f.name);
+      for (const auto& parameter : h.params)
+        ownership.message_payloads.insert(parameter.name);
       check_ownership(h.body, std::move(ownership), &d, &h);
     }
   }
@@ -1960,6 +1962,10 @@ class Checker {
   struct OwnershipEnv {
     std::unordered_map<string,string> types;
     std::set<string> state_fields;
+    // Incoming handler arguments are immutable message snapshots.  This is
+    // an authoritative ownership capability consumed by the ordinary
+    // READ/WRITE/CONSUME checker; it is not a parser-level convention.
+    std::set<string> message_payloads;
     // READ traversals remain active for the duration of their body.  This is
     // a compile-time borrow marker used to reject structural mutation of the
     // traversed collection.
@@ -5658,6 +5664,11 @@ class Checker {
 
   void consume_binding(int line, const string& name, const OwnershipEnv& env,
                        const string& destination) const {
+    if (env.message_payloads.count(name)) {
+      err(line, "cannot CONSUME incoming message payload '" + name +
+          "'; message payloads may only be read or forwarded");
+      return;
+    }
     auto type = env.types.find(name);
     if (type == env.types.end() || !transfer_type(type->second)) return;
     if (env.state_fields.count(name))
@@ -5812,6 +5823,18 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    if (requested != Effect::Read) {
+      auto location = storage_location(value, env.types);
+      if (location && env.message_payloads.count(location->root)) {
+        if (requested == Effect::Write)
+          err(line, "cannot WRITE incoming message payload '" +
+              location->root + "'; message payloads are immutable snapshots");
+        else
+          err(line, "cannot CONSUME incoming message payload '" +
+              location->root + "'; message payloads may only be read or forwarded");
+        return;
+      }
+    }
     if (simple_identifier(value)) {
       if (functions_.count(value)) return;  // Statically closed callable identity.
       auto location = storage_location(value, env.types);
@@ -6197,6 +6220,25 @@ class Checker {
           ++index;
           break;
         case Stmt::Kind::Reply: {
+          if (current_handler && current_handler->reply_type) {
+            string reply_value = strip_expression_parens(s.a);
+            if (simple_identifier(reply_value) &&
+                env.message_payloads.count(reply_value)) {
+              auto payload_type = env.types.find(reply_value);
+              // Copy scalars are already independent values, so returning a
+              // scalar preserves the established value semantics.  Returning
+              // a nontrivial snapshot would transfer its ownership and is
+              // rejected as an illegal payload escape.
+              // Domain handles are lightweight capabilities and remain
+              // pass-by-value; the immutable-snapshot restriction applies to
+              // aggregate payload data.
+              if (payload_type == env.types.end() ||
+                  (!copy_type(payload_type->second) &&
+                   !domains_.count(canonical_type_name(payload_type->second))))
+                err(s.line, "cannot reply with incoming message payload '" +
+                    reply_value + "'; reply with newly computed data instead");
+            }
+          }
           check_ownership_expression(s.line, s.a, env, Effect::Read);
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
@@ -9671,6 +9713,11 @@ class Generator {
   bool emit_static_specializations_ = true;
   bool public_specializations_ = false;
   bool benchmark_body_ = false;
+  // Parameters of a direct synchronous handler are represented as borrowed
+  // Rust values when their Moss payload type is non-Copy.  This set is scoped
+  // to the body currently being emitted and keeps ordinary helper-call
+  // lowering from adding a second borrow to an already borrowed parameter.
+  std::set<string> borrowed_parameters_;
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
   std::unordered_map<string,string> specialization_names_;
@@ -9988,6 +10035,8 @@ class Generator {
     string actual_type = generated_expr_type(argument, types).value_or("");
     if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
       return rendered;
+    if (plain_identifier(trim(argument)) && borrowed_parameters_.count(trim(argument)))
+      return rendered;
     if (effect == Effect::Write) return "&mut (" + rendered + ")";
     return "&(" + rendered + ")";
   }
@@ -10004,6 +10053,8 @@ class Generator {
     Effect effect = method_effect(method, index);
     string type = method.params[index].type;
     if (effect == Effect::Consume || !borrowable_type(type)) return rendered;
+    if (plain_identifier(trim(argument)) && borrowed_parameters_.count(trim(argument)))
+      return rendered;
     if (effect == Effect::Write) return "&mut (" + rendered + ")";
     return "&( " + rendered + ")";
   }
@@ -11498,7 +11549,26 @@ class Generator {
     // detached from the sender even when the source binding remains available;
     // the generated clone is an implementation of that boundary, never an
     // implicit copy for an ordinary local call.
+    if (plain_identifier(trim(e)) && borrowed_parameters_.count(trim(e)))
+      return "(*(" + r + ")).clone()";
     return "(" + r + ").clone()";
+  }
+
+  bool direct_payload_reference_type(const string& type) const {
+    string t = canonical_type_name(type);
+    return !t.empty() && t != "_" && !copy_type(t) && !domains_.count(t);
+  }
+
+  string direct_message_arg(const string& e, const string& type, const Domain* d,
+                            const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types = nullptr,
+                            size_t functional_pipeline_id = 0) const {
+    string r = nominal_domain_handle_argument(
+        e, type, d, locals, types, functional_pipeline_id);
+    if (!direct_payload_reference_type(type)) return r;
+    if (plain_identifier(trim(e)) && borrowed_parameters_.count(trim(e)))
+      return r;
+    return "&(" + r + ")";
   }
 
   string cluster_call_arg(const string& expression, const string& type,
@@ -11520,6 +11590,22 @@ class Generator {
     }
     return message_arg(expression, type, source, locals, types,
                        functional_pipeline_id);
+  }
+
+  string cluster_local_call_arg(const string& expression, const string& type,
+                                 const Domain* source,
+                                 const std::set<string>& locals, size_t cluster,
+                                 const std::unordered_map<string,string>* types = nullptr,
+                                 size_t functional_pipeline_id = 0) const {
+    string value_type = trim(type);
+    if (domains_.count(value_type)) {
+      if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster))
+        return value_type + "LocalRef";
+      return "(" + expr(expression, source, locals, types,
+                         functional_pipeline_id) + ").clone()";
+    }
+    return direct_message_arg(expression, type, source, locals, types,
+                              functional_pipeline_id);
   }
 
   void gen_tracker(std::ostringstream& o, bool synchronized) {
@@ -11891,7 +11977,9 @@ class Generator {
       debug_symbol_attributes(o, 4, native_symbol);
       o << "    fn " << h.name << "_locked(&self, state: "
         << (read_only ? "&" : "&mut ") << d.name << "State";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      for (const auto& p : h.params) o << ", " << p.name << ": "
+        << (direct_payload_reference_type(p.type) ? "&" : "")
+        << rust_type(p.type);
       o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
       o << "        let self_ref = self.clone();\n";
       o << "        let mut " << result_name << ": Option<" << rust_type(*h.reply_type)
@@ -11905,6 +11993,10 @@ class Generator {
         locals.insert(p.name);
         types[p.name] = p.type;
       }
+      borrowed_parameters_.clear();
+      for (const auto& p : h.params)
+        if (direct_payload_reference_type(p.type))
+          borrowed_parameters_.insert(p.name);
       locals.insert("self_ref");
       locals.insert(result_name);
       gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true,
@@ -11918,7 +12010,9 @@ class Generator {
           ? "READ-SHARED RwLock handler wrapper"
           : "exclusive direct handler wrapper");
       o << "    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      for (const auto& p : h.params) o << ", " << p.name << ": "
+        << (direct_payload_reference_type(p.type) ? "&" : "")
+        << rust_type(p.type);
       o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
       if (rwlock) {
         o << "        let " << (read_only ? "" : "mut ")
@@ -11933,6 +12027,7 @@ class Generator {
       o << ")\n";
       o << "    }\n";
     }
+    borrowed_parameters_.clear();
     o << "}\n\n";
 
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
@@ -11976,7 +12071,9 @@ class Generator {
       backend_comment(o, 4, "ATOMIC DOMAIN handler; no worker, mailbox, or state lock");
       debug_symbol_attributes(o, 4, native_symbol);
       o << "    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      for (const auto& p : h.params) o << ", " << p.name << ": "
+        << (direct_payload_reference_type(p.type) ? "&" : "")
+        << rust_type(p.type);
       if (h.reply_type) o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
       else o << ") {\n";
 
@@ -11986,6 +12083,10 @@ class Generator {
         locals.insert(p.name);
         types[p.name] = p.type;
       }
+      borrowed_parameters_.clear();
+      for (const auto& p : h.params)
+        if (direct_payload_reference_type(p.type))
+          borrowed_parameters_.insert(p.name);
       std::set<string> used_names = locals;
       used_names.insert("self");
       for (const auto& field : d.state) used_names.insert(field.name);
@@ -12045,6 +12146,7 @@ class Generator {
       o << "    }\n";
       tooling_end(o, 4, semantic_identity);
     }
+    borrowed_parameters_.clear();
     o << "}\n\n";
 
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
@@ -12490,7 +12592,9 @@ class Generator {
         debug_symbol_attributes(o, 4, native_symbol);
         o << "    fn " << domain->name << "_" << handler.name << "_local(&self";
         for (const auto& param : handler.params)
-          o << ", " << param.name << ": " << local_rust_type(param.type, cluster_index);
+          o << ", " << param.name << ": "
+            << (direct_payload_reference_type(param.type) ? "&" : "")
+            << local_rust_type(param.type, cluster_index);
         if (handler.reply_type)
           o << ") -> Option<" << local_rust_type(*handler.reply_type, cluster_index) << "> {\n";
         else
@@ -12512,11 +12616,16 @@ class Generator {
           locals.insert(param.name);
           types[param.name] = param.type;
         }
+        borrowed_parameters_.clear();
+        for (const auto& param : handler.params)
+          if (direct_payload_reference_type(param.type))
+            borrowed_parameters_.insert(param.name);
         locals.insert("self_ref");
         if (handler.reply_type) locals.insert(result_name);
         gen_stmts(o, handler.body, domain, &handler, result_name, locals, types,
                   3, true, true, cluster_index, false,
                   functional_handler_context(*domain, handler));
+        borrowed_parameters_.clear();
         o << "        }\n";
         if (handler.reply_type) o << "        " << result_name << "\n";
         o << "    }\n";
@@ -12548,6 +12657,7 @@ class Generator {
         o << "self." << domain->name << "_" << handler.name << "_local(";
         for (size_t index = 0; index < handler.params.size(); ++index) {
           if (index) o << ", ";
+          if (direct_payload_reference_type(handler.params[index].type)) o << "&";
           o << handler.params[index].name;
         }
         o << "); },\n";
@@ -12656,8 +12766,10 @@ class Generator {
             o << trim(param.type) << "LocalRef";
           else if (domains_.count(trim(param.type)))
             o << "Rc::new(" << param.name << ")";
-          else
+          else {
+            if (direct_payload_reference_type(param.type)) o << "&";
             o << param.name;
+          }
         }
         if (handler.reply_type) {
           o << ") { let _ = " << reply_name << ".send(";
@@ -13484,7 +13596,7 @@ class Generator {
                                       statement_functional_pipeline_id(
                                           s, functional_context, k));
               else
-                o << message_arg(
+                o << direct_message_arg(
                     s.args[k], typ, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
@@ -13570,7 +13682,7 @@ class Generator {
                   handler_effects(*target, *locked_handler).state_effect == Effect::Read;
               o << (read_handler ? "&" : "&mut ") << guard;
               for (size_t argument = 0; argument < awaited.args.size(); ++argument) {
-                o << ", " << message_arg(awaited.args[argument],
+                o << ", " << direct_message_arg(awaited.args[argument],
                                           locked_handler->params[argument].type,
                                           d, locals, &types,
                                           statement_functional_pipeline_id(
@@ -13606,10 +13718,10 @@ class Generator {
             o << "self." << target->name << "_" << s.c << "_local(";
             for (size_t k = 0; k < s.args.size(); ++k) {
               if (k) o << ", ";
-              o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, false, &types,
-                                    statement_functional_pipeline_id(
-                                        s, functional_context, k));
+              o << cluster_local_call_arg(s.args[k], h->params[k].type, d,
+                                          locals, *cluster_context, &types,
+                                          statement_functional_pipeline_id(
+                                              s, functional_context, k));
             }
             if (await_error_handling_) {
               o << ").unwrap_or_else(|| {\n";
@@ -13651,7 +13763,7 @@ class Generator {
                                       statement_functional_pipeline_id(
                                           s, functional_context, k));
               else
-                o << message_arg(
+                o << direct_message_arg(
                     s.args[k], h->params[k].type, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));

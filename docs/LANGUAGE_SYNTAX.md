@@ -351,6 +351,31 @@ The implementation must record any deviation from this document in the project
 checkpoint and design records. Parser limitations are not new Moss semantics.
 # Typing and compiler architecture
 
+## Message payloads
+
+Every incoming handler argument is an immutable value-copy snapshot. A handler
+may read fields, call READ-only helpers, and forward the value through another
+explicit `message` boundary. It may not mutate or consume the incoming value,
+move it into domain state, or reply with that same nontrivial snapshot. Reply
+with newly computed data instead:
+
+```moss
+domain Processor:
+  fn Size(payload: Record) -> Int:
+    reply payload.size()
+```
+
+The restriction is checked through the normal ownership/effect analysis,
+including calls to helpers and methods. A forwarding `message` is a new copy
+boundary and therefore does not consume the original payload. Primitive Copy
+values may continue to be passed by value.
+
+The mailbox backend materializes the independent snapshot. A synchronous
+shared-memory backend may implement the same semantics by passing a temporary
+immutable Rust reference for a nontrivial payload: the handler finishes before
+the sender can mutate its value, and the reference cannot escape the call.
+This is an implementation optimization, not a change to Moss semantics.
+
 Moss variables and parameters are either untyped or typed. Untyped means
 statically duck typed. Typed means annotated with either a concrete type or a
 trait. Moss has no dynamic typing. All required type and operation relationships
