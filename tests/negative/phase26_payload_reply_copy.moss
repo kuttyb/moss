@@ -1,0 +1,8 @@
+domain Worker:
+  fn Echo(x: Int) -> Int:
+    reply x
+
+fn main():
+  worker = spawn Worker()
+  result = await worker.Echo(1)
+  echo result

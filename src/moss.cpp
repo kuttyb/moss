@@ -6139,6 +6139,8 @@ class Checker {
             auto dot = s.a.rfind('.');
             if (dot != string::npos)
               check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
+            else if (simple_identifier(s.a) && env.message_payloads.count(s.a))
+              check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
@@ -6224,19 +6226,8 @@ class Checker {
             string reply_value = strip_expression_parens(s.a);
             if (simple_identifier(reply_value) &&
                 env.message_payloads.count(reply_value)) {
-              auto payload_type = env.types.find(reply_value);
-              // Copy scalars are already independent values, so returning a
-              // scalar preserves the established value semantics.  Returning
-              // a nontrivial snapshot would transfer its ownership and is
-              // rejected as an illegal payload escape.
-              // Domain handles are lightweight capabilities and remain
-              // pass-by-value; the immutable-snapshot restriction applies to
-              // aggregate payload data.
-              if (payload_type == env.types.end() ||
-                  (!copy_type(payload_type->second) &&
-                   !domains_.count(canonical_type_name(payload_type->second))))
-                err(s.line, "cannot reply with incoming message payload '" +
-                    reply_value + "'; reply with newly computed data instead");
+              err(s.line, "cannot reply with incoming message payload '" +
+                  reply_value + "'; reply with newly computed data instead");
             }
           }
           check_ownership_expression(s.line, s.a, env, Effect::Read);

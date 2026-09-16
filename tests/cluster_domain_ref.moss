@@ -1,10 +1,13 @@
 domain Worker
   on Ping()
     echo "cluster ref: ping"
+  on Self() -> Worker
+    reply self
 
 domain Registry
   on Get(worker: Worker) -> Worker
-    reply worker
+    let selected = await worker.Self()
+    reply selected
 
 domain Driver
   on Run(registry: Registry, worker: Worker)

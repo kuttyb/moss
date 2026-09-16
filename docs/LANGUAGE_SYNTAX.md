@@ -356,8 +356,10 @@ checkpoint and design records. Parser limitations are not new Moss semantics.
 Every incoming handler argument is an immutable value-copy snapshot. A handler
 may read fields, call READ-only helpers, and forward the value through another
 explicit `message` boundary. It may not mutate or consume the incoming value,
-move it into domain state, or reply with that same nontrivial snapshot. Reply
-with newly computed data instead:
+move it into domain state, reassign the incoming binding, or reply with that
+same snapshot. This restriction applies to every payload type, including
+primitive `Copy` values and domain handles. Reply with newly computed data
+instead:
 
 ```moss
 domain Processor:
@@ -367,8 +369,10 @@ domain Processor:
 
 The restriction is checked through the normal ownership/effect analysis,
 including calls to helpers and methods. A forwarding `message` is a new copy
-boundary and therefore does not consume the original payload. Primitive Copy
-values may continue to be passed by value.
+boundary and therefore does not consume the original payload. `Copy` is only a
+backend/property distinction: primitive values may continue to be passed by
+value, but it does not weaken payload immutability or the no-original-reply
+rule.
 
 The mailbox backend materializes the independent snapshot. A synchronous
 shared-memory backend may implement the same semantics by passing a temporary

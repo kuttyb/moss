@@ -392,8 +392,10 @@ shape.
 
 ### Message payload lowering
 
-Incoming domain payloads are immutable Moss value snapshots. Mailbox-backed
-targets retain an owned copy in the queued message. When the planner proves a
+Incoming domain payloads are immutable Moss value snapshots, including
+primitive values and domain handles; handlers cannot reassign or reply with
+the original binding. Mailbox-backed targets retain an owned copy in the queued
+message. When the planner proves a
 synchronous DirectMutex, DirectRwLock, DirectAtomic, or cluster-local call,
 nontrivial READ-only payloads are passed as temporary immutable references in
 generated Rust instead of cloned at that boundary. Primitive Copy values stay

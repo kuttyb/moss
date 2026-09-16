@@ -1,0 +1,16 @@
+type Record:
+  value: Int
+
+domain Worker:
+  fn Process(payload: Record):
+    other = Record(value = 2)
+    payload = other
+
+  fn Primitive(x: Int):
+    x = 42
+
+fn main():
+  worker = spawn Worker()
+  record = Record(value = 1)
+  message worker.Process(record)
+  message worker.Primitive(1)

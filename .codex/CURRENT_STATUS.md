@@ -667,11 +667,13 @@ No runtime iterator dispatch or vtable is emitted.
 
 ## Phase 2.6 — Immutable Message Payloads and Shared-Memory Copy Elision
 
-Incoming handler arguments are immutable READ-only value snapshots. The normal
-ownership/effect checker rejects mutation, consumption, moving a nontrivial
-payload into domain state, and replying with the original nontrivial payload,
-including through transitive helper calls. Explicit forwarding with `message`
-remains legal because it is a new copy boundary; derived replies remain legal.
+Incoming handler arguments are immutable READ-only value snapshots regardless of
+concrete type. The normal ownership/effect checker rejects mutation,
+reassignment, consumption, moving a payload into domain state, and replying
+with the original payload, including through transitive helper calls. Explicit
+forwarding with `message` remains legal because it is a new copy boundary;
+derived replies remain legal. `Copy` is only a backend/property distinction and
+does not weaken these Moss restrictions.
 Mailbox lowering retains owned payload copies. Synchronous DirectMutex,
 DirectRwLock, DirectAtomic, and cluster-local lowering pass nontrivial READ-only
 payloads by temporary immutable reference when safe, while primitive Copy values

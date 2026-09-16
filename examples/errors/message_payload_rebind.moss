@@ -1,0 +1,7 @@
+type Record:
+  value: Int
+
+domain Worker:
+  fn Process(payload: Record):
+    other = Record(value = 2)
+    payload = other

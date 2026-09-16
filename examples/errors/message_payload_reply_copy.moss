@@ -1,0 +1,3 @@
+domain Worker:
+  fn Echo(x: Int) -> Int:
+    reply x

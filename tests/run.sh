@@ -1388,6 +1388,9 @@ run_case phase26_mailbox_payload tests/phase26_mailbox_payload.moss '9'
 grep -F '(data).clone()' "$test_build/phase26_mailbox_payload.rs" >/dev/null ||
   fail 'mailbox payload did not retain an owned snapshot copy'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
+run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
+  "11 8
+forwarded: 10"
 
 reject_case phase26_payload_write \
   "cannot WRITE incoming message payload 'payload'"
@@ -1401,6 +1404,12 @@ reject_case phase26_payload_reply \
   "cannot reply with incoming message payload 'payload'"
 reject_case phase26_payload_alias_reply \
   "cannot CONSUME incoming message payload 'payload'"
+reject_case phase26_payload_reply_copy \
+  "cannot reply with incoming message payload 'x'"
+reject_case phase26_payload_rebind \
+  "cannot WRITE incoming message payload 'payload'"
+reject_case phase26_payload_rebind_copy \
+  "cannot WRITE incoming message payload 'x'"
 grep -F 'fn read_code(&self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
   fail "copyable field read did not retain a READ receiver"
 grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/null ||

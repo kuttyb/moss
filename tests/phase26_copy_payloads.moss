@@ -1,0 +1,25 @@
+domain Sink:
+  fn Process(x: Int):
+    echo "forwarded:", x
+
+domain Router:
+  fn Route(x: Int, sink: Sink):
+    message sink.Process(x)
+
+domain Calculator:
+  fn PlusOne(x: Int) -> Int:
+    reply x + 1
+
+  fn LocalUpdate(x: Int) -> Int:
+    y = x
+    y = y + 1
+    reply y
+
+fn main():
+  sink = spawn Sink()
+  router = spawn Router()
+  calculator = spawn Calculator()
+  message router.Route(10, sink)
+  plus_one = await calculator.PlusOne(10)
+  local = await calculator.LocalUpdate(7)
+  echo plus_one, local

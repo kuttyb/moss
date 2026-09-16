@@ -1,0 +1,7 @@
+domain Worker:
+  fn Process(x: Int):
+    x = 42
+
+fn main():
+  worker = spawn Worker()
+  message worker.Process(1)
