@@ -518,6 +518,21 @@ Phase 2 local calls are non-recursive. The compiler rejects direct and mutual ca
 
 Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read or forward them, but may not mutate, consume, reassign, move them into state, or reply with the original payload. The compiler emits an owned clone for mailbox transport; a proven synchronous shared-memory call may pass a temporary immutable reference instead. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability or the no-original-reply rule. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 
+## Fast Debug execution
+
+For a short edit → check → run loop, execute a checked Moss program without
+generating Rust:
+
+```text
+moss run --interp program.moss
+moss test --interp tests/fast_debug.moss
+```
+
+Use `--trace` for newline-delimited structured execution events. The initial
+interpreter supports ordinary functions, arithmetic, locals, conditionals,
+loops, structs, methods, and assertions. Domain/message/await execution remains
+on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md).
+
 ## Platforms
 
 The source builds on Linux and macOS with a C++17 compiler. Build the compiler locally with `make`.

@@ -1,0 +1,737 @@
+#pragma once
+
+#include <cmath>
+#include <cctype>
+#include <cstdint>
+#include <cstdlib>
+#include <functional>
+#include <iomanip>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <ostream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "ast.hpp"
+
+namespace moss {
+
+// Fast Debug is deliberately an execution backend over the checked Moss AST.
+// It does not parse, resolve, or type-check anything itself.  The checker has
+// already rejected unsupported ownership/concurrency patterns before this
+// class is constructed.
+class FastInterpreter {
+ public:
+  struct TraceEvent {
+    std::string kind;
+    std::string function;
+    int line = 0;
+    std::string detail;
+  };
+
+  struct Options {
+    bool trace = false;
+  };
+
+  class RuntimeError : public std::runtime_error {
+   public:
+    RuntimeError(int line, std::string message)
+        : std::runtime_error(std::move(message)), line_(line) {}
+    int line() const { return line_; }
+
+   private:
+    int line_;
+  };
+
+  explicit FastInterpreter(const Program& program)
+      : program_(program) {}
+  FastInterpreter(const Program& program, Options options)
+      : program_(program), options_(options) {}
+
+  const std::vector<TraceEvent>& trace() const { return trace_; }
+
+  void write_trace(std::ostream& out) const {
+    for (const auto& event : trace_) {
+      out << "{\"event\":\"" << escape(event.kind)
+          << "\",\"function\":\"" << escape(event.function)
+          << "\",\"line\":" << event.line;
+      if (!event.detail.empty())
+        out << ",\"detail\":\"" << escape(event.detail) << "\"";
+      out << "}\n";
+    }
+  }
+
+  void run_main(std::ostream& output) {
+    if (!program_.main)
+      throw RuntimeError(0, "Fast Debug requires a Moss main procedure");
+    Frame frame;
+    frame.function = "main";
+    execute(program_.main->body, frame, output);
+  }
+
+  void run_tests(std::ostream& output, const std::string& filter = {}) {
+    size_t discovered = 0;
+    for (const auto& test : program_.tests) {
+      if (!filter.empty() && test.name.find(filter) == std::string::npos &&
+          test.semantic_identity.find(filter) == std::string::npos)
+        continue;
+      ++discovered;
+      Frame frame;
+      frame.function = "test:" + test.name;
+      execute(test.body, frame, output);
+      output << "PASS " << test.name << "\n";
+    }
+    if (!discovered)
+      throw RuntimeError(0, filter.empty() ? "no Moss tests were found"
+                                          : "no Moss tests matched filter '" + filter + "'");
+    output << discovered << " passed\n";
+  }
+
+ private:
+  struct StructValue;
+
+  struct Value {
+    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector } kind = Kind::Unit;
+    bool boolean = false;
+    std::int64_t integer = 0;
+    double floating = 0.0;
+    std::string string;
+    std::shared_ptr<StructValue> object;
+    std::shared_ptr<std::vector<Value>> vector;
+
+    static Value unit();
+    static Value boolean_value(bool value);
+    static Value int_value(std::int64_t value);
+    static Value float_value(double value);
+    static Value string_value(std::string value);
+    static Value struct_value(std::string type);
+    static Value vector_value(std::vector<Value> values);
+    bool truthy() const;
+    std::string display() const;
+  };
+
+  struct StructValue {
+    std::string type;
+    std::unordered_map<std::string, Value> fields;
+  };
+
+  struct Frame {
+    std::string function;
+    std::unordered_map<std::string, Value> locals;
+  };
+
+  struct Flow {
+    bool returned = false;
+    Value value;
+  };
+
+  const Program& program_;
+  Options options_;
+  std::vector<TraceEvent> trace_;
+
+  static std::string escape(const std::string& value) {
+    std::string result;
+    for (char c : value) {
+      if (c == '\\' || c == '"') result.push_back('\\');
+      if (c == '\n') result += "\\n";
+      else if (c == '\r') result += "\\r";
+      else result.push_back(c);
+    }
+    return result;
+  }
+
+  void emit(const std::string& kind, const Frame& frame, int line,
+            std::string detail = {}) {
+    if (!options_.trace) return;
+    trace_.push_back({kind, frame.function, line, std::move(detail)});
+  }
+
+  static std::string trim_copy(std::string value) {
+    auto is_space = [](unsigned char c) { return std::isspace(c); };
+    size_t begin = 0;
+    while (begin < value.size() && is_space(static_cast<unsigned char>(value[begin]))) ++begin;
+    size_t end = value.size();
+    while (end > begin && is_space(static_cast<unsigned char>(value[end - 1]))) --end;
+    return value.substr(begin, end - begin);
+  }
+
+  static bool identifier(const std::string& value) {
+    if (value.empty() || !(std::isalpha(static_cast<unsigned char>(value.front())) || value.front() == '_')) return false;
+    for (size_t i = 1; i < value.size(); ++i)
+      if (!(std::isalnum(static_cast<unsigned char>(value[i])) || value[i] == '_')) return false;
+    return true;
+  }
+
+  static bool outer_parentheses(const std::string& value) {
+    if (value.size() < 2 || value.front() != '(' || value.back() != ')') return false;
+    int depth = 0; bool quoted = false; bool escaped = false;
+    for (size_t i = 0; i < value.size(); ++i) {
+      char c = value[i];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c == '\\') escaped = true;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') quoted = true;
+      else if (c == '(') ++depth;
+      else if (c == ')' && --depth == 0 && i + 1 != value.size()) return false;
+    }
+    return depth == 0;
+  }
+
+  static std::optional<std::pair<std::string, std::string>> split_operator(
+      const std::string& input, const std::vector<std::string>& operators) {
+    int parens = 0, brackets = 0, braces = 0; bool quoted = false; bool escaped = false;
+    for (size_t pos = input.size(); pos-- > 0;) {
+      char c = input[pos];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c == '\\') escaped = true;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
+      if (c == ')') ++parens; else if (c == '(') --parens;
+      else if (c == ']') ++brackets; else if (c == '[') --brackets;
+      else if (c == '}') ++braces; else if (c == '{') --braces;
+      if (parens || brackets || braces) continue;
+      for (const auto& op : operators) {
+        if (pos + op.size() <= input.size() && input.compare(pos, op.size(), op) == 0) {
+          if ((op == "-" || op == "+") && pos == 0) continue;
+          return std::make_pair(trim_copy(input.substr(0, pos)),
+                                trim_copy(input.substr(pos + op.size())));
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  static std::string operator_between(const std::string& whole,
+                                      const std::string& left,
+                                      const std::string& right,
+                                      const std::vector<std::string>& operators) {
+    int parens = 0, brackets = 0, braces = 0; bool quoted = false; bool escaped = false;
+    for (size_t pos = 0; pos < whole.size(); ++pos) {
+      char c = whole[pos];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (c == '\\') escaped = true;
+        else if (c == '"') quoted = false;
+        continue;
+      }
+      if (c == '"') { quoted = true; continue; }
+      if (c == '(') ++parens; else if (c == ')') --parens;
+      else if (c == '[') ++brackets; else if (c == ']') --brackets;
+      else if (c == '{') ++braces; else if (c == '}') --braces;
+      if (parens || brackets || braces) continue;
+      for (const auto& op : operators) {
+        if (pos + op.size() > whole.size() || whole.compare(pos, op.size(), op) != 0) continue;
+        if (trim_copy(whole.substr(0, pos)) == left &&
+            trim_copy(whole.substr(pos + op.size())) == right)
+          return op;
+      }
+    }
+    return {};
+  }
+
+  static bool parse_call(const std::string& input, std::string& callee,
+                         std::vector<std::string>& args) {
+    auto value = trim_copy(input);
+    auto lp = value.find('(');
+    if (lp == std::string::npos || value.back() != ')') return false;
+    int depth = 0; bool quoted = false;
+    for (size_t i = lp; i < value.size(); ++i) {
+      if (value[i] == '"') quoted = !quoted;
+      if (quoted) continue;
+      if (value[i] == '(') ++depth;
+      else if (value[i] == ')' && --depth == 0 && i + 1 != value.size()) return false;
+    }
+    if (depth != 0) return false;
+    callee = trim_copy(value.substr(0, lp));
+    if (callee.empty()) return false;
+    auto inside = value.substr(lp + 1, value.size() - lp - 2);
+    args.clear();
+    int p = 0, b = 0, s = 0; size_t start = 0; quoted = false;
+    for (size_t i = 0; i < inside.size(); ++i) {
+      char c = inside[i];
+      if (c == '"') quoted = !quoted;
+      if (quoted) continue;
+      if (c == '(') ++p; else if (c == ')') --p;
+      else if (c == '[') ++b; else if (c == ']') --b;
+      else if (c == '{') ++s; else if (c == '}') --s;
+      else if (c == ',' && p == 0 && b == 0 && s == 0) {
+        args.push_back(trim_copy(inside.substr(start, i - start))); start = i + 1;
+      }
+    }
+    if (!trim_copy(inside.substr(start)).empty()) args.push_back(trim_copy(inside.substr(start)));
+    return true;
+  }
+
+  static std::optional<std::pair<std::string, std::string>> top_level_member(
+      const std::string& input) {
+    int p = 0, b = 0, s = 0; bool quoted = false;
+    for (size_t i = input.size(); i-- > 0;) {
+      char c = input[i];
+      if (c == '"') quoted = !quoted;
+      if (quoted) continue;
+      if (c == ')') ++p; else if (c == '(') --p;
+      else if (c == ']') ++b; else if (c == '[') --b;
+      else if (c == '}') ++s; else if (c == '{') --s;
+      else if (c == '.' && p == 0 && b == 0 && s == 0)
+        return std::make_pair(trim_copy(input.substr(0, i)), trim_copy(input.substr(i + 1)));
+    }
+    return std::nullopt;
+  }
+
+  const Function* function(const std::string& name) const {
+    for (const auto& candidate : program_.functions)
+      if (candidate.name == name) return &candidate;
+    return nullptr;
+  }
+
+  const ObjectType* object_type(const std::string& name) const {
+    for (const auto& candidate : program_.objects)
+      if (candidate.name == name) return &candidate;
+    return nullptr;
+  }
+
+  const Method* method(const std::string& owner, const std::string& name) const {
+    auto object = object_type(owner);
+    if (!object) return nullptr;
+    for (const auto& candidate : object->methods)
+      if (candidate.name == name) return &candidate;
+    return nullptr;
+  }
+
+  static std::int64_t wrapping_add(std::int64_t left, std::int64_t right) {
+    return static_cast<std::int64_t>(static_cast<std::uint64_t>(left) +
+                                     static_cast<std::uint64_t>(right));
+  }
+  static std::int64_t wrapping_sub(std::int64_t left, std::int64_t right) {
+    return static_cast<std::int64_t>(static_cast<std::uint64_t>(left) -
+                                     static_cast<std::uint64_t>(right));
+  }
+  static std::int64_t wrapping_mul(std::int64_t left, std::int64_t right) {
+    return static_cast<std::int64_t>(static_cast<std::uint64_t>(left) *
+                                     static_cast<std::uint64_t>(right));
+  }
+
+  Value eval(const std::string& expression, Frame& frame, int line,
+             std::ostream& output) {
+    std::string e = trim_copy(expression);
+    while (outer_parentheses(e)) e = trim_copy(e.substr(1, e.size() - 2));
+    if (e.empty()) return Value::unit();
+    if (e == "true") return Value::boolean_value(true);
+    if (e == "false") return Value::boolean_value(false);
+    if (e == "not" || e == "!") return Value::boolean_value(false);
+    if (e.rfind("not ", 0) == 0) return Value::boolean_value(!eval(e.substr(4), frame, line, output).truthy());
+    if (e.rfind("assert ", 0) == 0) {
+      auto condition = e.substr(7);
+      if (!eval(condition, frame, line, output).truthy()) {
+        emit("AssertionFailure", frame, line, condition);
+        throw RuntimeError(line, "assertion failed: " + condition);
+      }
+      return Value::unit();
+    }
+    if (e.front() == '"' && e.back() == '"') return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
+
+    char* end = nullptr;
+    const auto numeric = e.c_str();
+    long long integer = std::strtoll(numeric, &end, 10);
+    if (end && *end == '\0' && e.find_first_of(".eE") == std::string::npos)
+      return Value::int_value(static_cast<std::int64_t>(integer));
+    char* float_end = nullptr;
+    double floating = std::strtod(numeric, &float_end);
+    if (float_end && *float_end == '\0' && e.find_first_of(".eE") != std::string::npos)
+      return Value::float_value(floating);
+
+    if (auto binary = split_operator(e, {"==", "!=", "<=", ">=", "<", ">"}))
+      return compare(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"+", "-"}))
+      return arithmetic(binary->first, binary->second, e, frame, line, output);
+    if (auto binary = split_operator(e, {"*", "/"}))
+      return arithmetic(binary->first, binary->second, e, frame, line, output);
+    if (!e.empty() && e.front() == '-' && e.size() > 1) {
+      Value value = eval(e.substr(1), frame, line, output);
+      if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
+      if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
+    }
+    if (e.front() == '[' && e.back() == ']') {
+      std::vector<Value> values;
+      auto inside = e.substr(1, e.size() - 2);
+      for (const auto& part : split_arguments(inside)) values.push_back(eval(part, frame, line, output));
+      return Value::vector_value(std::move(values));
+    }
+
+    std::string callee; std::vector<std::string> args;
+    if (parse_call(e, callee, args)) {
+      if (callee.find('.') == std::string::npos) {
+        if (callee == "spawn" || callee.rfind("spawn ", 0) == 0)
+          throw RuntimeError(line,
+                             "Fast Debug does not yet support domain instances; "
+                             "use the compiled backend");
+        if (callee == "assert") {
+          if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
+          if (!eval(args.front(), frame, line, output).truthy()) {
+            emit("AssertionFailure", frame, line, args.front());
+            throw RuntimeError(line, "assertion failed: " + args.front());
+          }
+          return Value::unit();
+        }
+        if (callee == "assertEqual") {
+          if (args.size() != 2) throw RuntimeError(line, "assertEqual expects two arguments");
+          auto actual = eval(args[0], frame, line, output);
+          auto expected = eval(args[1], frame, line, output);
+          if (!equal(actual, expected)) {
+            emit("AssertionFailure", frame, line, e);
+            throw RuntimeError(line, "assertEqual failed: actual=" + actual.display() +
+                               ", expected=" + expected.display());
+          }
+          return Value::unit();
+        }
+        if (callee == "sqrt") {
+          if (args.size() != 1) throw RuntimeError(line, "sqrt expects one argument");
+          auto value = eval(args.front(), frame, line, output);
+          return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
+        }
+        if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
+        if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
+        throw RuntimeError(line, "unsupported or unresolved callable '" + callee + "'");
+      }
+    }
+
+    if (auto member = top_level_member(e)) {
+      if (member->second.find('(') != std::string::npos) {
+        std::string method_name; std::vector<std::string> method_args;
+        if (parse_call(member->second, method_name, method_args)) {
+          auto receiver = eval(member->first, frame, line, output);
+          if (receiver.kind != Value::Kind::Struct || !receiver.object)
+            throw RuntimeError(line, "method receiver is not a Moss object");
+          auto target = method(receiver.object->type, method_name);
+          if (!target) throw RuntimeError(line, "unresolved method '" + method_name + "'");
+          return call_method(*target, receiver, method_args, frame, line, output);
+        }
+      }
+      auto receiver = eval(member->first, frame, line, output);
+      if (receiver.kind != Value::Kind::Struct || !receiver.object)
+        throw RuntimeError(line, "field receiver is not a Moss object");
+      auto field = receiver.object->fields.find(member->second);
+      if (field == receiver.object->fields.end()) throw RuntimeError(line, "unknown field '" + member->second + "'");
+      return field->second;
+    }
+
+    if (identifier(e)) {
+      auto found = frame.locals.find(e);
+      if (found != frame.locals.end()) return found->second;
+      throw RuntimeError(line, "unknown local '" + e + "'");
+    }
+    throw RuntimeError(line, "unsupported expression '" + e + "'");
+  }
+
+  static std::string decode_string(const std::string& value) {
+    std::string result;
+    bool escaped = false;
+    for (char c : value) {
+      if (escaped) {
+        if (c == 'n') result.push_back('\n'); else if (c == 'r') result.push_back('\r');
+        else if (c == 't') result.push_back('\t'); else result.push_back(c);
+        escaped = false;
+      } else if (c == '\\') escaped = true;
+      else result.push_back(c);
+    }
+    return result;
+  }
+
+  static std::vector<std::string> split_arguments(const std::string& input) {
+    std::vector<std::string> result; int p = 0, b = 0, s = 0; bool quoted = false; size_t start = 0;
+    for (size_t i = 0; i < input.size(); ++i) {
+      char c = input[i]; if (c == '"') quoted = !quoted;
+      if (quoted) continue;
+      if (c == '(') ++p; else if (c == ')') --p; else if (c == '[') ++b; else if (c == ']') --b;
+      else if (c == '{') ++s; else if (c == '}') --s;
+      else if (c == ',' && p == 0 && b == 0 && s == 0) {
+        result.push_back(trim_copy(input.substr(start, i - start))); start = i + 1;
+      }
+    }
+    auto tail = trim_copy(input.substr(start)); if (!tail.empty()) result.push_back(tail);
+    return result;
+  }
+
+  Value compare(const std::string& left_text, const std::string& right_text,
+                const std::string& whole, Frame& frame, int line,
+                std::ostream& output) {
+    std::string op = operator_between(
+        whole, left_text, right_text,
+        {"==", "!=", "<=", ">=", "<", ">"});
+    auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
+    if (op == "==") return Value::boolean_value(equal(left, right));
+    if (op == "!=") return Value::boolean_value(!equal(left, right));
+    double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
+    double r = right.kind == Value::Kind::Int ? right.integer : right.floating;
+    if (op == "<") return Value::boolean_value(l < r);
+    if (op == ">") return Value::boolean_value(l > r);
+    if (op == "<=") return Value::boolean_value(l <= r);
+    return Value::boolean_value(l >= r);
+  }
+
+  Value arithmetic(const std::string& left_text, const std::string& right_text,
+                   const std::string& whole, Frame& frame, int line,
+                   std::ostream& output) {
+    std::string op = operator_between(whole, left_text, right_text,
+                                      {"+", "-", "*", "/"});
+    auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
+    if (op == "+" && left.kind == Value::Kind::String && right.kind == Value::Kind::String)
+      return Value::string_value(left.string + right.string);
+    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Int) {
+      if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
+      if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
+      if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
+      if (right.integer == 0) throw RuntimeError(line, "integer division by zero");
+      if (left.integer == std::numeric_limits<std::int64_t>::min() && right.integer == -1)
+        return Value::int_value(std::numeric_limits<std::int64_t>::min());
+      return Value::int_value(left.integer / right.integer);
+    }
+    double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
+    double r = right.kind == Value::Kind::Int ? right.integer : right.floating;
+    if (op == "+") return Value::float_value(l + r);
+    if (op == "-") return Value::float_value(l - r);
+    if (op == "*") return Value::float_value(l * r);
+    if (r == 0.0) throw RuntimeError(line, "floating-point division by zero");
+    return Value::float_value(l / r);
+  }
+
+  static bool equal(const Value& left, const Value& right) {
+    if (left.kind == Value::Kind::Int && right.kind == Value::Kind::Float)
+      return static_cast<double>(left.integer) == right.floating;
+    if (left.kind == Value::Kind::Float && right.kind == Value::Kind::Int)
+      return left.floating == static_cast<double>(right.integer);
+    if (left.kind != right.kind) return false;
+    switch (left.kind) {
+      case Value::Kind::Unit: return true;
+      case Value::Kind::Bool: return left.boolean == right.boolean;
+      case Value::Kind::Int: return left.integer == right.integer;
+      case Value::Kind::Float: return left.floating == right.floating;
+      case Value::Kind::String: return left.string == right.string;
+      case Value::Kind::Struct:
+        if (!left.object || !right.object || left.object->type != right.object->type ||
+            left.object->fields.size() != right.object->fields.size()) return false;
+        for (const auto& entry : left.object->fields) {
+          auto other = right.object->fields.find(entry.first);
+          if (other == right.object->fields.end() || !equal(entry.second, other->second)) return false;
+        }
+        return true;
+      case Value::Kind::Vector:
+        if (!left.vector || !right.vector || left.vector->size() != right.vector->size()) return !left.vector && !right.vector;
+        for (size_t i = 0; i < left.vector->size(); ++i) if (!equal((*left.vector)[i], (*right.vector)[i])) return false;
+        return true;
+    }
+    return false;
+  }
+
+  Value construct(const ObjectType& object, const std::vector<std::string>& args,
+                  Frame& frame, int line, std::ostream& output) {
+    Value result = Value::struct_value(object.name);
+    for (const auto& field : object.fields) {
+      if (!field.init.empty()) result.object->fields[field.name] = eval(field.init, frame, field.line, output);
+      else result.object->fields[field.name] = Value::unit();
+    }
+    for (const auto& argument : args) {
+      auto equal_sign = argument.find('=');
+      if (equal_sign == std::string::npos) throw RuntimeError(line, "object constructors require named fields");
+      auto name = trim_copy(argument.substr(0, equal_sign));
+      auto field = result.object->fields.find(name);
+      if (field == result.object->fields.end()) throw RuntimeError(line, "unknown field '" + name + "'");
+      field->second = eval(argument.substr(equal_sign + 1), frame, line, output);
+    }
+    return result;
+  }
+
+  Value call(const Function& target, const std::vector<std::string>& arguments,
+             Frame& caller, int line, std::ostream& output) {
+    if (arguments.size() != target.params.size())
+      throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
+    Frame frame; frame.function = target.name;
+    for (size_t i = 0; i < arguments.size(); ++i)
+      frame.locals[target.params[i].name] = eval(arguments[i], caller, line, output);
+    emit("FunctionEnter", frame, target.line);
+    Flow flow = execute(target.body, frame, output);
+    Value result = flow.returned ? flow.value :
+        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+    emit("FunctionExit", frame, target.result_line ? target.result_line : target.line);
+    return result;
+  }
+
+  Value call_method(const Method& target, Value receiver,
+                    const std::vector<std::string>& arguments, Frame& caller,
+                    int line, std::ostream& output) {
+    if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
+    Frame frame; frame.function = target.owner + "." + target.name;
+    frame.locals["self"] = receiver;
+    for (const auto& field : receiver.object->fields) frame.locals[field.first] = field.second;
+    for (size_t i = 0; i < arguments.size(); ++i)
+      frame.locals[target.params[i].name] = eval(arguments[i], caller, line, output);
+    emit("MethodEnter", frame, target.line);
+    Flow flow = execute(target.body, frame, output);
+    for (const auto& field : receiver.object->fields) {
+      auto local = frame.locals.find(field.first);
+      if (local != frame.locals.end()) receiver.object->fields[field.first] = local->second;
+    }
+    Value result = flow.returned ? flow.value :
+        (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+    emit("MethodExit", frame, target.result_line ? target.result_line : target.line);
+    return result;
+  }
+
+  void assign(const std::string& target, Value value, Frame& frame, int line,
+              std::ostream& output) {
+    auto name = trim_copy(target);
+    if (identifier(name)) { frame.locals[name] = std::move(value); emit("LocalWrite", frame, line, name); return; }
+    auto member = top_level_member(name);
+    if (!member) throw RuntimeError(line, "unsupported assignment target '" + name + "'");
+    auto receiver = eval(member->first, frame, line, output);
+    if (receiver.kind != Value::Kind::Struct || !receiver.object)
+      throw RuntimeError(line, "field assignment receiver is not a Moss object");
+    receiver.object->fields[member->second] = std::move(value);
+    emit("StateWrite", frame, line, name);
+  }
+
+  Flow execute(const std::vector<Stmt>& statements, Frame& frame,
+               std::ostream& output, size_t begin = 0, size_t end = SIZE_MAX) {
+    if (end == SIZE_MAX) end = statements.size();
+    size_t index = begin;
+    while (index < end) {
+      const Stmt& statement = statements[index];
+      if (statement.kind == Stmt::Kind::If) {
+        size_t body_end = index + 1;
+        while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
+        size_t after = body_end, else_end = body_end;
+        if (body_end < end && statements[body_end].kind == Stmt::Kind::Else &&
+            statements[body_end].indent == statement.indent) {
+          else_end = body_end + 1;
+          while (else_end < end && statements[else_end].indent > statement.indent) ++else_end;
+          after = else_end;
+        }
+        bool condition = eval(statement.a, frame, statement.line, output).truthy();
+        emit("BranchTaken", frame, statement.line, condition ? "then" : "else");
+        Flow flow = condition
+            ? execute(statements, frame, output, index + 1, body_end)
+            : (after != body_end ? execute(statements, frame, output, body_end + 1, else_end) : Flow{});
+        if (flow.returned) return flow;
+        index = after;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Else) { ++index; continue; }
+      if (statement.kind == Stmt::Kind::While) {
+        size_t body_end = index + 1;
+        while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
+        size_t iterations = 0;
+        while (eval(statement.a, frame, statement.line, output).truthy()) {
+          if (++iterations > 10000000) throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
+          emit("LoopIteration", frame, statement.line, std::to_string(iterations));
+          Flow flow = execute(statements, frame, output, index + 1, body_end);
+          if (flow.returned) return flow;
+        }
+        index = body_end;
+        continue;
+      }
+      Flow flow;
+      switch (statement.kind) {
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var:
+          frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
+          emit("LocalWrite", frame, statement.line, statement.a);
+          break;
+        case Stmt::Kind::Assign:
+          assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
+          break;
+        case Stmt::Kind::Echo:
+          for (size_t i = 0; i < statement.args.size(); ++i) {
+            if (i) output << " ";
+            output << eval(statement.args[i], frame, statement.line, output).display();
+          }
+          output << "\n";
+          break;
+        case Stmt::Kind::Call:
+        case Stmt::Kind::Raw:
+          if (!statement.text.empty()) eval(statement.text, frame, statement.line, output);
+          break;
+        case Stmt::Kind::Return:
+          flow.returned = true;
+          flow.value = statement.a.empty() ? Value::unit() : eval(statement.a, frame, statement.line, output);
+          return flow;
+        case Stmt::Kind::Message:
+        case Stmt::Kind::AwaitMessage:
+        case Stmt::Kind::Reply:
+        case Stmt::Kind::For:
+          throw RuntimeError(statement.line, "Fast Debug does not yet support domains, messages, or await; use the compiled backend");
+        case Stmt::Kind::If:
+        case Stmt::Kind::Else:
+        case Stmt::Kind::While:
+          break;
+      }
+      ++index;
+    }
+    return {};
+  }
+};
+
+inline FastInterpreter::Value FastInterpreter::Value::unit() { return {}; }
+inline FastInterpreter::Value FastInterpreter::Value::boolean_value(bool value) {
+  Value result; result.kind = Kind::Bool; result.boolean = value; return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::int_value(std::int64_t value) {
+  Value result; result.kind = Kind::Int; result.integer = value; return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::float_value(double value) {
+  Value result; result.kind = Kind::Float; result.floating = value; return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::string_value(std::string value) {
+  Value result; result.kind = Kind::String; result.string = std::move(value); return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::struct_value(std::string type) {
+  Value result; result.kind = Kind::Struct;
+  result.object = std::make_shared<StructValue>();
+  result.object->type = std::move(type);
+  return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::vector_value(std::vector<Value> values) {
+  Value result; result.kind = Kind::Vector;
+  result.vector = std::make_shared<std::vector<Value>>(std::move(values));
+  return result;
+}
+inline bool FastInterpreter::Value::truthy() const {
+  if (kind == Kind::Bool) return boolean;
+  if (kind == Kind::Int) return integer != 0;
+  if (kind == Kind::Float) return floating != 0.0;
+  if (kind == Kind::String) return !string.empty();
+  if (kind == Kind::Vector) return vector && !vector->empty();
+  return kind != Kind::Unit;
+}
+inline std::string FastInterpreter::Value::display() const {
+  std::ostringstream out;
+  switch (kind) {
+    case Kind::Unit: return "()";
+    case Kind::Bool: return boolean ? "true" : "false";
+    case Kind::Int: return std::to_string(integer);
+    case Kind::Float: out << std::setprecision(15) << floating; return out.str();
+    case Kind::String: return string;
+    case Kind::Struct: return object ? object->type : "<struct>";
+    case Kind::Vector:
+      out << "[";
+      if (vector) for (size_t i = 0; i < vector->size(); ++i) {
+        if (i) out << ", ";
+        out << (*vector)[i].display();
+      }
+      out << "]";
+      return out.str();
+  }
+  return "()";
+}
+
+}  // namespace moss

@@ -1,0 +1,15 @@
+type Counter:
+  value: Int
+
+  fn bump(delta: Int) -> Int:
+    value = value + delta
+    return value
+
+fn adjust(counter: Counter) -> Int:
+  return counter.bump(3)
+
+fn main():
+  counter = Counter(value = 4)
+  assert counter.bump(2) == 6
+  assert adjust(counter) == 9
+  echo counter.value

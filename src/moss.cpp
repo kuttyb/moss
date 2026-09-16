@@ -30,6 +30,7 @@
 #include "ast.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
+#include "interpreter.hpp"
 
 using std::string;
 using std::vector;
@@ -20678,6 +20679,7 @@ static void usage() {
             << "  moss clean [--json]\n"
             << "  moss test [filter] [--affected] [--json]\n"
             << "  moss bench [filter] [--json] [--save NAME] [--compare NAME] [--fail-over PERCENT]\n\n"
+            << "  moss run --interp <input.moss> [--trace]\n\n"
             << "Backend optimization:\n"
             << "  -O, -Oshared-memory    apply safe functional semantic rewrites/fusion and plan optimized domain lowering\n"
             << "  -O0                    retain eager pipelines and lock-backed mailbox dispatch\n\n"
@@ -20698,6 +20700,45 @@ static void usage() {
             << "  type Quote:\n";
 }
 
+static moss::Program load_checked_interpreter_program(const std::filesystem::path& input) {
+  std::ifstream source(input);
+  if (!source) {
+    moss::CompileError error(0, "cannot open Moss source '" + input.string() + "'");
+    error.source_file = input.string();
+    throw error;
+  }
+  auto lines = moss::lex_lines(
+      source, std::filesystem::absolute(input).lexically_normal().string());
+  moss::Parser parser(std::move(lines));
+  moss::Program program = parser.parse();
+  moss::Checker checker(program);
+  checker.run();
+  moss::FunctionalOptimizer(program).run(false);
+  return program;
+}
+
+static int run_fast_interpreter_source(const std::filesystem::path& input,
+                                       bool trace) {
+  moss::Program program = load_checked_interpreter_program(input);
+  moss::FastInterpreter::Options options;
+  options.trace = trace;
+  moss::FastInterpreter interpreter(program, options);
+  interpreter.run_main(std::cout);
+  if (trace) interpreter.write_trace(std::cerr);
+  return 0;
+}
+
+static int run_fast_interpreter_tests(const std::filesystem::path& input,
+                                      const string& filter, bool trace) {
+  moss::Program program = load_checked_interpreter_program(input);
+  moss::FastInterpreter::Options options;
+  options.trace = trace;
+  moss::FastInterpreter interpreter(program, options);
+  interpreter.run_tests(std::cout, filter);
+  if (trace) interpreter.write_trace(std::cerr);
+  return 0;
+}
+
 int main(int argc, char** argv) {
   string diagnostic_source = "moss";
   string active_command = "compile";
@@ -20706,6 +20747,79 @@ int main(int argc, char** argv) {
   std::optional<moss::Program> active_program;
   try {
     if (argc < 2) { usage(); return 2; }
+
+    if (string(argv[1]) == "run") {
+      bool interpreter = false, trace = false;
+      string input;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--interp") interpreter = true;
+        else if (argument == "--trace") trace = true;
+        else if (argument == "--json") {
+          std::cerr << "moss: run --interp does not yet support --json\n";
+          return 2;
+        } else if (input.empty()) input = argument;
+        else {
+          std::cerr << "moss: run accepts one Moss source path\n";
+          return 2;
+        }
+      }
+      if (!interpreter) {
+        std::cerr << "moss: run currently requires --interp\n";
+        return 2;
+      }
+      if (input.empty()) {
+        std::cerr << "moss: run --interp requires a Moss source path\n";
+        return 2;
+      }
+      try {
+        return run_fast_interpreter_source(input, trace);
+      } catch (const moss::FastInterpreter::RuntimeError& error) {
+        std::cerr << "moss:" << error.line() << ": interpreter error: "
+                  << error.what() << "\n";
+        return 1;
+      }
+    }
+
+    // A standalone test file can use the same checked interpreter backend;
+    // project test discovery remains on the compiled path until the domain
+    // scheduler checkpoint is complete.
+    bool test_requests_interpreter = false;
+    if (string(argv[1]) == "test") {
+      for (int index = 2; index < argc; ++index)
+        if (string(argv[index]) == "--interp") test_requests_interpreter = true;
+    }
+    if (test_requests_interpreter) {
+      bool interpreter = false, trace = false;
+      string input, filter;
+      for (int index = 2; index < argc; ++index) {
+        string argument = argv[index];
+        if (argument == "--interp") interpreter = true;
+        else if (argument == "--trace") trace = true;
+        else if (argument == "--json") {
+          std::cerr << "moss: test --interp does not yet support --json\n";
+          return 2;
+        } else if (input.empty()) input = argument;
+        else if (filter.empty()) filter = argument;
+        else {
+          std::cerr << "moss: test accepts one source path and one filter\n";
+          return 2;
+        }
+      }
+      if (interpreter) {
+        if (input.empty()) {
+          std::cerr << "moss: test --interp requires a standalone Moss source path\n";
+          return 2;
+        }
+        try {
+          return run_fast_interpreter_tests(input, filter, trace);
+        } catch (const moss::FastInterpreter::RuntimeError& error) {
+          std::cerr << "moss:" << error.line() << ": interpreter error: "
+                    << error.what() << "\n";
+          return 1;
+        }
+      }
+    }
 
     // Formatting is useful for a standalone source file as well as a
     // manifest-backed project.  Project mode below discovers every convention

@@ -1365,6 +1365,20 @@ run_case generic_method_effects tests/generic_method_effects.moss '12 5'
 run_case phase2_safety examples/phase2_safety.moss \
   "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter await copy: 7 7\ntransferred payload: original')"
 
+# Phase 10.1A: the checked Moss AST executes directly without rustc.
+interp_basic_output=$($compiler run --interp tests/phase10_interpreter_basic.moss)
+[ "$interp_basic_output" = '13 5' ] || fail 'fast interpreter basic execution differed'
+interp_struct_output=$($compiler run --interp tests/phase10_interpreter_structs.moss)
+[ "$interp_struct_output" = '9' ] || fail 'fast interpreter struct execution differed'
+interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
+[ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
+interp_test_output=$($compiler test --interp tests/phase10_interpreter_tests.moss)
+printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
+  fail 'fast interpreter test runner did not report passing tests'
+interp_trace=$($compiler run --interp --trace tests/phase10_interpreter_basic.moss 2>&1 >/dev/null)
+printf '%s\n' "$interp_trace" | grep -F '"event":"FunctionEnter"' >/dev/null ||
+  fail 'fast interpreter did not emit structured trace events'
+
 # Phase 2.6: incoming message payloads are immutable READ snapshots. Direct
 # synchronous handlers may borrow non-Copy payloads, while mailbox sends keep
 # an owned snapshot at the queue boundary.

@@ -1,0 +1,10 @@
+fn transform(x: Int) -> Int:
+  y = x * 2
+  if y > 10:
+    return y + 1
+  return y - 1
+
+fn main():
+  assert transform(6) == 13
+  assert transform(3) == 5
+  echo transform(6), transform(3)

@@ -679,3 +679,14 @@ DirectRwLock, DirectAtomic, and cluster-local lowering pass nontrivial READ-only
 payloads by temporary immutable reference when safe, while primitive Copy values
 remain by value. This is a backend optimization preserving identical Moss
 semantics.
+
+## Phase 10.1A — Fast Debug interpreter checkpoint
+
+The checked Moss AST now has a direct Fast Debug execution backend for ordinary
+functions. `moss run --interp` and standalone `moss test --interp` execute
+literals, arithmetic, locals, assignments, conditionals, while loops,
+function calls, returns, structs, fields, methods, and assertions without
+invoking Rust tooling. `--trace` emits deterministic newline-delimited JSON
+semantic events. Domain scheduling, messages, and await/reply remain deferred
+to the next Phase 10 checkpoint; unsupported operations report an interpreter
+diagnostic rather than falling back to generated Rust.
