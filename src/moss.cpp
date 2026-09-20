@@ -1263,10 +1263,19 @@ class Checker {
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
     p_.concrete_domain_graph.closed = true;
+    std::ostringstream graph_material;
+    for (const auto& instance : p_.concrete_domain_graph.instances)
+      graph_material << std::quoted(instance.identity) << std::quoted(instance.specialization)
+                     << instance.domain_rank;
+    for (const auto& edge : p_.concrete_domain_graph.edges)
+      graph_material << std::quoted(edge.source_instance) << std::quoted(edge.route)
+                     << std::quoted(edge.target_instance);
+    p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     // Legacy dependency metadata adapter. Concrete routing legality has already
     // been established by the authoritative closed route graph above.
     check_global_await_cycles();
     build_functional_ir();
+    build_synchronization_plan(p_.concrete_domain_graph);
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -3911,13 +3920,240 @@ class Checker {
       return location;
     }
     auto dot = value.rfind('.');
-    if (dot != string::npos && value.find('(', dot) == string::npos) {
+    if (dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
       auto location = storage_location(value.substr(0, dot), env);
       if (!location) return std::nullopt;
       location->path.push_back(trim(value.substr(dot + 1)));
       return location;
     }
     return std::nullopt;
+  }
+
+  // Optional observation sink on the existing semantic effect traversal.
+  // No ownership summaries are rewritten to encode synchronization modes.
+  struct LeafEffectCapture {
+    std::map<string,string> roots;
+    std::map<string,StorageLocation> aliases;
+    StateLeafEffects effects;
+  };
+  mutable LeafEffectCapture* leaf_effect_capture_ = nullptr;
+  struct LeafCaptureScope {
+    LeafEffectCapture*& slot;
+    LeafEffectCapture* previous;
+    LeafCaptureScope(LeafEffectCapture*& target, LeafEffectCapture* value)
+        : slot(target), previous(target) { slot = value; }
+    ~LeafCaptureScope() { slot = previous; }
+  };
+
+  void checked_state_leaves(const string& path, const string& type,
+                            StateLeafSet& leaves, std::set<string> active = {}) const {
+    string concrete = canonical_type_name(type);
+    synchronization_require(!concrete.empty() && !starts_with(concrete, "_") &&
+                            !traits_.count(concrete), "unresolved state layout");
+    auto object = objects_.find(concrete);
+    if (object == objects_.end()) {
+      // Collections, optional values, and runtime indices retain the checked
+      // storage-location aggregate granularity. No dynamic key locks.
+      leaves.insert(path);
+      return;
+    }
+    synchronization_require(active.insert(concrete).second, "recursive state layout");
+    for (const auto& field : object->second->fields)
+      checked_state_leaves(path + "." + field.name, field.type, leaves, active);
+  }
+
+  void observe_leaf_access(const StorageLocation& location, Effect effect) const {
+    if (!leaf_effect_capture_) return;
+    auto& capture = *leaf_effect_capture_;
+    string root = location.root;
+    vector<string> path = location.path;
+    auto alias = capture.aliases.find(root);
+    if (alias != capture.aliases.end()) {
+      path.insert(path.begin(), alias->second.path.begin(), alias->second.path.end());
+      root = alias->second.root;
+    }
+    auto found = capture.roots.find(root);
+    if (found == capture.roots.end()) return;
+    string leaf = root, type = found->second;
+    for (const auto& member : path) {
+      if (member == "[]") break;
+      auto object = objects_.find(canonical_type_name(type));
+      synchronization_require(object != objects_.end(), "unresolved state projection");
+      auto field = std::find_if(object->second->fields.begin(), object->second->fields.end(),
+          [&](const Field& candidate) { return candidate.name == member; });
+      synchronization_require(field != object->second->fields.end(), "unknown checked state field");
+      leaf += "." + member;
+      type = field->type;
+    }
+    StateLeafSet leaves;
+    checked_state_leaves(leaf, type, leaves);
+    for (const auto& item : leaves) capture.effects.observe(item, effect);
+  }
+
+  // Reuse the same effect walker with concrete parameter/receiver types. Its
+  // formal access paths are substituted onto the caller's checked locations.
+  void capture_callable_effects(
+      const vector<Stmt>& body, const std::optional<string>& result,
+      const vector<Param>& formals, const vector<string>& arguments,
+      const std::unordered_map<string,string>& caller_env,
+      const vector<Param>& caller_params, vector<Effect>& caller_effects,
+      Effect& caller_receiver, const std::set<string>& caller_fields,
+      const ObjectType* object = nullptr, const string& receiver = "",
+      const StateLeafEffects* recorded = nullptr) const {
+    LeafEffectCapture capture;
+    std::unordered_map<string,string> env;
+    std::map<string,string> substitutions;
+    std::set<string> fields;
+    for (size_t i = 0; i < formals.size(); ++i) {
+      synchronization_require(i < arguments.size(), "unresolved callable arity");
+      auto type = inferred_expr_type(arguments[i], caller_env);
+      synchronization_require(type.has_value(), "unresolved callable argument");
+      env[formals[i].name] = *type;
+      capture.roots[formals[i].name] = *type;
+      substitutions[formals[i].name] = arguments[i];
+    }
+    if (object) {
+      env["self"] = object->name;
+      capture.roots["self"] = object->name;
+      substitutions["self"] = receiver;
+      for (const auto& field : object->fields) {
+        env[field.name] = field.type;
+        capture.aliases[field.name] = StorageLocation{"self", {field.name}};
+        fields.insert(field.name);
+      }
+    }
+    if (recorded) capture.effects = *recorded;
+    else {
+      LeafCaptureScope scope(leaf_effect_capture_, &capture);
+      vector<Effect> unused(formals.size(), Effect::Read);
+      Effect unused_receiver = Effect::Read;
+      size_t index = 0;
+      analyze_effect_block(body, index, 0, env, formals, unused, unused_receiver, fields);
+      if (result) analyze_effect_expression(*result, env, formals, unused,
+                                           unused_receiver, fields, Effect::Consume);
+    }
+    auto project = [&](const StateLeafSet& leaves, Effect effect) {
+      for (const auto& leaf : leaves) {
+        size_t dot = leaf.find('.');
+        string root = leaf.substr(0, dot);
+        auto actual = substitutions.find(root);
+        synchronization_require(actual != substitutions.end(), "unbound formal effect");
+        // Primitive arguments are copied into ordinary callees; writes to the
+        // callee's local parameter do not mutate the caller's primitive value.
+        Effect projected = effect;
+        if (root != "self" && copy_type(capture.roots.at(root))) projected = Effect::Read;
+        string expression = actual->second;
+        if (dot != string::npos) expression = "(" + expression + ")" + leaf.substr(dot);
+        if (auto location = storage_location(expression, caller_env))
+          observe_leaf_access(*location, projected);
+        else
+          analyze_effect_expression(expression, caller_env, caller_params, caller_effects,
+                                    caller_receiver, caller_fields, projected);
+      }
+    };
+    project(capture.effects.reads, Effect::Read);
+    project(capture.effects.writes, Effect::Write);
+    project(capture.effects.consumes, Effect::Consume);
+    // Evaluating an argument expression can itself call effectful code, even
+    // when the formal is unused. Direct storage is handled by the summary.
+    for (const auto& argument : arguments)
+      if (!storage_location(argument, caller_env) ||
+          copy_type(inferred_expr_type(argument, caller_env).value_or("")))
+        analyze_effect_expression(argument, caller_env, caller_params, caller_effects,
+                                  caller_receiver, caller_fields, Effect::Read);
+  }
+
+  StateLeafEffects specialized_handler_effects(
+      const Domain& domain, const Handler& handler,
+      const DomainSpecialization* specialization) const {
+    for (const auto& module : p_.external_modules)
+      if (starts_with(domain.name, module + "__")) {
+        if (handler.state_effects) return *handler.state_effects;
+        throw CompileError(handler.line, "compiled domain lacks handler state effects; rebuild its .mossi provider");
+      }
+    LeafEffectCapture capture;
+    std::unordered_map<string,string> env;
+    std::set<string> fields;
+    for (const auto& field : domain.state) {
+      string type = specialization ? specialization->state_types.at(field.name) : field.type;
+      capture.roots[field.name] = type;
+      env[field.name] = type;
+      fields.insert(field.name);
+    }
+    for (size_t i = 0; i < handler.params.size(); ++i)
+      env[handler.params[i].name] = specialization
+          ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
+    for (const auto& route : domain.routes) env[route.name] = route.type;
+    LeafCaptureScope scope(leaf_effect_capture_, &capture);
+    vector<Effect> unused(handler.params.size(), Effect::Read);
+    Effect unused_receiver = Effect::Read;
+    size_t index = 0;
+    analyze_effect_block(handler.body, index, 0, env, handler.params, unused, unused_receiver, fields);
+    return capture.effects;
+  }
+
+  void build_synchronization_plan(const ConcreteDomainGraph& graph) {
+    synchronization_require(graph.closed, "graph is not closed");
+    SynchronizationPlan plan;
+    plan.graph_identity = graph.identity;
+    std::set<int> ranks;
+    for (const auto& instance : graph.instances) {
+      synchronization_require(instance.domain_rank >= 0 && ranks.insert(instance.domain_rank).second,
+                              "duplicate or missing domain rank");
+      synchronization_require(instance.specialization_index.has_value(), "missing exact specialization");
+      const auto& specialization = p_.domain_specializations.at(*instance.specialization_index);
+      const auto& domain = p_.domains.at(instance.source_domain_index);
+      synchronization_require(specialization.identity() == instance.specialization &&
+                              specialization.source_domain == domain.name, "specialization mismatch");
+      DomainSynchronizationPlan planned;
+      planned.concrete_instance_id = instance.identity;
+      planned.specialization_id = instance.specialization;
+      planned.domain_rank = instance.domain_rank;
+      planned.domain = domain.name;
+      planned.source_file = instance.source_file;
+      planned.line = instance.line;
+      for (const auto& field : domain.state)
+        checked_state_leaves(field.name, specialization.state_types.at(field.name), planned.state_leaves);
+      for (const auto& handler : domain.handlers) {
+        HandlerSynchronizationPlan h;
+        h.name = handler.name;
+        h.handler_identity = specialization.identity() + "::handler:" + handler.name;
+        h.effects = specialized_handler_effects(domain, handler, &specialization);
+        for (const auto* leaves : {&h.effects.reads, &h.effects.writes, &h.effects.consumes})
+          for (const auto& leaf : *leaves)
+            synchronization_require(planned.state_leaves.count(leaf), "semantic effect outside specialization");
+        planned.handlers.push_back(std::move(h));
+      }
+      derive_domain_synchronization(planned);
+      plan.domains.push_back(std::move(planned));
+    }
+    std::sort(plan.domains.begin(), plan.domains.end(),
+        [](const auto& a, const auto& b) { return a.domain_rank < b.domain_rank; });
+    p_.synchronization_plan = std::move(plan);
+    for (auto& function : p_.functions) {
+      if (!function.exported || function.generic ||
+          (function.body.empty() && !function.result_expression)) continue;
+      LeafEffectCapture capture;
+      std::unordered_map<string,string> env;
+      for (const auto& parameter : function.params) {
+        capture.roots[parameter.name] = parameter.type;
+        env[parameter.name] = parameter.type;
+      }
+      LeafCaptureScope scope(leaf_effect_capture_, &capture);
+      vector<Effect> unused(function.params.size(), Effect::Read);
+      Effect receiver = Effect::Read;
+      size_t index = 0;
+      analyze_effect_block(function.body, index, 0, env, function.params, unused, receiver, {});
+      if (function.result_expression)
+        analyze_effect_expression(*function.result_expression, env, function.params, unused,
+                                  receiver, {}, Effect::Consume);
+      function.parameter_leaf_effects = std::move(capture.effects);
+    }
+    // Source declarations retain semantic observations for .mossi export only
+    // after instance plans have consumed their exact specialization contexts.
+    for (auto& domain : p_.domains)
+      for (auto& handler : domain.handlers)
+        handler.state_effects = specialized_handler_effects(domain, handler, nullptr);
   }
 
   static bool storage_locations_overlap(const StorageLocation& left,
@@ -4007,6 +4243,8 @@ class Checker {
                         Effect& receiver_effect,
                         const std::set<string>& receiver_fields) const {
     string value = trim(name);
+    if (leaf_effect_capture_)
+      if (auto location = storage_location(value, env)) observe_leaf_access(*location, effect);
     auto parameter = std::find_if(params.begin(), params.end(),
                                   [&](const Param& candidate) { return candidate.name == value; });
     if (parameter != params.end()) {
@@ -4030,8 +4268,89 @@ class Checker {
       const vector<Param>& params, vector<Effect>& parameter_effects,
       Effect& receiver_effect, const std::set<string>& receiver_fields,
       Effect requested = Effect::Read) const {
-    string value = normalize_pipeline(trim(expression));
+    if (leaf_effect_capture_) {
+      if (auto pipeline = parse_functional_pipeline(expression)) {
+        auto source_type = inferred_expr_type(pipeline->source, env);
+        auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
+        synchronization_require(element.has_value(), "unresolved functional effect source");
+        analyze_effect_expression(pipeline->source, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        string current_element = *element;
+        for (const auto& stage : pipeline->stages) {
+          if (stage.arguments.empty()) continue;
+          auto callable_env = env;
+          callable_env["_"] = current_element;
+          string callable = stage.arguments.back();
+          vector<string> inputs{current_element};
+          vector<string> arguments{"_"};
+          if (stage.kind == FunctionalNodeKind::Reduce && stage.arguments.size() == 2) {
+            analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Consume);
+            auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+            synchronization_require(accumulator.has_value(), "unresolved reduce accumulator");
+            callable_env["__sync_accumulator"] = *accumulator;
+            inputs.insert(inputs.begin(), *accumulator);
+            arguments.insert(arguments.begin(), "__sync_accumulator");
+          }
+          if (expression_uses(callable, "_"))
+            analyze_effect_expression(callable, callable_env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          else
+            analyze_effect_expression(callable + "(" + join_arguments(arguments) + ")",
+                                      callable_env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          if (stage.kind == FunctionalNodeKind::Map) {
+            auto result = functional_callable_result(callable, inputs, env);
+            synchronization_require(result.has_value(), "unresolved functional callable");
+            current_element = *result;
+          }
+        }
+        return;
+      }
+    }
+    // The observation path uses checked storage locations before the legacy
+    // parameter summary collapses projections to their root.
+    string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (value.empty()) return;
+    if (leaf_effect_capture_) {
+      if (auto location = storage_location(value, env)) {
+        observe_leaf_access(*location, projection_effect(value, requested, env));
+        string projected = value, base, index;
+        while (!simple_identifier(projected)) {
+          if (parse_index(projected, base, index)) {
+            analyze_effect_expression(index, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+            projected = base;
+          } else {
+            auto dot = projected.rfind('.');
+            if (dot == string::npos) break;
+            projected = strip_expression_parens(projected.substr(0, dot));
+          }
+        }
+        return;
+      }
+    }
+
+    if (leaf_effect_capture_) {
+      if (value.front() == '[' && value.back() == ']') {
+        for (const auto& item : split_top_level(value.substr(1, value.size() - 2), ','))
+          analyze_effect_expression(item, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      if (starts_with(value, "not ")) {
+        analyze_effect_expression(value.substr(4), env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      if (auto binary = split_binary(value, {" and ", " or "})) {
+        analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
 
     if (starts_with(value, "message ")) {
       string receiver, handler;
@@ -4078,7 +4397,17 @@ class Checker {
                                           ? Effect::Consume : Effect::Read);
           return;
         }
-        if (auto object_method = resolve_method(concrete, method, {} , true, nullptr)) {
+        vector<string> concrete_arguments;
+        if (leaf_effect_capture_)
+          for (const auto& argument : arguments)
+            concrete_arguments.push_back(inferred_expr_type(argument, env).value_or(""));
+        if (auto object_method = resolve_method(concrete, method, concrete_arguments, true, nullptr)) {
+          if (leaf_effect_capture_) {
+            capture_callable_effects(object_method->body, object_method->result_expression,
+                object_method->params, arguments, env, params, parameter_effects,
+                receiver_effect, receiver_fields, objects_.at(concrete), receiver);
+            return;
+          }
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields,
                                     object_method->receiver_effect);
@@ -4090,6 +4419,7 @@ class Checker {
           return;
         }
       }
+      synchronization_require(!leaf_effect_capture_, "unresolved concrete method effect target");
       Effect possible_receiver = Effect::Read;
       vector<Effect> possible_parameters;
       if (receiver_type && possible_method_effects(*receiver_type, method,
@@ -4136,8 +4466,26 @@ class Checker {
         }
         return;
       }
+      if (leaf_effect_capture_) {
+        auto callable = env.find(callee);
+        if (callable != env.end() && starts_with(callable->second, "callable:"))
+          callee = callable->second.substr(9);
+      }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
+        if (leaf_effect_capture_) {
+          const auto& target = *function->second;
+          const StateLeafEffects* recorded = nullptr;
+          if (target.body.empty() && !target.result_expression) {
+            if (!target.parameter_leaf_effects)
+              throw CompileError(target.line, "compiled function lacks parameter leaf effects; rebuild its .mossi provider");
+            recorded = &*target.parameter_leaf_effects;
+          }
+          capture_callable_effects(target.body, target.result_expression,
+              target.params, call_arguments, env, params, parameter_effects,
+              receiver_effect, receiver_fields, nullptr, "", recorded);
+          return;
+        }
         for (size_t index = 0; index < call_arguments.size(); ++index) {
           Effect argument_effect = function_parameter_effect(*function->second, index);
           analyze_effect_expression(call_arguments[index], env, params,
@@ -4152,6 +4500,12 @@ class Checker {
         if (const Method* object_method = resolve_method(
                 canonical_type_name(self->second), callee, argument_types,
                 true, nullptr)) {
+          if (leaf_effect_capture_) {
+            capture_callable_effects(object_method->body, object_method->result_expression,
+                object_method->params, call_arguments, env, params, parameter_effects,
+                receiver_effect, receiver_fields, objects_.at(canonical_type_name(self->second)), "self");
+            return;
+          }
           analyze_effect_expression("self", env, params, parameter_effects,
                                     receiver_effect, receiver_fields,
                                     object_method->receiver_effect);
@@ -4184,7 +4538,7 @@ class Checker {
     }
 
     auto dot = value.rfind('.');
-    if (dot != string::npos && value.find('(', dot) == string::npos) {
+    if (!leaf_effect_capture_ && dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
       analyze_effect_expression(value.substr(0, dot), env, params,
                                 parameter_effects, receiver_effect,
                                 receiver_fields,
@@ -4211,6 +4565,9 @@ class Checker {
                          parameter_effects, receiver_effect, receiver_fields);
     for (const auto& field : receiver_fields)
       if (expression_uses(value, field)) receiver_effect = join_effect(receiver_effect, Effect::Read);
+    if (leaf_effect_capture_)
+      for (const auto& root : leaf_effect_capture_->roots)
+        if (expression_uses(value, root.first)) observe_leaf_access({root.first, {}}, Effect::Read);
   }
 
   void analyze_effect_block(const vector<Stmt>& statements, size_t& index, int level,
@@ -4246,15 +4603,27 @@ class Checker {
           child_env[statement.a] =
               iterator_element_type(statement.line, statement.b, env)
                   .value_or("_value");
+        std::optional<std::map<string,StorageLocation>> saved_aliases;
+        if (leaf_effect_capture_ && statement.kind == Stmt::Kind::For &&
+            !copy_type(child_env.at(statement.a))) {
+          if (auto location = storage_location(statement.b, env)) {
+            saved_aliases = leaf_effect_capture_->aliases;
+            location->path.push_back("[]");
+            leaf_effect_capture_->aliases[statement.a] = *location;
+          }
+        }
         analyze_effect_block(statements, index, level + 1, child_env, params,
                              parameter_effects, receiver_effect, receiver_fields);
+        if (saved_aliases) leaf_effect_capture_->aliases = std::move(*saved_aliases);
+        auto other_env = env;
         if (is_if && index < statements.size() && statements[index].indent == level &&
             statements[index].kind == Stmt::Kind::Else) {
           ++index;
-          auto else_env = env;
-          analyze_effect_block(statements, index, level + 1, else_env, params,
+          analyze_effect_block(statements, index, level + 1, other_env, params,
                                parameter_effects, receiver_effect, receiver_fields);
         }
+        if (leaf_effect_capture_)
+          env = merge_type_environments({child_env, other_env}, statement.line, false);
         continue;
       }
       switch (statement.kind) {
@@ -4317,6 +4686,13 @@ class Checker {
           for (const auto& argument : statement.args)
             analyze_effect_expression(argument, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
+          if (leaf_effect_capture_ && !statement.message_result.empty()) {
+            auto receiver = env.find(statement.a);
+            synchronization_require(receiver != env.end() && domains_.count(receiver->second), "unresolved message receiver");
+            auto target = find_handler(*domains_.at(receiver->second), statement.b);
+            synchronization_require(target && target->reply_type.has_value(), "unresolved message reply");
+            env[statement.message_result] = *target->reply_type;
+          }
           ++index;
           break;
         }
@@ -5345,7 +5721,8 @@ class Checker {
 
   void infer_effects() {
     for (auto& function : p_.functions)
-      function.parameter_effects.assign(function.params.size(), Effect::Read);
+      if (!function.body.empty() || function.result_expression || !function.parameter_leaf_effects)
+        function.parameter_effects.assign(function.params.size(), Effect::Read);
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
         method.parameter_effects.assign(method.params.size(), Effect::Read);
@@ -16657,7 +17034,7 @@ static void write_bootstrap_json(std::ostream& out,
             "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
             "repair_actions", "static_cost_facts", "source_provenance",
             "first_order_effect_graph", "structured_execution_trace",
-            "synchronization_schema", "concrete_domain_graph",
+            "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
             "domain_ranks"});
   out << ",\n    \"capability_flags\": {"
          "\"impact_analysis\": true, "
@@ -16736,11 +17113,10 @@ static void write_bootstrap_json(std::ostream& out,
               "module:<project>::<module>",
               "specialization:<module>:<generic>:<type-tuple>"});
     out << ", \"synchronization_diagnostics\": {"
-           "\"availability\": \"schema_reserved_not_derived\", "
-           "\"fields\": [\"class_count\", \"root_count\", "
-           "\"handler_count\", \"conflicting_handler_pairs\", "
-           "\"disjoint_handler_pairs\", \"collapse_culprit_fields\"], "
-           "\"semantics\": \"reserved until synchronization analysis is settled\"}";
+           "\"availability\": \"derived\", "
+           "\"fields\": [\"graph_identity\", \"domains\", \"sync_classes\", "
+           "\"handlers\", \"leaf_to_class\", \"conflicts\", \"metrics\"], "
+           "\"semantics\": \"compiler-owned graph-relative SynchronizationPlan; physical locking unchanged\"}";
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
            "\"legal_alternatives\"], "
@@ -16991,6 +17367,178 @@ static void write_cost_result(std::ostream& out, const Program& program,
       << ", \"predictive_estimates\": null}";
 }
 
+static void write_synchronization_plan_json(std::ostream& out, const SynchronizationPlan& plan) {
+  auto leaves = [&](const StateLeafSet& values) {
+    write_agent_string_array(out, vector<string>(values.begin(), values.end()));
+  };
+  out << "{\"graph_identity\":";
+  write_debug_json_string(out, plan.graph_identity);
+  out << ",\"physical_lowering\":\"unchanged\",\"domains\":[";
+  for (size_t d = 0; d < plan.domains.size(); ++d) {
+    if (d) out << ',';
+    const auto& domain = plan.domains[d];
+    out << "{\"concrete_instance_id\":"; write_debug_json_string(out, domain.concrete_instance_id);
+    out << ",\"specialization_id\":"; write_debug_json_string(out, domain.specialization_id);
+    out << ",\"domain\":"; write_debug_json_string(out, domain.domain);
+    out << ",\"source_file\":"; write_debug_json_string(out, domain.source_file);
+    out << ",\"line\":" << domain.line << ",\"domain_rank\":" << domain.domain_rank;
+    out << ",\"state_leaves\":"; leaves(domain.state_leaves);
+    out << ",\"protected_mutable_leaves\":"; leaves(domain.protected_mutable_leaves);
+    out << ",\"leaf_to_class\":{";
+    bool first = true;
+    for (const auto& entry : domain.leaf_to_class) {
+      if (!first) out << ',';
+      first = false;
+      write_debug_json_string(out, entry.first); out << ':';
+      write_debug_json_string(out, domain.classes.at(entry.second).class_id);
+    }
+    out << "},\"sync_classes\":[";
+    for (size_t c = 0; c < domain.classes.size(); ++c) {
+      if (c) out << ',';
+      const auto& cls = domain.classes[c];
+      out << "{\"class_id\":"; write_debug_json_string(out, cls.class_id);
+      out << ",\"class_rank\":" << cls.class_rank << ",\"member_leaves\":";
+      leaves(cls.member_leaves);
+      out << ",\"mode_signature\":{";
+      for (size_t h = 0; h < domain.handlers.size(); ++h) {
+        if (h) out << ',';
+        write_debug_json_string(out, domain.handlers[h].handler_identity); out << ':';
+        write_debug_json_string(out, synchronization_mode_name(cls.mode_signature[h]));
+      }
+      out << "}}";
+    }
+    out << "],\"handlers\":[";
+    for (size_t h = 0; h < domain.handlers.size(); ++h) {
+      if (h) out << ',';
+      const auto& handler = domain.handlers[h];
+      out << "{\"handler_identity\":"; write_debug_json_string(out, handler.handler_identity);
+      out << ",\"name\":"; write_debug_json_string(out, handler.name);
+      out << ",\"read_set\":"; leaves(handler.effects.reads);
+      out << ",\"write_set\":"; leaves(handler.effects.writes);
+      out << ",\"consume_set\":"; leaves(handler.effects.consumes);
+      out << ",\"exclusive_set\":"; leaves(handler.exclusive_set);
+      out << ",\"protected_read_set\":"; leaves(handler.protected_read_set);
+      out << ",\"lock_set\":"; leaves(handler.lock_set);
+      out << ",\"normalized_effects\":{";
+      bool first_effect = true;
+      for (const auto& leaf : domain.state_leaves) {
+        auto effect = handler.effects.normalized(leaf);
+        if (!effect) continue;
+        if (!first_effect) out << ',';
+        first_effect = false;
+        write_debug_json_string(out, leaf); out << ':';
+        write_debug_json_string(out, ownership_effect_name(*effect));
+      }
+      out << "},\"class_set\":[";
+      first = true;
+      for (const auto& entry : handler.class_modes) {
+        if (!first) out << ',';
+        first = false;
+        write_debug_json_string(out, domain.classes.at(entry.first).class_id);
+      }
+      out << "],\"class_modes\":{";
+      first = true;
+      for (const auto& entry : handler.class_modes) {
+        if (!first) out << ',';
+        first = false;
+        write_debug_json_string(out, domain.classes.at(entry.first).class_id); out << ':';
+        write_debug_json_string(out, synchronization_mode_name(entry.second));
+      }
+      out << "},\"self_conflict\":" << (handler.self_conflict() ? "true" : "false") << '}';
+    }
+    out << "],\"conflicts\":[";
+    first = true;
+    size_t conflicting = 0, disjoint = 0, shared_pairs = 0;
+    for (size_t a = 0; a < domain.handlers.size(); ++a) {
+      for (size_t b = a; b < domain.handlers.size(); ++b) {
+        const auto& left = domain.handlers[a];
+        const auto& right = domain.handlers[b];
+        auto witnesses = synchronization_conflicts(left, right);
+        if (a != b) {
+          if (witnesses.empty()) ++disjoint; else ++conflicting;
+          bool shared = false;
+          for (const auto& entry : left.class_modes) {
+            auto other = right.class_modes.find(entry.first);
+            shared |= other != right.class_modes.end() && entry.second == SynchronizationMode::Shared &&
+                other->second == SynchronizationMode::Shared;
+          }
+          if (shared && witnesses.empty()) ++shared_pairs;
+        }
+        if (witnesses.empty()) continue;
+        if (!first) out << ',';
+        first = false;
+        out << "{\"left\":"; write_debug_json_string(out, left.handler_identity);
+        out << ",\"right\":"; write_debug_json_string(out, right.handler_identity);
+        out << ",\"witnesses\":[";
+        for (size_t i = 0; i < witnesses.size(); ++i) {
+          if (i) out << ',';
+          const auto& cls = domain.classes.at(witnesses[i]);
+          out << "{\"class_id\":"; write_debug_json_string(out, cls.class_id);
+          out << ",\"member_leaves\":"; leaves(cls.member_leaves); out << '}';
+        }
+        out << "]}";
+      }
+    }
+    std::set<string> roots;
+    for (const auto& leaf : domain.protected_mutable_leaves) roots.insert(leaf.substr(0, leaf.find('.')));
+    out << "],\"metrics\":{\"class_count\":" << domain.classes.size()
+        << ",\"root_count\":" << roots.size()
+        << ",\"protected_leaf_count\":" << domain.protected_mutable_leaves.size()
+        << ",\"handler_count\":" << domain.handlers.size()
+        << ",\"conflicting_handler_pairs\":" << conflicting
+        << ",\"disjoint_handler_pairs\":" << disjoint
+        << ",\"shared_reader_pairs\":" << shared_pairs << "}}";
+  }
+  out << "]}";
+}
+
+static string synchronization_plan_dump(const SynchronizationPlan& plan) {
+  std::ostringstream out;
+  auto leaves = [&](const StateLeafSet& values) {
+    bool first = true;
+    for (const auto& leaf : values) { if (!first) out << ", "; first = false; out << leaf; }
+    out << '\n';
+  };
+  out << "SynchronizationPlan " << plan.graph_identity << '\n';
+  for (const auto& domain : plan.domains) {
+    out << "Domain " << domain.domain << "\ninstance: " << domain.concrete_instance_id
+        << "\nspecialization: " << domain.specialization_id
+        << "\ndomain_rank: " << domain.domain_rank << "\nX*: "; leaves(domain.protected_mutable_leaves);
+    for (const auto& cls : domain.classes) {
+      out << "Class " << cls.class_id << "\n  rank: " << cls.class_rank << "\n  leaves: "; leaves(cls.member_leaves);
+      for (size_t h = 0; h < domain.handlers.size(); ++h) {
+        out << "  " << domain.handlers[h].name << ": " << synchronization_mode_name(cls.mode_signature[h]);
+        for (const auto& leaf : cls.member_leaves) {
+          auto effect = domain.handlers[h].effects.normalized(leaf);
+          if (effect) out << " " << leaf << "=" << ownership_effect_name(*effect);
+        }
+        out << '\n';
+      }
+    }
+    for (const auto& h : domain.handlers) {
+      out << "Handler " << h.name << "\n  R: "; leaves(h.effects.reads);
+      out << "  W: "; leaves(h.effects.writes);
+      out << "  C: "; leaves(h.effects.consumes);
+      out << "  X: "; leaves(h.exclusive_set);
+      out << "  ProtectedRead: "; leaves(h.protected_read_set);
+      out << "  LockSet (leaves): "; leaves(h.lock_set);
+      out << "  ClassSet (rank order):";
+      for (const auto& entry : h.class_modes)
+        out << ' ' << domain.classes.at(entry.first).class_id << '=' << synchronization_mode_name(entry.second);
+      out << "\n  self-conflict: " << (h.self_conflict() ? "yes" : "no") << '\n';
+    }
+    for (size_t a = 0; a < domain.handlers.size(); ++a)
+      for (size_t b = a + 1; b < domain.handlers.size(); ++b)
+        for (size_t rank : synchronization_conflicts(domain.handlers[a], domain.handlers[b])) {
+          out << "Conflict " << domain.handlers[a].name << " / " << domain.handlers[b].name
+              << " via " << domain.classes[rank].class_id << ": ";
+          leaves(domain.classes[rank].member_leaves);
+        }
+    out << '\n';
+  }
+  return out.str();
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
@@ -17051,8 +17599,16 @@ static bool write_semantic_query_json(
     out << ", \"cost_facts\": ";
     write_cost_result(out, program, plan, warnings, *target);
   }
+  if (command == "inspect" || command == "effects" || command == "why") {
+    out << ", \"synchronization_plan\":";
+    write_synchronization_plan_json(out, program.synchronization_plan);
+    out << ", \"synchronization_dump\":";
+    write_debug_json_string(out, synchronization_plan_dump(program.synchronization_plan));
+  }
   if (command == "inspect") {
-    out << ", \"concrete_domain_graph\": {\"closed\":"
+    out << ", \"concrete_domain_graph\": {\"graph_identity\":";
+    write_debug_json_string(out, program.concrete_domain_graph.identity);
+    out << ",\"closed\":"
         << (program.concrete_domain_graph.closed ? "true" : "false")
         << ",\"instances\": [";
     for (size_t index = 0; index < program.concrete_domain_graph.instances.size(); ++index) {
@@ -18542,6 +19098,27 @@ static ParsedModuleUnit load_module_interface(
       current_domain->state.push_back(std::move(field));
       continue;
     }
+    if (starts_with(line, "handler_state_effects ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      fields >> std::quoted(handler_name);
+      auto handler = std::find_if(current_domain->handlers.begin(), current_domain->handlers.end(),
+          [&](const Handler& candidate) { return candidate.name == handler_name; });
+      if (!fields || handler == current_domain->handlers.end())
+        throw CompileError(0, "invalid handler state effects in module interface");
+      StateLeafEffects effects;
+      for (auto* leaves : {&effects.reads, &effects.writes, &effects.consumes}) {
+        size_t count = 0;
+        if (!(fields >> count)) throw CompileError(0, "incomplete handler state effects in module interface");
+        for (size_t i = 0; i < count; ++i) {
+          string leaf;
+          if (!(fields >> std::quoted(leaf))) throw CompileError(0, "invalid state leaf in module interface");
+          leaves->insert(leaf);
+        }
+      }
+      handler->state_effects = std::move(effects);
+      continue;
+    }
     if (starts_with(line, "handler_param ") && current_domain) {
       std::istringstream fields(line.substr(14));
       string handler_name;
@@ -18597,6 +19174,21 @@ static ParsedModuleUnit load_module_interface(
         handler.body.push_back(std::move(reply_statement));
       }
       current_domain->handlers.push_back(std::move(handler));
+      continue;
+    }
+    if (starts_with(line, "parameter_leaf_effects ") && current) {
+      std::istringstream fields(line.substr(23));
+      StateLeafEffects effects;
+      for (auto* leaves : {&effects.reads, &effects.writes, &effects.consumes}) {
+        size_t count = 0;
+        if (!(fields >> count)) throw CompileError(0, "incomplete parameter leaf effects in module interface");
+        for (size_t i = 0; i < count; ++i) {
+          string leaf;
+          if (!(fields >> std::quoted(leaf))) throw CompileError(0, "invalid parameter leaf in module interface");
+          leaves->insert(leaf);
+        }
+      }
+      current->parameter_leaf_effects = std::move(effects);
       continue;
     }
     if (starts_with(line, "param ") && current) {
@@ -19237,6 +19829,7 @@ static Program module_program(const Program& whole, const string& module) {
   result.semantic_await_sites = whole.semantic_await_sites;
   result.semantic_await_edges = whole.semantic_await_edges;
   result.concrete_domain_graph = whole.concrete_domain_graph;
+  result.synchronization_plan = whole.synchronization_plan;
   result.domain_specializations = whole.domain_specializations;
   return result;
 }
@@ -19389,6 +19982,19 @@ static vector<std::filesystem::path> write_module_interfaces(
     string semantic_hash = stable_hash(body.str());
     out << semantic_hash << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects) << "\n";
+    if (function.parameter_leaf_effects) {
+      std::ostringstream effects;
+      effects << "  parameter_leaf_effects";
+      for (const auto* leaves : {&function.parameter_leaf_effects->reads,
+                                 &function.parameter_leaf_effects->writes,
+                                 &function.parameter_leaf_effects->consumes}) {
+        effects << " " << leaves->size();
+        for (const auto& leaf : *leaves) effects << " " << std::quoted(leaf);
+      }
+      effects << "\n";
+      out << effects.str();
+      abi << effects.str();
+    }
     for (size_t index = 0; index < function.params.size(); ++index) {
       Effect effect = index < function.parameter_effects.size()
           ? function.parameter_effects[index] : Effect::Read;
@@ -19552,6 +20158,17 @@ static vector<std::filesystem::path> write_module_interfaces(
       out << "  handler " << handler.name << " reply="
           << handler.reply_type.value_or("unit") << " effects="
           << interface_effects_text(handler.observable_effects) << "\n";
+      synchronization_require(handler.state_effects.has_value(), "missing exported handler effects");
+      std::ostringstream semantic_effects;
+      semantic_effects << "  handler_state_effects " << std::quoted(handler.name);
+      for (const auto* leaves : {&handler.state_effects->reads, &handler.state_effects->writes,
+                                 &handler.state_effects->consumes}) {
+        semantic_effects << " " << leaves->size();
+        for (const auto& leaf : *leaves) semantic_effects << " " << std::quoted(leaf);
+      }
+      semantic_effects << "\n";
+      out << semantic_effects.str();
+      interface_contents[module] << semantic_effects.str();
       for (const auto& parameter : handler.params) {
         std::ostringstream slot;
         slot << "  handler_param " << std::quoted(handler.name) << " "

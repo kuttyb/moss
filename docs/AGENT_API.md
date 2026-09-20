@@ -233,3 +233,14 @@ concrete and generic exports, and report exact declared-domain-instance legacy a
 identities when available. `moss impact` continues to use compiler-owned
 semantic dependencies and invalidates generic users when their semantic body
 hash changes.
+
+## Derived synchronization diagnostics (Phase 10.6C)
+
+`inspect`, `effects`, and `why` include `synchronization_plan` and
+`synchronization_dump`. Both project the checked program's authoritative plan,
+including exact instance/specialization identities, X*, leaf/class mappings,
+handler R/W/C/X/ProtectedRead/LockSet/ClassSet, normalized effects, acquisition
+modes, deterministic ranks, and conflict witnesses. `LockSet` contains leaves;
+`ClassSet` contains class identities in local rank order. The dump is a readable
+string available without another CLI command. Physical lock lowering is unchanged.
+See [the plan schema and derivation](SYNCHRONIZATION_PLAN.md).

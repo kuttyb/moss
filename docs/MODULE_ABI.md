@@ -85,3 +85,12 @@ For a typed callable that invokes a domain through a parameter, the contract use
 caller's exact declared instance (for example `app::worker1`) before running
 the same legacy dependency machinery. Internal module-owned instances remain qualified and
 opaque.
+
+## Phase 10.6C handler state effects
+
+Exported domains include `handler_state_effects` semantic records with counted
+READ, WRITE, and CONSUME leaf lists, including explicit empty lists. These records
+participate in semantic interface hashing and let source-free `.mossi` consumers
+derive the same graph-relative synchronization plan. Missing records fail closed
+with a request to rebuild the provider. They do not export synchronization classes,
+class ranks, or lock-layout ABI. See [SynchronizationPlan](SYNCHRONIZATION_PLAN.md).

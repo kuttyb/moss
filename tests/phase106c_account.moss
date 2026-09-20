@@ -1,0 +1,30 @@
+domain Account:
+  balance: Int
+  risk_limit: Int
+  display_name: String
+  stats: Int
+  config_value: Int
+
+  fn rename(name: String):
+    display_name = "renamed"
+
+  fn set_risk_limit(limit: Int):
+    risk_limit = limit
+
+  fn record_fill(amount: Int):
+    if amount < risk_limit:
+      balance = balance + amount
+      stats = stats + 1
+    echo config_value
+
+  fn read_stats() -> Int:
+    reply stats
+
+  fn read_config() -> Int:
+    reply config_value
+
+fn main():
+  account = Account(balance: 0, risk_limit: 100, display_name: "USD", stats: 0, config_value: 7)
+  message account.record_fill(3)
+  count = message account.read_stats()
+  echo count

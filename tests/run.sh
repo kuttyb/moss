@@ -931,6 +931,12 @@ run_case main_helper_await tests/main_helper_await.moss '9'
 run_case branch_same_domain_type tests/branch_same_domain_type.moss '7'
 run_case phase106b_topology tests/phase106b_topology.moss '7'
 python3 tests/tooling/check_domain_handle_closure.py "$compiler"
+run_case phase106c_account tests/phase106c_account.moss "$(printf '7\n1')"
+python3 tests/tooling/check_synchronization_plan.py "$compiler"
+${CXX:-c++} -std=c++17 -Wall -Wextra -pedantic -Werror -Isrc \
+  tests/tooling/check_synchronization_plan.cpp -o "$test_build/check_synchronization_plan"
+"$test_build/check_synchronization_plan"
+
 "$compiler" inspect main --source tests/phase106b_topology.moss --json > "$test_build/phase106b_topology.inspect.json"
 python3 - "$test_build/phase106b_topology.inspect.json" <<'PY'
 import json

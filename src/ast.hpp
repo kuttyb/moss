@@ -7,6 +7,7 @@
 #include <vector>
 #include "constraints.hpp"
 #include "functional_ir.hpp"
+#include "synchronization.hpp"
 
 namespace moss {
 
@@ -84,6 +85,8 @@ struct Handler {
   ObservableEffects observable_effects;
   int line = 0;
   string source_file;
+  // Checked semantic state effects, also carried by compiled providers.
+  std::optional<StateLeafEffects> state_effects;
 };
 struct DomainRoute {
   string name, type;
@@ -136,6 +139,7 @@ struct Function {
   ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
+  std::optional<StateLeafEffects> parameter_leaf_effects;
   string source_file;
   vector<AwaitBoundary> await_boundaries;
 };
@@ -211,6 +215,7 @@ struct ConcreteRouteEdge {
   int line = 0;
 };
 struct ConcreteDomainGraph {
+  string identity;
   vector<ConcreteDomainInstance> instances;
   vector<ConcreteRouteEdge> edges;
   // Set only after all executable bodies pass routing-capability checks.
@@ -249,6 +254,7 @@ struct Program {
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;
   ConcreteDomainGraph concrete_domain_graph;
+  SynchronizationPlan synchronization_plan;
 };
 
 } // namespace moss

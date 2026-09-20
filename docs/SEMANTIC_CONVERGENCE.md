@@ -36,7 +36,8 @@ route binding, or `message` receiver. Historical examples that passed handles
 to handlers/helpers or returned them through replies are superseded by declared
 `domainroutes`. Ordinary data payload and reply-by-value semantics are unchanged.
 Each graph instance refers explicitly to its concrete specialization record and
-checked source domain declaration. No synchronization plan is derived.
+checked source domain declaration. Phase 10.6C derives a graph-relative
+`SynchronizationPlan` from these exact specialization contexts.
 
 Moss functional callables are closed statically. A named function, a statically
 bound instance method, a placeholder expression, or a higher-order callable
@@ -78,8 +79,8 @@ rejected. Common handler logic belongs in an ordinary helper function. Historica
 material that discusses queued self-transfers is retained as legacy documentation.
 Concrete domain topology and any domain rank (`domain_rank`) are whole-program
 concerns, not local handler facts. Phase 10.6B validates the concrete route DAG
-and assigns deterministic unique instance ordinals; synchronization classes and
-2PL remain deferred.
+and assigns deterministic unique instance ordinals. Phase 10.6C derives
+synchronization classes and local ranks; production 2PL lowering remains deferred.
 
 Domain-local helper scoping belongs in the language/module design discussion,
 not in an implicit dispatch rule. Existing ordinary functions and methods keep
@@ -101,87 +102,22 @@ The Rust emitter still contains an isolated mailbox/completion adapter for
 physical representations selected by the existing backend planner. It waits
 for handler completion, so it does not expose asynchronous source behavior.
 Direct construction and route topology are now checked by the Phase 10.6B
-composition pass. Compiler-derived synchronization classes/2PL, supervision, and Fast Debug
-domain execution remain deferred to later phases.
+composition pass. Phase 10.6C implements synchronization planning. Production
+2PL lowering, supervision, and Fast Debug domain execution remain deferred.
 
-## Account synchronization derivation (documentation vocabulary)
+## Phase 10.6C synchronization planning
 
-The following is a complete derivation for the synchronization vocabulary used
-by future design work. It is not an implementation claim and does not add
-`ProtectedRead`, `LockSet`, or rank syntax to Moss.
+The compiler now derives one authoritative graph-relative `SynchronizationPlan`
+from the closed concrete graph and exact specialized handler effects. It retains
+READ / WRITE / CONSUME separately and maps them to shared/exclusive modes only
+in the derived plan. Immutable-after-publication leaves receive no classes.
+Production lock lowering is unchanged; handler-level 2PL remains Phase 10.6D.
 
-```moss
-domain Account:
-  balance: Int
-
-  fn deposit(delta: Int) -> Int:
-    balance = balance + delta
-    return balance
-
-  fn snapshot() -> Int:
-    return balance
-```
-
-Let `h` range over handlers and let `R(h)` and `W(h)` be the state fields read
-and written by that handler:
-
-```text
-R(deposit)   = { balance }   W(deposit)   = { balance }
-R(snapshot)  = { balance }   W(snapshot)  = { }
-W* = union_h W(h) = { balance }
-```
-
-The conceptual signatures/classes are therefore:
-
-```text
-deposit  : (&mut AccountState, Int) -> Int   class Write
-snapshot : (&AccountState) -> Int             class ProtectedRead
-```
-
-`ProtectedRead` is a future synchronization classification, not a Moss type.
-It is justified only when the read's root belongs to `W*` and the future
-whole-program synchronization proof permits that protected access. A read of a
-non-`W*` root is not silently promoted to `ProtectedRead`; the final lock/rank
-rules remain open.
-
-For example, a conceptual pipeline capture can be written as:
-
-```moss
-# Illustrative capture shape; this does not add new state-access syntax.
-values
-  |> map(_ + account.balance)
-```
-
-The capture contributes a semantic domain READ. It is classified as
-`ProtectedRead` only if the root `account` is in the whole-program `W*` set and
-the future synchronization analysis proves the access. Phase 10.5 records the
-vocabulary and provenance only; it does not fabricate a lock analysis.
-
-## Synchronization diagnostics schema
-
-The agent schema reserves a deterministic JSON shape for future synchronization
-diagnostics without claiming that the current compiler has derived these facts:
-
-```json
-{
-  "synchronization_diagnostics": {
-    "availability": "schema_reserved_not_derived",
-    "fields": [
-      "class_count",
-      "root_count",
-      "handler_count",
-      "conflicting_handler_pairs",
-      "disjoint_handler_pairs",
-      "collapse_culprit_fields"
-    ],
-    "semantics": "reserved until synchronization analysis is settled"
-  }
-}
-```
-
-No fake counts are emitted. The schema is available from
-`moss agent schema --json` so tools can discover it without mistaking a
-placeholder for a compiler result.
+See [SynchronizationPlan architecture](SYNCHRONIZATION_PLAN.md) for the definitions
+of X, X*, ProtectedRead, leaf LockSet, class signatures, ClassSet, local ranks,
+module metadata, Account golden, and the future scoped-domain breadcrumb.
+Existing semantic queries expose both structured plan data and a human-readable
+dump from the same object. The agent schema reports synchronization as derived.
 
 ## Identity and tracing contract
 

@@ -447,7 +447,10 @@ consume, reassign, or move them into state. `Copy` does not weaken this rule.
 the compiler rejects construction in later execution, control flow, helpers, or handlers.
 `domainroutes(...)` declares immutable route slots, and state fields/routes share one
 member namespace. The compiler validates a concrete acyclic routing graph and assigns
-whole-program ranks; synchronization classes and 2PL remain future phases.
+deterministic domain ranks. Phase 10.6C derives synchronization classes, handler
+ClassSets, and local class ranks in a graph-relative
+[`SynchronizationPlan`](docs/SYNCHRONIZATION_PLAN.md). Production 2PL lowering
+is not yet implemented.
 
 ## Shared-memory message transport
 
@@ -482,8 +485,8 @@ These are physical lowering choices only. Domains still logically serialize hand
 sender FIFO and serialized handler execution remain intact. This documentation does
 not claim a separate universal commit order beyond those source-visible guarantees;
 `message` and `reply` remain semantic by-value boundaries, and handlers remain
-non-reentrant. Fine-grained synchronization classes and domain ranks are not implemented
-in this phase.
+non-reentrant in the current backend. The compiler now computes domain ranks and
+fine-grained synchronization classes as analysis; physical locking is unchanged.
 No optimization inserts `unsafe` or synchronization syntax into Moss. `-O0` retains
 the ordinary lock-backed mailbox implementation as the semantic reference.
 Boundary regressions compile that reference and the optimized atomic backend with
@@ -551,7 +554,7 @@ Moss module into that run.
 
 [`docs/SEMANTIC_CONVERGENCE.md`](docs/SEMANTIC_CONVERGENCE.md) records the current
 first-order effect graph, functional callable specialization, domain terminology,
-reserved synchronization schema, and the shared semantic/source identities exposed by
+derived synchronization plan, and the shared semantic/source identities exposed by
 `moss-agent-1`. It also calls out legacy mailbox/worker material and design questions
 that remain intentionally open.
 
