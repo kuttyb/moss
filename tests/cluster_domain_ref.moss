@@ -17,7 +17,7 @@ domain Driver
     message selected.Ping()
 
 proc main()
-  let worker = spawn Worker()
-  let registry = spawn Registry()
-  let driver = spawn Driver()
+  let worker = Worker()
+  let registry = Registry()
+  let driver = Driver()
   message driver.Run(registry, worker)

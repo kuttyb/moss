@@ -7,6 +7,6 @@ domain Analyzer:
     reply total
 
 proc main():
-  analyzer = spawn Analyzer()
+  analyzer = Analyzer()
   total = message analyzer.Total()
   echo total

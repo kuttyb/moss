@@ -13,7 +13,7 @@ domain Waiting
     echo "second"
 
 proc main()
-  let dependency = spawn Dependency()
-  let waiting = spawn Waiting()
+  let dependency = Dependency()
+  let waiting = Waiting()
   message waiting.First(dependency)
   message waiting.Second()

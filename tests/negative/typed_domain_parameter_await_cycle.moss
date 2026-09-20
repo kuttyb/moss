@@ -13,9 +13,9 @@ domain Coordinator:
     ignored = await worker.Run()
 
 fn main():
-  c = spawn Coordinator()
-  w1 = spawn Worker()
-  w2 = spawn Worker()
+  c = Coordinator()
+  w1 = Worker()
+  w2 = Worker()
   message c.Ping(w1)
   message c.Ping(w2)
   message w2.Back(c)

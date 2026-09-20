@@ -3,6 +3,6 @@ domain Pair:
     echo a
 
 fn main():
-  p = spawn Pair()
+  p = Pair()
   message p.Set(10, 3.5)
   message p.Set(20, 7)

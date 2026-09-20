@@ -16,8 +16,8 @@ domain Receiver:
     ignored = message worker.Run()
 
 fn main():
-  helper = spawn A()
+  helper = A()
   message helper.Set(10)
-  receiver = spawn Receiver()
-  other = spawn A__helper()
+  receiver = Receiver()
+  other = A__helper()
   message receiver.Send(other)

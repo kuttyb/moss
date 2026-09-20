@@ -7,7 +7,7 @@ domain Worker:
     reply alias
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   data = Payload(value = 1)
   result = message worker.Echo(data)
   echo result.value

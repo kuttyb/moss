@@ -10,7 +10,7 @@ domain Flag:
     reply enabled
 
 fn main():
-  flag = spawn Flag()
+  flag = Flag()
   first = message flag.Enable(true)
   second = message flag.Toggle()
   echo first, second

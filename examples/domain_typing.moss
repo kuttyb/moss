@@ -20,7 +20,7 @@ domain Ledger:
     echo "total:", total
 
 fn main():
-  ledger = spawn Ledger()
+  ledger = Ledger()
   seed = twice(5)
   message ledger.Credit(seed)
   message ledger.DoubleCredit(seed)

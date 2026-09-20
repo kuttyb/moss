@@ -22,6 +22,6 @@ domain Worker:
     reply result
 
 fn main():
-  let coordinator = spawn Coordinator()
-  let worker = spawn Worker()
+  let coordinator = Coordinator()
+  let worker = Worker()
   message coordinator.Start(worker)

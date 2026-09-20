@@ -12,6 +12,6 @@ domain Client
     echo "sequential:", second
 
 proc main()
-  let worker = spawn Worker()
-  let client = spawn Client()
+  let worker = Worker()
+  let client = Client()
   message client.Run(worker)

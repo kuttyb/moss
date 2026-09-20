@@ -11,7 +11,7 @@ domain Driver
     message relay.Pass(worker)
 
 proc main()
-  let worker = spawn Worker()
-  let relay = spawn Relay()
-  let driver = spawn Driver()
+  let worker = Worker()
+  let relay = Relay()
+  let driver = Driver()
   message driver.Run(relay, worker)

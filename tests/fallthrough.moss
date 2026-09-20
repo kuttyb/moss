@@ -5,6 +5,6 @@ domain Worker
     echo "falling through"
 
 proc main()
-  let worker = spawn Worker()
+  let worker = Worker()
   let result = message worker.Maybe(false)
   echo result

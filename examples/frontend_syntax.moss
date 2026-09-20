@@ -24,7 +24,7 @@ domain Quotes:
     echo "note:", value
 
 fn main():
-  quotes = spawn Quotes()
+  quotes = Quotes()
   quote = message quotes.Latest()
   result = score(quote)
   message quotes.Note(result)

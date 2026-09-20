@@ -39,8 +39,8 @@ proc main():
   observed_count = values |> map(noisy) |> count
   sample = Sample(value: 7)
   observed = inspect(sample)
-  worker = spawn Worker()
-  router = spawn Router()
+  worker = Worker()
+  router = Router()
   direct = wait_for(worker)
   routed = message router.Route(worker)
   echo observed_count, observed, direct, routed

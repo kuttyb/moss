@@ -11,8 +11,8 @@ domain Box:
     reply value
 
 fn main():
-  intBox = spawn Box()
-  floatBox = spawn Box()
+  intBox = Box()
+  floatBox = Box()
   message intBox.Set(10)
   message floatBox.Set(3.5)
   intValue = message intBox.Get()

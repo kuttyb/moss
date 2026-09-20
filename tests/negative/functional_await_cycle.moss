@@ -17,6 +17,6 @@ domain Beta:
     reply total
 
 proc main():
-  alpha = spawn Alpha()
-  beta = spawn Beta()
+  alpha = Alpha()
+  beta = Beta()
   message alpha.Start(beta)

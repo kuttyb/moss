@@ -9,7 +9,7 @@ domain Catalog:
     reply title
 
 fn main():
-  catalog = spawn Catalog()
+  catalog = Catalog()
   before = message catalog.Read()
   published = message catalog.Publish("stable")
   after = message catalog.Read()

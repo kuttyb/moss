@@ -5,5 +5,5 @@ domain Maybe:
     echo "normal fallthrough"
 
 fn main():
-  maybe = spawn Maybe()
+  maybe = Maybe()
   message maybe.Pick(false)

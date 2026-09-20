@@ -3,5 +3,5 @@ domain Worker
     echo "ping"
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   worker.Ping()

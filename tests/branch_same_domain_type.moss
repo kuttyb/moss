@@ -13,9 +13,9 @@ domain Router:
     reply value
 
 fn main():
-  first = spawn Worker()
-  second = spawn Worker()
-  router = spawn Router()
+  first = Worker()
+  second = Worker()
+  router = Router()
   flag = true
   value = message router.Route(first, second, flag)
   echo value

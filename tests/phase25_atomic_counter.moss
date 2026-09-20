@@ -19,7 +19,7 @@ domain Counter:
     reply value
 
 fn main():
-  counter = spawn Counter()
+  counter = Counter()
   message counter.Increment()
   after_add = message counter.Add(2)
   after_subtract = message counter.Subtract(1)

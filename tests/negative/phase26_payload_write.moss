@@ -9,6 +9,6 @@ domain Worker:
     payload.clear()
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   buffer = Buffer(value = 1)
   message worker.Process(buffer)

@@ -16,9 +16,9 @@ domain Calculator:
     reply y
 
 fn main():
-  sink = spawn Sink()
-  router = spawn Router()
-  calculator = spawn Calculator()
+  sink = Sink()
+  router = Router()
+  calculator = Calculator()
   message router.Route(10, sink)
   plus_one = message calculator.PlusOne(10)
   local = message calculator.LocalUpdate(7)

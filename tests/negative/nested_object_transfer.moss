@@ -13,6 +13,6 @@ domain Sender
     message worker.Process(envelope.payload)
 
 proc main()
-  let worker = spawn Worker()
-  let sender = spawn Sender()
+  let worker = Worker()
+  let sender = Sender()
   message sender.Start(worker, Envelope(payload: Payload(value: 7)))

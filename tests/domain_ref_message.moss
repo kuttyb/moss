@@ -12,7 +12,7 @@ domain Relay
     message worker.Ping()
 
 proc main()
-  let worker = spawn Worker()
-  let relay = spawn Relay()
-  let sink = spawn Sink()
+  let worker = Worker()
+  let relay = Relay()
+  let sink = Sink()
   message relay.Run(worker, sink)

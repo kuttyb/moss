@@ -9,6 +9,6 @@ domain Worker:
     reply 1
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   value = wait_if(true, worker)
   echo value

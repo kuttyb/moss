@@ -6,5 +6,5 @@ domain D:
     echo "b"
 
 fn main():
-  d = spawn D()
+  d = D()
   message d.A(d)

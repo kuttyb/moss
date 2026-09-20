@@ -19,9 +19,9 @@ domain Producer:
     reply true
 
 fn main():
-  counter = spawn Counter()
-  left = spawn Producer()
-  right = spawn Producer()
+  counter = Counter()
+  left = Producer()
+  right = Producer()
   message left.Fill(counter, 1000)
   message right.Fill(counter, 1000)
   left_done = message left.Barrier()

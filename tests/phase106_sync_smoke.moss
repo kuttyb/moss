@@ -12,7 +12,7 @@ domain Worker:
     reply x
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   message worker.Set(7)
   echo "next"
   result = message worker.Get()

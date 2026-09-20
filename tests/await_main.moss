@@ -3,6 +3,6 @@ domain Worker
     reply true
 
 proc main()
-  let worker = spawn Worker()
+  let worker = Worker()
   var ready = message worker.Ready()
   echo "main:", ready

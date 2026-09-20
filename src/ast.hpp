@@ -85,7 +85,12 @@ struct Handler {
   int line = 0;
   string source_file;
 };
-struct Domain { string name, header; vector<Field> state; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
+struct DomainRoute {
+  string name, type;
+  int line = 0;
+  string source_file;
+};
+struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct FunctionSpecialization {
@@ -177,6 +182,29 @@ struct SemanticAwaitEdge {
   string target_instance;
 };
 
+// Whole-program concrete routing topology.  These identities are semantic
+// compiler facts; generated Rust names must not be used as their identity.
+struct ConcreteDomainInstance {
+  string identity;
+  string binding;
+  string domain;
+  string specialization;
+  string source_file;
+  int line = 0;
+  int domain_rank = -1;
+};
+struct ConcreteRouteEdge {
+  string source_instance;
+  string route;
+  string target_instance;
+  string source_file;
+  int line = 0;
+};
+struct ConcreteDomainGraph {
+  vector<ConcreteDomainInstance> instances;
+  vector<ConcreteRouteEdge> edges;
+};
+
 struct ModuleImport {
   string name;
   string owner_module;
@@ -208,6 +236,7 @@ struct Program {
   // Per-declared-instance facts for source domains whose untyped state and
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;
+  ConcreteDomainGraph concrete_domain_graph;
 };
 
 } // namespace moss

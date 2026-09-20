@@ -12,7 +12,7 @@ domain Analyzer:
     reply total
 
 proc main():
-  local = local_total()
-  analyzer = spawn Analyzer()
+  analyzer = Analyzer()
   remote = message analyzer.Total()
+  local = local_total()
   echo local, remote

@@ -15,8 +15,8 @@ domain Calculator:
     reply values |> map(double) |> sum
 
 proc main():
-  sink = spawn Sink()
-  calculator = spawn Calculator()
+  sink = Sink()
+  calculator = Calculator()
   values = [1, 2, 3]
   message sink.Store(values |> map(double) |> sum)
   stored = message sink.Stored()

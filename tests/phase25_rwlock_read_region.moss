@@ -5,7 +5,7 @@ domain Catalog:
     reply title
 
 fn main():
-  catalog = spawn Catalog()
+  catalog = Catalog()
   first = message catalog.Read()
   second = message catalog.Read()
   echo first, second

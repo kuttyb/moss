@@ -18,8 +18,8 @@ domain Router:
     reply value
 
 fn main():
-  sink = spawn Sink()
-  router = spawn Router()
+  sink = Sink()
+  router = Router()
   payload = Record(id = 21)
   result = message router.Route(payload, sink)
   echo "checksum:", result

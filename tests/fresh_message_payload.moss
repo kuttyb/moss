@@ -6,5 +6,5 @@ domain Worker
     echo "fresh:", payload.value
 
 proc main()
-  let worker = spawn Worker()
+  let worker = Worker()
   message worker.Process(Payload(value: 7))

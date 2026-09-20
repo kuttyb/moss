@@ -12,5 +12,5 @@ domain OwnershipDemo:
     echo "original:", original.text
 
 fn main():
-  let demo = spawn OwnershipDemo()
+  let demo = OwnershipDemo()
   message demo.Trigger()

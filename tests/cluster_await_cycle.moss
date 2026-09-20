@@ -9,6 +9,6 @@ domain Right
     reply answer
 
 proc main()
-  let left = spawn Left()
-  let right = spawn Right()
+  let left = Left()
+  let right = Right()
   message left.Ask(right)

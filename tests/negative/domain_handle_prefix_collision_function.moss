@@ -15,7 +15,7 @@ fn take(worker: A):
   echo 1
 
 fn main():
-  helper = spawn A()
+  helper = A()
   message helper.Set(10)
-  other = spawn A__helper()
+  other = A__helper()
   take(other)

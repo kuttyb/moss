@@ -5,5 +5,5 @@ domain Counter:
     echo "ping"
 
 fn main():
-  counter = spawn Counter()
+  counter = Counter()
   message counter.Ping()

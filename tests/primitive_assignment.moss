@@ -5,5 +5,5 @@ domain Demo
     echo "primitive:", first, second
 
 proc main()
-  let demo = spawn Demo()
+  let demo = Demo()
   message demo.Run()

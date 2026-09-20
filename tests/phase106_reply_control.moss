@@ -7,7 +7,7 @@ domain Chooser:
     echo "unreachable"
 
 fn main():
-  chooser = spawn Chooser()
+  chooser = Chooser()
   first = message chooser.Pick(true)
   second = message chooser.Pick(false)
   assertEqual(first, 1)

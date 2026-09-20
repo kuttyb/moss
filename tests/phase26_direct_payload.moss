@@ -9,7 +9,7 @@ domain Worker:
     reply read_value(payload)
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   data = Payload(value = 7)
   result = message worker.Process(data)
   data.value = 8

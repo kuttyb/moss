@@ -6,7 +6,7 @@ domain Register:
     reply value
 
 fn main():
-  register = spawn Register()
+  register = Register()
   first = message register.Set()
   second = message register.Set()
   third = message register.Set()

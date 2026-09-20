@@ -14,7 +14,7 @@ domain Store
     reply observed * 10 + dataset.size
 
 proc main()
-  let worker = spawn Worker()
-  let store = spawn Store()
+  let worker = Worker()
+  let store = Store()
   let result = message store.Send(worker)
   echo result

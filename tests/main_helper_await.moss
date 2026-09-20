@@ -7,6 +7,6 @@ domain Worker:
     reply 9
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   value = wait_for(worker)
   echo value

@@ -23,6 +23,6 @@ domain Workshop:
     message archive.Store(revised.revisions, revised.approved)
 
 fn main():
-  let archive = spawn Archive()
-  let workshop = spawn Workshop()
+  let archive = Archive()
+  let workshop = Workshop()
   message workshop.Start(archive)

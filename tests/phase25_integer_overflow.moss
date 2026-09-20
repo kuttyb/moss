@@ -30,10 +30,10 @@ fn duck_add(value):
   return value + value
 
 fn main():
-  incrementer = spawn IncrementAtMax()
-  decrementer = spawn DecrementAtMin()
-  adder = spawn AddAcrossMax()
-  subtractor = spawn SubtractAcrossMin()
+  incrementer = IncrementAtMax()
+  decrementer = DecrementAtMin()
+  adder = AddAcrossMax()
+  subtractor = SubtractAcrossMin()
 
   incremented = message incrementer.Increment()
   decremented = message decrementer.Decrement()

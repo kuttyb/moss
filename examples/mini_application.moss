@@ -99,8 +99,8 @@ fn main():
   pending.push(BuildJob(id = 103, units = 3, urgency = 6))
   pending.push(BuildJob(id = 104, units = 2, urgency = 1))
 
-  scheduler = spawn Scheduler()
-  metrics = spawn Metrics()
+  scheduler = Scheduler()
+  metrics = Metrics()
 
   first_position = message scheduler.Submit(build_code, scores["build"])
   second_position = message scheduler.Submit(maintenance_code, scores["maintenance"])

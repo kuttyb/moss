@@ -7,8 +7,8 @@ domain Beta:
     reply 2
 
 fn main():
-  alpha = spawn Alpha()
-  beta = spawn Beta()
+  alpha = Alpha()
+  beta = Beta()
   flag = true
   if flag:
     target = alpha

@@ -20,7 +20,7 @@ domain Bypass:
     reply 0
 
 fn main():
-  left = spawn Left()
-  right = spawn Right()
-  bypass = spawn Bypass()
+  left = Left()
+  right = Right()
+  bypass = Bypass()
   message left.Start(right, bypass, true)

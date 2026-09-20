@@ -13,8 +13,8 @@ domain Reader:
     echo "consistent"
 
 fn main():
-  catalog = spawn Catalog()
-  left = spawn Reader()
-  right = spawn Reader()
+  catalog = Catalog()
+  left = Reader()
+  right = Reader()
   message left.Run(catalog)
   message right.Run(catalog)

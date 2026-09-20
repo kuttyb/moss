@@ -23,14 +23,14 @@ fn take(worker: A):
   echo 1
 
 fn main():
-  helper = spawn A()
-  a2 = spawn A()
-  a3 = spawn A()
+  helper = A()
+  a2 = A()
+  a3 = A()
   message helper.Set(10)
   message a2.Set(20)
   message a3.Set(30)
-  other = spawn A__helper()
-  receiver = spawn Receiver()
+  other = A__helper()
+  receiver = Receiver()
   holder = Holder()
   message receiver.Send(helper)
   take(a2)

@@ -10,7 +10,7 @@ domain Worker:
     x = 42
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   record = Record(value = 1)
   message worker.Process(record)
   message worker.Primitive(1)

@@ -3,6 +3,6 @@ domain Worker:
     reply true
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   message worker.Notify()
   echo "done"

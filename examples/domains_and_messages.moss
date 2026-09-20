@@ -9,7 +9,7 @@ domain Worker:
     reply total
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   message worker.Run(10)
   current = message worker.Get()
   echo "current:", current

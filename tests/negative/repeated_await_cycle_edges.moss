@@ -13,6 +13,6 @@ domain Right:
     reply value
 
 fn main():
-  left = spawn Left()
-  right = spawn Right()
+  left = Left()
+  right = Right()
   message left.Start(right)

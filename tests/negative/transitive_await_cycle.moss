@@ -17,7 +17,7 @@ domain Third
     reply result
 
 fn main():
-  let first = spawn First()
-  let second = spawn Second()
-  let third = spawn Third()
+  let first = First()
+  let second = Second()
+  let third = Third()
   message first.Start(second, third)

@@ -12,6 +12,6 @@ domain Worker:
     mutate(payload)
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   buffer = Buffer(value = 1)
   message worker.Process(buffer)

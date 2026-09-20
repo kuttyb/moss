@@ -29,8 +29,8 @@ domain Checkout:
       echo "payment failed"
 
 fn main():
-  let inventory = spawn Inventory()
-  let payments = spawn Payments()
-  let checkout = spawn Checkout()
+  let inventory = Inventory()
+  let payments = Payments()
+  let checkout = Checkout()
   message checkout.PlaceOrder(inventory, payments, 3, 25)
   message checkout.PlaceOrder(inventory, payments, 8, 25)

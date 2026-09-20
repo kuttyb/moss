@@ -3,6 +3,6 @@ domain Worker:
     reply x
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   result = message worker.Echo(1)
   echo result

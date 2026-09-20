@@ -19,8 +19,8 @@ domain Counter:
     reply value
 
 fn main():
-  helper = spawn Helper()
-  audit = spawn Audit()
-  counter = spawn Counter()
+  helper = Helper()
+  audit = Audit()
+  counter = Counter()
   result = message counter.Work(helper, audit)
   echo "result:", result

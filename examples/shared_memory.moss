@@ -16,6 +16,6 @@ domain Client:
     echo "shared total:", first, second
 
 fn main():
-  counter = spawn Counter()
-  client = spawn Client()
+  counter = Counter()
+  client = Client()
   message client.Run(counter)

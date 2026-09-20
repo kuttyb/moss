@@ -8,6 +8,6 @@ domain Pair:
     reply left
 
 fn main():
-  pair = spawn Pair()
+  pair = Pair()
   value = message pair.Advance()
   echo value

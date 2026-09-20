@@ -12,6 +12,6 @@ domain Sender
     echo result
 
 proc main()
-  let worker = spawn Worker()
-  let sender = spawn Sender()
+  let worker = Worker()
+  let sender = Sender()
   message sender.Start(worker)

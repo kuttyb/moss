@@ -21,9 +21,9 @@ domain Producer
     reply true
 
 proc main()
-  let counter = spawn Counter()
-  let left = spawn Producer()
-  let right = spawn Producer()
+  let counter = Counter()
+  let left = Producer()
+  let right = Producer()
   message left.Fill(counter, 1000)
   message right.Fill(counter, 1000)
   let left_done = message left.Barrier()

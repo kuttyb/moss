@@ -13,7 +13,7 @@ domain Worker:
     reply total
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   data = Payload(value = 7)
   first = message worker.First(data)
   second = message worker.Second(data)

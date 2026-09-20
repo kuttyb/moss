@@ -11,8 +11,8 @@ domain Reader:
     echo first, second
 
 fn main():
-  register = spawn Register()
-  left = spawn Reader()
-  right = spawn Reader()
+  register = Register()
+  left = Reader()
+  right = Reader()
   message left.Run(register)
   message right.Run(register)

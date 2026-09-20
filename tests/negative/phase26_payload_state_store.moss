@@ -8,6 +8,6 @@ domain Worker:
     saved = payload
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   data = Payload(value = 1)
   message worker.Process(data)

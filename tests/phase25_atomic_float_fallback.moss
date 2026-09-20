@@ -6,6 +6,6 @@ domain Gauge:
     reply value
 
 fn main():
-  gauge = spawn Gauge()
+  gauge = Gauge()
   value = message gauge.Add(1.5)
   echo value

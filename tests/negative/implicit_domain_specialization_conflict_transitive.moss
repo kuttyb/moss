@@ -8,6 +8,6 @@ domain Box:
     value = normalize(x)
 
 fn main():
-  box = spawn Box()
+  box = Box()
   message box.Set(10)
   message box.Set(3.5)

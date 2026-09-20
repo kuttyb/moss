@@ -20,6 +20,7 @@
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <tuple>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -686,6 +687,8 @@ class Parser {
         fail(L, "domain members must use one indentation level");
       if (starts_with(L.text, "var ")) {
         d.state.push_back(parse_state_field());
+      } else if (starts_with(L.text, "domainroutes")) {
+        parse_domain_routes(d, head.indent + indent_unit_);
       } else if (starts_with(L.text, "on ")) {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "on"));
       } else if (starts_with(L.text, "fn ")) {
@@ -697,6 +700,47 @@ class Parser {
       }
     }
     return d;
+  }
+
+  void parse_domain_routes(Domain& domain, int member_indent) {
+    Line head = lines_[i_++];
+    string rest = trim(head.text.substr(std::string("domainroutes").size()));
+    if (rest.empty()) rest = "(";
+    if (rest.front() != '(')
+      fail(head, "domainroutes must be a declaration such as 'domainroutes(worker: Worker)'");
+    auto add_route = [&](const Line& line, string text) {
+      text = trim(std::move(text));
+      if (text.empty() || text == ",") return;
+      if (text.back() == ',') text.pop_back();
+      auto colon = top_level_colon(text);
+      if (colon == string::npos)
+        fail(line, "domain route must be 'name: DomainType'");
+      DomainRoute route;
+      route.name = trim(text.substr(0, colon));
+      route.type = canonical_type_name(trim(text.substr(colon + 1)));
+      route.line = line.no;
+      route.source_file = line.source_file;
+      if (!plain_identifier(route.name) || route.type.empty())
+        fail(line, "domain route must be 'name: DomainType'");
+      domain.routes.push_back(std::move(route));
+    };
+    string inline_body = rest.substr(1);
+    if (!inline_body.empty()) {
+      if (inline_body.back() != ')')
+        fail(head, "domainroutes declaration must close with ')'");
+      inline_body.pop_back();
+      for (const auto& item : split_top_level(inline_body, ',')) add_route(head, item);
+      return;
+    }
+    bool closed = false;
+    while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
+      Line line = lines_[i_++];
+      if (trim(line.text) == ")") { closed = true; break; }
+      if (line.indent != member_indent + indent_unit_ && line.indent != member_indent)
+        fail(line, "domain route declarations must use one indentation level");
+      add_route(line, line.text);
+    }
+    if (!closed) fail(head, "domainroutes declaration must close with ')'");
   }
 
   Field parse_state_field() {
@@ -1193,6 +1237,7 @@ class Checker {
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
+    build_concrete_domain_graph();
     check_test_and_benchmark_declarations();
     // Await boundedness is an ordinary well-formedness rule checked for every
     // executable body above. Graph construction below only records domain edges.
@@ -1680,6 +1725,18 @@ class Checker {
       if (!state_names.insert(f.name).second) err(f.line, "duplicate state field '" + f.name + "'");
       // Actor handles may exist as state; they still expose only message sends.
     }
+    std::set<string> route_names;
+    for (const auto& route : d.routes) {
+      if (!domains_.count(route.type))
+        err(route.source_file, route.line,
+            "unknown domain route type '" + route.type + "'");
+      if (!route_names.insert(route.name).second)
+        err(route.source_file, route.line,
+            "duplicate domain route '" + route.name + "'");
+      if (state_names.count(route.name))
+        err(route.source_file, route.line,
+            "duplicate domain member '" + route.name + "' (state and route share one namespace)");
+    }
     for (const auto& h : d.handlers) {
       if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
@@ -1708,6 +1765,7 @@ class Checker {
         env[p.name] = p.type;
       }
       for (const auto& f : d.state) env[f.name] = f.type;
+      for (const auto& route : d.routes) env[route.name] = route.type;
       check_stmts(h.body, env, &d, &h);
       OwnershipEnv ownership;
       ownership.types = env;
@@ -1724,6 +1782,157 @@ class Checker {
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
+  }
+
+  static bool legacy_spawn_expression(const string& expression) {
+    return starts_with(trim(expression), "spawn ");
+  }
+
+  void build_concrete_domain_graph() {
+    p_.concrete_domain_graph = {};
+    if (!p_.main) return;
+    bool composition_open = true;
+    std::unordered_map<string,size_t> by_binding;
+    std::unordered_map<string,string> binding_types;
+    std::set<string> used_members;
+
+    auto fail_at = [&](const Stmt& statement, const string& message) {
+      err(statement.source_file.empty() ? p_.main->source_file : statement.source_file,
+          statement.line, message);
+    };
+    auto parse_bindings = [&](const string& expression) {
+      vector<std::pair<string,string>> result;
+      string callee; vector<string> args;
+      if (!parse_simple_call(expression, callee, args)) return result;
+      for (const auto& arg : args) {
+        string name, value;
+        if (!parse_named_argument(arg, name, value)) continue;
+        result.emplace_back(std::move(name), std::move(value));
+      }
+      return result;
+    };
+
+    for (const auto& statement : p_.main->body) {
+      auto constructed = domain_constructor(statement.b);
+      if (legacy_spawn_expression(statement.b))
+        fail_at(statement,
+                "'spawn' is retired: construct domain instances directly in the main composition prefix");
+      if (constructed) {
+        if (statement.indent != 0 ||
+            !(statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
+              statement.kind == Stmt::Kind::Assign) || !plain_identifier(statement.a))
+          fail_at(statement,
+                  "domain construction is only allowed as a top-level binding in main's composition prefix");
+        if (!composition_open)
+          fail_at(statement,
+                  "domain construction must occur before ordinary execution begins in main");
+        if (by_binding.count(statement.a))
+          fail_at(statement, "duplicate domain instance binding '" + statement.a + "'");
+        const Domain& domain = *domains_.at(*constructed);
+        ConcreteDomainInstance instance;
+        instance.binding = statement.a;
+        instance.identity = "main::" + statement.a;
+        instance.domain = domain.name;
+        instance.specialization = domain.name;
+        instance.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
+        instance.line = statement.line;
+        by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
+        binding_types[statement.a] = domain.name;
+        p_.concrete_domain_graph.instances.push_back(std::move(instance));
+
+        auto supplied = parse_bindings(statement.b);
+        std::set<string> names;
+        for (const auto& pair : supplied) {
+          if (!names.insert(pair.first).second)
+            fail_at(statement, "duplicate constructor member binding '" + pair.first + "'");
+          auto route = std::find_if(domain.routes.begin(), domain.routes.end(),
+                                    [&](const DomainRoute& candidate) { return candidate.name == pair.first; });
+          auto field = std::find_if(domain.state.begin(), domain.state.end(),
+                                    [&](const Field& candidate) { return candidate.name == pair.first; });
+          if (route == domain.routes.end() && field == domain.state.end())
+            fail_at(statement, "unknown member '" + pair.first + "' in domain " + domain.name + " constructor");
+          if (route != domain.routes.end()) {
+            auto target = binding_types.find(trim(pair.second));
+            if (target == binding_types.end())
+              fail_at(statement, "route '" + pair.first + "' must bind an earlier concrete domain instance");
+            if (!same_type(target->second, route->type))
+              fail_at(statement, "route '" + pair.first + "' expects domain " + route->type +
+                              " but received " + target->second);
+            ConcreteRouteEdge edge;
+            edge.source_instance = p_.concrete_domain_graph.instances.back().identity;
+            edge.route = pair.first;
+            edge.target_instance = p_.concrete_domain_graph.instances[by_binding.at(trim(pair.second))].identity;
+            edge.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
+            edge.line = statement.line;
+            p_.concrete_domain_graph.edges.push_back(std::move(edge));
+          } else {
+            if (domains_.count(canonical_type_name(inferred_expr_type(pair.second, binding_types).value_or(""))))
+              fail_at(statement, "domain handle '" + pair.second + "' cannot be used as state data");
+            auto actual = inferred_expr_type(pair.second, binding_types);
+            if (actual && !field->type.empty() && !same_type(field->type, *actual))
+              fail_at(statement, "state member '" + pair.first + "' has type '" + field->type +
+                              "' but initializer has type '" + *actual + "'");
+          }
+        }
+        for (const auto& route : domain.routes)
+          if (!names.count(route.name))
+            fail_at(statement, "missing required route binding '" + route.name + "'");
+        composition_open = true;
+      } else if (statement.indent == 0) {
+        composition_open = false;
+      }
+    }
+
+    // A direct constructor nested in a control-flow block is not a prefix
+    // binding even when its expression itself is otherwise well typed.
+    for (const auto& statement : p_.main->body) {
+      if (statement.indent > 0 && domain_constructor(statement.b))
+        fail_at(statement, "domain construction is not allowed in control flow; construct all domains in main's composition prefix");
+    }
+
+    const size_t n = p_.concrete_domain_graph.instances.size();
+    vector<vector<size_t>> adjacency(n);
+    vector<int> indegree(n, 0);
+    std::unordered_map<string,size_t> by_identity;
+    for (size_t index = 0; index < n; ++index)
+      by_identity[p_.concrete_domain_graph.instances[index].identity] = index;
+    for (const auto& edge : p_.concrete_domain_graph.edges) {
+      size_t source = by_identity.at(edge.source_instance);
+      size_t target = by_identity.at(edge.target_instance);
+      adjacency[source].push_back(target);
+      ++indegree[target];
+    }
+    vector<size_t> ready;
+    for (size_t index = 0; index < n; ++index) if (indegree[index] == 0) ready.push_back(index);
+    auto stable_less = [&](size_t left, size_t right) {
+      const auto& a = p_.concrete_domain_graph.instances[left];
+      const auto& b = p_.concrete_domain_graph.instances[right];
+      return std::tie(a.source_file, a.line, a.identity) <
+             std::tie(b.source_file, b.line, b.identity);
+    };
+    std::sort(ready.begin(), ready.end(), stable_less);
+    int rank = 0;
+    size_t visited = 0;
+    while (!ready.empty()) {
+      size_t current = ready.front();
+      ready.erase(ready.begin());
+      p_.concrete_domain_graph.instances[current].domain_rank = rank++;
+      ++visited;
+      for (size_t target : adjacency[current]) {
+        if (--indegree[target] == 0) {
+          ready.push_back(target);
+          std::sort(ready.begin(), ready.end(), stable_less);
+        }
+      }
+    }
+    if (visited != n) {
+      std::ostringstream cycle;
+      cycle << "concrete domain route cycle detected";
+      for (const auto& edge : p_.concrete_domain_graph.edges)
+        cycle << "\n  " << edge.source_instance << " --" << edge.route
+              << "--> " << edge.target_instance;
+      throw CompileError(p_.main->line, cycle.str());
+    }
   }
 
   void check_test_and_benchmark_declarations() {
@@ -1798,11 +2007,22 @@ class Checker {
     }
   }
 
-  static std::optional<string> spawn_domain(const string& expr) {
+  std::optional<string> domain_constructor(const string& expr) const {
     string e = trim(expr);
-    if (!starts_with(e, "spawn ") || !ends_with(e, "()")) return std::nullopt;
-    string name = trim(e.substr(6, e.size() - 8));
-    if (name.empty()) return std::nullopt;
+    if (starts_with(e, "spawn ")) {
+      // Kept only long enough to produce the migration diagnostic in the
+      // ordinary checker.  It is not a semantic construction form anymore.
+      string legacy = trim(e.substr(6));
+      string name;
+      vector<string> ignored;
+      if (parse_simple_call(legacy, name, ignored) && domains_.count(name))
+        return name;
+      return std::nullopt;
+    }
+    string name;
+    vector<string> args;
+    if (!parse_simple_call(e, name, args) || !domains_.count(name))
+      return std::nullopt;
     return name;
   }
 
@@ -2548,7 +2768,7 @@ class Checker {
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
         auto existing = env.find(statement.a);
-        if (auto spawned = spawn_domain(statement.b)) {
+        if (auto spawned = domain_constructor(statement.b)) {
           env[statement.a] = *spawned;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
           env[statement.a] = canonical_type_name(*inferred);
@@ -2913,7 +3133,7 @@ class Checker {
     };
 
     for (const auto& statement : p_.main->body) {
-      if (auto spawned = spawn_domain(statement.b)) {
+      if (auto spawned = domain_constructor(statement.b)) {
         auto domain = domains_.find(*spawned);
         if (domain != domains_.end()) {
           bindings[statement.a] = domain->second;
@@ -3829,7 +4049,7 @@ class Checker {
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
           if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
-          else if (auto spawned = spawn_domain(statement.b)) env[statement.a] = *spawned;
+          else if (auto spawned = domain_constructor(statement.b)) env[statement.a] = *spawned;
           else env[statement.a] = "_value";
           ++index;
           break;
@@ -4576,7 +4796,7 @@ class Checker {
         return module.empty() ? binding : module + "::" + binding;
       };
       for (const auto& statement : p_.main->body) {
-        if (auto spawned = spawn_domain(statement.b)) {
+        if (auto spawned = domain_constructor(statement.b)) {
           string instance = module_instance(*spawned, statement.a);
           binding_types[statement.a] = *spawned;
           binding_instances[statement.a] = instance;
@@ -4719,7 +4939,7 @@ class Checker {
           for (const auto& statement : body) {
             if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
                 statement.kind == Stmt::Kind::Assign) {
-              if (auto spawned = spawn_domain(statement.b)) {
+              if (auto spawned = domain_constructor(statement.b)) {
                 types[statement.a] = *spawned;
                 string exact = module_instance(*spawned, statement.a);
                 instances[statement.a] = exact;
@@ -6260,7 +6480,7 @@ class Checker {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
           std::optional<string> type;
-          if (auto spawned = spawn_domain(s.b)) type = *spawned;
+          if (auto spawned = domain_constructor(s.b)) type = *spawned;
           else type = inferred_expr_type(s.b, env.types);
 
           env.types[s.a] = type.value_or("_value");
@@ -6293,7 +6513,7 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
-          if (auto spawned = spawn_domain(s.b)) {
+          if (auto spawned = domain_constructor(s.b)) {
             env.types[s.a] = *spawned;
             env.moved.erase(s.a);
             ++index;
@@ -7065,7 +7285,10 @@ class Checker {
                                          const TypeEnv& current_env) {
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
-        if (auto spawned = spawn_domain(statement.b)) {
+        if (legacy_spawn_expression(statement.b))
+          err(statement.line,
+              "'spawn' is retired: construct domain instances directly in the main composition prefix");
+        if (auto spawned = domain_constructor(statement.b)) {
           if (!domains_.count(*spawned))
             err(statement.line, "unknown domain in spawn: " + *spawned);
           if (current || current_function)
@@ -11710,6 +11933,7 @@ class Generator {
     if (d) {
       std::set<string> fields;
       for (const auto& f : d->state) fields.insert(f.name);
+      for (const auto& route : d->routes) fields.insert(route.name);
       string out;
       bool in_str = false, esc = false;
       for (size_t i = 0; i < e.size();) {
@@ -12262,6 +12486,7 @@ class Generator {
       std::unordered_map<string,string> types;
       types["self"] = d.name;
       for (const auto& f : d.state) types[f.name] = f.type;
+      for (const auto& route : d.routes) types[route.name] = route.type;
       for (const auto& p : h.params) {
         locals.insert(p.name);
         types[p.name] = p.type;
@@ -12310,8 +12535,10 @@ class Generator {
     o << "}\n\n";
 
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>)") << " -> "
-      << d.name << "Ref {\n";
+      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>");
+    for (const auto& route : d.routes)
+      o << ", " << route.name << ": " << rust_type(route.type);
+    o << ") -> " << d.name << "Ref {\n";
     if (d.exported)
       o << "    let _tracker = Arc::new(MossTracker::new());\n";
     backend_comment(o, 4, "SHARED-MEMORY DIRECT state allocation for domain " + d.name);
@@ -12329,6 +12556,8 @@ class Generator {
       source_comment(o, 8, f.line, state_field_signature(f));
       o << "        " << f.name << ": " << init << ",\n";
     }
+    for (const auto& route : d.routes)
+      o << "        " << route.name << ": " << route.name << ",\n";
     o << "    };\n";
     o << "    " << d.name << "Ref { state: Arc::new("
       << (rwlock ? "RwLock" : "Mutex") << "::new(state)) }\n";
@@ -12603,6 +12832,10 @@ class Generator {
       else
         o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
+    for (const auto& route : d.routes) {
+      source_comment(o, 4, route.line, route.name + ": " + route.type);
+      o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
+    }
     o << "}\n\n";
     tooling_end(o, 0, domain_identity);
 
@@ -12699,6 +12932,7 @@ class Generator {
       std::unordered_map<string,string> types;
       types["self"] = d.name;
       for (const auto& f : d.state) types[f.name] = f.type;
+      for (const auto& route : d.routes) types[route.name] = route.type;
       for (const auto& p : h.params) {
         locals.insert(p.name);
         types[p.name] = p.type;
@@ -12723,8 +12957,10 @@ class Generator {
 
     backend_comment(o, 0, "MESSAGE/MAILBOX worker for domain " + d.name + "; each dequeued Moss message runs to completion");
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "()" : "(tracker: Arc<MossTracker>)")
-      << " -> " << d.name << "Ref {\n";
+      << (d.exported ? "()" : "(tracker: Arc<MossTracker>");
+    for (const auto& route : d.routes)
+      o << ", " << route.name << ": " << rust_type(route.type);
+    o << ") -> " << d.name << "Ref {\n";
     if (d.exported)
       o << "    let tracker = Arc::new(MossTracker::new());\n";
     o << "    __moss_require_send::<" << d.name << "Msg>();\n";
@@ -12740,6 +12976,8 @@ class Generator {
       source_comment(o, 12, f.line, state_field_signature(f));
       o << "            " << f.name << ": " << init << ",\n";
     }
+    for (const auto& route : d.routes)
+      o << "            " << route.name << ": " << route.name << ",\n";
     o << "        };\n";
     o << "        while let Ok(msg) = rx.recv() {\n";
     o << "            match msg {\n";
@@ -13559,10 +13797,8 @@ class Generator {
               else
                 backend_comment(o, (base + level) * 4,
                                 "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
-              o << indent(level) << (existing_binding ? "" : "let ") << s.a
-                << " = spawn_" << snake_case(*sd)
-                << (domains_.count(*sd) && domains_.at(*sd)->exported
-                        ? "();\n" : "(__tracker.clone());\n");
+              o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+              emit_spawn_call(o, *sd, s.b, d, locals, &types);
             }
             locals.insert(s.a);
             types[s.a] = *sd;
@@ -13756,9 +13992,7 @@ class Generator {
             if (auto cluster = plan_.cluster_for(*sd))
               o << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
             else
-              o << "spawn_" << snake_case(*sd)
-                << (domains_.count(*sd) && domains_.at(*sd)->exported
-                        ? "();\n" : "(__tracker.clone());\n");
+              emit_spawn_call(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
             auto source = types.find(trim(s.b));
@@ -14265,10 +14499,45 @@ class Generator {
     }
   }
 
-  static std::optional<string> CheckerSpawn(const string& expr) {
+  std::optional<string> CheckerSpawn(const string& expr) const {
     string e = trim(expr);
-    if (!starts_with(e, "spawn ") || !ends_with(e, "()")) return std::nullopt;
-    return trim(e.substr(6, e.size()-8));
+    if (starts_with(e, "spawn ")) e = trim(e.substr(6));
+    string callee; vector<string> args;
+    if (!parse_simple_call(e, callee, args)) return std::nullopt;
+    return domains_.count(callee) ? std::optional<string>(callee) : std::nullopt;
+  }
+
+  void emit_spawn_call(std::ostringstream& o, const string& domain,
+                       const string& expression, const Domain* context,
+                       const std::set<string>& locals,
+                       const std::unordered_map<string,string>* types) const {
+    auto found = domains_.find(domain);
+    if (found == domains_.end()) {
+      o << "spawn_" << snake_case(domain) << "(__tracker.clone());\n";
+      return;
+    }
+    const Domain& definition = *found->second;
+    bool exported = definition.exported;
+    o << "spawn_" << snake_case(domain) << (exported ? "()" : "(__tracker.clone()");
+    string constructor = trim(expression);
+    if (starts_with(constructor, "spawn ")) constructor = trim(constructor.substr(6));
+    string callee; vector<string> arguments;
+    std::unordered_map<string,string> named;
+    if (parse_simple_call(constructor, callee, arguments)) {
+      for (const auto& argument : arguments) {
+        string name, value;
+        if (parse_named_argument(argument, name, value)) named[name] = value;
+      }
+    }
+    if (!exported) {
+      for (const auto& route : definition.routes) {
+        auto value = named.find(route.name);
+        if (value == named.end())
+          throw std::runtime_error("internal error: missing route binding during lowering");
+        o << ", " << expr(value->second, context, locals, types);
+      }
+    }
+    o << ");\n";
   }
 
   static string cluster_spawn_binding(size_t cluster, const string& domain) {
@@ -16245,6 +16514,30 @@ static bool write_semantic_query_json(
   if (command == "inspect" || command == "cost") {
     out << ", \"cost_facts\": ";
     write_cost_result(out, program, plan, warnings, *target);
+  }
+  if (command == "inspect") {
+    out << ", \"concrete_domain_graph\": {\"instances\": [";
+    for (size_t index = 0; index < program.concrete_domain_graph.instances.size(); ++index) {
+      if (index) out << ",";
+      const auto& instance = program.concrete_domain_graph.instances[index];
+      out << "{\"identity\":"; write_debug_json_string(out, instance.identity);
+      out << ",\"binding\":"; write_debug_json_string(out, instance.binding);
+      out << ",\"domain\":"; write_debug_json_string(out, instance.domain);
+      out << ",\"source_file\":"; write_debug_json_string(out, instance.source_file);
+      out << ",\"line\":" << instance.line << ",\"domain_rank\":"
+          << instance.domain_rank << "}";
+    }
+    out << "],\"edges\":[";
+    for (size_t index = 0; index < program.concrete_domain_graph.edges.size(); ++index) {
+      if (index) out << ",";
+      const auto& edge = program.concrete_domain_graph.edges[index];
+      out << "{\"source_instance\":"; write_debug_json_string(out, edge.source_instance);
+      out << ",\"route\":"; write_debug_json_string(out, edge.route);
+      out << ",\"target_instance\":"; write_debug_json_string(out, edge.target_instance);
+      out << ",\"source_file\":"; write_debug_json_string(out, edge.source_file);
+      out << ",\"line\":" << edge.line << "}";
+    }
+    out << "]}";
   }
   out << "}\n}\n";
   return true;

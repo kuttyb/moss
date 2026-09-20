@@ -7,6 +7,6 @@ domain Counter:
     reply value
 
 fn main():
-  counter = spawn Counter()
+  counter = Counter()
   value = message counter.Increment()
   echo value

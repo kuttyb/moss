@@ -8,7 +8,7 @@ domain Box:
     reply value
 
 fn main():
-  singleBox = spawn Box()
+  singleBox = Box()
   message singleBox.Set(10)
   message singleBox.Set(20)
   result = message singleBox.Get()

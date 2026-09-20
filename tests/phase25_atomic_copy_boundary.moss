@@ -9,7 +9,7 @@ domain Gate:
     reply enabled
 
 fn main():
-  gate = spawn Gate()
+  gate = Gate()
   token = Token(label = "original")
   returned = message gate.Remember(true, token)
   echo token.label, returned

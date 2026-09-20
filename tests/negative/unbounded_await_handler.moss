@@ -10,6 +10,6 @@ domain Caller:
     reply value
 
 fn main():
-  worker = spawn Worker()
-  caller = spawn Caller()
+  worker = Worker()
+  caller = Caller()
   message caller.Start(worker, true)

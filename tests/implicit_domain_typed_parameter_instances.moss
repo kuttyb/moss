@@ -15,9 +15,9 @@ domain Coordinator:
     ignored = message worker.Run()
 
 fn main():
-  c = spawn Coordinator()
-  w1 = spawn Worker()
-  w2 = spawn Worker()
+  c = Coordinator()
+  w1 = Worker()
+  w2 = Worker()
   message c.Init(1)
   message w1.Set(10)
   message w2.Set(3.5)

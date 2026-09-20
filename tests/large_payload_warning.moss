@@ -38,6 +38,6 @@ domain Sender
     message worker.Store(payload)
 
 proc main()
-  let worker = spawn Worker()
-  let sender = spawn Sender()
+  let worker = Worker()
+  let sender = Sender()
   message sender.Start(worker)

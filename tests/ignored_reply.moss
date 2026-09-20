@@ -4,5 +4,5 @@ domain Worker
     reply true
 
 proc main()
-  let worker = spawn Worker()
+  let worker = Worker()
   message worker.Fire()

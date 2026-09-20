@@ -6,6 +6,6 @@ domain Worker:
       reply "wrong type"
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   result = message worker.Maybe(true)
   echo result

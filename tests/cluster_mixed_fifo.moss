@@ -13,6 +13,6 @@ domain Caller
     echo "result:", value
 
 proc main()
-  let target = spawn Target()
-  let caller = spawn Caller()
+  let target = Target()
+  let caller = Caller()
   message caller.Run(target)

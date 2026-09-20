@@ -14,8 +14,8 @@ domain Worker:
     reply 1
 
 fn main():
-  intWorker = spawn Worker()
-  floatWorker = spawn Worker()
+  intWorker = Worker()
+  floatWorker = Worker()
   message intWorker.Set(10)
   message floatWorker.Set(3.5)
   message intWorker.Ping(floatWorker)

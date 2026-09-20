@@ -6,6 +6,6 @@ domain Worker
     reply Payload(value: 9)
 
 proc main()
-  let worker = spawn Worker()
+  let worker = Worker()
   let payload = message worker.Build()
   echo "fresh reply:", payload.value

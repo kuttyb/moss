@@ -12,8 +12,8 @@ fn notify(worker: Worker) -> Int:
   return 1
 
 proc main():
-  first = spawn Worker()
-  second = spawn Worker()
+  first = Worker()
+  second = Worker()
   workers = [first, second]
   pipeline_total = workers |> map(notify) |> sum
   first_seen = message first.Seen()

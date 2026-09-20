@@ -7,6 +7,6 @@ domain Register:
     reply previous
 
 fn main():
-  register = spawn Register()
+  register = Register()
   previous = message register.Swap(9)
   echo previous

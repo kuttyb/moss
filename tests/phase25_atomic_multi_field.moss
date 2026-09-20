@@ -11,7 +11,7 @@ domain Stats:
     reply enabled
 
 fn main():
-  stats = spawn Stats()
+  stats = Stats()
   count = message stats.Increment()
   enabled = message stats.Toggle()
   echo count, enabled

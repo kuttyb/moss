@@ -6,6 +6,6 @@ domain Worker:
     echo payload.value
 
 fn main():
-  worker = spawn Worker()
+  worker = Worker()
   data = Payload(value = 9)
   message worker.Process(data)

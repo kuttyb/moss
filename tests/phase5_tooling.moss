@@ -39,6 +39,6 @@ fn main():
   step_probe(1)
   echo summarize(values)
 
-  counter = spawn Counter()
+  counter = Counter()
   result = message counter.Add(5)
   echo result

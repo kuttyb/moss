@@ -6,6 +6,6 @@ domain Counter:
     echo "counter:", value
 
 fn main():
-  let counter = spawn Counter()
+  let counter = Counter()
   message counter.Add(41)
   message counter.Add(1)

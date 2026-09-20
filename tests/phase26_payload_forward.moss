@@ -10,7 +10,7 @@ domain Router:
     message sink.Process(payload)
 
 fn main():
-  sink = spawn Sink()
-  router = spawn Router()
+  sink = Sink()
+  router = Router()
   data = Payload(value = 11)
   message router.Route(data, sink)
