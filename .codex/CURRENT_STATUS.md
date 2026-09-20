@@ -2,9 +2,10 @@
 
 Updated: 2026-09-20
 
-## Phase 10.6F.1 gates passed — awaiting review and explicit v0.1 re-closure
+## Phase 10.6F.1 checked in as `f1dd43e` — awaiting review and explicit v0.1 re-closure
 
-The provisional Phase 10 closeout (`a907336`, status `94fca2c`) is reopened.
+The provisional Phase 10 closeout (`a907336`, status `94fca2c`) was reopened for
+F.1 and the static typed-lowering implementation is now checked in as `f1dd43e`.
 Phase 10.6F measured release-blocking fixed overhead from runtime synchronization
 metadata interpretation. F.1 now lowers the unchanged SynchronizationPlan into
 typed class-owned state and direct statically emitted acquisitions. No semantic,

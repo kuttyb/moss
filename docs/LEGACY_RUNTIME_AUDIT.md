@@ -25,16 +25,17 @@ READs at `b3f8a64`. This record describes the Phase 10.6E change, not Phase
   `phase26_repeated_payload.moss`, `message_object_copy.moss`, and
   `negative/cluster_await_retired.moss`. Deletions are listed below.
 
-## Production implementation
+## Historical 10.6E production snapshot (superseded by 10.6F.1)
 
-The generator now has one domain path: `construct_<domain>` creates per-instance
-class storage and `message` calls the target's synchronized handler entry directly.
-Source-free provider calls use the corresponding exported entry bridge. The
-existing `MossClassRuntime` and frame-bounded borrowed views remain authoritative;
-`src/handler_runtime.hpp` is unchanged. No unsafe storage or new lock algorithm
-was introduced. Plan validation, exact SHARED/EXCLUSIVE acquisition, full-handler
-retention, nested rank ordering, restoration, reply release, and panic/poison abort
-behavior are retained.
+This section records the implementation state at the 10.6E checkpoint. At that
+point, `construct_<domain>` created per-instance class storage and direct
+synchronized entries, while the generic `MossClassRuntime` and frame-bounded
+borrowed views were still the active physical implementation. Phase 10.6F.1
+superseded that design: production now emits typed class-owned `RwLock` fields,
+direct acquisitions, and typed borrowed views; the generic runtime is no longer
+used on the execution path. Plan validation, exact SHARED/EXCLUSIVE acquisition,
+full-handler retention, nested rank ordering, reply release, and panic/poison
+abort behavior remain authoritative.
 
 Removed from `src/moss.cpp` and checked metadata:
 
