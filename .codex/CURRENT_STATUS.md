@@ -94,11 +94,12 @@ implementation; they do not establish physical 2PL or primitive write-through
 correctness. No preflight validation remains pending. Implementation obligations
 remain listed under Immediate next tasks.
 
-Follow-up status correction: ordinary parameter effects are inferred, and no
-`mut`, `var`, `write`, or `inout` parameter syntax is planned. Historical
-await/serialization assumptions and the 10.5 open-design blocker are explicitly
-superseded by 10.6A–C. Only this status file changed; compiler code and tests were
-untouched. `git diff --check` passed for this correction.
+Follow-up status correction: ordinary READ/WRITE/CONSUME parameter effects are
+inferred; no `var`, `mut`, `write`, or `inout` modifier is planned for parameter
+mutation. Old await/serialized-domain assumptions are historical and superseded
+by Phase 10.6A. The historical Phase 10.5 open-design blocker is superseded by
+the resolved decisions in 10.6A–C. Only this status file changed; compiler code
+and tests were untouched. `git diff --check` passed for this correction.
 
 ## Version and commits
 
@@ -217,8 +218,8 @@ untouched. `git diff --check` passed for this correction.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Ordinary function parameter READ/WRITE/CONSUME effects are inferred. Primitive
   parameter assignment may be caller-visible WRITE; the physical lowering gap
-  is recorded above for 10.6D. No `mut`, `var`, `write`, or `inout` parameter
-  syntax is planned.
+  is recorded above for 10.6D. No `var`, `mut`, `write`, or `inout` modifier is
+  planned for parameter mutation.
 - Immutable sharing, arenas, `ref object` identity, and persistent `revise` versions are deferred because retention and leak behavior is unresolved.
 - Moss `Int` is currently signed 64-bit two's-complement. Overflowing integer
   arithmetic wraps modulo 2^64 in every backend; Rust overflow-check settings are
@@ -754,18 +755,19 @@ handles, and synchronous calls are described above.
 - Nontrivial assignment transfers ownership; hidden deep copies and COW are prohibited.
 - `deepCopy()` is explicit future syntax and is not implemented.
 - Detached-local cross-domain transfer was the decision at that time and is superseded by the 2026-09-11 prohibition. Same-domain queued transfer remains allowed.
-- Historical proposal: ordinary read-only and `var` procedure parameters would
-  not transfer. This proposal is superseded by inferred ordinary function
-  parameter effects; no explicit parameter-mutation syntax is planned.
+- The historical explicit-parameter proposal is superseded: ordinary function
+  parameter READ/WRITE/CONSUME effects are inferred, and primitive parameter
+  assignment may be caller-visible WRITE. No `var`, `mut`, `write`, or `inout`
+  modifier is planned for parameter mutation.
 - Immutable sharing, arenas, and `revise` remain deferred due memory-retention and leak concerns.
 
 ### Assumptions Codex made
 
-- Historical assumption, superseded by 10.6A–C: await/reply and total-domain
-  serialization were treated as the language model. Current Moss uses
-  synchronous `message`, terminating `reply`, and the closed concrete graph with
-  compiler-owned synchronization analysis; physical handler-level 2PL remains
-  10.6D work.
+- Historical assumption, superseded by Phase 10.6A: await/reply and total-domain
+  serialization were treated as the language model. Phase 10.6A establishes
+  synchronous `message` and terminating `reply`. Phases 10.6B–C add the closed
+  concrete graph and compiler-owned synchronization analysis; physical
+  handler-level 2PL remains 10.6D work.
 - The lightweight checker is extended only for direct, statically recognizable transfer cases in this increment.
 
 ### Tests actually executed
@@ -898,8 +900,8 @@ queries now expose the stored `SynchronizationPlan`, including derived effects,
 classes, ranks, handler sets, and conflicts. `docs/SYNCHRONIZATION_PLAN.md`
 records the implemented Account derivation.
 
-The Phase 10.5 “blocked by open design” statement is historical and superseded
-by 10.6A–C:
+The Phase 10.5 “BLOCKED BY OPEN DESIGN” paragraph is historical and superseded
+by the resolved decisions in Phases 10.6A–C:
 10.6A/B/B.1 settled synchronous calls, self-send/chaining rejection, closed handles,
 and concrete domain ranks; 10.6C implements synchronization analysis and semantic
 effect metadata. Existing ordinary parameter WRITE effects remain authoritative.
