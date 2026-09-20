@@ -1,0 +1,69 @@
+type Profile:
+  name: String
+  values: Vector[Int]
+  fn score() -> Int:
+    amount = values |> sum
+    if name == "large":
+      return amount + 5
+    return amount + 1
+
+type Record:
+  profile: Profile
+  count: Int
+  fn score() -> Int:
+    amount = profile.values |> sum
+    if profile.name == "large":
+      return amount + count + 5
+    return amount + count + 1
+
+fn inspect_record(value: Record) -> Int:
+  return value.score()
+
+fn inspect_text(value: String) -> Int:
+  if value == value:
+    return 5
+  return 1
+
+domain Reader:
+  fn Accept(value: Record) -> Int:
+    reply inspect_record(value)
+
+domain Store:
+  domainroutes(child: Reader)
+  record: Record
+  config: Profile
+  total: Int
+  fn Change():
+    record.count = record.count + 1
+    record.profile.name = "changed"
+    record.profile.values = [4, 5]
+  fn Bump():
+    total = total + 1
+  fn Read() -> Int:
+    a = inspect_record(record)
+    b = record.score()
+    c = inspect_text(record.profile.name)
+    reply a + b + c
+  fn Mixed() -> Int:
+    amount = record.score()
+    total = total + amount
+    reply total
+  fn Immutable() -> Int:
+    reply config.score()
+  fn Pipeline() -> Int:
+    reply record.profile.values |> map(_ + record.count) |> sum
+  fn Forward() -> Int:
+    before = inspect_record(record)
+    child_value = message child.Accept(record)
+    after = inspect_record(record)
+    reply before + child_value + after
+  fn Snapshot() -> Record:
+    reply record
+
+fn main():
+  child = Reader()
+  store = Store(child: child, record: Record(profile: Profile(name: "large", values: [1, 2, 3]), count: 2), config: Profile(name: "fixed", values: [10, 20]), total: 0)
+  echo message store.Read(), message store.Mixed(), message store.Immutable(), message store.Pipeline(), message store.Forward()
+  snapshot = message store.Snapshot()
+  message store.Change()
+  echo snapshot.score(), message store.Read()

@@ -113,6 +113,9 @@ READ / WRITE / CONSUME separately and maps them to shared/exclusive modes only
 in the derived plan. Immutable-after-publication leaves receive no classes.
 Phase 10.6D consumes this stored plan for production handler-level 2PL, with
 exact shared/exclusive class acquisition and full-handler guard retention.
+Phase 10.6D.1 replaces handler-entry READ snapshots with borrowed views tied to
+those guards; immutable state is borrowed directly. Explicit message/reply
+boundaries still establish independent values, with owned incoming payloads.
 
 See [SynchronizationPlan architecture](SYNCHRONIZATION_PLAN.md) for the definitions
 of X, X*, ProtectedRead, leaf LockSet, class signatures, ClassSet, local ranks,

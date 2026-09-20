@@ -10781,6 +10781,12 @@ class Generator {
 
     o << handler_runtime_rust();
     for (const auto& t : p_.objects) gen_object(o, t);
+    std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
+    for (const auto& entry : view_objects) {
+      if (entry.second->fields.empty()) continue;
+      bool owns = std::any_of(p_.objects.begin(), p_.objects.end(), [&](const auto& object) { return object.name == entry.first; });
+      gen_object_access(o, *entry.second, owns);
+    }
     for (const auto& f : p_.functions) gen_function(o, f);
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
@@ -10814,6 +10820,10 @@ class Generator {
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
   string construction_binding_;
+  bool view_domain_ = false;
+  bool view_method_ = false;
+  std::set<string> view_parameters_;
+  mutable bool mutable_projection_ = false;
   bool await_error_handling_ = true;
   bool debug_build_ = false;
   ProgramGenerationMode mode_ = ProgramGenerationMode::Application;
@@ -11149,12 +11159,25 @@ class Generator {
                           const std::set<string>& locals,
                           const std::unordered_map<string,string>* types) const {
     string base, index;
-    if (!parse_index(trim(argument), base, index)) return expr(argument, d, locals, types);
+    if (!parse_index(trim(argument), base, index)) return place_expr(argument, d, locals, types);
     string storage = write_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get_mut(&(" + key + ")).expect(\"Moss missing map key\")";
+    return "(" + storage + ")[(" + key + ") as usize]";
+  }
+
+  string read_call_place(const string& argument, const Domain* d,
+                         const std::set<string>& locals,
+                         const std::unordered_map<string,string>* types) const {
+    string base, index;
+    if (!parse_index(trim(argument), base, index)) return expr(argument, d, locals, types);
+    string storage = read_call_place(base, d, locals, types);
+    string key = expr(index, d, locals, types);
+    auto type = generated_expr_type(base, types);
+    if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
+      return "*(" + storage + ").get(&(" + key + ")).expect(\"Moss missing map key\")";
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
@@ -11176,7 +11199,7 @@ class Generator {
         !write_through_parameters_.count(trim(argument)))
       return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
-    return "&(" + rendered + ")";
+    return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
 
   string method_call_argument(const Method& method, size_t index,
@@ -11195,7 +11218,7 @@ class Generator {
         !write_through_parameters_.count(trim(argument)))
       return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
-    return "&( " + rendered + ")";
+    return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
 
   struct GeneratedBinaryExpression {
@@ -12377,6 +12400,7 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0) const {
     e = trim(std::move(e));
+    if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
       return "*" + e;
     // `message` is a Moss expression as well as a statement.  Assignment
@@ -12558,13 +12582,14 @@ class Generator {
           (canonical_type_name(*base_type) == "map" ||
            starts_with(canonical_type_name(*base_type), "map["));
       if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-      return "(" + expr(ib, d, locals, types) + "[" + ir + "]).clone()";
+      string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
+      return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
 
     string member_receiver, member_name;
     vector<string> member_arguments;
     if (parse_member_call(e, member_receiver, member_name, member_arguments)) {
-      string receiver_expression = expr(member_receiver, d, locals, types);
+      string receiver_expression = method_receiver_place(member_receiver, member_name, member_arguments, d, locals, types);
       if (starts_with(receiver_expression, "*")) receiver_expression = "(" + receiver_expression + ")";
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
@@ -12579,7 +12604,7 @@ class Generator {
                                                   return result;
                                                 }(), true, nullptr)) {
           std::ostringstream rendered;
-          rendered << receiver_expression << "." << member_name << "(";
+          rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
             rendered << method_call_argument(*method, index, member_arguments[index], d, locals, types);
@@ -12592,7 +12617,7 @@ class Generator {
       // checker; retain their ordinary Rust method spelling when the concrete
       // method is not available to this expression pass.
       std::ostringstream rendered;
-      rendered << receiver_expression << "." << member_name << "(";
+      rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
       for (size_t index = 0; index < member_arguments.size(); ++index) {
         if (index) rendered << ", ";
         rendered << expr(member_arguments[index], d, locals, types);
@@ -12665,7 +12690,7 @@ class Generator {
       if (parse_simple_call(e, head, call_args)) {
         bool known_function = functions_.count(head);
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
-        r << emitted_function_name(head, call_args, types) << "(";
+        r << viewed_function_name(head, call_args, d, locals, types) << "(";
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
@@ -12682,8 +12707,30 @@ class Generator {
       }
     }
 
+    // Expand borrowed access paths before the ordinary state identifier rewrite.
+    if (view_domain_ || view_method_ || !view_parameters_.empty()) {
+      string result;
+      bool quoted = false, escaped = false;
+      for (size_t i = 0; i < e.size();) {
+        char ch = e[i];
+        if (quoted) {
+          result += ch; ++i;
+          if (escaped) escaped = false;
+          else if (ch == '\\') escaped = true;
+          else if (ch == '\"') quoted = false;
+        } else if (ch == '\"') { quoted = true; result += ch; ++i; }
+        else if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_') {
+          size_t end = i + 1;
+          while (end < e.size() && (std::isalnum(static_cast<unsigned char>(e[end])) || e[end] == '_' || e[end] == '.')) ++end;
+          string path = e.substr(i, end - i);
+          auto place = view_place(path, d, locals, types);
+          result += place ? *place : path; i = end;
+        } else { result += ch; ++i; }
+      }
+      e = result;
+    }
     // Replace domain state identifiers with state.<name>, respecting basic identifier boundaries.
-    if (d) {
+    if (d && !view_domain_ && !view_method_) {
       std::set<string> fields;
       for (const auto& f : d->state) fields.insert(f.name);
       for (const auto& route : d->routes) fields.insert(route.name);
@@ -12785,9 +12832,9 @@ class Generator {
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
                      size_t functional_pipeline_id = 0) const {
-    string r = nominal_domain_handle_argument(
-        e, type, d, locals, types, functional_pipeline_id);
+    string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
+    if (is_object_view(e, d, locals, types)) return "(" + r + ").__moss_value()";
     if (copy_type(t) || t == "_") return r;
     // Messages are the explicit Moss semantic copy boundary.  A payload is
     // detached from the sender even when the source binding remains available;
@@ -12798,23 +12845,13 @@ class Generator {
     return "(" + r + ").clone()";
   }
 
-  bool direct_payload_reference_type(const string& type) const {
-    string t = canonical_type_name(type);
-    return !t.empty() && t != "_" && !copy_type(t) && !domains_.count(t);
-  }
+  bool direct_payload_reference_type(const string&) const { return false; }
 
   string direct_message_arg(const string& e, const string& type, const Domain* d,
                             const std::set<string>& locals,
                             const std::unordered_map<string,string>* types = nullptr,
                             size_t functional_pipeline_id = 0) const {
-    string r = nominal_domain_handle_argument(
-        e, type, d, locals, types, functional_pipeline_id);
-    if (domains_.count(canonical_type_name(type)))
-      throw std::runtime_error("internal error: domain capability reached payload lowering");
-    if (!direct_payload_reference_type(type)) return r;
-    if (plain_identifier(trim(e)) && borrowed_parameters_.count(trim(e)))
-      return r;
-    return "&(" + r + ")";
+    return message_arg(e, type, d, locals, types, functional_pipeline_id);
   }
 
   string cluster_call_arg(const string& expression, const string& type,
@@ -12968,18 +13005,30 @@ class Generator {
     }
     o << "}\n\n";
     tooling_end(o, 0, type_identity);
-    for (const auto& method : t.methods) {
+    // Native provider storage decomposition moves fields without exposing Moss
+    // field access or requiring the consumer to read Rust-private fields.
+    o << "impl " << t.name << " {\n    " << (t.exported ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+    for (const auto& field : t.fields) o << rust_type(field.type) << ",";
+    o << ") { (";
+    for (const auto& field : t.fields) o << "self." << field.name << ",";
+    o << ") }\n}\n";
+    for (const auto& method : t.methods) for (bool view : {false, true}) {
+      bool needs_view = false;
+      for (size_t i = 0; i < method.params.size(); ++i)
+        needs_view |= method_effect(method, i) != Effect::Consume && view_object_type(method.params[i].type);
+      if (view && !needs_view) continue;
+      const string method_name = (view ? "__moss_view_" : "") + method.name;
       string semantic_identity = method_semantic_identity(t, method);
-      string generated_symbol = t.name + "::" + method.name;
+      string generated_symbol = t.name + "::" + method_name;
       string native_symbol = tooling_native_symbol(
           "method", t.name + "__" + method.name, semantic_identity);
       tooling_begin(o, 0, "method", semantic_identity, generated_symbol,
-                    native_symbol);
+                    view ? "" : native_symbol);
       o << "impl " << t.name << " {\n";
       source_comment(o, 4, method.line,
                      "fn " + method.name);
-      debug_symbol_attributes(o, 4, native_symbol);
-      o << "    fn " << method.name;
+      debug_symbol_attributes(o, 4, native_symbol, !view);
+      o << "    fn " << method_name;
       if (method.receiver_effect == Effect::Consume) o << "(self";
       else if (method.receiver_effect == Effect::Write) o << "(&mut self";
       else o << "(&self";
@@ -12987,7 +13036,8 @@ class Generator {
         if (p.type.empty()) throw std::runtime_error("unresolved concrete method parameter type: " + method.name + "." + p.name);
         size_t parameter_index = static_cast<size_t>(&p - method.params.data());
         Effect effect = method_effect(method, parameter_index);
-        string parameter_type = rust_type(p.type);
+        string parameter_type = view && effect != Effect::Consume && view_object_type(p.type)
+            ? "impl " + access_trait(p.type) : rust_type(p.type);
         if (effect != Effect::Consume && (effect == Effect::Write || borrowable_type(p.type))) {
           o << ", " << (effect == Effect::Write ? "" : "") << p.name << ": "
             << (effect == Effect::Write ? "&mut " : "&") << parameter_type;
@@ -12997,10 +13047,13 @@ class Generator {
       }
       if (method.return_type) o << ") -> " << rust_type(*method.return_type) << " {\n";
       else o << ") {\n";
-      write_through_parameters_.clear();
-      for (size_t index = 0; index < method.params.size(); ++index)
-        if (method_effect(method, index) == Effect::Write)
+      write_through_parameters_.clear(); view_parameters_.clear();
+      for (size_t index = 0; index < method.params.size(); ++index) {
+        if (view && method_effect(method, index) != Effect::Consume && view_object_type(method.params[index].type))
+          view_parameters_.insert(method.params[index].name);
+        else if (method_effect(method, index) == Effect::Write)
           write_through_parameters_.insert(method.params[index].name);
+      }
       Domain receiver;
       receiver.name = t.name;
       receiver.state = t.fields;
@@ -13025,19 +13078,20 @@ class Generator {
       o << "    }\n";
       o << "}\n\n";
       tooling_end(o, 0, semantic_identity);
-      write_through_parameters_.clear();
+      write_through_parameters_.clear(); view_parameters_.clear();
     }
   }
 
   void gen_function_instance(std::ostringstream& o, const Function& f,
-                             const FunctionSpecialization* specialization) {
+                             const FunctionSpecialization* specialization, bool view = false) {
     bool container_generic = !specialization &&
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
           return p.type == "vector" || p.type == "queue" || p.type == "map";
         });
     string semantic_identity = function_semantic_identity(f, specialization);
     string generated_symbol = specialization ? specialization->generated_name : f.name;
-    bool can_export = specialization || (!f.generic && !container_generic);
+    if (view) generated_symbol = "__moss_view_" + generated_symbol;
+    bool can_export = !view && (specialization || (!f.generic && !container_generic));
     string native_symbol = tooling_native_symbol(
         "function", f.name, semantic_identity);
     tooling_begin(o, 0, "function", semantic_identity, generated_symbol,
@@ -13080,6 +13134,10 @@ class Generator {
         parameter_rust_type = rust_type(pt);
       }
       Effect effect = function_effect(f, index);
+      if (view && effect != Effect::Consume && view_object_type(pt)) {
+        o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
+        continue;
+      }
       bool generic_copy_value = !specialization && f.params[index].type.empty() &&
           !ops.empty() && !ops.count("[]");
       bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
@@ -13118,10 +13176,13 @@ class Generator {
       types[f.params[index].name] = specialization
           ? specialization->parameter_types[index] : f.params[index].type;
     }
-    write_through_parameters_.clear();
-    for (size_t index = 0; index < f.params.size(); ++index)
-      if (function_effect(f, index) == Effect::Write)
+    write_through_parameters_.clear(); view_parameters_.clear();
+    for (size_t index = 0; index < f.params.size(); ++index) {
+      if (view && function_effect(f, index) != Effect::Consume && view_object_type(types.at(f.params[index].name)))
+        view_parameters_.insert(f.params[index].name);
+      else if (function_effect(f, index) == Effect::Write)
         write_through_parameters_.insert(f.params[index].name);
+    }
     string functional_context = functional_function_context(f, specialization);
     gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, false,
               std::nullopt, true, functional_context);
@@ -13135,7 +13196,12 @@ class Generator {
     }
     o << "}\n\n";
     tooling_end(o, 0, semantic_identity);
-    write_through_parameters_.clear();
+    write_through_parameters_.clear(); view_parameters_.clear();
+    bool needs_view = false;
+    for (size_t i = 0; i < f.params.size(); ++i)
+      needs_view |= function_effect(f, i) != Effect::Consume &&
+          view_object_type(specialization ? specialization->parameter_types[i] : f.params[i].type);
+    if (!view && needs_view) gen_function_instance(o, f, specialization, true);
   }
 
   void gen_function(std::ostringstream& o, const Function& f) {
@@ -13216,6 +13282,7 @@ class Generator {
   }
 
 #include "handler_lowering.inc"
+#include "borrowed_views.inc"
 
   void gen_direct_domain(std::ostringstream& o, const Domain& d) {
     bool rwlock = plan_.lowering_for(d) == DomainLowering::DirectRwLock;
@@ -14777,9 +14844,9 @@ class Generator {
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-            lhs = expr(lhs_base, d, locals, &types) + "[" + ir + "]";
+            lhs = "(" + place_expr(lhs_base, d, locals, &types) + ")[" + ir + "]";
           }
-          else lhs = expr(s.a, d, locals, &types);
+          else lhs = place_expr(s.a, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
           if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
@@ -14812,7 +14879,9 @@ class Generator {
             string mb, mi;
             if (parse_index(s.a, mb, mi) && types.count(mb) &&
                 (types.at(mb) == "map" || starts_with(types.at(mb), "map[")))
-              o << indent(level) << expr(mb, d, locals, &types) << ".insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+              o << indent(level) << "(" << place_expr(mb, d, locals, &types) << ").insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+            else if (is_object_view(s.a, d, locals, &types))
+              o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
             else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
             if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
@@ -14863,13 +14932,14 @@ class Generator {
           if (benchmark_body_) o << "std::hint::black_box(";
           o << (implicit_method ? "self." : "")
             << (s.b.empty() && known_function
-                    ? emitted_function_name(s.a, s.args, &types)
+                    ? viewed_function_name(s.a, s.args, d, locals, &types)
+                    : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
             if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
-            o << "." << method;
+            o << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
           }
           o << "(";
           size_t emitted_arguments = 0;
@@ -15808,11 +15878,19 @@ static DebugMap build_debug_map(const Program& program, const string& rust,
   map.debug_build = debug_build;
   map.optimized = optimized;
   vector<string> lines = generated_lines(rust);
-  for (const auto& region : collect_debug_regions(lines))
-    map.entries.push_back(debug_entry_from_region(
-        region, lines,
-        debug_source_for_identity(program, region.semantic_identity,
-                                  source_file), generated_file));
+  for (const auto& region : collect_debug_regions(lines)) {
+    auto entry = debug_entry_from_region(region, lines,
+        debug_source_for_identity(program, region.semantic_identity, source_file), generated_file);
+    auto existing = std::find_if(map.entries.begin(), map.entries.end(),
+        [&](const auto& candidate) { return candidate.semantic_identity == entry.semantic_identity; });
+    if (existing == map.entries.end()) map.entries.push_back(std::move(entry));
+    else {
+      // Owned and borrowed implementations retain one Moss identity and its
+      // original native symbol. Exact mappings cover BOTH physical bodies, so
+      // source breakpoints/reverse lookup also work inside borrowed helpers.
+      existing->line_mappings.insert(existing->line_mappings.end(), entry.line_mappings.begin(), entry.line_mappings.end());
+    }
+  }
 
   // Traits are erased through static specialization, but retain source-only
   // entries so editor navigation can explain that they have no runtime object.
@@ -18067,7 +18145,7 @@ static string backend_flags_text(const vector<string>& flags) {
 static string backend_identity_payload(
     const BackendToolchainIdentity& identity) {
   std::ostringstream out;
-  out << "moss-codegen\nhandler-2pl-1\nresolved-rustc\n" << identity.rustc_executable
+  out << "moss-codegen\nhandler-borrowed-reads-1\nresolved-rustc\n" << identity.rustc_executable
       << "\nversion-verbose-bytes\n" << identity.version_verbose.size()
       << "\n" << identity.version_verbose
       << "\nprofile\n" << identity.profile
@@ -19054,7 +19132,7 @@ static ParsedModuleUnit load_module_interface(
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  if (text.find("\nnative_abi 2\n") == string::npos)
+  if (text.find("\nnative_abi 3\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
@@ -19248,7 +19326,7 @@ static ParsedModuleUnit load_module_interface(
       continue;
     }
     if (starts_with(line, "public_representation field ") && current_object) {
-      std::istringstream field(line.substr(29));
+      std::istringstream field(line.substr(string("public_representation field ").size()));
       Field value;
       field >> value.name >> value.type;
       current_object->fields.push_back(std::move(value));
@@ -20289,7 +20367,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     header << "moss-module-interface-v1\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
-           << "native_abi 2\n"
+           << "native_abi 3\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "

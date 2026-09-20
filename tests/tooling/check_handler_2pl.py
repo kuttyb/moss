@@ -237,8 +237,8 @@ run([out / 'nested-test'])
 # Failure must abort even if an outer caller attempts catch_unwind. Inject a
 # backend hook into an ordinary generated body; no Moss failure syntax added.
 failure = text.replace('fn main() {', 'fn saved_main() {', 1)
-assert 'increment(&mut (state.left));' in failure
-failure = failure.replace('increment(&mut (state.left));', 'increment(&mut (state.left)); panic!("injected handler failure");', 1)
+assert 'increment(&mut (*state.left));' in failure
+failure = failure.replace('increment(&mut (*state.left));', 'increment(&mut (*state.left)); panic!("injected handler failure");', 1)
 failure += '\nfn main() {\n' + constructors(text) + '\nlet _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| store.Left_shared())); println!("RESUMED");\n}\n'
 (out / 'failure.rs').write_text(failure)
 run(['rustc', '-D', 'warnings', '-A', 'unreachable_code', out / 'failure.rs', '-o', out / 'failure'])
@@ -289,7 +289,7 @@ for source_free in (False, True):
         assert physical not in interface
 interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
-interface_path.write_text(contents.replace('native_abi 2\n', ''))
+interface_path.write_text(contents.replace('native_abi 3\n', ''))
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
 assert 'rebuild' in old and 'native calling convention' in old
 interface_path.write_text(contents)

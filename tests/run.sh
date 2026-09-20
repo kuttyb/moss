@@ -12,7 +12,7 @@ fail() {
 
 # All optimization/transport flags must converge on the authoritative 2PL path.
 assert_class_lowering() {
-  grep -F 'struct MossClassRuntime<V: Clone> {' "$1" >/dev/null ||
+  grep -F 'struct MossClassRuntime<V> {' "$1" >/dev/null ||
     fail "$1 omitted synchronization-class storage"
   grep -F 'self.state.enter(' "$1" >/dev/null ||
     fail "$1 bypassed synchronized handler entry"
@@ -29,7 +29,7 @@ compile_case() {
   if grep -Eq 'std::sync::mpsc|mpsc::channel' "$test_build/$name.rs"; then
     fail "$name emitted forbidden Rust message-passing transport"
   fi
-  grep -F 'struct MossClassRuntime<V: Clone> {' "$test_build/$name.rs" >/dev/null ||
+  grep -F 'struct MossClassRuntime<V> {' "$test_build/$name.rs" >/dev/null ||
     fail "$name did not emit synchronization-class storage"
   rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
 }
@@ -899,8 +899,10 @@ trait_specializations=$(grep -c '^fn __moss_specialize_render_' \
   "$test_build/static_trait_dispatch.rs")
 [ "$trait_specializations" -eq 2 ] ||
   fail "trait-typed function did not emit two concrete specializations"
-if grep -Eq '(^trait[[:space:]]|dyn[[:space:]]|vtable)' \
-    "$test_build/static_trait_dispatch.rs"; then
+# Backend access traits use static generic dispatch; Moss traits remain erased.
+if grep -Eq '(dyn[[:space:]]|vtable)' \
+    "$test_build/static_trait_dispatch.rs" ||
+   grep -E '^trait[[:space:]]' "$test_build/static_trait_dispatch.rs" | grep -v '^trait MossAccess_' >/dev/null; then
   fail "static trait dispatch emitted runtime trait machinery"
 fi
 compile_case method_ast_ownership tests/method_ast_ownership.moss
@@ -1157,10 +1159,10 @@ assert_class_lowering "$test_build/phase25_atomic_swap.rs"
 run_optimized_case phase25_atomic_copy_boundary \
   tests/phase25_atomic_copy_boundary.moss 'original true'
 assert_class_lowering "$test_build/phase25_atomic_copy_boundary.rs"
-if grep -F '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null; then
-  fail "synchronous atomic payload path retained an unnecessary clone"
+if ! grep -F '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null; then
+  fail "synchronous payload path omitted its independent value"
 fi
-grep -F 'Remember_shared(true, &(token))' \
+grep -F 'Remember_shared(true, (token).clone())' \
   "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null ||
   fail "atomic request did not pass its non-Copy payload by immutable reference"
 
@@ -1197,7 +1199,7 @@ for phase25_name in phase25_batching phase25_lock_coalesce phase25_rwlock \
                     phase25_atomic_counter phase25_atomic_bool phase25_atomic_multi_field; do
   "$compiler" -O0 "tests/$phase25_name.moss" \
     -o "$test_build/${phase25_name}_o0.rs"
-  grep -F 'struct MossClassRuntime<V: Clone> {' \
+  grep -F 'struct MossClassRuntime<V> {' \
     "$test_build/${phase25_name}_o0.rs" >/dev/null ||
     fail "$phase25_name -O0 output did not retain planned synchronization"
   assert_class_lowering "$test_build/${phase25_name}_o0.rs"
@@ -1385,17 +1387,16 @@ if command -v python3 >/dev/null 2>&1; then
     fail 'fast interpreter did not execute the complete project source closure'
 fi
 
-# Phase 2.6: incoming message payloads are immutable READ snapshots. Direct
-# synchronous handlers may borrow non-Copy payloads. All current compiled
-# paths use this nonescaping implementation of semantic by-value arguments.
+# Incoming payloads remain immutable semantic values. Phase 10.6D.1 explicitly
+# establishes their independent storage before entering the target domain.
 run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8'
-grep -F 'fn Process_body(&self, state: &mut WorkerState, payload: &Payload)' \
+grep -F "fn Process_body(&self, state: &mut WorkerState<'_>, payload: Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'direct handler did not receive a non-Copy payload by immutable reference'
-grep -F 'worker.Process_shared(&(data))' "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'direct call did not pass the payload by immutable reference'
-if grep -F '(data).clone()' "$test_build/phase26_direct_payload.rs" >/dev/null; then
-  fail 'direct synchronous payload boundary inserted an unnecessary clone'
+  fail 'direct handler did not receive an independent non-Copy payload'
+grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'direct call did not establish the by-value payload'
+if ! grep -F '(data).clone()' "$test_build/phase26_direct_payload.rs" >/dev/null; then
+  fail 'direct synchronous payload boundary omitted its independent value'
 fi
 run_optimized_case phase26_lock_payload tests/phase26_lock_payload.moss '7 8'
 if grep -F 'COALESCED LOCK REGION' "$test_build/phase26_lock_payload.rs" >/dev/null; then
@@ -1406,8 +1407,8 @@ if grep -F 'First_locked(&mut' "$test_build/phase26_lock_payload.rs" | grep -F '
   fail 'coalesced synchronous payload calls retained an unnecessary clone'
 fi
 run_case phase26_mailbox_payload tests/phase26_mailbox_payload.moss '9'
-grep -F 'Process_shared(&(data))' "$test_build/phase26_mailbox_payload.rs" >/dev/null ||
-  fail 'compatibility option bypassed immutable synchronous payload borrowing'
+grep -F 'Process_shared((data).clone())' "$test_build/phase26_mailbox_payload.rs" >/dev/null ||
+  fail 'compatibility option bypassed independent payload construction'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
 run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
   "forwarded: 10
@@ -1847,5 +1848,6 @@ else
 fi
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_handler_2pl.py "$compiler" "$test_build/phase106d"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compiler" "$test_build/phase106d1"
 
 echo 'all Moss v0.2 tests passed'

@@ -1,0 +1,59 @@
+type Data:
+  title: String
+  values: Vector[Int]
+  count: Int
+  fn score() -> Int:
+    echo title
+    amount = values |> sum
+    return amount + count
+
+type Inspector:
+  extra: Int
+  fn inspect(value: Data) -> Int:
+    amount = value.score()
+    return amount + extra
+
+fn generic_score(value):
+  return value.score()
+
+fn bump(value: Data):
+  value.count = value.count + 1
+
+fn echo_text(value: String):
+  echo value
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+domain Store:
+  value: Data
+  strings: Vector[String]
+  fn Read() -> Int:
+    reader = Inspector(extra: 10)
+    a = generic_score(value)
+    b = reader.inspect(value)
+    echo_text(strings[0])
+    echo strings[0]
+    reply a + b
+  fn Mixed() -> Int:
+    bump(value)
+    reply generic_score(value)
+  fn MutateValues():
+    value.values[0] = 10
+  fn IndexReply() -> String:
+    reply strings[0]
+  fn ReplaceStrings():
+    strings = ["changed indexed"]
+  fn Dataflow() -> Int:
+    reply value.values |> filter(_ > value.count) |> map(_ + value.count) |> reduce(0, add)
+
+fn main():
+  store = Store(value: Data(title: "original", values: [1, 2, 3], count: 1), strings: ["indexed original"])
+  echo message store.Read()
+  echo message store.Mixed()
+  echo message store.Dataflow()
+  message store.MutateValues()
+  echo message store.Dataflow()
+  snapshot = message store.IndexReply()
+  message store.ReplaceStrings()
+  echo snapshot

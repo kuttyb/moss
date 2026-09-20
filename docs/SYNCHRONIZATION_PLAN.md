@@ -1,4 +1,4 @@
-# Phases 10.6C–D: synchronization planning and production handler-level 2PL
+# Phases 10.6C–D.1: synchronization planning and production handler-level 2PL
 
 Phase 10.6C implements `SynchronizationPlan`; Phase 10.6D consumes that stored
 object for production handler-level 2PL. All compilation/optimization modes use
@@ -192,16 +192,37 @@ and retains every guard until the reply/result and state restoration are complet
 Ordinary helpers and functional stages acquire no additional domain locks.
 
 Storage is entirely safe Rust: there is no `UnsafeCell`, raw pointer projection,
-or unsafe `Sync` implementation. Under retained guards, the wrapper moves its
-exclusive leaves into a private working state and copies its observed READ leaves.
-Unobserved leaves in that private value have inert defaults and never overwrite
-published state. The body operates on ordinary Rust values and references; on
-normal return every evacuated exclusive leaf is moved back before any guard is
-released. This also supports whole-object operations spanning several classes.
-Read snapshots are a conservative physical implementation, not new Moss value
-identity or ownership rules. They can allocate/copy nontrivial values; reducing
-that cost is future backend work. No coarse state guard serializes disjoint
-handlers. The initial baseline prioritizes storage safety over layout efficiency.
+or unsafe `Sync` implementation. Phase 10.6D.1 removes the initial 10.6D READ
+snapshots. `MossHandlerFrame::read(&self, leaf) -> Option<&V>` borrows protected
+leaves through retained guards and immutable leaves directly from published
+storage. The reference cannot outlive the frame. The synchronization runtime and
+physical leaf enums have no `Clone` requirement.
+
+The wrapper first evacuates only EXCLUSIVE leaves, then builds a private typed
+state view. Each observed leaf is either `MossSlot::Read(&T)` or
+`MossSlot::Exclusive(T)`. An absent slot is inaccessible metadata: no default,
+clone, or temporary user value is constructed for an unused leaf. READ + WRITE
+normalizes to the exclusive working value, without a second shared representation.
+The mutable reference to this private view never aliases a complete shared domain
+state. Before unlocking, the wrapper consumes the view, restores every evacuated
+exclusive leaf, and drops the frame. Rust lifetimes prevent restoring/releasing a
+frame while borrowed values are still in use.
+
+Nested objects have recursive typed views. Statically dispatched Rust accessor
+traits let ordinary helper/method bodies operate on an owned object or its view,
+including whole-object reads spanning classes. Accessors return references to the
+original leaves; they do not reconstruct an owned object. There is no `dyn` trait,
+virtual dispatch, Arc/COW value substitution, or new Moss borrowing syntax. Source
+traits remain compile-time structural constraints. Ordinary helper/callable and
+functional pipeline reads execute under the already-held handler guards.
+
+Explicit `message` and `reply` boundaries establish independent values. Owned
+payloads enter target handlers; no Rust reference into caller domain storage
+crosses a message. For a borrowed aggregate, `__moss_value` constructs the owned
+boundary value by copying its leaves. It is called for value boundaries, never
+handler entry or an ordinary READ call. Trivial primitive copies remain
+observationally irrelevant. Conservative boundary copies may later be optimized
+with an equivalence proof; ordinary READ has no hidden snapshot cost.
 
 Composition constructs descendants before owners, fully initializes state and
 per-instance class locks, and publishes handles only after construction. Cloned
@@ -267,7 +288,7 @@ monotonic rank tracking would reject this valid sequence and is not used.
 Source-free providers compile reusable handler wrappers. The final application
 passes its physical descriptor to the generated constructor through an internal
 Rust calling convention. `.mossi` exports semantic effects, not class IDs, ranks,
-ClassSets, physical lock layout, or global LockRank. Native ABI version 2 and the
+ClassSets, physical lock layout, or global LockRank. Native ABI version 3 and the
 codegen fingerprint reject obsolete compiled calling conventions and caches;
 providers built before this migration require rebuilding.
 
@@ -285,3 +306,30 @@ nested calls and descending siblings after return, state restoration, primitive
 WRITE-through, source-free providers, exact specializations, deterministic generation,
 legacy-option convergence, and fail-closed failure. A separate C++ regression
 corrupts stored plans and requires physical validation to reject them.
+
+
+## Borrowed-read validation and provider compatibility (10.6D.1)
+
+`check_borrowed_reads.py` compiles a runtime with non-Clone values, checks a clone
+counter stays zero across entry/repeated reads/helpers/methods, and verifies that
+an explicit independent copy increments it. A compile-fail test proves a returned
+READ borrow cannot outlive its frame. Generated-code tests use large Strings and
+Vectors and compare their backing addresses in real handler/helper/method bodies
+with the protected original storage. Coverage includes nested and whole objects,
+mixed READ/WRITE, immutable state, generic helpers, method arguments, indexed
+reads/writes, captured map/filter/reduce, independent replies and payloads, and
+deterministic output. The full 10.6D concurrency and failure suite remains active.
+
+Source-free providers export reusable native static accessors and generic helper
+implementations; the consumer needs only existing semantic type/effect metadata.
+Generated decomposition methods move private provider fields into class storage
+without granting new Moss source-level field access. A loader off-by-one error in
+existing `public_representation field` records is corrected; synchronization
+analysis is unchanged. `.mossi` contains no view/borrow layout, Rust lifetimes, or
+synchronization policy. Native ABI version 3 requires rebuilding older providers
+so these backend-private entry points exist.
+
+Remaining representation costs are static accessor code size, slot/descriptor
+metadata, and conservative explicit-boundary copies. None require hidden READ
+cloning, additional domain locks, or unsafe access. Layout/profitability work
+remains later work. Fast Debug alignment and legacy deletion remain Phase 10.6E.

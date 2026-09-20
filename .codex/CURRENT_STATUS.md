@@ -2,9 +2,92 @@
 
 Updated: 2026-09-20
 
-## Phase 10.6D complete — production handler-level 2PL
+## Phase 10.6D.1 complete — borrowed protected READs
 
-The working tree implements production handler-level 2PL from the authoritative
+The 10.6D baseline is checked in as `9f49e64`. The working tree replaces
+handler-entry READ snapshots with frame-bounded borrows and generated typed object
+views. `MossHandlerFrame::read` returns a reference backed by retained class guards,
+or directly by immutable runtime storage. `V: Clone` and physical leaf-enum Clone
+derivations are removed. Storage remains entirely safe Rust, with no unsafe,
+Arc/COW value substitution, or whole-state shared mutable references.
+
+The private handler state ABI now contains recursive typed views with borrowed
+READ slots and owned EXCLUSIVE slots. Unobserved slots contain only absent
+metadata, never fabricated/default user values. Exclusive evacuation/restoration
+is retained; normalization, plans, exact ClassSets, modes, ranks, parent guard
+retention, failure behavior, and primitive WRITE-through are unchanged.
+
+Static Rust accessor traits and reusable generic helper/method implementations
+support whole/nested-object READs without reconstructing owned objects. There is
+no dynamic trait dispatch or new Moss syntax. Helpers, methods, indexed reads, and
+functional captures borrow existing values. Explicit message/reply boundaries
+materialize independent owned values; Rust references into caller state do not
+cross messages. Owned replies remain valid after frame release and later mutation.
+
+Source-free providers use existing semantic type/effect records. A pre-existing
+off-by-one read of `public_representation field` metadata is fixed; no 10.6C
+algorithm changes were needed. Generated decomposition entry points move private
+provider fields into physical storage without exposing new Moss field access.
+Native ABI version 3 requires rebuilding older providers for the new internal
+entry points; no view layout, lifetimes, or synchronization metadata enters `.mossi`.
+Debug maps retain one source/semantic identity and the original native symbol,
+with exact line mappings for both owned and borrowed implementations.
+
+Final validation passed after the last compiler and regression changes:
+
+- Strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build, followed by `make`.
+- Complete `make check`: 10.6A/B/B.1/C/D and new D.1 regressions; modules and
+  source-free `.mossi` providers; functional/dataflow, agent/introspection,
+  project workflows, existing Fast Debug tests, and tooling.
+- `make examples`, including generated Rust with warnings denied. The existing
+  intentional negative use-after-transfer example remains excluded.
+- The full-suite and standalone 10.6D runtime/codegen runs both passed. Each
+  runs five concurrency harness repetitions, with 20 disjoint-writer,
+  shared-reader, and split-object overlaps and 800 conflicting increments per
+  repetition. Reader/writer exclusion, reply release, exact class layouts,
+  nested/sibling ordering, whole-object restoration, primitive WRITE-through,
+  panic/poison failure, and dispatch-option convergence remain passing.
+- New D.1 checks compile non-Clone runtime values, require zero clones across
+  entry/repeated reads/helpers/methods, and reject a borrow escaping its frame.
+  Instrumented generated wrappers/helpers/methods observe the original backing
+  addresses of 100,000-element String/Vector state. Whole/nested objects,
+  mixed READ/WRITE, immutable state, generics, indexed reads/writes, and captured
+  map/filter/reduce work without entry snapshots. Message payload and reply
+  independence, deterministic Rust, and stable debug identities are verified.
+- Source and source-free provider tests pass for aggregate READ helpers,
+  methods, protected domain state, and consumer-local views. No physical view
+  or synchronization metadata is serialized into `.mossi`.
+- All 19 Emacs ERT tests, warnings-as-errors Emacs byte compilation, debug-map
+  and objdump checks, `sh -n tests/run.sh`, and Git whitespace checks pass.
+  Optional live LLDB/DAP checks were capability-skipped because process tracing
+  is unavailable; objdump's missing Rust standard-library source warning does
+  not prevent its mapping checks from passing.
+
+These final results supersede development runs invalidated by later edits.
+Logs are disposable under repository `tmp/`; no validation remains pending.
+Remaining representation costs are static accessor code size, absent-slot and
+descriptor metadata, and conservative explicit-boundary copies. No new 10.6E
+blocker was discovered. Fast Debug domain execution and legacy deletion remain
+10.6E work; neither is completed by this change.
+
+Changed files: `src/moss.cpp`, `src/handler_runtime.hpp`,
+`src/handler_lowering.inc`, new `src/borrowed_views.inc`,
+`tests/phase106d1_borrowed_reads.moss`,
+`tests/phase106d1_read_projection.moss`,
+`tests/tooling/check_borrowed_reads.py`, `tests/tooling/check_handler_2pl.py`,
+`tests/run.sh`, `docs/SYNCHRONIZATION_PLAN.md`, `docs/MODULE_ABI.md`,
+`docs/SEMANTIC_CONVERGENCE.md`, and this status file.
+
+Phase 10.6D.1 removes the remaining hidden READ snapshots from production domain
+execution. Protected READ state is now accessed through borrowed views tied to
+the retained synchronization-class guards, while immutable-after-publication
+state is borrowed directly. Explicit Moss value boundaries remain by value, and
+the Phase 10.6D handler-level 2PL, rank ordering, deadlock proof, and
+conflict-serializability guarantees are unchanged.
+
+## Checked-in Phase 10.6D closeout — production handler-level 2PL
+
+Commit `9f49e64` implements production handler-level 2PL from the authoritative
 `Program::synchronization_plan`. Each constructed domain owns typed leaf storage
 and one Rust `RwLock` per planned class. The synchronized `_shared` wrapper
 acquires exactly ClassSet in increasing class rank, selects read/write guards
@@ -12,13 +95,11 @@ from SHARED/EXCLUSIVE modes, retains them across the full body and nested messag
 restores exclusive leaves, then releases before returning the reply. Empty
 ClassSets and immutable-after-publication storage acquire no class lock.
 
-Storage is entirely safe Rust, without unsafe, raw pointers, or runtime type
-erasure. Exclusive leaves move into a private working value under retained guards;
-observed READ leaves use conservative physical snapshots. Every exclusive leaf
-is restored before normal release. READ snapshots can allocate/copy nontrivial
-values; reducing this representation overhead remains later backend work, without
-changing source ownership semantics. Panic, poison, missing reply, or invalid
-restoration aborts instead of allowing execution against torn state.
+At this historical checkpoint storage was entirely safe Rust, without unsafe,
+raw pointers, or runtime type erasure. Exclusive leaves moved into a private
+working value under retained guards, while READ leaves used physical snapshots.
+Phase 10.6D.1 supersedes those READ snapshots with borrowed views. Exclusive
+restoration before unlock and fatal panic/poison/missing-reply behavior remain.
 
 All active compilation modes, former mailbox/reference options, cluster options,
 nominal specialization adapters, and exported bridges converge on synchronized
@@ -89,10 +170,10 @@ the global `(domain_rank, class_rank)` order, establishing the failure-free
 deadlock-freedom and conflict-serializability guarantees of the synchronous-domain
 architecture. Legacy transport/runtime machinery remains for Phase 10.6E cleanup.
 
-## Current checkpoint through Phase 10.6D
+## Current checkpoint through Phase 10.6D.1
 
 Checked-in 10.6C compiler closeout: `eb4d49a`, following snapshot `486eba4`.
-The 10.6D changes are in the working tree atop `3d7ccd1`.
+The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
 
 | Phase | Implementation state |
 | --- | --- |
@@ -100,7 +181,8 @@ The 10.6D changes are in the working tree atop `3d7ccd1`.
 | 10.6B | Complete: static composition, `domainroutes`, a closed concrete DAG, and deterministic `domain_rank`; source `spawn` is retired. |
 | 10.6B.1 | Complete: closed domain-handle universe and exact concrete `DomainSpecialization` linkage. |
 | 10.6C | Complete: compiler-owned `SynchronizationPlan`, including leaf effects, classes, ranks, handler sets, conflicts, and introspection. |
-| 10.6D | Complete in the working tree, fully validated: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
+| 10.6D | Complete at `9f49e64`: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
+| 10.6D.1 | Complete in the working tree atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
 | Later work | Fast Debug domain execution and legacy runtime removal remain unimplemented. |
 
 Current language semantics are synchronous domain calls over the closed concrete
@@ -557,8 +639,9 @@ and tests were untouched. `git diff --check` passed for this correction.
   is not an active language feature.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
 - Production synchronization consumes the stored plan at every optimization level;
-  old backend synchronization heuristics are dormant. Physical READ snapshots are
-  conservative and can allocate; storage/layout profitability remains future work.
+  old backend synchronization heuristics are dormant. 10.6D.1 removes READ
+  snapshots; static-accessor code size, slot/descriptor overhead, and conservative
+  explicit-boundary copies remain possible future representation optimizations.
 - Legacy cluster configuration is type-wide and requires a single concrete instance
   per member type, now obtained from the checked static composition.
 - The closed concrete route DAG and deterministic domain ranks are complete.
@@ -744,10 +827,10 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phases 10.6A–D are complete; the final 10.6D validation is recorded above.
+Phases 10.6A–D.1 are complete; final validation is recorded above.
 Phase 10 as a whole is not complete.
 
-1. Review the completed 10.6D working-tree changes.
+1. Review the completed 10.6D.1 change; the checked-in 10.6D baseline is `9f49e64`.
 2. Phase 10.6E: Fast Debug domain execution and removal of dormant legacy runtime
    and synchronization implementations. No new 10.6E blocker was discovered;
    the pre-existing provider-internal generic linkage limitation remains separate.

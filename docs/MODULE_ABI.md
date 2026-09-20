@@ -101,9 +101,15 @@ state even when only the helper's compiled interface remains. Missing helper
 records also require rebuilding the provider; an absent body is not proof of
 an empty effect. These records participate in the semantic interface hash.
 
-Phase 10.6D uses native ABI version 2 for inferred primitive WRITE references and
-plan-driven domain constructors. Old providers must be rebuilt. This native
+Phase 10.6D introduced native ABI version 2 for inferred primitive WRITE
+references and plan-driven domain constructors. Phase 10.6D.1 advances it to
+version 3 for reusable static borrowed-access helpers and provider decomposition
+entry points. Old providers must be rebuilt. This native
 compatibility marker carries no synchronization-class ABI: the final application
 supplies its compiler-derived descriptor at construction, including for source-free
 providers. `.mossi` continues to export semantic handler/formal leaf effects only;
 class IDs, ranks, ClassSets, and lock storage are not serialized as provider ABI.
+
+Borrowed views and Rust lifetimes remain backend policy and are not serialized
+in `.mossi`. Existing public type representation and semantic parameter/handler
+effects suffice for borrowed reads, including source-free providers.
