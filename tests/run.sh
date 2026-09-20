@@ -12,9 +12,9 @@ fail() {
 
 # All functional optimization flags must converge on the authoritative 2PL path.
 assert_class_lowering() {
-  grep -F 'struct MossClassRuntime<V> {' "$1" >/dev/null ||
+  grep -F 'fn moss_read_or_abort<T>' "$1" >/dev/null ||
     fail "$1 omitted synchronization-class storage"
-  grep -F 'self.state.enter(' "$1" >/dev/null ||
+  grep -F 'let result = __moss_body_' "$1" >/dev/null ||
     fail "$1 bypassed synchronized handler entry"
   if grep -E 'Arc<(Mutex|RwLock)<[^>]*State|AtomicI64|AtomicBool|MossCluster[0-9]+Runtime|thread::spawn' "$1" >/dev/null; then
     fail "$1 activated legacy coarse/atomic/cluster synchronization"
@@ -29,7 +29,7 @@ compile_case() {
   if grep -Eq 'std::sync::mpsc|mpsc::channel' "$test_build/$name.rs"; then
     fail "$name emitted forbidden Rust message-passing transport"
   fi
-  grep -F 'struct MossClassRuntime<V> {' "$test_build/$name.rs" >/dev/null ||
+  grep -F 'fn moss_read_or_abort<T>' "$test_build/$name.rs" >/dev/null ||
     fail "$name did not emit synchronization-class storage"
   rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
 }
@@ -889,7 +889,7 @@ run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
 shared_memory_message_line=$(awk '/^  message client.Run\(\)/ { print NR; exit }' examples/shared_memory.moss)
 grep -F "// Moss line $shared_memory_message_line: message client.Run()" "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its Moss source-line annotation"
-grep -F 'self.state.enter(' \
+grep -F 'let result = __moss_body_' \
   "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its synchronous direct lowering annotation"
 run_case checkout examples/checkout.moss 'charged: 75
@@ -970,7 +970,7 @@ observed: widget 1 false
 revised: widget 2 true
 verified: widget 2 true
 archive: widget 2 true'
-grep -F 'self.state.enter(' "$test_build/shared_memory_object_pipeline.rs" >/dev/null ||
+grep -F 'let result = __moss_body_' "$test_build/shared_memory_object_pipeline.rs" >/dev/null ||
   fail "object pipeline did not use synchronous shared-memory transport"
 run_optimized_case shared_memory_ignored_reply tests/ignored_reply.moss \
   'ignored reply completed'
@@ -1135,11 +1135,11 @@ grep -F '"semantic_identity": "domain-specialization:Box:floatBox"' \
 grep -F '"name": "value", "type": "float"' \
   "$test_build/implicit_domain_specialization_float.json" >/dev/null ||
   fail 'implicit Box Float specialization did not infer value: float'
-grep -F 'struct Box__intBoxState' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+grep -F 'struct Box__intBoxRuntime' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Int specialization did not get a concrete Rust layout'
 grep -F 'value: i64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Int layout was not statically concrete'
-grep -F 'struct Box__floatBoxState' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
+grep -F 'struct Box__floatBoxRuntime' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Float specialization did not get a concrete Rust layout'
 grep -F 'value: f64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Float layout was not statically concrete'
@@ -1171,10 +1171,10 @@ grep -F '"name": "payload", "type": "int"' \
 grep -F '"name": "payload", "type": "float"' \
   "$test_build/implicit_domain_specialization_message_float.json" >/dev/null ||
   fail 'implicit floatWorker specialization did not infer payload: float'
-grep -F 'struct Worker__intWorkerState' \
+grep -F 'struct Worker__intWorkerRuntime' \
   "$test_build/implicit_domain_specialization_message.rs" >/dev/null ||
   fail 'implicit intWorker specialization did not get a concrete Rust layout'
-grep -F 'struct Worker__floatWorkerState' \
+grep -F 'struct Worker__floatWorkerRuntime' \
   "$test_build/implicit_domain_specialization_message.rs" >/dev/null ||
   fail 'implicit floatWorker specialization did not get a concrete Rust layout'
 reject_case implicit_domain_specialization_await_cycle \
@@ -1229,7 +1229,7 @@ fi
 # Incoming payloads remain immutable semantic values. Phase 10.6D.1 explicitly
 # establishes their independent storage before entering the target domain.
 run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8'
-grep -F "fn Process_body(&self, state: &mut WorkerState<'_>, payload: Payload)" \
+grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
   fail 'direct handler did not receive an independent non-Copy payload'
 grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payload.rs" >/dev/null ||
@@ -1627,5 +1627,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compil
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106e_domains.py "$compiler" "$test_build/phase106e"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106f.py "$compiler" "$test_build/phase106f"
+
+
+if command -v python3 >/dev/null 2>&1; then
+  python3 tests/tooling/check_phase106f1.py "$compiler" "$test_build/phase106f1" ||
+    fail 'static typed synchronization lowering regression'
+fi
 
 echo 'all Moss v0.1 tests passed'

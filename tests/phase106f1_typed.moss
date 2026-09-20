@@ -1,0 +1,35 @@
+domain Account:
+  balance: Int
+  fills: Int
+  limit: Int
+  currency: String
+  fn Empty() -> Int:
+    reply 7
+  fn Read() -> Int:
+    reply balance
+  fn Write():
+    balance = balance + 1
+  fn Two() -> Int:
+    balance = balance + 1
+    fills = fills + 1
+    reply balance + fills
+  fn Mixed() -> Int:
+    balance = balance + 1
+    reply balance + limit
+  fn Three() -> Int:
+    balance = balance + 1
+    fills = fills + 1
+    reply balance + fills + limit
+  fn SetLimit():
+    limit = limit + 1
+  fn Immutable() -> String:
+    echo currency
+    reply currency
+
+fn main():
+  account = Account(balance: 0, fills: 0, limit: 10, currency: "USD")
+  other = Account(balance: 100, fills: 0, limit: 20, currency: "EUR")
+  echo message account.Empty(), message account.Read()
+  message account.Write()
+  echo message account.Two(), message account.Mixed(), message account.Three()
+  echo message other.Read()

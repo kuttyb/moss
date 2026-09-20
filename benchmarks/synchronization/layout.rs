@@ -1,3 +1,4 @@
+// Historical Phase 10.6F generic-storage layout probe; F.1 production uses typed class structs.
 // Isolated layout experiment, not a production backend or a proposed default.
 use std::collections::BTreeMap;
 use std::sync::{RwLock,Barrier};

@@ -2,7 +2,64 @@
 
 Updated: 2026-09-20
 
-## Phase 10 complete — Moss v0.1
+## Phase 10.6F.1 gates passed — awaiting review and explicit v0.1 re-closure
+
+The provisional Phase 10 closeout (`a907336`, status `94fca2c`) is reopened.
+Phase 10.6F measured release-blocking fixed overhead from runtime synchronization
+metadata interpretation. F.1 now lowers the unchanged SynchronizationPlan into
+typed class-owned state and direct statically emitted acquisitions. No semantic,
+partition, lock-order, Fast Debug, or source-language changes are authorized.
+Phase 15 must wait for F.1 review and explicit v0.1 re-closure.
+
+Implementation and validation complete: production now emits typed class-owned RwLocks,
+direct acquisitions, in-place WRITE, and borrowed state projections. Generic
+runtime plans/maps/evacuation are removed. Source-free providers expose semantic
+typed borrowed handler bodies; the final application generates all physical
+layouts, including for a provider built without any concrete instances. Native
+ABI is bumped to 5. The 10.6C analysis and Fast Debug execution are unchanged.
+
+Final strict C++17 `-O2 -Wall -Wextra -pedantic -Werror`, `make`, complete
+`make check`, and `make examples` passed. Generated Rust uses warnings denied.
+This includes all A/B/B.1/C/D/D.1/E/F tests and new F.1 structure, direct typed
+layout/acquisition, no-allocation assembly, independent-instance and provider
+built-without-instances checks. D's concurrency harness repeats five times;
+all conflict/exclusion, nested/sibling ordering, reply release, WRITE-through,
+panic/poison, no-clone/original-storage/helper/method/functional and module tests
+pass. Fast Debug equivalence, deterministic plans/traces, ledger, agent/tooling,
+all 20 Emacs ERT tests and warning-as-error editor byte compilation pass. Live
+LLDB/DAP is capability-skipped because process tracing is unavailable.
+`sh -n tests/run.sh` and Git whitespace checks pass. Subsequent edits only update
+documentation, test comments/report wording and the final success-message order;
+they do not invalidate implementation validation. Earlier development failures
+are superseded by this final full-suite run.
+
+The durable [F.1 report](../docs/PERFORMANCE_10_6F_1.md) contains methodology,
+old/new results, example generated layout/body, native ABI impact, assembly
+findings, limitations, and the full validation record. Isolated eleven-sample
+tight-loop medians in ns/call (typed / handwritten Rust) are: empty 0.710/0.571,
+SHARED 11.782/11.652, EXCLUSIVE 11.647/11.613, two EXCLUSIVE 20.947/20.301,
+mixed two-class 21.639/21.171, three-class 30.120/29.382. The multi-fold metadata
+overhead is removed; the sub-nanosecond empty result describes a near-empty
+benchmark loop, not service request latency.
+
+The unchanged original threaded F harness was rerun with both compilers, seven
+repetitions each. Two disjoint callers measured 10.33 Mops/sec with typed Moss
+versus 3.13 with a coarse RwLock in this workload. Instrumentation still observes
+four shared readers, two disjoint writers and one conflicting writer; nested
+ancestor hold amplification remains intentional. No universal speedup is claimed.
+At the largest existing stress size (96 leaves/192 handlers per Store), generated
+Rust shrank from 7,062,780 to 728,572 bytes; optimized rustc compile/link median
+fell from 37,354 to 536 ms, C++ generation from 30.01 to 16.78 ms. Stored-plan
+derivation stayed about 76/75 ms. Repeated output is deterministic. Measurements
+are not correctness timing gates and raw logs are disposable.
+
+No unsafe, new language semantics, early unlock, atomics, lock elision, layout
+padding, scheduler, or alternative backend was introduced. No F.1 implementation
+work remains; review and explicit v0.1 re-closure are pending. Phase 15 and Phase
+20 have not begun, and no release/tag has been published. The validation below
+applies only to the historical F implementation.
+
+## Historical provisional Phase 10 closeout — superseded by F.1 blocker
 
 Phase 10.6F implementation, benchmarks, tests, and release documentation are
 checked in as **`a907336`**, based on `202d9c7` (the 10.6E documentation correction).

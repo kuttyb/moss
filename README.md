@@ -1,6 +1,6 @@
 # Moss v0.1
 
-Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Start with the [v0.1 guide](docs/V0_1.md), [performance report](docs/PERFORMANCE_10_6F.md), and [ledger seed project](examples/projects/ledger/README.md).
+Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 10.6F.1 has passed validation and awaits review and explicit release re-closure; Phase 15 has not begun. Start with the [v0.1 guide](docs/V0_1.md), [performance report](docs/PERFORMANCE_10_6F_1.md), and [ledger seed project](examples/projects/ledger/README.md).
 
 Domain routing is statically closed: declare dependencies with `domainroutes`,
 bind them in the initial `main` composition prefix, and invoke them with
@@ -9,7 +9,9 @@ or stored/aliased values. See [domain syntax](docs/LANGUAGE_SYNTAX.md#closed-rou
 and [topology introspection](docs/AGENT_API.md#closed-concrete-domain-topology).
 
 Production domains use one `SynchronizationPlan`-driven `Handler2PL` backend with
-borrowed protected READs. Fast Debug executes the same checked synchronous
+borrowed protected READs. Synchronization planning is compile-time only: generated
+Rust owns typed `RwLock<ClassState>` fields and acquires them directly, with no
+runtime plan or field lookup. Fast Debug executes the same checked synchronous
 domain semantics directly, without locks or scheduling. Retired runtime
 implementations were removed in Phase 10.6E.
 

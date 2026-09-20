@@ -38,6 +38,7 @@
         return std::nullopt;
       }
       type = field->type; rendered = "state." + root;
+      access = view_domain_access_ && view_object_type(type);
     } else return std::nullopt;
     for (size_t i = next; i < parts.size(); ++i) {
       auto object = objects_.find(canonical_type_name(type));
@@ -48,7 +49,7 @@
       rendered += access ? ".__moss_field_" + parts[i] + (mutable_projection_ ? "_mut()" : "()") : "." + parts[i];
       type = field->type;
     }
-    if (view_object_type(type) && !access) return rendered;
+    if (view_object_type(type) && (!access || (view_domain_access_ && parts.size() == 1 && !view_parameters_.count(root)))) return rendered;
     return "*" + rendered;
   }
 
@@ -111,7 +112,7 @@
   void gen_object_access(std::ostringstream& o, const ObjectType& t, bool owns) {
     const string trait = access_trait(t.name);
     if (owns) {
-      o << (t.exported ? "pub " : "") << "trait " << trait << ": std::fmt::Debug {\n";
+      o << ((t.exported || p_.explicit_module) ? "pub " : "") << "trait " << trait << ": std::fmt::Debug {\n";
       for (const auto& field : t.fields) {
         string result = rust_type(field.type);
         if (view_object_type(field.type)) {
@@ -178,18 +179,29 @@
       }
       o << "}\n";
     }
-    o << "struct " << t.name << "View<'a> {\n";
-    for (const auto& field : t.fields) o << "    " << field.name << ": " << physical_view_type(field.type) << ",\n";
-    o << "}\nimpl std::fmt::Debug for " << t.name << "View<'_> {\n"
+    string generics, bounds;
+    for (size_t i = 0; i < t.fields.size(); ++i) {
+      if (i) { generics += ", "; bounds += ", "; }
+      string arg = "F" + std::to_string(i);
+      generics += arg;
+      bounds += arg + ": ";
+      const auto& field = t.fields[i];
+      bounds += view_object_type(field.type) ? access_trait(field.type) :
+          "std::ops::DerefMut<Target = " + rust_type(field.type) + "> + std::fmt::Debug";
+    }
+    o << "struct " << t.name << "View<" << generics << "> {\n";
+    for (size_t i = 0; i < t.fields.size(); ++i)
+      o << "    " << t.fields[i].name << ": F" << i << ",\n";
+    o << "}\nimpl<" << bounds << "> std::fmt::Debug for " << t.name << "View<" << generics << "> {\n"
       << "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
       << "        f.debug_struct(\"" << t.name << "\")";
     for (const auto& field : t.fields) o << ".field(\"" << field.name << "\", &self." << field.name << ")";
-    o << ".finish()\n    }\n}\nimpl<'a> " << trait << " for " << t.name << "View<'a> {\n";
-    for (const auto& field : t.fields) {
-      string result = rust_type(field.type);
-      string access = "self." + field.name;
+    o << ".finish()\n    }\n}\nimpl<" << bounds << "> " << trait << " for " << t.name << "View<" << generics << "> {\n";
+    for (size_t i = 0; i < t.fields.size(); ++i) {
+      const auto& field = t.fields[i];
+      string result = rust_type(field.type), access = "self." + field.name;
       if (view_object_type(field.type)) {
-        result += "View<'a>";
+        result = "F" + std::to_string(i);
         o << "    type Field_" << field.name << " = " << result << ";\n";
       } else access = "*" + access;
       o << "    fn __moss_field_" << field.name << "(&self) -> &" << result << " { &" << access << " }\n"

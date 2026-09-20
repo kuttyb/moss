@@ -63,7 +63,7 @@ contiguity and uniqueness. Partition, subset, semantic-state membership, and
 class-mode invariants fail closed in release builds as well as debug builds.
 The plan supplies the ordering pair `(domain_rank, class_rank)`. Production
 lowering validates the stored graph, specialization linkage, ranks, partition,
-footprints, and final modes before emitting physical descriptors. It neither
+footprints, and final modes before emitting typed layouts and direct acquisitions. It neither
 recomputes synchronization analysis nor repairs a corrupt plan at runtime.
 
 A message remains an observable sequencing point. A caller's plan contains only
@@ -172,40 +172,41 @@ acquisition, and handler-lifetime 2PL, including nested message calls. Runtime
 locks belong to each constructed instance, never process-global singletons.
 Scoped graph activations and imported outer routes remain future design.
 
-## Production storage and handler entry (10.6D)
+## Production storage and handler entry (10.6F.1)
 
-Each generated domain reference owns an `Arc<MossClassRuntime<DomainLeaf>>` and
-immutable route references. `DomainLeaf` is a generated typed Rust enum; it does
-not use runtime trait dispatch or type erasure. The runtime owns exactly one
-`std::sync::RwLock` per synchronization class, containing that class's leaves.
-Leaves outside X* live in separately published immutable storage with no lock.
-Class order and membership come directly from the final application's plan.
-Two leaves sharing a class use one lock; split classes use distinct locks even
-when their leaves belong to one source object.
+SynchronizationPlan is compile-time only. Code generation projects its exact
+classes, member leaves and modes into typed Rust. Every runtime instance owns an
+`Arc<DomainRuntime>` containing direct `RwLock<DomainClassN>` fields. Each class
+struct owns exactly its protected leaves; immutable-after-publication leaves live
+in a separate immutable struct. Identical concrete layouts can share a Rust type
+while their instances own independent state and locks. Different specializations
+receive their own checked layouts.
 
-`Handler_shared` is the single synchronized entry wrapper. It acquires exactly
-the handler's stored ClassSet in increasing class rank, using read guards for
-SHARED and write guards for EXCLUSIVE. An empty ClassSet acquires nothing.
-Acquisition never upgrades a guard. The wrapper invokes a private `Handler_body`
-and retains every guard until the reply/result and state restoration are complete.
+`Handler_shared` is the single synchronized entry wrapper. It emits straight-line
+read/write acquisitions against known class fields, in increasing class rank,
+then invokes a typed borrowed handler body. Guards remain live through the entire
+body and nested messages. Reply values are established before the guards drop.
+An empty ClassSet emits no lock acquisition. There are no runtime plans, handler
+searches, class/leaf maps, guard maps, evacuated sets or restoration vectors.
 Ordinary helpers and functional stages acquire no additional domain locks.
 
-Storage is entirely safe Rust: there is no `UnsafeCell`, raw pointer projection,
-or unsafe `Sync` implementation. Phase 10.6D.1 removes the initial 10.6D READ
-snapshots. `MossHandlerFrame::read(&self, leaf) -> Option<&V>` borrows protected
-leaves through retained guards and immutable leaves directly from published
-storage. The reference cannot outlive the frame. The synchronization runtime and
-physical leaf enums have no `Clone` requirement.
+Storage and projections are safe Rust. SHARED reads borrow directly through a
+read guard; EXCLUSIVE operations use mutable field borrows through a write guard.
+Immutable reads borrow directly from immutable storage. Ordinary WRITE mutates
+in place, with no evacuation/restoration framework. Rust lifetimes bind these
+references to retained guards; concurrent handlers never receive mutable
+references to a complete shared domain state. Unused top-level state fields are
+omitted from each handler's view. The runtime has no Clone bound.
 
-The wrapper first evacuates only EXCLUSIVE leaves, then builds a private typed
-state view. Each observed leaf is either `MossSlot::Read(&T)` or
-`MossSlot::Exclusive(T)`. An absent slot is inaccessible metadata: no default,
-clone, or temporary user value is constructed for an unused leaf. READ + WRITE
-normalizes to the exclusive working value, without a second shared representation.
-The mutable reference to this private view never aliases a complete shared domain
-state. Before unlocking, the wrapper consumes the view, restores every evacuated
-exclusive leaf, and drops the frame. Rust lifetimes prevent restoring/releasing a
-frame while borrowed values are still in use.
+For split aggregates the compiler constructs a statically typed view whose field
+capabilities are generic types, not runtime mode tags. `MossRead` and `MossWrite` are backend-only types storing `&T` and `&mut T`
+respectively. Partial object projections use zero-sized absent
+capabilities only where the object access trait requires an unused member;
+no unused value is constructed. Invalid access through such a capability aborts,
+but checked effects make that branch unreachable in valid programs.
+
+The earlier D/D.1 generic `MossClassRuntime`/`MossHandlerFrame`/`MossSlot`
+representation and generic take/restore path are retired by F.1.
 
 Nested objects have recursive typed views. Statically dispatched Rust accessor
 traits let ordinary helper/method bodies operate on an owned object or its view,
@@ -235,7 +236,7 @@ is no alternate transport, completion acknowledgement, or backend selector.
 ## Guard lifetime, failures, and correctness
 
 A terminating `reply` evaluates and establishes its independent by-value result
-inside the body. The wrapper then restores all exclusive leaves, releases its
+inside the body. The wrapper then finishes all typed state accesses, releases its
 class guards, and returns the result to the caller. Normal no-value completion
 uses the same restoration and release sequence. Reply copies remain conservative;
 state is never released in an evacuated or uninitialized condition.
@@ -280,12 +281,14 @@ monotonic rank tracking would reject this valid sequence and is not used.
 
 ## Modules, inspection, and regressions
 
-Source-free providers compile reusable handler wrappers. The final application
-passes its physical descriptor to the generated constructor through an internal
-Rust calling convention. `.mossi` exports semantic effects, not class IDs, ranks,
-ClassSets, physical lock layout, or global LockRank. Native ABI version 4 and the
+Source-free providers compile reusable handler bodies over semantic typed state
+references and static route contracts. The final application generates class
+layouts and synchronized wrappers from its own stored plan, then calls those
+provider bodies. This also works when no domain instance existed in the original
+provider build. `.mossi` exports semantic types/effects, not class IDs, ranks,
+ClassSets, physical lock layout, or global LockRank. Native ABI version 5 and the
 codegen fingerprint reject obsolete compiled calling conventions and caches;
-providers built before this migration require rebuilding.
+providers built before F.1 require rebuilding.
 
 Existing synchronization JSON reports `physical_lowering: "handler_2pl"`.
 The human dump projects each handler's acquisitions as `(domain_rank, class_rank)`
@@ -322,13 +325,13 @@ Generated decomposition methods move private provider fields into class storage
 without granting new Moss source-level field access. A loader off-by-one error in
 existing `public_representation field` records is corrected; synchronization
 analysis is unchanged. `.mossi` contains no view/borrow layout, Rust lifetimes, or
-synchronization policy. Native ABI version 4 requires rebuilding older providers
+synchronization policy. Native ABI version 5 requires rebuilding older providers
 so these backend-private entry points exist.
 
-Remaining representation costs are static accessor code size, slot/descriptor
-metadata, and conservative explicit-boundary copies. None require hidden READ
-cloning, additional domain locks, or unsafe access. Layout/profitability work
-remains later work. Fast Debug domain execution and legacy retirement are implemented in Phase 10.6E.
+Remaining representation costs include static accessor/body code size,
+fail-closed unwind checks, and conservative explicit-boundary copies. F.1 removes
+runtime descriptor/slot selection and generic storage navigation. Further
+layout/profitability work requires measurement. Fast Debug domain execution and legacy retirement are implemented in Phase 10.6E.
 
 
 ## Shared frontend, two execution engines

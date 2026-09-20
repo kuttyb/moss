@@ -84,3 +84,17 @@ are not an asymptotic-complexity claim.
 The correctness suite invokes tiny benchmark construction and instrumentation
 checks; it never asserts a performance threshold. See
 [the recorded report](../../docs/PERFORMANCE_10_6F.md) for results and deferred costs.
+
+## Static typed lowering (10.6F.1)
+
+Run `python3 benchmarks/synchronization/typed.py --out tmp/106f1/typed` for
+one million calls per sample, eleven alternating repetitions, and optimized
+assembly. It covers empty, SHARED, EXCLUSIVE, two-class, mixed two-class, and
+three-class acquisition. Each sample reports Moss/Rust medians, absolute delta,
+and ratio; no timing decides correctness. This tight single-thread harness is
+separate from the original thread/barrier suite, which should also be rerun.
+Both accept `--compiler` to compare the retained old compiler with F.1.
+
+Use `scaling.py --rustc-repeats 3 --out tmp/106f1/scaling` to include optimized
+Rust compile/link time. The earlier `layout.rs` BTreeMap-shaped probe is explicitly
+historical evidence about the F runtime, not the current typed class layout.

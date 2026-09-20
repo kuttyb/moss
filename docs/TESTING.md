@@ -340,3 +340,22 @@ bounded semantic trace records, the clean four-module ledger project, and its
 source-free model provider. It compiles/runs tiny benchmark and optional physical
 instrumentation harnesses without timing gates. Full measurement is opt-in through
 `benchmarks/synchronization/`; results are recorded in `PERFORMANCE_10_6F.md`.
+
+
+## Static typed synchronization (10.6F.1)
+
+`check_phase106f1.py` compares generated typed class members and direct lock
+acquisitions with the stored plan, verifies independent instances and shared
+layout reuse, rejects runtime metadata/maps/loops in the synchronization path,
+and inspects optimized assembly for allocation/lookup calls in tiny handlers.
+A source-free provider regression begins with no concrete instances, hides its
+source, then creates and routes to two instances in a fresh consumer graph.
+The updated D/D.1 tests retain their concurrency, failure, original-storage,
+non-Clone, clone-counter, and boundary-independence assertions against typed
+state. Tests use no wall-clock performance thresholds.
+
+`benchmarks/synchronization/typed.py` measures empty, one SHARED, one EXCLUSIVE,
+two EXCLUSIVE, mixed two-class, and three-class entries against the same native
+RwLock primitive. It emits optimized assembly and median/delta/ratio summaries.
+`scaling.py --rustc-repeats 3` additionally measures optimized rustc compilation,
+separately from C++ checking/plan generation and Rust source byte counts.

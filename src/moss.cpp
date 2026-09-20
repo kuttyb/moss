@@ -9015,19 +9015,31 @@ class Generator {
       gen_object_access(o, *entry.second, owns);
     }
     for (const auto& f : p_.functions) gen_function(o, f);
-    // Declare concrete references before handlers that follow their routes.
-    for (const auto& d : p_.domains) gen_ref_decl(o, d);
+    auto body_owner = [&](const Domain& d) {
+      return !p_.explicit_module || starts_with(d.name, p_.module_name + "__");
+    };
+    for (const auto& d : p_.domains) if (body_owner(d)) gen_domain_body_abi(o, d);
     for (const auto& d : specialized_domains_)
-      if (owns_specialization(d)) gen_ref_decl(o, d);
-    for (const auto& d : p_.domains) gen_nominal_handle(o, d);
-    for (const auto& d : p_.domains) gen_domain(o, d);
-    for (const auto& d : p_.domains)
-      if (d.exported) gen_exported_domain_bridge(o, d);
-    for (const auto& d : specialized_domains_)
-      if (owns_specialization(d)) {
+      if (owns_specialization(d) && body_owner(d)) gen_domain_body_abi(o, d);
+    if (!p_.explicit_module || p_.main) {
+      // The final application owns every physical layout, including source-free
+      // provider domains. Provider bodies expose only semantic borrowed access.
+      for (const auto& d : p_.domains) gen_ref_decl(o, d);
+      for (const auto& d : specialized_domains_) if (owns_specialization(d)) gen_ref_decl(o, d);
+      for (const auto& d : p_.domains) gen_nominal_handle(o, d);
+      for (const auto& d : p_.domains) {
         gen_domain(o, d);
+        gen_route_contract(o, d, d.name + "Ref");
+        if (has_domain_specializations(d.name)) gen_route_contract(o, d, d.name + "Handle");
         if (d.exported) gen_exported_domain_bridge(o, d);
       }
+      for (const auto& d : specialized_domains_) if (owns_specialization(d)) {
+        gen_domain(o, d);
+        // Exact specialized routes use their nominal source contract where
+        // parameter/reply types are compatible (existing handle adapter).
+        if (d.exported) gen_exported_domain_bridge(o, d);
+      }
+    }
     if (mode_ == ProgramGenerationMode::Tests)
       gen_test_harness(o);
     else if (mode_ == ProgramGenerationMode::Benchmarks)
@@ -9045,6 +9057,7 @@ class Generator {
   std::set<string> write_through_parameters_;
   string construction_binding_;
   bool view_domain_ = false;
+  bool view_domain_access_ = false;
   bool view_method_ = false;
   std::set<string> view_parameters_;
   mutable bool mutable_projection_ = false;
@@ -10983,7 +10996,7 @@ class Generator {
     source_comment(o, 0, t.line, t.header.empty() ? "type " + t.name : t.header);
     backend_comment(o, 0, "value representation for the Moss object; object ownership stays in Moss");
     o << "#[derive(Clone, Debug)]\n"
-      << (t.exported ? "pub " : "") << "struct " << t.name << " {\n";
+      << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << " {\n";
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
       o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
@@ -10992,7 +11005,7 @@ class Generator {
     tooling_end(o, 0, type_identity);
     // Native provider storage decomposition moves fields without exposing Moss
     // field access or requiring the consumer to read Rust-private fields.
-    o << "impl " << t.name << " {\n    " << (t.exported ? "pub " : "") << "fn __moss_into_parts(self) -> (";
+    o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
     for (const auto& field : t.fields) o << rust_type(field.type) << ",";
     o << ") { (";
     for (const auto& field : t.fields) o << "self." << field.name << ",";
@@ -11199,7 +11212,7 @@ class Generator {
 
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
     o << "#[derive(Clone)]\n" << (d.exported ? "pub " : "") << "struct " << d.name << "Ref {\n"
-      << "    state: Arc<MossClassRuntime<" << d.name << "Leaf>>,\n";
+      << "    state: Arc<" << d.name << "Runtime>,\n";
     for (const auto& route : d.routes)
       o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
     o << "}\n\n";
@@ -12123,7 +12136,14 @@ class Generator {
       }
     }
     if (constructor_argument) o << ", ";
-    emit_physical_descriptor(o, construction_binding_);
+    const auto& plan = physical_domain_plan(construction_binding_);
+    o << rust_string_literal(plan.concrete_instance_id) << ", " << plan.domain_rank;
+    for (const auto& h : definition.handlers) {
+      auto found_handler = std::find_if(plan.handlers.begin(), plan.handlers.end(),
+          [&](const auto& candidate) { return candidate.name == h.name; });
+      synchronization_require(found_handler != plan.handlers.end(), "missing typed handler identity");
+      o << ", " << rust_string_literal(found_handler->handler_identity);
+    }
     o << ");\n";
   }
 
@@ -14547,7 +14567,7 @@ static string backend_flags_text(const vector<string>& flags) {
 static string backend_identity_payload(
     const BackendToolchainIdentity& identity) {
   std::ostringstream out;
-  out << "moss-codegen\nsynchronous-domains-2\nresolved-rustc\n" << identity.rustc_executable
+  out << "moss-codegen\nstatic-typed-domains-1\nresolved-rustc\n" << identity.rustc_executable
       << "\nversion-verbose-bytes\n" << identity.version_verbose.size()
       << "\n" << identity.version_verbose
       << "\nprofile\n" << identity.profile
@@ -15532,7 +15552,7 @@ static ParsedModuleUnit load_module_interface(
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  if (text.find("\nnative_abi 4\n") == string::npos)
+  if (text.find("\nnative_abi 5\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
@@ -16376,7 +16396,7 @@ static Program module_program(const Program& whole, const string& module) {
   for (const auto& trait : whole.traits)
     if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
   for (const auto& domain : whole.domains)
-    if (belongs_to_module(domain.name, module)) result.domains.push_back(domain);
+    if (whole.main_module == module || belongs_to_module(domain.name, module)) result.domains.push_back(domain);
   if (whole.main && whole.main_module == module) result.main = whole.main;
   for (const auto& test : whole.tests)
     if (whole.main_module.empty() || whole.main_module == module)
@@ -16692,7 +16712,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     header << "moss-module-interface-v1\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
-           << "native_abi 4\n"
+           << "native_abi 5\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "

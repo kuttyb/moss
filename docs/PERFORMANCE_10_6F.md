@@ -1,5 +1,11 @@
 # Phase 10.6F performance validation
 
+This report preserves the original generic-runtime measurements. Its tiny-handler
+metadata overhead was subsequently classified as a v0.1 release blocker, leading
+to [Phase 10.6F.1 static typed lowering](PERFORMANCE_10_6F_1.md). The original
+numbers and decisions below are historical evidence, not the current backend
+performance claim.
+
 Measured on 2026-09-20, starting from `202d9c7` (checked-in 10.6E plus its
 README/status correction). These are observations on one machine, not language
 performance guarantees or CI thresholds. The final backend keeps the same stored

@@ -8,7 +8,7 @@ import statistics
 import subprocess
 import time
 repo=Path(__file__).resolve().parents[2]
-p=argparse.ArgumentParser();p.add_argument('--compiler',default=str(repo/'moss'));p.add_argument('--out',default=str(repo/'tmp/106f/scaling'));p.add_argument('--repeats',type=int,default=5);a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--compiler',default=str(repo/'moss'));p.add_argument('--out',default=str(repo/'tmp/106f/scaling'));p.add_argument('--repeats',type=int,default=5);p.add_argument('--rustc-repeats',type=int,default=0);a=p.parse_args()
 out=Path(a.out);out.mkdir(parents=True,exist_ok=True)
 rows=[]
 for size in (8,32,96):
@@ -31,6 +31,12 @@ for size in (8,32,96):
         generated=rust.read_text();assert old_rust is None or old_rust==generated;old_rust=generated
         query=subprocess.run([a.compiler,'inspect','main','--source',str(source),'--json'],text=True,capture_output=True,check=True).stdout
         assert old_query is None or old_query==query;old_query=query
+    rustc_ms=[]
+    for n in range(a.rustc_repeats):
+        start=time.perf_counter_ns()
+        subprocess.run(['rustc','--edition=2021','-C','opt-level=3','-D','warnings',str(rust),'-o',str(out/'stress')],check=True,capture_output=True,text=True)
+        rustc_ms.append((time.perf_counter_ns()-start)/1e6)
+        assert subprocess.run([str(out/'stress')],check=True,capture_output=True,text=True).stdout.strip()=='0'
     plan=json.loads(old_query)['result']['synchronization_plan']
-    rows.append(dict(leaves_per_store=size,handlers_per_store=2*size,instances=len(plan['domains']),routes=max(1,size//8),classes=sum(len(d['sync_classes']) for d in plan['domains']),rust_bytes=len(old_rust),total_ms=statistics.median(elapsed),stages_ms={k:statistics.median(v) for k,v in sorted(records.items())}))
+    rows.append(dict(leaves_per_store=size,handlers_per_store=2*size,instances=len(plan['domains']),routes=max(1,size//8),classes=sum(len(d['sync_classes']) for d in plan['domains']),rust_bytes=len(old_rust),rustc_ms=statistics.median(rustc_ms) if rustc_ms else None,rustc_repeats=a.rustc_repeats,total_ms=statistics.median(elapsed),stages_ms={k:statistics.median(v) for k,v in sorted(records.items())}))
 (out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n');print(out/'summary.json')

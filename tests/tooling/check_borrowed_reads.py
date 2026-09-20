@@ -21,7 +21,7 @@ def run(args, *, cwd=None, expected=0):
 
 runtime = (repo / 'src/handler_runtime.hpp').read_text().split('R"RUST(', 1)[1].split(')RUST"', 1)[0]
 assert 'V: Clone' not in runtime and '.clone()' not in runtime
-assert 'fn read(&self,' in runtime and 'Option<&V>' in runtime
+assert 'moss_read_or_abort<T>' in runtime and 'MossClassRuntime' not in runtime
 preamble = '#![allow(dead_code, unused_variables)]\n'
 harness = r'''
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -37,43 +37,32 @@ impl Clone for Probe {
 }
 impl Probe { fn score(&self) -> usize { self.text.len() } }
 fn inspect(value: &Probe) -> usize { value.score() }
-fn plan() -> MossPhysicalPlan {
-    ("instance", 0, vec![vec!["protected"]], vec![
-        ("read", vec![(0,false)], vec!["protected","fixed"], vec![], "read"),
-        ("write", vec![(0,true)], vec![], vec!["protected"], "write"),
-    ])
-}
 fn main() {
-    let mut values = MossLeaves::new();
-    values.insert("protected", NonClone { text: "original".into() });
-    values.insert("fixed", NonClone { text: "immutable".into() });
-    let state = MossClassRuntime::new(plan(), values);
+    let protected = std::sync::RwLock::new(NonClone { text: "original".into() });
+    let immutable = NonClone { text: "immutable".into() };
     {
-        let frame = state.enter("read");
-        assert_eq!(frame.read("protected").unwrap().text, "original");
-        assert!(std::ptr::eq(frame.read("fixed").unwrap(), &state.immutable["fixed"]));
-        assert!(frame.read("unused").is_none());
-        assert!(state.classes[0].try_write().is_err());
+        let guard = moss_read_or_abort(&protected);
+        let value = MossRead(&guard.text);
+        assert_eq!(&**value, "original");
+        assert_eq!(immutable.text, "immutable");
+        assert!(protected.try_write().is_err());
     }
-    let mut values = MossLeaves::new();
-    values.insert("protected", Probe { text: "x".repeat(100_000) });
-    values.insert("fixed", Probe { text: "y".repeat(100_000) });
-    let state = MossClassRuntime::new(plan(), values);
-    let frame = state.enter("read");
+    let protected = std::sync::RwLock::new(Probe { text: "x".repeat(100_000) });
+    let fixed = Probe { text: "y".repeat(100_000) };
+    let guard = moss_read_or_abort(&protected);
     for _ in 0..20 {
-        let value = MossSlot::Read(frame.read("protected").unwrap());
+        let value = MossRead(&*guard);
         assert_eq!(value.text.len(), 100_000);
         assert_eq!(value.score(), 100_000);
         assert_eq!(inspect(&value), 100_000);
-        assert_eq!(frame.read("fixed").unwrap().score(), 100_000);
+        assert_eq!(fixed.score(), 100_000);
     }
     assert_eq!(CLONES.load(Ordering::SeqCst), 0);
-    // An explicit independent-value boundary can clone; ordinary READ never did.
-    let reply = frame.read("protected").unwrap().clone();
+    let reply = guard.clone();
     assert_eq!(CLONES.load(Ordering::SeqCst), 1);
-    assert_ne!(reply.text.as_ptr(), frame.read("protected").unwrap().text.as_ptr());
-    drop(frame);
-    assert!(state.classes[0].try_write().is_ok());
+    assert_ne!(reply.text.as_ptr(), guard.text.as_ptr());
+    drop(guard);
+    assert!(protected.try_write().is_ok());
 }
 '''
 (out / 'runtime.rs').write_text(preamble + runtime + harness)
@@ -81,10 +70,9 @@ run(['rustc', '-D', 'warnings', out / 'runtime.rs', '-o', out / 'runtime'])
 run([out / 'runtime'])
 escape = r'''
 fn main() {
-    let values = MossLeaves::<String>::new();
-    let runtime = MossClassRuntime::new(("i",0,vec![],vec![("h",vec![],vec![],vec![],"h")]), values);
+    let runtime = std::sync::RwLock::new(String::from("value"));
     let borrowed;
-    { let frame = runtime.enter("h"); borrowed = frame.read("x"); }
+    { let guard = moss_read_or_abort(&runtime); borrowed = &*guard; }
     println!("{:?}", borrowed);
 }
 '''
@@ -107,7 +95,7 @@ run(['rustc', '-D', 'warnings', rust, '-o', out / 'reads'])
 assert run([out / 'reads']).strip() == '31 13 31 12 39\n13 31'
 assert 'V: Clone' not in text and 'Default::default()' not in text
 assert not re.search(r'#\[derive\(Clone\)\]\s*enum \w+Leaf', text)
-assert 'self.state.enter(' in text and '__frame.read(' in text
+assert 'moss_read_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
 assert 'value: &impl MossAccess_Record' in text
 assert 'Accept_shared((state.record).__moss_value())' in text
 assert 'Some((state.record).__moss_value())' in text
@@ -133,10 +121,10 @@ fn check_read_pointers(name: &String, values: &Vec<i64>) {
     });
 }
 '''
-needle = "fn Read_body(&self, state: &mut StoreState<'_>) -> Option<i64> {"
+needle = next(line for line in text.splitlines() if line.startswith('fn __moss_body_Store_Read('))
 assert needle in text
-instrumented = text.replace(needle, needle + '\ncheck_read_pointers(&state.record.profile.name, &state.record.profile.values);', 1)
-needle = "fn Accept_body(&self, state: &mut ReaderState<'_>, value: Record) -> Option<i64> {"
+instrumented = text.replace(needle, needle + '\ncheck_read_pointers(state.record.__moss_field_profile().__moss_field_name(), state.record.__moss_field_profile().__moss_field_values());', 1)
+needle = next(line for line in text.splitlines() if line.startswith('fn __moss_body_Reader_Accept('))
 assert needle in instrumented
 instrumented = instrumented.replace(needle, needle + "\nEXPECTED_READ_POINTERS.with(|expected| { if let Some((n,v)) = *expected.borrow() { assert_ne!(value.profile.name.as_ptr() as usize, n); assert_ne!(value.profile.values.as_ptr() as usize, v); } });", 1)
 needle = 'fn __moss_view_inspect_record(value: &impl MossAccess_Record) -> i64 {'
@@ -148,32 +136,29 @@ instrumented = instrumented[:method] + '\ncheck_read_pointers(self.__moss_field_
 constructors = '\n'.join(line for line in text[text.index('fn main() {'):].splitlines() if ' = construct_' in line)
 # Inflate actual domain state, without a benchmark or new Moss syntax.
 constructors = constructors.replace('"large".to_string()', '"x".repeat(100_000)').replace('vec![1_i64, 2_i64, 3_i64]', 'vec![1_i64; 100_000]')
-# Identify enum variants by the generated typed insertion, without assuming leaf indices.
-name_variant = re.search(r'leaves.insert\("record.profile.name", (StoreLeaf::L\d+)', text)[1]
-values_variant = re.search(r'leaves.insert\("record.profile.values", (StoreLeaf::L\d+)', text)[1]
+# Resolve physical fields from the authoritative plan in the test generator.
+def stored(path):
+    cls = next(c['class_rank'] for c in store_plan['sync_classes'] if path in c['member_leaves'])
+    field = '__moss_storage_' + ''.join(str(len(part)) + '_' + part for part in path.split('.'))
+    return f'store.state.class{cls}.read().unwrap().{field}'
 test = r'''
 #[test]
 fn original_storage() {
     CONSTRUCTORS
-    let frame = store.state.enter("Read");
-    let name = match frame.read("record.profile.name").unwrap() { NAME(value) => value, _ => panic!() };
-    let values = match frame.read("record.profile.values").unwrap() { VALUES(value) => value, _ => panic!() };
-    EXPECTED_READ_POINTERS.with(|expected| *expected.borrow_mut() = Some((name.as_ptr() as usize, values.as_ptr() as usize)));
-    drop(frame);
+    let name_pointer = NAME.as_ptr() as usize;
+    let values_pointer = VALUES.as_ptr() as usize;
+    EXPECTED_READ_POINTERS.with(|expected| *expected.borrow_mut() = Some((name_pointer, values_pointer)));
     assert_eq!(store.Read_shared(), Some(200011));
     assert_eq!(store.Mixed_shared(), Some(100003));
     assert_eq!(store.Immutable_shared(), Some(31));
     assert_eq!(store.Forward_shared(), Some(300009));
     EXPECTED_READ_POINTERS.with(|expected| *expected.borrow_mut() = None);
     let snapshot = store.Snapshot_shared().unwrap();
-    let frame = store.state.enter("Read");
-    let stored = match frame.read("record.profile.name").unwrap() { NAME(value) => value, _ => panic!() };
-    assert_ne!(snapshot.profile.name.as_ptr(), stored.as_ptr());
-    drop(frame);
+    assert_ne!(snapshot.profile.name.as_ptr(), NAME.as_ptr());
     store.Change_shared();
     assert_eq!(snapshot.profile.name.len(), 100_000);
 }
-'''.replace('CONSTRUCTORS', constructors).replace('NAME(value)', name_variant + '(value)').replace('VALUES(value)', values_variant + '(value)')
+'''.replace('CONSTRUCTORS', constructors).replace('NAME', stored('record.profile.name')).replace('VALUES', stored('record.profile.values'))
 rust.write_text(instrumented + probe + test)
 run(['rustc', '--test', '-D', 'warnings', rust, '-o', out / 'original-storage'])
 run([out / 'original-storage'])

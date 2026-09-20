@@ -96,11 +96,14 @@ an empty effect. These records participate in the semantic interface hash.
 Phase 10.6D introduced native ABI version 2 for inferred primitive WRITE
 references and plan-driven domain constructors. Phase 10.6D.1 introduced
 version 3 for reusable static borrowed-access helpers and provider decomposition
-entry points. Phase 10.6E uses version 4 after removing await metadata and
-retired constructor/runtime plumbing. Old providers must be rebuilt. This native
-compatibility marker carries no synchronization-class ABI: the final application
-supplies its compiler-derived descriptor at construction, including for source-free
-providers. `.mossi` continues to export semantic handler/formal leaf effects only;
+entry points. Phase 10.6E used version 4 after removing await metadata and
+retired constructor/runtime plumbing. Phase 10.6F.1 uses **version 5**: providers
+export reusable typed borrowed handler bodies and static route contracts; the
+final application emits its own class structs, locks, and synchronized entries.
+Provider bodies can call private helpers through their compiled Rust crate.
+Bodies over aggregate access traits or route contracts use static Rust generics,
+not trait objects. Providers need no concrete domain instance at build time.
+Old providers must be rebuilt. No physical descriptor is passed at construction. `.mossi` continues to export semantic handler/formal leaf effects only;
 class IDs, ranks, ClassSets, and lock storage are not serialized as provider ABI.
 
 Borrowed views and Rust lifetimes remain backend policy and are not serialized

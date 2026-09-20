@@ -25,7 +25,7 @@ def compile_fixture(source, flags=(), name='fixture'):
     rust = out / (name + '.rs')
     run([compiler, *flags, source, '-o', rust])
     text = rust.read_text()
-    assert 'struct MossClassRuntime' in text and 'self.state.enter(' in text
+    assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
     assert not re.search(r'Arc<(Mutex|RwLock)<\w+State|AtomicI64|AtomicBool|thread::spawn', text)
     assert 'unsafe {' not in text and 'unsafe impl' not in text
     return rust, text
@@ -104,18 +104,17 @@ mod phase106d {
         COMPLETION.set(Mutex::new(None)).unwrap();
         MOSS_LOCK_HOOK.set(hook).unwrap();
         CONSTRUCTORS
-        assert_eq!(store.state.classes.len(), 3); // pair.x/y share ONE physical lock
-        let left_rank = *store.state.leaf_classes.get("left").unwrap();
-        let right_rank = *store.state.leaf_classes.get("right").unwrap();
-        assert_ne!(left_rank, right_rank);
-        assert!(!store.state.leaf_classes.contains_key("fixed"));
+        // These are separate typed fields; pair.x/y reside in class1 together.
+        assert_eq!(store.state.class1.read().unwrap().__moss_storage_4_pair1_x, 0);
+        assert_eq!(store.state.class1.read().unwrap().__moss_storage_4_pair1_y, 0);
         for _ in 0..20 {
             // Barrier deadlocks if a hidden whole-domain lock serializes disjoint entries.
             pair(store.clone(), store.clone(), |s| s.Left_shared(), |s| s.Right_shared());
             // Same-class shared readers must ALSO reach the barrier together.
             pair(store.clone(), store.clone(), |s| { s.ReadLeft_shared(); }, |s| { s.ReadLeftAgain_shared(); });
         }
-        assert_eq!(split.state.classes.len(), 2);
+        assert!(split.state.class0.try_write().is_ok());
+        assert!(split.state.class1.try_write().is_ok());
         for _ in 0..20 {
             *OVERLAP.get().unwrap().lock().unwrap() = Some(Arc::new(Barrier::new(2)));
             let x = split.clone(); let y = split.clone();
@@ -141,17 +140,17 @@ mod phase106d {
         assert_eq!(store.ReadLeft_shared(), Some(820));
         // Explicit compatibility matrix while guards are retained, no sleeps or fairness assumptions.
         {
-            let reader = store.state.enter("ReadLeft");
-            assert!(store.state.classes[left_rank].try_write().is_err());
-            assert!(store.state.classes[left_rank].try_read().is_ok());
+            let reader = moss_read_or_abort(&store.state.class0);
+            assert!(store.state.class0.try_write().is_err());
+            assert!(store.state.class0.try_read().is_ok());
             drop(reader);
-            let writer = store.state.enter("Left");
-            assert!(store.state.classes[left_rank].try_write().is_err());
-            assert!(store.state.classes[left_rank].try_read().is_err());
-            assert!(store.state.classes[right_rank].try_write().is_ok());
+            let writer = moss_write_or_abort(&store.state.class0);
+            assert!(store.state.class0.try_write().is_err());
+            assert!(store.state.class0.try_read().is_err());
+            assert!(store.state.class2.try_write().is_ok());
             drop(writer);
         }
-        assert!(store.state.classes[left_rank].try_write().is_ok());
+        assert!(store.state.class0.try_write().is_ok());
         let acquisitions = ACQUISITIONS.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(store.Fixed_shared(), Some(7));
         assert_eq!(ACQUISITIONS.load(std::sync::atomic::Ordering::SeqCst), acquisitions);
@@ -165,10 +164,10 @@ mod phase106d {
             flag.store(true, std::sync::atomic::Ordering::SeqCst);
             reply
         });
-        gate.wait(); // reply evaluated and leaves restored, but guards still held
+        gate.wait(); // reply evaluated and state valid, but guards still held
         assert!(!returned.load(std::sync::atomic::Ordering::SeqCst));
-        assert!(store.state.classes[left_rank].try_read().is_err());
-        assert!(store.state.classes[right_rank].try_write().is_err());
+        assert!(store.state.class0.try_read().is_err());
+        assert!(store.state.class2.try_write().is_err());
         SECOND_CALLER.set(Barrier::new(2)).unwrap();
         let second_returned = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let second_flag = second_returned.clone();
@@ -189,8 +188,10 @@ mod phase106d {
         assert_eq!(store.Pair_shared(), Some(2));
         assert_eq!(store.ReadPair_shared(), Some(2));
         HELD.with(|held| assert!(held.borrow().is_empty()));
-        // Normal reply restores all evacuated leaves before wrapper return/unlock.
-        assert!(store.state.classes.iter().all(|c| c.try_write().is_ok()));
+        // Normal reply leaves typed state valid before wrapper return/unlock.
+        assert!(store.state.class0.try_write().is_ok());
+        assert!(store.state.class1.try_write().is_ok());
+        assert!(store.state.class2.try_write().is_ok());
     }
 }
 '''.replace('CONSTRUCTORS', constructors(text))
@@ -246,7 +247,7 @@ r = subprocess.run([str(out / 'failure')], capture_output=True, text=True, timeo
 assert r.returncode != 0 and 'RESUMED' not in r.stdout, r
 print('Phase 10.6D runtime/codegen checks passed: disjoint writers, shared readers, conflicts, exact classes, class sharing, empty footprint, nested/sibling ordering, WRITE-through, release, failure, deterministic flag convergence.')
 
-# Source-free provider: physical descriptor belongs to the consumer graph;
+# Source-free provider: typed physical layout belongs to the consumer graph;
 # inferred primitive WRITE ABI survives source removal with its semantic effects.
 project = out / 'modules'
 if project.exists():
@@ -280,7 +281,7 @@ fn main():
 for source_free in (False, True):
     if source_free:
         provider.rename(provider.with_suffix('.hidden'))
-        # Force a fresh consumer graph/descriptor rather than cached execution.
+        # Force a fresh consumer graph/layout rather than cached execution.
         application.write_text(application.read_text().replace('value: 8', 'value: 18'))
     built = json.loads(run([compiler, 'build', '--json'], cwd=project))['result']
     assert run([built['artifacts']['executable']]).strip() == ('11 5 19' if source_free else '11 5 9')
@@ -289,7 +290,7 @@ for source_free in (False, True):
         assert physical not in interface
 interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
-interface_path.write_text(contents.replace('native_abi 4\n', ''))
+interface_path.write_text(contents.replace('native_abi 5\n', ''))
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
 assert 'rebuild' in old and 'native calling convention' in old
 interface_path.write_text(contents)
@@ -304,10 +305,10 @@ special, special_text = compile_fixture(special_source, name='specialized')
 run(['rustc', '-D', 'warnings', special, '-o', out / 'specialized'])
 assert run([out / 'specialized']).strip() == '11 22'
 special.write_text(special_text + '\n#[test] fn exact_physical_layout() {\n' + constructors(special_text) +
-                   '\nassert_eq!(left.state.classes.len(), 2);\nassert_eq!(right.state.classes.len(), 1);\n}\n')
+                   '\nassert!(left.state.class0.try_write().is_ok()); assert!(left.state.class1.try_write().is_ok());\nassert!(right.state.class0.try_write().is_ok());\n}\n')
 run(['rustc', '--test', '-D', 'warnings', special, '-o', out / 'specialized-test'])
 run([out / 'specialized-test'])
-print('Phase 10.6D exact-specialization and whole-object restoration checks passed.')
+print('Phase 10.6D exact-specialization and whole-object state-validity checks passed.')
 
 parameter_rust = out / 'parameters.rs'
 run([compiler, repository / 'tests/phase106d_parameter_write.moss', '-o', parameter_rust])
@@ -319,9 +320,8 @@ print('Phase 10.6D primitive/generic/method/projection WRITE and aggregate reass
 poison = text.replace('fn main() {', 'fn saved_main() {', 1)
 poison += '\nfn main() {\n' + constructors(text) + r"""
     let target = store.clone();
-    let rank = *store.state.leaf_classes.get("left").unwrap();
     let _ = std::thread::spawn(move || {
-        let _guard = target.state.classes[rank].write().unwrap();
+        let _guard = target.state.class0.write().unwrap();
         panic!("inject poison outside handler entry");
     }).join();
     store.Left_shared();

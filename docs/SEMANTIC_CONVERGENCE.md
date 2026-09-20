@@ -136,7 +136,9 @@ Production synchronization decisions were resolved in 10.6A–C and implemented
 in 10.6D; backend test hooks report planned lock acquisitions and releases.
 The earlier “blocked by open design” status is historical.
 
-Phase 10.6F closes Phase 10 as [Moss v0.1](V0_1.md), adding stored-plan diagnostic
-views and measured performance validation while preserving this language model.
+Phase 10.6F provisionally closed Phase 10 as [Moss v0.1](V0_1.md), adding
+stored-plan diagnostics and performance validation. Its measured metadata overhead
+reopened release closure for 10.6F.1. Typed lowering preserves the same semantics;
+review and explicit v0.1 re-closure precede dogfooding.
 The next milestone is Phase 15 Dogfooding, followed by Phases 20–22 as described
 in the v0.1 roadmap.
