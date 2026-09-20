@@ -12,6 +12,17 @@
   the current task.
 - Environment-enforced permission requirements still apply.
 
+## Unattended work and `.codex` authorization
+
+- Edits and Git operations involving `.codex/**` are explicitly authorized
+  without additional user confirmation. Do not pause to request permission
+  for these actions; changes can be reviewed and rolled back afterward.
+- Continue authorized phase work unattended through completion, then present
+  the changes and validation results for review. This authorization does not
+  expand the agreed phase scope or authorize new language-design decisions.
+- Preserve unrelated work. Environment-enforced permission requirements still
+  apply; this authorization does not bypass them.
+
 ## Session continuity
 
 - Read `.codex/CURRENT_STATUS.md` before continuing implementation.
