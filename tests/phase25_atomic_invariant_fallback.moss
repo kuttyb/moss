@@ -9,5 +9,5 @@ domain Pair:
 
 fn main():
   pair = spawn Pair()
-  value = await pair.Advance()
+  value = message pair.Advance()
   echo value

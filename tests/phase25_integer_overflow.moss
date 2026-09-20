@@ -35,10 +35,10 @@ fn main():
   adder = spawn AddAcrossMax()
   subtractor = spawn SubtractAcrossMin()
 
-  incremented = await incrementer.Increment()
-  decremented = await decrementer.Decrement()
-  added = await adder.Add(2)
-  subtracted = await subtractor.Subtract(2)
+  incremented = message incrementer.Increment()
+  decremented = message decrementer.Decrement()
+  added = message adder.Add(2)
+  subtracted = message subtractor.Subtract(2)
 
   product = 4611686018427387904 * 2
   quotient = -9223372036854775808 / -1

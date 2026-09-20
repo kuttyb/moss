@@ -7,5 +7,5 @@ domain Gauge:
 
 fn main():
   gauge = spawn Gauge()
-  value = await gauge.Add(1.5)
+  value = message gauge.Add(1.5)
   echo value

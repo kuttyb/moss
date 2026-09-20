@@ -357,7 +357,7 @@ grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   fail 'message callback did not stop fusion'
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_await_barrier_optimized.rs" >/dev/null ||
-  fail 'await callback did not stop fusion'
+  fail 'message callback did not stop fusion'
 [ "$(grep -c 'Moss backend: FUSED FUNCTIONAL PIPELINE' \
     "$test_build/phase4_exact_pipeline_id_optimized.rs")" -eq 1 ] ||
   fail 'exact pipeline plan did not fuse the pure identical-text context'
@@ -848,9 +848,9 @@ grep -F 'fusion stopped: message send' \
   fail 'fusion explanation omitted the message barrier'
 "$compiler" -O --explain-fusion --check tests/phase4_await_barrier.moss \
   >"$test_build/phase4_await.explain"
-grep -F 'fusion stopped: await' \
+grep -F 'fusion stopped: message send' \
   "$test_build/phase4_await.explain" >/dev/null ||
-  fail 'fusion explanation omitted the await barrier'
+  fail 'fusion explanation omitted the synchronous message barrier'
 "$compiler" -O --dump-functional-ir --check \
   tests/phase4_exact_pipeline_id.moss >"$test_build/phase4_exact_pipeline_id.ir"
 grep -E '^Pipeline %[0-9]+ \[fn:local_total\] semantic=fn:local_total@4:result' \
@@ -900,7 +900,7 @@ grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null |
 grep -F 'square(quote.size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
 run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
-grep -F 'fn Latest_shared(&self, __moss_reply: MossSender<Quote>)' \
+grep -F 'fn Latest_shared(&self, __moss_reply: MossSender<Quote>, __moss_done: MossSender<()>)' \
   "$test_build/inferred_frontend.rs" >/dev/null ||
   fail "inferred reply handler did not lower with its inferred reply type"
 grep -F '// Moss line 6: value = 0' "$test_build/inferred_frontend.rs" >/dev/null ||
@@ -961,15 +961,12 @@ grep -F 'total: AtomicI64' "$test_build/shared_memory_example_optimized.rs" >/de
   fail "shared-memory example did not lower Counter state to AtomicI64"
 grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory example did not retain the asynchronous Client mailbox"
-grep -F '// Moss line 14: first = await counter.Add(10)' \
+grep -F '// Moss line 14: first = message counter.Add(10)' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
-  fail "shared-memory optimization omitted its Moss await annotation"
-grep -F '// Moss backend: ATOMIC DOMAIN await: execute one SeqCst state action directly' \
+  fail "shared-memory optimization omitted its Moss message annotation"
+grep -F '// Moss backend: ATOMIC DOMAIN one-way execution' \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory optimization omitted its atomic lowering annotation"
-compile_unchecked_await_case unchecked_awaits examples/shared_memory.moss
-[ "$("$test_build/unchecked_awaits")" = 'shared total: 10 42' ] ||
-  fail "unchecked-await mode changed successful execution"
 run_optimized_case shared_memory_object_pipeline examples/object_pipeline.moss \
   'created: widget 1 false
 observed: widget 1 false
@@ -1210,7 +1207,7 @@ compile_optimized_case phase25_atomic_external_fallback \
   tests/phase25_atomic_external_fallback.moss
 grep -F '// Moss backend plan: Counter = DirectMutex.' \
   "$test_build/phase25_atomic_external_fallback.rs" >/dev/null ||
-  fail "handler with message, await, and echo did not fall back to locking"
+  fail "handler with message and echo did not fall back to locking"
 run_optimized_case phase25_atomic_float_fallback \
   tests/phase25_atomic_float_fallback.moss '1.5'
 grep -F '// Moss backend plan: Gauge = DirectMutex.' \
@@ -1259,8 +1256,8 @@ done
 
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
-reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message' or 'await'"
-reject_case invalid_await "await requires an assignment target"
+reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message'"
+reject_case invalid_await "await is retired: message is synchronous"
 reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
@@ -1463,12 +1460,9 @@ reject_case phase26_payload_consume \
   "cannot CONSUME incoming message payload 'payload'"
 reject_case phase26_payload_state_store \
   "cannot CONSUME incoming message payload 'payload'"
-reject_case phase26_payload_reply \
-  "cannot reply with incoming message payload 'payload'"
-reject_case phase26_payload_alias_reply \
-  "cannot CONSUME incoming message payload 'payload'"
-reject_case phase26_payload_reply_copy \
-  "cannot reply with incoming message payload 'x'"
+run_case phase26_payload_reply tests/negative/phase26_payload_reply.moss '7'
+run_case phase26_payload_alias_reply tests/negative/phase26_payload_alias_reply.moss '7'
+run_case phase26_payload_reply_copy tests/negative/phase26_payload_reply_copy.moss '1'
 reject_case phase26_payload_rebind \
   "cannot WRITE incoming message payload 'payload'"
 reject_case phase26_payload_rebind_copy \
@@ -1485,51 +1479,13 @@ grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
 
 reject_case branch_divergent_domain_types \
   "binding 'target' has conflicting domain types across control-flow paths: Alpha and Beta"
-reject_case branch_domain_await_cycle \
-  "binding 'target' has conflicting domain types across control-flow paths: Right and Bypass"
-reject_case unbounded_await_handler \
-  "await target 'target' cannot be statically and conservatively bounded to one concrete domain"
-reject_case unbounded_await_main_helper \
-  "await target 'target' cannot be statically and conservatively bounded to one concrete domain"
-
-reject_case direct_await_cycle "await cycle detected:"
-grep -F 'Left --await line 3--> Right' \
-  "$test_build/direct_await_cycle.stderr" >/dev/null ||
-  fail "direct cycle witness omitted the Left await source site"
-grep -F 'Right --await line 11--> Left' \
-  "$test_build/direct_await_cycle.stderr" >/dev/null ||
-  fail "direct cycle witness omitted the Right await source site"
-
-reject_case transitive_await_cycle "await cycle detected:"
-grep -F 'First --await line 3--> Second' \
-  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
-  fail "transitive cycle witness omitted the First await source site"
-grep -F 'Second --await line 11--> Third' \
-  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
-  fail "transitive cycle witness omitted the Second await source site"
-grep -F 'Third --await line 16--> First' \
-  "$test_build/transitive_await_cycle.stderr" >/dev/null ||
-  fail "transitive cycle witness omitted the Third await source site"
-
-reject_case function_await_cycle "await cycle detected:"
-grep -F 'Left --await line 2--> Right' \
-  "$test_build/function_await_cycle.stderr" >/dev/null ||
-  fail "helper-hidden cycle witness omitted the helper await source site"
-grep -F 'Right --await line 15--> Left' \
-  "$test_build/function_await_cycle.stderr" >/dev/null ||
-  fail "helper-hidden cycle witness omitted the returning await source site"
-
-reject_case repeated_await_cycle_edges "await cycle detected:"
-grep -F 'Left --await line 3--> Right' \
-  "$test_build/repeated_await_cycle_edges.stderr" >/dev/null ||
-  fail "repeated-edge cycle witness did not report the edge used by DFS"
-grep -F 'Right --await line 12--> Left' \
-  "$test_build/repeated_await_cycle_edges.stderr" >/dev/null ||
-  fail "repeated-edge cycle witness omitted its closing edge"
-if grep -F 'Left --await line 4--> Right' \
-    "$test_build/repeated_await_cycle_edges.stderr" >/dev/null; then
-  fail "repeated-edge cycle witness reported an unrelated duplicate await site"
-fi
+reject_case branch_domain_await_cycle "await is retired: message is synchronous"
+reject_case unbounded_await_handler "await is retired: message is synchronous"
+reject_case unbounded_await_main_helper "await is retired: message is synchronous"
+reject_case direct_await_cycle "await is retired: message is synchronous"
+reject_case transitive_await_cycle "await is retired: message is synchronous"
+reject_case function_await_cycle "await is retired: message is synchronous"
+reject_case repeated_await_cycle_edges "await is retired: message is synchronous"
 reject_case recursive_function "recursive local call cycle: recurse -> recurse"
 reject_case mutually_recursive_functions "recursive local call cycle: first -> second -> first"
 reject_case write_read_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
@@ -1540,13 +1496,7 @@ reject_case double_consume_alias "conflicting accesses to value 'item' in call t
 reject_case nontrivial_field_move "value 'packet' was transferred"
 reject_case branch_join_consume "value 'item' was transferred"
 reject_source example_await_cycle examples/errors/await_cycle.moss \
-  "await cycle detected:"
-grep -F 'Coordinator --await line 6--> Worker' \
-  "$test_build/example_await_cycle.stderr" >/dev/null ||
-  fail "unreachable-branch cycle witness omitted its helper await site"
-grep -F 'Worker --await line 21--> Coordinator' \
-  "$test_build/example_await_cycle.stderr" >/dev/null ||
-  fail "unreachable-branch cycle witness omitted its closing await site"
+  "await is retired: message is synchronous"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
@@ -1557,7 +1507,7 @@ reject_cluster cluster_duplicate_spawn tests/shared_memory_contention.moss 'Coun
 reject_cluster cluster_unknown_domain examples/counter.moss 'Counter,Missing' \
   'unknown domain in cluster: Missing'
 reject_cluster cluster_await_cycle tests/cluster_await_cycle.moss 'Left,Right' \
-  'await cycle detected:'
+  'await is retired: message is synchronous'
 
 compile_cluster_case clustered_checkout examples/checkout.moss 'Checkout,Inventory,Payments'
 clustered_checkout_output=$("$test_build/clustered_checkout")
@@ -1654,37 +1604,13 @@ second' ] || fail "shared-memory non_reentrant output was out of order on iterat
   iteration=$((iteration + 1))
 done
 
-compile_case fallthrough tests/fallthrough.moss
-fallthrough_stdout="$test_build/fallthrough.stdout"
-fallthrough_stderr="$test_build/fallthrough.stderr"
-set +e
-timeout 5 "$test_build/fallthrough" >"$fallthrough_stdout" 2>"$fallthrough_stderr"
-fallthrough_status=$?
-set -e
-[ "$fallthrough_status" -ne 0 ] || fail "fallthrough unexpectedly succeeded"
-[ "$fallthrough_status" -ne 124 ] || fail "fallthrough await hung"
-grep -F 'Moss await failed: Worker.Maybe completed without a reply' "$fallthrough_stderr" >/dev/null ||
-  fail "fallthrough did not report a clear await failure"
-
-compile_shared_memory_case shared_memory_fallthrough tests/fallthrough.moss
-shared_fallthrough_stdout="$test_build/shared_memory_fallthrough.stdout"
-shared_fallthrough_stderr="$test_build/shared_memory_fallthrough.stderr"
-set +e
-timeout 5 "$test_build/shared_memory_fallthrough" >"$shared_fallthrough_stdout" 2>"$shared_fallthrough_stderr"
-shared_fallthrough_status=$?
-set -e
-[ "$shared_fallthrough_status" -ne 0 ] || fail "shared-memory fallthrough unexpectedly succeeded"
-[ "$shared_fallthrough_status" -ne 124 ] || fail "shared-memory fallthrough await hung"
-grep -F 'Moss await failed: Worker.Maybe completed without a reply' "$shared_fallthrough_stderr" >/dev/null ||
-  fail "shared-memory fallthrough did not report a clear await failure"
-
-reject_case await_one_way "cannot await one-way handler 'Worker.Notify'"
+reject_case fallthrough "must reply on every normal control-flow path"
+reject_case await_one_way "await is retired: message is synchronous"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
-reject_case await_unknown_receiver \
-  "await target 'missing' cannot be statically and conservatively bounded to one concrete domain"
-reject_case await_unknown_handler "domain Worker has no message handler 'Missing'"
-reject_case await_wrong_arity 'message Worker.Work expects 1 arguments, got 0'
-reject_case self_await 'a domain cannot await itself because handlers are non-reentrant'
+reject_case await_unknown_receiver "await is retired: message is synchronous"
+reject_case await_unknown_handler "await is retired: message is synchronous"
+reject_case await_wrong_arity "await is retired: message is synchronous"
+reject_case self_await "self-send is not allowed"
 reject_case duck_missing_method "missing required method 'describe'"
 reject_case duck_wrong_method_arity "wrong arity for required method 'describe'"
 reject_case duck_incompatible_method_argument "method 'draw' is incompatible with argument types (string)"
@@ -1699,12 +1625,7 @@ reject_case implicit_domain_parameter_conflict_zero \
   "handler 'Set' parameter 0"
 reject_case implicit_domain_parameter_conflict_one \
   "handler 'Set' parameter 1"
-reject_case typed_domain_parameter_await_cycle 'await cycle detected:'
-grep -F 'w2' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null ||
-  fail 'typed domain parameter await cycle omitted the concrete w2 instance'
-if grep -F 'w1' "$test_build/typed_domain_parameter_await_cycle.stderr" >/dev/null; then
-  fail 'typed domain parameter await cycle reported the non-cyclic w1 instance'
-fi
+reject_case typed_domain_parameter_await_cycle "await is retired: message is synchronous"
 reject_case domain_handle_prefix_collision_message "argument 1 to message Receiver.Send has type 'A__helper', expected 'A'"
 reject_case domain_handle_prefix_collision_function "argument 1 to function 'take' has type 'A__helper', expected 'A'"
 reject_case domain_handle_prefix_collision_method "no matching method 'Receiver.Send' for supplied arguments"
@@ -1738,7 +1659,7 @@ reject_case functional_recursion \
 reject_case functional_hof_recursion \
   "recursive local call cycle: recurse -> recurse"
 reject_case functional_await_cycle \
-  "await cycle detected:"
+  "await is retired: message is synchronous"
 reject_case functional_callback_alias \
   "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
 reject_case functional_placeholder_noncopy_identity \

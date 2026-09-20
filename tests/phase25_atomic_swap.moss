@@ -8,5 +8,5 @@ domain Register:
 
 fn main():
   register = spawn Register()
-  previous = await register.Swap(9)
+  previous = message register.Swap(9)
   echo previous

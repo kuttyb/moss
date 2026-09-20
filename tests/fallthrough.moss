@@ -6,5 +6,5 @@ domain Worker
 
 proc main()
   let worker = spawn Worker()
-  let result = await worker.Maybe(false)
+  let result = message worker.Maybe(false)
   echo result

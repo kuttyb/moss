@@ -14,5 +14,5 @@ domain Analyzer:
 proc main():
   local = local_total()
   analyzer = spawn Analyzer()
-  remote = await analyzer.Total()
+  remote = message analyzer.Total()
   echo local, remote

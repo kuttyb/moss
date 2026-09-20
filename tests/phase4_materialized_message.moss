@@ -10,5 +10,5 @@ proc main():
   sink = spawn Sink()
   source = [1, 2, 3]
   materialized = source |> map(double)
-  total = await sink.Total(materialized)
+  total = message sink.Total(materialized)
   echo total

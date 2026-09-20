@@ -12,7 +12,7 @@ domain Counter:
   value = 0
 
   fn Work(helper: Helper, audit: Audit) -> int:
-    amount = await helper.Read()
+    amount = message helper.Read()
     value = value + amount
     message audit.Note(value)
     echo "counter:", value
@@ -22,5 +22,5 @@ fn main():
   helper = spawn Helper()
   audit = spawn Audit()
   counter = spawn Counter()
-  result = await counter.Work(helper, audit)
+  result = message counter.Work(helper, audit)
   echo "result:", result

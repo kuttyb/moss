@@ -11,6 +11,6 @@ domain Flag:
 
 fn main():
   flag = spawn Flag()
-  first = await flag.Enable(true)
-  second = await flag.Toggle()
+  first = message flag.Enable(true)
+  second = message flag.Toggle()
   echo first, second

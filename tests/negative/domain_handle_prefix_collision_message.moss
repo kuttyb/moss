@@ -13,7 +13,7 @@ domain A__helper:
 
 domain Receiver:
   fn Send(worker: A):
-    ignored = await worker.Run()
+    ignored = message worker.Run()
 
 fn main():
   helper = spawn A()

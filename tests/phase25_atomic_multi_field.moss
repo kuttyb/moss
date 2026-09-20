@@ -12,6 +12,6 @@ domain Stats:
 
 fn main():
   stats = spawn Stats()
-  count = await stats.Increment()
-  enabled = await stats.Toggle()
+  count = message stats.Increment()
+  enabled = message stats.Toggle()
   echo count, enabled

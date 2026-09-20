@@ -9,12 +9,12 @@ domain Store
   var dataset: Dataset = Dataset(size: 3)
 
   on Send(worker: Worker) -> int
-    let observed = await worker.Process(dataset)
+    let observed = message worker.Process(dataset)
     dataset.size = 4
     reply observed * 10 + dataset.size
 
 proc main()
   let worker = spawn Worker()
   let store = spawn Store()
-  let result = await store.Send(worker)
+  let result = message store.Send(worker)
   echo result

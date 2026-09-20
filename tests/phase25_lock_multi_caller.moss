@@ -6,8 +6,8 @@ domain Register:
 
 domain Reader:
   fn Run(register: Register):
-    first = await register.Read()
-    second = await register.Read()
+    first = message register.Read()
+    second = message register.Read()
     echo first, second
 
 fn main():

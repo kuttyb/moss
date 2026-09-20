@@ -6,6 +6,6 @@ domain Catalog:
 
 fn main():
   catalog = spawn Catalog()
-  first = await catalog.Read()
-  second = await catalog.Read()
+  first = message catalog.Read()
+  second = message catalog.Read()
   echo first, second

@@ -40,5 +40,5 @@ fn main():
   echo summarize(values)
 
   counter = spawn Counter()
-  result = await counter.Add(5)
+  result = message counter.Add(5)
   echo result

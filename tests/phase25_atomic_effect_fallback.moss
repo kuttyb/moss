@@ -8,5 +8,5 @@ domain Counter:
 
 fn main():
   counter = spawn Counter()
-  value = await counter.Increment()
+  value = message counter.Increment()
   echo value

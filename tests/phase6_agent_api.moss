@@ -19,7 +19,7 @@ fn noisy(value: Int) -> Int:
   return value
 
 fn wait_for(worker: Worker) -> Int:
-  value = await worker.Add(1)
+  value = message worker.Add(1)
   return value
 
 domain Worker:
@@ -31,7 +31,7 @@ domain Worker:
 
 domain Router:
   fn Route(worker: Worker) -> Int:
-    value = await worker.Add(2)
+    value = message worker.Add(2)
     reply value
 
 proc main():
@@ -42,7 +42,7 @@ proc main():
   worker = spawn Worker()
   router = spawn Router()
   direct = wait_for(worker)
-  routed = await router.Route(worker)
+  routed = message router.Route(worker)
   echo observed_count, observed, direct, routed
 
 fn locally_pure_statement(value: Int) -> Int:

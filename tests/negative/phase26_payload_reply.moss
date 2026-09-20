@@ -8,5 +8,5 @@ domain Worker:
 fn main():
   worker = spawn Worker()
   data = Payload(value = 1)
-  result = await worker.Echo(data)
+  result = message worker.Echo(data)
   echo result.value

@@ -11,5 +11,5 @@ domain Gate:
 fn main():
   gate = spawn Gate()
   token = Token(label = "original")
-  returned = await gate.Remember(true, token)
+  returned = message gate.Remember(true, token)
   echo token.label, returned

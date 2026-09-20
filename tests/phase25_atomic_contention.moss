@@ -12,7 +12,7 @@ domain Producer:
   fn Fill(counter: Counter, count: int):
     sent = 0
     while sent < count:
-      observed = await counter.Add(1)
+      observed = message counter.Add(1)
       sent = sent + 1
 
   fn Barrier() -> bool:
@@ -24,7 +24,7 @@ fn main():
   right = spawn Producer()
   message left.Fill(counter, 1000)
   message right.Fill(counter, 1000)
-  left_done = await left.Barrier()
-  right_done = await right.Barrier()
-  total = await counter.Read()
+  left_done = message left.Barrier()
+  right_done = message right.Barrier()
+  total = message counter.Read()
   echo total, left_done, right_done

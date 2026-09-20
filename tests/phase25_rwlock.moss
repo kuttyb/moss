@@ -10,7 +10,7 @@ domain Catalog:
 
 fn main():
   catalog = spawn Catalog()
-  before = await catalog.Read()
-  published = await catalog.Publish("stable")
-  after = await catalog.Read()
+  before = message catalog.Read()
+  published = message catalog.Publish("stable")
+  after = message catalog.Read()
   echo before, published, after

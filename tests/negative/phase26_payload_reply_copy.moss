@@ -4,5 +4,5 @@ domain Worker:
 
 fn main():
   worker = spawn Worker()
-  result = await worker.Echo(1)
+  result = message worker.Echo(1)
   echo result
