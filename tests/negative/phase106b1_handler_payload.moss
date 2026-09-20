@@ -1,3 +1,4 @@
+# Historical positive deliberately reversed: static-DAG routes cannot be payloads/values.
 domain Worker:
   payload
 
@@ -8,20 +9,18 @@ domain Worker:
     reply 1
 
 domain Coordinator:
-  domainroutes(left: Worker, right: Worker)
   fn Init(x):
     ignored = x
 
-  fn Ping():
-    ignored = message left.Run()
-    ignored_again = message right.Run()
+  fn Ping(worker: Worker):
+    ignored = message worker.Run()
 
 fn main():
-  c = Coordinator(left: w1, right: w2)
+  c = Coordinator()
   w1 = Worker()
   w2 = Worker()
   message c.Init(1)
   message w1.Set(10)
   message w2.Set(3.5)
-  message c.Ping()
-  message c.Ping()
+  message c.Ping(w1)
+  message c.Ping(w2)

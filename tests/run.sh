@@ -929,6 +929,7 @@ run_case await_main tests/await_main.moss 'main: true'
 run_case main_helper_await tests/main_helper_await.moss '9'
 run_case branch_same_domain_type tests/branch_same_domain_type.moss '7'
 run_case phase106b_topology tests/phase106b_topology.moss '7'
+python3 tests/tooling/check_domain_handle_closure.py "$compiler"
 "$compiler" inspect main --source tests/phase106b_topology.moss --json > "$test_build/phase106b_topology.inspect.json"
 python3 - "$test_build/phase106b_topology.inspect.json" <<'PY'
 import json
@@ -1299,24 +1300,24 @@ run_case_either_order implicit_domain_parameter_multiple_instances \
   tests/implicit_domain_parameter_multiple_instances.moss '10' '2.5'
 run_case implicit_domain_typed_parameter_instances \
   tests/implicit_domain_typed_parameter_instances.moss ''
-grep -F 'fn Ping_shared(&self, worker: WorkerHandle, __moss_done: MossSender<()>)' \
+grep -F 'left: WorkerHandle' \
   "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null ||
-  fail 'typed domain parameter specialization did not retain a uniform nominal Worker handle'
+  fail 'static route lost the specialized Worker backend handle'
 if grep -F 'fn Ping_shared(&self, worker: Worker__' \
     "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null; then
   fail 'typed domain parameter specialization leaked a declared instance identity'
 fi
 run_case nominal_handle_conversion_paths \
   tests/nominal_handle_conversion_paths.moss "$(printf '1\n2')"
-grep -F 'fn take(worker: AHandle)' \
+grep -F 'fn take(value: i64)' \
   "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
-  fail 'ordinary function domain parameter did not use nominal handle representation'
-grep -E 'fn Send\(&self, (mut )?worker: AHandle\)' \
+  fail 'ordinary helper must receive the message result, not a handle'
+grep -E 'fn Send\(&self, (mut )?value: i64\)' \
   "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
-  fail 'method domain parameter did not use nominal handle representation'
-grep -F 'fn Send_shared(&self, worker: AHandle, __moss_done: MossSender<()>)' \
+  fail 'ordinary method must receive the message result, not a handle'
+grep -F 'worker: AHandle' \
   "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
-  fail 'message handler domain parameter did not use nominal handle representation'
+  fail 'static route lost the specialized A backend handle'
 grep -F 'struct A__helper__specialized_' \
   "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
   fail 'specialized A/helper backend layout was not disambiguated from nominal A__helper'
@@ -1570,16 +1571,16 @@ compile_cluster_case cluster_domain_ref tests/cluster_domain_ref.moss 'Driver,Re
 [ "$("$test_build/cluster_domain_ref")" = 'cluster ref: ping
 cluster ref: ping' ] ||
   fail "cluster-local domain reference did not retain capability behavior"
-grep -F 'fn Registry_Get_local(&self, worker: WorkerLocalRef) -> Option<WorkerLocalRef>' \
+grep -F 'fn Registry_Get_local(&self)' \
   "$test_build/cluster_domain_ref.rs" >/dev/null ||
-  fail "cluster-local request/reply did not use the zero-sized local capability"
+  fail "cluster-local handler still takes a capability payload"
 
 compile_cluster_case cluster_external_ref tests/cluster_external_ref.moss 'Driver,Relay'
 [ "$("$test_build/cluster_external_ref")" = 'external ref: ping' ] ||
   fail "cluster-local forwarding of an external capability failed"
-grep -F 'fn Relay_Pass_local(&self, worker: Rc<WorkerRef>)' \
+grep -F 'fn Relay_Pass_local(&self)' \
   "$test_build/cluster_external_ref.rs" >/dev/null ||
-  fail "external capability did not use a non-atomic cluster-local Rc"
+  fail "external static-route handler still takes a capability payload"
 
 compile_cluster_case clustered_non_reentrant tests/non_reentrant.moss 'Waiting,Dependency'
 iteration=1
@@ -1646,9 +1647,13 @@ reject_case implicit_domain_parameter_conflict_zero \
 reject_case implicit_domain_parameter_conflict_one \
   "handler 'Set' parameter 1"
 reject_case typed_domain_parameter_await_cycle "await is retired: message is synchronous"
-reject_case domain_handle_prefix_collision_message "argument 1 to message Receiver.Send has type 'A__helper', expected 'A'"
-reject_case domain_handle_prefix_collision_function "argument 1 to function 'take' has type 'A__helper', expected 'A'"
-reject_case domain_handle_prefix_collision_method "no matching method 'Receiver.Send' for supplied arguments"
+reject_case domain_handle_prefix_collision_message "domain handles cannot be passed as handler payloads"
+reject_case domain_handle_prefix_collision_function "domain handles cannot be passed as ordinary function parameters"
+reject_case domain_handle_prefix_collision_method "domain handles cannot be passed as ordinary method parameters"
+# Historical capability-passing positives deliberately reversed for static-DAG semantics.
+reject_case phase106b1_handler_payload "domain handles cannot be passed as handler payloads"
+reject_case phase106b1_historical_handle_calls "domain handles cannot be passed as handler payloads"
+reject_case phase106b1_historical_handle_reply "domain handles cannot be returned through reply"
 reject_case unresolved_collection_type "heterogeneous or unresolved collection element type"
 reject_case heterogeneous_collection "heterogeneous or unresolved collection element type"
 reject_case functional_filter_not_bool "filter predicate returns 'int'; expected 'bool'"

@@ -1,0 +1,24 @@
+# Historical positive deliberately reversed: static-DAG routes cannot be payloads/values.
+domain Worker
+  on Ping()
+    echo "cluster ref: ping"
+  on Self() -> Worker
+    reply self
+
+domain Registry
+  on Get(worker: Worker) -> Worker
+    let selected = message worker.Self()
+    reply selected
+
+domain Driver
+  on Run(registry: Registry, worker: Worker)
+    let selected = message registry.Get(worker)
+    let alias = selected
+    message alias.Ping()
+    message selected.Ping()
+
+proc main()
+  let worker = Worker()
+  let registry = Registry()
+  let driver = Driver()
+  message driver.Run(registry, worker)

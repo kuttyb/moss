@@ -1215,6 +1215,7 @@ class Checker {
   }
 
   void run() {
+    check_domain_handle_declarations();
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
@@ -1232,15 +1233,16 @@ class Checker {
     infer_domain_state_fields(true);
     infer_handler_reply_types(true);
     infer_function_signatures(true);
+    check_domain_handle_declarations();
     check_objects();
     check_local_call_cycles();
     infer_effects();
     infer_observable_effects();
+    build_concrete_domain_graph();
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
-    build_concrete_domain_graph();
     check_test_and_benchmark_declarations();
     // Await boundedness is an ordinary well-formedness rule checked for every
     // executable body above. Graph construction below only records domain edges.
@@ -1721,12 +1723,100 @@ class Checker {
     return false;
   }
 
+  // Domain handles are a compiler category, not ordinary structural values.
+  // Type applications are traversed structurally, including nested containers.
+  bool contains_domain_handle(const string& type) const {
+    string value = canonical_type_name(type);
+    if (domains_.count(value)) return true;
+    auto bracket = value.find('[');
+    if (bracket != string::npos && value.back() == ']')
+      for (const auto& argument : split_top_level(
+               value.substr(bracket + 1, value.size() - bracket - 2), ','))
+        if (contains_domain_handle(trim(argument))) return true;
+    return false;
+  }
+
+  void check_domain_handle_declarations() {
+    auto reject = [&](const string& type, const string& file, int line,
+                      const string& role) {
+      if (contains_domain_handle(type))
+        err(file, line, "domain handles cannot be " + role +
+            "; declare an immutable domainroutes dependency instead");
+    };
+    for (const auto& domain : p_.domains) {
+      for (const auto& field : domain.state)
+        reject(field.type, domain.source_file, field.line, "stored as ordinary state");
+      for (const auto& handler : domain.handlers) {
+        for (const auto& parameter : handler.params)
+          reject(parameter.type, handler.source_file, handler.line, "passed as handler payloads");
+        if (handler.reply_type)
+          reject(*handler.reply_type, handler.source_file, handler.line, "returned through reply");
+      }
+    }
+    for (const auto& function : p_.functions) {
+      for (const auto& parameter : function.params)
+        reject(parameter.type, function.source_file, function.line, "passed as ordinary function parameters");
+      if (function.return_type)
+        reject(*function.return_type, function.source_file, function.line, "returned as ordinary values");
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& field : object.fields)
+        reject(field.type, object.source_file, field.line, "stored in aggregates");
+      for (const auto& method : object.methods) {
+        for (const auto& parameter : method.params)
+          reject(parameter.type, method.source_file, method.line, "passed as ordinary method parameters");
+        if (method.return_type)
+          reject(*method.return_type, method.source_file, method.line, "returned as ordinary values");
+      }
+    }
+    for (const auto& trait : p_.traits)
+      for (const auto& method : trait.methods) {
+        for (const auto& parameter : method.params)
+          reject(parameter.type, trait.source_file, trait.line, "passed as ordinary trait parameters");
+        if (method.return_type)
+          reject(*method.return_type, trait.source_file, trait.line, "returned as ordinary values");
+      }
+  }
+
+  void check_static_message_receiver(int line, const string& receiver,
+                                     const TypeEnv& env) const {
+    auto self = env.find("self");
+    if (self != env.end() && domains_.count(self->second)) {
+      const Domain& domain = *domains_.at(self->second);
+      if (receiver == "self")
+        err(line, "self-send is not allowed; move shared logic to an ordinary helper function");
+      auto route = std::find_if(domain.routes.begin(), domain.routes.end(),
+          [&](const DomainRoute& slot) { return slot.name == receiver; });
+      if (route == domain.routes.end())
+        err(line, "message target '" + receiver +
+            "' must resolve through a declared domainroutes slot");
+      // Uninstantiated module declarations have structural routes; every
+      // instantiated copy must have that route in the authoritative graph.
+      for (const auto& instance : p_.concrete_domain_graph.instances)
+        if (instance.domain == domain.name &&
+            std::none_of(p_.concrete_domain_graph.edges.begin(),
+                         p_.concrete_domain_graph.edges.end(),
+                [&](const ConcreteRouteEdge& edge) {
+                  return edge.source_instance == instance.identity && edge.route == receiver;
+                }))
+          err(line, "message route is absent from ConcreteDomainGraph");
+    } else if (std::none_of(p_.concrete_domain_graph.instances.begin(),
+                           p_.concrete_domain_graph.instances.end(),
+                 [&](const ConcreteDomainInstance& instance) {
+                   auto binding = env.find(receiver);
+                   return instance.binding == receiver && binding != env.end() &&
+                       binding->second == instance.domain;
+                 })) {
+      err(line, "message target '" + receiver +
+          "' is not a concrete composition binding or declared domainroutes slot");
+    }
+  }
+
   void check_domain(const Domain& d) {
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
       if (!valid_type(f.type)) err(f.line, "unknown state type '" + f.type + "'");
       if (!state_names.insert(f.name).second) err(f.line, "duplicate state field '" + f.name + "'");
-      // Actor handles may exist as state; they still expose only message sends.
     }
     std::set<string> route_names;
     for (const auto& route : d.routes) {
@@ -1765,6 +1855,8 @@ class Checker {
               "' in handler '" + d.name + "." + h.name + "'");
         if (!valid_type(p.type)) err(h.line, "unknown parameter type '" + p.type + "'");
         if (env.count(p.name)) err(h.line, "duplicate parameter '" + p.name + "'");
+        if (route_names.count(p.name))
+          err(h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
         env[p.name] = p.type;
       }
       for (const auto& f : d.state) env[f.name] = f.type;
@@ -1828,7 +1920,17 @@ class Checker {
       instance.binding = statement.a;
       instance.identity = "main::" + statement.a;
       instance.domain = domain.name;
-      instance.specialization = domain.name;
+      instance.source_domain_index = static_cast<size_t>(&domain - p_.domains.data());
+      instance.specialization = "domain:" + domain.name;
+      for (size_t index = 0; index < p_.domain_specializations.size(); ++index) {
+        const auto& specialization = p_.domain_specializations[index];
+        if (specialization.source_domain == domain.name &&
+            specialization.instance == statement.a) {
+          instance.specialization_index = index;
+          instance.specialization = specialization.identity();
+          break;
+        }
+      }
       instance.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
       instance.line = statement.line;
       by_binding[statement.a] = p_.concrete_domain_graph.instances.size();
@@ -2002,9 +2104,11 @@ class Checker {
       for (size_t edge_index : witness) {
         const auto& edge = p_.concrete_domain_graph.edges[edge_index];
         cycle << "\n  " << edge.source_instance << " --" << edge.route
-              << "--> " << edge.target_instance;
+              << "--> " << edge.target_instance << " at "
+              << edge.source_file << ":" << edge.line;
       }
-      throw CompileError(p_.main->line, cycle.str());
+      const auto& first = p_.concrete_domain_graph.edges.at(witness.front());
+      err(first.source_file, first.line, cycle.str());
     }
   }
 
@@ -3124,6 +3228,7 @@ class Checker {
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
         }
       }
@@ -3408,6 +3513,7 @@ class Checker {
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
           for (auto& field : domain.state) {
             auto inferred = env.find(field.name);
@@ -3442,6 +3548,7 @@ class Checker {
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
           for (const auto& statement : handler.body) {
             if (statement.kind != Stmt::Kind::Reply) continue;
@@ -3632,6 +3739,7 @@ class Checker {
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
           for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
         }
       }
@@ -4598,6 +4706,7 @@ class Checker {
         TypeEnv env;
         env["self"] = domain.name;
         for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& route : domain.routes) env[route.name] = route.type;
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
         collect_callable_edges(handler.body, std::nullopt, 0, std::move(env),
@@ -4811,6 +4920,7 @@ class Checker {
         std::unordered_map<string,string> env;
         env["self"] = domain.name;
         for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& route : domain.routes) env[route.name] = route.type;
         for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
         visit_body(handler.body, std::nullopt, 0, std::move(env), nullptr,
                    domain.name,
@@ -4991,6 +5101,7 @@ class Checker {
           types["self"] = domain.name;
           instances["self"] = source_instance;
           for (const auto& field : domain.state) types[field.name] = field.type;
+          for (const auto& route : domain.routes) types[route.name] = route.type;
           for (size_t index = 0; index < handler.params.size(); ++index) {
             types[handler.params[index].name] = handler.params[index].type;
             if (index < arguments.size()) {
@@ -5596,6 +5707,7 @@ class Checker {
           std::set<string> parameters;
           env["self"] = domain.name;
           for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& route : domain.routes) env[route.name] = route.type;
           for (const auto& parameter : handler.params) {
             env[parameter.name] = parameter.type;
             parameters.insert(parameter.name);
@@ -5999,6 +6111,7 @@ class Checker {
         TypeEnv env;
         env["self"] = domain.name;
         for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& route : domain.routes) env[route.name] = route.type;
         std::set<string> domain_fields;
         for (const auto& field : domain.state) domain_fields.insert(field.name);
         for (const auto& parameter : handler.params)
@@ -7151,6 +7264,8 @@ class Checker {
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
+    if (domain_constructor(original))
+      err(line, "domain construction is only allowed as a binding in main's composition prefix");
     if (starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> args;
@@ -7162,6 +7277,7 @@ class Checker {
         err(line, "message receiver '" + receiver + "' is not a domain instance");
       if (receiver == "self")
         err(line, "self-send is not allowed; move shared logic to an ordinary helper function");
+      check_static_message_receiver(line, receiver, env);
       auto self_binding = env.find("self");
       if (self_binding != env.end() && receiver != "self" &&
           canonical_type_name(binding->second) == canonical_type_name(self_binding->second))
@@ -7170,6 +7286,21 @@ class Checker {
       const Handler* target = check_call(line, receiver, handler, args, env);
       (void)target;
       for (const auto& argument : args) check_expression(line, argument, env);
+      return;
+    }
+    if (auto type = inferred_expr_type(original, env))
+      if (contains_domain_handle(*type))
+        err(line, "domain handles cannot be used as ordinary values or payloads; "
+            "use only static domainroutes bindings and message targets");
+    // Parentheses, literals and unary forms must not hide a routing capability
+    // from the ordinary-expression checker.
+    if (original.size() >= 2 && original.front() == '(' && original.back() == ')') {
+      check_expression(line, original.substr(1, original.size() - 2), env);
+      return;
+    }
+    if (original.size() >= 2 && original.front() == '[' && original.back() == ']') {
+      for (const auto& element : split_top_level(original.substr(1, original.size() - 2), ','))
+        check_expression(line, element, env);
       return;
     }
     if (check_functional_pipeline(line, original, env)) return;
@@ -7229,6 +7360,8 @@ class Checker {
     }
     string ib, ii;
     if (parse_index(value, ib, ii)) {
+      check_expression(line, ib, env);
+      check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
       if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
@@ -7256,7 +7389,7 @@ class Checker {
       }
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" and ", " or "}, {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_expression(line, binary->first, env);
@@ -7264,6 +7397,10 @@ class Checker {
         return;
       }
     }
+    for (const auto& binding : functional_captures(value, env))
+      if (contains_domain_handle(env.at(binding)))
+        err(line, "domain handle '" + binding +
+            "' is not an ordinary value; use domainroutes and message targets only");
   }
 
   const Domain* bounded_await_target(const string& receiver,
@@ -7371,10 +7508,14 @@ class Checker {
         if (auto spawned = domain_constructor(statement.b)) {
           if (!domains_.count(*spawned))
             err(statement.line, "unknown domain in spawn: " + *spawned);
-          if (current || current_function)
+          if (current || current_function || current_object_ || !p_.main ||
+              &statements != &p_.main->body)
             err(statement.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
           return;
         }
+        auto existing = current_env.find(statement.a);
+        if (existing != current_env.end() && contains_domain_handle(existing->second))
+          err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
         check_expression(statement.line, statement.b, current_env);
         if (statement.kind == Stmt::Kind::Assign &&
             simple_identifier(statement.a) && !current_env.count(statement.a)) {
@@ -7407,6 +7548,7 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
+        check_static_message_receiver(statement.line, statement.a, current_env);
         if (current && statement.a == "self")
           err(statement.line,
               "self-send is not allowed; move shared logic to an ordinary helper function");
@@ -9102,6 +9244,7 @@ class BackendOptimizer {
         std::unordered_map<string, string> types;
         types["self"] = domain.name;
         for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& route : domain.routes) types[route.name] = route.type;
         for (const auto& param : handler.params) types[param.name] = param.type;
         scan_calls(handler.body, types, asynchronously_called, call_graph_complete);
       }
@@ -9653,6 +9796,7 @@ class BackendOptimizer {
         std::unordered_map<string, string> types;
         types["self"] = domain.name;
         for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& route : domain.routes) types[route.name] = route.type;
         for (const auto& param : handler.params) types[param.name] = param.type;
         plan_batches_in(handler.body, &domain, std::move(types), plan);
       }
@@ -9781,6 +9925,7 @@ class BackendOptimizer {
         std::unordered_map<string, string> types;
         types["self"] = domain.name;
         for (const auto& field : domain.state) types[field.name] = field.type;
+        for (const auto& route : domain.routes) types[route.name] = route.type;
         for (const auto& param : handler.params) types[param.name] = param.type;
         collect_domain_uses(handler.body, &domain, "domain:" + domain.name,
                             std::move(types), callers, escaped);
@@ -13248,6 +13393,7 @@ class Generator {
         std::unordered_map<string, string> types;
         types["self"] = domain->name;
         for (const auto& field : domain->state) types[field.name] = field.type;
+        for (const auto& route : domain->routes) types[route.name] = route.type;
         for (const auto& param : handler.params) {
           locals.insert(param.name);
           types[param.name] = param.type;
@@ -14649,7 +14795,10 @@ class Generator {
         auto value = named.find(route.name);
         if (value == named.end())
           throw std::runtime_error("internal error: missing route binding during lowering");
-        o << ", (" << expr(value->second, context, locals, types) << ").clone()";
+        // The checked graph has already proved nominal route compatibility.
+        // Adapt the concrete storage reference to the existing route handle;
+        // never use a generated type spelling to establish compatibility.
+        o << ", (" << expr(value->second, context, locals, types) << ").clone().into()";
       }
       for (const auto& field : definition.state) {
         auto value = named.find(field.name);
@@ -15604,8 +15753,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
         });
     if (source == program.domains.end()) continue;
     SemanticTargetFact fact;
-    fact.semantic_identity = "domain-specialization:" +
-        specialization.source_domain + ":" + specialization.instance;
+    fact.semantic_identity = specialization.identity();
     fact.context = fact.semantic_identity;
     fact.kind = "domain_specialization";
     fact.name = specialization.source_domain + "." + specialization.instance;
@@ -16647,6 +16795,10 @@ static bool write_semantic_query_json(
       out << "{\"identity\":"; write_debug_json_string(out, instance.identity);
       out << ",\"binding\":"; write_debug_json_string(out, instance.binding);
       out << ",\"domain\":"; write_debug_json_string(out, instance.domain);
+      out << ",\"concrete_instance_id\":"; write_debug_json_string(out, instance.identity);
+      out << ",\"source_domain_id\":";
+      write_debug_json_string(out, "domain:" + program.domains.at(instance.source_domain_index).name);
+      out << ",\"specialization_id\":"; write_debug_json_string(out, instance.specialization);
       out << ",\"source_file\":"; write_debug_json_string(out, instance.source_file);
       out << ",\"line\":" << instance.line << ",\"domain_rank\":"
           << instance.domain_rank << "}";

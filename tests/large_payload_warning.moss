@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 type Word = object
   a: int
   b: int
@@ -32,12 +33,13 @@ domain Worker
     echo payload.a.a
 
 domain Sender
+  domainroutes(worker: Worker)
   var payload: Large
 
-  on Start(worker: Worker)
+  on Start()
     message worker.Store(payload)
 
 proc main()
   let worker = Worker()
-  let sender = Sender()
-  message sender.Start(worker)
+  let sender = Sender(worker: worker)
+  message sender.Start()

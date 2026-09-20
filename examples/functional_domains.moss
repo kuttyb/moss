@@ -1,9 +1,9 @@
 # Functional callbacks obey the same explicit domain rules as ordinary code.
-# read_source contains a synchronous message, so its map stage is an eager fusion barrier.
+# A message through a declared route is an eager fusion barrier.
 domain Source:
   value = 7
 
-  fn Read() -> Int:
+  fn Read(unused: Int) -> Int:
     reply value
 
 domain Sink:
@@ -15,17 +15,19 @@ domain Sink:
   fn Stored() -> Int:
     reply stored
 
-fn read_source(source: Source) -> Int:
-  value = message source.Read()
-  return value
+domain Batch:
+  domainroutes(source: Source)
+
+  fn Total() -> Int:
+    values = [0, 0]
+    total = values |> map(message source.Read(_)) |> sum
+    reply total
 
 proc main():
   first = Source()
-  second = Source()
+  batch = Batch(source: first)
   sink = Sink()
-  sources = [first, second]
-
-  total = sources |> map(read_source) |> sum
+  total = message batch.Total()
 
   # A terminal is a concrete scalar and can cross a message boundary normally.
   message sink.Store(total)

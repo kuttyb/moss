@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 type Payload:
   value: Int
 
@@ -6,11 +7,12 @@ domain Sink:
     echo payload.value
 
 domain Router:
-  fn Route(payload: Payload, sink: Sink):
+  domainroutes(sink: Sink)
+  fn Route(payload: Payload):
     message sink.Process(payload)
 
 fn main():
   sink = Sink()
-  router = Router()
+  router = Router(sink: sink)
   data = Payload(value = 11)
-  message router.Route(data, sink)
+  message router.Route(data)

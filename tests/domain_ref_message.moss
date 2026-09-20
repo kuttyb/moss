@@ -1,18 +1,21 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Worker
   on Ping()
     echo "ping"
 
 domain Sink
-  on Accept(worker: Worker)
+  domainroutes(worker: Worker)
+  on Accept()
     message worker.Ping()
 
 domain Relay
-  on Run(worker: Worker, sink: Sink)
-    message sink.Accept(worker)
+  domainroutes(worker: Worker, sink: Sink)
+  on Run()
+    message sink.Accept()
     message worker.Ping()
 
 proc main()
   let worker = Worker()
-  let relay = Relay()
-  let sink = Sink()
-  message relay.Run(worker, sink)
+  let relay = Relay(worker: worker, sink: sink)
+  let sink = Sink(worker: worker)
+  message relay.Run()

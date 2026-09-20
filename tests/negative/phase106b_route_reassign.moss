@@ -5,10 +5,10 @@ domain Worker:
 domain Router:
   domainroutes(worker: Worker)
 
-  fn Reset(other: Worker):
-    worker = other
+  fn Reset():
+    worker = worker
 
 proc main():
   worker = Worker()
   router = Router(worker: worker)
-  message router.Reset(worker)
+  message router.Reset()

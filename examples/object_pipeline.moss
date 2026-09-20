@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 type WorkItem:
   name: string
   revisions: int
@@ -8,7 +9,8 @@ domain Archive:
     echo "archive: widget", revisions, approved
 
 domain Workshop:
-  fn Start(archive: Archive):
+  domainroutes(archive: Archive)
+  fn Start():
     var item = WorkItem(name: "widget", revisions: 0, approved: false)
     item.revisions = item.revisions + 1
     echo "created:", item.name, item.revisions, item.approved
@@ -24,5 +26,5 @@ domain Workshop:
 
 fn main():
   let archive = Archive()
-  let workshop = Workshop()
-  message workshop.Start(archive)
+  let workshop = Workshop(archive: archive)
+  message workshop.Start()

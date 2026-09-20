@@ -107,6 +107,9 @@ struct AwaitBoundary {
 struct DomainSpecialization {
   string source_domain;
   string instance;
+  string identity() const {
+    return "domain-specialization:" + source_domain + ":" + instance;
+  }
   std::unordered_map<string,string> state_types;
   // Handler parameter specializations are indexed by parameter slot, not by a
   // flat call history. One concrete type per handler parameter slot:
@@ -189,6 +192,11 @@ struct ConcreteDomainInstance {
   string binding;
   string domain;
   string specialization;
+  // Explicit reference into Program::domain_specializations for an implicitly
+  // specialized layout. Otherwise the checked source domain is the concrete
+  // (non-generic) specialization. Neither reference is a Rust type spelling.
+  std::optional<size_t> specialization_index;
+  size_t source_domain_index = 0;
   string source_file;
   int line = 0;
   int domain_rank = -1;

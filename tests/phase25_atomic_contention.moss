@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Counter:
   value = 0
 
@@ -9,7 +10,8 @@ domain Counter:
     reply value
 
 domain Producer:
-  fn Fill(counter: Counter, count: int):
+  domainroutes(counter: Counter)
+  fn Fill(count: int):
     sent = 0
     while sent < count:
       observed = message counter.Add(1)
@@ -20,10 +22,10 @@ domain Producer:
 
 fn main():
   counter = Counter()
-  left = Producer()
-  right = Producer()
-  message left.Fill(counter, 1000)
-  message right.Fill(counter, 1000)
+  left = Producer(counter: counter)
+  right = Producer(counter: counter)
+  message left.Fill(1000)
+  message right.Fill(1000)
   left_done = message left.Barrier()
   right_done = message right.Barrier()
   total = message counter.Read()

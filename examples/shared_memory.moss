@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 # Moss stays message based. The Rust backend represents the messages with
 # lock-backed shared-memory queues; -Oshared-memory recognizes the complete
 # Counter as atomic and removes its request queue, worker, and state mutex.
@@ -10,12 +11,13 @@ domain Counter:
     reply total
 
 domain Client:
-  fn Run(counter: Counter):
+  domainroutes(counter: Counter)
+  fn Run():
     first = message counter.Add(10)
     second = message counter.Add(32)
     echo "shared total:", first, second
 
 fn main():
   counter = Counter()
-  client = Client()
-  message client.Run(counter)
+  client = Client(counter: counter)
+  message client.Run()

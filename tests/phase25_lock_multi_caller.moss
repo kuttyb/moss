@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Register:
   value: string = "ready"
 
@@ -5,14 +6,15 @@ domain Register:
     reply value
 
 domain Reader:
-  fn Run(register: Register):
+  domainroutes(register: Register)
+  fn Run():
     first = message register.Read()
     second = message register.Read()
     echo first, second
 
 fn main():
   register = Register()
-  left = Reader()
-  right = Reader()
-  message left.Run(register)
-  message right.Run(register)
+  left = Reader(register: register)
+  right = Reader(register: register)
+  message left.Run()
+  message right.Run()

@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Inventory:
   available = 10
 
@@ -16,7 +17,8 @@ domain Payments:
     reply true
 
 domain Checkout:
-  fn PlaceOrder(inventory: Inventory, payments: Payments, quantity: int, price: int):
+  domainroutes(inventory: Inventory, payments: Payments)
+  fn PlaceOrder(quantity: int, price: int):
     let reserved = message inventory.Reserve(quantity)
     if not reserved:
       echo "order rejected: insufficient inventory"
@@ -31,6 +33,6 @@ domain Checkout:
 fn main():
   let inventory = Inventory()
   let payments = Payments()
-  let checkout = Checkout()
-  message checkout.PlaceOrder(inventory, payments, 3, 25)
-  message checkout.PlaceOrder(inventory, payments, 8, 25)
+  let checkout = Checkout(inventory: inventory, payments: payments)
+  message checkout.PlaceOrder(3, 25)
+  message checkout.PlaceOrder(8, 25)

@@ -1,3 +1,4 @@
+# Historical positive deliberately reversed: static-DAG routes cannot be payloads/values.
 domain A:
   value
 
@@ -12,15 +13,14 @@ domain A__helper:
     echo 3
 
 domain Receiver:
-  domainroutes(worker: A)
-  fn Send():
+  fn Send(worker: A):
     ignored = message worker.Run()
 
 type Holder:
-  fn Send(value: Int):
+  fn Send(worker: A):
     echo 2
 
-fn take(value: Int):
+fn take(worker: A):
   echo 1
 
 fn main():
@@ -28,11 +28,11 @@ fn main():
   a2 = A()
   a3 = A()
   other = A__helper()
-  receiver = Receiver(worker: helper)
+  receiver = Receiver()
   holder = Holder()
   message helper.Set(10)
   message a2.Set(20)
   message a3.Set(30)
-  message receiver.Send()
-  take(message a2.Run())
-  holder.Send(message a3.Run())
+  message receiver.Send(helper)
+  take(a2)
+  holder.Send(a3)

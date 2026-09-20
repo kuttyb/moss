@@ -1,17 +1,20 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Worker
   on Ping()
     echo "external ref: ping"
 
 domain Relay
-  on Pass(worker: Worker)
+  domainroutes(worker: Worker)
+  on Pass()
     message worker.Ping()
 
 domain Driver
-  on Run(relay: Relay, worker: Worker)
-    message relay.Pass(worker)
+  domainroutes(relay: Relay, worker: Worker)
+  on Run()
+    message relay.Pass()
 
 proc main()
   let worker = Worker()
-  let relay = Relay()
-  let driver = Driver()
-  message driver.Run(relay, worker)
+  let relay = Relay(worker: worker)
+  let driver = Driver(relay: relay, worker: worker)
+  message driver.Run()

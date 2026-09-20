@@ -1,14 +1,17 @@
 domain Source:
-  fn Value() -> Int:
+  fn Value(unused: Int) -> Int:
     reply 3
 
-fn read_value(source: Source) -> Int:
-  value = message source.Value()
-  return value
+domain Batch:
+  domainroutes(source: Source)
+
+  fn Run() -> Int:
+    values = [0, 0]
+    total = values |> map(message source.Value(_)) |> sum
+    reply total
 
 proc main():
   first = Source()
-  second = Source()
-  sources = [first, second]
-  total = sources |> map(read_value) |> sum
+  batch = Batch(source: first)
+  total = message batch.Run()
   echo total

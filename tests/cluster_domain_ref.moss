@@ -1,23 +1,21 @@
 domain Worker
   on Ping()
     echo "cluster ref: ping"
-  on Self() -> Worker
-    reply self
 
 domain Registry
-  on Get(worker: Worker) -> Worker
-    let selected = message worker.Self()
-    reply selected
+  domainroutes(worker: Worker)
+  on Get()
+    message worker.Ping()
 
 domain Driver
-  on Run(registry: Registry, worker: Worker)
-    let selected = message registry.Get(worker)
-    let alias = selected
-    message alias.Ping()
-    message selected.Ping()
+  domainroutes(registry: Registry, worker: Worker)
+  # Static-DAG migration: no returned/aliased domain capability.
+  on Run()
+    message registry.Get()
+    message worker.Ping()
 
 proc main()
   let worker = Worker()
-  let registry = Registry()
-  let driver = Driver()
-  message driver.Run(registry, worker)
+  let registry = Registry(worker: worker)
+  let driver = Driver(registry: registry, worker: worker)
+  message driver.Run()

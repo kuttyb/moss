@@ -18,8 +18,8 @@ fn noisy(value: Int) -> Int:
   echo "seen", value
   return value
 
-fn wait_for(worker: Worker) -> Int:
-  value = message worker.Add(1)
+fn wait_for(value: Int) -> Int:
+  # A helper receives a result, not a runtime route.
   return value
 
 domain Worker:
@@ -30,19 +30,20 @@ domain Worker:
     reply total
 
 domain Router:
-  fn Route(worker: Worker) -> Int:
+  domainroutes(worker: Worker)
+  fn Route() -> Int:
     value = message worker.Add(2)
     reply value
 
 proc main():
   worker = Worker()
-  router = Router()
+  router = Router(worker: worker)
   values = [1, 2, 3]
   observed_count = values |> map(noisy) |> count
   sample = Sample(value: 7)
   observed = inspect(sample)
-  direct = wait_for(worker)
-  routed = message router.Route(worker)
+  direct = wait_for(message worker.Add(1))
+  routed = message router.Route()
   echo observed_count, observed, direct, routed
 
 fn locally_pure_statement(value: Int) -> Int:

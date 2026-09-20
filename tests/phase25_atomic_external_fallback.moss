@@ -9,9 +9,10 @@ domain Audit:
     echo "audit:", value
 
 domain Counter:
+  domainroutes(helper: Helper, audit: Audit)
   value = 0
 
-  fn Work(helper: Helper, audit: Audit) -> int:
+  fn Work() -> int:
     amount = message helper.Read()
     value = value + amount
     message audit.Note(value)
@@ -21,6 +22,6 @@ domain Counter:
 fn main():
   helper = Helper()
   audit = Audit()
-  counter = Counter()
-  result = message counter.Work(helper, audit)
+  counter = Counter(helper: helper, audit: audit)
+  result = message counter.Work()
   echo "result:", result

@@ -1,9 +1,11 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Sink:
   fn Process(x: Int):
     echo "forwarded:", x
 
 domain Router:
-  fn Route(x: Int, sink: Sink):
+  domainroutes(sink: Sink)
+  fn Route(x: Int):
     message sink.Process(x)
 
 domain Calculator:
@@ -17,9 +19,9 @@ domain Calculator:
 
 fn main():
   sink = Sink()
-  router = Router()
+  router = Router(sink: sink)
   calculator = Calculator()
-  message router.Route(10, sink)
+  message router.Route(10)
   plus_one = message calculator.PlusOne(10)
   local = message calculator.LocalUpdate(7)
   echo plus_one, local

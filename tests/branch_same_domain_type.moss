@@ -3,19 +3,19 @@ domain Worker:
     reply 7
 
 domain Router:
-  fn Route(first: Worker, second: Worker, flag: bool) -> int:
-    if flag:
-      target = first
-    else:
-      target = second
+  domainroutes(first: Worker, second: Worker)
 
-    value = message target.Ping()
-    reply value
+  # Select a message, never alias a routing capability.
+  fn Route(flag: bool) -> int:
+    if flag:
+      reply message first.Ping()
+    else:
+      reply message second.Ping()
 
 fn main():
   first = Worker()
   second = Worker()
-  router = Router()
+  router = Router(first: first, second: second)
   flag = true
-  value = message router.Route(first, second, flag)
+  value = message router.Route(flag)
   echo value

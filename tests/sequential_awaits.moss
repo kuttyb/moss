@@ -6,12 +6,13 @@ domain Worker
     reply value == 1
 
 domain Client
-  on Run(worker: Worker)
+  domainroutes(worker: Worker)
+  on Run()
     let first = message worker.First()
     let second = message worker.Second(first)
     echo "sequential:", second
 
 proc main()
   let worker = Worker()
-  let client = Client()
-  message client.Run(worker)
+  let client = Client(worker: worker)
+  message client.Run()

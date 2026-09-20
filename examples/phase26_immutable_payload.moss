@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 # Message arguments are immutable value snapshots. Handlers can inspect an
 # incoming payload, call READ-only helpers, and forward it across another
 # explicit message boundary, but never move or mutate the snapshot.
@@ -12,14 +13,15 @@ domain Sink:
     echo "sink:", record.id
 
 domain Router:
-  fn Route(record: Record, sink: Sink) -> Int:
+  domainroutes(sink: Sink)
+  fn Route(record: Record) -> Int:
     value = checksum(record)
     message sink.Process(record)
     reply value
 
 fn main():
   sink = Sink()
-  router = Router()
+  router = Router(sink: sink)
   payload = Record(id = 21)
-  result = message router.Route(payload, sink)
+  result = message router.Route(payload)
   echo "checksum:", result

@@ -1,5 +1,5 @@
-fn wait_for(worker: Worker) -> int:
-  value = message worker.Ping()
+fn wait_for(value: int) -> int:
+  # Helpers receive ordinary results, not routing capabilities.
   return value
 
 domain Worker:
@@ -8,5 +8,5 @@ domain Worker:
 
 fn main():
   worker = Worker()
-  value = wait_for(worker)
+  value = wait_for(message worker.Ping())
   echo value

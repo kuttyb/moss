@@ -1,21 +1,26 @@
 domain Worker:
   seen = 0
 
-  fn Record():
+  fn Record(delta: Int) -> Int:
     seen = seen + 1
+    reply 1
 
   fn Seen() -> Int:
     reply seen
 
-fn notify(worker: Worker) -> Int:
-  message worker.Record()
-  return 1
+domain Batch:
+  domainroutes(first: Worker, second: Worker)
+
+  fn Run():
+    values = [1]
+    first_total = values |> map(message first.Record(_)) |> count
+    second_total = values |> map(message second.Record(_)) |> count
+    first_seen = message first.Seen()
+    second_seen = message second.Seen()
+    echo first_total + second_total, first_seen, second_seen
 
 proc main():
   first = Worker()
   second = Worker()
-  workers = [first, second]
-  pipeline_total = workers |> map(notify) |> sum
-  first_seen = message first.Seen()
-  second_seen = message second.Seen()
-  echo pipeline_total, first_seen, second_seen
+  batch = Batch(first: first, second: second)
+  message batch.Run()

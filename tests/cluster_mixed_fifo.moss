@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Target
   var total: int = 0
 
@@ -7,12 +8,13 @@ domain Target
     reply total
 
 domain Caller
-  on Run(target: Target)
+  domainroutes(target: Target)
+  on Run()
     message target.Add(1)
     let value = message target.Add(2)
     echo "result:", value
 
 proc main()
   let target = Target()
-  let caller = Caller()
-  message caller.Run(target)
+  let caller = Caller(target: target)
+  message caller.Run()

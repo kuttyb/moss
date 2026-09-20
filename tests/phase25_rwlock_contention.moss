@@ -1,3 +1,4 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Catalog:
   title: string = "stable"
 
@@ -5,7 +6,8 @@ domain Catalog:
     reply title
 
 domain Reader:
-  fn Run(catalog: Catalog):
+  domainroutes(catalog: Catalog)
+  fn Run():
     count = 0
     while count < 1000:
       observed = message catalog.Read()
@@ -14,7 +16,7 @@ domain Reader:
 
 fn main():
   catalog = Catalog()
-  left = Reader()
-  right = Reader()
-  message left.Run(catalog)
-  message right.Run(catalog)
+  left = Reader(catalog: catalog)
+  right = Reader(catalog: catalog)
+  message left.Run()
+  message right.Run()

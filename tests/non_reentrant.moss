@@ -1,9 +1,11 @@
+# Static-DAG migration: dependencies are routes, never runtime payloads.
 domain Dependency
   on Finish() -> bool
     reply true
 
 domain Waiting
-  on First(dependency: Dependency)
+  domainroutes(dependency: Dependency)
+  on First()
     echo "start"
     let finished = message dependency.Finish()
     if finished:
@@ -14,6 +16,6 @@ domain Waiting
 
 proc main()
   let dependency = Dependency()
-  let waiting = Waiting()
-  message waiting.First(dependency)
+  let waiting = Waiting(dependency: dependency)
+  message waiting.First()
   message waiting.Second()
