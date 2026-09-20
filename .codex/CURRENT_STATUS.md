@@ -2,7 +2,104 @@
 
 Updated: 2026-09-20
 
-## Phase 10.6E complete — checked in as `7b335d1`
+## Phase 10 complete — Moss v0.1
+
+Phase 10.6F implementation, benchmarks, tests, and release documentation are
+checked in as **`a907336`**, based on `202d9c7` (the 10.6E documentation correction).
+Phases 10.6A, 10.6B, 10.6B.1, 10.6C, 10.6D, 10.6D.1, 10.6E, and 10.6F are
+complete. **Next: Phase 15 — Dogfooding.** No GitHub release or tag was created.
+
+The [v0.1 milestone](../docs/V0_1.md) records the settled structural-trait,
+effect, static-topology, synchronous-message, 2PL, borrowed-READ, and value-boundary
+model. The [performance report](../docs/PERFORMANCE_10_6F.md) preserves methodology,
+environment, robust measurements, fixes/deferred issues, and the final terminology
+audit. These documents are durable; temporary raw logs are not status authority.
+
+Stored-plan introspection now reports leaf/class counts and compression, exact
+per-handler shared/exclusive acquisition counts, read-only/self-conflicting
+handlers, pair opportunities, a deterministic conflict matrix with class/leaf
+witnesses, and class-sharing/splitting explanations. No effects or synchronization
+partition are independently rediscovered. Optional `moss_perf` physical events
+measure actual contention, wait/hold time, handler/nested time, and current call
+depth using thread-local collection. Normal production instrumentation is off.
+`MOSS_PROFILE_COMPILER` provides optional stage timings outside semantic JSON.
+
+Measurement preceded optimization. Borrowing private handler route/self handles
+removes redundant Arc clones without changing locks or message/reply values.
+A separate concrete backend fix publishes rustc crate-name rlib aliases so
+transitive local/source-free module dependencies link correctly. Native `.mossi`
+ABI remains 4; compiler version is 0.1.0 and backend cache identity is refreshed.
+No unsafe, layout padding, new language semantics, synchronization algorithm,
+lock elision, early unlock, atomics, scheduler, or concurrency-ingress syntax was
+introduced.
+
+Measured conclusions on the recorded i3-1315U/Linux/Rust environment:
+
+- Shared readers reached four simultaneous holders; disjoint writers reached two;
+  conflicting writers remained at one. Shared-reader throughput rose from 3.51 to
+  7.98 million operations/sec at one/eight callers. Disjoint has only two writable
+  classes: throughput rose from 2.99 to 4.11 million operations/sec at one/two
+  callers; more callers contend within those classes.
+- Empty/shared/two-class wrappers measured 81/167/330 ns median. Typed Rust shared
+  reads measured about 36 ns. Small-handler metadata/view overhead remains real;
+  no blanket near-Rust or coarse-lock speedup claim is made.
+- Ordinary String/Vector/whole-object READ remained effectively size-independent
+  from 16 to 1,048,576 bytes/elements. Large explicit copies scale with payload
+  size as required. Existing non-Clone/clone-counter tests remain authoritative.
+- Nested child execution accounts for roughly three quarters of parent lock hold
+  time in the instrumented sample; maximum nesting is three. Instrumented durations
+  include observer overhead and are separate from uninstrumented throughput.
+- Runtime-shaped locks occupy 40 bytes/alignment 8. Packed and 128-byte-separated
+  probes both measured about 9.1 ns/op median, providing no padding justification.
+- At 96 leaves/192 handlers per Store, 24 instances/12 routes/1,152 total classes,
+  plan derivation was about 75 ms of 380 ms total C++ compilation. Generated Rust
+  reached 7 MB; code-size/static-projection work remains a real future cost.
+- Deterministic tracing grew linearly to 60,017 events / 14.6 MB for 4,002 messages
+  (about 498 ms in the recorded sample). Trace slicing is useful future tooling;
+  Fast Debug is not turned into an optimizing runtime or concurrency simulator.
+
+New seed programs include a four-module ledger with types, structural predicate,
+concrete helpers/factories, domains/routes, independent payload forwarding, and
+state replies; an index summary; and a production functional pipeline. Existing
+trait examples exercise constrained structural specialization. The clean ledger
+builds/runs/debugs with equivalent results, and its model works source-free in
+production. Cross-module generic/structural dispatch, qualified statement calls,
+provider-field construction, multiple-main ergonomics, Fast Debug `for`/pipeline
+coverage, and trace volume are explicitly recorded for Phase 15 rather than
+silently treated as finished language surface.
+
+Final validation passed on the final implementation:
+
+- Strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build and `make`.
+- Complete `make check`: retained 10.6A/B/B.1/C/D/D.1/E suites and new F diagnostics,
+  deterministic output, benchmark/instrumentation structural checks, expanded
+  compiled/interpreted equivalence, clean modules and source-free providers.
+- Repeated 2PL concurrency, nested/sibling ordering, reply release, primitive WRITE,
+  fail-closed panic/poison, non-Clone/zero-copy READ, helper/method/functional and
+  module regressions. Each D concurrency harness runs five repetitions.
+- `make examples`, generated Rust with warnings denied, functional/dataflow,
+  project, agent/introspection, debug-map/objdump, and tooling checks.
+- All 20 Emacs ERT tests and warnings-as-errors byte compilation.
+- `sh -n tests/run.sh`, working-tree/staged/HEAD Git whitespace checks, and the
+  repository-wide terminology/artifact audit. Live LLDB/DAP tests were
+  capability-skipped because process tracing is unavailable.
+
+Benchmark timings are never correctness gates. No generated measurement logs,
+binaries, or compiled editor files are checked in; the Rust benchmark files are
+hand-written source. These results supersede development runs and failures before
+the final fixes. Only this checked-in-state documentation follows the implementation
+commit; no code changes invalidate the recorded validation.
+
+Phase 10.6F completes Phase 10 and establishes Moss v0.1. The synchronous-domain
+architecture has now been implemented, consolidated, instrumented, and quantitatively
+validated from compiler-derived synchronization planning through production
+handler-level 2PL and borrowed protected reads. Fast Debug executes the same checked
+domain semantics deterministically, and the repository now contains coherent v0.1
+documentation, diagnostics, benchmarks, and seed programs for real-world dogfooding.
+Further language refinement will be driven by Phase 15 usage rather than speculative
+extension.
+
+## Historical Phase 10.6E closeout — checked in as `7b335d1`
 
 Phase 10.6E is checked in as `7b335d1`, atop `e70943c`. Phase 10.6D is checked
 in as `9f49e64` and 10.6D.1 as `b3f8a64`. All three phases are implemented,
@@ -250,7 +347,7 @@ the global `(domain_rank, class_rank)` order, establishing the failure-free
 deadlock-freedom and conflict-serializability guarantees of the synchronous-domain
 architecture. Legacy transport/runtime machinery remains for Phase 10.6E cleanup.
 
-## Current checkpoint through Phase 10.6E
+## Current checkpoint — Phase 10 / Moss v0.1 complete
 
 Checked-in 10.6C compiler closeout: `eb4d49a`, following snapshot `486eba4`.
 The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
@@ -264,7 +361,8 @@ The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
 | 10.6D | Complete at `9f49e64`: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
 | 10.6D.1 | Complete at `b3f8a64`, atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
 | 10.6E | Complete and validated at `7b335d1`: legacy runtime retired; deterministic Fast Debug domains supported. |
-| 10.6F | Diagnostics, layout, and quantitative performance validation remain future work. |
+| 10.6F | Complete at `a907336`: diagnostics, instrumentation, quantitative validation, measured backend fixes, and v0.1 release closure. |
+| Next | Phase 15 Dogfooding; then Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision, and Phase 22 Agent Agency Tooling. |
 
 Current language semantics are synchronous domain calls over the closed concrete
 graph. Legacy mailbox/worker adapters and alternate synchronization implementations
@@ -352,7 +450,7 @@ and tests were untouched. `git diff --check` passed for this correction.
 
 ## Historical version and commit chronology
 
-- Compiler version: Moss v0.2
+- Historical compiler version at this checkpoint: Moss v0.2 (superseded by the v0.1 milestone above).
 - Static duck-typed methods and named-trait specialization are complete on top of
   `df73771` (`Complete concrete method semantics`). This checkpoint closes the initial
   static method/trait foundation without adding runtime dispatch.
@@ -891,16 +989,18 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phases 10.6A–E are checked in; the validated 10.6E commit is `7b335d1`.
-Phase 10 as a whole is not complete.
+Phases 10.6A–F are complete and checked in. Phase 10 is the Moss v0.1 milestone.
 
-1. Phase 10.6F: measure class storage/accessor code size, descriptor/slot overhead,
-   explicit-boundary copies, uncontended handler cost, contention, and nested-call
-   hold times; improve diagnostics and evaluate layout using those measurements.
-   No lock elision, early unlock, atomics, or clustering is introduced by 10.6E.
-2. Separate later work includes interpreter `for`/functional coverage, the existing
-   provider-internal generic linkage limitation, package resolution, `deepCopy()`,
-   future lexical domain scopes/concurrency ingress, and Phase 12 supervision.
+1. Phase 15 — Dogfooding: write substantial Moss programs, identify real friction,
+   and let actual usage determine the next refinements. Start with the ledger,
+   index, pipeline, and structural-trait seeds. This closeout does not begin new
+   Phase 15 feature work.
+2. Track measured tiny-handler/storage/code-size costs, interpreter `for`/pipeline
+   coverage, cross-module generic linkage and ergonomics, trace slicing, package
+   resolution, and standard-library gaps as evidence for subsequent priorities.
+3. Post-dogfooding roadmap: Phase 20 Rust Interoperability; Phase 21 Error
+   Propagation & Supervision; Phase 22 Agent Agency Tooling. Scoped domain lifetimes
+   and concurrency ingress remain explicitly unresolved future directions.
 
 The 10.6C synchronization algorithms remain authoritative and unchanged apart
 from removal of unreachable retired-Await traversal branches. No language-design
