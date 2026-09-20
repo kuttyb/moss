@@ -94,6 +94,12 @@ implementation; they do not establish physical 2PL or primitive write-through
 correctness. No preflight validation remains pending. Implementation obligations
 remain listed under Immediate next tasks.
 
+Follow-up status correction: ordinary parameter effects are inferred, and no
+`mut`, `var`, `write`, or `inout` parameter syntax is planned. Historical
+await/serialization assumptions and the 10.5 open-design blocker are explicitly
+superseded by 10.6A–C. Only this status file changed; compiler code and tests were
+untouched. `git diff --check` passed for this correction.
+
 ## Version and commits
 
 - Compiler version: Moss v0.2
@@ -209,10 +215,10 @@ remain listed under Immediate next tasks.
 - Ordinary primitive values remain usable after sending. Domain handles are routing
   capabilities and cannot be sent as payloads or used as ordinary values.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
-- Ordinary function parameters use inferred READ/WRITE/CONSUME effects, including
-  caller-visible primitive WRITE; the physical lowering gap is recorded above
-  for 10.6D. Earlier proposed ordinary-procedure `var` syntax is historical and
-  does not replace the implemented effect model.
+- Ordinary function parameter READ/WRITE/CONSUME effects are inferred. Primitive
+  parameter assignment may be caller-visible WRITE; the physical lowering gap
+  is recorded above for 10.6D. No `mut`, `var`, `write`, or `inout` parameter
+  syntax is planned.
 - Immutable sharing, arenas, `ref object` identity, and persistent `revise` versions are deferred because retention and leak behavior is unresolved.
 - Moss `Int` is currently signed 64-bit two's-complement. Overflowing integer
   arithmetic wraps modulo 2^64 in every backend; Rust overflow-check settings are
@@ -473,7 +479,8 @@ remain listed under Immediate next tasks.
 - Ownership analysis remains conservative around arbitrary raw expressions and indirect aliases outside the statically represented projection/call slice.
 - `deepCopy()` and its cost warnings are approved but not implemented; no implicit copy is inserted.
 - Top-level `fn` local functions and inferred parameter effects are implemented.
-  The earlier proposed ordinary `proc` parameter model remains historical.
+  Earlier explicit parameter-mutation syntax proposals are superseded by the
+  current inferred-effect rule; no such syntax is planned.
   Self-send and same-domain handler chaining are rejected; queued self-communication
   is not an active language feature.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
@@ -685,8 +692,6 @@ authorized by this preflight.
 ## Open design questions requiring Kutty's decision
 
 - Exact `deepCopy()` warning wording and fixed-size estimates.
-- Earlier ordinary-procedure syntax proposals remain deferred; existing ordinary
-  function WRITE effects are established and must be implemented by the backend.
 - Future retention-safe designs for immutable sharing, arenas, and persistent versions.
 - How future automatic cluster selection should balance locality, synchronous calls, and load distribution.
 - Supervision, failure propagation, transactional rollback, and restart semantics remain
@@ -749,12 +754,18 @@ handles, and synchronous calls are described above.
 - Nontrivial assignment transfers ownership; hidden deep copies and COW are prohibited.
 - `deepCopy()` is explicit future syntax and is not implemented.
 - Detached-local cross-domain transfer was the decision at that time and is superseded by the 2026-09-11 prohibition. Same-domain queued transfer remains allowed.
-- Ordinary read-only and `var` procedure parameters do not transfer.
+- Historical proposal: ordinary read-only and `var` procedure parameters would
+  not transfer. This proposal is superseded by inferred ordinary function
+  parameter effects; no explicit parameter-mutation syntax is planned.
 - Immutable sharing, arenas, and `revise` remain deferred due memory-retention and leak concerns.
 
 ### Assumptions Codex made
 
-- Existing await/reply and serialized-domain behavior remains approved.
+- Historical assumption, superseded by 10.6A–C: await/reply and total-domain
+  serialization were treated as the language model. Current Moss uses
+  synchronous `message`, terminating `reply`, and the closed concrete graph with
+  compiler-owned synchronization analysis; physical handler-level 2PL remains
+  10.6D work.
 - The lightweight checker is extended only for direct, statically recognizable transfer cases in this increment.
 
 ### Tests actually executed
@@ -767,7 +778,9 @@ handles, and synchronous calls are described above.
 
 ### Semantic questions still unresolved
 
-- `deepCopy()` warning details and ordinary procedure design, as listed above.
+- At this historical checkpoint: `deepCopy()` warning details and ordinary
+  procedure design. The parameter-syntax proposal is superseded by the current
+  inferred-effect rule above.
 
 ### Exact commit hash containing the work
 
@@ -885,7 +898,8 @@ queries now expose the stored `SynchronizationPlan`, including derived effects,
 classes, ranks, handler sets, and conflicts. `docs/SYNCHRONIZATION_PLAN.md`
 records the implemented Account derivation.
 
-The historical 10.5 open-design list is not the current implementation blocker:
+The Phase 10.5 “blocked by open design” statement is historical and superseded
+by 10.6A–C:
 10.6A/B/B.1 settled synchronous calls, self-send/chaining rejection, closed handles,
 and concrete domain ranks; 10.6C implements synchronization analysis and semantic
 effect metadata. Existing ordinary parameter WRITE effects remain authoritative.
