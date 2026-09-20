@@ -1,0 +1,34 @@
+fn bump(value):
+  value = value + 1
+
+fn forward(value: Int):
+  bump(value)
+
+fn toggle(value: Bool):
+  value = not value
+
+fn add_half(value: Float):
+  value = value + 0.5
+
+fn reset(values: Vector[Int]):
+  values = [7, 8]
+
+type Helper:
+  seed: Int
+  fn Change(value: Int):
+    value = value + seed
+
+fn main():
+  n = 1
+  forward(n)
+  flag = false
+  toggle(flag)
+  number = 1.0
+  add_half(number)
+  values = [10, 20]
+  bump(values[0])
+  helper = Helper(seed: 3)
+  helper.Change(n)
+  echo n, flag, number, values[0]
+  reset(values)
+  echo values[0], values[1]

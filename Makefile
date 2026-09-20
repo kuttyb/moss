@@ -9,7 +9,7 @@ EXAMPLE_BUILD_DIR ?= build/examples/optimized
 
 all: moss
 
-moss: src/moss.cpp $(wildcard src/*.hpp)
+moss: src/moss.cpp $(wildcard src/*.hpp src/*.inc)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
 check: moss

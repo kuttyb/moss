@@ -1,9 +1,11 @@
-# Phase 10.6C: compiler-owned synchronization planning
+# Phases 10.6C–D: synchronization planning and production handler-level 2PL
 
-Phase 10.6C implements `SynchronizationPlan`. Production handler-level 2PL
-lowering is not yet implemented. The existing Rust lock objects, mailbox
-compatibility, batching, coalescing, atomics, and acquisition order are unchanged.
-The new plan is required analysis, independent of backend optimization flags.
+Phase 10.6C implements `SynchronizationPlan`; Phase 10.6D consumes that stored
+object for production handler-level 2PL. All compilation/optimization modes use
+the same plan-driven synchronization boundary. Legacy mailbox, coarse-lock,
+atomic, batching, coalescing, and cluster implementations remain in compiler
+source for Phase 10.6E deletion, but no active handler path uses them to override
+the plan. The analysis is independent of backend optimization flags.
 
 ```text
 closed ConcreteDomainGraph + exact DomainSpecialization records
@@ -11,7 +13,7 @@ closed ConcreteDomainGraph + exact DomainSpecialization records
                           ↓
                   SynchronizationPlan
                           ↓
-                  Phase 10.6D physical locking (future)
+                  Phase 10.6D physical class locking and handler entry
 ```
 
 `Program::synchronization_plan` is the authoritative object. The builder takes a
@@ -31,8 +33,9 @@ from CONSUME. For synchronization, READ maps to SHARED and both WRITE and CONSUM
 map to EXCLUSIVE; absence maps to NONE.
 Projection through helpers retains inferred semantic effects for primitive
 parameters too. Planning never weakens WRITE to READ based on a Rust Copy or
-by-value representation. It does not change ordinary parameter assignment or
-implement write-through lowering.
+by-value representation. Phase 10.6D implements inferred ordinary parameter
+WRITE with writable caller storage, including primitive values and projections.
+No parameter-mutation modifier is added; incoming message payloads stay immutable.
 
 For each concrete domain:
 
@@ -59,8 +62,10 @@ syntax or permanent ABI. A new reader may split a previously shared class.
 Every domain rank is checked for uniqueness, and every class rank is checked for
 contiguity and uniqueness. Partition, subset, semantic-state membership, and
 class-mode invariants fail closed in release builds as well as debug builds.
-The plan supplies the future ordering pair `(domain_rank, class_rank)` but emits
-no acquisitions or runtime rank checks.
+The plan supplies the ordering pair `(domain_rank, class_rank)`. Production
+lowering validates the stored graph, specialization linkage, ranks, partition,
+footprints, and final modes before emitting physical descriptors. It neither
+recomputes synchronization analysis nor repairs a corrupt plan at runtime.
 
 A message remains an observable sequencing point. A caller's plan contains only
 its own state; routed callee state is never flattened into the caller's LockSet.
@@ -163,6 +168,120 @@ memberships. A concrete type is checked when specialization/use requires it;
 there is no `implements` declaration or runtime trait dispatch. Planning consumes
 statically closed callables and fails closed on unresolved method targets.
 
-Phase 10.6D must consume this object for physical class storage, shared/exclusive
-acquisition, and handler-lifetime 2PL, including nested message calls. This phase
-does not prove or implement that backend migration.
+Phase 10.6D consumes this object for physical class storage, shared/exclusive
+acquisition, and handler-lifetime 2PL, including nested message calls. Runtime
+locks belong to each constructed instance, never process-global singletons.
+Scoped graph activations and imported outer routes remain future design.
+
+## Production storage and handler entry (10.6D)
+
+Each generated domain reference owns an `Arc<MossClassRuntime<DomainLeaf>>` and
+immutable route references. `DomainLeaf` is a generated typed Rust enum; it does
+not use runtime trait dispatch or type erasure. The runtime owns exactly one
+`std::sync::RwLock` per synchronization class, containing that class's leaves.
+Leaves outside X* live in separately published immutable storage with no lock.
+Class order and membership come directly from the final application's plan.
+Two leaves sharing a class use one lock; split classes use distinct locks even
+when their leaves belong to one source object.
+
+`Handler_shared` is the single synchronized entry wrapper. It acquires exactly
+the handler's stored ClassSet in increasing class rank, using read guards for
+SHARED and write guards for EXCLUSIVE. An empty ClassSet acquires nothing.
+Acquisition never upgrades a guard. The wrapper invokes a private `Handler_body`
+and retains every guard until the reply/result and state restoration are complete.
+Ordinary helpers and functional stages acquire no additional domain locks.
+
+Storage is entirely safe Rust: there is no `UnsafeCell`, raw pointer projection,
+or unsafe `Sync` implementation. Under retained guards, the wrapper moves its
+exclusive leaves into a private working state and copies its observed READ leaves.
+Unobserved leaves in that private value have inert defaults and never overwrite
+published state. The body operates on ordinary Rust values and references; on
+normal return every evacuated exclusive leaf is moved back before any guard is
+released. This also supports whole-object operations spanning several classes.
+Read snapshots are a conservative physical implementation, not new Moss value
+identity or ownership rules. They can allocate/copy nontrivial values; reducing
+that cost is future backend work. No coarse state guard serializes disjoint
+handlers. The initial baseline prioritizes storage safety over layout efficiency.
+
+Composition constructs descendants before owners, fully initializes state and
+per-instance class locks, and publishes handles only after construction. Cloned
+handles reach the same class objects. Different concrete specializations receive
+their own typed leaf representations and final per-instance descriptors.
+
+All active compiled dispatch is direct synchronous entry, including invocation
+under former mailbox/reference, atomic, and cluster option configurations.
+The legacy physical dispatch implementations are dormant, not deleted. Exported
+module bridges and nominal specialization routing also converge on synchronized
+entry. Thus no compatibility worker acknowledgement or cluster-local shortcut can
+bypass locking in the active path. A future reactivated transport would have to
+call this wrapper and acknowledge completion only after it returns.
+
+## Guard lifetime, failures, and correctness
+
+A terminating `reply` evaluates and establishes its independent by-value result
+inside the body. The wrapper then restores all exclusive leaves, releases its
+class guards, and returns the result to the caller. Normal no-value completion
+uses the same restoration and release sequence. Reply copies remain conservative;
+state is never released in an evacuated or uninitialized condition.
+
+An unexpected panic aborts the process before the frame releases any guards.
+An incomplete reply, missing storage, failed restoration, or poisoned class lock
+also aborts. The wrapper does not catch a failure and permit normal Moss execution
+to continue against torn state. This defines no rollback, restart, or supervision
+policy; those remain later work.
+
+For failure-free execution, Moss domain-local protected state is
+conflict-serializable under compiler-derived handler-level 2PL. This is not one
+global transaction across the domain call tree, a total order for outbound effects,
+a rollback guarantee, or a fairness/starvation-freedom guarantee. Reader/writer
+admission policy is unspecified.
+
+Parent classes remain held across nested synchronous messages. Descendants acquire
+their own classes and release them when their own handlers complete; their classes
+are not flattened into an ancestor's footprint. This intentionally amplifies lock
+hold time and can cause head-of-line blocking. Early unlock, lock-liveness regions,
+lock elision, atomics, synchronization-class merging, clustering, cache-line padding,
+and quantitative layout tuning are not implemented here.
+
+## Structural deadlock proof
+
+For every newly acquired Moss-managed lock:
+
+```text
+LockRank(new) > LockRank(each currently held lock)
+LockRank(D, C) = (domain_rank(D), class_rank_D(C))
+```
+
+Local acquisitions increase class rank. Every route edge increases domain rank,
+which lowering validates against the closed concrete DAG. A wait cycle would
+therefore require `L1 < L2 < ... < Ln < L1`, which is impossible. Production
+correctness depends on this static structure, not runtime deadlock detection.
+
+The rule concerns currently held locks. An ancestor at rank 0 can call a child at
+rank 2, wait for that child to release its locks, and then call a sibling at rank 1.
+The second call still acquires above the held ancestor. Historical thread-wide
+monotonic rank tracking would reject this valid sequence and is not used.
+
+## Modules, inspection, and regressions
+
+Source-free providers compile reusable handler wrappers. The final application
+passes its physical descriptor to the generated constructor through an internal
+Rust calling convention. `.mossi` exports semantic effects, not class IDs, ranks,
+ClassSets, physical lock layout, or global LockRank. Native ABI version 2 and the
+codegen fingerprint reject obsolete compiled calling conventions and caches;
+providers built before this migration require rebuilding.
+
+Existing synchronization JSON reports `physical_lowering: "handler_2pl"`.
+The human dump projects each handler's acquisitions as `(domain_rank, class_rank)`
+plus final mode and documents full-handler retention. Test-only generated lock
+hooks observe real wrapper execution without making production tracing mandatory.
+Fast Debug domain execution and lock simulation remain deferred to 10.6E.
+
+`check_handler_2pl.py` compiles generated Rust with warnings denied, drives real
+wrappers from backend threads, and uses barriers rather than timing benchmarks to
+prove disjoint-writer and shared-reader overlap. It also covers conflicting writers,
+read/write exclusion, empty footprints, class sharing/splitting, rank order,
+nested calls and descending siblings after return, state restoration, primitive
+WRITE-through, source-free providers, exact specializations, deterministic generation,
+legacy-option convergence, and fail-closed failure. A separate C++ regression
+corrupts stored plans and requires physical validation to reject them.

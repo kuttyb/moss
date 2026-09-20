@@ -243,5 +243,7 @@ including exact instance/specialization identities, X*, leaf/class mappings,
 handler R/W/C/X/ProtectedRead/LockSet/ClassSet, normalized effects, acquisition
 modes, deterministic ranks, and conflict witnesses. `LockSet` contains leaves;
 `ClassSet` contains class identities in local rank order. The dump is a readable
-string available without another CLI command. Physical lock lowering is unchanged.
+string available without another CLI command. Production locking consumes this
+plan (`physical_lowering: "handler_2pl"`); the dump also shows ranked acquisitions
+and full-handler retention.
 See [the plan schema and derivation](SYNCHRONIZATION_PLAN.md).

@@ -80,7 +80,7 @@ material that discusses queued self-transfers is retained as legacy documentatio
 Concrete domain topology and any domain rank (`domain_rank`) are whole-program
 concerns, not local handler facts. Phase 10.6B validates the concrete route DAG
 and assigns deterministic unique instance ordinals. Phase 10.6C derives
-synchronization classes and local ranks; production 2PL lowering remains deferred.
+synchronization classes and local ranks; Phase 10.6D implements production 2PL.
 
 Domain-local helper scoping belongs in the language/module design discussion,
 not in an implicit dispatch rule. Existing ordinary functions and methods keep
@@ -98,12 +98,12 @@ immutable READ snapshots: they may be read, forwarded through another
 Self-send and same-domain handler chaining are rejected; shared logic belongs
 in ordinary helpers.
 
-The Rust emitter still contains an isolated mailbox/completion adapter for
-physical representations selected by the existing backend planner. It waits
-for handler completion, so it does not expose asynchronous source behavior.
+The Rust emitter retains legacy mailbox/completion adapters as dormant code for
+10.6E removal. Production calls use the plan-driven synchronized entry wrapper.
 Direct construction and route topology are now checked by the Phase 10.6B
 composition pass. Phase 10.6C implements synchronization planning. Production
-2PL lowering, supervision, and Fast Debug domain execution remain deferred.
+2PL lowering is implemented in 10.6D; supervision and Fast Debug domain execution
+remain deferred.
 
 ## Phase 10.6C synchronization planning
 
@@ -111,7 +111,8 @@ The compiler now derives one authoritative graph-relative `SynchronizationPlan`
 from the closed concrete graph and exact specialized handler effects. It retains
 READ / WRITE / CONSUME separately and maps them to shared/exclusive modes only
 in the derived plan. Immutable-after-publication leaves receive no classes.
-Production lock lowering is unchanged; handler-level 2PL remains Phase 10.6D.
+Phase 10.6D consumes this stored plan for production handler-level 2PL, with
+exact shared/exclusive class acquisition and full-handler guard retention.
 
 See [SynchronizationPlan architecture](SYNCHRONIZATION_PLAN.md) for the definitions
 of X, X*, ProtectedRead, leaf LockSet, class signatures, ClassSet, local ranks,
@@ -126,6 +127,8 @@ physical source locations; they are not promised to survive arbitrary source
 movement. Phase 6 `entity-v1` identities are the separate semantic-query/edit
 contract. Fast Debug trace events now carry the physical source file and the
 corresponding semantic identity when the checked AST has it, alongside function,
-line, branch, local-read/write, return, loop, and assertion events. Lock,
-synchronization, and domain-rank event semantics remain **BLOCKED BY OPEN
-DESIGN**.
+line, branch, local-read/write, return, loop, and assertion events. Fast Debug
+domain execution and lock tracing remain deferred to 10.6E.
+Production synchronization decisions were resolved in 10.6A–C and implemented
+in 10.6D; backend test hooks report planned lock acquisitions and releases.
+The earlier “blocked by open design” status is historical.

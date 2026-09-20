@@ -2,36 +2,124 @@
 
 Updated: 2026-09-20
 
-## Current checkpoint through Phase 10.6C
+## Phase 10.6D complete — production handler-level 2PL
 
-Checked-in compiler closeout: `eb4d49a`, following snapshot `486eba4`.
-Repository HEAD at this preflight is `5ceb958` (temporary-file policy).
+The working tree implements production handler-level 2PL from the authoritative
+`Program::synchronization_plan`. Each constructed domain owns typed leaf storage
+and one Rust `RwLock` per planned class. The synchronized `_shared` wrapper
+acquires exactly ClassSet in increasing class rank, selects read/write guards
+from SHARED/EXCLUSIVE modes, retains them across the full body and nested messages,
+restores exclusive leaves, then releases before returning the reply. Empty
+ClassSets and immutable-after-publication storage acquire no class lock.
 
-| Phase | Checked-in state |
+Storage is entirely safe Rust, without unsafe, raw pointers, or runtime type
+erasure. Exclusive leaves move into a private working value under retained guards;
+observed READ leaves use conservative physical snapshots. Every exclusive leaf
+is restored before normal release. READ snapshots can allocate/copy nontrivial
+values; reducing this representation overhead remains later backend work, without
+changing source ownership semantics. Panic, poison, missing reply, or invalid
+restoration aborts instead of allowing execution against torn state.
+
+All active compilation modes, former mailbox/reference options, cluster options,
+nominal specialization adapters, and exported bridges converge on synchronized
+entry. Old transport/coarse/atomic/coalescing/cluster implementations remain
+dormant in source for 10.6E. Ordinary primitive WRITE parameters now use writable
+caller storage, including generic/method calls and projections. Parameter effects
+and the 10.6C synchronization-analysis algorithms are unchanged.
+
+Final graph/specialization/rank/partition/mode validation rejects corrupt checked
+state before emission. Source-free providers receive the final application's
+descriptor at construction; no physical synchronization metadata becomes `.mossi`
+ABI. Native ABI version 2 requires rebuilding older providers.
+
+Final validation passed after the last compiler changes:
+
+- Forced C++17 `-O2 -Wall -Wextra -pedantic -Werror` build, then `make`.
+- Complete `make check`: 10.6A/B/B.1/C regressions, new corrupt-plan and 10.6D
+  runtime/codegen checks, module/source-free `.mossi`, functional/dataflow,
+  agent/introspection, project workflows, existing Fast Debug checks, and tooling.
+- `make examples`, with generated Rust warnings denied; the intentional negative
+  use-after-transfer example remains excluded by the existing target.
+- Standalone 10.6D suite and the full-suite invocation both passed. Each executes
+  five harness repetitions, each with 20 disjoint-writer, shared-reader, and
+  split-object overlaps plus 800 conflicting increments. Barriers prove overlap;
+  these are correctness checks, not timing benchmarks.
+- Reader/writer exclusion, zero immutable-handler acquisitions, exact class
+  sharing/splitting, increasing local ranks, parent retention, nested/sibling
+  ordering, blocked-caller reply release, whole-object restoration, specialization
+  layouts, primitive/generic/method/projection WRITE, source-free providers,
+  deterministic generation, legacy-option convergence, panic, and poison checks.
+- All 19 Emacs ERT tests; warnings-as-errors Emacs byte compilation; debug-map
+  and objdump checks; `sh -n tests/run.sh`; working-tree, staged, and HEAD diff
+  whitespace checks. Optional live LLDB/DAP checks were capability-skipped because
+  process tracing is unavailable. Objdump's missing Rust standard-library source
+  warning does not prevent the source-map checks from passing.
+
+Earlier development runs are superseded by these final results. One added
+corruption-test input initially assigned the already-present mode; correcting it
+required no compiler or analysis change. The complete suite passed afterward.
+Logs are disposable under repository `tmp/`; no validation remains pending.
+
+For failure-free execution, domain-local protected state is conflict-serializable
+under compiler-derived handler-level 2PL. Every newly acquired lock ranks above
+every currently held lock under `(domain_rank, class_rank)`, so a wait cycle would
+require the impossible `L1 < L2 < ... < Ln < L1`. Completed descendants leave the
+held stack, allowing later lower-ranked siblings above their ancestor. This is
+not a global multi-domain transaction, total outbound-effect order, rollback,
+supervision, fairness, or starvation-freedom guarantee. Parent lock retention can
+amplify nested-call latency; early unlock, elision, atomics, and clustering remain
+future work. See `docs/SYNCHRONIZATION_PLAN.md` for the full architecture.
+
+Changed files: `src/moss.cpp`, `src/handler_lowering.inc`,
+`src/handler_runtime.hpp`, `src/synchronization_lowering.hpp`, `Makefile`,
+`tests/run.sh`, `tests/phase106d_handler_2pl.moss`, `tests/phase106d_nested.moss`,
+`tests/phase106d_parameter_write.moss`, `tests/phase106d_specializations.moss`,
+`tests/tooling/check_handler_2pl.py`,
+`tests/tooling/check_synchronization_lowering.cpp`,
+`tests/tooling/check_synchronization_plan.py`, `docs/SYNCHRONIZATION_PLAN.md`,
+`docs/SEMANTIC_CONVERGENCE.md`, `docs/MODULE_ABI.md`, `docs/AGENT_API.md`, and
+this status file. No 10.6C analysis algorithms or language design changed.
+
+Phase 10.6D makes the compiler-derived SynchronizationPlan authoritative for
+production domain execution. Every compiled handler now acquires exactly its
+planned shared/exclusive synchronization classes in deterministic rank order,
+retains them for the full handler lifetime including nested synchronous messages,
+and releases them only after normal handler completion. Nested acquisitions obey
+the global `(domain_rank, class_rank)` order, establishing the failure-free
+deadlock-freedom and conflict-serializability guarantees of the synchronous-domain
+architecture. Legacy transport/runtime machinery remains for Phase 10.6E cleanup.
+
+## Current checkpoint through Phase 10.6D
+
+Checked-in 10.6C compiler closeout: `eb4d49a`, following snapshot `486eba4`.
+The 10.6D changes are in the working tree atop `3d7ccd1`.
+
+| Phase | Implementation state |
 | --- | --- |
 | 10.6A | Complete: synchronous, expression-valued `message` and terminating `reply`; source `await` is retired. |
 | 10.6B | Complete: static composition, `domainroutes`, a closed concrete DAG, and deterministic `domain_rank`; source `spawn` is retired. |
 | 10.6B.1 | Complete: closed domain-handle universe and exact concrete `DomainSpecialization` linkage. |
 | 10.6C | Complete: compiler-owned `SynchronizationPlan`, including leaf effects, classes, ranks, handler sets, conflicts, and introspection. |
-| 10.6D | Unimplemented: production physical class locking and handler-level two-phase locking (2PL), including primitive parameter WRITE lowering described below. |
+| 10.6D | Complete in the working tree, fully validated: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
 | Later work | Fast Debug domain execution and legacy runtime removal remain unimplemented. |
 
 Current language semantics are synchronous domain calls over the closed concrete
-graph. Legacy mailbox/worker adapters and whole-domain locks still exist in
-generated execution; neither asynchronous mailbox behavior nor total domain
-serialization defines the current Moss language model. Historical checkpoint
+graph. Legacy mailbox/worker adapters and whole-domain locks remain dormant in
+compiler source; production execution uses planned synchronization classes.
+Neither asynchronous mailbox behavior nor total domain serialization defines
+the current Moss language model. Historical checkpoint
 descriptions below are implementation history, not permission to restore retired
 syntax or change language semantics.
 
-## Phase 10.6C closeout and validation
+## Historical Phase 10.6C closeout and validation
 
 The `eb4d49a` closeout completes the synchronization-plan implementation resumed
 from `486eba4`. The compiler derives leaf READ/WRITE/CONSUME
 observations, X*, ProtectedRead, leaf LockSets, equal-signature synchronization
 classes, local class ranks, handler ClassSets, and conflict witnesses from the
 closed graph's exact specializations. JSON and human dumps consume the stored
-plan. No production class-lock storage, acquisitions, or handler-level 2PL is
-emitted; those remain Phase 10.6D.
+plan. That checkpoint emitted no production class-lock storage, acquisitions,
+or handler-level 2PL; the current 10.6D implementation supplies them.
 
 This closeout preserves inferred primitive-parameter WRITE effects instead of
 downgrading them based on backend Copy representation. Compiled helper interfaces
@@ -58,7 +146,7 @@ planning. The source-free leaf-effect fixture uses concrete helpers to test its
 intended contract; provider-native generic specialization linkage needs separate
 backend work. Ordinary/generic semantic-effect tests remain enabled.
 
-## Phase 10.6D known backend correctness item: primitive WRITE
+## Primitive WRITE backend correctness item — resolved in 10.6D
 
 Moss semantic analysis permits caller-visible WRITE through ordinary primitive
 function parameters when inferred by the existing parameter-effect analysis.
@@ -67,16 +155,14 @@ assign `value = value + 1` and calls it with domain state `counter`; the inferre
 handler write set includes `counter`. These are ordinary function parameters,
 not incoming message payloads, which remain immutable snapshots.
 
-Production code generation still has a physical write-through mismatch: passing
-such primitive arguments by value does not implement the caller-visible WRITE.
-Phase 10.6D must resolve that mismatch as part of production backend work and
-make generated execution honor the existing effects. Do not weaken WRITE to READ
-or change the semantic effect model to match Rust Copy/by-value representation.
-The 10.6C regression validates the semantic effect and plan, not runtime
-write-through correctness. No calling-convention or analysis change is made by
-this documentation preflight.
+The historical by-value Rust mismatch is resolved by generated mutable-reference
+calling conventions selected from existing parameter effects. Executable 10.6D
+regressions verify ordinary primitive mutation and mutation of protected domain
+state through helpers, as well as methods, generics, projections, and source-free
+providers. WRITE has not been weakened to READ. No parameter modifier or semantic
+effect change is introduced.
 
-## Documentation preflight validation
+## Historical documentation preflight validation (before 10.6D)
 
 This preflight changes only `.codex/CURRENT_STATUS.md`. The 10.6C analysis and
 language design remain unchanged. Documentation consistency review checked the
@@ -184,7 +270,7 @@ and tests were untouched. `git diff --check` passed for this correction.
   member namespace. The compiler records one `ConcreteDomainGraph`, rejects concrete
   route cycles, preserves physical source provenance, and assigns deterministic unique
   whole-program `domain_rank` values. Synchronization classes followed in 10.6C;
-  physical handler-level 2PL remains unimplemented in 10.6D.
+  physical handler-level 2PL is implemented in 10.6D.
 - Phase 10.6B.1 closes the handle universe in the checker: handles only occur as
   composition bindings, declared route bindings, and message receivers. Ordinary
   parameters/payloads, replies, state, aggregates, aliases, reassignment, and route
@@ -196,7 +282,7 @@ and tests were untouched. `git diff --check` passed for this correction.
   Module namespace qualification, constructor metadata, synchronous exported
   bridges, and legacy cluster construction consume the same checked composition.
   This checkpoint did not add synchronization classes, LockSet/ClassSet, class
-  ranks, or 2PL. The analysis is now complete in 10.6C; physical 2PL remains 10.6D.
+  ranks, or 2PL. Analysis followed in 10.6C and physical 2PL in 10.6D.
   Validation: strict C++17 `-O2 -Werror` build, full `make check`, `make examples`
   (generated Rust `-D warnings`), focused handle-closure/module regressions,
   Emacs warnings-as-errors byte compilation and 19 ERT tests, shell syntax, and
@@ -206,8 +292,8 @@ and tests were untouched. `git diff --check` passed for this correction.
   graph-relative analysis over exact specializations. It derives leaf
   READ/WRITE/CONSUME observations, X*, ProtectedRead, LockSets, equal-signature
   classes, local class ranks, ClassSets, and conflict witnesses. JSON and human
-  dumps read this stored plan. Physical class locks and handler-level 2PL are
-  unimplemented and remain Phase 10.6D.
+  dumps read this stored plan. Phase 10.6D adds physical class locks and
+  handler-level 2PL without replacing the analysis.
 
 ## Approved semantics
 
@@ -217,8 +303,8 @@ and tests were untouched. `git diff --check` passed for this correction.
   capabilities and cannot be sent as payloads or used as ordinary values.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Ordinary function parameter READ/WRITE/CONSUME effects are inferred. Primitive
-  parameter assignment may be caller-visible WRITE; the physical lowering gap
-  is recorded above for 10.6D. No `var`, `mut`, `write`, or `inout` modifier is
+  parameter assignment may be caller-visible WRITE; 10.6D implements physical
+  write-through. No `var`, `mut`, `write`, or `inout` modifier is
   planned for parameter mutation.
 - Immutable sharing, arenas, `ref object` identity, and persistent `revise` versions are deferred because retention and leak behavior is unresolved.
 - Moss `Int` is currently signed 64-bit two's-complement. Overflowing integer
@@ -394,40 +480,25 @@ and tests were untouched. `git diff --check` passed for this correction.
   constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
 - Direct composition-prefix domain construction and `domainroutes(...)` implement
-  the static concrete graph. The legacy mailbox backend uses one OS thread and
-  serialized lock-backed adapter per unclustered domain where selected; this is
-  backend compatibility machinery, not a language serialization requirement.
-- Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
-- `--cluster=A,B` static placement for single-instance domain types, with one shared worker and ingress mailbox per cluster.
-- Statically selected `_shared` cross-thread calls and `_local` same-cluster calls.
-  Cluster-member capabilities use zero-sized local reference types. Historical
-  local-await dispatch and one-way queue helpers remain legacy backend machinery;
-  active source messages are synchronous.
-- `-Oshared-memory` / `-O` builds an explicit whole-program plan with `Mailbox`,
-  `DirectMutex`, `DirectRwLock`, `DirectAtomic`, and `ClusterLocal` domain
-  classifications plus separate batched-send and coalesced-lock region facts.
-- The former asynchronous send-batching plan is disabled for active synchronous
-  `message`; legacy queue helpers remain only as backend compatibility machinery.
-- Direct lock-backed handlers have separate `_locked` implementations and `_shared`
-  wrappers. Message execution is synchronous; the former await-based coalescing proof
-  remains legacy backend code and is not part of active source semantics.
-- Direct domains with useful pure state readers use `Arc<RwLock<State>>`; READ handlers
-  use shared guards, while WRITE handlers use exclusive guards. External effects,
-  uncertain analysis, stateless handlers, and effectively write-only domains retain
-  `Mutex`.
-- Entirely compatible integer/boolean domains lower to `AtomicI64`/`AtomicBool` with
-  `Ordering::SeqCst`. Loads, stores, add/subtract, boolean toggle, and scalar swap are
-  supported. Both statement and expression-valued synchronous messages execute directly, and a fully atomic
-  program emits no mailbox, condition variable, mutex, or worker thread.
+  the static concrete graph. Production handles share per-instance class storage;
+  all active modes use the synchronized handler entry described above.
+- Historical mailbox `Mutex<VecDeque<_>>`/`Condvar` transport, shared cluster workers,
+  `_local` dispatch, coarse `Arc<Mutex<State>>`/`Arc<RwLock<State>>`, batching,
+  coalescing, and whole-domain atomics remain dormant source implementations for
+  10.6E cleanup. These do not determine current physical synchronization.
+- `-Oshared-memory`, `-O`, and `-O0` select `Handler2PL` for domains. Functional
+  optimization still respects the selected optimization level. Legacy cluster
+  options are validated but do not merge domains or bypass class acquisition.
+- `_shared` wrappers retain planned reader/writer guards around private `_body`
+  implementations. Rust checks Send/Sync legality; no unsafe storage access is used.
 - Ordinary integer `+`, `-`, `*`, `/`, integer `sum`, and generated state-update
-  equivalents lower through explicit `i64` wrapping operations. Atomic fetch-add/
-  fetch-sub reply reconstruction uses the same rule, keeping optimized execution
-  equivalent to the mailbox reference at `i64::MIN` and `i64::MAX`.
+  equivalents lower through explicit `i64` wrapping operations. Historical atomic
+  fetch-add/fetch-sub implementations retain the same rule but are dormant.
 - Synchronous expression/statement messages, typed/inferred reply handlers, terminating
   `reply value`, and explicit normal handler completion for no-value handlers.
 - Domain-owned mutable state, synchronous handler invocation, local `let`/`var`,
   control flow, `echo`, and bare `return`. Legacy total-domain serialization is
-  an existing backend behavior; physical handler-level 2PL remains 10.6D work.
+  superseded by 10.6D's exact handler-level class acquisition.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
 - One indentation-aware type-environment walker now serves ordinary statement checking,
   domain-reference inference, local-call discovery, and legacy await-target resolution. It
@@ -485,18 +556,17 @@ and tests were untouched. `git diff --check` passed for this correction.
   Self-send and same-domain handler chaining are rejected; queued self-communication
   is not an active language feature.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
-- Backend choices use deliberately small whole-program heuristics rather than profiles
-  or a cost model. `-O0` retains the unoptimized lock-backed mailbox adapter with
-  synchronous message completion.
+- Production synchronization consumes the stored plan at every optimization level;
+  old backend synchronization heuristics are dormant. Physical READ snapshots are
+  conservative and can allocate; storage/layout profitability remains future work.
 - Legacy cluster configuration is type-wide and requires a single concrete instance
   per member type, now obtained from the checked static composition.
 - The closed concrete route DAG and deterministic domain ranks are complete.
-  `SynchronizationPlan` supplies class ranks and handler ClassSets; production
-  physical class locking and handler-level 2PL are unimplemented (10.6D).
+  `SynchronizationPlan` supplies class ranks and handler ClassSets; 10.6D consumes
+  them for production physical class locking and handler-level 2PL.
 - Fast Debug domain execution and legacy runtime removal remain later work.
-- Primitive ordinary-parameter WRITE lowering remains incorrect where generated
-  execution passes the argument by value; resolving this is a 10.6D backend task,
-  not a reason to weaken the existing semantic effects.
+- Primitive ordinary-parameter WRITE lowering is fixed in 10.6D; the existing
+  semantic effects remain authoritative.
 - Functional collection ownership is intentionally conservative. A callback that would
   WRITE or CONSUME a nontrivial element, a mutable capture, or a nontrivial `filter`
   result that would require an implicit copy is rejected rather than cloned or made
@@ -516,8 +586,8 @@ and tests were untouched. `git diff --check` passed for this correction.
   retained batch helpers do not define current language behavior.
 - Historical lock coalescing was limited to adjacent awaits in `main` and a strict
   single-spawn/no-escape/no-other-caller proof. This legacy backend mechanism is
-  not the planned production handler-level 2PL implementation.
-- Atomic lowering intentionally excludes floats, CAS loops, arbitrary expressions,
+  not the active production handler-level 2PL implementation.
+- Historical atomic lowering (now dormant) excludes floats, CAS loops, arbitrary expressions,
   multi-action handlers, and cross-field invariants. One incompatible handler falls
   the entire domain back to a coherent lock/mailbox representation; there is no hybrid
   atomic/mailbox domain.
@@ -531,10 +601,9 @@ and tests were untouched. `git diff --check` passed for this correction.
 - Source `await` and `spawn` are retired; domain construction is restricted to the
   initial `main` composition prefix. Cancellation, timeouts, and failure propagation
   remain unimplemented.
-- The legacy direct-shared backend can retain its whole-state lock during a nested
-  synchronous call to a mailbox-backed domain, increasing lock-hold latency.
-  This describes existing physical lowering, not a current language requirement
-  for total domain serialization. Production class locking remains 10.6D work.
+- Parent class guards remain held across nested synchronous messages, intentionally
+  increasing lock-hold latency and possible head-of-line blocking. Fairness is
+  unspecified; early unlock and lock elision remain future work.
 - Most compiler implementation remains in one C++17 translation unit with a deliberately
   compact semantic/type checker and extracted data headers.
 
@@ -543,8 +612,9 @@ and tests were untouched. `git diff --check` passed for this correction.
 The following records describe tests at their original checkpoints. References to
 spawn, await, one-way messages, passable handles, FIFO, and serialization are
 historical coverage, not current source semantics or a claim that those fixtures
-remain unchanged. The checked-in 10.6C validation and this documentation-only
-preflight are recorded separately above; these older suites were not rerun here.
+remain unchanged. Current validation and the historical documentation-only
+preflight are recorded separately above. Legacy physical-code expectations have
+been replaced with plan-driven expectations while executable behavior stays covered.
 
 `make check` passes with Phase 4.6 on the frozen Phase 2.5 foundation. The suite compiles ordinary,
 Mutex/RwLock/atomic optimized, batched, coalesced, and clustered Rust with
@@ -674,21 +744,21 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phases 10.6A, 10.6B, 10.6B.1, and 10.6C are complete. This preflight authorizes
-documentation/status changes only; the following implementation work remains pending.
+Phases 10.6A–D are complete; the final 10.6D validation is recorded above.
+Phase 10 as a whole is not complete.
 
-1. Phase 10.6D: consume the existing `SynchronizationPlan` for physical class
-   storage, shared/exclusive acquisition, and handler-level 2PL, including nested
-   synchronous messages. Resolve ordinary primitive parameter write-through so
-   generated execution implements the existing inferred WRITE semantics.
-2. Later work: Fast Debug domain execution and removal of legacy runtime machinery.
-3. Other deferred work: package/dependency resolution, explicit `deepCopy()`,
+1. Review the completed 10.6D working-tree changes.
+2. Phase 10.6E: Fast Debug domain execution and removal of dormant legacy runtime
+   and synchronization implementations. No new 10.6E blocker was discovered;
+   the pre-existing provider-internal generic linkage limitation remains separate.
+3. Phase 10.6F and other deferred work: quantitative layout/storage tuning,
+   package/dependency resolution, explicit `deepCopy()`,
    future reference facilities, and optimizer profitability/parallelism. Explicit
    modules/imports already exist in Phase 8.
 
 Do not modify the 10.6C synchronization-analysis algorithms unless a failing
 regression demonstrates an actual defect. No language-design changes are
-authorized by this preflight.
+authorized by the 10.6D backend scope.
 
 ## Open design questions requiring Kutty's decision
 
@@ -767,7 +837,7 @@ handles, and synchronous calls are described above.
   serialization were treated as the language model. Phase 10.6A establishes
   synchronous `message` and terminating `reply`. Phases 10.6B–C add the closed
   concrete graph and compiler-owned synchronization analysis; physical
-  handler-level 2PL remains 10.6D work.
+  handler-level 2PL is implemented in 10.6D.
 - The lightweight checker is extended only for direct, statically recognizable transfer cases in this increment.
 
 ### Tests actually executed
@@ -905,5 +975,5 @@ by the resolved decisions in Phases 10.6A–C:
 10.6A/B/B.1 settled synchronous calls, self-send/chaining rejection, closed handles,
 and concrete domain ranks; 10.6C implements synchronization analysis and semantic
 effect metadata. Existing ordinary parameter WRITE effects remain authoritative.
-Physical handler-level 2PL and primitive write-through correctness remain 10.6D;
+Phase 10.6D implements physical handler-level 2PL and primitive write-through;
 Fast Debug domain execution and legacy runtime removal remain later work.

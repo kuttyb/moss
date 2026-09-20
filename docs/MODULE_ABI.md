@@ -4,7 +4,7 @@ Domain route declarations are structural metadata. Domain handles are not ABI
 payload values: they cannot be ordinary or handler parameters, reply results,
 state data, or aggregate elements. `.mossi` retains declared route slots and
 nominal target domains; composition binds concrete instances and their exact
-specializations in the final application. Final `domain_rank` and future
+specializations in the final application. Final `domain_rank` and
 synchronization-class facts are not module ABI properties.
 
 The interface now includes `construction_state` records (member name, type,
@@ -100,3 +100,10 @@ They preserve formal READ/WRITE/CONSUME paths for substitution onto a caller's
 state even when only the helper's compiled interface remains. Missing helper
 records also require rebuilding the provider; an absent body is not proof of
 an empty effect. These records participate in the semantic interface hash.
+
+Phase 10.6D uses native ABI version 2 for inferred primitive WRITE references and
+plan-driven domain constructors. Old providers must be rebuilt. This native
+compatibility marker carries no synchronization-class ABI: the final application
+supplies its compiler-derived descriptor at construction, including for source-free
+providers. `.mossi` continues to export semantic handler/formal leaf effects only;
+class IDs, ranks, ClassSets, and lock storage are not serialized as provider ABI.

@@ -1,0 +1,63 @@
+fn increment(value: Int):
+  value = value + 1
+
+type Pair:
+  x: Int
+  y: Int
+
+domain Store:
+  left: Int
+  right: Int
+  pair: Pair
+  fixed: Int
+  fn Left():
+    increment(left)
+  fn LeftAgain():
+    increment(left)
+  fn Right():
+    increment(right)
+  fn ReadLeft() -> Int:
+    reply left
+  fn ReadLeftAgain() -> Int:
+    reply left
+  fn Fixed() -> Int:
+    reply fixed
+  fn Both() -> Int:
+    increment(right)
+    increment(left)
+    reply left + right
+  fn Pair() -> Int:
+    pair.y = pair.y + 1
+    pair.x = pair.x + 1
+    reply pair.x + pair.y
+  fn ReadPair() -> Int:
+    reply pair.x + pair.y
+
+fn rewrite_pair(value: Pair):
+  value.y = value.y + 1
+  value.x = value.x + 1
+
+domain Split:
+  value: Pair
+  fn X():
+    value.x = value.x + 1
+  fn Y():
+    value.y = value.y + 1
+  fn Both():
+    rewrite_pair(value)
+  fn Read() -> Pair:
+    reply value
+
+domain Other:
+  fn Empty():
+    echo "unused"
+
+fn main():
+  other = Other()
+  split = Split(value: Pair(x: 0, y: 0))
+  store = Store(left: 0, right: 0, pair: Pair(x: 0, y: 0), fixed: 7)
+  local = 10
+  increment(local)
+  message store.Left()
+  message store.Right()
+  echo local, message store.ReadLeft(), message store.Both(), message store.Pair(), message store.Fixed()

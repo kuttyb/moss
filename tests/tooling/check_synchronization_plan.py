@@ -23,7 +23,7 @@ def inspect(source, cwd=None):
     assert raw == invoke(*args, cwd=cwd).stdout
     result = json.loads(raw)["result"]
     plan = result["synchronization_plan"]
-    assert plan["physical_lowering"] == "unchanged"
+    assert plan["physical_lowering"] == "handler_2pl"
     assert result["synchronization_dump"].startswith("SynchronizationPlan " + plan["graph_identity"])
     domains = plan["domains"]
     assert len({d["domain_rank"] for d in domains}) == len(domains)

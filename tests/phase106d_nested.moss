@@ -1,0 +1,30 @@
+domain Leaf:
+  value: Int
+  fn Work() -> Int:
+    value = value + 1
+    reply value
+
+domain Branch:
+  domainroutes(child: Leaf)
+  value: Int
+  fn Work() -> Int:
+    value = value + 1
+    result = message child.Work()
+    reply value + result
+
+domain Root:
+  domainroutes(branch: Branch, sibling: Leaf)
+  value: Int
+  fn Work() -> Int:
+    value = value + 1
+    higher = message sibling.Work()
+    lower = message branch.Work()
+    reply value + higher + lower
+
+fn main():
+  root = Root(branch: branch, sibling: sibling, value: 0)
+  branch = Branch(child: child, value: 0)
+  child = Leaf(value: 0)
+  sibling = Leaf(value: 0)
+  echo message root.Work()
+  echo message root.Work()

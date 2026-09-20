@@ -1,0 +1,36 @@
+type Left:
+  a: Int
+  b: Int
+  fn step():
+    a = a + 1
+  fn fresh() -> Left:
+    return Left(a: a, b: b)
+  fn total() -> Int:
+    return a + b
+
+type Right:
+  c: Int
+  fn step():
+    c = c + 2
+  fn fresh() -> Right:
+    return Right(c: c)
+  fn total() -> Int:
+    return c
+
+domain Box:
+  value
+  fn Set(input):
+    value = input.fresh()
+  fn Update():
+    value.step()
+  fn Read() -> Int:
+    reply value.total()
+
+fn main():
+  left = Box()
+  right = Box()
+  message left.Set(Left(a: 3, b: 7))
+  message right.Set(Right(c: 20))
+  message left.Update()
+  message right.Update()
+  echo message left.Read(), message right.Read()
