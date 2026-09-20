@@ -1623,6 +1623,8 @@ reject_case phase106b_route_cycle \
   "concrete domain route cycle detected"
 reject_case phase106b_impure_state_initializer \
   "domain state initializers must be side-effect-free"
+reject_case phase106b_route_reassign \
+  "domain route 'worker' is immutable"
 reject_case await_one_way "await is retired: message is synchronous"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
 reject_case await_unknown_receiver "await is retired: message is synchronous"

@@ -1,0 +1,14 @@
+domain Worker:
+  fn Run():
+    echo "run"
+
+domain Router:
+  domainroutes(worker: Worker)
+
+  fn Reset(other: Worker):
+    worker = other
+
+proc main():
+  worker = Worker()
+  router = Router(worker: worker)
+  message router.Reset(worker)

@@ -7361,6 +7361,13 @@ class Checker {
         if (legacy_spawn_expression(statement.b))
           err(statement.line,
               "'spawn' is retired: construct domain instances directly in the main composition prefix");
+        if (current &&
+            std::any_of(current->routes.begin(), current->routes.end(),
+                        [&](const DomainRoute& route) {
+                          return route.name == statement.a;
+                        }))
+          err(statement.line, "domain route '" + statement.a +
+              "' is immutable; bind routes in main's domain construction prefix");
         if (auto spawned = domain_constructor(statement.b)) {
           if (!domains_.count(*spawned))
             err(statement.line, "unknown domain in spawn: " + *spawned);
