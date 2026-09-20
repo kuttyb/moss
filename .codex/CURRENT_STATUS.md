@@ -2,11 +2,18 @@
 
 Updated: 2026-09-20
 
-## Phase 10.6E complete — staged for review
+## Phase 10.6E complete — checked in as `7b335d1`
 
-Base/current HEAD: `e70943c`. Phase 10.6D is checked in as `9f49e64` and
-10.6D.1 as `b3f8a64`; neither is uncommitted work. Phase 10.6E is implemented,
-validated, and staged atop that base, not yet committed.
+Phase 10.6E is checked in as `7b335d1`, atop `e70943c`. Phase 10.6D is checked
+in as `9f49e64` and 10.6D.1 as `b3f8a64`. All three phases are implemented,
+validated, and committed.
+
+Documentation-only closeout correction: README now explicitly names the single
+SynchronizationPlan-driven Handler2PL backend across `-O0`, `-O`, and
+`-Oshared-memory`, removes stale serialized-handler/atomic-handler wording, and
+describes directly interpreted synchronous domains/messages/replies. The requested
+README terminology audit and `git diff --check` pass. No compiler, runtime, or
+test files changed; the implementation validation recorded below is unchanged.
 
 Production now has one domain implementation: direct synchronous calls through
 plan-driven handler entries, using the unchanged safe-Rust class runtime and
@@ -256,7 +263,7 @@ The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
 | 10.6C | Complete: compiler-owned `SynchronizationPlan`, including leaf effects, classes, ranks, handler sets, conflicts, and introspection. |
 | 10.6D | Complete at `9f49e64`: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
 | 10.6D.1 | Complete at `b3f8a64`, atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
-| 10.6E | Complete and validated in the staged change: legacy runtime retired; deterministic Fast Debug domains supported. |
+| 10.6E | Complete and validated at `7b335d1`: legacy runtime retired; deterministic Fast Debug domains supported. |
 | 10.6F | Diagnostics, layout, and quantitative performance validation remain future work. |
 
 Current language semantics are synchronous domain calls over the closed concrete
@@ -884,15 +891,14 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phases 10.6A–D.1 are checked in. Phase 10.6E is complete, validated, and staged
-for review as recorded above. Phase 10 as a whole is not complete.
+Phases 10.6A–E are checked in; the validated 10.6E commit is `7b335d1`.
+Phase 10 as a whole is not complete.
 
-1. Review and commit the validated Phase 10.6E change.
-2. Phase 10.6F: measure class storage/accessor code size, descriptor/slot overhead,
+1. Phase 10.6F: measure class storage/accessor code size, descriptor/slot overhead,
    explicit-boundary copies, uncontended handler cost, contention, and nested-call
    hold times; improve diagnostics and evaluate layout using those measurements.
    No lock elision, early unlock, atomics, or clustering is introduced by 10.6E.
-3. Separate later work includes interpreter `for`/functional coverage, the existing
+2. Separate later work includes interpreter `for`/functional coverage, the existing
    provider-internal generic linkage limitation, package resolution, `deepCopy()`,
    future lexical domain scopes/concurrency ingress, and Phase 12 supervision.
 

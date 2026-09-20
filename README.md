@@ -8,7 +8,7 @@ synchronous `message`. Handles cannot be payloads, replies, ordinary parameters,
 or stored/aliased values. See [domain syntax](docs/LANGUAGE_SYNTAX.md#closed-routing-capabilities-phase-106b1)
 and [topology introspection](docs/AGENT_API.md#closed-concrete-domain-topology).
 
-Production domains use one compiler-derived handler-level 2PL backend with
+Production domains use one `SynchronizationPlan`-driven `Handler2PL` backend with
 borrowed protected READs. Fast Debug executes the same checked synchronous
 domain semantics directly, without locks or scheduling. Retired runtime
 implementations were removed in Phase 10.6E.
@@ -162,7 +162,7 @@ checks or focused semantic queries:
 See [the agent semantic API](docs/AGENT_API.md) for selectors, diagnostic codes, and the
 minimal recommended `AGENTS.md` onboarding snippet.
 
-Compile every valid top-level example with the shared-memory optimization using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped. Additional diagnostic examples live under `examples/errors` and are not part of this build target.
+Compile every valid top-level example with functional optimizations enabled using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped. Additional diagnostic examples live under `examples/errors` and are not part of this build target.
 
 ## What Moss looks like
 
@@ -311,7 +311,7 @@ semantic and compiler contract.
 
 Additional examples:
 
-- `examples/counter.moss` demonstrates serialized state updates.
+- `examples/counter.moss` demonstrates synchronous calls and protected state updates.
 - `examples/shared_memory.moss` shows synchronous Moss calls through plan-driven handler entry.
 - `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
@@ -355,11 +355,10 @@ arithmetic has explicit wrapping semantics: overflow is reduced modulo
 equivalents all wrap. Integer division also wraps its sole signed-overflow case
 (`Int` minimum divided by `-1`); division by zero remains invalid. Generated
 Rust uses explicit wrapping operations, so Rust debug/release overflow settings
-cannot change Moss results. Atomic add/sub handlers use the same rule when
-deriving a returned new value.
+cannot change Moss results.
 
 - Domain-owned mutable state
-- Serialized, run-to-completion domain handlers
+- Synchronous, run-to-completion domain handlers with planned shared/exclusive class locking
 - Cross-domain synchronous `message domain.Handler(...)` calls
 - `message domain.Handler(...)` expression and statement syntax
 - Request/reply handlers with inferred or optional `-> Type` reply annotations
@@ -471,15 +470,18 @@ restored before unlock. Nested calls retain ancestor guards and obey the global
 See [synchronization architecture](docs/SYNCHRONIZATION_PLAN.md) for the structural
 deadlock proof and domain-local conflict-serializability scope.
 
-`-O` (also spelled `-Oshared-memory`) controls functional rewrites and fusion.
-Every optimization level uses the same domain runtime. The retired `--cluster`
-and `--no-await-error-handling` options are removed. Generated ordinary domain
-calls contain no queue, completion channel, worker loop, or future.
+`-O0`, `-O`, and `-Oshared-memory` share the same domain runtime semantics and
+`SynchronizationPlan`-driven `Handler2PL` backend. `-O` and `-Oshared-memory`
+enable functional rewrites and fusion; `-O0` uses eager functional lowering.
+Generated ordinary domain calls contain no queue, completion channel, worker
+loop, or future. Historical/superseded backend options `--cluster` and
+`--no-await-error-handling` were removed in Phase 10.6E.
 
 Future lexical domain scopes and concurrency ingress remain separate design
 work. No fairness guarantee, transaction spanning domains, or recovery semantics
-is implied. Early unlock, lock elision, atomic promotion, and compiler-proven
-clustering remain future optimizations.
+is implied. Early unlock, lock elision, and atomic promotion remain future
+optimizations. The historical domain-cluster backend is removed; any future
+domain grouping would require a separate compiler correctness proof.
 
 ## Important status
 
@@ -500,10 +502,11 @@ moss test --interp tests/fast_debug.moss
 moss debug app
 ```
 
-Use `--trace` for newline-delimited structured execution events. The initial
+Use `--trace` for newline-delimited structured execution events. The
 interpreter supports ordinary functions, arithmetic, locals, conditionals,
 while loops, structs, methods, assertions, and synchronous domains with static
-routes and nested message/reply execution; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
+routes, directly interpreted synchronous messages, and terminating replies,
+including nested calls; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
 `moss debug` interprets the complete reachable Moss source closure (or the
 legacy project uber-module) as one checked program; it never mixes a native
 Moss module into that run.
