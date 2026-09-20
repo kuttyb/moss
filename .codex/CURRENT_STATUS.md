@@ -4,7 +4,8 @@ Updated: 2026-09-20
 
 ## Phase 10.6D.1 complete — borrowed protected READs
 
-The 10.6D baseline is checked in as `9f49e64`. The working tree replaces
+The 10.6D baseline is checked in as `9f49e64`. Phase 10.6D.1, checked in as
+`b3f8a64`, replaces
 handler-entry READ snapshots with frame-bounded borrows and generated typed object
 views. `MossHandlerFrame::read` returns a reference backed by retained class guards,
 or directly by immutable runtime storage. `V: Clone` and physical leaf-enum Clone
@@ -182,7 +183,7 @@ The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
 | 10.6B.1 | Complete: closed domain-handle universe and exact concrete `DomainSpecialization` linkage. |
 | 10.6C | Complete: compiler-owned `SynchronizationPlan`, including leaf effects, classes, ranks, handler sets, conflicts, and introspection. |
 | 10.6D | Complete at `9f49e64`: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
-| 10.6D.1 | Complete in the working tree atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
+| 10.6D.1 | Complete at `b3f8a64`, atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
 | Later work | Fast Debug domain execution and legacy runtime removal remain unimplemented. |
 
 Current language semantics are synchronous domain calls over the closed concrete
