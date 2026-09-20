@@ -174,14 +174,14 @@ The showcase programs are executable syntax guides:
 - [static functional callables](examples/functional_static_callables.moss) uses bound methods, method placeholders, and a higher-order helper specialized to two functions.
 - [functional effect order](examples/functional_effect_order.moss) makes eager stage ordering and an effectful reduction initializer observable.
 - [functional objects](examples/functional_objects.moss) runs statically resolved read-only methods and trivial field projections over user-defined values.
-- [functional domains](examples/functional_domains.moss) shows an explicit `await` inside a callback acting as a fusion barrier, followed by a scalar message boundary.
+- [functional domains](examples/functional_domains.moss) shows a synchronous `message` inside a callback acting as a fusion barrier, followed by a scalar message boundary.
 - [functional terminal optimization](examples/functional_terminal_optimization.moss) shows count-to-length, dead pure-map removal, and safe `any`/`all` short-circuiting.
 - [functional scope fusion](examples/functional_scope_fusion.moss) keeps a source-level immutable binding while removing its physical intermediate collection.
 - [functional shared traversal](examples/functional_shared_traversal.moss) gives three independent terminals one stable-source traversal.
 - [functional materialization](examples/functional_materialization.moss) shows a second consumer forcing a collection to exist before its terminal traversal is shared.
 - [functional semantic optimization](examples/functional_semantic_optimization.moss) shows map/filter composition, a virtual named intermediate, dead-map removal, known-size count, and safe short circuiting.
-- [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, domains, messages, awaits, and a pipeline.
-- [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit await/reply copy boundaries.
+- [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, synchronous domains, messages, and a pipeline.
+- [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit message/reply copy boundaries.
 - [Phase 7 project](examples/projects/phase7_demo) demonstrates a manifest, debug/release builds, in-source and external tests, filtered benchmarks, and baselines.
 - [failing Phase 7 test](examples/projects/phase7_failing_test) demonstrates Moss-level assertion details and continued test reporting.
 
@@ -245,7 +245,7 @@ runtime callable lookup.
 
 `-O` fuses a chain only when its inferred observable effects make element-at-a-time
 execution equivalent to the eager reference. I/O, local mutation, domain observation
-or mutation, `message`, `await`, unresolved effects, and possible failure ordering are
+or mutation, `message`, unresolved effects, and possible failure ordering are
 barriers. A missed fusion is valid; a speculative reordering is not. Fused reductions
 use Moss's wrapping integer arithmetic and allocate no intermediate vector.
 
@@ -305,15 +305,15 @@ semantic and compiler contract.
 Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
-- `examples/shared_memory.moss` shows ordinary Moss messages and awaits selecting mailbox or whole-domain atomic implementations without changing the source.
-- `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, explicit messages, and assignment-await syntax.
+- `examples/shared_memory.moss` shows ordinary synchronous Moss messages selecting mailbox or whole-domain atomic implementations without changing the source.
+- `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
 The intentional programs under `examples/errors` showcase Phase 2 diagnostics rather
 than Rust backend failures:
 
-- [global await cycle](examples/errors/await_cycle.moss) hides one dependency behind an ordinary function call and an unreachable runtime branch.
+- [historical await-cycle diagnostic](examples/errors/await_cycle.moss) records the retired pre-10.6A model.
 - [recursive local call](examples/errors/recursive_call.moss) has a base case but is rejected because Phase 2 has no recursion.
 - [conflicting call access](examples/errors/conflicting_access.moss) passes one binding as both WRITE and READ; two READ uses remain legal in `phase2_safety.moss`.
 
@@ -353,12 +353,12 @@ deriving a returned new value.
 
 - Domain-owned mutable state
 - Serialized, run-to-completion domain handlers
-- Cross-domain asynchronous message sends
-- Explicit `message domain.Handler(...)` syntax for asynchronous sends
+- Cross-domain synchronous `message domain.Handler(...)` calls
+- `message domain.Handler(...)` expression and statement syntax
 - Request/reply handlers with inferred or optional `-> Type` reply annotations
 - Domain state with inferred `name = initializer` bindings and optional `name: Type` constraints
 - `reply value`, which sends one response and terminates the current handler
-- `value = await domain.Message(...)`, plus compatible `let`/`var` await declarations
+- terminating `reply value` handlers; source-level `await` is retired
 - Inferred top-level `fn` functions, expression-bodied functions, and typed functional pipeline expressions
 - Eager ordered `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and `all`
 - Static named/placeholder callables, immutable captures, and specialized higher-order helpers
@@ -377,7 +377,7 @@ deriving a returned new value.
 - Nim-style `and`, `or`, `not`, `true`, and `false`
 - `int`, `float`, `bool`, `string`, `seq`, `option`, and `table` lowering
 
-## Await and reply
+## Synchronous domain messages and reply
 
 A handler without `-> Type` is inferred as one-way when it has no `reply`. If it contains
 typed `reply` expressions, Moss infers their common reply type. An explicit `-> Type`
@@ -404,14 +404,17 @@ Named object constructors use `=` for value bindings:
 Quote(symbol = "MOSS", price = 12.5)
 ```
 
-For v0.2, `await` is supported as the complete right-hand side of an assignment:
+`message receiver.Handler(args)` is a synchronous, blocking domain invocation. It may
+be used as an expression or statement; statement position discards the result. The
+caller continues only after the handler has completed:
 
 ```moss
-reserved = await inventory.Reserve(quantity)
+reserved = message inventory.Reserve(quantity)
+message logger.Record(reserved)
 ```
 
-The `let reserved = await ...` and `var reserved = await ...` forms remain compatible.
-`await` is a Moss domain request/reply operation, not general coroutine syntax.
+Source-level `await` is retired. Replace `value = await receiver.Handler(...)` with
+`value = message receiver.Handler(...)`; the compiler reports this migration directly.
 
 Ordinary local functions use `fn` and can omit types when inference is unambiguous:
 
@@ -422,15 +425,20 @@ fn score(x):
   x |> square
 ```
 
-`message` and `await` are required at domain boundaries. A naked `domain.Handler(...)`
-call is rejected by the compiler; a call without a domain receiver remains an ordinary
-local function call.
+`message` is required at domain boundaries. A naked `domain.Handler(...)` call is
+rejected by the compiler; a call without a domain receiver remains an ordinary local
+function call. Self-send and same-domain handler chaining are illegal; put reusable
+logic in an ordinary helper function.
 
-Reply handlers may also be called without `await`; the message is sent normally and its reply is ignored. If an awaited handler reaches its end without executing `reply`, the awaiting code fails with a clear runtime error.
+`reply expr` evaluates `expr` and terminates the handler immediately, like a handler
+return. A value-returning handler must reply on every normal path; a no-value handler
+may complete normally. Incoming payloads are immutable snapshots: handlers may read or
+forward them and may reply with the incoming value by value, but may not mutate,
+consume, reassign, or move them into state. `Copy` does not weaken this rule.
 
-`--no-await-error-handling` omits the generated per-await `unwrap_or_else` diagnostic path and uses unchecked reply extraction instead. This is intended for a future supervision-tree runtime that owns failures; until those guarantees exist, the default await checks should remain enabled.
-
-By default, each constructed domain instance owns one OS thread and a generated lock-backed shared-memory mailbox. An await blocks that domain's thread. The domain remains logically occupied and does not dequeue another message until the awaited reply arrives, so handlers are non-reentrant and queued messages retain sender FIFO. `await self.Message(...)` is rejected because it would necessarily deadlock. This is backend/legacy transport terminology, not a new constructor or worker API.
+The current `spawn` spelling for constructing a domain instance is transitional.
+Mailboxes, queues, workers, and OS threads remain backend implementation details, not
+asynchronous source semantics.
 
 ## Shared-memory message transport
 
@@ -442,33 +450,31 @@ cheapest implementation it can prove equivalent:
 ```
 
 The plan records one domain lowering—`Mailbox`, `DirectMutex`, `DirectRwLock`,
-`DirectAtomic`, or configured `ClusterLocal`—plus separate batched-send and
-coalesced-lock regions. Rust generation executes that plan rather than rediscovering
-optimization patterns. A configured cluster takes precedence, followed by a legal
-whole-domain atomic representation, direct/coalesced shared state, RwLock or Mutex,
-batched mailbox transport, and finally an ordinary mailbox.
+`DirectAtomic`, or configured `ClusterLocal`. Rust generation executes that plan
+rather than rediscovering optimization patterns. A configured cluster takes
+precedence, followed by a legal whole-domain atomic representation, direct shared
+state, RwLock or Mutex, and finally the legacy mailbox adapter.
 
-- Adjacent side-effect-free asynchronous messages to the same receiver use one queue
-  lock and one completion-tracker update. Payload values are still copied at the Moss
-  message boundary and retain source order.
-- Awaited-only domains can use direct shared state. Handler implementation is split
-  from its lock wrapper, and a uniquely owned sequence of awaits in `main` can reuse
-  one guard. If another caller or escaped capability is possible, each operation keeps
-  its own guard.
+- Synchronous messages are not batched: each invocation completes before the next
+  statement. The legacy mailbox adapter still sends a completion acknowledgement when
+  `-O0` selects that physical representation.
+- Synchronous domains can use direct shared state. Handler implementation is split
+  from its lock wrapper, and a direct message call completes before the caller resumes.
 - A state-reading handler with no ordering-sensitive external effect can take a shared
   `RwLock` guard. State writes remain exclusive; write-only or uncertain domains use
   `Mutex`.
 - A domain made entirely of one-action integer or boolean handlers uses `AtomicI64`
   and `AtomicBool` with `SeqCst` ordering. Eligible loads, stores, add/subtract,
-  toggles, and swaps execute directly for both `message` and `await`, so a fully
+  toggles, and swaps execute directly for synchronous `message`, so a fully
   atomic domain has no worker, mailbox, condition variable, or state mutex. One
   ineligible handler makes the whole domain fall back to locking.
 
 These are physical lowering choices only. Domains still logically serialize handlers;
 sender FIFO and serialized handler execution remain intact. This documentation does
 not claim a separate universal commit order beyond those source-visible guarantees;
-`message`, `await`, and `reply` remain semantic copy boundaries, and an awaiting handler
-remains non-reentrant.
+`message` and `reply` remain semantic by-value boundaries, and handlers remain
+non-reentrant. Fine-grained synchronization classes and domain ranks are not implemented
+in this phase.
 No optimization inserts `unsafe` or synchronization syntax into Moss. `-O0` retains
 the ordinary lock-backed mailbox implementation as the semantic reference.
 Boundary regressions compile that reference and the optimized atomic backend with
@@ -480,22 +486,11 @@ for a directly corresponding declaration or statement. `Moss backend plan` recor
 each domain classification, while `Moss backend` marks atomic handlers, shared reads,
 coalesced guards, batched enqueues, and cluster-local calls.
 
-Moss validates every `await` target in handlers, local helpers, and `main`, including
-helpers reached only from `main`. A local domain-reference binding must have one
+Source `await` is retired. A local domain-reference binding must have one
 concrete static domain type after every control-flow join: assigning `Alpha` on one
 branch and `Beta` on another is rejected rather than treated as a union or resolved by
-branch order. Await traversal remains conservative, so an await inside `if false` still
-contributes a dependency.
-
-The compiler then builds a whole-program domain await DAG and rejects every possible
-cycle. Dependencies propagate through ordinary non-recursive local function calls;
-asynchronous `message` sends do not add edges. Cycle diagnostics show the Moss source
-line for each await edge in the witness. Besides preventing logical deadlock under
-serialized, non-reentrant domain semantics, this global acyclicity prevents cyclic
-nested domain-lock acquisition in direct shared-memory lowering. A direct handler can
-currently retain domain A's state lock for the full request/reply latency while it
-awaits a mailbox-backed domain B. That is semantically correct—A remains occupied—but
-is a future lock-hold-latency optimization opportunity. Cancellation, timeouts, and
+branch order. The former await DAG is retained only as legacy backend/tooling metadata;
+new synchronous messages do not create await dependencies. Cancellation, timeouts, and
 failure propagation are not implemented.
 
 ## Domain clustering
@@ -508,9 +503,13 @@ Backend cluster configuration groups domain types onto one worker without adding
 
 Each clustered type must currently be constructed exactly once and unconditionally in `main`. The generated runtime call creates one worker and one lock-backed ingress mailbox for the group. External calls use the shared-memory `_shared` implementation. Calls between cluster members are statically emitted as `_local` calls, and member capabilities become zero-sized local references, so there is no runtime placement check or shared-handle clone on that path.
 
-Awaited local messages invoke the target handler directly. One-way local messages enter a plain single-threaded `VecDeque` and run after the current handler, retaining Moss's asynchronous and non-reentrant behavior without locks, atomics, or condition variables on the local path. If a local await follows an older queued message to the same target, the generated runtime drains that older work before making the direct call to preserve FIFO.
+Cluster-local messages invoke the target handler directly and synchronously. The
+legacy local queue remains only as backend compatibility machinery; it is not a
+source-level operation.
 
-Await-cycle rejection is a language rule applied before backend placement, so the same source is rejected with or without `--cluster`. Cluster planning does not define a separate or weaker cycle policy.
+Historical await-cycle fixtures are rejected before backend placement; active
+synchronous messages do not participate in an await graph. Cluster planning does
+not define a separate or weaker policy.
 
 ## Important status
 
@@ -518,7 +517,7 @@ This is an early v0.2 prototype, not the compiler for the complete language we s
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
-Messages, awaits, and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read or forward them, but may not mutate, consume, reassign, move them into state, or reply with the original payload. The compiler emits an owned clone for mailbox transport; a proven synchronous shared-memory call may pass a temporary immutable reference instead. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability or the no-original-reply rule. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
+Messages and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read, forward, or reply with them by value, but may not mutate, consume, reassign, or move them into state. The compiler emits an owned clone for mailbox transport; a proven synchronous shared-memory call may pass a temporary immutable reference instead. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 
 ## Fast Debug execution
 
@@ -533,7 +532,7 @@ moss debug app
 
 Use `--trace` for newline-delimited structured execution events. The initial
 interpreter supports ordinary functions, arithmetic, locals, conditionals,
-loops, structs, methods, and assertions. Domain/message/await execution remains
+loops, structs, methods, and assertions. Domain/message execution remains
 on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
 `moss debug` interprets the complete reachable Moss source closure (or the
 legacy project uber-module) as one checked program; it never mixes a native

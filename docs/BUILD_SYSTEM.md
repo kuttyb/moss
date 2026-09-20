@@ -429,6 +429,7 @@ by the desired build is the supported recovery. Do not repair the generated
 Explicit modules are checked as logical units and composed in import-DAG order.
 The Rust backend remains the materialized-code boundary; Moss does not persist
 rustc MIR. Builds emit versioned `.mossi` semantic interfaces containing public
-signatures, ownership/effect/await contracts, and generic semantic artifacts.
+signatures, ownership/effect contracts, legacy await metadata where present, and
+generic semantic artifacts.
 Optimization and the Rust toolchain fingerprint affect native artifact caches,
 not semantic module identity.

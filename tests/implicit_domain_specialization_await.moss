@@ -7,15 +7,8 @@ domain Worker:
   fn Set(x):
     payload = normalize(x)
 
-  fn Ping(other: Worker):
-    ignored = message other.Pong()
-
-  fn Pong() -> int:
-    reply 1
-
 fn main():
   intWorker = spawn Worker()
   floatWorker = spawn Worker()
   message intWorker.Set(10)
   message floatWorker.Set(3.5)
-  message intWorker.Ping(floatWorker)

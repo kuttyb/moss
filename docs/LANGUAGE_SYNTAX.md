@@ -132,7 +132,7 @@ intra-domain call. It has no mailbox, request/reply, or domain scheduling meanin
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
 a compatibility spelling while existing programs migrate. Domain message handlers keep
 their serialized handler semantics. Both `on Handler(...)` and `fn Handler(...)` inside a
-`domain` declare message handlers; the `message` or `await` keyword at each call site
+`domain` declarations contain message handlers; the `message` keyword at each call site
 still makes the domain boundary explicit. A top-level `fn` declares an ordinary local
 function. Domain and handler headers may carry a trailing `:` when using indentation
 oriented formatting. Handler parameter types, like local function parameters, may be
@@ -221,7 +221,7 @@ runtime lookup. General lambdas and dynamically escaping callable values are not
 this source surface.
 
 Pipeline values are compiler structure, not lazy runtime iterators. A transformation
-pipeline whose result is still a collection cannot cross `message`, `await`, or `reply`
+pipeline whose result is still a collection cannot cross `message` or `reply`
 directly; bind its materialized result first. A terminal already produces a concrete
 scalar and may cross an explicit domain copy boundary normally. All ordinary ownership
 and alias checks also apply inside callbacks. A consuming callback is rejected when
@@ -248,38 +248,33 @@ changed by this rule.
 
 ## Domain communication
 
-Cross-domain communication is always visible in source. The three forms have distinct
-meaning:
+Cross-domain communication is always visible in source. Ordinary calls remain local;
+`message` is a synchronous, blocking domain-handler invocation:
 
 ```moss
-foo()                              # ordinary local/intra-domain call
-message Portfolio.apply_fill(fill) # asynchronous Moss domain message
-position = await Portfolio.position(symbol) # Moss request and wait for its reply
+foo()                                  # ordinary local/intra-domain call
+position = message Portfolio.position(symbol)
+message Portfolio.record(position)     # statement result is discarded
 ```
 
-`message` is fire-and-forget. `await` is specifically the Moss domain request/reply
-operation; it is not general coroutine syntax. The compatibility form
-`let position = await Portfolio.position(symbol)` remains accepted while assignment
-syntax is migrated. The awaited destination's type is inferred from the handler's
-declared or inferred reply type.
+The caller resumes only after the handler terminates. `reply expr` establishes the
+handler's value and terminates it immediately. A value-returning handler must reply on
+every normal path; a no-value handler may complete normally. Source-level `await` is
+retired and rejected with a migration diagnostic directing users to `message`.
 
-A naked dotted call whose receiver is a domain reference, such as
-`Portfolio.apply_fill(fill)`, is a compile-time error requiring `message` or `await`.
-The checker must distinguish ordinary local calls, asynchronous messages, and awaited
-messages in the AST/IR so this rule does not depend on Rust code generation.
+A naked dotted call whose receiver is a domain reference is a compile-time error. Self-
+send and same-domain handler chaining are also errors; reusable handler logic belongs in
+an ordinary statically resolved helper. Domains own mutable state, handlers run to
+completion without re-entrancy, and ownership boundaries are checked statically.
 
-The existing Moss rules remain in force: domains own mutable state, handlers run to
-completion without re-entrancy, sender-to-receiver message order is preserved, request /
-reply handlers require an explicit reply, ownership boundaries are checked statically,
-and await blocks the requesting domain according to the current runtime contract.
+Message arguments and replies remain semantic by-value boundaries. Incoming payload
+bindings are immutable snapshots: they may be read or forwarded, and the original
+incoming value may be replied by value, but it may not be written, consumed, rebound,
+or moved into state. This applies to primitive and nontrivial values alike.
 
-Every awaited receiver must resolve to one concrete domain type during ordinary static
-checking, including awaits in helpers used only by `main`. Type environments fork at an
-`if`/`else` and merge afterward. A binding created on both paths remains available only
-when both paths assign the same concrete type; different domain types are rejected, and
-a binding created on only one path is not definite after the join. Moss does not infer a
-domain union from branch order. Await dependency discovery still visits every branch,
-including a syntactically false branch.
+`spawn` is the current transitional spelling for constructing a domain instance. The
+final composition/topology syntax is deferred to a later phase; fine-grained ranks and
+synchronization classes are not part of this language slice.
 
 ## Rust boundary
 
@@ -294,22 +289,13 @@ lowering while the frontend evolves. Such normalization is an implementation pla
 must preserve the source meanings above and must not make backend mechanisms observable
 in Moss.
 
-With optimization enabled, the backend may implement the same domain as a mailbox, a
-direct `Mutex`/`RwLock` state object, a set of `SeqCst` atomics, or a configured local
-cluster. It may also batch adjacent sends or reuse a proven-exclusive lock guard. These
-choices add no source category: `message`, `await`, and `reply` remain copy boundaries;
-handlers remain serialized and non-reentrant, and sender FIFO remains a source-visible
-guarantee. This text does not assert one universal domain commit order beyond those
-guarantees. `-O0` is the ordinary mailbox reference lowering. Generated
-comments expose the selected plan for testing, but Rust locks, atomics, queues, and
-threads are not Moss semantics.
-
-The global await DAG is required by both the source concurrency model and direct
-shared-memory lowering. It prevents logical non-reentrant await deadlocks and cyclic
-nested acquisition of domain state locks. A direct-shared handler currently keeps its
-source state lock while awaiting a mailbox-backed domain, so the lock can remain held
-for the target's full request/reply latency. This is semantically correct and recorded
-as a future performance concern rather than changed by the current backend.
+With optimization enabled, the backend may implement the same domain as a legacy
+mailbox, a direct `Mutex`/`RwLock` state object, a set of `SeqCst` atomics, or a
+configured local cluster. These choices add no source category: `message` and `reply`
+remain copy boundaries, handlers remain serialized and non-reentrant, and generated
+Rust synchronization is not Moss syntax. `-O0` retains the mailbox adapter as a
+reference implementation for compatibility; the active source operation is still
+synchronous.
 
 Phase 10.5 does not introduce self-send or same-domain handler-chaining syntax. Put
 shared handler logic in ordinary statically resolved helpers. Historical backend notes
@@ -345,7 +331,7 @@ iterator may mutate its own concrete iterator state through its statically resol
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain
 handlers, `proc main()`, `let`/`var` declarations, and dotted message calls. The
 migration adds the `fn`, `type Name:`, inferred state bindings, inferred handler replies,
-`message`, assignment-await, pipeline, and `=` constructor forms incrementally. Existing
+`message`, pipeline, and `=` constructor forms incrementally. Existing
 examples are written in the preferred syntax; compatibility tests retain older spellings
 where useful. The old naked dotted spelling is rejected when its receiver is a domain
 reference. Legacy declarations remain available where they do not make the communication
@@ -377,8 +363,7 @@ The restriction is checked through the normal ownership/effect analysis,
 including calls to helpers and methods. A forwarding `message` is a new copy
 boundary and therefore does not consume the original payload. `Copy` is only a
 backend/property distinction: primitive values may continue to be passed by
-value, but it does not weaken payload immutability or the no-original-reply
-rule.
+value, but it does not weaken payload immutability.
 
 The mailbox backend materializes the independent snapshot. A synchronous
 shared-memory backend may implement the same semantics by passing a temporary
@@ -426,7 +411,7 @@ one explicit loop when its effects are safe. The Phase 4.5 examples
 terminal simplification, scope fusion, DAG traversal sharing, and explicit
 materialization. The larger
 [`mini_application.moss`](../examples/mini_application.moss) combines those static
-features with domains, `message`, and `await`. These are ordinary source programs:
+features with domains and synchronous `message`. These are ordinary source programs:
 Moss resolves calls before Rust generation and does not create runtime trait objects.
 ## Modules
 

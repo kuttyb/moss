@@ -95,7 +95,7 @@ to its concrete function/method specialization and then to ordinary local call e
 Generic higher-order declarations may be deferred until a concrete call site, but an
 unresolved indirect callable cannot enter checked functional IR. Captures are included
 in the same summaries; a captured domain-state read is a domain READ effect. `message`
-is an observable effect barrier, just like `await`, domain-state access, I/O, possible
+is an observable effect barrier, just like domain-state access, I/O, possible
 failure, or potential divergence.
 
 ## Ownership and boundaries
@@ -115,7 +115,7 @@ mutation.
 
 A pipeline is internal compiler structure until it becomes a materialized Moss
 collection or terminal result. A transformation pipeline cannot directly cross a
-`message`, `await`, or `reply` copy boundary; materialize it in a local binding first.
+`message` or `reply` copy boundary; materialize it in a local binding first.
 A terminal is already a concrete scalar and may cross an explicit domain boundary
 normally. The boundary never transports a lazy pipeline object.
 
@@ -127,7 +127,7 @@ whether changing the schedule is visible. It records:
 - immutable/local capture reads;
 - local mutation;
 - domain-state observation and mutation;
-- `message` and `await`;
+- synchronous `message`;
 - external or I/O effects such as `echo`;
 - possible failure and unresolved effects;
 - potential divergence, tracked separately from both failure and observable effects.
@@ -346,7 +346,7 @@ The examples directory separates the main ideas into small programs:
   with `echo`, demonstrating why observable effects stop fusion.
 - `functional_objects.moss` applies concrete read-only methods and safe trivial-field
   projections to user-defined values without dynamic dispatch or hidden object copies.
-- `functional_domains.moss` demonstrates an awaited domain callback as a fusion barrier
+- `functional_domains.moss` demonstrates a synchronous domain message inside a callback as a fusion barrier
   and then sends the concrete terminal result across a normal message boundary.
 - `functional_terminal_optimization.moss` demonstrates exact counts, dead pure maps,
   and legal short-circuit terminals.

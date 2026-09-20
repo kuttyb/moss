@@ -3593,6 +3593,19 @@ class Checker {
     string value = normalize_pipeline(trim(expression));
     if (value.empty()) return;
 
+    if (starts_with(value, "message ")) {
+      string receiver, handler;
+      vector<string> arguments;
+      if (parse_member_call(trim(value.substr(8)), receiver, handler, arguments)) {
+        analyze_effect_expression(receiver, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        for (const auto& argument : arguments)
+          analyze_effect_expression(argument, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+      }
+      return;
+    }
+
     if (simple_effect_identifier(value)) {
       auto type = env.find(value);
       Effect effective = requested;
@@ -4990,6 +5003,22 @@ class Checker {
     string original = trim(expression);
     if (original.empty()) return effects;
 
+    if (starts_with(original, "message ")) {
+      effects.message = true;
+      string receiver, handler;
+      vector<string> arguments;
+      if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+        effects.merge(observable_expression_effects(
+            receiver, env, domain_fields, implicit_object));
+        for (const auto& argument : arguments)
+          effects.merge(observable_expression_effects(
+              argument, env, domain_fields, implicit_object));
+      } else {
+        effects.unresolved = true;
+      }
+      return effects;
+    }
+
     if (auto pipeline = parse_functional_pipeline(original)) {
       effects.merge(observable_expression_effects(
           pipeline->source, env, domain_fields, implicit_object));
@@ -6132,7 +6161,7 @@ class Checker {
                                   const OwnershipEnv& env,
                                   const string& action) const {
     // A message is Moss's explicit semantic copy boundary.  The source value
-    // remains available after a send/await/reply; the backend materializes a
+    // remains available after a message/reply; the backend materializes a
     // detached payload (or an equivalent proven optimization).  This helper is
     // retained as a single validation hook for future reference-capability
     // checks, but ordinary aggregate values are intentionally legal here.
@@ -6647,7 +6676,7 @@ class Checker {
       string concrete = canonical_type_name(*receiver_type);
       if (domains_.count(concrete))
         err(line, "functional callable '" + identity +
-            "' cannot hide a domain crossing; use explicit message or await");
+            "' cannot hide a domain crossing; use explicit message");
       MethodResolutionFailure failure = MethodResolutionFailure::None;
       const Method* method = resolve_method(concrete, bound_method, input_types,
                                             false, &failure);
@@ -6840,6 +6869,11 @@ class Checker {
         err(line, "message receiver '" + receiver + "' is not a domain instance");
       if (receiver == "self")
         err(line, "self-send is not allowed; move shared logic to an ordinary helper function");
+      auto self_binding = env.find("self");
+      if (self_binding != env.end() && receiver != "self" &&
+          canonical_type_name(binding->second) == canonical_type_name(self_binding->second))
+        err(line,
+            "same-domain handler chaining is not allowed; move shared logic to an ordinary helper function");
       const Handler* target = check_call(line, receiver, handler, args, env);
       (void)target;
       for (const auto& argument : args) check_expression(line, argument, env);
@@ -7139,7 +7173,7 @@ class Checker {
           if (receiver != current_env.end() &&
               domains_.count(canonical_type_name(receiver->second)))
             err(statement.line, "naked cross-domain call '" + statement.a + "." +
-                statement.b + "' requires 'message' or 'await'");
+                statement.b + "' requires 'message'");
           bool collection = receiver != current_env.end() &&
               (receiver->second == "vector" || receiver->second == "queue" ||
                receiver->second == "map" || starts_with(receiver->second, "vector[") ||
@@ -11381,6 +11415,80 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0) const {
     e = trim(std::move(e));
+    // `message` is a Moss expression as well as a statement.  Assignment
+    // statements have a dedicated lowering path, but expression positions
+    // (for example `echo message d.Get()`) must retain the same synchronous
+    // completion and reply semantics.  Keep the compatibility mailbox
+    // adapter inside this expression block; direct and cluster-local calls
+    // remain ordinary synchronous Rust calls.
+    if (starts_with(e, "message ")) {
+      string receiver, handler;
+      vector<string> arguments;
+      if (!parse_member_call(trim(e.substr(8)), receiver, handler, arguments) ||
+          !types || !plain_identifier(receiver))
+        throw std::runtime_error("internal error: malformed message expression");
+      auto receiver_type = types->find(receiver);
+      if (receiver_type == types->end())
+        throw std::runtime_error("internal error: unresolved message receiver");
+      auto domain_it = domains_.find(canonical_type_name(receiver_type->second));
+      if (domain_it == domains_.end())
+        throw std::runtime_error("internal error: message expression receiver is not a domain");
+      const Domain& target_domain = *domain_it->second;
+      const Handler* target_handler = find_handler(target_domain, handler);
+      if (!target_handler)
+        throw std::runtime_error("internal error: unresolved message expression handler");
+      bool local_cluster = d && cluster_for(*d) &&
+          cluster_for(target_domain) &&
+          *cluster_for(*d) == *cluster_for(target_domain);
+      bool direct = local_cluster || plan_.lowering_for(target_domain) != DomainLowering::Mailbox;
+      string recv = expr(receiver, d, locals, types);
+      auto argument_text = [&](bool clustered) {
+        std::ostringstream rendered;
+        for (size_t index = 0; index < arguments.size(); ++index) {
+          if (index) rendered << ", ";
+          string parameter_type = index < target_handler->params.size()
+              ? target_handler->params[index].type : "_";
+          if (clustered)
+            rendered << cluster_call_arg(arguments[index], parameter_type, d, locals,
+                                         *cluster_for(target_domain), false, types);
+          else if (direct)
+            rendered << direct_message_arg(arguments[index], parameter_type, d, locals, types);
+          else
+            rendered << message_arg(arguments[index], parameter_type, d, locals, types);
+        }
+        return rendered.str();
+      };
+      string call_name = handler + (local_cluster ? "_local" : "_shared");
+      if (direct) {
+        std::ostringstream rendered;
+        rendered << recv << "." << call_name << "(" << argument_text(local_cluster) << ")";
+        if (target_handler->reply_type)
+          rendered << ".unwrap_or_else(|| panic!(\"Moss message failed: "
+                    << target_domain.name << "." << handler
+                    << " completed without a reply\"))";
+        return rendered.str();
+      }
+      string reply_type = target_handler->reply_type
+          ? rust_type(*target_handler->reply_type) : "()";
+      std::ostringstream rendered;
+      rendered << "({ let (__moss_expr_reply_tx, __moss_expr_reply_rx) = moss_channel::<"
+                << reply_type << ">(); let (__moss_expr_done_tx, __moss_expr_done_rx) = "
+                << "moss_channel::<()>(); " << recv << "." << call_name << "("
+                << argument_text(false);
+      if (target_handler->reply_type)
+        rendered << (arguments.empty() ? "" : ", ") << "__moss_expr_reply_tx, ";
+      else if (!arguments.empty())
+        rendered << ", ";
+      rendered << "__moss_expr_done_tx); let _ = __moss_expr_done_rx.recv(); ";
+      if (target_handler->reply_type)
+        rendered << "__moss_expr_reply_rx.recv().unwrap_or_else(|_| panic!(\"Moss message failed: "
+                  << target_domain.name << "." << handler
+                  << " completed without a reply\"))";
+      else
+        rendered << "()";
+      rendered << " })";
+      return rendered.str();
+    }
     if (auto functional = functional_expr(
             e, d, locals, types, functional_pipeline_id))
       return *functional;
@@ -11798,7 +11906,7 @@ class Generator {
   }
 
   void gen_shared_channel(std::ostringstream& o) {
-    backend_comment(o, 0, "MESSAGE/MAILBOX implementation: Moss messages are enqueued in shared memory under Mutex and awaited with Condvar");
+    backend_comment(o, 0, "LEGACY MESSAGE/MAILBOX adapter: synchronous calls enqueue under Mutex and wait for completion with Condvar");
     o << "struct MossChannelState<T> { queue: VecDeque<T>, senders: usize, receiver_open: bool }\n";
     o << "struct MossChannel<T> { state: Mutex<MossChannelState<T>>, ready: Condvar }\n";
     o << "struct MossSender<T> { channel: Arc<MossChannel<T>> }\n";
@@ -12118,7 +12226,7 @@ class Generator {
     bool rwlock = plan_.lowering_for(d) == DomainLowering::DirectRwLock;
     backend_comment(o, 0, "SHARED-MEMORY DIRECT implementation for domain " + d.name +
         (rwlock ? "; handler effects select RwLock read/write guards"
-                : "; awaited Moss messages call through Arc<Mutex<State>>"));
+                : "; synchronous Moss messages call through Arc<Mutex<State>>"));
     o << "impl " << d.name << "Ref {\n";
     for (const auto& h : d.handlers) {
       string result_name = reply_binding(d, h);
@@ -12423,8 +12531,11 @@ class Generator {
       if (handler.reply_type)
         o << ", " << reply_name << ": MossSender<"
           << rust_type(*handler.reply_type) << ">";
-      if (direct) o << ") -> Option<" << rust_type(*handler.reply_type) << "> {\n";
-      else o << ") {\n";
+      if (!direct) o << ", __moss_done: MossSender<()>";
+      if (direct && handler.reply_type)
+        o << ") -> Option<" << rust_type(*handler.reply_type) << "> {\n";
+      else
+        o << ") {\n";
       o << "        match &self.route {\n";
       o << "            " << route << "::Base(inner) => inner."
         << handler.name << "_shared(";
@@ -12437,6 +12548,11 @@ class Generator {
       if (handler.reply_type) {
         if (!first) o << ", ";
         o << reply_name;
+        first = false;
+      }
+      if (!direct) {
+        if (!first) o << ", ";
+        o << "__moss_done";
       }
       o << "),\n";
       for (size_t route_index = 1; route_index < routes.size(); ++route_index) {
@@ -12452,6 +12568,11 @@ class Generator {
         if (handler.reply_type) {
           if (!first) o << ", ";
           o << reply_name;
+          first = false;
+        }
+        if (!direct) {
+          if (!first) o << ", ";
+          o << "__moss_done";
         }
         o << "),\n";
       }
@@ -12669,7 +12790,7 @@ class Generator {
       for (const auto& handler : domain->handlers) {
         source_comment(o, 4, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
         o << "    " << domain->name << "_" << handler.name;
-        if (!handler.params.empty() || handler.reply_type) {
+        {
           o << "(";
           size_t count = 0;
           for (const auto& param : handler.params) {
@@ -12679,7 +12800,10 @@ class Generator {
           if (handler.reply_type) {
             if (count) o << ", ";
             o << "MossSender<" << rust_type(*handler.reply_type) << ">";
+            count = 1;
           }
+          if (count) o << ", ";
+          o << "MossSender<()>";
           o << ")";
         }
         o << ",\n";
@@ -12721,11 +12845,12 @@ class Generator {
           o << ", " << param.name << ": " << rust_type(param.type);
         if (handler.reply_type)
           o << ", " << reply_name << ": MossSender<" << rust_type(*handler.reply_type) << ">";
+        o << ", __moss_done: MossSender<()>";
         o << ") {\n";
         o << "        self.tracker.begin();\n";
         o << "        if self.tx.send(" << prefix << "SharedMsg::" << domain->name
           << "_" << handler.name;
-        if (!handler.params.empty() || handler.reply_type) {
+        {
           o << "(";
           size_t count = 0;
           for (const auto& param : handler.params) {
@@ -12735,7 +12860,10 @@ class Generator {
           if (handler.reply_type) {
             if (count) o << ", ";
             o << reply_name;
+            count = 1;
           }
+          if (count) o << ", ";
+          o << "__moss_done";
           o << ")";
         }
         o << ").is_err() { self.tracker.end(); }\n";
@@ -12845,7 +12973,7 @@ class Generator {
     }
     o << "        }\n";
     o << "    }\n";
-    backend_comment(o, 4, "CLUSTER-LOCAL queue dispatch; asynchronous Moss sends stay ordered without a lock");
+    backend_comment(o, 4, "LEGACY CLUSTER-LOCAL queue adapter; active messages dispatch synchronously");
     o << "    fn __moss_drain_local(&self) {\n";
     o << "        loop {\n";
     o << "            let message = { self.local_queue.borrow_mut().pop_front() };\n";
@@ -12917,7 +13045,7 @@ class Generator {
         backend_comment(o, 16, "CLUSTER ingress/message dispatch: hand off to the cluster-local handler");
         o << "                " << prefix << "SharedMsg::" << domain->name << "_"
           << handler.name;
-        if (!handler.params.empty() || handler.reply_type) {
+        {
           o << "(";
           size_t count = 0;
           for (const auto& param : handler.params) {
@@ -12927,7 +13055,10 @@ class Generator {
           if (handler.reply_type) {
             if (count) o << ", ";
             o << reply_name;
+            count = 1;
           }
+          if (count) o << ", ";
+          o << "__moss_done";
           o << ")";
         }
         o << " => {\n";
@@ -12965,6 +13096,7 @@ class Generator {
         } else {
           o << ");\n";
         }
+        o << "                    let _ = __moss_done.send(());\n";
         o << "                }\n";
       }
     }
@@ -13740,22 +13872,30 @@ class Generator {
           }
           if (local_cluster_call(d, target, cluster_context)) {
             backend_comment(o, (base + level) * 4,
-                            "CLUSTER-LOCAL version: enqueue on the plain same-thread local queue");
-            o << indent(level) << "self.__moss_enqueue_local(MossCluster" << *cluster_context
-              << "LocalMsg::" << target->name << "_" << s.b;
-            if (!s.args.empty()) {
-              o << "(";
-              for (size_t k = 0; k < s.args.size(); ++k) {
-                if (k) o << ", ";
-                string typ = h && k < h->params.size() ? h->params[k].type : "_";
-                o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
-                                      false, &types,
-                                      statement_functional_pipeline_id(
-                                          s, functional_context, k));
-              }
-              o << ")";
+                            "CLUSTER-LOCAL synchronous message execution");
+            bool has_result = h && h->reply_type && !s.message_result.empty();
+            o << indent(level);
+            if (has_result) o << "let " << s.message_result << " = ";
+            else if (h && h->reply_type) o << "let _ = ";
+            o << "self." << target->name << "_" << s.b << "_local(";
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              if (k) o << ", ";
+              string typ = h && k < h->params.size() ? h->params[k].type : "_";
+              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
+                                    false, &types,
+                                    statement_functional_pipeline_id(
+                                        s, functional_context, k));
             }
-            o << ");\n";
+            o << ")";
+            if (h && h->reply_type)
+              o << ".unwrap_or_else(|| panic!(\"Moss message failed: "
+                << target->name << "." << h->name
+                << " completed without a reply\"))";
+            o << ";\n";
+            if (has_result) {
+              locals.insert(s.message_result);
+              types[s.message_result] = *h->reply_type;
+            }
             ++i;
             break;
           }
@@ -13832,11 +13972,13 @@ class Generator {
           o << done_tx;
           o << ");\n";
           if (!reply_rx.empty()) {
-            if (!s.message_result.empty())
+            if (!s.message_result.empty()) {
               o << indent(level) << "let " << s.message_result << " = "
                 << reply_rx << ".recv().unwrap_or_else(|_| panic!(\"Moss message failed: "
                 << target->name << "." << h->name << " completed without a reply\"));\n";
-            else
+              locals.insert(s.message_result);
+              types[s.message_result] = *h->reply_type;
+            } else
               o << indent(level) << "let _ = " << reply_rx << ".recv();\n";
             o << indent(level) << "let _ = " << done_rx << ".recv();\n";
           } else {
@@ -14086,6 +14228,12 @@ class Generator {
           }
           o << indent(level) << "break 'handler;\n";
           ++i;
+          // `reply` terminates the handler.  Do not emit statements that are
+          // lexically after an unconditional reply: rustc would otherwise
+          // diagnose the generated code as unreachable, even though Moss's
+          // control-flow checker has already established the terminating
+          // semantics.
+          while (i < ss.size() && ss[i].indent >= level) ++i;
           break;
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty())
@@ -21039,13 +21187,13 @@ static void usage() {
             << "  --emit-debug-map FILE   write the shared Moss provenance map to FILE\n"
             << "  --native-output FILE    record the intended native executable in the debug map\n"
             << "  --diagnostic-paths      prefix diagnostics with the Moss source path\n\n"
-            << "  --no-await-error-handling  omit per-await reply checks (supervision owns failures)\n\n"
+            << "  --no-await-error-handling  legacy mailbox compatibility option\n\n"
             << "  --cluster=A,B          place the listed domain types on one generated worker thread\n\n"
             << "Request/reply:\n"
             << "  message domain.Message(args...)\n"
             << "  fn Message(args...) [-> Type]\n"
             << "  reply value\n"
-            << "  value = await domain.Message(args...)\n"
+            << "  value = message domain.Message(args...)\n"
             << "  fn square(x) = x * x\n"
             << "  type Quote:\n";
 }

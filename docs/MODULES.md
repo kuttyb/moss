@@ -27,7 +27,7 @@ namespace merging, and multiple providers for one module are intentionally not
 part of Phase 8.
 
 Typed exports are materialized module ABI: their arguments and result have a
-closed concrete Moss signature, ownership modes, effects, and await contract.
+closed concrete Moss signature, ownership modes, effects, and synchronous message/reply contract.
 They are checked and lowered by the exporting module.
 
 An export with unresolved parameters is a compile-time Moss generic. Its

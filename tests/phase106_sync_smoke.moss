@@ -3,6 +3,7 @@ domain Worker:
 
   fn Set(x: Int):
     value = x
+    echo "set"
 
   fn Get() -> Int:
     reply value
@@ -13,7 +14,9 @@ domain Worker:
 fn main():
   worker = spawn Worker()
   message worker.Set(7)
+  echo "next"
   result = message worker.Get()
   assertEqual(result, 7)
+  echo message worker.Get()
   echoed = message worker.Echo(9)
   assertEqual(echoed, 9)

@@ -7,5 +7,5 @@ domain Worker:
 
 fn main():
   worker = spawn Worker()
-  result = await worker.Maybe(true)
+  result = message worker.Maybe(true)
   echo result

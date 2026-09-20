@@ -156,11 +156,10 @@ if calls["direct_calls"][0]["line"] != 11:
     fail("call edge omitted Moss source provenance")
 
 awaits = query("awaits", "handler:Router.Route")
-if awaits["awaits"]["transitive_targets"] != ["Worker"]:
-    fail("await query omitted the global transitive dependency")
-edge = awaits["awaits"]["domain_edges"][0]
-if edge["source_domain"] != "Router" or edge["line"] != 34:
-    fail("await dependency edge omitted its source site")
+if awaits["awaits"]["transitive_targets"]:
+    fail("retired await analysis reported a dependency for synchronous message")
+if awaits["awaits"]["domain_edges"]:
+    fail("retired await analysis reported active domain edges")
 
 why = query("why", "main@39:expression:0", optimized=True)
 explanations = "\n".join(why["explanations"])

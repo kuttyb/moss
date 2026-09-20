@@ -1,0 +1,14 @@
+domain Chooser:
+  fn Pick(flag: bool) -> Int:
+    if flag:
+      reply 1
+    echo "after"
+    reply 2
+    echo "unreachable"
+
+fn main():
+  chooser = spawn Chooser()
+  first = message chooser.Pick(true)
+  second = message chooser.Pick(false)
+  assertEqual(first, 1)
+  assertEqual(second, 2)

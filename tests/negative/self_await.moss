@@ -1,6 +1,6 @@
 domain Worker
   on Work() -> bool
-    let result = await self.Work()
+    let result = message self.Work()
     reply result
 
 proc main()

@@ -1,0 +1,9 @@
+domain Maybe:
+  fn Pick(flag: bool) -> Int:
+    if flag:
+      reply 1
+    echo "normal fallthrough"
+
+fn main():
+  maybe = spawn Maybe()
+  message maybe.Pick(false)

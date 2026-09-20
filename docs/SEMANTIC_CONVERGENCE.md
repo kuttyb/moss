@@ -49,13 +49,15 @@ IR with an unresolved callable. Debug builds assert this compiler invariant.
 Captures participate in the same graph. Reading captured domain state is a
 domain READ effect; mutating or communicating through a capture contributes the
 corresponding observable effect. A `message` is an observable effect barrier
-for functional optimization, as are `await`, domain-state access, I/O, and
+for functional optimization, as are domain-state access, I/O, and
 other effects already listed in `docs/FUNCTIONAL_DATAFLOW.md`.
 
 ## Domains and legacy transport terminology
 
-The source-level model is a statically checked domain computation. In new
-prose, prefer **construct a domain instance** or **create a domain instance**.
+The source-level model is a statically checked synchronous domain computation:
+`message` is a blocking handler invocation, `reply` terminates a handler, and
+source-level `await` is retired. In new prose, prefer **construct a domain instance**
+or **create a domain instance**.
 `spawn` is the current source spelling and remains in executable examples and
 the legacy backend; this phase does not invent a replacement constructor
 syntax.
@@ -65,18 +67,35 @@ documents describe implementation choices or an earlier phase. They are not a
 new source-level API. The native backend still documents those paths because
 they remain implemented; Fast Debug does not simulate them yet.
 
-For the converged source model, there is no self-send and no same-domain handler
-chaining as a new supported language pattern. Common handler logic belongs in an
-ordinary helper function. Historical material that discusses queued
-self-transfers is retained as historical/legacy material pending a settled
-language decision; removing or newly rejecting that behavior is **BLOCKED BY OPEN
-DESIGN**. Likewise, concrete domain topology and
+For the converged source model, self-send and same-domain handler chaining are
+rejected. Common handler logic belongs in an ordinary helper function. Historical
+material that discusses queued self-transfers is retained as legacy documentation.
+Concrete domain topology and
 any domain rank (`rank_D`) are whole-program/link-time concerns, not local
 handler facts, and Phase 10.5 does not choose their lowering.
 
 Domain-local helper scoping belongs in the language/module design discussion,
 not in an implicit dispatch rule. Existing ordinary functions and methods keep
 their current lexical/module rules.
+
+## Phase 10.6A synchronous-domain migration
+
+The checked compiler now has one active domain-invocation concept: a
+`message` is a synchronous, blocking handler call and may produce a value in
+an expression. `reply` establishes that value and terminates the handler;
+value-returning handlers must reply on every normal path. Source-level
+`await` is retired and produces a migration diagnostic. Incoming payloads are
+immutable READ snapshots: they may be read, forwarded through another
+`message`, or replied by value, but cannot be written, rebound, or consumed.
+Self-send and same-domain handler chaining are rejected; shared logic belongs
+in ordinary helpers.
+
+The Rust emitter still contains an isolated mailbox/completion adapter for
+physical representations selected by the existing backend planner. It waits
+for handler completion, so it does not expose asynchronous source behavior.
+`spawn` remains transitional construction syntax. Domain topology, ranks,
+compiler-derived synchronization classes/2PL, supervision, and Fast Debug
+domain execution remain deferred to later phases.
 
 ## Account synchronization derivation (documentation vocabulary)
 

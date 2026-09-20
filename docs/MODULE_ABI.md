@@ -20,7 +20,7 @@ For concrete exports it records:
 - the closed signature;
 - parameter READ/WRITE/CONSUME modes;
 - observable effects;
-- await/domain contract;
+- synchronous message/reply domain contract (historical await metadata is legacy);
 - the materialized semantic identity.
 
 Exported domain handlers also retain the message-payload contract: every
@@ -51,8 +51,8 @@ bindings created by `spawn Worker()` are separate nodes. The final composed
 program unions those edges and runs the existing DFS; domain type names are
 never used as instance identity.
 
-For a typed callable that awaits through a domain parameter, the contract uses
+For a typed callable that invokes a domain through a parameter, the contract uses
 `target=parameter[N]` plus the handler/domain. Final linking substitutes the
 caller's exact declared instance (for example `app::worker1`) before running
-the same await DFS. Internal module-owned instances remain qualified and
+the same legacy dependency machinery. Internal module-owned instances remain qualified and
 opaque.

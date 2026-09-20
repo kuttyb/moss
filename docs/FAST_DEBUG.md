@@ -36,7 +36,7 @@ domain-rank events are reserved until those designs are settled.
 The trace is intentionally machine-readable so later debugger and agent tools
 can consume it without parsing display text.
 
-The initial interpreter is deliberately limited: domain instances, `message`,
-`await`, and `reply` still require the compiled backend. Fast Debug reports a
+The initial interpreter is deliberately limited: domain instances, synchronous
+`message`, and `reply` still require the compiled backend. Fast Debug reports a
 clear interpreter diagnostic rather than silently falling back to Rust. The
 compiled Rust/LLVM path remains the production and concurrency implementation.

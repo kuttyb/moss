@@ -2,7 +2,7 @@
 
 Phase 6 exposes compiler facts and bounded development actions through one deterministic,
 vendor-independent JSON protocol. It is a view over the analyses already used for Moss
-type, ownership, effect, await, functional, and backend decisions; edits remain exact and
+type, ownership, effect, domain, functional, and backend decisions; edits remain exact and
 validated. It is not a daemon, MCP server, or replacement compiler pipeline.
 
 ## Bootstrap and discovery
@@ -73,10 +73,10 @@ An exact location can alternatively be written as one target:
 moss inspect src/main.moss:18 --json
 ```
 
-`inspect` combines type, ownership, observable effects, static calls, await facts, and
+`inspect` combines type, ownership, observable effects, static calls, legacy await facts, and
 existing compiler explanations. The focused commands return the same authoritative
 subsets. Ownership (`READ`, `WRITE`, `CONSUME`) remains separate from observable effects
-such as local mutation, domain access, message, await, I/O, failure, and divergence.
+such as local mutation, domain access, synchronous message, I/O, failure, and divergence.
 
 Effect precision follows the selected target. Callable targets expose their transitive
 callable summary, and functional pipeline/node targets expose the precise summaries
@@ -87,7 +87,8 @@ inherits unrelated effects from the rest of its function. In that case,
 exists. Phase 6A does not run a new statement-effect analysis to answer a query.
 
 `calls` reports only statically resolved targets retained by recursion validation.
-`awaits` reports validated await sites and the global domain dependency edges, including
+`awaits` reports legacy await sites and dependency edges; new synchronous programs
+normally return an empty await set, including
 their Moss source lines. `why` reuses existing functional materialization/fusion/semantic
 rewrite notes and backend lowering decisions; it does not reconstruct a separate
 optimization analysis.
@@ -207,7 +208,7 @@ from any stronger cross-edit identity model that may be needed in a future relea
 
 Project builds expose emitted `.mossi` paths in `artifacts.module_interfaces`.
 Semantic records use module-qualified declaration identities, distinguish
-concrete and generic exports, and report exact declared domain-instance await
+concrete and generic exports, and report exact declared-domain-instance legacy await
 identities when available. `moss impact` continues to use compiler-owned
 semantic dependencies and invalidates generic users when their semantic body
 hash changes.

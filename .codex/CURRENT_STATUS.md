@@ -1,6 +1,6 @@
 # Moss current status
 
-Updated: 2026-09-14
+Updated: 2026-09-19
 
 ## Version and commits
 
@@ -70,11 +70,18 @@ Updated: 2026-09-14
   module system, or new optimizer semantics. Native cache reuse
   includes the resolved Rust compiler, verbose backend version, profile, and flags;
   benchmark baselines use the same fingerprint for compatibility.
+- Phase 10.6A establishes synchronous domain invocation in the checked compiler and
+  production lowering. `message` is a blocking, expression-valued handler call;
+  `reply` terminates a handler; source-level `await` is retired with a migration
+  diagnostic. Incoming payloads remain immutable value snapshots, may be forwarded,
+  and may be replied by value, but cannot be written or consumed. Self-send and
+  same-domain handler chaining are rejected. Transitional `spawn` construction and
+  legacy mailbox transport adapters remain until the topology/synchronization stages.
 
 ## Approved semantics
 
 - Assignment of a uniquely owned nontrivial local transfers ownership; later source use is an error.
-- `message`, awaited request payloads, and `reply` are explicit value-copy boundaries. Existing non-primitive locals, parameters, state, and projections may cross while the sender retains an independent value.
+- `message` payloads and `reply` results are explicit value-copy boundaries. Existing non-primitive locals, parameters, state, and projections may cross while the sender retains an independent value.
 - Primitive values and domain references remain usable after sending.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Future ordinary procedures read parameters temporarily by default; `var` permits temporary caller-visible mutation without transfer.
@@ -189,8 +196,8 @@ Updated: 2026-09-14
 
 - Indentation-aware parser for object types, domains, handlers, local `fn` functions, and both `fn main()` and compatibility `proc main()`.
 - Julia-like `type Name:` blocks, inferred object fields, expression/block-bodied `fn`
-  functions, typed functional pipeline expressions, explicit `message`, and
-  assignment-style `await`.
+  functions, typed functional pipeline expressions, and synchronous expression-valued
+  `message`; source-level `await` is retired.
 - Phase 4 recognizes `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and
   `all` as functional/dataflow operations rather than opaque nested calls. Static type
   propagation verifies element, predicate, accumulator, and terminal result types before
@@ -202,7 +209,7 @@ Updated: 2026-09-14
   parameters are closed at each call site, recorded as specialization dependencies, and
   erased from generated Rust; unbounded callable identity is rejected.
 - `ObservableEffects` independently records local capture reads/mutation, domain
-  reads/writes, message, await, I/O/external effects, unresolved effects, and possible
+  reads/writes, message, legacy await metadata, I/O/external effects, unresolved effects, and possible
   failure. Transitive summaries conservatively govern fusion without changing
   READ/WRITE/CONSUME ownership inference.
 - The functional IR distinguishes dense compilation-local pipeline/node handles from
@@ -250,33 +257,32 @@ Updated: 2026-09-14
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
   constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
-- Domain spawning from `main`; one OS thread and serialized lock-backed shared-memory mailbox per unclustered queued domain in generated Rust.
+- Transitional domain construction from `main` via `spawn`; one OS thread and serialized lock-backed shared-memory mailbox adapter per unclustered domain in generated Rust.
 - Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
 - `--cluster=A,B` static placement for single-instance domain types, with one shared worker and ingress mailbox per cluster.
 - Statically selected `_shared` cross-thread calls and `_local` same-cluster calls. Cluster-member capabilities use zero-sized local reference types; local awaits dispatch directly and local one-way calls use a single-threaded queue without synchronization.
 - `-Oshared-memory` / `-O` builds an explicit whole-program plan with `Mailbox`,
   `DirectMutex`, `DirectRwLock`, `DirectAtomic`, and `ClusterLocal` domain
   classifications plus separate batched-send and coalesced-lock region facts.
-- Adjacent proven-total, side-effect-free asynchronous sends to the same receiver
-  lower to one `send_batch` queue acquisition. `MossTracker::begin_n/end_n`
-  coalesces completion accounting and restores the full count after an all-or-none
-  enqueue failure.
+- The former asynchronous send-batching plan is disabled for active synchronous
+  `message`; legacy queue helpers remain only as backend compatibility machinery.
 - Direct lock-backed handlers have separate `_locked` implementations and `_shared`
-  wrappers. A single unconditional `main` spawn with no alias, escape, return, nested
-  capability, or alternate caller can form a one-guard consecutive-await region.
+  wrappers. Message execution is synchronous; the former await-based coalescing proof
+  remains legacy backend code and is not part of active source semantics.
 - Direct domains with useful pure state readers use `Arc<RwLock<State>>`; READ handlers
   use shared guards, while WRITE handlers use exclusive guards. External effects,
   uncertain analysis, stateless handlers, and effectively write-only domains retain
   `Mutex`.
 - Entirely compatible integer/boolean domains lower to `AtomicI64`/`AtomicBool` with
   `Ordering::SeqCst`. Loads, stores, add/subtract, boolean toggle, and scalar swap are
-  supported. Both one-way and awaited calls execute directly, and a fully atomic
+  supported. Both statement and expression-valued synchronous messages execute directly, and a fully atomic
   program emits no mailbox, condition variable, mutex, or worker thread.
 - Ordinary integer `+`, `-`, `*`, `/`, integer `sum`, and generated state-update
   equivalents lower through explicit `i64` wrapping operations. Atomic fetch-add/
   fetch-sub reply reconstruction uses the same rule, keeping optimized execution
   equivalent to the mailbox reference at `i64::MIN` and `i64::MAX`.
-- One-way asynchronous messages, typed/inferred reply handlers, `reply value`, and assignment-style `await` (with compatible `let`/`var` initializers).
+- Synchronous expression/statement messages, typed/inferred reply handlers, terminating
+  `reply value`, and explicit normal handler completion for no-value handlers.
 - Domain-owned mutable state, serialized run-to-completion handlers, local `let`/`var`, control flow, `echo`, and bare `return`.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
 - One indentation-aware type-environment walker now serves ordinary statement checking,
@@ -284,18 +290,18 @@ Updated: 2026-09-14
   forks `if`/`else` environments, merges only types present on every relevant path, and
   rejects conflicting concrete types. Definite same-type branch creation is carried to
   Rust lowering through explicit join metadata.
-- Static bounded-target validation covers handlers, methods, all local functions, and
-  `main`, including helpers reached only from `main`. Whole-program await-dependency
-  checking separately constructs source-domain edges, follows statically resolved
-  functional callbacks, visits every branch
-  conservatively, and rejects every possible cycle reached through ordinary local
-  functions. Asynchronous sends do not create await edges.
+- Static callable/effect validation remains available across handlers, methods, local
+  functions, and `main`. Legacy await-target/cycle machinery remains for compatibility
+  fixtures only; active synchronous messages do not create await edges.
 - Await-cycle witnesses identify the source line used for every dependency edge;
   repeated logical edges retain their actual source sites rather than relying on one
   arbitrary map insertion.
 - Direct and mutual recursion are rejected. Compiler-internal READ/WRITE/CONSUME summaries drive local call lowering, and conflicting aliases at a call site are Moss compile-time errors.
 - Copyable field projections retain a read effect; moving a nontrivial field consumes its containing value. Consuming method receivers lower by value rather than as shared receiver references.
-- Generated Rust compilation with warnings denied in the test suite.
+- Generated Rust compilation with warnings denied in the test suite. Active domain
+  calls complete before the following Moss statement; mailbox adapters, where still
+  selected, wait for handler completion rather than exposing asynchronous language
+  behavior.
 - Executable showcases cover method-based duck typing, two concrete named-trait
   implementations, inferred Vector/Map/Queue use, an executable optimized functional
   dataflow pipeline, and a small static job-scheduler application with domains, messages,
@@ -304,7 +310,7 @@ Updated: 2026-09-14
   immutable captures and source reuse, every reduction terminal and empty-input identity,
   bound methods and static higher-order specialization, observable eager effect order,
   wrapping reduction arithmetic, read-only pipelines over user-defined values, and an
-  awaited domain callback that remains an eager fusion barrier.
+  synchronous domain callback that remains an eager fusion barrier.
 - Four Phase 4.5 showcases cover terminal simplification, a virtual cross-binding
   intermediate, a shared terminal traversal, and multiple-consumer materialization.
 - The Phase 4.6 showcase covers semantic map/filter composition, a virtual named
@@ -429,7 +435,7 @@ and cover named, bound-method, and placeholder `map`, `filter`, map/map, map/fil
 every terminal, immutable capture, statically specialized higher-order helpers, empty
 input, object-method placeholders, eager callback output order, and wrapping reduction.
 Generated-code checks require one explicit loop and no intermediate vector or Rust iterator chain for fusible
-pipelines. Separate I/O, possible-failure, domain-state, `message`, and `await` cases must
+pipelines. Separate I/O, possible-failure, domain-state, and synchronous `message` cases must
 retain eager lowering. Terminal scalars can use message/reply boundaries directly, while
 transformation collections must first materialize. Deterministic IR/explanation checks
 cover types, spans, materialization, provenance, and barrier reasons. Negative tests require Moss diagnostics for invalid
@@ -669,11 +675,10 @@ No runtime iterator dispatch or vtable is emitted.
 
 Incoming handler arguments are immutable READ-only value snapshots regardless of
 concrete type. The normal ownership/effect checker rejects mutation,
-reassignment, consumption, moving a payload into domain state, and replying
-with the original payload, including through transitive helper calls. Explicit
-forwarding with `message` remains legal because it is a new copy boundary;
-derived replies remain legal. `Copy` is only a backend/property distinction and
-does not weaken these Moss restrictions.
+reassignment, consumption, and moving a payload into domain state, including
+through transitive helper calls. A payload may be replied by value or forwarded
+with `message`; both are explicit value boundaries. `Copy` is only a
+backend/property distinction and does not weaken these Moss restrictions.
 Mailbox lowering retains owned payload copies. Synchronous DirectMutex,
 DirectRwLock, DirectAtomic, and cluster-local lowering pass nontrivial READ-only
 payloads by temporary immutable reference when safe, while primitive Copy values
@@ -687,9 +692,9 @@ functions. `moss run --interp` and standalone `moss test --interp` execute
 literals, arithmetic, locals, assignments, conditionals, while loops,
 function calls, returns, structs, fields, methods, and assertions without
 invoking Rust tooling. `--trace` emits deterministic newline-delimited JSON
-semantic events. Domain scheduling, messages, and await/reply remain deferred
-to the next Phase 10 checkpoint; unsupported operations report an interpreter
-diagnostic rather than falling back to generated Rust.
+semantic events. Domain scheduling, synchronous messages, and replies remain
+unsupported in Fast Debug; source `await` is retired. Unsupported operations
+report an interpreter diagnostic rather than falling back to generated Rust.
 
 Fast Debug project entry points now reuse the project compiler's checked source
 loading. `moss debug app` (or a project directory/entry source) interprets the

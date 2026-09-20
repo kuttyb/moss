@@ -1,0 +1,10 @@
+domain D:
+  fn A(other: D):
+    message other.B()
+
+  fn B():
+    echo "b"
+
+fn main():
+  d = spawn D()
+  message d.A(d)
