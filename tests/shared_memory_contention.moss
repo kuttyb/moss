@@ -12,7 +12,7 @@ domain Producer
   on Fill(counter: Counter, count: int)
     var sent = 0
     while sent < count:
-      let accepted = await counter.Add(1)
+      let accepted = message counter.Add(1)
       if not accepted:
         return
       sent = sent + 1
@@ -26,7 +26,7 @@ proc main()
   let right = spawn Producer()
   message left.Fill(counter, 1000)
   message right.Fill(counter, 1000)
-  let left_done = await left.Barrier()
-  let right_done = await right.Barrier()
-  let total = await counter.Value()
+  let left_done = message left.Barrier()
+  let right_done = message right.Barrier()
+  let total = message counter.Value()
   echo "shared total:", total, left_done, right_done

@@ -1,5 +1,5 @@
 fn wait_for(worker: Worker) -> int:
-  value = await worker.Ping()
+  value = message worker.Ping()
   return value
 
 domain Worker:

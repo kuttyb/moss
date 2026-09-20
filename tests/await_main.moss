@@ -4,5 +4,5 @@ domain Worker
 
 proc main()
   let worker = spawn Worker()
-  var ready = await worker.Ready()
+  var ready = message worker.Ready()
   echo "main:", ready

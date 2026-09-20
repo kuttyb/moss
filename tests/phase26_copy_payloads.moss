@@ -20,6 +20,6 @@ fn main():
   router = spawn Router()
   calculator = spawn Calculator()
   message router.Route(10, sink)
-  plus_one = await calculator.PlusOne(10)
-  local = await calculator.LocalUpdate(7)
+  plus_one = message calculator.PlusOne(10)
+  local = message calculator.LocalUpdate(7)
   echo plus_one, local

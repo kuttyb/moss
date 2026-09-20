@@ -16,6 +16,6 @@ proc main():
   second = spawn Worker()
   workers = [first, second]
   pipeline_total = workers |> map(notify) |> sum
-  first_seen = await first.Seen()
-  second_seen = await second.Seen()
+  first_seen = message first.Seen()
+  second_seen = message second.Seen()
   echo pipeline_total, first_seen, second_seen

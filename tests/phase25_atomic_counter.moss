@@ -21,8 +21,8 @@ domain Counter:
 fn main():
   counter = spawn Counter()
   message counter.Increment()
-  after_add = await counter.Add(2)
-  after_subtract = await counter.Subtract(1)
-  predicted = await counter.Next()
-  observed = await counter.Read()
+  after_add = message counter.Add(2)
+  after_subtract = message counter.Subtract(1)
+  predicted = message counter.Next()
+  observed = message counter.Read()
   echo after_add, after_subtract, predicted, observed

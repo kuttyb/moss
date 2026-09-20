@@ -15,6 +15,6 @@ domain Worker:
 fn main():
   worker = spawn Worker()
   data = Payload(value = 7)
-  first = await worker.First(data)
-  second = await worker.Second(data)
+  first = message worker.First(data)
+  second = message worker.Second(data)
   echo first, second

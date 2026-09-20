@@ -7,7 +7,7 @@ domain Register:
 
 fn main():
   register = spawn Register()
-  first = await register.Set()
-  second = await register.Set()
-  third = await register.Set()
+  first = message register.Set()
+  second = message register.Set()
+  third = message register.Set()
   echo first, second, third

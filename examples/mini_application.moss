@@ -102,16 +102,16 @@ fn main():
   scheduler = spawn Scheduler()
   metrics = spawn Metrics()
 
-  first_position = await scheduler.Submit(build_code, scores["build"])
-  second_position = await scheduler.Submit(maintenance_code, scores["maintenance"])
+  first_position = message scheduler.Submit(build_code, scores["build"])
+  second_position = message scheduler.Submit(maintenance_code, scores["maintenance"])
 
-  # The message is asynchronous. The later await observes it in FIFO order.
+  # Messages complete synchronously in source order.
   message scheduler.MarkStarted(build_code)
-  snapshot = await scheduler.Snapshot()
+  snapshot = message scheduler.Snapshot()
 
   message metrics.Record(scores["build"])
   message metrics.Record(scores["maintenance"])
-  total = await metrics.Total()
+  total = message metrics.Total()
 
   echo "queue positions:", first_position, second_position
   echo "public codes:", build_code, maintenance_code

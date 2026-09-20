@@ -1,5 +1,5 @@
 # Functional callbacks obey the same explicit domain rules as ordinary code.
-# read_source contains await, so its map stage is an eager fusion barrier.
+# read_source contains a synchronous message, so its map stage is an eager fusion barrier.
 domain Source:
   value = 7
 
@@ -16,7 +16,7 @@ domain Sink:
     reply stored
 
 fn read_source(source: Source) -> Int:
-  value = await source.Read()
+  value = message source.Read()
   return value
 
 proc main():
@@ -29,5 +29,5 @@ proc main():
   # A terminal is a concrete scalar and can cross a message boundary normally.
   sink = spawn Sink()
   message sink.Store(total)
-  observed = await sink.Stored()
+  observed = message sink.Stored()
   echo "domain-backed total:", observed

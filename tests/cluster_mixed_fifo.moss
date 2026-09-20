@@ -9,7 +9,7 @@ domain Target
 domain Caller
   on Run(target: Target)
     message target.Add(1)
-    let value = await target.Add(2)
+    let value = message target.Add(2)
     echo "result:", value
 
 proc main()

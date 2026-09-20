@@ -6,12 +6,12 @@ domain Worker
 
 domain Registry
   on Get(worker: Worker) -> Worker
-    let selected = await worker.Self()
+    let selected = message worker.Self()
     reply selected
 
 domain Driver
   on Run(registry: Registry, worker: Worker)
-    let selected = await registry.Get(worker)
+    let selected = message registry.Get(worker)
     let alias = selected
     message alias.Ping()
     message selected.Ping()

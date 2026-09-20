@@ -11,8 +11,8 @@ domain Counter:
 
 domain Client:
   fn Run(counter: Counter):
-    first = await counter.Add(10)
-    second = await counter.Add(32)
+    first = message counter.Add(10)
+    second = message counter.Add(32)
     echo "shared total:", first, second
 
 fn main():

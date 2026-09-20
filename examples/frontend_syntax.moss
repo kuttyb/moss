@@ -1,5 +1,5 @@
 # Modern frontend forms: inferred functions, colon-style value types, inferred domain
-# state/replies, `=` constructors, pipelines, explicit messages, and assignment-await.
+# state/replies, `=` constructors, pipelines, and synchronous messages.
 
 type Quote:
   symbol
@@ -25,6 +25,6 @@ domain Quotes:
 
 fn main():
   quotes = spawn Quotes()
-  quote = await quotes.Latest()
+  quote = message quotes.Latest()
   result = score(quote)
   message quotes.Note(result)

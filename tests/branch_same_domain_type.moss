@@ -9,7 +9,7 @@ domain Router:
     else:
       target = second
 
-    value = await target.Ping()
+    value = message target.Ping()
     reply value
 
 fn main():
@@ -17,5 +17,5 @@ fn main():
   second = spawn Worker()
   router = spawn Router()
   flag = true
-  value = await router.Route(first, second, flag)
+  value = message router.Route(first, second, flag)
   echo value

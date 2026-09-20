@@ -8,7 +8,7 @@ domain Worker:
     payload = normalize(x)
 
   fn Ping(other: Worker):
-    ignored = await other.Pong()
+    ignored = message other.Pong()
 
   fn Pong() -> int:
     reply 1

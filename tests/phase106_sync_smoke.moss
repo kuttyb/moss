@@ -1,0 +1,19 @@
+domain Worker:
+  value: Int
+
+  fn Set(x: Int):
+    value = x
+
+  fn Get() -> Int:
+    reply value
+
+  fn Echo(x: Int) -> Int:
+    reply x
+
+fn main():
+  worker = spawn Worker()
+  message worker.Set(7)
+  result = message worker.Get()
+  assertEqual(result, 7)
+  echoed = message worker.Echo(9)
+  assertEqual(echoed, 9)

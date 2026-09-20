@@ -12,7 +12,7 @@ domain Coordinator:
     ignored = x
 
   fn Ping(worker: Worker):
-    ignored = await worker.Run()
+    ignored = message worker.Run()
 
 fn main():
   c = spawn Coordinator()

@@ -39,6 +39,12 @@ struct Param {
 struct Stmt {
   enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
+  // A synchronous message may be used as an expression initializer.  The
+  // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
+  // while this records the optional destination binding.  Keeping this on
+  // the checked statement avoids lowering source `message` through an
+  // artificial send/await pair.
+  string message_result;
   vector<int> continuation_lines;
   bool is_mutable = false; bool declaration = true; string semantic_type;
   // Types that remain definite after this control-flow statement. Concrete

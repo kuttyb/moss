@@ -5,7 +5,7 @@ domain Dependency
 domain Waiting
   on First(dependency: Dependency)
     echo "start"
-    let finished = await dependency.Finish()
+    let finished = message dependency.Finish()
     if finished:
       echo "finish"
 

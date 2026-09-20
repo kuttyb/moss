@@ -3,7 +3,7 @@ domain Source:
     reply 3
 
 fn read_value(source: Source) -> Int:
-  value = await source.Value()
+  value = message source.Value()
   return value
 
 proc main():

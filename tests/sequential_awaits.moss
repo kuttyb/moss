@@ -7,8 +7,8 @@ domain Worker
 
 domain Client
   on Run(worker: Worker)
-    let first = await worker.First()
-    let second = await worker.Second(first)
+    let first = message worker.First()
+    let second = message worker.Second(first)
     echo "sequential:", second
 
 proc main()

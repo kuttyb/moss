@@ -11,5 +11,5 @@ domain Worker:
 fn main():
   worker = spawn Worker()
   message worker.Run(10)
-  current = await worker.Get()
+  current = message worker.Get()
   echo "current:", current

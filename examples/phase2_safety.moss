@@ -36,9 +36,9 @@ fn main():
   inspect(packet, packet)
   echo "primitive projection:", packet.read_code()
 
-  # The await request and reply are detached copies, so packet remains usable.
-  let copied = await mirror.Copy(packet)
-  echo "after await copy:", packet.code, copied.code
+  # The synchronous message and reply are value boundaries, so packet remains usable.
+  let copied = message mirror.Copy(packet)
+  echo "after message copy:", packet.code, copied.code
 
   # This is the final use of packet: take_payload consumes the receiver.
   let payload = packet.take_payload()

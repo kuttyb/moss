@@ -1,0 +1,7 @@
+domain Worker:
+  fn Get() -> Int:
+    reply 1
+
+fn main():
+  worker = spawn Worker()
+  value = await worker.Get()

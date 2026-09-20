@@ -17,12 +17,12 @@ domain Payments:
 
 domain Checkout:
   fn PlaceOrder(inventory: Inventory, payments: Payments, quantity: int, price: int):
-    let reserved = await inventory.Reserve(quantity)
+    let reserved = message inventory.Reserve(quantity)
     if not reserved:
       echo "order rejected: insufficient inventory"
       return
 
-    let paid = await payments.Charge(quantity * price)
+    let paid = message payments.Charge(quantity * price)
     if paid:
       echo "order completed"
     else:

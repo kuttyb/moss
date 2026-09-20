@@ -8,5 +8,5 @@ domain Analyzer:
 
 proc main():
   analyzer = spawn Analyzer()
-  total = await analyzer.Total()
+  total = message analyzer.Total()
   echo total

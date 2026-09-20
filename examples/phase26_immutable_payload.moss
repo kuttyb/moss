@@ -21,5 +21,5 @@ fn main():
   sink = spawn Sink()
   router = spawn Router()
   payload = Record(id = 21)
-  result = await router.Route(payload, sink)
+  result = message router.Route(payload, sink)
   echo "checksum:", result

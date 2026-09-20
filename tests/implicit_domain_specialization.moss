@@ -15,7 +15,7 @@ fn main():
   floatBox = spawn Box()
   message intBox.Set(10)
   message floatBox.Set(3.5)
-  intValue = await intBox.Get()
-  floatValue = await floatBox.Get()
+  intValue = message intBox.Get()
+  floatValue = message floatBox.Get()
   echo intValue
   echo floatValue

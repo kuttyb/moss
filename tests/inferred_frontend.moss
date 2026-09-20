@@ -23,7 +23,7 @@ fn main():
   counter = spawn Counter()
   annotated = spawn Annotated()
   quotes = spawn Quotes()
-  first = await counter.Add(2)
-  second = await annotated.Get()
-  quote = await quotes.Latest()
+  first = message counter.Add(2)
+  second = message annotated.Get()
+  quote = message quotes.Latest()
   echo first, second, quote.symbol, quote.price

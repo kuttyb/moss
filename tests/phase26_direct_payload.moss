@@ -11,6 +11,6 @@ domain Worker:
 fn main():
   worker = spawn Worker()
   data = Payload(value = 7)
-  result = await worker.Process(data)
+  result = message worker.Process(data)
   data.value = 8
   echo result, data.value

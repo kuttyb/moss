@@ -19,6 +19,6 @@ proc main():
   calculator = spawn Calculator()
   values = [1, 2, 3]
   message sink.Store(values |> map(double) |> sum)
-  stored = await sink.Stored()
-  calculated = await calculator.Total(values)
+  stored = message sink.Stored()
+  calculated = message calculator.Total(values)
   echo stored, calculated

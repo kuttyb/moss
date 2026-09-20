@@ -12,24 +12,24 @@ domain Workshop:
     var item = WorkItem(name: "widget", revisions: 0, approved: false)
     item.revisions = item.revisions + 1
     echo "created:", item.name, item.revisions, item.approved
-    message self.Observe(item, archive)
+    observe_item(item, archive)
 
-  fn Observe(item: WorkItem, archive: Archive):
-    echo "observed:", item.name, item.revisions, item.approved
-    message self.Revise(item, archive)
+fn observe_item(item: WorkItem, archive: Archive):
+  echo "observed:", item.name, item.revisions, item.approved
+  revise_item(item, archive)
 
-  fn Revise(item: WorkItem, archive: Archive):
-    # Incoming message payloads are immutable snapshots.  Construct a new
-    # value from scalar fields instead of moving the payload into a local.
-    var revised = WorkItem(name = "widget", revisions = item.revisions, approved = item.approved)
-    revised.revisions = revised.revisions + 1
-    revised.approved = true
-    echo "revised:", revised.name, revised.revisions, revised.approved
-    message self.Verify(revised, archive)
+fn revise_item(item: WorkItem, archive: Archive):
+  # Incoming message payloads are immutable snapshots.  Construct a new
+  # value from scalar fields instead of moving the payload into a local.
+  var revised = WorkItem(name = "widget", revisions = item.revisions, approved = item.approved)
+  revised.revisions = revised.revisions + 1
+  revised.approved = true
+  echo "revised:", revised.name, revised.revisions, revised.approved
+  verify_item(revised, archive)
 
-  fn Verify(item: WorkItem, archive: Archive):
-    echo "verified:", item.name, item.revisions, item.approved
-    message archive.Store(item.revisions, item.approved)
+fn verify_item(item: WorkItem, archive: Archive):
+  echo "verified:", item.name, item.revisions, item.approved
+  message archive.Store(item.revisions, item.approved)
 
 fn main():
   let archive = spawn Archive()
