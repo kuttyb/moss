@@ -90,6 +90,14 @@ specialization dependency and emits a concrete helper with no runtime callable a
 Unbounded callable identity is rejected; there are no boxed functions, vtables, dynamic
 lookup, or general function-pointer escape.
 
+After specialization, effect propagation is a first-order graph: a pipeline node points
+to its concrete function/method specialization and then to ordinary local call edges.
+Generic higher-order declarations may be deferred until a concrete call site, but an
+unresolved indirect callable cannot enter checked functional IR. Captures are included
+in the same summaries; a captured domain-state read is a domain READ effect. `message`
+is an observable effect barrier, just like `await`, domain-state access, I/O, possible
+failure, or potential divergence.
+
 ## Ownership and boundaries
 
 Functional analysis consumes the Phase 2 READ/WRITE/CONSUME summaries rather than

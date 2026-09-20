@@ -371,7 +371,7 @@ deriving a returned new value.
   queries over existing compiler facts
 - Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
-- `spawn` from `main`
+- construction of domain instances from `main` (the current source spelling is `spawn`)
 - Primitive and object value payloads
 - `let`, `var`, `if`/`else`, `while`, `echo`, and bare `return`
 - Nim-style `and`, `or`, `not`, `true`, and `false`
@@ -430,7 +430,7 @@ Reply handlers may also be called without `await`; the message is sent normally 
 
 `--no-await-error-handling` omits the generated per-await `unwrap_or_else` diagnostic path and uses unchecked reply extraction instead. This is intended for a future supervision-tree runtime that owns failures; until those guarantees exist, the default await checks should remain enabled.
 
-By default, each spawned domain owns one OS thread and a generated lock-backed shared-memory mailbox. An await blocks that domain's thread. The domain remains logically occupied and does not dequeue another message until the awaited reply arrives, so handlers are non-reentrant and queued messages retain serialized order. `await self.Message(...)` is rejected because it would necessarily deadlock.
+By default, each constructed domain instance owns one OS thread and a generated lock-backed shared-memory mailbox. An await blocks that domain's thread. The domain remains logically occupied and does not dequeue another message until the awaited reply arrives, so handlers are non-reentrant and queued messages retain sender FIFO. `await self.Message(...)` is rejected because it would necessarily deadlock. This is backend/legacy transport terminology, not a new constructor or worker API.
 
 ## Shared-memory message transport
 
@@ -465,8 +465,10 @@ batched mailbox transport, and finally an ordinary mailbox.
   ineligible handler makes the whole domain fall back to locking.
 
 These are physical lowering choices only. Domains still logically serialize handlers;
-sender FIFO and a valid domain-wide total order remain intact; `message`, `await`, and
-`reply` remain semantic copy boundaries; and an awaiting handler remains non-reentrant.
+sender FIFO and serialized handler execution remain intact. This documentation does
+not claim a separate universal commit order beyond those source-visible guarantees;
+`message`, `await`, and `reply` remain semantic copy boundaries, and an awaiting handler
+remains non-reentrant.
 No optimization inserts `unsafe` or synchronization syntax into Moss. `-O0` retains
 the ordinary lock-backed mailbox implementation as the semantic reference.
 Boundary regressions compile that reference and the optimized atomic backend with
@@ -504,7 +506,7 @@ Backend cluster configuration groups domain types onto one worker without adding
 ./moss --cluster=Checkout,Inventory,Payments examples/checkout.moss -o build/checkout.rs
 ```
 
-Each clustered type must currently be spawned exactly once and unconditionally in `main`. The generated runtime call creates one worker and one lock-backed ingress mailbox for the group. External calls use the shared-memory `_shared` implementation. Calls between cluster members are statically emitted as `_local` calls, and member capabilities become zero-sized local references, so there is no runtime placement check or shared-handle clone on that path.
+Each clustered type must currently be constructed exactly once and unconditionally in `main`. The generated runtime call creates one worker and one lock-backed ingress mailbox for the group. External calls use the shared-memory `_shared` implementation. Calls between cluster members are statically emitted as `_local` calls, and member capabilities become zero-sized local references, so there is no runtime placement check or shared-handle clone on that path.
 
 Awaited local messages invoke the target handler directly. One-way local messages enter a plain single-threaded `VecDeque` and run after the current handler, retaining Moss's asynchronous and non-reentrant behavior without locks, atomics, or condition variables on the local path. If a local await follows an older queued message to the same target, the generated runtime drains that older work before making the direct call to preserve FIFO.
 
@@ -536,6 +538,14 @@ on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
 `moss debug` interprets the complete reachable Moss source closure (or the
 legacy project uber-module) as one checked program; it never mixes a native
 Moss module into that run.
+
+## Semantic convergence and agent introspection
+
+[`docs/SEMANTIC_CONVERGENCE.md`](docs/SEMANTIC_CONVERGENCE.md) records the current
+first-order effect graph, functional callable specialization, domain terminology,
+reserved synchronization schema, and the shared semantic/source identities exposed by
+`moss-agent-1`. It also calls out legacy mailbox/worker material and design questions
+that remain intentionally open.
 
 ## Platforms
 

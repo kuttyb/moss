@@ -92,6 +92,19 @@ their Moss source lines. `why` reuses existing functional materialization/fusion
 rewrite notes and backend lowering decisions; it does not reconstruct a separate
 optimization analysis.
 
+Target JSON also includes `source_identity` (the semantic identity used for the current
+build) and `specialization_identity` when the selected target is an actual specialization
+record. Direct call records include `resolved: true`, `target_kind`, physical source
+location, argument types, and a specialization identity only when the compiler has an
+exact matching specialization. `inspect` and `calls` additionally expose `callers`
+from the same retained static call graph. No field is inferred from generated symbol
+spelling.
+
+The schema response reserves `synchronization_diagnostics` with fields for future class
+counts, roots, handlers, conflicting/disjoint pairs, and collapse culprit fields. Its
+current availability is `schema_reserved_not_derived`; the compiler does not fabricate
+lock or synchronization facts before that design is settled.
+
 Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`; Moss
 does not guess a nearby semantic entity or invent a dynamic target.
 

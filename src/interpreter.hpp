@@ -30,6 +30,8 @@ class FastInterpreter {
   struct TraceEvent {
     std::string kind;
     std::string function;
+    std::string source_file;
+    std::string semantic_identity;
     int line = 0;
     std::string detail;
   };
@@ -59,6 +61,9 @@ class FastInterpreter {
     for (const auto& event : trace_) {
       out << "{\"event\":\"" << escape(event.kind)
           << "\",\"function\":\"" << escape(event.function)
+          << "\",\"source_file\":\"" << escape(event.source_file)
+          << "\",\"semantic_identity\":\""
+          << escape(event.semantic_identity)
           << "\",\"line\":" << event.line;
       if (!event.detail.empty())
         out << ",\"detail\":\"" << escape(event.detail) << "\"";
@@ -71,6 +76,8 @@ class FastInterpreter {
       throw RuntimeError(0, "Fast Debug requires a Moss main procedure");
     Frame frame;
     frame.function = "main";
+    frame.source_file = program_.main->source_file;
+    frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
   }
 
@@ -83,6 +90,8 @@ class FastInterpreter {
       ++discovered;
       Frame frame;
       frame.function = "test:" + test.name;
+      frame.source_file = test.source_file;
+      frame.semantic_identity = test.semantic_identity;
       execute(test.body, frame, output);
       output << "PASS " << test.name << "\n";
     }
@@ -122,6 +131,8 @@ class FastInterpreter {
 
   struct Frame {
     std::string function;
+    std::string source_file;
+    std::string semantic_identity;
     std::unordered_map<std::string, Value> locals;
   };
 
@@ -148,7 +159,8 @@ class FastInterpreter {
   void emit(const std::string& kind, const Frame& frame, int line,
             std::string detail = {}) {
     if (!options_.trace) return;
-    trace_.push_back({kind, frame.function, line, std::move(detail)});
+    trace_.push_back({kind, frame.function, frame.source_file,
+                      frame.semantic_identity, line, std::move(detail)});
   }
 
   static std::string trim_copy(std::string value) {
@@ -428,7 +440,10 @@ class FastInterpreter {
 
     if (identifier(e)) {
       auto found = frame.locals.find(e);
-      if (found != frame.locals.end()) return found->second;
+      if (found != frame.locals.end()) {
+        emit("LocalRead", frame, line, e);
+        return found->second;
+      }
       throw RuntimeError(line, "unknown local '" + e + "'");
     }
     throw RuntimeError(line, "unsupported expression '" + e + "'");
@@ -556,13 +571,20 @@ class FastInterpreter {
              Frame& caller, int line, std::ostream& output) {
     if (arguments.size() != target.params.size())
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
-    Frame frame; frame.function = target.name;
+    Frame frame;
+    frame.function = target.name;
+    frame.source_file = target.source_file;
+    frame.semantic_identity = "fn:" + target.name + "@" +
+        std::to_string(target.line);
     for (size_t i = 0; i < arguments.size(); ++i)
       frame.locals[target.params[i].name] = eval(arguments[i], caller, line, output);
     emit("FunctionEnter", frame, target.line);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
         (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+    if (!flow.returned)
+      emit("Return", frame, target.result_line ? target.result_line : target.line,
+           result.display());
     emit("FunctionExit", frame, target.result_line ? target.result_line : target.line);
     return result;
   }
@@ -571,7 +593,11 @@ class FastInterpreter {
                     const std::vector<std::string>& arguments, Frame& caller,
                     int line, std::ostream& output) {
     if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
-    Frame frame; frame.function = target.owner + "." + target.name;
+    Frame frame;
+    frame.function = target.owner + "." + target.name;
+    frame.source_file = target.source_file;
+    frame.semantic_identity = "method:" + target.owner + "." +
+        target.name + "@" + std::to_string(target.line);
     frame.locals["self"] = receiver;
     for (const auto& field : receiver.object->fields) frame.locals[field.first] = field.second;
     for (size_t i = 0; i < arguments.size(); ++i)
@@ -584,6 +610,9 @@ class FastInterpreter {
     }
     Value result = flow.returned ? flow.value :
         (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
+    if (!flow.returned)
+      emit("Return", frame, target.result_line ? target.result_line : target.line,
+           result.display());
     emit("MethodExit", frame, target.result_line ? target.result_line : target.line);
     return result;
   }
@@ -664,6 +693,7 @@ class FastInterpreter {
         case Stmt::Kind::Return:
           flow.returned = true;
           flow.value = statement.a.empty() ? Value::unit() : eval(statement.a, frame, statement.line, output);
+          emit("Return", frame, statement.line, flow.value.display());
           return flow;
         case Stmt::Kind::Message:
         case Stmt::Kind::AwaitMessage:

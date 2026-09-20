@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <cerrno>
 #include <cctype>
 #include <chrono>
@@ -5295,10 +5296,18 @@ class Checker {
       return effects;
     }
     auto local = env.find(identity);
+    const bool deferred_generic_callable =
+        local != env.end() && starts_with(local->second, "_generic:");
     if (local != env.end() && starts_with(local->second, "callable:"))
       identity = local->second.substr(9);
     auto function = functions_.find(identity);
     if (function == functions_.end()) {
+#ifndef NDEBUG
+      // The only permitted unresolved callable at this stage is a generic
+      // higher-order declaration awaiting a concrete specialization.
+      assert(deferred_generic_callable &&
+             "unresolved indirect callable reached effect analysis");
+#endif
       effects.unresolved = true;
       return effects;
     }
@@ -5386,6 +5395,20 @@ class Checker {
         node.effects = functional_stage_effects(
             callable, callback_input_types, env, node.callable_identity,
             node.captures, domain_fields, implicit_object);
+#ifndef NDEBUG
+        // Generic higher-order bodies are intentionally unresolved until a
+        // concrete call site specializes them.  Every other pipeline reaching
+        // the checked functional IR must have a concrete callable identity;
+        // an unresolved indirect callable here would make effect propagation
+        // silently incomplete.
+        auto callable_binding = env.find(trim(callable));
+        const bool deferred_generic_callable =
+            callable_binding != env.end() &&
+            starts_with(callable_binding->second, "_generic:");
+        if (!deferred_generic_callable)
+          assert(!node.effects.unresolved &&
+                 !node.callable_identity.empty());
+#endif
         if (owning_function &&
             !starts_with(node.callable_identity, "placeholder:") &&
             !node.callable_identity.empty() &&
@@ -13575,7 +13598,7 @@ class Generator {
             throw std::runtime_error("internal error: asynchronous send reached direct shared-memory generation");
           if (target && direct_atomic(*target)) {
             backend_comment(o, (base + level) * 4,
-                            "ATOMIC DOMAIN one-way execution; SeqCst preserves the domain total order");
+                            "ATOMIC DOMAIN one-way execution; SeqCst preserves the selected atomic ordering");
             o << indent(level);
             if (h && h->reply_type) o << "let _ = ";
             o << recv << "." << s.b << "_shared(";
@@ -15143,6 +15166,14 @@ static void write_semantic_target_json(std::ostream& out,
   out << ", \"identity_version\": \"entity-v1\"";
   out << ", \"construct_kind\": ";
   write_debug_json_string(out, target.kind);
+  out << ", \"source_identity\": ";
+  write_debug_json_string(out, target.semantic_identity);
+  out << ", \"specialization_identity\": ";
+  if (target.kind == "domain_specialization" ||
+      target.kind == "specialization")
+    write_debug_json_string(out, target.semantic_identity);
+  else
+    out << "null";
   out << ", \"name\": ";
   write_debug_json_string(out, target.name);
   out << ", \"module_identity\": ";
@@ -15206,6 +15237,43 @@ static vector<const SemanticCallEdge*> calls_for_target(
   for (const auto& edge : program.semantic_call_edges)
     if (edge.source == target.context) result.push_back(&edge);
   return result;
+}
+
+static vector<const SemanticCallEdge*> callers_for_target(
+    const Program& program, const SemanticTargetFact& target) {
+  vector<const SemanticCallEdge*> result;
+  for (const auto& edge : program.semantic_call_edges)
+    if (edge.target == target.context) result.push_back(&edge);
+  return result;
+}
+
+static string semantic_call_target_kind(const string& target) {
+  if (starts_with(target, "fn:")) return "function";
+  if (starts_with(target, "method:")) return "method";
+  if (starts_with(target, "handler:")) return "handler";
+  return "resolved_callable";
+}
+
+static std::optional<string> specialization_identity_for_call(
+    const Program& program, const SemanticCallEdge& edge) {
+  if (!starts_with(edge.target, "fn:") || edge.argument_types.empty())
+    return std::nullopt;
+  string name = edge.target.substr(3);
+  auto function = std::find_if(
+      program.functions.begin(), program.functions.end(),
+      [&](const Function& candidate) { return candidate.name == name; });
+  if (function == program.functions.end()) return std::nullopt;
+  for (const auto& specialization : function->specializations) {
+    if (specialization.parameter_types != edge.argument_types) continue;
+    string identity = "specialization:" + name + "<";
+    for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
+      if (index) identity += ",";
+      identity += specialization.parameter_types[index];
+    }
+    identity += ">";
+    return identity;
+  }
+  return std::nullopt;
 }
 
 static vector<const SemanticAwaitSite*> awaits_for_context(
@@ -15444,7 +15512,9 @@ static void write_bootstrap_json(std::ostream& out,
             "modules", "qualified_imports", "module_interfaces",
             "generic_specialization_identity", "instance_keyed_awaits",
             "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
-            "repair_actions", "static_cost_facts"});
+            "repair_actions", "static_cost_facts", "source_provenance",
+            "first_order_effect_graph", "structured_execution_trace",
+            "synchronization_schema"});
   out << ",\n    \"capability_flags\": {"
          "\"impact_analysis\": true, "
          "\"incremental_verification\": true, "
@@ -15520,6 +15590,12 @@ static void write_bootstrap_json(std::ostream& out,
               "bench:<relative-source>:<name>",
               "module:<project>::<module>",
               "specialization:<module>:<generic>:<type-tuple>"});
+    out << ", \"synchronization_diagnostics\": {"
+           "\"availability\": \"schema_reserved_not_derived\", "
+           "\"fields\": [\"class_count\", \"root_count\", "
+           "\"handler_count\", \"conflicting_handler_pairs\", "
+           "\"disjoint_handler_pairs\", \"collapse_culprit_fields\"], "
+           "\"semantics\": \"reserved until synchronization analysis is settled\"}";
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
            "\"legal_alternatives\"], "
@@ -15577,11 +15653,34 @@ static void write_calls_result(std::ostream& out, const Program& program,
     if (index) out << ", ";
     out << "{\"target\": ";
     write_debug_json_string(out, calls[index]->target);
+    out << ", \"resolved\": true, \"target_kind\": ";
+    write_debug_json_string(out,
+                            semantic_call_target_kind(calls[index]->target));
     out << ", \"line\": " << calls[index]->line
         << ", \"source_file\": ";
     write_debug_json_string(out, calls[index]->source_file);
     out << ", \"argument_types\": ";
     write_agent_string_array(out, calls[index]->argument_types);
+    out << ", \"specialization_identity\": ";
+    auto specialization = specialization_identity_for_call(program, *calls[index]);
+    if (specialization) write_debug_json_string(out, *specialization);
+    else out << "null";
+    out << "}";
+  }
+  out << "]";
+}
+
+static void write_callers_result(std::ostream& out, const Program& program,
+                                 const SemanticTargetFact& target) {
+  auto callers = callers_for_target(program, target);
+  out << "[";
+  for (size_t index = 0; index < callers.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"source\": ";
+    write_debug_json_string(out, callers[index]->source);
+    out << ", \"line\": " << callers[index]->line
+        << ", \"source_file\": ";
+    write_debug_json_string(out, callers[index]->source_file);
     out << "}";
   }
   out << "]";
@@ -15792,6 +15891,8 @@ static bool write_semantic_query_json(
   if (command == "inspect" || command == "calls") {
     out << ", \"direct_calls\": ";
     write_calls_result(out, program, *target);
+    out << ", \"callers\": ";
+    write_callers_result(out, program, *target);
   }
   if (command == "inspect" || command == "awaits") {
     out << ", \"awaits\": ";

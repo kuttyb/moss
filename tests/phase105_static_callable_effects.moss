@@ -1,0 +1,24 @@
+# Phase 10.5: every callable used by a concrete pipeline is a first-order
+# compiler target before effect propagation.
+type Scaler:
+  factor: Int
+
+  fn apply(value: Int) -> Int:
+    return value * factor
+
+fn announce(value: Int) -> Int:
+  echo value
+  return value
+
+fn transform(values, operation):
+  return values |> map(operation)
+
+proc main():
+  values = [1, 2]
+  scaler = Scaler(factor = 3)
+  named = transform(values, announce)
+  bound = values |> map(scaler.apply)
+  placeholder = values |> map(_ + 1)
+  assert named[0] == 1
+  assert bound[1] == 6
+  assert placeholder[0] == 2

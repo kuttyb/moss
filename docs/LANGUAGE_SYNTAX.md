@@ -298,8 +298,9 @@ With optimization enabled, the backend may implement the same domain as a mailbo
 direct `Mutex`/`RwLock` state object, a set of `SeqCst` atomics, or a configured local
 cluster. It may also batch adjacent sends or reuse a proven-exclusive lock guard. These
 choices add no source category: `message`, `await`, and `reply` remain copy boundaries;
-handlers retain one valid serialized total order; and sender FIFO and non-reentrancy
-remain language rules. `-O0` is the ordinary mailbox reference lowering. Generated
+handlers remain serialized and non-reentrant, and sender FIFO remains a source-visible
+guarantee. This text does not assert one universal domain commit order beyond those
+guarantees. `-O0` is the ordinary mailbox reference lowering. Generated
 comments expose the selected plan for testing, but Rust locks, atomics, queues, and
 threads are not Moss semantics.
 
@@ -309,6 +310,11 @@ nested acquisition of domain state locks. A direct-shared handler currently keep
 source state lock while awaiting a mailbox-backed domain, so the lock can remain held
 for the target's full request/reply latency. This is semantically correct and recorded
 as a future performance concern rather than changed by the current backend.
+
+Phase 10.5 does not introduce self-send or same-domain handler-chaining syntax. Put
+shared handler logic in ordinary statically resolved helpers. Historical backend notes
+may mention queued self-messages; their final source-level status is intentionally
+superseded/open rather than changed by this documentation checkpoint.
 
 ## Static iteration
 

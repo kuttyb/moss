@@ -44,6 +44,12 @@ details.
 Projects without `module` declarations continue to use the implicit project
 module used by earlier Moss phases.
 
+Domain helper scoping remains an ordinary language/module concern: common handler
+logic should live in ordinary helpers with normal static call resolution. This
+document does not add implicit same-domain handler chaining or self-send rules.
+Concrete domain topology and any domain rank are whole-program composition/link
+facts, not declarations inferred from a directory or a local handler.
+
 ## Separate compilation
 
 An explicit module is compiled in import-DAG order to its own generated Rust

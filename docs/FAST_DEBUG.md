@@ -28,8 +28,11 @@ conditionals, while loops, structs, fields, methods, and assertions are
 supported in this initial 10.1A slice.
 
 `--trace` writes newline-delimited structured JSON events to standard error.
-Events retain the Moss function and source line, including function entry and
-exit, local writes, branch choices, loop iterations, and assertion failures.
+Events retain the Moss function, physical source file, semantic identity, and
+source line, including function entry and exit, local reads/writes, returns,
+branch choices, loop iterations, and assertion failures. The event names and
+fields describe settled ordinary execution only; lock, synchronization, and
+domain-rank events are reserved until those designs are settled.
 The trace is intentionally machine-readable so later debugger and agent tools
 can consume it without parsing display text.
 

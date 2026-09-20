@@ -698,3 +698,26 @@ legacy `src/**/*.moss` uber-module otherwise. All selected Moss code executes
 in one interpreter; compiled Moss interfaces/native modules are rejected rather
 than mixed into the run. Project closure regressions cover cross-file calls and
 verify that no Rust compiler is needed.
+
+## Phase 10.5 — Semantic convergence and AI introspection
+
+Phase 10.5 is a non-semantic tooling/documentation checkpoint. The existing
+static callable specialization, first-order effect summaries, entity-v1/source
+provenance, semantic query API, impact graph, and Fast Debug trace are now
+documented together. Query JSON exposes the existing source identity,
+specialization identity when an exact record exists, resolved call kind, and
+caller edges without creating a second analysis. Fast Debug ordinary execution
+trace events retain source file and semantic identity and include local reads,
+returns, branches, loops, writes, and assertion failures.
+
+`moss agent schema --json` reserves (but does not fabricate)
+`synchronization_diagnostics` fields for future class/root/handler and
+conflict/collapse reporting. A complete Account `R(h)`, `W(h)`, `W*`, and
+ProtectedRead derivation is recorded in `docs/SEMANTIC_CONVERGENCE.md` as
+design vocabulary only.
+
+Legacy mailbox/worker/await transport descriptions remain for implemented
+backends and historical checkpoints. No new self-send or same-domain handler
+chaining semantics, WRITE-parameter assignment rule, domain-handle
+representation, synchronization rank, effect ABI, or lock trace semantics
+were selected here; those items remain **BLOCKED BY OPEN DESIGN**.

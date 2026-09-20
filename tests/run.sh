@@ -767,6 +767,45 @@ fi
     "$test_build/phase4_callable_specialization_optimized.rs")" -eq 2 ] ||
   fail 'functional callable did not retain distinct Int and Float specializations'
 
+# Phase 10.5: named, bound-method, placeholder, and higher-order callables
+# must be concrete before their functional effect summaries are consumed.
+"$compiler" -O --dump-functional-ir --check \
+  tests/phase105_static_callable_effects.moss \
+  >"$test_build/phase105_static_callable_effects.ir"
+grep -F 'callable=announce IO' \
+  "$test_build/phase105_static_callable_effects.ir" >/dev/null ||
+  fail 'named functional callable did not retain its concrete I/O effect'
+grep -F 'semantic=fn:transform<vector[int],callable:announce>@14:expression:0' \
+  "$test_build/phase105_static_callable_effects.ir" >/dev/null ||
+  fail 'higher-order callable parameter was not concretely specialized'
+grep -F 'callable=scaler.apply PURE+CAPTURE_READ' \
+  "$test_build/phase105_static_callable_effects.ir" >/dev/null ||
+  fail 'bound method callable did not resolve before effect propagation'
+grep -F 'callable=placeholder:_ + 1 PURE' \
+  "$test_build/phase105_static_callable_effects.ir" >/dev/null ||
+  fail 'placeholder callable did not resolve before effect propagation'
+"$compiler" calls fn:transform --source \
+  tests/phase105_static_callable_effects.moss --json \
+  >"$test_build/phase105_calls.json"
+grep -F '"source_identity"' "$test_build/phase105_calls.json" >/dev/null ||
+  fail 'semantic query omitted source identity'
+grep -F '"callers"' "$test_build/phase105_calls.json" >/dev/null ||
+  fail 'semantic query omitted retained caller edges'
+"$compiler" inspect main --source \
+  tests/phase105_static_callable_effects.moss --json \
+  >"$test_build/phase105_inspect.json"
+grep -F '"resolved": true' "$test_build/phase105_inspect.json" >/dev/null ||
+  fail 'semantic query omitted resolved call identity'
+grep -F '"target_kind": "method"' "$test_build/phase105_inspect.json" >/dev/null ||
+  fail 'semantic query omitted concrete method target kind'
+grep -F '"specialization_identity": "specialization:transform<vector[int],callable:announce>"' \
+  "$test_build/phase105_inspect.json" >/dev/null ||
+  fail 'semantic query omitted concrete specialization identity'
+"$compiler" agent schema --json >"$test_build/phase105_schema.json"
+grep -F '"synchronization_diagnostics"' "$test_build/phase105_schema.json" >/dev/null ||
+  fail 'agent schema omitted reserved synchronization diagnostics'
+
+
 "$compiler" -O --dump-functional-ir --check tests/phase4_fusion.moss \
   >"$test_build/phase4_functional_ir.first"
 "$compiler" -O --dump-functional-ir --check tests/phase4_fusion.moss \
@@ -1378,6 +1417,12 @@ printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
 interp_trace=$($compiler run --interp --trace tests/phase10_interpreter_basic.moss 2>&1 >/dev/null)
 printf '%s\n' "$interp_trace" | grep -F '"event":"FunctionEnter"' >/dev/null ||
   fail 'fast interpreter did not emit structured trace events'
+printf '%s\n' "$interp_trace" | grep -F '"semantic_identity":"fn:transform@1"' >/dev/null ||
+  fail 'fast interpreter trace omitted semantic identity'
+printf '%s\n' "$interp_trace" | grep -F '"event":"LocalRead"' >/dev/null ||
+  fail 'fast interpreter trace omitted local-read events'
+printf '%s\n' "$interp_trace" | grep -F '"event":"Return"' >/dev/null ||
+  fail 'fast interpreter trace omitted return events'
 if command -v python3 >/dev/null 2>&1; then
   python3 tests/tooling/check_phase10_fast_debug_project.py "$compiler" ||
     fail 'fast interpreter did not execute the complete project source closure'
