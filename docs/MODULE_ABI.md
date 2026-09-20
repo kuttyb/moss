@@ -42,7 +42,7 @@ For concrete exports it records:
 - the closed signature;
 - parameter READ/WRITE/CONSUME modes;
 - observable effects;
-- synchronous message/reply domain contract (historical await metadata is legacy);
+- synchronous message/reply domain contract;
 - the materialized semantic identity.
 
 Exported domain handlers also retain the message-payload contract: every
@@ -51,8 +51,7 @@ forwarded through another explicit message, but cannot be mutated, consumed,
 reassigned, or stored by move. A reply is a new semantic value boundary, so
 replying the incoming value by value is legal regardless of whether its
 concrete type is `Copy`. This contract
-is preserved when a module is specialized and is independent of whether the
-final backend uses a mailbox or a synchronous shared-memory reference.
+is preserved when a module is specialized and by both execution engines.
 
 Exported domains may also carry structural `route name: Domain` declarations
 from `domainroutes(...)`. These describe route edges for final application
@@ -74,17 +73,10 @@ not to the semantic `ModuleId`. A changed Rust compiler/toolchain fingerprint
 rebuilds materialized artifacts; Moss does not promise a stable binary ABI
 across arbitrary rustc versions.
 
-Legacy await metadata uses exact statically declared domain-instance identities.
-Two bindings created by the retired `spawn Worker()` spelling were separate
-nodes. The final composed
-program unions those edges and runs the existing DFS; domain type names are
-never used as instance identity.
-
-For a typed callable that invokes a domain through a parameter, the contract uses
-`target=parameter[N]` plus the handler/domain. Final linking substitutes the
-caller's exact declared instance (for example `app::worker1`) before running
-the same legacy dependency machinery. Internal module-owned instances remain qualified and
-opaque.
+Concrete routes and exact specialization identities determine final application
+topology. Phase 10.6E removes obsolete await-boundary metadata and effects;
+ordinary function parameters cannot carry domain handles. Bind outbound domain
+dependencies through `domainroutes`.
 
 ## Phase 10.6C handler state effects
 
@@ -102,9 +94,10 @@ records also require rebuilding the provider; an absent body is not proof of
 an empty effect. These records participate in the semantic interface hash.
 
 Phase 10.6D introduced native ABI version 2 for inferred primitive WRITE
-references and plan-driven domain constructors. Phase 10.6D.1 advances it to
+references and plan-driven domain constructors. Phase 10.6D.1 introduced
 version 3 for reusable static borrowed-access helpers and provider decomposition
-entry points. Old providers must be rebuilt. This native
+entry points. Phase 10.6E uses version 4 after removing await metadata and
+retired constructor/runtime plumbing. Old providers must be rebuilt. This native
 compatibility marker carries no synchronization-class ABI: the final application
 supplies its compiler-derived descriptor at construction, including for source-free
 providers. `.mossi` continues to export semantic handler/formal leaf effects only;

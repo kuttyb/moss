@@ -69,8 +69,8 @@ moss check src/main.moss --json
 
 Successful checks return a diagnostics array, including warnings such as
 `MESSAGE_PAYLOAD_COPY_LARGE`. Compile failures return stable category codes such as
-`OWNERSHIP_USE_AFTER_CONSUME`, `AWAIT_CYCLE`, `RECURSION_CYCLE`,
-`AWAIT_TARGET_UNBOUNDED`, and `TYPE_INFERENCE_FAILED`. Human diagnostics remain the
+`OWNERSHIP_USE_AFTER_CONSUME`, `RECURSION_CYCLE`, and
+`TYPE_INFERENCE_FAILED`. Human diagnostics remain the
 default for `moss --check source.moss` and `moss check source.moss`.
 
 ## Semantic queries
@@ -84,7 +84,6 @@ moss type line:18 --source src/main.moss --json
 moss effects fn:normalize --source src/main.moss --json
 moss ownership method:Buffer.push --source src/main.moss --json
 moss calls fn:evaluate --source src/main.moss --json
-moss awaits handler:Router.Route --source src/main.moss --json
 moss why main@24:expression:0 --source src/main.moss --json -O
 ```
 
@@ -94,7 +93,7 @@ An exact location can alternatively be written as one target:
 moss inspect src/main.moss:18 --json
 ```
 
-`inspect` combines type, ownership, observable effects, static calls, legacy await facts, and
+`inspect` combines type, ownership, observable effects, static calls, concrete topology, and
 existing compiler explanations. The focused commands return the same authoritative
 subsets. Ownership (`READ`, `WRITE`, `CONSUME`) remains separate from observable effects
 such as local mutation, domain access, synchronous message, I/O, failure, and divergence.
@@ -108,9 +107,9 @@ inherits unrelated effects from the rest of its function. In that case,
 exists. Phase 6A does not run a new statement-effect analysis to answer a query.
 
 `calls` reports only statically resolved targets retained by recursion validation.
-`awaits` reports legacy await sites and dependency edges; new synchronous programs
-normally return an empty await set, including
-their Moss source lines. `why` reuses existing functional materialization/fusion/semantic
+The retired `awaits` query and await-only schema fields are removed. Concrete
+routing remains available through `inspect` and its `concrete_domain_graph`.
+`why` reuses existing functional materialization/fusion/semantic
 rewrite notes and backend lowering decisions; it does not reconstruct a separate
 optimization analysis.
 
@@ -230,8 +229,8 @@ from any stronger cross-edit identity model that may be needed in a future relea
 
 Project builds expose emitted `.mossi` paths in `artifacts.module_interfaces`.
 Semantic records use module-qualified declaration identities, distinguish
-concrete and generic exports, and report exact declared-domain-instance legacy await
-identities when available. `moss impact` continues to use compiler-owned
+concrete and generic exports, and report exact concrete domain and specialization
+identities. Impact snapshots retain concrete route dependencies. `moss impact` continues to use compiler-owned
 semantic dependencies and invalidates generic users when their semantic body
 hash changes.
 
@@ -247,3 +246,13 @@ string available without another CLI command. Production locking consumes this
 plan (`physical_lowering: "handler_2pl"`); the dump also shows ranked acquisitions
 and full-handler retention.
 See [the plan schema and derivation](SYNCHRONIZATION_PLAN.md).
+
+## Fast Debug synchronous domains (10.6E)
+
+Compile/check once, then interpret the checked transitive Moss source closure
+with `moss run --interp --trace` or `moss debug`. Domains no longer require a
+switch to native execution. Trace events identify composition, nested messages,
+handler entry/exit, state READ/WRITE/CONSUME, and terminating replies with stable
+instance/specialization/source identities. Fast Debug uses one deterministic
+logical schedule; production lock events and contention remain separate runtime
+validation concerns. See [Fast Debug](FAST_DEBUG.md).

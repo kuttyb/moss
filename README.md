@@ -8,9 +8,10 @@ synchronous `message`. Handles cannot be payloads, replies, ordinary parameters,
 or stored/aliased values. See [domain syntax](docs/LANGUAGE_SYNTAX.md#closed-routing-capabilities-phase-106b1)
 and [topology introspection](docs/AGENT_API.md#closed-concrete-domain-topology).
 
-Phase 2.5 is frozen and complete. Its mailbox, batching, direct-lock, RwLock,
-atomic, and cluster lowerings are backend choices beneath one Moss semantic
-model; later language or optimizer phases belong in separate checkpoints.
+Production domains use one compiler-derived handler-level 2PL backend with
+borrowed protected READs. Fast Debug executes the same checked synchronous
+domain semantics directly, without locks or scheduling. Retired runtime
+implementations were removed in Phase 10.6E.
 
 Phase 4 functional/dataflow compilation is now implemented on top of that frozen
 foundation. Pipelines are typed Moss IR, callable effects are inferred separately
@@ -311,7 +312,7 @@ semantic and compiler contract.
 Additional examples:
 
 - `examples/counter.moss` demonstrates serialized state updates.
-- `examples/shared_memory.moss` shows ordinary synchronous Moss messages selecting mailbox or whole-domain atomic implementations without changing the source.
+- `examples/shared_memory.moss` shows synchronous Moss calls through plan-driven handler entry.
 - `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
 - `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
@@ -449,87 +450,44 @@ the compiler rejects construction in later execution, control flow, helpers, or 
 member namespace. The compiler validates a concrete acyclic routing graph and assigns
 deterministic domain ranks. Phase 10.6C derives synchronization classes, handler
 ClassSets, and local class ranks in a graph-relative
-[`SynchronizationPlan`](docs/SYNCHRONIZATION_PLAN.md). Production 2PL lowering
-is not yet implemented.
+[`SynchronizationPlan`](docs/SYNCHRONIZATION_PLAN.md). Production locking acquires exactly each handler's planned shared/exclusive
+classes in increasing class rank and retains them through nested synchronous
+messages until handler completion.
 
-## Shared-memory message transport
+## Domain execution
 
-`-Oshared-memory` (or `-O`) runs a whole-program backend planner that selects the
-cheapest implementation it can prove equivalent:
-
-```sh
-./moss -Oshared-memory examples/checkout.moss -o build/checkout.rs
+```text
+Moss source → checker / specialization / effects → ConcreteDomainGraph
+                                                   ├─ SynchronizationPlan
+                                                   │    → production: 2PL + borrowed views
+                                                   └─ Fast Debug: direct deterministic interpreter
 ```
 
-The plan records one domain lowering—`Mailbox`, `DirectMutex`, `DirectRwLock`,
-`DirectAtomic`, or configured `ClusterLocal`. Rust generation executes that plan
-rather than rediscovering optimization patterns. A configured cluster takes
-precedence, followed by a legal whole-domain atomic representation, direct shared
-state, RwLock or Mutex, and finally the legacy mailbox adapter.
+Production runtime instances own one RwLock per synchronization class. Protected
+READs borrow stored values under retained guards; immutable state is borrowed
+without locking. EXCLUSIVE values move into private working storage and are
+restored before unlock. Nested calls retain ancestor guards and obey the global
+`(domain_rank, class_rank)` order. Unexpected handler failure is fail-closed.
+See [synchronization architecture](docs/SYNCHRONIZATION_PLAN.md) for the structural
+deadlock proof and domain-local conflict-serializability scope.
 
-- Synchronous messages are not batched: each invocation completes before the next
-  statement. The legacy mailbox adapter still sends a completion acknowledgement when
-  `-O0` selects that physical representation.
-- Synchronous domains can use direct shared state. Handler implementation is split
-  from its lock wrapper, and a direct message call completes before the caller resumes.
-- A state-reading handler with no ordering-sensitive external effect can take a shared
-  `RwLock` guard. State writes remain exclusive; write-only or uncertain domains use
-  `Mutex`.
-- A domain made entirely of one-action integer or boolean handlers uses `AtomicI64`
-  and `AtomicBool` with `SeqCst` ordering. Eligible loads, stores, add/subtract,
-  toggles, and swaps execute directly for synchronous `message`, so a fully
-  atomic domain has no worker, mailbox, condition variable, or state mutex. One
-  ineligible handler makes the whole domain fall back to locking.
+`-O` (also spelled `-Oshared-memory`) controls functional rewrites and fusion.
+Every optimization level uses the same domain runtime. The retired `--cluster`
+and `--no-await-error-handling` options are removed. Generated ordinary domain
+calls contain no queue, completion channel, worker loop, or future.
 
-These are physical lowering choices only. Domains still logically serialize handlers;
-sender FIFO and serialized handler execution remain intact. This documentation does
-not claim a separate universal commit order beyond those source-visible guarantees;
-`message` and `reply` remain semantic by-value boundaries, and handlers remain
-non-reentrant in the current backend. The compiler now computes domain ranks and
-fine-grained synchronization classes as analysis; physical locking is unchanged.
-No optimization inserts `unsafe` or synchronization syntax into Moss. `-O0` retains
-the ordinary lock-backed mailbox implementation as the semantic reference.
-Boundary regressions compile that reference and the optimized atomic backend with
-Rust overflow checks enabled and require identical results at `i64::MIN` and
-`i64::MAX`.
-
-Generated Rust is annotated for inspection: `Moss line N` identifies the source line
-for a directly corresponding declaration or statement. `Moss backend plan` records
-each domain classification, while `Moss backend` marks atomic handlers, shared reads,
-coalesced guards, batched enqueues, and cluster-local calls.
-
-Source `await` is retired. A local domain-reference binding must have one
-concrete static domain type after every control-flow join: assigning `Alpha` on one
-branch and `Beta` on another is rejected rather than treated as a union or resolved by
-branch order. The former await DAG is retained only as legacy backend/tooling metadata;
-new synchronous messages do not create await dependencies. Cancellation, timeouts, and
-failure propagation are not implemented.
-
-## Domain clustering
-
-Backend cluster configuration groups domain types onto one worker without adding Moss syntax:
-
-```sh
-./moss --cluster=Checkout,Inventory,Payments examples/checkout.moss -o build/checkout.rs
-```
-
-Each clustered type must currently be constructed exactly once and unconditionally in `main`. The generated runtime call creates one worker and one lock-backed ingress mailbox for the group. External calls use the shared-memory `_shared` implementation. Calls between cluster members are statically emitted as `_local` calls, and member capabilities become zero-sized local references, so there is no runtime placement check or shared-handle clone on that path.
-
-Cluster-local messages invoke the target handler directly and synchronously. The
-legacy local queue remains only as backend compatibility machinery; it is not a
-source-level operation.
-
-Historical await-cycle fixtures are rejected before backend placement; active
-synchronous messages do not participate in an await graph. Cluster planning does
-not define a separate or weaker policy.
+Future lexical domain scopes and concurrency ingress remain separate design
+work. No fairness guarantee, transaction spanning domains, or recovery semantics
+is implied. Early unlock, lock elision, atomic promotion, and compiler-proven
+clustering remain future optimizations.
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas, or a general multi-instance cluster planner.
+This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
-Messages and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read, forward, or reply with them by value, but may not mutate, consume, reassign, or move them into state. The compiler emits an owned clone for mailbox transport; a proven synchronous shared-memory call may pass a temporary immutable reference instead. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
+Messages and replies are explicit value-copy boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read, forward, or reply with them by value, but may not mutate, consume, reassign, or move them into state. The backend establishes independent owned message/reply values. Ordinary state READs borrow stored values. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability. Large statically sized payloads produce a copy-cost warning. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
 
 ## Fast Debug execution
 
@@ -544,8 +502,8 @@ moss debug app
 
 Use `--trace` for newline-delimited structured execution events. The initial
 interpreter supports ordinary functions, arithmetic, locals, conditionals,
-loops, structs, methods, and assertions. Domain/message execution remains
-on the compiled backend; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
+while loops, structs, methods, assertions, and synchronous domains with static
+routes and nested message/reply execution; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
 `moss debug` interprets the complete reachable Moss source closure (or the
 legacy project uber-module) as one checked program; it never mixes a native
 Moss module into that run.
@@ -555,7 +513,7 @@ Moss module into that run.
 [`docs/SEMANTIC_CONVERGENCE.md`](docs/SEMANTIC_CONVERGENCE.md) records the current
 first-order effect graph, functional callable specialization, domain terminology,
 derived synchronization plan, and the shared semantic/source identities exposed by
-`moss-agent-1`. It also calls out legacy mailbox/worker material and design questions
+`moss-agent-1`. It also calls out explicitly historical material and design questions
 that remain intentionally open.
 
 ## Platforms
@@ -566,8 +524,8 @@ The source builds on Linux and macOS with a C++17 compiler. Build the compiler l
 Phase 8 adds first-class modules, qualified imports/exports, materialized typed
 exports, semantic-IR generic exports, and `.mossi` module interfaces. See
 [`docs/MODULES.md`](docs/MODULES.md) and
-[`docs/MODULE_ABI.md`](docs/MODULE_ABI.md). Await analysis is keyed by declared
-domain instances, never by domain type.
+[`docs/MODULE_ABI.md`](docs/MODULE_ABI.md). Concrete topology and synchronization plans are keyed by exact domain
+instances and specializations, never by domain type alone.
 
 For a minimal two-module project, see
 [`examples/projects/phase10_modules`](examples/projects/phase10_modules):

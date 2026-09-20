@@ -74,8 +74,8 @@ or range-only optimized locations are not presented as precise Moss steps."
 (defconst moss--control-keywords
   '("if" "else" "while" "return" "and" "or" "not"))
 
-(defconst moss--concurrency-keywords
-  '("message" "await" "reply" "spawn"))
+(defconst moss--domain-keywords
+  '("message" "reply" "domainroutes"))
 
 (defconst moss--builtin-types
   '("Int" "Float" "Bool" "String" "Vector" "Map" "Queue"
@@ -101,9 +101,11 @@ or range-only optimized locations are not presented as precise Moss steps."
 (defconst moss-font-lock-keywords
   `((,(regexp-opt (append moss--declaration-keywords
                           moss--control-keywords
-                          moss--concurrency-keywords)
+                          moss--domain-keywords)
                   'symbols)
      . font-lock-keyword-face)
+    ;; Retired spellings stay recognizable as migration errors, not keywords.
+    (,(regexp-opt '("await" "spawn") 'symbols) . font-lock-warning-face)
     (,(regexp-opt (append moss--functional-operations moss--test-builtins)
                   'symbols)
      . font-lock-builtin-face)

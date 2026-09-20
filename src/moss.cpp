@@ -1010,7 +1010,6 @@ class Parser {
         s.message_result = s.a;
         s.a = std::move(receiver);
         s.b = std::move(handler);
-        s.is_mutable = is_var;
       } else if (contains_word_outside_string(s.b, "await")) {
         fail(L, "await is retired: message is synchronous");
       }
@@ -1021,7 +1020,6 @@ class Parser {
       s.a = trim(L.text.substr(0, assignment));
       s.b = trim(L.text.substr(assignment + 1));
       if (s.a.empty() || s.b.empty()) fail(L, "assignment requires a target and an expression");
-      s.declaration = false;
       if (starts_with(s.b, "await ")) {
         fail(L, "await is retired: message is synchronous; use '" + s.a +
              " = message receiver.Handler(...)'");
@@ -1275,7 +1273,6 @@ class Checker {
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     // Legacy dependency metadata adapter. Concrete routing legality has already
     // been established by the authoritative closed route graph above.
-    check_global_await_cycles();
     build_functional_ir();
     build_synchronization_plan(p_.concrete_domain_graph);
   }
@@ -2051,7 +2048,7 @@ class Checker {
             // concrete graph depend on runtime behavior.
             ObservableEffects initializer_effects =
                 observable_expression_effects(pair.second, binding_types);
-            if (initializer_effects.message || initializer_effects.await ||
+            if (initializer_effects.message ||
                 initializer_effects.domain_read || initializer_effects.domain_write ||
                 initializer_effects.local_mutation || initializer_effects.external_io ||
                 initializer_effects.may_fail || initializer_effects.may_diverge ||
@@ -2236,16 +2233,6 @@ class Checker {
 
   std::optional<string> domain_constructor(const string& expr) const {
     string e = trim(expr);
-    if (starts_with(e, "spawn ")) {
-      // Kept only long enough to produce the migration diagnostic in the
-      // ordinary checker.  It is not a semantic construction form anymore.
-      string legacy = trim(e.substr(6));
-      string name;
-      vector<string> ignored;
-      if (parse_simple_call(legacy, name, ignored) && domains_.count(name))
-        return name;
-      return std::nullopt;
-    }
     string name;
     vector<string> args;
     if (!parse_simple_call(e, name, args) || !domains_.count(name))
@@ -2929,7 +2916,7 @@ class Checker {
   }
 
   // This is the common control-flow join for inference, ordinary checking,
-  // local-call discovery, ownership type state, and await-edge discovery. A
+  // local-call discovery, ownership type state, and concrete message discovery. A
   // later pass must not recover a branch type that this join discarded.
   TypeEnv merge_type_environments(const vector<TypeEnv>& paths, int line,
                                   bool reject_conflicts) const {
@@ -2995,8 +2982,8 @@ class Checker {
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
         auto existing = env.find(statement.a);
-        if (auto spawned = domain_constructor(statement.b)) {
-          env[statement.a] = *spawned;
+        if (auto constructed = domain_constructor(statement.b)) {
+          env[statement.a] = *constructed;
         } else if (auto inferred = inferred_expr_type(statement.b, env)) {
           env[statement.a] = canonical_type_name(*inferred);
         } else if (statement.kind != Stmt::Kind::Assign || existing == env.end()) {
@@ -3036,19 +3023,6 @@ class Checker {
           if (const Handler* handler = find_handler(*domain->second, statement.b))
             if (handler->reply_type)
               env[statement.message_result] = *handler->reply_type;
-      }
-      return;
-    }
-
-    if (statement.kind == Stmt::Kind::AwaitMessage) {
-      auto receiver = env.find(statement.b);
-      if (receiver != env.end()) {
-        auto domain = domains_.find(canonical_type_name(receiver->second));
-        if (domain != domains_.end())
-          if (const Handler* handler = find_handler(*domain->second, statement.c))
-            if (handler->reply_type)
-              env[statement.a] = specialized_handler_reply_type(
-                  statement.b, statement.c, env).value_or(*handler->reply_type);
       }
       return;
     }
@@ -3174,15 +3148,12 @@ class Checker {
           constrain_constructor_fields(statement.line, statement.b, current_env);
           break;
         case Stmt::Kind::Message:
-        case Stmt::Kind::AwaitMessage:
         case Stmt::Kind::Call:
           for (const auto& arg : statement.args)
             constrain_constructor_fields(statement.line, arg, current_env);
-          if (statement.kind == Stmt::Kind::Message || statement.kind == Stmt::Kind::AwaitMessage) {
-            const string& receiver_name = statement.kind == Stmt::Kind::Message
-                ? statement.a : statement.b;
-            const string& handler_name = statement.kind == Stmt::Kind::Message
-                ? statement.b : statement.c;
+          if (statement.kind == Stmt::Kind::Message) {
+            const string& receiver_name = statement.a;
+            const string& handler_name = statement.b;
             auto receiver = current_env.find(receiver_name);
             if (receiver != current_env.end() && domains_.count(receiver->second)) {
               auto* handler = find_handler(*domains_.at(receiver->second), handler_name);
@@ -3361,8 +3332,8 @@ class Checker {
     };
 
     for (const auto& statement : p_.main->body) {
-      if (auto spawned = domain_constructor(statement.b)) {
-        auto domain = domains_.find(*spawned);
+      if (auto constructed = domain_constructor(statement.b)) {
+        auto domain = domains_.find(*constructed);
         if (domain != domains_.end()) {
           bindings[statement.a] = domain->second;
           main_env[statement.a] = domain->second->name;
@@ -3382,15 +3353,12 @@ class Checker {
         }
       }
 
-      if (statement.kind == Stmt::Kind::Message ||
-          statement.kind == Stmt::Kind::AwaitMessage) {
-        const string& receiver = statement.kind == Stmt::Kind::Message
-            ? statement.a : statement.b;
+      if (statement.kind == Stmt::Kind::Message) {
+        const string& receiver = statement.a;
         auto binding = bindings.find(receiver);
         if (binding != bindings.end()) {
           const Domain& domain = *binding->second;
-          const string& handler_name = statement.kind == Stmt::Kind::Message
-              ? statement.b : statement.c;
+          const string& handler_name = statement.b;
           const Handler* handler = find_handler(domain, handler_name);
           if (handler) {
             bool implicit_domain = std::any_of(
@@ -3421,8 +3389,8 @@ class Checker {
                   ? actual_types[index] : parameter.type;
               // Handler specialization is nominal: a typed domain-handle
               // parameter is constrained by its declared domain type.  The
-              // exact spawned instance supplied at this call site is tracked
-              // separately by await analysis and must not split the handler
+              // exact constructed instance supplied at this call site is tracked
+              // separately by concrete topology and must not split the handler
               // layout (Worker__w1 versus Worker__w2).
               auto& parameter_types =
                   specialization.handler_parameter_types[handler_name];
@@ -4639,7 +4607,7 @@ class Checker {
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
           if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
-          else if (auto spawned = domain_constructor(statement.b)) env[statement.a] = *spawned;
+          else if (auto constructed = domain_constructor(statement.b)) env[statement.a] = *constructed;
           else env[statement.a] = "_value";
           ++index;
           break;
@@ -4697,21 +4665,7 @@ class Checker {
           ++index;
           break;
         }
-        case Stmt::Kind::AwaitMessage: {
-          analyze_effect_expression(statement.b, env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Read);
-          for (const auto& argument : statement.args)
-            analyze_effect_expression(argument, env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Read);
-          if (auto receiver = env.find(statement.b); receiver != env.end() && domains_.count(receiver->second)) {
-            if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
-              if (const Handler* handler = find_handler(*domain->second, statement.c))
-                if (handler->reply_type) env[statement.a] = *handler->reply_type;
-            }
-          }
-          ++index;
-          break;
-        }
+
         case Stmt::Kind::Reply:
           analyze_effect_expression(statement.a, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
@@ -4962,9 +4916,6 @@ class Checker {
       case Stmt::Kind::Message:
         expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
         break;
-      case Stmt::Kind::AwaitMessage:
-        expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
-        break;
       case Stmt::Kind::Echo:
         expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
         break;
@@ -5001,7 +4952,6 @@ class Checker {
         break;
       case Stmt::Kind::Call:
       case Stmt::Kind::Message:
-      case Stmt::Kind::AwaitMessage:
       case Stmt::Kind::Echo:
         expressions.insert(expressions.end(), statement.args.begin(),
                            statement.args.end());
@@ -5196,530 +5146,6 @@ class Checker {
       if (state[node] == 0) visit(node);
   }
 
-  void check_global_await_cycles() {
-    struct AwaitDependency {
-      string target;
-      int line = 0;
-    };
-    std::map<string,vector<AwaitDependency>> graph;
-    std::set<string> visited;
-    std::function<void(const vector<Stmt>&, const std::optional<string>&, int,
-                       TypeEnv, const ObjectType*, const string&,
-                       const string&)> visit_body;
-    std::function<void(int, const string&, const TypeEnv&,
-                       const ObjectType*, const string&)> visit_expression;
-    std::function<void(const LocalCallSite&, const string&)> visit_callable;
-
-    visit_expression = [&](int line, const string& expression, const TypeEnv& env,
-                           const ObjectType* implicit_owner,
-                           const string& source_domain) {
-      vector<LocalCallSite> calls;
-      collect_local_call_sites(line, expression, env, implicit_owner, calls);
-      for (const auto& call : calls) visit_callable(call, source_domain);
-    };
-
-    visit_callable = [&](const LocalCallSite& call, const string& source_domain) {
-      std::ostringstream key;
-      key << source_domain << "\n" << call.target;
-      for (const auto& type : call.argument_types) key << "\n" << type;
-      if (!visited.insert(key.str()).second) return;
-
-      if (starts_with(call.target, "fn:")) {
-        auto function = functions_.find(call.target.substr(3));
-        if (function == functions_.end()) return;
-        TypeEnv env;
-        for (size_t index = 0; index < function->second->params.size(); ++index) {
-          const auto& parameter = function->second->params[index];
-          bool use_actual = parameter.type.empty() || traits_.count(parameter.type);
-          string actual = index < call.argument_types.size()
-              ? call.argument_types[index] : "";
-          env[parameter.name] = use_actual && !actual.empty()
-              ? actual
-              : parameter.type.empty() ? "_dynamic:" + parameter.name
-                                       : parameter.type;
-        }
-        visit_body(function->second->body, function->second->result_expression,
-                   function->second->result_line, std::move(env), nullptr,
-                   source_domain, call.target);
-        return;
-      }
-
-      const ObjectType* owner = nullptr;
-      const Method* method = callable_method(call.target, &owner);
-      if (!method || !owner) return;
-      TypeEnv env;
-      env["self"] = owner->name;
-      for (const auto& field : owner->fields) env[field.name] = field.type;
-      for (size_t index = 0; index < method->params.size(); ++index) {
-        string actual = index < call.argument_types.size()
-            ? call.argument_types[index] : "";
-        env[method->params[index].name] = method->params[index].type.empty() &&
-            !actual.empty() ? actual : method->params[index].type;
-      }
-      visit_body(method->body, method->result_expression, method->result_line,
-                 std::move(env), owner, source_domain, call.target);
-    };
-
-    visit_body = [&](const vector<Stmt>& body,
-                     const std::optional<string>& result_expression,
-                     int result_line, TypeEnv env,
-                     const ObjectType* implicit_owner,
-                     const string& source_domain,
-                     const string& callable_context) {
-      TypeEnvVisitor visit_statement = [&](const Stmt& statement,
-                                            const TypeEnv& current_env) {
-        if (statement.kind == Stmt::Kind::AwaitMessage) {
-          const Domain* target = bounded_await_target(statement.b, current_env);
-          if (!target)
-            throw std::runtime_error(
-                "internal error: unvalidated await target reached cycle construction");
-          SemanticAwaitSite site;
-          site.source = callable_context;
-          site.target_domain = target->name;
-          site.line = statement.line;
-          if (std::find_if(
-                  p_.semantic_await_sites.begin(),
-                  p_.semantic_await_sites.end(),
-                  [&](const SemanticAwaitSite& existing) {
-                    return existing.source == site.source &&
-                        existing.target_domain == site.target_domain &&
-                        existing.line == site.line;
-                  }) == p_.semantic_await_sites.end())
-            p_.semantic_await_sites.push_back(std::move(site));
-          if (!source_domain.empty()) {
-            auto& dependencies = graph[source_domain];
-            bool duplicate = std::any_of(
-                dependencies.begin(), dependencies.end(),
-                [&](const AwaitDependency& dependency) {
-                  return dependency.target == target->name &&
-                         dependency.line == statement.line;
-                });
-            if (!duplicate) {
-              dependencies.push_back({target->name, statement.line});
-              SemanticAwaitEdge edge;
-              edge.source_domain = source_domain;
-              edge.target_domain = target->name;
-              edge.line = statement.line;
-              p_.semantic_await_edges.push_back(std::move(edge));
-            }
-          }
-        }
-        for (const auto& expression : statement_expressions(statement))
-          visit_expression(statement.line, expression, current_env, implicit_owner,
-                           source_domain);
-      };
-      env = walk_type_environment(body, std::move(env), visit_statement, true);
-      if (result_expression) {
-        if (result_line <= 0)
-          throw std::runtime_error(
-              "internal error: await-bearing result expression has no Moss source line");
-        visit_expression(result_line, *result_expression, env, implicit_owner,
-                         source_domain);
-      }
-    };
-
-    p_.semantic_await_sites.clear();
-    p_.semantic_await_edges.clear();
-
-    // Local-call cycles are rejected before this pass. That keeps transitive
-    // await discovery finite and simple; `visited` still memoizes repeated
-    // specializations. If Moss gains recursion, await-effect propagation must
-    // be revisited explicitly rather than relying on this traversal shape.
-    //
-    // The resulting global DAG serves two soundness obligations. It prevents
-    // logical deadlock for serialized, non-reentrant domains, and it prevents
-    // cyclic nested state-lock acquisition in the direct shared-memory backend,
-    // whose handler may retain one domain lock while awaiting another domain.
-    for (const auto& domain : p_.domains) {
-      graph[domain.name];
-      for (const auto& handler : domain.handlers) {
-        std::unordered_map<string,string> env;
-        env["self"] = domain.name;
-        for (const auto& field : domain.state) env[field.name] = field.type;
-        for (const auto& route : domain.routes) env[route.name] = route.type;
-        for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
-        visit_body(handler.body, std::nullopt, 0, std::move(env), nullptr,
-                   domain.name,
-                   "handler:" + domain.name + "." + handler.name);
-      }
-    }
-
-    // Retain direct await sites for executable roots that contribute no
-    // source-domain graph edge. Calls reached from these bodies reuse the same
-    // bounded traversal and memoization as handler analysis.
-    if (p_.main)
-      visit_body(p_.main->body, std::nullopt, 0, {}, nullptr, "", "main");
-    for (const auto& test : p_.tests)
-      visit_body(test.body, std::nullopt, 0, {}, nullptr, "",
-                 "test:" + test.name);
-    for (const auto& benchmark : p_.benchmarks)
-      visit_body(benchmark.body, std::nullopt, 0, {}, nullptr, "",
-                 "bench:" + benchmark.name);
-    for (const auto& function : p_.functions) {
-      TypeEnv env;
-      for (const auto& parameter : function.params)
-        env[parameter.name] = parameter.type.empty()
-            ? "_generic:" + parameter.name : parameter.type;
-      visit_body(function.body, function.result_expression,
-                 function.result_line, std::move(env), nullptr, "",
-                 "fn:" + function.name);
-    }
-    for (const auto& object : p_.objects) {
-      for (const auto& method : object.methods) {
-        TypeEnv env;
-        env["self"] = object.name;
-        for (const auto& field : object.fields) env[field.name] = field.type;
-        for (const auto& parameter : method.params)
-          env[parameter.name] = parameter.type;
-        visit_body(method.body, method.result_expression, method.result_line,
-                   std::move(env), &object, "",
-                   "method:" + object.name + "." + method.name);
-      }
-    }
-
-    // A project main body gives every statically declared domain binding a
-    // stable instance identity.  Refine the existing await traversal with
-    // those identities before running the same DFS below.  This keeps the
-    // language rule (finite, statically declared domains) and the semantic
-    // await-edge representation intact while avoiding the unsound type-keyed
-    // collapse of two `spawn Worker()` bindings.
-    if (p_.main) {
-      using InstanceEnv = std::unordered_map<string,string>;
-      std::unordered_map<string,string> binding_types;
-      std::unordered_map<string,string> binding_instances;
-      std::unordered_map<string,string> instance_types;
-      std::unordered_map<string,vector<string>> instances_by_type;
-      auto module_instance = [](const string& domain, const string& binding) {
-        auto separator = domain.find("__");
-        string module = separator == string::npos ? string() : domain.substr(0, separator);
-        return module.empty() ? binding : module + "::" + binding;
-      };
-      for (const auto& statement : p_.main->body) {
-        if (auto spawned = domain_constructor(statement.b)) {
-          string instance = module_instance(*spawned, statement.a);
-          binding_types[statement.a] = *spawned;
-          binding_instances[statement.a] = instance;
-          instance_types[instance] = *spawned;
-          instances_by_type[*spawned].push_back(instance);
-        }
-      }
-      if (!binding_instances.empty()) {
-        std::map<string,vector<AwaitDependency>> exact_graph;
-        std::set<string> exact_nodes;
-        std::set<string> exact_visited;
-        p_.semantic_await_sites.clear();
-        p_.semantic_await_edges.clear();
-
-        auto instance_for = [&](const string& binding, const InstanceEnv& env) {
-          auto found = env.find(binding);
-          if (found != env.end()) return found->second;
-          auto type = binding_types.find(binding);
-          if (type != binding_types.end() && instances_by_type[type->second].size() == 1)
-            return instances_by_type[type->second].front();
-          return string();
-        };
-        auto type_for_instance = [&](const string& instance) {
-          auto direct = instance_types.find(instance);
-          if (direct != instance_types.end()) return direct->second;
-          for (const auto& entry : instances_by_type)
-            if (std::find(entry.second.begin(), entry.second.end(), instance) != entry.second.end())
-              return entry.first;
-          return string();
-        };
-        auto display_instance = [&](const string& instance) {
-          string type = type_for_instance(instance);
-          auto found = instances_by_type.find(type);
-          // Preserve the established diagnostic spelling for the common
-          // one-instance-per-domain case; disambiguate only when a nominal
-          // domain actually has multiple declared instances.
-          return found != instances_by_type.end() && found->second.size() == 1
-              ? type : instance;
-        };
-        std::function<void(const vector<Stmt>&, const string&, const string&,
-                           TypeEnv, InstanceEnv, const string&)> walk_body;
-        std::function<void(const Domain&, const Handler&, const string&,
-                           const vector<string>&, const string&)> walk_handler;
-        std::function<void(const Function&, const string&, const vector<string>&,
-                           const InstanceEnv&)> walk_function;
-
-        auto add_edge = [&](const string& source_instance, const string& target_instance,
-                            const string& source_domain, const string& target_domain,
-                            const string& source, int line) {
-          if (source_instance.empty() || target_instance.empty()) return;
-          exact_nodes.insert(source_instance);
-          exact_nodes.insert(target_instance);
-          auto& dependencies = exact_graph[source_instance];
-          bool duplicate = std::any_of(
-              dependencies.begin(), dependencies.end(),
-              [&](const AwaitDependency& dependency) {
-                return dependency.target == target_instance && dependency.line == line;
-              });
-          if (duplicate) return;
-          dependencies.push_back({target_instance, line});
-          p_.semantic_await_edges.push_back(
-              {source_domain, target_domain, line, source_instance, target_instance});
-          p_.semantic_await_sites.push_back(
-              {source, target_domain, line, source_instance, target_instance});
-        };
-
-        walk_function = [&](const Function& function, const string& source_instance,
-                            const vector<string>& arguments, const InstanceEnv& caller_instances) {
-          string key = source_instance + "\nfn:" + function.name;
-          for (const auto& argument : arguments) key += "\n" + instance_for(argument, caller_instances);
-          if (!exact_visited.insert(key).second) return;
-          TypeEnv types;
-          InstanceEnv instances;
-          for (size_t index = 0; index < function.params.size(); ++index) {
-            const auto& parameter = function.params[index];
-            types[parameter.name] = parameter.type;
-            if (index < arguments.size()) {
-              string actual = instance_for(arguments[index], caller_instances);
-              if (!actual.empty()) instances[parameter.name] = actual;
-            }
-          }
-          vector<Stmt> executable = function.body;
-          if (function.result_expression) {
-            Stmt result;
-            result.kind = Stmt::Kind::Raw;
-            result.line = function.result_line;
-            result.text = *function.result_expression;
-            executable.push_back(std::move(result));
-          }
-          walk_body(executable, source_instance, type_for_instance(source_instance), std::move(types),
-                    std::move(instances), "fn:" + function.name);
-          for (const auto& boundary : function.await_boundaries) {
-            if (boundary.parameter_index >= arguments.size()) continue;
-            string target_instance = instance_for(
-                arguments[boundary.parameter_index], caller_instances);
-            string target_domain = boundary.domain;
-            auto target = domains_.find(canonical_type_name(target_domain));
-            if (target == domains_.end() || target_instance.empty()) continue;
-            auto handler = find_handler(*target->second, boundary.handler);
-            if (handler)
-              walk_handler(*target->second, *handler, target_instance, {},
-                           "fn:" + function.name + "\n" +
-                           std::to_string(boundary.line));
-            add_edge(source_instance, target_instance,
-                     type_for_instance(source_instance), target->second->name,
-                     "fn:" + function.name, boundary.line);
-          }
-        };
-
-        walk_handler = [&](const Domain& domain, const Handler& handler,
-                           const string& source_instance,
-                           const vector<string>& arguments,
-                           const string& invocation_key) {
-          string key = invocation_key + "\nhandler:" + domain.name + "." + handler.name;
-          for (const auto& argument : arguments) key += "\n" + argument;
-          if (!exact_visited.insert(key).second) return;
-          TypeEnv types;
-          InstanceEnv instances;
-          types["self"] = domain.name;
-          instances["self"] = source_instance;
-          for (const auto& field : domain.state) types[field.name] = field.type;
-          for (const auto& route : domain.routes) types[route.name] = route.type;
-          for (size_t index = 0; index < handler.params.size(); ++index) {
-            types[handler.params[index].name] = handler.params[index].type;
-            if (index < arguments.size()) {
-              string actual = arguments[index];
-              auto bound = binding_instances.find(actual);
-              if (bound != binding_instances.end()) instances[handler.params[index].name] = bound->second;
-              else if (actual.find("::") != string::npos)
-                instances[handler.params[index].name] = actual;
-            }
-          }
-          walk_body(handler.body, source_instance, domain.name, std::move(types),
-                    std::move(instances), "handler:" + domain.name + "." + handler.name);
-        };
-
-        walk_body = [&](const vector<Stmt>& body, const string& source_instance,
-                        const string& source_domain, TypeEnv types,
-                        InstanceEnv instances, const string& context) {
-          exact_nodes.insert(source_instance);
-          for (const auto& statement : body) {
-            if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-                statement.kind == Stmt::Kind::Assign) {
-              if (auto spawned = domain_constructor(statement.b)) {
-                types[statement.a] = *spawned;
-                string exact = module_instance(*spawned, statement.a);
-                instances[statement.a] = exact;
-              } else {
-                auto alias = instances.find(trim(statement.b));
-                if (alias != instances.end()) instances[statement.a] = alias->second;
-              }
-            }
-            if (statement.kind == Stmt::Kind::Message ||
-                statement.kind == Stmt::Kind::AwaitMessage) {
-              string receiver = statement.kind == Stmt::Kind::Message
-                  ? statement.a : statement.b;
-              string target_instance = receiver == "self"
-                  ? source_instance : instance_for(receiver, instances);
-              string target_type;
-              auto receiver_type = types.find(receiver);
-              if (receiver == "self") target_type = source_domain;
-              else if (receiver_type != types.end()) target_type = receiver_type->second;
-              if (target_type.empty() && !target_instance.empty()) {
-                for (const auto& type_entry : instances_by_type)
-                  if (std::find(type_entry.second.begin(), type_entry.second.end(), target_instance) != type_entry.second.end())
-                    target_type = type_entry.first;
-              }
-              auto target = domains_.find(canonical_type_name(target_type));
-              if (target != domains_.end() && !target_instance.empty()) {
-                auto handler = find_handler(*target->second,
-                    statement.kind == Stmt::Kind::Message ? statement.b : statement.c);
-                vector<string> invocation_arguments;
-                for (const auto& argument : statement.args) {
-                  string exact = instance_for(trim(argument), instances);
-                  invocation_arguments.push_back(exact.empty() ? argument : exact);
-                }
-                if (handler)
-                  walk_handler(*target->second, *handler, target_instance,
-                               invocation_arguments, source_instance + "\n" + std::to_string(statement.line));
-              }
-              if (statement.kind == Stmt::Kind::AwaitMessage) {
-                string target_domain = target != domains_.end()
-                    ? target->second->name : target_type;
-                add_edge(source_instance, target_instance, source_domain,
-                         target_domain, context, statement.line);
-              }
-            }
-            for (const auto& expression : statement_expressions(statement)) {
-              vector<LocalCallSite> calls;
-              collect_local_call_sites(statement.line, expression, types, nullptr, calls);
-              for (const auto& call : calls) {
-                if (!starts_with(call.target, "fn:")) continue;
-                auto function = functions_.find(call.target.substr(3));
-                if (function != functions_.end())
-                  walk_function(*function->second, source_instance,
-                                call.arguments, instances);
-              }
-            }
-          }
-        };
-
-        // Begin with executable main dispatches. The exact declared binding
-        // becomes the source instance once a message is sent to it.
-        for (const auto& statement : p_.main->body) {
-          if (statement.kind != Stmt::Kind::Message &&
-              statement.kind != Stmt::Kind::AwaitMessage) continue;
-          string target_instance = instance_for(
-              statement.kind == Stmt::Kind::Message ? statement.a : statement.b,
-              binding_instances);
-          string target_type = binding_types[statement.kind == Stmt::Kind::Message
-              ? statement.a : statement.b];
-          auto target = domains_.find(canonical_type_name(target_type));
-          if (target == domains_.end() || target_instance.empty()) continue;
-          auto handler = find_handler(*target->second,
-              statement.kind == Stmt::Kind::Message ? statement.b : statement.c);
-          if (handler)
-            walk_handler(*target->second, *handler, target_instance,
-                         statement.args, "main\n" + std::to_string(statement.line));
-        }
-
-        std::sort(p_.semantic_await_edges.begin(), p_.semantic_await_edges.end(),
-                  [](const SemanticAwaitEdge& left, const SemanticAwaitEdge& right) {
-                    if (left.source_instance != right.source_instance)
-                      return left.source_instance < right.source_instance;
-                    if (left.line != right.line) return left.line < right.line;
-                    return left.target_instance < right.target_instance;
-                  });
-        std::sort(p_.semantic_await_sites.begin(), p_.semantic_await_sites.end(),
-                  [](const SemanticAwaitSite& left, const SemanticAwaitSite& right) {
-                    if (left.source_instance != right.source_instance)
-                      return left.source_instance < right.source_instance;
-                    if (left.line != right.line) return left.line < right.line;
-                    return left.target_instance < right.target_instance;
-                  });
-        std::map<string,int> exact_state;
-        vector<string> exact_stack;
-        vector<int> exact_lines;
-        std::function<void(const string&, int)> visit_exact = [&](const string& node, int incoming_line) {
-          exact_state[node] = 1;
-          exact_stack.push_back(node);
-          exact_lines.push_back(incoming_line);
-          auto dependencies = exact_graph.find(node);
-          if (dependencies != exact_graph.end()) {
-            for (const auto& dependency : dependencies->second) {
-              if (exact_state[dependency.target] == 0) visit_exact(dependency.target, dependency.line);
-              else if (exact_state[dependency.target] == 1) {
-                auto begin = std::find(exact_stack.begin(), exact_stack.end(), dependency.target);
-                size_t first = static_cast<size_t>(std::distance(exact_stack.begin(), begin));
-                std::ostringstream witness;
-                witness << "await cycle detected:";
-                for (size_t index = first; index + 1 < exact_stack.size(); ++index)
-                  witness << "\n  " << display_instance(exact_stack[index])
-                          << " --await line " << exact_lines[index + 1] << "--> "
-                          << display_instance(exact_stack[index + 1]);
-                witness << "\n  " << display_instance(node) << " --await line "
-                        << dependency.line << "--> " << display_instance(dependency.target);
-                err(dependency.line, witness.str());
-              }
-            }
-          }
-          exact_lines.pop_back();
-          exact_stack.pop_back();
-          exact_state[node] = 2;
-        };
-        for (const auto& node : exact_nodes)
-          if (exact_state[node] == 0) visit_exact(node, 0);
-        return;
-      }
-    }
-
-    std::sort(p_.semantic_await_sites.begin(), p_.semantic_await_sites.end(),
-              [](const SemanticAwaitSite& left,
-                 const SemanticAwaitSite& right) {
-                if (left.source != right.source)
-                  return left.source < right.source;
-                if (left.line != right.line) return left.line < right.line;
-                return left.target_domain < right.target_domain;
-              });
-    std::sort(p_.semantic_await_edges.begin(), p_.semantic_await_edges.end(),
-              [](const SemanticAwaitEdge& left,
-                 const SemanticAwaitEdge& right) {
-                if (left.source_domain != right.source_domain)
-                  return left.source_domain < right.source_domain;
-                if (left.line != right.line) return left.line < right.line;
-                return left.target_domain < right.target_domain;
-              });
-
-    std::map<string,int> state;
-    vector<string> stack;
-    vector<int> incoming_lines;
-    std::function<void(const string&, int)> visit =
-        [&](const string& domain, int incoming_line) {
-      state[domain] = 1;
-      stack.push_back(domain);
-      incoming_lines.push_back(incoming_line);
-      auto dependencies = graph.find(domain);
-      if (dependencies != graph.end()) {
-        for (const auto& dependency : dependencies->second) {
-          if (state[dependency.target] == 0) {
-            visit(dependency.target, dependency.line);
-          } else if (state[dependency.target] == 1) {
-            auto begin = std::find(stack.begin(), stack.end(), dependency.target);
-            size_t first = static_cast<size_t>(
-                std::distance(stack.begin(), begin));
-            std::ostringstream witness;
-            witness << "await cycle detected:";
-            for (size_t index = first; index + 1 < stack.size(); ++index) {
-              witness << "\n  " << stack[index] << " --await line "
-                      << incoming_lines[index + 1] << "--> " << stack[index + 1];
-            }
-            witness << "\n  " << domain << " --await line "
-                    << dependency.line << "--> " << dependency.target;
-            err(dependency.line, witness.str());
-          }
-        }
-      }
-      incoming_lines.pop_back();
-      stack.pop_back();
-      state[domain] = 2;
-    };
-    for (const auto& domain : p_.domains)
-      if (state[domain.name] == 0) visit(domain.name, 0);
-  }
-
   void infer_effects() {
     for (auto& function : p_.functions)
       if (!function.body.empty() || function.result_expression || !function.parameter_leaf_effects)
@@ -5809,7 +5235,7 @@ class Checker {
         left.local_mutation == right.local_mutation &&
         left.domain_read == right.domain_read &&
         left.domain_write == right.domain_write &&
-        left.message == right.message && left.await == right.await &&
+        left.message == right.message &&
         left.external_io == right.external_io &&
         left.may_fail == right.may_fail &&
         left.may_diverge == right.may_diverge &&
@@ -6024,7 +5450,6 @@ class Checker {
         effects.may_diverge = true;
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
-      if (statement.kind == Stmt::Kind::AwaitMessage) effects.await = true;
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -6181,7 +5606,6 @@ class Checker {
     if (effects.domain_write) return "observable domain WRITE";
     if (effects.domain_read) return "observable domain READ";
     if (effects.message) return "message send";
-    if (effects.await) return "await";
     if (effects.external_io) return "external/I/O effect";
     if (effects.local_mutation) return "observable local mutation";
     if (effects.may_fail) return "possible failure ordering";
@@ -7083,7 +6507,7 @@ class Checker {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
           std::optional<string> type;
-          if (auto spawned = domain_constructor(s.b)) type = *spawned;
+          if (auto constructed = domain_constructor(s.b)) type = *constructed;
           else type = inferred_expr_type(s.b, env.types);
 
           env.types[s.a] = type.value_or("_value");
@@ -7116,8 +6540,8 @@ class Checker {
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
           }
-          if (auto spawned = domain_constructor(s.b)) {
-            env.types[s.a] = *spawned;
+          if (auto constructed = domain_constructor(s.b)) {
+            env.types[s.a] = *constructed;
             env.moved.erase(s.a);
             ++index;
             break;
@@ -7132,28 +6556,7 @@ class Checker {
           ++index;
           break;
         }
-        case Stmt::Kind::AwaitMessage: {
-          check_ownership_expression(s.line, s.b, env, Effect::Read);
-          const Handler* awaited = check_call(s.line, s.b, s.c, s.args, env.types);
-          for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
-            const auto& arg = s.args[arg_index];
-            check_ownership_expression(s.line, arg, env, Effect::Read);
-            require_cross_domain_value(s.line, arg, awaited->params[arg_index].type,
-                                       env, "");
-            warn_payload(s.line, awaited->params[arg_index].type);
-          }
-          if (auto receiver = env.types.find(s.b); receiver != env.types.end()) {
-            if (auto domain = domains_.find(receiver->second); domain != domains_.end()) {
-              if (const Handler* handler = find_handler(*domain->second, s.c); handler && handler->reply_type)
-                env.types[s.a] = specialized_handler_reply_type(
-                    s.b, s.c, env.types).value_or(*handler->reply_type);
-            }
-          }
-          if (!env.types.count(s.a)) env.types[s.a] = "_value";
-          env.moved.erase(s.a);
-          ++index;
-          break;
-        }
+
         case Stmt::Kind::Message: {
           check_ownership_expression(s.line, s.a, env, Effect::Read);
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
@@ -7821,23 +7224,6 @@ class Checker {
             "' is not an ordinary value; use domainroutes and message targets only");
   }
 
-  const Domain* bounded_await_target(const string& receiver,
-                                     const TypeEnv& env) const {
-    auto binding = env.find(receiver);
-    if (binding == env.end() || starts_with(binding->second, "_")) return nullptr;
-    auto domain = domains_.find(canonical_type_name(binding->second));
-    return domain == domains_.end() ? nullptr : domain->second;
-  }
-
-  const Domain& require_bounded_await_target(int line, const string& receiver,
-                                             const TypeEnv& env) const {
-    const Domain* domain = bounded_await_target(receiver, env);
-    if (!domain)
-      err(line, "await target '" + receiver +
-          "' cannot be statically and conservatively bounded to one concrete domain");
-    return *domain;
-  }
-
   std::optional<string> iterator_element_type(int line, const string& source,
                                               const TypeEnv& env) const {
     string callee;
@@ -7923,12 +7309,12 @@ class Checker {
                         }))
           err(statement.line, "domain route '" + statement.a +
               "' is immutable; bind routes in main's domain construction prefix");
-        if (auto spawned = domain_constructor(statement.b)) {
-          if (!domains_.count(*spawned))
-            err(statement.line, "unknown domain in spawn: " + *spawned);
+        if (auto constructed = domain_constructor(statement.b)) {
+          if (!domains_.count(*constructed))
+            err(statement.line, "unknown domain in construction: " + *constructed);
           if (current || current_function || current_object_ || !p_.main ||
               &statements != &p_.main->body)
-            err(statement.line, "spawning domains inside handlers or functions is not supported in v0.2; create them in main");
+            err(statement.line, "domain construction is allowed only in the main composition prefix");
           return;
         }
         auto existing = current_env.find(statement.a);
@@ -8005,40 +7391,6 @@ class Checker {
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
         }
-        return;
-      }
-
-      if (statement.kind == Stmt::Kind::AwaitMessage) {
-        if (current && statement.b == "self")
-          err(statement.line,
-              "a domain cannot await itself because handlers are non-reentrant");
-        const Domain& target = require_bounded_await_target(
-            statement.line, statement.b, current_env);
-        for (const auto& argument : statement.args) {
-          if (auto pipeline = parse_functional_pipeline(argument)) {
-            auto source_type = inferred_expr_type(pipeline->source, current_env);
-            if (source_type && functional_element_type(
-                                   *source_type, pipeline->source) &&
-                functional_pipeline_requires_materialization(*pipeline))
-              err(statement.line,
-                  "functional pipeline must be materialized in a local binding "
-                  "before crossing a domain boundary");
-          }
-        }
-        const Handler* handler = check_call(statement.line, statement.b,
-                                            statement.c, statement.args,
-                                            current_env);
-        for (const auto& argument : statement.args) {
-          check_expression(statement.line, argument, current_env);
-        }
-        if (!handler->reply_type)
-          err(statement.line, "cannot await one-way handler '" + target.name + "." +
-              statement.c + "'");
-        if (!statement.declaration && current_env.count(statement.a) &&
-            !same_type(current_env.at(statement.a), *handler->reply_type))
-          err(statement.line, "await assignment to '" + statement.a +
-              "' has type '" + current_env.at(statement.a) + "', expected '" +
-              *handler->reply_type + "'");
         return;
       }
 
@@ -8593,7 +7945,6 @@ class FunctionalOptimizer {
       if (effects.domain_write) return "observable domain WRITE";
       if (effects.domain_read) return "observable domain READ";
       if (effects.message) return "message send";
-      if (effects.await) return "await";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
       if (effects.may_fail) return "callback may fail";
@@ -8611,7 +7962,6 @@ class FunctionalOptimizer {
         if (effects.domain_write) return "observable domain WRITE";
         if (effects.domain_read) return "observable domain READ";
         if (effects.message) return "message send";
-        if (effects.await) return "await";
         if (effects.external_io) return "observable callback effect";
         if (effects.local_mutation) return "observable local mutation";
         if (effects.may_fail) return "callback may fail";
@@ -8715,7 +8065,6 @@ class FunctionalOptimizer {
       if (effects.domain_write) return "observable domain WRITE";
       if (effects.domain_read) return "observable domain READ";
       if (effects.message) return "message send";
-      if (effects.await) return "await";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
       if (effects.may_fail) return "callback may fail";
@@ -8943,8 +8292,7 @@ class FunctionalOptimizer {
   static bool statement_defines(const Stmt& statement, const string& name) {
     return (statement.kind == Stmt::Kind::Assign ||
             statement.kind == Stmt::Kind::Let ||
-            statement.kind == Stmt::Kind::Var ||
-            statement.kind == Stmt::Kind::AwaitMessage) &&
+            statement.kind == Stmt::Kind::Var) &&
         trim(statement.a) == name;
   }
 
@@ -8982,7 +8330,7 @@ class FunctionalOptimizer {
         if (simple_binding) occurrence.result_binding = statement.a;
         occurrences.push_back(std::move(occurrence));
       }
-      if (simple_binding || statement.kind == Stmt::Kind::AwaitMessage)
+      if (simple_binding)
         known_bindings.insert(statement.a);
       if (statement.kind == Stmt::Kind::If)
         for (const auto& joined : statement.joined_types)
@@ -9073,7 +8421,6 @@ class FunctionalOptimizer {
           Stmt::Kind kind = body[statement_index].kind;
           observable = observable || kind == Stmt::Kind::Echo ||
               kind == Stmt::Kind::Message ||
-              kind == Stmt::Kind::AwaitMessage ||
               kind == Stmt::Kind::Call || kind == Stmt::Kind::If ||
               kind == Stmt::Kind::While;
         }
@@ -9414,7 +8761,6 @@ static string observable_effect_label(const ObservableEffects& effects) {
   if (effects.domain_read) labels.push_back("DOMAIN_READ");
   if (effects.domain_write) labels.push_back("DOMAIN_WRITE");
   if (effects.message) labels.push_back("MESSAGE");
-  if (effects.await) labels.push_back("AWAIT");
   if (effects.external_io) labels.push_back("IO");
   if (effects.may_fail) labels.push_back("MAY_FAIL");
   if (effects.may_diverge) labels.push_back("MAY_DIVERGE");
@@ -9537,1098 +8883,20 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
   }
 }
 
-enum class DomainLowering {
-  Handler2PL,
-  Mailbox,
-  DirectMutex,
-  DirectRwLock,
-  DirectAtomic,
-  ClusterLocal
-};
-
-struct HandlerEffectSummary {
-  Effect state_effect = Effect::Read;
-  bool touches_state = false;
-  bool externally_observable = false;
-  std::set<string> read_fields;
-  std::set<string> written_fields;
-};
-
-enum class AtomicActionKind { Load, Store, FetchAdd, FetchSub, FetchXor, Swap };
-
-struct AtomicHandlerPlan {
-  AtomicActionKind action = AtomicActionKind::Load;
-  string field;
-  string operand;
-  string result_expression;
-};
-
-struct BatchedSendRegion {
-  int first_line = 0;
-  size_t count = 0;
-  string receiver;
-  string target_domain;
-};
-
-struct CoalescedLockRegion {
-  int first_line = 0;
-  size_t count = 0;
-  string receiver;
-  string target_domain;
-  bool shared_read = false;
-};
-
-struct OptimizationPlan {
-  bool optimizations_enabled = false;
-  std::unordered_map<string, DomainLowering> domain_lowerings;
-  std::unordered_map<string, HandlerEffectSummary> handler_effects;
-  std::unordered_map<string, AtomicHandlerPlan> atomic_handlers;
-  vector<BatchedSendRegion> batched_send_regions;
-  vector<CoalescedLockRegion> coalesced_lock_regions;
-  vector<vector<string>> domain_clusters;
-
-  std::optional<size_t> cluster_for(const string& domain) const {
-    for (size_t index = 0; index < domain_clusters.size(); ++index) {
-      const auto& members = domain_clusters[index];
-      if (std::find(members.begin(), members.end(), domain) != members.end()) return index;
-    }
-    return std::nullopt;
-  }
-
-  bool same_cluster(const string& left, const string& right) const {
-    auto a = cluster_for(left), b = cluster_for(right);
-    return a && b && *a == *b;
-  }
-
-  DomainLowering lowering_for(const string& domain) const {
-    auto found = domain_lowerings.find(domain);
-    return found == domain_lowerings.end() ? DomainLowering::Mailbox : found->second;
-  }
-
-  DomainLowering lowering_for(const Domain& domain) const {
-    return lowering_for(domain.name);
-  }
-
-  const BatchedSendRegion* batch_at(int line) const {
-    auto found = std::find_if(batched_send_regions.begin(), batched_send_regions.end(),
-                              [&](const BatchedSendRegion& region) {
-                                return region.first_line == line;
-                              });
-    return found == batched_send_regions.end() ? nullptr : &*found;
-  }
-
-  const CoalescedLockRegion* coalesced_at(int line) const {
-    auto found = std::find_if(coalesced_lock_regions.begin(), coalesced_lock_regions.end(),
-                              [&](const CoalescedLockRegion& region) {
-                                return region.first_line == line;
-                              });
-    return found == coalesced_lock_regions.end() ? nullptr : &*found;
-  }
-
-  bool needs_mailbox_runtime() const {
-    if (std::all_of(domain_lowerings.begin(), domain_lowerings.end(),
-                    [](const auto& entry) { return entry.second == DomainLowering::Handler2PL; })) return false;
-    if (!optimizations_enabled) return true;
-    if (!domain_clusters.empty()) return true;
-    return std::any_of(domain_lowerings.begin(), domain_lowerings.end(),
-                       [](const auto& entry) {
-                         return entry.second == DomainLowering::Mailbox;
-                       });
-  }
-
-  bool has_lowering(DomainLowering lowering) const {
-    return std::any_of(domain_lowerings.begin(), domain_lowerings.end(),
-                       [&](const auto& entry) { return entry.second == lowering; });
-  }
-
-};
-
-// Select the authoritative handler-level 2PL path for every backend mode.
-// Legacy optimization analysis remains dormant below the selection boundary
-// until Phase 10.6E removes the superseded implementations.
-class BackendOptimizer {
- public:
-  explicit BackendOptimizer(const Program& program) : program_(program) {
-    for (const auto& object : program_.objects) objects_[object.name] = &object;
-    for (const auto& domain : program_.domains) domains_[domain.name] = &domain;
-  }
-
-  OptimizationPlan run(bool enabled, const vector<vector<string>>& requested_clusters = {}) const {
-    OptimizationPlan plan;
-    plan.optimizations_enabled = enabled;
-    plan.domain_clusters = requested_clusters;
-    validate_clusters(plan);
-    // Legacy transport/synchronization optimizers remain below for 10.6E
-    // removal. They do not analyze or choose active handler synchronization.
-    plan.domain_clusters.clear();
-    for (const auto& domain : program_.domains)
-      plan.domain_lowerings[domain.name] = DomainLowering::Handler2PL;
-    return plan;
-
-    for (const auto& domain : program_.domains) {
-      plan.domain_lowerings[domain.name] = plan.cluster_for(domain.name)
-          ? DomainLowering::ClusterLocal : DomainLowering::Mailbox;
-      for (const auto& handler : domain.handlers)
-        plan.handler_effects[handler_key(domain, handler)] =
-            analyze_handler_effects(domain, handler);
-    }
-
-    std::set<string> asynchronously_called;
-    bool call_graph_complete = true;
-    for (const auto& domain : program_.domains) {
-      for (const auto& handler : domain.handlers) {
-        std::unordered_map<string, string> types;
-        types["self"] = domain.name;
-        for (const auto& field : domain.state) types[field.name] = field.type;
-        for (const auto& route : domain.routes) types[route.name] = route.type;
-        for (const auto& param : handler.params) types[param.name] = param.type;
-        scan_calls(handler.body, types, asynchronously_called, call_graph_complete);
-      }
-    }
-    if (program_.main) {
-      std::unordered_map<string, string> types;
-      scan_calls(program_.main->body, types, asynchronously_called, call_graph_complete);
-    }
-    for (const auto& test : program_.tests) {
-      std::unordered_map<string, string> types;
-      scan_calls(test.body, types, asynchronously_called, call_graph_complete);
-    }
-    for (const auto& benchmark : program_.benchmarks) {
-      std::unordered_map<string, string> types;
-      scan_calls(benchmark.body, types, asynchronously_called,
-                 call_graph_complete);
-    }
-    // Local functions can contain domain communication even though their calls are
-    // ordinary Moss calls. Scan their bodies as part of the whole-program plan so a
-    // message hidden behind a function cannot accidentally be promoted to direct
-    // shared-memory dispatch. A function call itself remains a conservative barrier
-    // because this pass does not yet build a typed interprocedural call graph.
-    for (const auto& function : program_.functions) {
-      std::unordered_map<string, string> types;
-      for (const auto& param : function.params) types[param.name] = param.type;
-      scan_calls(function.body, types, asynchronously_called, call_graph_complete);
-      if (function.result_expression) call_graph_complete = false;
-    }
-
-    if (!enabled) return plan;
-
-    for (const auto& domain : program_.domains) {
-      if (plan.cluster_for(domain.name)) continue;
-      // The legacy backend materializes per-instance layouts separately. Its
-      // nominal route adapter requires a common transport contract; do not
-      // promote just the unspecialized declaration and leave its instances on
-      // mailbox transport. This is a compatibility fallback, not new locking.
-      if (std::any_of(program_.domain_specializations.begin(),
-                      program_.domain_specializations.end(),
-              [&](const DomainSpecialization& specialization) {
-                return specialization.materialized_layout && specialization.source_domain == domain.name;
-              }))
-        continue;
-
-      std::unordered_map<string, AtomicHandlerPlan> atomic_handlers;
-      if (domain.routes.empty() && atomic_domain_plan(domain, atomic_handlers)) {
-        plan.domain_lowerings[domain.name] = DomainLowering::DirectAtomic;
-        plan.atomic_handlers.insert(atomic_handlers.begin(), atomic_handlers.end());
-        continue;
-      }
-
-      if (!call_graph_complete || asynchronously_called.count(domain.name) ||
-          !domain_is_direct_candidate(domain))
-        continue;
-
-      bool has_read_handler = false;
-      bool rwlock_safe = true;
-      for (const auto& handler : domain.handlers) {
-        const auto& effects = plan.handler_effects.at(handler_key(domain, handler));
-        has_read_handler = has_read_handler ||
-            (effects.state_effect == Effect::Read && effects.touches_state);
-        rwlock_safe = rwlock_safe && !effects.externally_observable;
-      }
-      plan.domain_lowerings[domain.name] = has_read_handler && rwlock_safe
-          ? DomainLowering::DirectRwLock : DomainLowering::DirectMutex;
-    }
-
-    plan_batched_sends(plan);
-    plan_coalesced_locks(plan);
-    return plan;
-  }
-
- private:
-  const Program& program_;
-  std::unordered_map<string, const ObjectType*> objects_;
-  std::unordered_map<string, const Domain*> domains_;
-
-  static string handler_key(const Domain& domain, const Handler& handler) {
-    return domain.name + "." + handler.name;
-  }
-
-  static Effect combine_effect(Effect left, Effect right) {
-    if (left == Effect::Consume || right == Effect::Consume) return Effect::Consume;
-    if (left == Effect::Write || right == Effect::Write) return Effect::Write;
-    return Effect::Read;
-  }
-
-  static string root_name(const string& expression) {
-    string value = trim(expression);
-    if (starts_with(value, "self.")) value = trim(value.substr(5));
-    size_t end = 0;
-    while (end < value.size() &&
-           (std::isalnum(static_cast<unsigned char>(value[end])) || value[end] == '_'))
-      ++end;
-    return value.substr(0, end);
-  }
-
-  static bool expression_mentions(const string& expression, const string& name) {
-    for (size_t index = 0; index < expression.size();) {
-      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
-            expression[index] == '_')) {
-        ++index;
-        continue;
-      }
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      if (expression.substr(index, end - index) == name) return true;
-      index = end;
-    }
-    return false;
-  }
-
-  static bool expression_mentions_unqualified(const string& expression,
-                                               const string& name) {
-    for (size_t index = 0; index < expression.size();) {
-      if (!(std::isalpha(static_cast<unsigned char>(expression[index])) ||
-            expression[index] == '_')) {
-        ++index;
-        continue;
-      }
-      size_t start = index;
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      size_t previous = start;
-      while (previous > 0 &&
-             std::isspace(static_cast<unsigned char>(expression[previous - 1])))
-        --previous;
-      if (expression.substr(start, end - start) == name &&
-          (previous == 0 || expression[previous - 1] != '.'))
-        return true;
-      index = end;
-    }
-    return false;
-  }
-
-  static bool expression_mentions_state(const string& expression,
-                                        const string& name) {
-    if (expression_mentions_unqualified(expression, name)) return true;
-    string compact;
-    compact.reserve(expression.size());
-    bool in_string = false;
-    for (char ch : expression) {
-      if (ch == '"') in_string = !in_string;
-      if (!in_string && std::isspace(static_cast<unsigned char>(ch))) continue;
-      compact.push_back(ch);
-    }
-    return expression_mentions(compact, "self") &&
-           compact.find("self." + name) != string::npos;
-  }
-
-  static bool expression_is_obviously_pure(const string& expression) {
-    bool in_string = false;
-    bool escaped = false;
-    for (size_t index = 0; index < expression.size(); ++index) {
-      char ch = expression[index];
-      if (in_string) {
-        if (escaped) escaped = false;
-        else if (ch == '\\') escaped = true;
-        else if (ch == '"') in_string = false;
-        continue;
-      }
-      if (ch == '"') {
-        in_string = true;
-        continue;
-      }
-      if (!(std::isalpha(static_cast<unsigned char>(ch)) || ch == '_')) continue;
-      size_t end = index + 1;
-      while (end < expression.size() &&
-             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
-              expression[end] == '_'))
-        ++end;
-      size_t next = end;
-      while (next < expression.size() &&
-             std::isspace(static_cast<unsigned char>(expression[next])))
-        ++next;
-      if (next < expression.size() && expression[next] == '(') return false;
-      index = end - 1;
-    }
-    return true;
-  }
-
-  static bool batch_payload_is_total(const string& expression) {
-    string value = trim(expression);
-    if (value == "true" || value == "false") return true;
-    if (plain_identifier(value)) return true;
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') return true;
-    char* end = nullptr;
-    (void)std::strtoll(value.c_str(), &end, 10);
-    if (end && *end == '\0' && end != value.c_str()) return true;
-    end = nullptr;
-    (void)std::strtod(value.c_str(), &end);
-    if (end && *end == '\0' && end != value.c_str()) return true;
-    // A chain of field projections cannot call user code or fail after the
-    // checker has established each concrete field.
-    bool expect_identifier = true;
-    for (size_t index = 0; index < value.size();) {
-      if (expect_identifier) {
-        if (!(std::isalpha(static_cast<unsigned char>(value[index])) ||
-              value[index] == '_'))
-          return false;
-        while (index < value.size() &&
-               (std::isalnum(static_cast<unsigned char>(value[index])) ||
-                value[index] == '_'))
-          ++index;
-        expect_identifier = false;
-      } else {
-        if (value[index] != '.') return false;
-        ++index;
-        expect_identifier = true;
-      }
-    }
-    return !expect_identifier;
-  }
-
-  static std::optional<std::pair<string, string>> split_binary(
-      const string& expression, const vector<string>& operators) {
-    int parens = 0, braces = 0, brackets = 0;
-    bool in_string = false;
-    for (size_t index = expression.size(); index-- > 0;) {
-      char ch = expression[index];
-      if (in_string) {
-        if (ch == '"' && (index == 0 || expression[index - 1] != '\\'))
-          in_string = false;
-        continue;
-      }
-      if (ch == '"') { in_string = true; continue; }
-      if (ch == ')') ++parens;
-      else if (ch == '(') --parens;
-      else if (ch == '}') ++braces;
-      else if (ch == '{') --braces;
-      else if (ch == ']') ++brackets;
-      else if (ch == '[') --brackets;
-      if (parens != 0 || braces != 0 || brackets != 0) continue;
-      for (const auto& op : operators) {
-        if (index + op.size() <= expression.size() &&
-            expression.compare(index, op.size(), op) == 0)
-          return std::make_pair(trim(expression.substr(0, index)),
-                                trim(expression.substr(index + op.size())));
-      }
-    }
-    return std::nullopt;
-  }
-
-  static void record_reads(const string& expression, const Domain& domain,
-                           HandlerEffectSummary& summary) {
-    for (const auto& field : domain.state) {
-      if (!expression_mentions_state(expression, field.name)) continue;
-      summary.touches_state = true;
-      summary.read_fields.insert(field.name);
-    }
-  }
-
-  HandlerEffectSummary analyze_handler_effects(const Domain& domain,
-                                               const Handler& handler) const {
-    HandlerEffectSummary summary;
-    for (const auto& statement : handler.body) {
-      switch (statement.kind) {
-        case Stmt::Kind::Assign: {
-          string root = root_name(statement.a);
-          auto state_field = std::find_if(domain.state.begin(), domain.state.end(),
-              [&](const Field& field) { return field.name == root; });
-          if (state_field != domain.state.end()) {
-            summary.touches_state = true;
-            summary.written_fields.insert(root);
-            summary.state_effect = combine_effect(summary.state_effect, Effect::Write);
-          } else {
-            record_reads(statement.a, domain, summary);
-          }
-          record_reads(statement.b, domain, summary);
-          if (!expression_is_obviously_pure(statement.b))
-            summary.externally_observable = true;
-          break;
-        }
-        case Stmt::Kind::If:
-        case Stmt::Kind::While:
-        case Stmt::Kind::For:
-          record_reads(statement.kind == Stmt::Kind::For ? statement.b : statement.a,
-                       domain, summary);
-          if (!expression_is_obviously_pure(
-                  statement.kind == Stmt::Kind::For ? statement.b : statement.a))
-            summary.externally_observable = true;
-          break;
-        case Stmt::Kind::Let:
-        case Stmt::Kind::Var:
-          record_reads(statement.b, domain, summary);
-          if (!expression_is_obviously_pure(statement.b))
-            summary.externally_observable = true;
-          break;
-        case Stmt::Kind::Reply:
-        case Stmt::Kind::Return:
-        case Stmt::Kind::Raw:
-          record_reads(statement.a, domain, summary);
-          if (!statement.a.empty() && !expression_is_obviously_pure(statement.a))
-            summary.externally_observable = true;
-          break;
-        case Stmt::Kind::Call:
-        case Stmt::Kind::Message:
-        case Stmt::Kind::AwaitMessage:
-        case Stmt::Kind::Echo:
-          summary.externally_observable = true;
-          record_reads(statement.a, domain, summary);
-          record_reads(statement.b, domain, summary);
-          record_reads(statement.c, domain, summary);
-          for (const auto& argument : statement.args)
-            record_reads(argument, domain, summary);
-          break;
-        case Stmt::Kind::Else:
-          break;
-      }
-    }
-    return summary;
-  }
-
-  const Field* find_state_field(const Domain& domain, const string& name) const {
-    auto found = std::find_if(domain.state.begin(), domain.state.end(),
-                              [&](const Field& field) { return field.name == name; });
-    return found == domain.state.end() ? nullptr : &*found;
-  }
-
-  bool atomic_handler_plan(const Domain& domain, const Handler& handler,
-                           AtomicHandlerPlan& plan) const {
-    // This recognizer deliberately describes exactly one primitive state
-    // operation. It never introduces a CAS loop, so Moss expressions are
-    // evaluated once and multi-action/cross-field handlers fall through to a
-    // lock-backed whole-domain representation.
-    const Stmt* assignment = nullptr;
-    const Stmt* captured_previous = nullptr;
-    const Stmt* reply = nullptr;
-    size_t assignment_index = 0, capture_index = 0, reply_index = 0;
-    for (size_t index = 0; index < handler.body.size(); ++index) {
-      const auto& statement = handler.body[index];
-      if (statement.indent != 0) return false;
-      if (statement.kind == Stmt::Kind::Assign &&
-          find_state_field(domain, trim(statement.a))) {
-        if (assignment) return false;
-        assignment = &statement;
-        assignment_index = index;
-      } else if ((statement.kind == Stmt::Kind::Assign ||
-                  statement.kind == Stmt::Kind::Let ||
-                  statement.kind == Stmt::Kind::Var) &&
-                 !find_state_field(domain, trim(statement.a)) &&
-                 find_state_field(domain, trim(statement.b))) {
-        if (captured_previous) return false;
-        captured_previous = &statement;
-        capture_index = index;
-      } else if (statement.kind == Stmt::Kind::Reply) {
-        if (reply) return false;
-        reply = &statement;
-        reply_index = index;
-      } else {
-        return false;
-      }
-    }
-
-    if (handler.reply_type && !reply) return false;
-    if (!handler.reply_type && reply) return false;
-
-    if (!assignment) {
-      if (!reply) return false;
-      if (!expression_is_obviously_pure(reply->a) ||
-          expression_mentions(reply->a, "self")) return false;
-      const Field* field = nullptr;
-      for (const auto& candidate : domain.state) {
-        if (!expression_mentions_unqualified(reply->a, candidate.name)) continue;
-        if (field) return false;
-        field = &candidate;
-      }
-      if (!field) return false;
-      plan.action = AtomicActionKind::Load;
-      plan.field = field->name;
-      if (trim(reply->a) != field->name)
-        plan.result_expression = trim(reply->a);
-      return true;
-    }
-
-    const Field* field = find_state_field(domain, trim(assignment->a));
-    if (!field || !expression_is_obviously_pure(assignment->b) ||
-        expression_mentions(assignment->b, "self")) return false;
-    for (const auto& other : domain.state)
-      if (other.name != field->name &&
-          expression_mentions_unqualified(assignment->b, other.name))
-        return false;
-    if (captured_previous) {
-      if (!reply || capture_index >= assignment_index || assignment_index >= reply_index ||
-          trim(captured_previous->b) != field->name ||
-          trim(reply->a) != trim(captured_previous->a))
-        return false;
-      for (const auto& state_field : domain.state)
-        if (expression_mentions_unqualified(assignment->b, state_field.name)) return false;
-      plan.action = AtomicActionKind::Swap;
-      plan.field = field->name;
-      plan.operand = trim(assignment->b);
-      return true;
-    }
-    if (reply) {
-      if (!expression_is_obviously_pure(reply->a) ||
-          expression_mentions(reply->a, "self")) return false;
-      for (const auto& other : domain.state)
-        if (other.name != field->name &&
-            expression_mentions_unqualified(reply->a, other.name))
-          return false;
-      if (trim(reply->a) != field->name)
-        plan.result_expression = trim(reply->a);
-    }
-
-    string right = trim(assignment->b);
-    if (field->type == "bool" && right == "not " + field->name) {
-      plan.action = AtomicActionKind::FetchXor;
-      plan.operand = "true";
-    } else if (auto add = split_binary(right, {"+"})) {
-      if (field->type != "int") return false;
-      if (trim(add->first) == field->name &&
-          !expression_mentions_unqualified(add->second, field->name)) {
-        plan.action = AtomicActionKind::FetchAdd;
-        plan.operand = add->second;
-      } else if (trim(add->second) == field->name &&
-                 !expression_mentions_unqualified(add->first, field->name)) {
-        plan.action = AtomicActionKind::FetchAdd;
-        plan.operand = add->first;
-      } else {
-        return false;
-      }
-    } else if (auto subtract = split_binary(right, {"-"})) {
-      if (field->type != "int" || trim(subtract->first) != field->name ||
-          expression_mentions_unqualified(subtract->second, field->name))
-        return false;
-      plan.action = AtomicActionKind::FetchSub;
-      plan.operand = subtract->second;
-    } else {
-      if (expression_mentions_unqualified(right, field->name)) return false;
-      plan.action = AtomicActionKind::Store;
-      plan.operand = right;
-    }
-    plan.field = field->name;
-    return true;
-  }
-
-  bool atomic_domain_plan(
-      const Domain& domain,
-      std::unordered_map<string, AtomicHandlerPlan>& handlers) const {
-    if (domain.state.empty() || domain.handlers.empty()) return false;
-    for (const auto& field : domain.state)
-      if (field.type != "int" && field.type != "bool") return false;
-    for (const auto& handler : domain.handlers) {
-      for (const auto& param : handler.params)
-        if (find_state_field(domain, param.name)) return false;
-      for (const auto& param : handler.params) {
-        std::set<string> visiting;
-        if (!sendable_type(param.type, visiting)) return false;
-      }
-      if (handler.reply_type) {
-        std::set<string> visiting;
-        if (!sendable_type(*handler.reply_type, visiting)) return false;
-      }
-      AtomicHandlerPlan handler_plan;
-      if (!atomic_handler_plan(domain, handler, handler_plan)) return false;
-      handlers[handler_key(domain, handler)] = std::move(handler_plan);
-    }
-    return true;
-  }
-
-  const Domain* statement_target(
-      const Stmt& statement, const Domain* source,
-      const std::unordered_map<string, string>& types) const {
-    string receiver;
-    if (statement.kind == Stmt::Kind::Message) receiver = statement.a;
-    else if (statement.kind == Stmt::Kind::AwaitMessage) receiver = statement.b;
-    else return nullptr;
-    if (receiver == "self") return source;
-    auto found = types.find(receiver);
-    if (found == types.end()) return nullptr;
-    auto domain = domains_.find(canonical_type_name(found->second));
-    return domain == domains_.end() ? nullptr : domain->second;
-  }
-
-  void update_statement_types(const Stmt& statement, const Domain* source,
-                              std::unordered_map<string, string>& types) const {
-    if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-        statement.kind == Stmt::Kind::Assign) {
-      if (auto spawned = spawned_domain(statement.b)) {
-        types[statement.a] = *spawned;
-      } else {
-        auto alias = types.find(trim(statement.b));
-        if (alias != types.end()) types[statement.a] = alias->second;
-      }
-      return;
-    }
-    if (statement.kind == Stmt::Kind::Message && !statement.message_result.empty()) {
-      const Domain* target = statement_target(statement, source, types);
-      const Handler* handler = target ? find_handler(*target, statement.b) : nullptr;
-      if (handler && handler->reply_type) types[statement.message_result] = *handler->reply_type;
-      return;
-    }
-    if (statement.kind != Stmt::Kind::AwaitMessage) return;
-    const Domain* target = statement_target(statement, source, types);
-    const Handler* handler = target ? find_handler(*target, statement.c) : nullptr;
-    if (handler && handler->reply_type) types[statement.a] = *handler->reply_type;
-  }
-
-  bool batchable_message(const Stmt& statement, const Domain* source,
-                         const std::unordered_map<string, string>& types,
-                         const Domain*& target) const {
-    if (statement.kind != Stmt::Kind::Message) return false;
-    target = statement_target(statement, source, types);
-    if (!target) return false;
-    const Handler* handler = find_handler(*target, statement.b);
-    if (!handler) return false;
-    for (const auto& argument : statement.args)
-      if (!batch_payload_is_total(argument)) return false;
-    return true;
-  }
-
-  void plan_batches_in(const vector<Stmt>& statements, const Domain* source,
-                       std::unordered_map<string, string> types,
-                       OptimizationPlan& plan) const {
-    for (size_t index = 0; index < statements.size();) {
-      const Stmt& statement = statements[index];
-      const Domain* target = nullptr;
-      bool eligible = batchable_message(statement, source, types, target) &&
-          plan.lowering_for(target->name) == DomainLowering::Mailbox;
-      if (eligible) {
-        size_t end = index + 1;
-        for (; end < statements.size(); ++end) {
-          const Stmt& candidate = statements[end];
-          const Domain* candidate_target = nullptr;
-          if (candidate.indent != statement.indent || candidate.a != statement.a ||
-              !batchable_message(candidate, source, types, candidate_target) ||
-              candidate_target != target)
-            break;
-        }
-        if (end - index >= 2) {
-          plan.batched_send_regions.push_back(
-              BatchedSendRegion{statement.line, end - index, statement.a, target->name});
-          index = end;
-          continue;
-        }
-      }
-      update_statement_types(statement, source, types);
-      ++index;
-    }
-  }
-
-  void plan_batched_sends(OptimizationPlan& plan) const {
-    // Phase 10.6A makes every message a synchronous invocation.  A queued
-    // batch would allow the caller to continue before each handler completed,
-    // so the old asynchronous batching optimization is intentionally dormant
-    // until a synchronous completion-aware batch representation exists.
-    (void)plan;
-    return;
-    /*
-    for (const auto& domain : program_.domains) {
-      for (const auto& handler : domain.handlers) {
-        std::unordered_map<string, string> types;
-        types["self"] = domain.name;
-        for (const auto& field : domain.state) types[field.name] = field.type;
-        for (const auto& route : domain.routes) types[route.name] = route.type;
-        for (const auto& param : handler.params) types[param.name] = param.type;
-        plan_batches_in(handler.body, &domain, std::move(types), plan);
-      }
-    }
-    for (const auto& function : program_.functions) {
-      std::unordered_map<string, string> types;
-      for (const auto& param : function.params) types[param.name] = param.type;
-      plan_batches_in(function.body, nullptr, std::move(types), plan);
-    }
-    if (program_.main)
-      plan_batches_in(program_.main->body, nullptr, {}, plan);
-    */
-  }
-
-  void collect_domain_uses(
-      const vector<Stmt>& statements, const Domain* source, const string& context,
-      std::unordered_map<string, string> types,
-      std::unordered_map<string, std::set<string>>& callers,
-      std::set<string>& escaped) const {
-    for (const auto& statement : statements) {
-      if (statement.kind == Stmt::Kind::Message ||
-          statement.kind == Stmt::Kind::AwaitMessage) {
-        if (const Domain* target = statement_target(statement, source, types))
-          callers[target->name].insert(context);
-      }
-
-      for (const auto& binding : types) {
-        string domain_type = canonical_type_name(binding.second);
-        if (!domains_.count(domain_type)) continue;
-        bool used_outside_receiver = false;
-        if ((statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-             statement.kind == Stmt::Kind::Assign) &&
-            !spawned_domain(statement.b) &&
-            expression_mentions(statement.b, binding.first))
-          used_outside_receiver = true;
-        if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
-            statement.kind == Stmt::Kind::For ||
-            statement.kind == Stmt::Kind::Reply || statement.kind == Stmt::Kind::Return ||
-            statement.kind == Stmt::Kind::Raw)
-          used_outside_receiver = expression_mentions(
-              statement.kind == Stmt::Kind::For ? statement.b : statement.a,
-              binding.first);
-        if (statement.kind == Stmt::Kind::Call &&
-            (expression_mentions(statement.a, binding.first) ||
-             expression_mentions(statement.b, binding.first)))
-          used_outside_receiver = true;
-        for (const auto& argument : statement.args)
-          used_outside_receiver = used_outside_receiver ||
-              expression_mentions(argument, binding.first);
-        if (used_outside_receiver) escaped.insert(domain_type);
-      }
-
-      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-          statement.kind == Stmt::Kind::Assign) {
-        auto alias = types.find(trim(statement.b));
-        if (alias != types.end() && domains_.count(canonical_type_name(alias->second)))
-          escaped.insert(canonical_type_name(alias->second));
-      }
-
-      if (statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Message ||
-          statement.kind == Stmt::Kind::AwaitMessage) {
-        for (const auto& argument : statement.args) {
-          auto value = types.find(trim(argument));
-          if (value != types.end() && domains_.count(canonical_type_name(value->second)))
-            escaped.insert(canonical_type_name(value->second));
-        }
-      }
-      update_statement_types(statement, source, types);
-    }
-  }
-
-  bool coalescable_await(const Stmt& statement,
-                         const std::unordered_map<string, string>& types,
-                         const std::set<string>& exclusive_domains,
-                         const Domain*& target) const {
-    if (statement.kind != Stmt::Kind::AwaitMessage) return false;
-    target = statement_target(statement, nullptr, types);
-    if (!target || !exclusive_domains.count(target->name)) return false;
-    const Handler* handler = find_handler(*target, statement.c);
-    if (!handler || !handler->reply_type) return false;
-    for (const auto& argument : statement.args)
-      if (!expression_is_obviously_pure(argument)) return false;
-    return true;
-  }
-
-  void plan_coalesced_locks(OptimizationPlan& plan) const {
-    if (!program_.main) return;
-
-    // The initial exclusivity proof is intentionally narrow: one unconditional
-    // main spawn, no capability-shaped storage/parameter/result, no alias or
-    // expression escape, and no caller context other than main.
-    std::unordered_map<string, size_t> spawn_counts;
-    std::set<string> escaped;
-    auto escape_type = [&](const string& type) {
-      for (const auto& domain : program_.domains)
-        if (expression_mentions(type, domain.name)) escaped.insert(domain.name);
-    };
-    for (const auto& statement : program_.main->body) {
-      if (auto spawned = spawned_domain(statement.b)) {
-        ++spawn_counts[*spawned];
-        if (statement.indent != 0) escaped.insert(*spawned);
-      }
-    }
-    for (const auto& object : program_.objects)
-      for (const auto& field : object.fields) escape_type(field.type);
-    for (const auto& domain : program_.domains) {
-      for (const auto& field : domain.state) escape_type(field.type);
-      for (const auto& handler : domain.handlers) {
-        for (const auto& param : handler.params) escape_type(param.type);
-        if (handler.reply_type) escape_type(*handler.reply_type);
-        for (const auto& statement : handler.body)
-          if (auto spawned = spawned_domain(statement.b)) escaped.insert(*spawned);
-      }
-    }
-    for (const auto& function : program_.functions) {
-      for (const auto& param : function.params) escape_type(param.type);
-      if (function.return_type) escape_type(*function.return_type);
-      for (const auto& statement : function.body)
-        if (auto spawned = spawned_domain(statement.b)) escaped.insert(*spawned);
-    }
-
-    std::unordered_map<string, std::set<string>> callers;
-    for (const auto& domain : program_.domains) {
-      for (const auto& handler : domain.handlers) {
-        std::unordered_map<string, string> types;
-        types["self"] = domain.name;
-        for (const auto& field : domain.state) types[field.name] = field.type;
-        for (const auto& route : domain.routes) types[route.name] = route.type;
-        for (const auto& param : handler.params) types[param.name] = param.type;
-        collect_domain_uses(handler.body, &domain, "domain:" + domain.name,
-                            std::move(types), callers, escaped);
-      }
-    }
-    for (const auto& function : program_.functions) {
-      std::unordered_map<string, string> types;
-      for (const auto& param : function.params) types[param.name] = param.type;
-      collect_domain_uses(function.body, nullptr, "function:" + function.name,
-                          std::move(types), callers, escaped);
-    }
-    collect_domain_uses(program_.main->body, nullptr, "main", {}, callers, escaped);
-
-    std::set<string> exclusive_domains;
-    for (const auto& domain : program_.domains) {
-      DomainLowering lowering = plan.lowering_for(domain);
-      if ((lowering == DomainLowering::DirectMutex ||
-           lowering == DomainLowering::DirectRwLock) &&
-          spawn_counts[domain.name] == 1 && !escaped.count(domain.name) &&
-          callers[domain.name] == std::set<string>{"main"})
-        exclusive_domains.insert(domain.name);
-    }
-
-    std::unordered_map<string, string> types;
-    const auto& statements = program_.main->body;
-    for (size_t index = 0; index < statements.size();) {
-      const Stmt& statement = statements[index];
-      const Domain* target = nullptr;
-      if (coalescable_await(statement, types, exclusive_domains, target) &&
-          (plan.lowering_for(target->name) == DomainLowering::DirectMutex ||
-           plan.lowering_for(target->name) == DomainLowering::DirectRwLock)) {
-        size_t end = index + 1;
-        for (; end < statements.size(); ++end) {
-          const Stmt& candidate = statements[end];
-          const Domain* candidate_target = nullptr;
-          if (candidate.indent != statement.indent || candidate.b != statement.b ||
-              !coalescable_await(candidate, types, exclusive_domains, candidate_target) ||
-              candidate_target != target)
-            break;
-        }
-        if (end - index >= 2) {
-          bool shared_read = plan.lowering_for(target->name) == DomainLowering::DirectRwLock;
-          for (size_t item = index; item < end; ++item) {
-            const auto& effects = plan.handler_effects.at(
-                target->name + "." + statements[item].c);
-            shared_read = shared_read && effects.state_effect == Effect::Read;
-          }
-          plan.coalesced_lock_regions.push_back(CoalescedLockRegion{
-              statement.line, end - index, statement.b, target->name, shared_read});
-          for (size_t item = index; item < end; ++item)
-            update_statement_types(statements[item], nullptr, types);
-          index = end;
-          continue;
-        }
-      }
-      update_statement_types(statement, nullptr, types);
-      ++index;
-    }
-  }
-
-  void validate_clusters(const OptimizationPlan& plan) const {
-    std::set<string> seen;
-    for (size_t index = 0; index < plan.domain_clusters.size(); ++index) {
-      const auto& cluster = plan.domain_clusters[index];
-      if (cluster.size() < 2)
-        throw std::runtime_error("domain cluster " + std::to_string(index + 1) +
-                                 " must contain at least two domain types");
-      for (const auto& name : cluster) {
-        if (!domains_.count(name))
-          throw std::runtime_error("unknown domain in cluster: " + name);
-        if (!seen.insert(name).second)
-          throw std::runtime_error("domain appears in more than one cluster: " + name);
-      }
-    }
-
-    if (plan.domain_clusters.empty()) return;
-    std::unordered_map<string, size_t> spawn_counts;
-    std::set<string> nested_spawns;
-    if (program_.main) {
-      for (const auto& statement : program_.main->body) {
-        if (statement.kind != Stmt::Kind::Let && statement.kind != Stmt::Kind::Var &&
-            statement.kind != Stmt::Kind::Assign) continue;
-        if (auto spawned = spawned_domain(statement.b)) {
-          ++spawn_counts[*spawned];
-          if (statement.indent != 0) nested_spawns.insert(*spawned);
-        }
-      }
-    }
-    for (const auto& cluster : plan.domain_clusters) {
-      for (const auto& name : cluster) {
-        if (spawn_counts[name] != 1)
-          throw std::runtime_error("clustered domain type '" + name +
-              "' must be spawned exactly once in main (found " +
-              std::to_string(spawn_counts[name]) + ")");
-        if (nested_spawns.count(name))
-          throw std::runtime_error("clustered domain type '" + name +
-                                   "' must be spawned unconditionally at main scope");
-      }
-    }
-
-  }
-
-  bool sendable_type(const string& type, std::set<string>& visiting) const {
-    string t = trim(type);
-    if (t == "int" || t == "float" || t == "bool" || t == "string") return true;
-
-    // Domain references are thread-safe capabilities in both backend transports.
-    if (domains_.count(t)) return true;
-
-    auto object = objects_.find(t);
-    if (object != objects_.end()) {
-      // Recursive value objects are not representable without indirection in the
-      // current Rust backend, so keep this optimization conservative around them.
-      if (!visiting.insert(t).second) return false;
-      bool sendable = std::all_of(object->second->fields.begin(), object->second->fields.end(),
-          [&](const Field& field) { return sendable_type(field.type, visiting); });
-      visiting.erase(t);
-      return sendable;
-    }
-
-    if ((starts_with(t, "seq[") || starts_with(t, "option[")) && ends_with(t, "]"))
-      return sendable_type(trim(t.substr(t.find('[') + 1, t.size() - t.find('[') - 2)), visiting);
-    if (starts_with(t, "table[") && ends_with(t, "]")) {
-      auto parts = split_top_level(t.substr(6, t.size() - 7), ',');
-      return parts.size() == 2 && sendable_type(parts[0], visiting) &&
-             sendable_type(parts[1], visiting);
-    }
-    return false;
-  }
-
-  bool domain_is_direct_candidate(const Domain& domain) const {
-    if (domain.handlers.empty()) return false;
-    for (const auto& field : domain.state) {
-      std::set<string> visiting;
-      if (!sendable_type(field.type, visiting)) return false;
-    }
-    for (const auto& handler : domain.handlers) {
-      for (const auto& param : handler.params) {
-        std::set<string> visiting;
-        if (!sendable_type(param.type, visiting)) return false;
-      }
-      if (handler.reply_type) {
-        std::set<string> visiting;
-        if (!sendable_type(*handler.reply_type, visiting)) return false;
-      }
-    }
-    return true;
-  }
-
-  std::optional<string> spawned_domain(const string& expression) const {
-    string value = trim(expression);
-    if (starts_with(value, "spawn ")) value = trim(value.substr(6));
-    string name; vector<string> arguments;
-    if (!parse_simple_call(value, name, arguments) || !domains_.count(name))
-      return std::nullopt;
-    return name;
-  }
-
-  const Handler* find_handler(const Domain& domain, const string& name) const {
-    for (const auto& handler : domain.handlers)
-      if (handler.name == name) return &handler;
-    return nullptr;
-  }
-
-  void scan_calls(const vector<Stmt>& statements, std::unordered_map<string, string>& types,
-                  std::set<string>& asynchronously_called, bool& complete) const {
-    size_t index = 0;
-    scan_call_block(statements, index, 0, types, asynchronously_called, complete);
-    if (index != statements.size()) complete = false;
-  }
-
-  void scan_call_block(const vector<Stmt>& statements, size_t& index, int level,
-                       std::unordered_map<string, string>& types,
-                       std::set<string>& asynchronously_called, bool& complete) const {
-    while (index < statements.size()) {
-      const Stmt& statement = statements[index];
-      if (statement.indent < level) return;
-      if (statement.indent > level) {
-        complete = false;
-        return;
-      }
-      if (statement.kind == Stmt::Kind::Else) return;
-
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
-          statement.kind == Stmt::Kind::For) {
-        bool is_if = statement.kind == Stmt::Kind::If;
-        ++index;
-        auto child_types = types;
-        if (statement.kind == Stmt::Kind::For)
-          child_types[statement.a] = statement.semantic_type.empty()
-              ? "_value" : statement.semantic_type;
-        scan_call_block(statements, index, level + 1, child_types,
-                        asynchronously_called, complete);
-        if (is_if && index < statements.size() && statements[index].indent == level &&
-            statements[index].kind == Stmt::Kind::Else) {
-          ++index;
-          auto alternative_types = types;
-          scan_call_block(statements, index, level + 1, alternative_types,
-                          asynchronously_called, complete);
-        }
-        continue;
-      }
-
-      if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
-          statement.kind == Stmt::Kind::Assign) {
-        if (auto spawned = spawned_domain(statement.b)) {
-          types[statement.a] = *spawned;
-        } else {
-          auto source = types.find(trim(statement.b));
-          types[statement.a] = source == types.end() ? "_value" : source->second;
-        }
-        ++index;
-        continue;
-      }
-
-      if (statement.kind != Stmt::Kind::Message && statement.kind != Stmt::Kind::AwaitMessage) {
-        if (statement.kind == Stmt::Kind::Call) complete = false;
-        ++index;
-        continue;
-      }
-
-      const string& receiver = statement.kind == Stmt::Kind::Message ? statement.a : statement.b;
-      auto receiver_type = types.find(receiver);
-      if (receiver_type == types.end() || !domains_.count(receiver_type->second)) {
-        complete = false;
-        ++index;
-        continue;
-      }
-      const Domain& target = *domains_.at(receiver_type->second);
-      if (statement.kind == Stmt::Kind::Message) {
-        // `message` is synchronous in the checked language.  It is still a
-        // statically resolved call edge, but it must not force mailbox
-        // lowering merely because of its source spelling.
-        const Handler* handler = find_handler(target, statement.b);
-        if (!statement.message_result.empty() && handler && handler->reply_type)
-          types[statement.message_result] = *handler->reply_type;
-      } else {
-        const Handler* handler = find_handler(target, statement.c);
-        types[statement.a] = handler && handler->reply_type ? *handler->reply_type : "_value";
-      }
-      ++index;
-    }
-  }
-};
+struct OptimizationPlan { bool optimizations_enabled = false; };
 
 enum class ProgramGenerationMode { Application, Tests, Benchmarks };
 
 class Generator {
  public:
-  Generator(const Program& p, const OptimizationPlan& plan,
-            bool await_error_handling = true, bool debug_build = false,
+  Generator(const Program& p, const OptimizationPlan&,
+            bool debug_build = false,
             ProgramGenerationMode mode = ProgramGenerationMode::Application,
             vector<string> rust_dependencies = {},
             const Program* resolution_program = nullptr,
             bool emit_static_specializations = true,
             bool public_specializations = false)
-      : p_(p), plan_(plan), await_error_handling_(await_error_handling),
+      : p_(p),
         debug_build_(debug_build), mode_(mode),
         rust_dependencies_(std::move(rust_dependencies)),
         emit_static_specializations_(emit_static_specializations),
@@ -10636,12 +8904,6 @@ class Generator {
     for (const auto& d : p.domains) domains_[d.name] = &d;
     const Program& semantic_program = resolution_program ? *resolution_program : p;
     semantic_program_ = &semantic_program;
-    // Phase 10.6D: legacy optimization decisions may not override the plan.
-    plan_.domain_clusters.clear();
-    plan_.batched_send_regions.clear();
-    plan_.coalesced_lock_regions.clear();
-    for (const auto& domain : semantic_program.domains)
-      plan_.domain_lowerings[domain.name] = DomainLowering::Handler2PL;
     std::set<string> used_domain_names;
     for (const auto& domain : semantic_program.domains) used_domain_names.insert(domain.name);
     for (const auto& specialization : semantic_program.domain_specializations) {
@@ -10692,7 +8954,6 @@ class Generator {
     }
     for (const auto& d : specialized_domains_) {
       domains_[d.name] = &d;
-      plan_.domain_lowerings[d.name] = DomainLowering::Handler2PL;
     }
     for (const auto& o : p.objects) objects_[o.name] = &o;
     for (const auto& f : p.functions) functions_[f.name] = &f;
@@ -10712,45 +8973,8 @@ class Generator {
     validate_synchronization_lowering(*semantic_program_);
     std::ostringstream o;
     o << "// Generated by Moss v0.2. Do not edit by hand.\n";
-    if (plan_.needs_mailbox_runtime())
-      o << "// Message transport: lock-backed shared-memory mailboxes.\n";
-    else
-      o << "// Message transport: mailbox-free statically selected shared memory.\n";
-    o << "// SynchronizationPlan drives production handler-level 2PL for every optimization level.\n";
-    o << "// Moss source remains message-based; these comments identify its Rust lowering.\n";
-    if (!await_error_handling_)
-      o << "// Legacy unchecked-await option has no effect on fail-closed handler entry.\n";
-    bool has_direct = plan_.has_lowering(DomainLowering::Handler2PL) || plan_.has_lowering(DomainLowering::DirectMutex) ||
-        plan_.has_lowering(DomainLowering::DirectRwLock) ||
-        plan_.has_lowering(DomainLowering::DirectAtomic);
-    if (has_direct) {
-      o << "// Message optimization: direct shared-memory dispatch for ";
-      bool first = true;
-      for (const auto& domain : p_.domains) {
-        DomainLowering lowering = plan_.lowering_for(domain);
-        if (lowering != DomainLowering::Handler2PL && lowering != DomainLowering::DirectMutex &&
-            lowering != DomainLowering::DirectRwLock &&
-            lowering != DomainLowering::DirectAtomic)
-          continue;
-        if (!first) o << ", ";
-        first = false;
-        o << domain.name;
-      }
-      o << ".\n";
-    }
-    for (const auto& domain : p_.domains) {
-      o << "// Moss backend plan: " << domain.name << " = ";
-      o << "Handler2PL";
-      o << ".\n";
-    }
-    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index) {
-      o << "// Domain cluster " << index << ": static same-thread dispatch for ";
-      for (size_t member = 0; member < plan_.domain_clusters[index].size(); ++member) {
-        if (member) o << ", ";
-        o << plan_.domain_clusters[index][member];
-      }
-      o << ".\n";
-    }
+    o << "// Synchronous domain calls enter compiler-planned handler-level 2PL.\n";
+    for (const auto& domain : p_.domains) o << "// Moss backend plan: " << domain.name << " = Handler2PL.\n";
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
     for (const auto& dependency : rust_dependencies_) {
@@ -10765,19 +8989,8 @@ class Generator {
     }
     if (!rust_dependencies_.empty()) o << "\n";
     o << "use std::collections::{HashMap, VecDeque};\n";
-    o << "use std::cell::RefCell;\n";
-    o << "use std::rc::Rc;\n";
     o << "use std::sync::Arc;\n";
-    if (plan_.needs_mailbox_runtime()) o << "use std::sync::{Condvar, Mutex};\n";
-    else if (plan_.has_lowering(DomainLowering::DirectMutex)) o << "use std::sync::Mutex;\n";
-    if (plan_.has_lowering(DomainLowering::DirectRwLock)) o << "use std::sync::RwLock;\n";
-    if (plan_.has_lowering(DomainLowering::DirectAtomic))
-      o << "use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};\n";
-    if (plan_.needs_mailbox_runtime()) o << "use std::thread;\n";
-    o << "\n";
     o << "fn __moss_require_send<T: Send>() {}\n\n";
-    if (plan_.needs_mailbox_runtime()) gen_shared_channel(o);
-    gen_tracker(o, plan_.needs_mailbox_runtime());
 
     o << handler_runtime_rust();
     for (const auto& t : p_.objects) gen_object(o, t);
@@ -10788,7 +9001,7 @@ class Generator {
       gen_object_access(o, *entry.second, owns);
     }
     for (const auto& f : p_.functions) gen_function(o, f);
-    // Refs first because handler message enums can mention refs to later domains.
+    // Declare concrete references before handlers that follow their routes.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
     for (const auto& d : specialized_domains_)
       if (owns_specialization(d)) gen_ref_decl(o, d);
@@ -10801,8 +9014,6 @@ class Generator {
         gen_domain(o, d);
         if (d.exported) gen_exported_domain_bridge(o, d);
       }
-    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
-      gen_cluster(o, index, plan_.domain_clusters[index]);
     if (mode_ == ProgramGenerationMode::Tests)
       gen_test_harness(o);
     else if (mode_ == ProgramGenerationMode::Benchmarks)
@@ -10816,7 +9027,6 @@ class Generator {
 
  private:
   const Program& p_;
-  OptimizationPlan plan_;
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
   string construction_binding_;
@@ -10824,7 +9034,6 @@ class Generator {
   bool view_method_ = false;
   std::set<string> view_parameters_;
   mutable bool mutable_projection_ = false;
-  bool await_error_handling_ = true;
   bool debug_build_ = false;
   ProgramGenerationMode mode_ = ProgramGenerationMode::Application;
   vector<string> rust_dependencies_;
@@ -10836,7 +9045,6 @@ class Generator {
   // Rust values when their Moss payload type is non-Copy.  This set is scoped
   // to the body currently being emitted and keeps ordinary helper-call
   // lowering from adding a second borrow to an already borrowed parameter.
-  std::set<string> borrowed_parameters_;
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
   std::unordered_map<string,string> specialization_sources_;
@@ -10851,7 +9059,6 @@ class Generator {
   };
   std::unordered_map<string, DomainInstanceBinding> domain_instance_bindings_;
   std::set<string> ambiguous_domain_instance_bindings_;
-  size_t reply_temp_ = 0;
   size_t assertion_temp_ = 0;
 
   bool owns_specialization(const Domain& specialized) const {
@@ -11001,34 +9208,6 @@ class Generator {
         std::to_string(handler.line);
   }
 
-  bool direct_shared_memory(const Domain& domain) const {
-    DomainLowering lowering = plan_.lowering_for(domain);
-    return lowering == DomainLowering::Handler2PL || lowering == DomainLowering::DirectMutex ||
-           lowering == DomainLowering::DirectRwLock ||
-           lowering == DomainLowering::DirectAtomic;
-  }
-
-  bool direct_lock(const Domain& domain) const {
-    DomainLowering lowering = plan_.lowering_for(domain);
-    return lowering == DomainLowering::Handler2PL || lowering == DomainLowering::DirectMutex ||
-           lowering == DomainLowering::DirectRwLock;
-  }
-
-  bool direct_atomic(const Domain& domain) const {
-    return plan_.lowering_for(domain) == DomainLowering::DirectAtomic;
-  }
-
-  std::optional<size_t> cluster_for(const Domain& domain) const {
-    return plan_.cluster_for(domain.name);
-  }
-
-  bool local_cluster_call(const Domain* source, const Domain* target,
-                          const std::optional<size_t>& cluster_context) const {
-    return source && target && cluster_context &&
-           plan_.same_cluster(source->name, target->name) &&
-           plan_.cluster_for(source->name) == cluster_context;
-  }
-
   string rust_type(const string& t) const {
     string x = canonical_type_name(t);
     if (x == "int") return "i64";
@@ -11066,17 +9245,6 @@ class Generator {
       if (c.kind == ConstraintKind::Indexable) out.insert("[]");
     }
     return out;
-  }
-
-  string local_rust_type(const string& type, size_t cluster) const {
-    string value = trim(type);
-    auto domain = domains_.find(value);
-    if (domain != domains_.end()) {
-      if (plan_.cluster_for(value) == std::optional<size_t>(cluster))
-        return value + "LocalRef";
-      return "Rc<" + value + "Ref>";
-    }
-    return rust_type(value);
   }
 
   string default_value(const string& type) const {
@@ -11195,9 +9363,6 @@ class Generator {
     string actual_type = generated_expr_type(argument, types).value_or("");
     if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
       return rendered;
-    if (plain_identifier(trim(argument)) && borrowed_parameters_.count(trim(argument)) &&
-        !write_through_parameters_.count(trim(argument)))
-      return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
@@ -11214,9 +9379,6 @@ class Generator {
     Effect effect = method_effect(method, index);
     string type = method.params[index].type;
     if (effect == Effect::Consume || (effect != Effect::Write && !borrowable_type(type))) return rendered;
-    if (plain_identifier(trim(argument)) && borrowed_parameters_.count(trim(argument)) &&
-        !write_through_parameters_.count(trim(argument)))
-      return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
@@ -12398,7 +10560,8 @@ class Generator {
 
   string expr(string e, const Domain* d, const std::set<string>& locals,
               const std::unordered_map<string,string>* types = nullptr,
-              size_t functional_pipeline_id = 0) const {
+              size_t functional_pipeline_id = 0,
+              const vector<size_t>* message_argument_plans = nullptr) const {
     e = trim(std::move(e));
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
@@ -12406,9 +10569,7 @@ class Generator {
     // `message` is a Moss expression as well as a statement.  Assignment
     // statements have a dedicated lowering path, but expression positions
     // (for example `echo message d.Get()`) must retain the same synchronous
-    // completion and reply semantics.  Keep the compatibility mailbox
-    // adapter inside this expression block; direct and cluster-local calls
-    // remain ordinary synchronous Rust calls.
+    // completion and reply semantics through synchronized handler entry.
     if (starts_with(e, "message ")) {
       string receiver, handler;
       vector<string> arguments;
@@ -12431,61 +10592,20 @@ class Generator {
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
           call << message_arg(arguments[index], target_handler->params.at(index).type,
-                              d, locals, types);
+                              d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
         }
         call << ")";
         return call.str();
       }
-      bool local_cluster = d && cluster_for(*d) &&
-          cluster_for(target_domain) &&
-          *cluster_for(*d) == *cluster_for(target_domain);
-      bool direct = local_cluster || plan_.lowering_for(target_domain) != DomainLowering::Mailbox;
-      string recv = expr(receiver, d, locals, types);
-      auto argument_text = [&](bool clustered) {
-        std::ostringstream rendered;
-        for (size_t index = 0; index < arguments.size(); ++index) {
-          if (index) rendered << ", ";
-          string parameter_type = index < target_handler->params.size()
-              ? target_handler->params[index].type : "_";
-          if (clustered)
-            rendered << cluster_call_arg(arguments[index], parameter_type, d, locals,
-                                         *cluster_for(target_domain), false, types);
-          else if (direct)
-            rendered << direct_message_arg(arguments[index], parameter_type, d, locals, types);
-          else
-            rendered << message_arg(arguments[index], parameter_type, d, locals, types);
-        }
-        return rendered.str();
-      };
-      string call_name = handler + (local_cluster ? "_local" : "_shared");
-      if (direct) {
-        std::ostringstream rendered;
-        rendered << recv << "." << call_name << "(" << argument_text(local_cluster) << ")";
-        if (target_handler->reply_type)
-          rendered << ".unwrap_or_else(|| panic!(\"Moss message failed: "
-                    << target_domain.name << "." << handler
-                    << " completed without a reply\"))";
-        return rendered.str();
-      }
-      string reply_type = target_handler->reply_type
-          ? rust_type(*target_handler->reply_type) : "()";
       std::ostringstream rendered;
-      rendered << "{ let (__moss_expr_reply_tx, __moss_expr_reply_rx) = moss_channel::<"
-                << reply_type << ">(); let (__moss_expr_done_tx, __moss_expr_done_rx) = "
-                << "moss_channel::<()>(); " << recv << "." << call_name << "("
-                << argument_text(false);
+      rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
+      for (size_t index = 0; index < arguments.size(); ++index) {
+        if (index) rendered << ", ";
+        rendered << message_arg(arguments[index], target_handler->params.at(index).type, d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
+      }
+      rendered << ")";
       if (target_handler->reply_type)
-        rendered << (arguments.empty() ? "" : ", ") << "__moss_expr_reply_tx, ";
-      else if (!arguments.empty())
-        rendered << ", ";
-      rendered << "__moss_expr_done_tx); let _ = __moss_expr_done_rx.recv(); ";
-      if (target_handler->reply_type)
-        rendered << "__moss_expr_reply_rx.recv().unwrap_or_else(|_| panic!(\"Moss message failed: "
-                  << target_domain.name << "." << handler
-                  << " completed without a reply\"))";
-      else
-        rendered << "()";
-      rendered << " }";
+        rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
     }
     if (auto functional = functional_expr(
@@ -12840,156 +10960,7 @@ class Generator {
     // detached from the sender even when the source binding remains available;
     // the generated clone is an implementation of that boundary, never an
     // implicit copy for an ordinary local call.
-    if (plain_identifier(trim(e)) && borrowed_parameters_.count(trim(e)))
-      return "(*(" + r + ")).clone()";
     return "(" + r + ").clone()";
-  }
-
-  bool direct_payload_reference_type(const string&) const { return false; }
-
-  string direct_message_arg(const string& e, const string& type, const Domain* d,
-                            const std::set<string>& locals,
-                            const std::unordered_map<string,string>* types = nullptr,
-                            size_t functional_pipeline_id = 0) const {
-    return message_arg(e, type, d, locals, types, functional_pipeline_id);
-  }
-
-  string cluster_call_arg(const string& expression, const string& type,
-                          const Domain* source, const std::set<string>& locals,
-                          size_t cluster, bool crosses_thread,
-                          const std::unordered_map<string,string>* types = nullptr,
-                          size_t functional_pipeline_id = 0) const {
-    string value_type = trim(type);
-    if (domains_.count(value_type)) {
-      if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster)) {
-        if (crosses_thread)
-          return "self." + snake_case(value_type) + "_ref.clone()";
-        return value_type + "LocalRef";
-      }
-      string value = expr(expression, source, locals, types,
-                          functional_pipeline_id);
-      if (crosses_thread) return "(" + value + ").as_ref().clone()";
-      return "(" + value + ").clone()";
-    }
-    return message_arg(expression, type, source, locals, types,
-                       functional_pipeline_id);
-  }
-
-  string cluster_local_call_arg(const string& expression, const string& type,
-                                 const Domain* source,
-                                 const std::set<string>& locals, size_t cluster,
-                                 const std::unordered_map<string,string>* types = nullptr,
-                                 size_t functional_pipeline_id = 0) const {
-    string value_type = trim(type);
-    if (domains_.count(value_type)) {
-      if (plan_.cluster_for(value_type) == std::optional<size_t>(cluster))
-        return value_type + "LocalRef";
-      return "(" + expr(expression, source, locals, types,
-                         functional_pipeline_id) + ").clone()";
-    }
-    return direct_message_arg(expression, type, source, locals, types,
-                              functional_pipeline_id);
-  }
-
-  void gen_tracker(std::ostringstream& o, bool synchronized) {
-    if (!synchronized) {
-      backend_comment(o, 0, "mailbox-free completion tracker; direct operations finish before returning");
-      o << "struct MossTracker;\n";
-      o << "impl MossTracker {\n";
-      o << "    fn new() -> Self { Self }\n";
-      o << "    fn wait_zero(&self) -> bool { true }\n";
-      o << "}\n\n";
-      return;
-    }
-    backend_comment(o, 0, "runtime completion tracking for generated domain work");
-    o << "struct MossTrackerState { pending: usize, failed: bool }\n";
-    o << "struct MossTracker { state: Mutex<MossTrackerState>, cv: Condvar }\n";
-    o << "impl MossTracker {\n";
-    o << "    fn new() -> Self { Self { state: Mutex::new(MossTrackerState { pending: 0, failed: false }), cv: Condvar::new() } }\n";
-    o << "    fn begin(&self) { let mut state = self.state.lock().unwrap(); state.pending += 1; }\n";
-    o << "    fn begin_n(&self, count: usize) { let mut state = self.state.lock().unwrap(); state.pending += count; }\n";
-    o << "    fn end(&self) { let mut state = self.state.lock().unwrap(); state.pending -= 1; if state.pending == 0 { self.cv.notify_all(); } }\n";
-    o << "    fn end_n(&self, count: usize) { let mut state = self.state.lock().unwrap(); state.pending -= count; if state.pending == 0 { self.cv.notify_all(); } }\n";
-    o << "    fn fail(&self) { let mut state = self.state.lock().unwrap(); state.failed = true; self.cv.notify_all(); }\n";
-    o << "    fn wait_zero(&self) -> bool {\n";
-    o << "        let mut state = self.state.lock().unwrap();\n";
-    o << "        while state.pending != 0 && !state.failed { state = self.cv.wait(state).unwrap(); }\n";
-    o << "        !state.failed\n";
-    o << "    }\n";
-    o << "}\n\n";
-  }
-
-  void gen_shared_channel(std::ostringstream& o) {
-    backend_comment(o, 0, "LEGACY MESSAGE/MAILBOX adapter: synchronous calls enqueue under Mutex and wait for completion with Condvar");
-    o << "struct MossChannelState<T> { queue: VecDeque<T>, senders: usize, receiver_open: bool }\n";
-    o << "struct MossChannel<T> { state: Mutex<MossChannelState<T>>, ready: Condvar }\n";
-    o << "struct MossSender<T> { channel: Arc<MossChannel<T>> }\n";
-    o << "struct MossReceiver<T> { channel: Arc<MossChannel<T>> }\n\n";
-    o << "fn moss_channel<T>() -> (MossSender<T>, MossReceiver<T>) {\n";
-    o << "    let channel = Arc::new(MossChannel {\n";
-    o << "        state: Mutex::new(MossChannelState { queue: VecDeque::new(), senders: 1, receiver_open: true }),\n";
-    o << "        ready: Condvar::new(),\n";
-    o << "    });\n";
-    o << "    (MossSender { channel: channel.clone() }, MossReceiver { channel })\n";
-    o << "}\n\n";
-    o << "impl<T> Clone for MossSender<T> {\n";
-    o << "    fn clone(&self) -> Self {\n";
-    o << "        let mut state = self.channel.state.lock().unwrap();\n";
-    o << "        state.senders += 1;\n";
-    o << "        drop(state);\n";
-    o << "        Self { channel: self.channel.clone() }\n";
-    o << "    }\n";
-    o << "}\n\n";
-    o << "impl<T> MossSender<T> {\n";
-    o << "    fn send(&self, value: T) -> Result<(), T> {\n";
-    o << "        let mut state = self.channel.state.lock().unwrap();\n";
-    o << "        if !state.receiver_open { return Err(value); }\n";
-    o << "        state.queue.push_back(value);\n";
-    o << "        drop(state);\n";
-    o << "        self.channel.ready.notify_one();\n";
-    o << "        Ok(())\n";
-    o << "    }\n";
-    o << "    // Lock-coalesced enqueue path: append a contiguous batch under one mutex guard.\n";
-    o << "    #[allow(dead_code)]\n";
-    o << "    fn send_batch(&self, values: Vec<T>) -> Result<(), Vec<T>> {\n";
-    o << "        let mut state = self.channel.state.lock().unwrap();\n";
-    o << "        if !state.receiver_open { return Err(values); }\n";
-    o << "        state.queue.extend(values);\n";
-    o << "        drop(state);\n";
-    o << "        self.channel.ready.notify_one();\n";
-    o << "        Ok(())\n";
-    o << "    }\n";
-    o << "}\n\n";
-    o << "impl<T> Drop for MossSender<T> {\n";
-    o << "    fn drop(&mut self) {\n";
-    o << "        let mut state = self.channel.state.lock().unwrap();\n";
-    o << "        state.senders -= 1;\n";
-    o << "        let closed = state.senders == 0;\n";
-    o << "        drop(state);\n";
-    o << "        if closed { self.channel.ready.notify_all(); }\n";
-    o << "    }\n";
-    o << "}\n\n";
-    o << "impl<T> MossReceiver<T> {\n";
-    o << "    fn recv(&self) -> Result<T, ()> {\n";
-    o << "        let mut state = self.channel.state.lock().unwrap();\n";
-    o << "        loop {\n";
-    o << "            if let Some(value) = state.queue.pop_front() { return Ok(value); }\n";
-    o << "            if state.senders == 0 { return Err(()); }\n";
-    o << "            state = self.channel.ready.wait(state).unwrap();\n";
-    o << "        }\n";
-    o << "    }\n";
-    o << "}\n\n";
-    o << "impl<T> Drop for MossReceiver<T> {\n";
-    o << "    fn drop(&mut self) {\n";
-    o << "        let abandoned = {\n";
-    o << "            let mut state = self.channel.state.lock().unwrap();\n";
-    o << "            state.receiver_open = false;\n";
-    o << "            std::mem::take(&mut state.queue)\n";
-    o << "        };\n";
-    o << "        self.channel.ready.notify_all();\n";
-    o << "        drop(abandoned);\n";
-    o << "    }\n";
-    o << "}\n\n";
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
@@ -13061,8 +11032,7 @@ class Generator {
       std::unordered_map<string,string> types;
       for (const auto& field : t.fields) types[field.name] = field.type;
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
-      gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, false,
-                std::nullopt, true, functional_method_context(t, method));
+      gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
       if (method.result_expression) {
         string context = functional_method_context(t, method);
         auto plan = method.result_functional_pipeline_ids.find(context);
@@ -13099,7 +11069,7 @@ class Generator {
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
     backend_comment(o, 0, specialization
         ? "STATIC specialization: concrete local function selected before Rust generation"
-        : "LOCAL function: ordinary intra-domain call; no Moss mailbox or domain scheduling");
+        : "LOCAL function: ordinary intra-domain call; no domain dispatch");
     debug_symbol_attributes(o, 0, native_symbol, can_export);
     bool materialized_export = f.exported && !specialization &&
         !f.generic && !container_generic;
@@ -13184,8 +11154,7 @@ class Generator {
         write_through_parameters_.insert(f.params[index].name);
     }
     string functional_context = functional_function_context(f, specialization);
-    gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, false,
-              std::nullopt, true, functional_context);
+    gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
     if (f.result_expression) {
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
@@ -13220,35 +11189,6 @@ class Generator {
     for (const auto& route : d.routes)
       o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
     o << "}\n\n";
-    return;
-    source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
-    if (cluster_for(d)) {
-      backend_comment(o, 0, "CLUSTER ingress/message version of " + d.name + "Ref (shared-memory mailbox)");
-    } else if (direct_atomic(d)) {
-      backend_comment(o, 0, "ATOMIC DOMAIN reference (Arc<" + d.name + "State>; no mailbox or state lock)");
-    } else if (plan_.lowering_for(d) == DomainLowering::DirectRwLock) {
-      backend_comment(o, 0, "SHARED-MEMORY DIRECT version of " + d.name + "Ref (Arc<RwLock<" + d.name + "State>>)");
-    } else if (plan_.lowering_for(d) == DomainLowering::DirectMutex) {
-      backend_comment(o, 0, "SHARED-MEMORY DIRECT version of " + d.name + "Ref (Arc<Mutex<" + d.name + "State>>)");
-    } else {
-      backend_comment(o, 0, "MESSAGE/MAILBOX version of " + d.name + "Ref (shared-memory lock-backed queue)");
-    }
-    o << "#[derive(Clone)]\n" << (d.exported ? "pub " : "")
-      << "struct " << d.name << "Ref {\n";
-    if (auto cluster = cluster_for(d)) {
-      o << "    tx: MossSender<MossCluster" << *cluster << "SharedMsg>,\n";
-      o << "    tracker: Arc<MossTracker>,\n";
-    } else if (direct_atomic(d)) {
-      o << "    state: Arc<" << d.name << "State>,\n";
-    } else if (plan_.lowering_for(d) == DomainLowering::DirectRwLock) {
-      o << "    state: Arc<RwLock<" << d.name << "State>>,\n";
-    } else if (plan_.lowering_for(d) == DomainLowering::DirectMutex) {
-      o << "    state: Arc<Mutex<" << d.name << "State>>,\n";
-    } else {
-      o << "    tx: MossSender<" << d.name << "Msg>,\n";
-      o << "    tracker: Arc<MossTracker>,\n";
-    }
-    o << "}\n\n";
   }
 
   static string reply_binding(const Domain& d, const Handler& h) {
@@ -13256,7 +11196,7 @@ class Generator {
     for (const auto& f : d.state) used.insert(f.name);
     for (const auto& p : h.params) used.insert(p.name);
     for (const auto& s : h.body) {
-      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var || s.kind == Stmt::Kind::AwaitMessage)
+      if (s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var)
         used.insert(s.a);
     }
     string name = "__moss_reply";
@@ -13271,275 +11211,8 @@ class Generator {
     });
   }
 
-  const HandlerEffectSummary& handler_effects(const Domain& domain,
-                                              const Handler& handler) const {
-    return plan_.handler_effects.at(domain.name + "." + handler.name);
-  }
-
-  const AtomicHandlerPlan& atomic_handler(const Domain& domain,
-                                          const Handler& handler) const {
-    return plan_.atomic_handlers.at(domain.name + "." + handler.name);
-  }
-
 #include "handler_lowering.inc"
 #include "borrowed_views.inc"
-
-  void gen_direct_domain(std::ostringstream& o, const Domain& d) {
-    bool rwlock = plan_.lowering_for(d) == DomainLowering::DirectRwLock;
-    backend_comment(o, 0, "SHARED-MEMORY DIRECT implementation for domain " + d.name +
-        (rwlock ? "; handler effects select RwLock read/write guards"
-                : "; synchronous Moss messages call through Arc<Mutex<State>>"));
-    o << "impl " << d.name << "Ref {\n";
-    for (const auto& h : d.handlers) {
-      string result_name = reply_binding(d, h);
-      bool read_only = rwlock && handler_effects(d, h).state_effect == Effect::Read;
-      string semantic_identity = handler_semantic_identity(d, h);
-      string generated_symbol = d.name + "Ref::" + h.name + "_locked";
-      string native_symbol = tooling_native_symbol(
-          "handler", d.name + "__" + h.name, semantic_identity);
-      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
-                    native_symbol);
-      source_comment(o, 4, h.line, handler_signature(h));
-      backend_comment(o, 4, read_only
-          ? "READ-SHARED RwLock handler body; locking is separated from implementation"
-          : "SHARED-MEMORY DIRECT handler body; locking is separated from implementation");
-      debug_symbol_attributes(o, 4, native_symbol);
-      o << "    fn " << h.name << "_locked(&self, state: "
-        << (read_only ? "&" : "&mut ") << d.name << "State";
-      for (const auto& p : h.params) o << ", " << p.name << ": "
-        << (direct_payload_reference_type(p.type) ? "&" : "")
-        << rust_type(p.type);
-      if (h.reply_type)
-        o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
-      else
-        o << ") {\n";
-      o << "        let self_ref = self.clone();\n";
-      if (h.reply_type)
-        o << "        let mut " << result_name << ": Option<" << rust_type(*h.reply_type)
-          << "> = None;\n";
-      o << "        ";
-      if (handler_needs_label(h)) o << "'handler: ";
-      o << "{\n";
-      std::set<string> locals;
-      std::unordered_map<string,string> types;
-      types["self"] = d.name;
-      for (const auto& f : d.state) types[f.name] = f.type;
-      for (const auto& route : d.routes) types[route.name] = route.type;
-      for (const auto& p : h.params) {
-        locals.insert(p.name);
-        types[p.name] = p.type;
-      }
-      borrowed_parameters_.clear();
-      for (const auto& p : h.params)
-        if (direct_payload_reference_type(p.type))
-          borrowed_parameters_.insert(p.name);
-      locals.insert("self_ref");
-      locals.insert(result_name);
-      gen_stmts(o, h.body, &d, &h, result_name, locals, types, 3, true, true,
-                std::nullopt, false, functional_handler_context(d, h));
-      o << "        }\n";
-      if (h.reply_type) o << "        " << result_name << "\n";
-      o << "    }\n";
-      tooling_end(o, 4, semantic_identity);
-
-      backend_comment(o, 4, read_only
-          ? "READ-SHARED RwLock handler wrapper"
-          : "exclusive direct handler wrapper");
-      o << "    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": "
-        << (direct_payload_reference_type(p.type) ? "&" : "")
-        << rust_type(p.type);
-      if (h.reply_type)
-        o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
-      else
-        o << ") {\n";
-      if (rwlock) {
-        o << "        let " << (read_only ? "" : "mut ")
-          << "state = self.state." << (read_only ? "read" : "write")
-          << "().unwrap();\n";
-      } else {
-        o << "        let mut state = self.state.lock().unwrap();\n";
-      }
-      if (!h.reply_type) o << "        self." << h.name << "_locked("
-        << (read_only ? "&state" : "&mut state");
-      else o << "        self." << h.name << "_locked("
-        << (read_only ? "&state" : "&mut state");
-      for (const auto& p : h.params) o << ", " << p.name;
-      if (h.reply_type) o << ")\n";
-      else o << ");\n";
-      o << "    }\n";
-    }
-    borrowed_parameters_.clear();
-    o << "}\n\n";
-
-    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "(" : "(_tracker: Arc<MossTracker>");
-    bool constructor_parameter = !d.exported;
-    for (const auto& route : d.routes) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << route.name << ": " << rust_type(route.type);
-    }
-    for (const auto& field : d.state) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << field.name << ": " << rust_type(field.type);
-    }
-    o << ") -> " << d.name << "Ref {\n";
-    if (d.exported)
-      o << "    let _tracker = Arc::new(MossTracker::new());\n";
-    backend_comment(o, 4, "SHARED-MEMORY DIRECT state allocation for domain " + d.name);
-    o << "    __moss_require_send::<" << d.name << "State>();\n";
-    for (const auto& h : d.handlers) {
-      for (const auto& p : h.params)
-        o << "    __moss_require_send::<" << rust_type(p.type) << ">();\n";
-      if (h.reply_type)
-        o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
-    }
-    o << "    let state = " << d.name << "State {\n";
-    for (const auto& f : d.state) {
-      string init = f.name;
-      if (f.type == "string" && !init.empty() && init.front() == '"' && init.back() == '"') init += ".to_string()";
-      source_comment(o, 8, f.line, state_field_signature(f));
-      o << "        " << f.name << ": " << init << ",\n";
-    }
-    for (const auto& route : d.routes)
-      o << "        " << route.name << ": " << route.name << ",\n";
-    o << "    };\n";
-    o << "    " << d.name << "Ref { state: Arc::new("
-      << (rwlock ? "RwLock" : "Mutex") << "::new(state)) }\n";
-    o << "}\n\n";
-  }
-
-  void gen_atomic_domain(std::ostringstream& o, const Domain& d) {
-    backend_comment(o, 0, "ATOMIC DOMAIN implementation for " + d.name +
-        "; every handler is one SeqCst linearizable state action");
-    o << "impl " << d.name << "Ref {\n";
-    for (const auto& h : d.handlers) {
-      const AtomicHandlerPlan& action = atomic_handler(d, h);
-      string semantic_identity = handler_semantic_identity(d, h);
-      string generated_symbol = d.name + "Ref::" + h.name + "_shared";
-      string native_symbol = tooling_native_symbol(
-          "handler", d.name + "__" + h.name, semantic_identity);
-      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
-                    native_symbol);
-      source_comment(o, 4, h.line, handler_signature(h));
-      backend_comment(o, 4, "ATOMIC DOMAIN handler; no worker, mailbox, or state lock");
-      debug_symbol_attributes(o, 4, native_symbol);
-      o << "    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": "
-        << (direct_payload_reference_type(p.type) ? "&" : "")
-        << rust_type(p.type);
-      if (h.reply_type) o << ") -> Option<" << rust_type(*h.reply_type) << "> {\n";
-      else o << ") {\n";
-
-      std::set<string> locals;
-      std::unordered_map<string, string> types;
-      for (const auto& p : h.params) {
-        locals.insert(p.name);
-        types[p.name] = p.type;
-      }
-      borrowed_parameters_.clear();
-      for (const auto& p : h.params)
-        if (direct_payload_reference_type(p.type))
-          borrowed_parameters_.insert(p.name);
-      std::set<string> used_names = locals;
-      used_names.insert("self");
-      for (const auto& field : d.state) used_names.insert(field.name);
-      string value_name = fresh_generated_name("__moss_value", used_names);
-      string operand_name = fresh_generated_name("__moss_operand", used_names);
-      string previous_name = fresh_generated_name("__moss_previous", used_names);
-      string next_name = fresh_generated_name("__moss_next", used_names);
-      string operand = action.operand.empty()
-          ? string() : expr(action.operand, nullptr, locals, &types);
-      switch (action.action) {
-        case AtomicActionKind::Load:
-          o << "        let " << value_name << " = self.state." << action.field
-            << ".load(Ordering::SeqCst);\n";
-          break;
-        case AtomicActionKind::Store:
-          o << "        let " << value_name << " = " << operand << ";\n";
-          o << "        self.state." << action.field
-            << ".store(" << value_name << ", Ordering::SeqCst);\n";
-          break;
-        case AtomicActionKind::FetchAdd:
-          o << "        let " << operand_name << " = " << operand << ";\n";
-          o << "        let " << previous_name << " = self.state." << action.field
-            << ".fetch_add(" << operand_name << ", Ordering::SeqCst);\n";
-          o << "        let " << value_name << " = " << previous_name
-            << ".wrapping_add(" << operand_name << ");\n";
-          break;
-        case AtomicActionKind::FetchSub:
-          o << "        let " << operand_name << " = " << operand << ";\n";
-          o << "        let " << previous_name << " = self.state." << action.field
-            << ".fetch_sub(" << operand_name << ", Ordering::SeqCst);\n";
-          o << "        let " << value_name << " = " << previous_name
-            << ".wrapping_sub(" << operand_name << ");\n";
-          break;
-        case AtomicActionKind::FetchXor:
-          o << "        let " << previous_name << " = self.state." << action.field
-            << ".fetch_xor(true, Ordering::SeqCst);\n";
-          o << "        let " << value_name << " = !" << previous_name << ";\n";
-          break;
-        case AtomicActionKind::Swap:
-          o << "        let " << next_name << " = " << operand << ";\n";
-          o << "        let " << value_name << " = self.state." << action.field
-            << ".swap(" << next_name << ", Ordering::SeqCst);\n";
-          break;
-      }
-      if (h.reply_type) {
-        locals.insert(value_name);
-        auto field = std::find_if(d.state.begin(), d.state.end(),
-            [&](const Field& candidate) { return candidate.name == action.field; });
-        if (field != d.state.end()) types[value_name] = field->type;
-        string result_expression = action.result_expression.empty()
-            ? value_name
-            : replace_unqualified_word(action.result_expression, action.field,
-                                       value_name);
-        o << "        Some(" << message_arg(result_expression, *h.reply_type,
-                                              nullptr, locals, &types) << ")\n";
-      }
-      o << "    }\n";
-      tooling_end(o, 4, semantic_identity);
-    }
-    borrowed_parameters_.clear();
-    o << "}\n\n";
-
-    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "(" : "(_tracker: Arc<MossTracker>");
-    bool constructor_parameter = !d.exported;
-    for (const auto& route : d.routes) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << route.name << ": " << rust_type(route.type);
-    }
-    for (const auto& field : d.state) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << field.name << ": " << rust_type(field.type);
-    }
-    o << ") -> " << d.name << "Ref {\n";
-    if (d.exported)
-      o << "    let _tracker = Arc::new(MossTracker::new());\n";
-    backend_comment(o, 4, "ATOMIC DOMAIN allocation; no dedicated thread or mailbox");
-    o << "    __moss_require_send::<" << d.name << "State>();\n";
-    for (const auto& h : d.handlers) {
-      for (const auto& p : h.params)
-        o << "    __moss_require_send::<" << rust_type(p.type) << ">();\n";
-      if (h.reply_type)
-        o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
-    }
-    o << "    " << d.name << "Ref { state: Arc::new(" << d.name << "State {\n";
-    for (const auto& f : d.state) {
-      string init = f.name;
-      source_comment(o, 8, f.line, state_field_signature(f));
-      o << "        " << f.name << ": "
-        << (f.type == "bool" ? "AtomicBool" : "AtomicI64")
-        << "::new(" << init << "),\n";
-    }
-    o << "    }) }\n";
-    o << "}\n\n";
-  }
 
   static string nominal_handle_variant(const string& domain) {
     return "Specialized_" + stable_hash(domain).substr(0, 12);
@@ -13624,16 +11297,11 @@ class Generator {
             << "(" << arguments << "),\n";
         o << "        }\n    }\n";
       }
-      bool direct = direct_shared_memory(*routes.front());
-      for (const auto* route_domain : routes)
-        if (direct_shared_memory(*route_domain) != direct)
-          compatible = false;
-      if (!compatible) continue;
-      if (direct) {
+
         o << "    fn " << handler.name << "_shared(&self";
         for (const auto& parameter : handler.params)
           o << ", " << parameter.name << ": "
-            << (direct_payload_reference_type(parameter.type) ? "&" : "") << rust_type(parameter.type);
+            << rust_type(parameter.type);
         o << ") -> " << (handler.reply_type ? "Option<" + rust_type(*handler.reply_type) + ">" : "()")
           << " {\n        match &self.route {\n";
         for (size_t index = 0; index < routes.size(); ++index) {
@@ -13643,69 +11311,12 @@ class Generator {
           o << "),\n";
         }
         o << "        }\n    }\n";
-        continue;
-      }
-
-      o << "    fn " << handler.name << "_shared(&self";
-      for (const auto& parameter : handler.params)
-        o << ", " << parameter.name << ": " << rust_type(parameter.type);
-      string reply_name = reply_binding(source, handler);
-      if (handler.reply_type)
-        o << ", " << reply_name << ": MossSender<"
-          << rust_type(*handler.reply_type) << ">";
-      if (!direct) o << ", __moss_done: MossSender<()>";
-      if (direct && handler.reply_type)
-        o << ") -> Option<" << rust_type(*handler.reply_type) << "> {\n";
-      else
-        o << ") {\n";
-      o << "        match &self.route {\n";
-      o << "            " << route << "::Base(inner) => inner."
-        << handler.name << "_shared(";
-      bool first = true;
-      for (const auto& parameter : handler.params) {
-        if (!first) o << ", ";
-        first = false;
-        o << parameter.name;
-      }
-      if (handler.reply_type) {
-        if (!first) o << ", ";
-        o << reply_name;
-        first = false;
-      }
-      if (!direct) {
-        if (!first) o << ", ";
-        o << "__moss_done";
-      }
-      o << "),\n";
-      for (size_t route_index = 1; route_index < routes.size(); ++route_index) {
-        o << "            " << route << "::"
-          << nominal_handle_variant(routes[route_index]->name) << "(inner) => inner."
-          << handler.name << "_shared(";
-        first = true;
-        for (const auto& parameter : handler.params) {
-          if (!first) o << ", ";
-          first = false;
-          o << parameter.name;
-        }
-        if (handler.reply_type) {
-          if (!first) o << ", ";
-          o << reply_name;
-          first = false;
-        }
-        if (!direct) {
-          if (!first) o << ", ";
-          o << "__moss_done";
-        }
-        o << "),\n";
-      }
-      o << "        }\n    }\n";
-    }
+          }
     o << "}\n\n";
   }
 
-  // Keep crate-private transport types behind an ordinary synchronous call.
-  // The target is already fixed by the checked route graph. This adapter does
-  // not export a Moss handle parameter or expose per-crate queue token types.
+  // Expose a synchronous provider entry over its private state representation.
+  // The target is fixed by the checked concrete route graph.
   void gen_exported_domain_bridge(std::ostringstream& out, const Domain& domain) {
     out << "impl " << domain.name << "Ref {\n";
     exported_domain_bridge_body_ = true;
@@ -13730,568 +11341,7 @@ class Generator {
     out << "}\n\n";
   }
 
-  void gen_domain(std::ostringstream& o, const Domain& d) {
-    gen_planned_domain(o, d);
-    return;
-    string domain_identity = "domain:" + d.name + "@" +
-        std::to_string(d.line);
-    tooling_begin(o, 0, "domain", domain_identity, d.name + "State");
-    source_comment(o, 0, d.line, d.header.empty() ? "domain " + d.name : d.header);
-    if (cluster_for(d)) {
-      backend_comment(o, 0, "CLUSTER-LOCAL state representation for domain " + d.name + " (RefCell on the cluster worker)");
-    } else if (direct_atomic(d)) {
-      backend_comment(o, 0, "ATOMIC DOMAIN state representation for domain " + d.name + " (SeqCst linearization)");
-    } else if (direct_lock(d)) {
-      backend_comment(o, 0, "SHARED-MEMORY DIRECT state representation for domain " + d.name);
-    } else {
-      backend_comment(o, 0, "MESSAGE/MAILBOX state representation for domain " + d.name + " (one worker drains a shared-memory queue)");
-    }
-    o << "struct " << d.name << "State {\n";
-    for (const auto& f : d.state) {
-      source_comment(o, 4, f.line, state_field_signature(f));
-      if (direct_atomic(d))
-        o << "    " << f.name << ": " << (f.type == "bool" ? "AtomicBool" : "AtomicI64") << ",\n";
-      else
-        o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
-    }
-    for (const auto& route : d.routes) {
-      if (cluster_for(d) && plan_.cluster_for(route.type) == cluster_for(d)) continue;
-      source_comment(o, 4, route.line, route.name + ": " + route.type);
-      o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
-    }
-    o << "}\n\n";
-    tooling_end(o, 0, domain_identity);
-
-    if (cluster_for(d)) return;
-
-    if (direct_atomic(d)) {
-      gen_atomic_domain(o, d);
-      return;
-    }
-
-    if (direct_lock(d)) {
-      gen_direct_domain(o, d);
-      return;
-    }
-
-    backend_comment(o, 0, "MESSAGE/MAILBOX handler messages for domain " + d.name + " (Rust enum plus shared-memory queue)");
-    o << "enum " << d.name << "Msg {\n";
-    for (const auto& h : d.handlers) {
-      source_comment(o, 4, h.line, handler_signature(h));
-      o << "    " << h.name;
-      {
-        o << "(";
-        size_t count = 0;
-        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
-          if (count) o << ", ";
-          o << rust_type(h.params[i].type);
-        }
-        if (h.reply_type) {
-          if (count) o << ", ";
-          o << "MossSender<" << rust_type(*h.reply_type) << ">";
-        }
-        if (count || h.reply_type) o << ", ";
-        o << "MossSender<()>";
-        o << ")";
-      }
-      o << ",\n";
-    }
-    o << "}\n\n";
-
-    backend_comment(o, 0, "MESSAGE/MAILBOX send methods for domain " + d.name);
-    o << "impl " << d.name << "Ref {\n";
-    for (const auto& h : d.handlers) {
-      string reply_name = reply_binding(d, h);
-      source_comment(o, 4, h.line, handler_signature(h));
-      backend_comment(o, 4, "MESSAGE/MAILBOX version: enqueue the Moss handler invocation");
-      o << "    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
-      if (h.reply_type) o << ", " << reply_name << ": MossSender<" << rust_type(*h.reply_type) << ">";
-      o << ", __moss_done: MossSender<()>";
-      o << ") {\n        self.tracker.begin();\n        if self.tx.send(" << d.name << "Msg::" << h.name;
-      {
-        o << "(";
-        size_t count = 0;
-        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
-          if (count) o << ", ";
-          o << h.params[i].name;
-        }
-        if (h.reply_type) {
-          if (count) o << ", ";
-          o << reply_name;
-        }
-        if (count || h.reply_type) o << ", ";
-        o << "__moss_done";
-        o << ")";
-      }
-      o << ").is_err() { self.tracker.end(); }\n    }\n";
-    }
-    for (const auto& h : d.handlers) {
-      string reply_name = reply_binding(d, h);
-      string semantic_identity = handler_semantic_identity(d, h);
-      string implementation = "__moss_handler_" + h.name + "_mailbox";
-      string generated_symbol = d.name + "Ref::" + implementation;
-      string native_symbol = tooling_native_symbol(
-          "handler", d.name + "__" + h.name, semantic_identity);
-      tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
-                    native_symbol);
-      source_comment(o, 4, h.line, handler_signature(h));
-      backend_comment(o, 4,
-                      "MESSAGE/MAILBOX handler implementation; transport and body are separated for tooling");
-      debug_symbol_attributes(o, 4, native_symbol);
-      o << "    fn " << implementation << "(&self, state: &mut "
-        << d.name << "State";
-      for (const auto& p : h.params)
-        o << ", " << p.name << ": " << rust_type(p.type);
-      if (h.reply_type)
-        o << ", " << reply_name << ": MossSender<"
-          << rust_type(*h.reply_type) << ">";
-      o << ") {\n";
-      o << "        let self_ref = self.clone();\n";
-      o << "        ";
-      if (handler_needs_label(h)) o << "'handler: ";
-      o << "{\n";
-      std::set<string> locals;
-      std::unordered_map<string,string> types;
-      types["self"] = d.name;
-      for (const auto& f : d.state) types[f.name] = f.type;
-      for (const auto& route : d.routes) types[route.name] = route.type;
-      for (const auto& p : h.params) {
-        locals.insert(p.name);
-        types[p.name] = p.type;
-      }
-      locals.insert("self_ref");
-      if (h.reply_type) locals.insert(reply_name);
-      gen_stmts(o, h.body, &d, &h, reply_name, locals, types, 3, true, false,
-                std::nullopt, false, functional_handler_context(d, h));
-      o << "        }\n";
-      o << "    }\n";
-      tooling_end(o, 4, semantic_identity);
-    }
-    backend_comment(o, 4, "BATCHED MAILBOX SEND helper: one tracker update and one queue lock");
-    o << "    fn __moss_send_batch(&self, messages: Vec<" << d.name << "Msg>) {\n";
-    o << "        let count = messages.len();\n";
-    o << "        self.tracker.begin_n(count);\n";
-    o << "        if let Err(unsent) = self.tx.send_batch(messages) {\n";
-    o << "            self.tracker.end_n(unsent.len());\n";
-    o << "        }\n";
-    o << "    }\n";
-    o << "}\n\n";
-
-    backend_comment(o, 0, "MESSAGE/MAILBOX worker for domain " + d.name + "; each dequeued Moss message runs to completion");
-    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "(" : "(tracker: Arc<MossTracker>");
-    bool constructor_parameter = !d.exported;
-    for (const auto& route : d.routes) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << route.name << ": " << rust_type(route.type);
-    }
-    for (const auto& field : d.state) {
-      if (constructor_parameter) o << ", ";
-      constructor_parameter = true;
-      o << field.name << ": " << rust_type(field.type);
-    }
-    o << ") -> " << d.name << "Ref {\n";
-    if (d.exported)
-      o << "    let tracker = Arc::new(MossTracker::new());\n";
-    o << "    __moss_require_send::<" << d.name << "Msg>();\n";
-    o << "    let (tx, rx): (MossSender<" << d.name << "Msg>, MossReceiver<" << d.name
-      << "Msg>) = moss_channel();\n";
-    o << "    let actor = " << d.name << "Ref { tx: tx.clone(), tracker: tracker.clone() };\n";
-    o << "    let self_ref = actor.clone();\n";
-    o << "    thread::spawn(move || {\n";
-    o << "        let mut state = " << d.name << "State {\n";
-    for (const auto& f : d.state) {
-      string init = f.name;
-      if (f.type == "string" && !init.empty() && init.front() == '"' && init.back() == '"') init += ".to_string()";
-      source_comment(o, 12, f.line, state_field_signature(f));
-      o << "            " << f.name << ": " << init << ",\n";
-    }
-    for (const auto& route : d.routes)
-      o << "            " << route.name << ": " << route.name << ",\n";
-    o << "        };\n";
-    o << "        while let Ok(msg) = rx.recv() {\n";
-    o << "            match msg {\n";
-    for (const auto& h : d.handlers) {
-      string reply_name = reply_binding(d, h);
-      source_comment(o, 16, h.line, handler_signature(h));
-      backend_comment(o, 16, "MESSAGE/MAILBOX dispatch: run the dequeued Moss handler");
-      o << "                " << d.name << "Msg::" << h.name;
-      {
-        o << "(";
-        size_t count = 0;
-        for (size_t i = 0; i < h.params.size(); ++i, ++count) {
-          if (count) o << ", ";
-          o << h.params[i].name;
-        }
-        if (h.reply_type) {
-          if (count) o << ", ";
-          o << reply_name;
-        }
-        if (count || h.reply_type) o << ", ";
-        o << "__moss_done";
-        o << ")";
-      }
-      o << " => {\n";
-      o << "                    self_ref.__moss_handler_" << h.name
-        << "_mailbox(&mut state";
-      for (const auto& p : h.params) o << ", " << p.name;
-      if (h.reply_type) o << ", " << reply_name;
-      o << ");\n";
-      o << "                    let _ = __moss_done.send(());\n";
-      o << "                }\n";
-    }
-    o << "            }\n";
-    o << "            tracker.end();\n";
-    o << "        }\n    });\n";
-    o << "    actor\n}\n\n";
-  }
-
-  void gen_cluster(std::ostringstream& o, size_t cluster_index,
-                   const vector<string>& member_names) {
-    vector<const Domain*> members;
-    for (const auto& name : member_names) members.push_back(domains_.at(name));
-    const string prefix = "MossCluster" + std::to_string(cluster_index);
-
-    backend_comment(o, 0, "CLUSTER ingress/message representation: outside callers use one shared-memory mailbox");
-    o << "enum " << prefix << "SharedMsg {\n";
-    for (const Domain* domain : members) {
-      for (const auto& handler : domain->handlers) {
-        source_comment(o, 4, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
-        o << "    " << domain->name << "_" << handler.name;
-        {
-          o << "(";
-          size_t count = 0;
-          for (const auto& param : handler.params) {
-            if (count++) o << ", ";
-            o << rust_type(param.type);
-          }
-          if (handler.reply_type) {
-            if (count) o << ", ";
-            o << "MossSender<" << rust_type(*handler.reply_type) << ">";
-            count = 1;
-          }
-          if (count) o << ", ";
-          o << "MossSender<()>";
-          o << ")";
-        }
-        o << ",\n";
-      }
-    }
-    o << "}\n\n";
-
-    backend_comment(o, 0, "CLUSTER-LOCAL representation: same-thread calls use local capabilities and no lock-backed transport");
-    for (const Domain* domain : members)
-      o << "#[derive(Clone, Copy)]\nstruct " << domain->name << "LocalRef;\n\n";
-
-    o << "enum " << prefix << "LocalMsg {\n";
-    for (const Domain* domain : members) {
-      for (const auto& handler : domain->handlers) {
-        source_comment(o, 4, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
-        o << "    " << domain->name << "_" << handler.name;
-        if (!handler.params.empty()) {
-          o << "(";
-          for (size_t index = 0; index < handler.params.size(); ++index) {
-            if (index) o << ", ";
-            o << local_rust_type(handler.params[index].type, cluster_index);
-          }
-          o << ")";
-        }
-        o << ",\n";
-      }
-    }
-    o << "}\n\n";
-
-    for (const Domain* domain : members) {
-      backend_comment(o, 0, "CLUSTER ingress/message methods for domain " + domain->name + " (shared-memory mailbox)");
-      o << "impl " << domain->name << "Ref {\n";
-      for (const auto& handler : domain->handlers) {
-        string reply_name = reply_binding(*domain, handler);
-        source_comment(o, 4, handler.line, handler_signature(handler));
-        backend_comment(o, 4, "CLUSTER ingress/message version: enqueue the Moss handler invocation");
-        o << "    fn " << handler.name << "_shared(&self";
-        for (const auto& param : handler.params)
-          o << ", " << param.name << ": " << rust_type(param.type);
-        if (handler.reply_type)
-          o << ", " << reply_name << ": MossSender<" << rust_type(*handler.reply_type) << ">";
-        o << ", __moss_done: MossSender<()>";
-        o << ") {\n";
-        o << "        self.tracker.begin();\n";
-        o << "        if self.tx.send(" << prefix << "SharedMsg::" << domain->name
-          << "_" << handler.name;
-        {
-          o << "(";
-          size_t count = 0;
-          for (const auto& param : handler.params) {
-            if (count++) o << ", ";
-            o << param.name;
-          }
-          if (handler.reply_type) {
-            if (count) o << ", ";
-            o << reply_name;
-            count = 1;
-          }
-          if (count) o << ", ";
-          o << "__moss_done";
-          o << ")";
-        }
-        o << ").is_err() { self.tracker.end(); }\n";
-        o << "    }\n";
-      }
-      o << "}\n\n";
-    }
-
-    backend_comment(o, 0, "CLUSTER-LOCAL handler implementations: direct same-thread calls");
-    o << "struct " << prefix << "Runtime {\n";
-    for (const Domain* domain : members) {
-      string stem = snake_case(domain->name);
-      source_comment(o, 4, domain->line, "domain " + domain->name);
-      o << "    " << stem << "_state: RefCell<" << domain->name << "State>,\n";
-      o << "    " << stem << "_ref: " << domain->name << "Ref,\n";
-    }
-    o << "    local_queue: RefCell<VecDeque<" << prefix << "LocalMsg>>,\n";
-    o << "}\n\n";
-
-    o << "impl " << prefix << "Runtime {\n";
-    for (const Domain* domain : members) {
-      for (const auto& handler : domain->handlers) {
-        string result_name = reply_binding(*domain, handler);
-        string semantic_identity = handler_semantic_identity(*domain, handler);
-        string generated_symbol = prefix + "Runtime::" + domain->name + "_" +
-            handler.name + "_local";
-        string native_symbol = tooling_native_symbol(
-            "handler", domain->name + "__" + handler.name,
-            semantic_identity);
-        tooling_begin(o, 4, "handler", semantic_identity, generated_symbol,
-                      native_symbol);
-        source_comment(o, 4, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
-        backend_comment(o, 4, "CLUSTER-LOCAL version: invoke this Moss handler directly on the cluster thread");
-        debug_symbol_attributes(o, 4, native_symbol);
-        o << "    fn " << domain->name << "_" << handler.name << "_local(&self";
-        for (const auto& param : handler.params)
-          o << ", " << param.name << ": "
-            << (direct_payload_reference_type(param.type) ? "&" : "")
-            << local_rust_type(param.type, cluster_index);
-        if (handler.reply_type)
-          o << ") -> Option<" << local_rust_type(*handler.reply_type, cluster_index) << "> {\n";
-        else
-          o << ") {\n";
-        o << "        let mut state = self." << snake_case(domain->name)
-          << "_state.borrow_mut();\n";
-        o << "        let self_ref = " << domain->name << "LocalRef;\n";
-        if (handler.reply_type)
-          o << "        let mut " << result_name << ": Option<"
-            << local_rust_type(*handler.reply_type, cluster_index) << "> = None;\n";
-        o << "        ";
-        if (handler_needs_label(handler)) o << "'handler: ";
-        o << "{\n";
-        std::set<string> locals;
-        std::unordered_map<string, string> types;
-        types["self"] = domain->name;
-        for (const auto& field : domain->state) types[field.name] = field.type;
-        for (const auto& route : domain->routes) types[route.name] = route.type;
-        for (const auto& param : handler.params) {
-          locals.insert(param.name);
-          types[param.name] = param.type;
-        }
-        borrowed_parameters_.clear();
-        for (const auto& param : handler.params)
-          if (direct_payload_reference_type(param.type))
-            borrowed_parameters_.insert(param.name);
-        locals.insert("self_ref");
-        if (handler.reply_type) locals.insert(result_name);
-        gen_stmts(o, handler.body, domain, &handler, result_name, locals, types,
-                  3, true, true, cluster_index, false,
-                  functional_handler_context(*domain, handler));
-        borrowed_parameters_.clear();
-        o << "        }\n";
-        if (handler.reply_type) o << "        " << result_name << "\n";
-        o << "    }\n";
-        tooling_end(o, 4, semantic_identity);
-      }
-    }
-
-    o << "    fn __moss_enqueue_local(&self, message: " << prefix << "LocalMsg) {\n";
-    o << "        self.local_queue.borrow_mut().push_back(message);\n";
-    o << "    }\n";
-    o << "    fn __moss_dispatch_local(&self, message: " << prefix << "LocalMsg) {\n";
-    o << "        match message {\n";
-    for (const Domain* domain : members) {
-      for (const auto& handler : domain->handlers) {
-        source_comment(o, 12, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
-        backend_comment(o, 12, "CLUSTER-LOCAL queue dispatch for this Moss message");
-        o << "            " << prefix << "LocalMsg::" << domain->name << "_"
-          << handler.name;
-        if (!handler.params.empty()) {
-          o << "(";
-          for (size_t index = 0; index < handler.params.size(); ++index) {
-            if (index) o << ", ";
-            o << handler.params[index].name;
-          }
-          o << ")";
-        }
-        o << " => { ";
-        if (handler.reply_type) o << "let _ = ";
-        o << "self." << domain->name << "_" << handler.name << "_local(";
-        for (size_t index = 0; index < handler.params.size(); ++index) {
-          if (index) o << ", ";
-          if (direct_payload_reference_type(handler.params[index].type)) o << "&";
-          o << handler.params[index].name;
-        }
-        o << "); },\n";
-      }
-    }
-    o << "        }\n";
-    o << "    }\n";
-    backend_comment(o, 4, "LEGACY CLUSTER-LOCAL queue adapter; active messages dispatch synchronously");
-    o << "    fn __moss_drain_local(&self) {\n";
-    o << "        loop {\n";
-    o << "            let message = { self.local_queue.borrow_mut().pop_front() };\n";
-    o << "            let Some(message) = message else { break; };\n";
-    o << "            self.__moss_dispatch_local(message);\n";
-    o << "        }\n";
-    o << "    }\n";
-    for (const Domain* domain : members) {
-      if (domain->handlers.empty()) continue;
-      o << "    fn __moss_flush_" << domain->name << "_local(&self) {\n";
-      o << "        loop {\n";
-      o << "            let message = {\n";
-      o << "                let mut queue = self.local_queue.borrow_mut();\n";
-      o << "                let position = queue.iter().position(|message| matches!(message, ";
-      for (size_t index = 0; index < domain->handlers.size(); ++index) {
-        if (index) o << " | ";
-        const auto& handler = domain->handlers[index];
-        o << prefix << "LocalMsg::" << domain->name << "_" << handler.name;
-        if (!handler.params.empty()) o << "(..)";
-      }
-      o << "));\n";
-      o << "                position.and_then(|position| queue.remove(position))\n";
-      o << "            };\n";
-      o << "            let Some(message) = message else { break; };\n";
-      o << "            self.__moss_dispatch_local(message);\n";
-      o << "        }\n";
-      o << "    }\n";
-    }
-    o << "}\n\n";
-
-    o << "fn spawn_moss_cluster_" << cluster_index << "(tracker: Arc<MossTracker>";
-    for (const Domain* domain : members) {
-      for (const auto& route : domain->routes)
-        if (plan_.cluster_for(route.type) != std::optional<size_t>(cluster_index))
-          o << ", " << domain->name << "_" << route.name << ": " << rust_type(route.type);
-      for (const auto& field : domain->state)
-        o << ", " << domain->name << "_" << field.name << ": " << rust_type(field.type);
-    }
-    o << ") -> (";
-    for (size_t index = 0; index < members.size(); ++index) {
-      if (index) o << ", ";
-      o << members[index]->name << "Ref";
-    }
-    o << ") {\n";
-    o << "    __moss_require_send::<" << prefix << "SharedMsg>();\n";
-    o << "    let (tx, rx): (MossSender<" << prefix << "SharedMsg>, MossReceiver<"
-      << prefix << "SharedMsg>) = moss_channel();\n";
-    for (const Domain* domain : members) {
-      string stem = snake_case(domain->name);
-      o << "    let " << stem << "_ref = " << domain->name
-        << "Ref { tx: tx.clone(), tracker: tracker.clone() };\n";
-      o << "    let " << stem << "_runtime_ref = " << stem << "_ref.clone();\n";
-    }
-    o << "    thread::spawn(move || {\n";
-    o << "        let runtime = " << prefix << "Runtime {\n";
-    for (const Domain* domain : members) {
-      string stem = snake_case(domain->name);
-      o << "            " << stem << "_state: RefCell::new(" << domain->name << "State {\n";
-      for (const auto& field : domain->state) {
-        source_comment(o, 16, field.line, state_field_signature(field));
-        o << "                " << field.name << ": " << domain->name << "_" << field.name << ",\n";
-      }
-      for (const auto& route : domain->routes)
-        if (plan_.cluster_for(route.type) != std::optional<size_t>(cluster_index))
-          o << "                " << route.name << ": " << domain->name << "_" << route.name << ",\n";
-      o << "            }),\n";
-      o << "            " << stem << "_ref: " << stem << "_runtime_ref,\n";
-    }
-    o << "            local_queue: RefCell::new(VecDeque::new()),\n";
-    o << "        };\n";
-    o << "        while let Ok(message) = rx.recv() {\n";
-    o << "            match message {\n";
-    for (const Domain* domain : members) {
-      for (const auto& handler : domain->handlers) {
-        string reply_name = reply_binding(*domain, handler);
-        source_comment(o, 16, handler.line, "domain " + domain->name + ": " + handler_signature(handler));
-        backend_comment(o, 16, "CLUSTER ingress/message dispatch: hand off to the cluster-local handler");
-        o << "                " << prefix << "SharedMsg::" << domain->name << "_"
-          << handler.name;
-        {
-          o << "(";
-          size_t count = 0;
-          for (const auto& param : handler.params) {
-            if (count++) o << ", ";
-            o << param.name;
-          }
-          if (handler.reply_type) {
-            if (count) o << ", ";
-            o << reply_name;
-            count = 1;
-          }
-          if (count) o << ", ";
-          o << "__moss_done";
-          o << ")";
-        }
-        o << " => {\n";
-        if (handler.reply_type) {
-          o << "                    if let Some(value) = runtime." << domain->name << "_"
-            << handler.name << "_local(";
-        } else {
-          o << "                    runtime." << domain->name << "_" << handler.name
-            << "_local(";
-        }
-        for (size_t index = 0; index < handler.params.size(); ++index) {
-          if (index) o << ", ";
-          const auto& param = handler.params[index];
-          if (domains_.count(trim(param.type)) &&
-              plan_.cluster_for(trim(param.type)) == std::optional<size_t>(cluster_index))
-            o << trim(param.type) << "LocalRef";
-          else if (domains_.count(trim(param.type)))
-            o << "Rc::new(" << param.name << ")";
-          else {
-            if (direct_payload_reference_type(param.type)) o << "&";
-            o << param.name;
-          }
-        }
-        if (handler.reply_type) {
-          o << ") { let _ = " << reply_name << ".send(";
-          string reply_type = trim(*handler.reply_type);
-          if (domains_.count(reply_type) &&
-              plan_.cluster_for(reply_type) == std::optional<size_t>(cluster_index))
-            o << "runtime." << snake_case(reply_type) << "_ref.clone()";
-          else if (domains_.count(reply_type))
-            o << "value.as_ref().clone()";
-          else
-            o << "value";
-          o << "); }\n";
-        } else {
-          o << ");\n";
-        }
-        o << "                    let _ = __moss_done.send(());\n";
-        o << "                }\n";
-      }
-    }
-    o << "            }\n";
-    o << "            runtime.__moss_drain_local();\n";
-    o << "            tracker.end();\n";
-    o << "        }\n";
-    o << "    });\n";
-    o << "    (";
-    for (size_t index = 0; index < members.size(); ++index) {
-      if (index) o << ", ";
-      o << snake_case(members[index]->name) << "_ref";
-    }
-    o << ")\n";
-    o << "}\n\n";
-  }
+  void gen_domain(std::ostringstream& o, const Domain& d) { gen_planned_domain(o, d); }
 
   static string rust_string_literal(const string& value) {
     return "\"" + debug_json_escape(value) + "\"";
@@ -14318,13 +11368,11 @@ class Generator {
       tooling_begin(o, 0, "test", test.semantic_identity, function_name);
       source_comment(o, 0, test.line, test.header);
       o << "#[inline(never)]\nfn " << function_name << "() {\n";
-      o << "    let __tracker = Arc::new(MossTracker::new());\n";
       std::set<string> locals;
       std::unordered_map<string,string> types;
       gen_stmts(o, test.body, nullptr, nullptr, "", locals, types, 1,
-                false, false, std::nullopt, false,
+                false, false,
                 "test:" + test.name);
-      o << "    let _ = __tracker.wait_zero();\n";
       o << "}\n";
       tooling_end(o, 0, test.semantic_identity);
       o << "\n";
@@ -14368,18 +11416,17 @@ class Generator {
                     function_name);
       source_comment(o, 0, benchmark.line, benchmark.header);
       o << "#[inline(never)]\nfn " << function_name
-        << "(__tracker: &Arc<MossTracker>) {\n";
+        << "() {\n";
       std::set<string> locals;
       std::unordered_map<string,string> types;
       bool previous_benchmark_body = benchmark_body_;
       benchmark_body_ = true;
       gen_stmts(o, benchmark.body, nullptr, nullptr, "", locals, types, 1,
-                false, false, std::nullopt, false,
+                false, false,
                 "bench:" + benchmark.name);
       benchmark_body_ = previous_benchmark_body;
       for (const auto& local : locals)
         o << "    std::hint::black_box(&" << local << ");\n";
-      o << "    let _ = __tracker.wait_zero();\n";
       o << "}\n";
       tooling_end(o, 0, benchmark.semantic_identity);
       o << "\n";
@@ -14391,17 +11438,16 @@ class Generator {
     o << "    const ITERATIONS: usize = 1000;\n";
     o << "    let previous_hook = std::panic::take_hook();\n";
     o << "    std::panic::set_hook(Box::new(|_| {}));\n";
-    o << "    let __tracker = Arc::new(MossTracker::new());\n";
     for (const auto& benchmark : p_.benchmarks) {
       string function_name = test_or_benchmark_function_name(
           "bench", benchmark.semantic_identity);
       o << "    for _ in 0..WARMUP { for _ in 0..ITERATIONS { std::hint::black_box("
-        << function_name << "(&__tracker)); } }\n";
+        << function_name << "()); } }\n";
       o << "    let mut samples: Vec<u128> = Vec::with_capacity(SAMPLES);\n";
       o << "    for _ in 0..SAMPLES {\n";
       o << "        let started = std::time::Instant::now();\n";
       o << "        for _ in 0..ITERATIONS { std::hint::black_box("
-        << function_name << "(&__tracker)); }\n";
+        << function_name << "()); }\n";
       o << "        let elapsed = started.elapsed().as_nanos();\n";
       o << "        samples.push((elapsed + ITERATIONS as u128 - 1) / ITERATIONS as u128);\n";
       o << "    }\n";
@@ -14427,7 +11473,6 @@ class Generator {
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
     debug_symbol_attributes(o, 0, "moss__main");
     o << "fn main() {\n";
-    o << "    let __tracker = Arc::new(MossTracker::new());\n";
     std::set<string> locals;
     std::unordered_map<string,string> types;
     // Domain construction is a structural composition prefix.  Emit that
@@ -14438,7 +11483,7 @@ class Generator {
     vector<Stmt> constructions;
     vector<Stmt> executable;
     for (const auto& statement : m.body) {
-      if (CheckerSpawn(statement.b)) constructions.push_back(statement);
+      if (domain_construction(statement.b)) constructions.push_back(statement);
       else executable.push_back(statement);
     }
     std::unordered_map<string,int> domain_ranks;
@@ -14454,77 +11499,14 @@ class Generator {
                        // to target, so construction runs in reverse rank.
                        return domain_ranks[left.a] > domain_ranks[right.a];
                      });
-    // The old cluster adapter constructs one runtime object for its members.
-    // Supply state and external routes from this same checked composition,
-    // rather than constructing clusters before their dependencies exist.
     domain_instance_bindings_.clear();
     ambiguous_domain_instance_bindings_.clear();
-    std::set<string> emitted;
-    while (emitted.size() < constructions.size()) {
-      bool progress = false;
-      for (const auto& construction : constructions) {
-        if (emitted.count(construction.a)) continue;
-        string domain = *CheckerSpawn(construction.b);
-        auto cluster = plan_.cluster_for(domain);
-        vector<Stmt> group;
-        if (cluster) {
-          for (const auto& member : plan_.domain_clusters[*cluster])
-            for (const auto& candidate : constructions)
-              if (CheckerSpawn(candidate.b) == std::optional<string>(member)) group.push_back(candidate);
-        } else group.push_back(construction);
-        std::set<string> group_names;
-        for (const auto& member : group) group_names.insert(member.a);
-        bool ready = true;
-        for (const auto& edge : p_.concrete_domain_graph.edges)
-          for (const auto& member : group)
-            if (edge.source_instance == domain_identities.at(member.a)) {
-              auto target = std::find_if(p_.concrete_domain_graph.instances.begin(),
-                  p_.concrete_domain_graph.instances.end(), [&](const ConcreteDomainInstance& instance) {
-                    return instance.identity == edge.target_instance;
-                  });
-              if (target == p_.concrete_domain_graph.instances.end() ||
-                  (!group_names.count(target->binding) && !emitted.count(target->binding))) ready = false;
-            }
-        if (!ready) continue;
-        if (cluster) {
-          o << "    let (";
-          for (size_t index = 0; index < group.size(); ++index) {
-            if (index) o << ", ";
-            o << cluster_spawn_binding(*cluster, *CheckerSpawn(group[index].b));
-          }
-          o << ") = spawn_moss_cluster_" << *cluster << "(__tracker.clone()";
-          for (const auto& member : group) {
-            const Domain& definition = *domains_.at(*CheckerSpawn(member.b));
-            string callee; vector<string> arguments;
-            parse_simple_call(member.b, callee, arguments);
-            std::unordered_map<string,string> bindings;
-            for (const auto& argument : arguments) {
-              string name, value;
-              if (parse_named_argument(argument, name, value)) bindings[name] = value;
-            }
-            for (const auto& route : definition.routes)
-              if (plan_.cluster_for(route.type) != cluster)
-                o << ", (" << expr(bindings.at(route.name), nullptr, locals, &types) << ").clone().into()";
-            for (const auto& field : definition.state) {
-              string value = bindings.count(field.name) ? bindings.at(field.name) : field.init;
-              o << ", " << (value.empty() ? default_value(field.type) : expr(value, nullptr, locals, &types));
-            }
-          }
-          o << ");\n";
-        }
-        size_t index = 0;
-        gen_block(o, group, index, 0, nullptr, nullptr, "", locals, types, 1,
-                  false, false, std::nullopt, false, {}, "main");
-        emitted.insert(group_names.begin(), group_names.end());
-        progress = true;
-      }
-      if (!progress)
-        throw CompileError(m.line, "legacy cluster grouping creates a construction dependency cycle; choose a DAG-compatible cluster");
-    }
+    size_t construction_index = 0;
+    gen_block(o, constructions, construction_index, 0, nullptr, nullptr, "", locals, types, 1,
+              false, false, {}, "main");
     size_t index = 0;
     gen_block(o, executable, index, 0, nullptr, nullptr, "", locals, types, 1,
-              false, false, std::nullopt, false, {}, "main");
-    o << "    __tracker.wait_zero();\n";
+              false, false, {}, "main");
     o << "}\n";
     tooling_end(o, 0, semantic_identity);
   }
@@ -14539,10 +11521,9 @@ class Generator {
   }
 
   void gen_stmts(std::ostringstream& o, const vector<Stmt>& ss, const Domain* d,
-                 const Handler* current_handler, const string& reply_sender,
+                 const Handler* current_handler, const string& reply_slot,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
-                 int base, bool in_handler, bool direct_reply = false,
-                 std::optional<size_t> cluster_context = std::nullopt,
+                 int base, bool in_handler,
                  bool in_function = false,
                  const string& functional_context = "") {
     // Binding metadata is lexical to this generated Moss body.  Keeping it
@@ -14551,17 +11532,16 @@ class Generator {
     domain_instance_bindings_.clear();
     ambiguous_domain_instance_bindings_.clear();
     size_t i = 0;
-    gen_block(o, ss, i, 0, d, current_handler, reply_sender, locals, types, base,
-              in_handler, direct_reply, cluster_context, in_function, {},
+    gen_block(o, ss, i, 0, d, current_handler, reply_slot, locals, types, base,
+              in_handler, in_function, {},
               functional_context);
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
   void gen_block(std::ostringstream& o, const vector<Stmt>& ss, size_t& i, int level,
-                 const Domain* d, const Handler* current_handler, const string& reply_sender,
+                 const Domain* d, const Handler* current_handler, const string& reply_slot,
                  std::set<string>& locals, std::unordered_map<string,string>& types,
-                 int base, bool in_handler, bool direct_reply,
-                 std::optional<size_t> cluster_context, bool in_function,
+                 int base, bool in_handler, bool in_function,
                  std::set<string> join_assignments = {},
                  const string& functional_context = "") {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
@@ -14624,8 +11604,7 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "CONTROL-FLOW JOIN: binding has one definite static type on every path");
             o << indent(level) << "let mut " << binding << ": "
-              << (cluster_context ? local_rust_type(type, *cluster_context)
-                                  : rust_type(type))
+              << rust_type(type)
               << ";\n";
             locals.insert(binding);
             types[binding] = type;
@@ -14640,9 +11619,8 @@ class Generator {
           auto child_types = types;
           auto child_join_assignments = join_assignments;
           child_join_assignments.insert(joined_bindings.begin(), joined_bindings.end());
-          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function, child_join_assignments,
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                    child_locals, child_types, base, in_handler, in_function, child_join_assignments,
                     functional_context);
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
@@ -14651,9 +11629,8 @@ class Generator {
             ++i;
             auto else_locals = locals;
             auto else_types = types;
-            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                      else_locals, else_types, base, in_handler, direct_reply,
-                      cluster_context, in_function, child_join_assignments,
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      else_locals, else_types, base, in_handler, in_function, child_join_assignments,
                       functional_context);
             o << indent(level) << "}\n";
           } else {
@@ -14674,9 +11651,8 @@ class Generator {
           ++i;
           auto child_locals = locals;
           auto child_types = types;
-          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function, join_assignments,
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                    child_locals, child_types, base, in_handler, in_function, join_assignments,
                     functional_context);
           o << indent(level) << "}\n";
           break;
@@ -14702,9 +11678,8 @@ class Generator {
             child_locals.insert(s.a);
             child_types[s.a] = "int";
             ++i;
-            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                      child_locals, child_types, base, in_handler, direct_reply,
-                      cluster_context, in_function, join_assignments,
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      child_locals, child_types, base, in_handler, in_function, join_assignments,
                       functional_context);
             o << indent(level) << "}\n";
             break;
@@ -14727,9 +11702,8 @@ class Generator {
             child_locals.insert(s.a);
             child_types[s.a] = element;
             ++i;
-            gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                      child_locals, child_types, base, in_handler, direct_reply,
-                      cluster_context, in_function, join_assignments,
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      child_locals, child_types, base, in_handler, in_function, join_assignments,
                       functional_context);
             o << indent(level) << "}\n";
             break;
@@ -14769,9 +11743,8 @@ class Generator {
               ? trim(next_type.substr(7, next_type.size() - 8)) : "_value";
           child_types[s.a] = element;
           ++i;
-          gen_block(o, ss, i, level + 1, d, current_handler, reply_sender,
-                    child_locals, child_types, base, in_handler, direct_reply,
-                    cluster_context, in_function, join_assignments,
+          gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                    child_locals, child_types, base, in_handler, in_function, join_assignments,
                     functional_context);
           o << indent(level + 2) << "}\n";
           o << indent(level + 2) << "None => break,\n";
@@ -14797,37 +11770,15 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
-          if (auto sd = CheckerSpawn(s.b)) {
+          if (auto sd = domain_construction(s.b)) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
             remember_domain_instance_binding(s.a, source_domain, s.a);
             auto specialized = specialization_names_.find(*sd + "\n" + s.a);
             if (specialized != specialization_names_.end()) *sd = specialized->second;
             bool existing_binding = locals.count(s.a);
-            if (auto cluster = plan_.cluster_for(*sd)) {
-              backend_comment(o, (base + level) * 4,
-                              "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
-              o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = "
-                << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
-            } else {
-              DomainLowering lowering = plan_.lowering_for(*sd);
-              if (lowering == DomainLowering::Handler2PL)
-                backend_comment(o, (base + level) * 4, "PLAN-DRIVEN domain handle; per-instance synchronization classes");
-              else if (lowering == DomainLowering::DirectAtomic)
-                backend_comment(o, (base + level) * 4,
-                                "ATOMIC DOMAIN handle; state actions use SeqCst atomics");
-              else if (lowering == DomainLowering::DirectRwLock)
-                backend_comment(o, (base + level) * 4,
-                                "SHARED-MEMORY DIRECT domain handle; state uses Arc<RwLock<_>>");
-              else if (lowering == DomainLowering::DirectMutex)
-                backend_comment(o, (base + level) * 4,
-                                "SHARED-MEMORY DIRECT domain handle; state uses Arc<Mutex<_>>");
-              else
-                backend_comment(o, (base + level) * 4,
-                                "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
-              o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
-              emit_spawn_call(o, *sd, s.b, d, locals, &types);
-            }
+            o << indent(level) << (existing_binding ? "" : "let ") << s.a << " = ";
+            emit_domain_construction(o, *sd, s.b, d, locals, &types);
             locals.insert(s.a);
             types[s.a] = *sd;
             ++i;
@@ -14994,40 +11945,18 @@ class Generator {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var: {
           bool joined_assignment = join_assignments.erase(s.a) != 0;
-          auto sd = CheckerSpawn(s.b);
+          auto sd = domain_construction(s.b);
           if (sd) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
             remember_domain_instance_binding(s.a, source_domain, s.a);
             auto specialized = specialization_names_.find(*sd + "\n" + s.a);
             if (specialized != specialization_names_.end()) *sd = specialized->second;
-            if (auto cluster = plan_.cluster_for(*sd)) {
-              backend_comment(o, (base + level) * 4,
-                              "CLUSTER-LOCAL domain handle; spawn is bound to the cluster worker");
-            } else if (plan_.lowering_for(*sd) == DomainLowering::Handler2PL) {
-              backend_comment(o, (base + level) * 4,
-                              "PLAN-DRIVEN domain handle; per-instance synchronization classes");
-            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectAtomic) {
-              backend_comment(o, (base + level) * 4,
-                              "ATOMIC DOMAIN handle; state actions use SeqCst atomics");
-            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectRwLock) {
-              backend_comment(o, (base + level) * 4,
-                              "SHARED-MEMORY DIRECT domain handle; state uses Arc<RwLock<_>>");
-            } else if (plan_.lowering_for(*sd) == DomainLowering::DirectMutex) {
-              backend_comment(o, (base + level) * 4,
-                              "SHARED-MEMORY DIRECT domain handle; state uses Arc<Mutex<_>>");
-            } else {
-              backend_comment(o, (base + level) * 4,
-                              "MESSAGE/MAILBOX domain handle; sends use a lock-backed shared-memory queue");
-            }
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
             o << s.a << " = ";
-            if (auto cluster = plan_.cluster_for(*sd))
-              o << cluster_spawn_binding(*cluster, *sd) << ".clone();\n";
-            else
-              emit_spawn_call(o, *sd, s.b, d, locals, &types);
+            emit_domain_construction(o, *sd, s.b, d, locals, &types);
             types[s.a] = *sd;
           } else {
             auto source = types.find(trim(s.b));
@@ -15062,459 +11991,35 @@ class Generator {
           break;
         }
         case Stmt::Kind::Message: {
-          const Domain* target = nullptr;
-          if (s.a == "self" && d) target = d;
-          else {
-            auto type = types.find(s.a);
-            if (type != types.end() && domains_.count(type->second)) target = domains_.at(type->second);
+          string call = "message " + s.a + "." + s.b + "(";
+          for (size_t argument = 0; argument < s.args.size(); ++argument) {
+            if (argument) call += ", ";
+            call += s.args[argument];
           }
-          string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals, &types);
-          const Handler* h = target ? find_handler(*target, s.b) : nullptr;
-          if (target && target->exported) {
-            string call = "message " + s.a + "." + s.b + "(";
-            for (size_t argument = 0; argument < s.args.size(); ++argument) {
-              if (argument) call += ", ";
-              call += s.args[argument];
-            }
-            call += ")";
-            o << indent(level);
-            if (!s.message_result.empty()) {
-              if (!locals.count(s.message_result)) o << "let ";
-              o << s.message_result << " = ";
-            }
-            o << expr(call, d, locals, &types) << ";\n";
-            if (!s.message_result.empty()) {
-              locals.insert(s.message_result);
-              types[s.message_result] = h->reply_type.value_or("unit");
-            }
-            ++i;
-            break;
+          call += ")";
+          o << indent(level);
+          if (!s.message_result.empty()) {
+            if (!locals.count(s.message_result)) o << "let mut ";
+            o << s.message_result << " = ";
           }
-          if (const BatchedSendRegion* region = plan_.batch_at(s.line)) {
-            if (!target || plan_.lowering_for(*target) != DomainLowering::Mailbox ||
-                region->target_domain != target->name || region->receiver != s.a ||
-                i + region->count > ss.size())
-              throw std::runtime_error("internal error: invalid batched-send optimization region");
-            size_t batch_id = reply_temp_++;
-            std::set<string> batch_names = locals;
-            string batch_variable = fresh_generated_name(
-                "__moss_batch_" + std::to_string(batch_id), batch_names);
-            backend_comment(o, (base + level) * 4,
-                            "BATCHED MAILBOX SEND (" + std::to_string(region->count) +
-                            " messages): payloads evaluate in source order before one enqueue");
-            vector<string> ignored_reply_senders(region->count);
-            vector<string> ignored_reply_receivers(region->count);
-            for (size_t item = 0; item < region->count; ++item) {
-              const Handler* batch_handler = find_handler(*target, ss[i + item].b);
-              if (!batch_handler || !batch_handler->reply_type) continue;
-              string suffix = std::to_string(batch_id) + "_" + std::to_string(item);
-              ignored_reply_senders[item] = fresh_generated_name(
-                  "__moss_batch_reply_tx_" + suffix, batch_names);
-              ignored_reply_receivers[item] = fresh_generated_name(
-                  "__moss_batch_reply_rx_" + suffix, batch_names);
-              o << indent(level) << "let (" << ignored_reply_senders[item] << ", "
-                << ignored_reply_receivers[item] << ") = moss_channel::<"
-                << rust_type(*batch_handler->reply_type) << ">();\n";
-            }
-            o << indent(level) << "let " << batch_variable << " = vec![\n";
-            for (size_t item = 0; item < region->count; ++item) {
-              const Stmt& message = ss[i + item];
-              const Handler* batch_handler = find_handler(*target, message.b);
-              if (!batch_handler ||
-                  message.kind != Stmt::Kind::Message || message.a != s.a)
-                throw std::runtime_error("internal error: stale batched-send optimization region");
-              if (item)
-                source_comment(o, (base + level + 1) * 4, message.line, message.text);
-              o << indent(level + 1) << target->name << "Msg::" << message.b;
-              if (!message.args.empty() || batch_handler->reply_type) {
-                o << "(";
-                for (size_t argument = 0; argument < message.args.size(); ++argument) {
-                  if (argument) o << ", ";
-                  string type = batch_handler->params[argument].type;
-                  if (cluster_context)
-                    o << cluster_call_arg(message.args[argument], type, d, locals,
-                                          *cluster_context, true, &types,
-                                          statement_functional_pipeline_id(
-                                              message, functional_context,
-                                              argument));
-                  else
-                    o << message_arg(
-                        message.args[argument], type, d, locals, &types,
-                        statement_functional_pipeline_id(
-                            message, functional_context, argument));
-                }
-                if (batch_handler->reply_type) {
-                  if (!message.args.empty()) o << ", ";
-                  o << ignored_reply_senders[item];
-                }
-                o << ")";
-              }
-              o << ",\n";
-            }
-            o << indent(level) << "];\n";
-            o << indent(level) << recv << ".__moss_send_batch("
-              << batch_variable << ");\n";
-            for (const auto& receiver : ignored_reply_receivers)
-              if (!receiver.empty()) o << indent(level) << "drop(" << receiver << ");\n";
-            i += region->count;
-            break;
+          vector<size_t> argument_plans;
+          for (size_t argument = 0; argument < s.args.size(); ++argument)
+            argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
+          o << expr(call, d, locals, &types, 0, &argument_plans) << ";\n";
+          if (!s.message_result.empty()) {
+            const Domain& target = *domains_.at(canonical_type_name(types.at(s.a)));
+            locals.insert(s.message_result);
+            types[s.message_result] = find_handler(target, s.b)->reply_type.value_or("unit");
           }
-          if (local_cluster_call(d, target, cluster_context)) {
-            backend_comment(o, (base + level) * 4,
-                            "CLUSTER-LOCAL synchronous message execution");
-            bool has_result = h && h->reply_type && !s.message_result.empty();
-            o << indent(level);
-            if (has_result) o << "let " << s.message_result << " = ";
-            else if (h && h->reply_type) o << "let _ = ";
-            o << "self." << target->name << "_" << s.b << "_local(";
-            for (size_t k = 0; k < s.args.size(); ++k) {
-              if (k) o << ", ";
-              string typ = h && k < h->params.size() ? h->params[k].type : "_";
-              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
-                                    false, &types,
-                                    statement_functional_pipeline_id(
-                                        s, functional_context, k));
-            }
-            o << ")";
-            if (h && h->reply_type)
-              o << ".unwrap_or_else(|| panic!(\"Moss message failed: "
-                << target->name << "." << h->name
-                << " completed without a reply\"))";
-            o << ";\n";
-            if (has_result) {
-              locals.insert(s.message_result);
-              types[s.message_result] = *h->reply_type;
-            }
-            ++i;
-            break;
-          }
-          if (target && direct_shared_memory(*target)) {
-            backend_comment(o, (base + level) * 4,
-                            direct_atomic(*target)
-                                ? "ATOMIC DOMAIN synchronous message execution"
-                                : "SHARED-MEMORY DIRECT synchronous message execution");
-            bool has_result = h && h->reply_type && !s.message_result.empty();
-            o << indent(level);
-            if (has_result) o << "let " << s.message_result << " = ";
-            else if (h && h->reply_type) o << "let _ = ";
-            o << recv << "." << s.b << "_shared(";
-            for (size_t k = 0; k < s.args.size(); ++k) {
-              if (k) o << ", ";
-              string typ = h && k < h->params.size() ? h->params[k].type : "_";
-              if (cluster_context)
-                o << cluster_call_arg(s.args[k], typ, d, locals,
-                                      *cluster_context, true, &types,
-                                      statement_functional_pipeline_id(
-                                          s, functional_context, k));
-              else
-                o << direct_message_arg(
-                    s.args[k], typ, d, locals, &types,
-                    statement_functional_pipeline_id(
-                        s, functional_context, k));
-            }
-            o << ")";
-            if (h && h->reply_type) o << ".unwrap_or_else(|| panic!(\"Moss message failed: "
-                                      << target->name << "." << h->name
-                                      << " completed without a reply\"))";
-            o << ";\n";
-            if (has_result) {
-              locals.insert(s.message_result);
-              types[s.message_result] = *h->reply_type;
-            }
-            ++i;
-            break;
-          }
-          backend_comment(o, (base + level) * 4,
-                          "MESSAGE/MAILBOX version: synchronously enqueue and complete the Moss handler");
-          string reply_tx, reply_rx;
-          string done_tx = "__moss_done_tx_" + std::to_string(reply_temp_++);
-          string done_rx = "__moss_done_rx_" + std::to_string(reply_temp_++);
-          o << indent(level) << "let (" << done_tx << ", " << done_rx
-            << ") = moss_channel::<()>();\n";
-          if (h && h->reply_type) {
-            size_t id = reply_temp_++;
-            reply_tx = "__moss_reply_tx_" + std::to_string(id);
-            reply_rx = "__moss_reply_rx_" + std::to_string(id);
-            o << indent(level) << "let (" << reply_tx << ", " << reply_rx
-              << ") = moss_channel::<" << rust_type(*h->reply_type) << ">();\n";
-          }
-          o << indent(level) << recv << "." << s.b << "_shared(";
-          for (size_t k = 0; k < s.args.size(); ++k) {
-            if (k) o << ", ";
-            string typ = h && k < h->params.size() ? h->params[k].type : "_";
-            if (cluster_context)
-              o << cluster_call_arg(s.args[k], typ, d, locals, *cluster_context,
-                                    true, &types,
-                                    statement_functional_pipeline_id(
-                                        s, functional_context, k));
-            else
-              o << message_arg(
-                  s.args[k], typ, d, locals, &types,
-                  statement_functional_pipeline_id(
-                      s, functional_context, k));
-          }
-          if (!reply_tx.empty()) {
-            if (!s.args.empty()) o << ", ";
-            o << reply_tx;
-          }
-          if (!s.args.empty() || !reply_tx.empty()) o << ", ";
-          o << done_tx;
-          o << ");\n";
-          if (!reply_rx.empty()) {
-            if (!s.message_result.empty()) {
-              o << indent(level) << "let " << s.message_result << " = "
-                << reply_rx << ".recv().unwrap_or_else(|_| panic!(\"Moss message failed: "
-                << target->name << "." << h->name << " completed without a reply\"));\n";
-              locals.insert(s.message_result);
-              types[s.message_result] = *h->reply_type;
-            } else
-              o << indent(level) << "let _ = " << reply_rx << ".recv();\n";
-            o << indent(level) << "let _ = " << done_rx << ".recv();\n";
-          } else {
-            o << indent(level) << "let _ = " << done_rx << ".recv();\n";
-          }
-          ++i;
-          break;
-        }
-        case Stmt::Kind::AwaitMessage: {
-          auto type = types.find(s.b);
-          const Domain* target = type != types.end() && domains_.count(type->second)
-              ? domains_.at(type->second) : nullptr;
-          const Handler* h = target ? find_handler(*target, s.c) : nullptr;
-          if (!target || !h || !h->reply_type)
-            throw std::runtime_error("internal error: unchecked await reached code generation");
-          string recv = expr(s.b, d, locals, &types);
-          if (const CoalescedLockRegion* region = plan_.coalesced_at(s.line)) {
-            if (!direct_lock(*target) || region->target_domain != target->name ||
-                region->receiver != s.b || i + region->count > ss.size())
-              throw std::runtime_error("internal error: invalid coalesced-lock optimization region");
-            size_t lock_id = reply_temp_++;
-            std::set<string> lock_names = locals;
-            string guard = fresh_generated_name(
-                "__moss_guard_" + std::to_string(lock_id), lock_names);
-            bool rwlock = plan_.lowering_for(*target) == DomainLowering::DirectRwLock;
-            backend_comment(o, (base + level) * 4,
-                            "COALESCED LOCK REGION (" + std::to_string(region->count) +
-                            " operations): exclusive whole-program caller proof");
-            o << indent(level) << "let " << (region->shared_read ? "" : "mut ")
-              << guard << " = " << recv << ".state."
-              << (rwlock ? (region->shared_read ? "read" : "write") : "lock")
-              << "().unwrap();\n";
-            for (size_t item = 0; item < region->count; ++item) {
-              const Stmt& awaited = ss[i + item];
-              const Handler* locked_handler = find_handler(*target, awaited.c);
-              if (!locked_handler || !locked_handler->reply_type ||
-                  awaited.kind != Stmt::Kind::AwaitMessage || awaited.b != s.b)
-                throw std::runtime_error("internal error: stale coalesced-lock optimization region");
-              if (item)
-                source_comment(o, (base + level) * 4, awaited.line, awaited.text);
-              bool bind = !locals.count(awaited.a);
-              o << indent(level);
-              if (bind) o << "let " << (awaited.is_mutable ? "mut " : "") << awaited.a;
-              else o << awaited.a;
-              o << " = ";
-              if (!await_error_handling_) o << "unsafe { ";
-              o << recv << "." << awaited.c << "_locked(";
-              bool read_handler = rwlock &&
-                  handler_effects(*target, *locked_handler).state_effect == Effect::Read;
-              o << (read_handler ? "&" : "&mut ") << guard;
-              for (size_t argument = 0; argument < awaited.args.size(); ++argument) {
-                o << ", " << direct_message_arg(awaited.args[argument],
-                                          locked_handler->params[argument].type,
-                                          d, locals, &types,
-                                          statement_functional_pipeline_id(
-                                              awaited, functional_context,
-                                              argument));
-              }
-              if (await_error_handling_) {
-                o << ").unwrap_or_else(|| {\n";
-                o << indent(level + 1) << "panic!(\"Moss await failed: "
-                  << target->name << "." << locked_handler->name
-                  << " completed without a reply\")\n";
-                o << indent(level) << "});\n";
-              } else {
-                o << ").unwrap_unchecked() };\n";
-              }
-              locals.insert(awaited.a);
-              types[awaited.a] = *locked_handler->reply_type;
-            }
-            o << indent(level) << "drop(" << guard << ");\n";
-            i += region->count;
-            break;
-          }
-          if (local_cluster_call(d, target, cluster_context)) {
-            backend_comment(o, (base + level) * 4,
-                            "CLUSTER-LOCAL version: flush older local messages, then call the handler directly");
-            o << indent(level) << "self.__moss_flush_" << target->name << "_local();\n";
-            bool bind = !locals.count(s.a);
-            if (bind)
-              o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
-            else
-              o << indent(level) << s.a << " = ";
-            if (!await_error_handling_) o << "unsafe { ";
-            o << "self." << target->name << "_" << s.c << "_local(";
-            for (size_t k = 0; k < s.args.size(); ++k) {
-              if (k) o << ", ";
-              o << cluster_local_call_arg(s.args[k], h->params[k].type, d,
-                                          locals, *cluster_context, &types,
-                                          statement_functional_pipeline_id(
-                                              s, functional_context, k));
-            }
-            if (await_error_handling_) {
-              o << ").unwrap_or_else(|| {\n";
-              o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-                << h->name << " completed without a reply\")\n";
-              o << indent(level) << "});\n";
-            } else {
-              o << ").unwrap_unchecked() };\n";
-            }
-            locals.insert(s.a);
-            types[s.a] = *h->reply_type;
-            ++i;
-            break;
-          }
-          if (direct_shared_memory(*target)) {
-            backend_comment(o, (base + level) * 4,
-                            direct_atomic(*target)
-                                ? "ATOMIC DOMAIN await: execute one SeqCst state action directly"
-                                : "SHARED-MEMORY DIRECT version: lock the target state and invoke the handler without a request message");
-            bool localize_domain_reply = cluster_context &&
-                domains_.count(trim(*h->reply_type));
-            string result = s.a;
-            if (localize_domain_reply)
-              result = "__moss_reply_value_" + std::to_string(reply_temp_++);
-            bool bind = !locals.count(s.a);
-            if (bind)
-              o << indent(level) << "let "
-                << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-                << " = ";
-            else
-              o << indent(level) << result << " = ";
-            if (!await_error_handling_) o << "unsafe { ";
-            o << recv << "." << s.c << "_shared(";
-            for (size_t k = 0; k < s.args.size(); ++k) {
-              if (k) o << ", ";
-              if (cluster_context)
-                o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                      *cluster_context, true, &types,
-                                      statement_functional_pipeline_id(
-                                          s, functional_context, k));
-              else
-                o << direct_message_arg(
-                    s.args[k], h->params[k].type, d, locals, &types,
-                    statement_functional_pipeline_id(
-                        s, functional_context, k));
-            }
-            if (await_error_handling_) {
-              o << ").unwrap_or_else(|| {\n";
-              o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-                << h->name << " completed without a reply\")\n";
-              o << indent(level) << "});\n";
-            } else {
-              o << ").unwrap_unchecked() };\n";
-            }
-            if (localize_domain_reply) {
-              string reply_type = trim(*h->reply_type);
-              if (!locals.count(s.a))
-                o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
-              else
-                o << indent(level) << s.a << " = ";
-              if (plan_.cluster_for(reply_type) == cluster_context)
-                o << "{ drop(" << result << "); " << reply_type << "LocalRef };\n";
-              else
-                o << "Rc::new(" << result << ");\n";
-            }
-            locals.insert(s.a);
-            types[s.a] = *h->reply_type;
-            ++i;
-            break;
-          }
-          size_t id = reply_temp_++;
-          string reply_tx = "__moss_reply_tx_" + std::to_string(id);
-          string reply_rx = "__moss_reply_rx_" + std::to_string(id);
-          backend_comment(o, (base + level) * 4,
-                          "MESSAGE/MAILBOX version: send a request and await its lock-backed one-shot reply");
-          bool localize_domain_reply = cluster_context &&
-              domains_.count(trim(*h->reply_type));
-          string result = localize_domain_reply
-              ? "__moss_reply_value_" + std::to_string(id) : s.a;
-          o << indent(level) << "let (" << reply_tx << ", " << reply_rx
-            << ") = moss_channel::<" << rust_type(*h->reply_type) << ">();\n";
-          o << indent(level) << recv << "." << s.c << "_shared(";
-          for (size_t k = 0; k < s.args.size(); ++k) {
-            if (k) o << ", ";
-            if (cluster_context)
-              o << cluster_call_arg(s.args[k], h->params[k].type, d, locals,
-                                    *cluster_context, true, &types,
-                                    statement_functional_pipeline_id(
-                                        s, functional_context, k));
-            else
-              o << message_arg(
-                  s.args[k], h->params[k].type, d, locals, &types,
-                  statement_functional_pipeline_id(
-                      s, functional_context, k));
-          }
-          if (!s.args.empty()) o << ", ";
-          o << reply_tx << ");\n";
-          bool bind = !locals.count(s.a);
-          if (bind)
-            o << indent(level) << "let "
-              << (!localize_domain_reply && s.is_mutable ? "mut " : "") << result
-              << " = ";
-          else
-            o << indent(level) << result << " = ";
-          if (!await_error_handling_) o << "unsafe { ";
-          o << reply_rx << ".recv()";
-          if (await_error_handling_) {
-            o << ".unwrap_or_else(|_| {\n";
-            o << indent(level + 1) << "panic!(\"Moss await failed: " << target->name << "."
-              << h->name << " completed without a reply\")\n";
-            o << indent(level) << "});\n";
-          } else {
-            o << ".unwrap_unchecked() };\n";
-          }
-          if (localize_domain_reply) {
-            string reply_type = trim(*h->reply_type);
-            o << indent(level) << "let " << (s.is_mutable ? "mut " : "") << s.a << " = ";
-            if (plan_.cluster_for(reply_type) == cluster_context)
-              o << "{ drop(" << result << "); " << reply_type << "LocalRef };\n";
-            else
-              o << "Rc::new(" << result << ");\n";
-          }
-          locals.insert(s.a);
-          types[s.a] = *h->reply_type;
           ++i;
           break;
         }
         case Stmt::Kind::Reply:
-          if (!current_handler || !current_handler->reply_type || reply_sender.empty())
+          if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
-          if (direct_reply) {
-            backend_comment(o, (base + level) * 4,
-                            cluster_context
-                                ? "CLUSTER-LOCAL version: place the reply in the direct return slot"
-                                : "SHARED-MEMORY DIRECT version: place the reply in the direct return slot");
-            o << indent(level) << reply_sender << " = Some("
-              << (cluster_context
-                    ? cluster_call_arg(s.a, *current_handler->reply_type, d, locals,
-                                       *cluster_context, false, &types,
-                                       statement_functional_pipeline_id(
-                                           s, functional_context, 0))
-                    : message_arg(
-                          s.a, *current_handler->reply_type, d, locals, &types,
-                          statement_functional_pipeline_id(
-                              s, functional_context, 0)))
-              << ");\n";
-          } else {
-            backend_comment(o, (base + level) * 4,
-                            "MESSAGE/MAILBOX version: send the reply through a lock-backed one-shot mailbox");
-            o << indent(level) << "let _ = " << reply_sender << ".send("
-              << message_arg(
-                     s.a, *current_handler->reply_type, d, locals, &types,
-                     statement_functional_pipeline_id(
-                         s, functional_context, 0))
-              << ");\n";
-          }
+          o << indent(level) << reply_slot << " = Some("
+            << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
+                statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
           o << indent(level) << "break 'handler;\n";
           ++i;
           // `reply` terminates the handler.  Do not emit statements that are
@@ -15554,28 +12059,24 @@ class Generator {
     }
   }
 
-  std::optional<string> CheckerSpawn(const string& expr) const {
+  std::optional<string> domain_construction(const string& expr) const {
     string e = trim(expr);
-    if (starts_with(e, "spawn ")) e = trim(e.substr(6));
     string callee; vector<string> args;
     if (!parse_simple_call(e, callee, args)) return std::nullopt;
     return domains_.count(callee) ? std::optional<string>(callee) : std::nullopt;
   }
 
-  void emit_spawn_call(std::ostringstream& o, const string& domain,
+  void emit_domain_construction(std::ostringstream& o, const string& domain,
                        const string& expression, const Domain* context,
                        const std::set<string>& locals,
                        const std::unordered_map<string,string>* types) const {
     auto found = domains_.find(domain);
     if (found == domains_.end()) {
-      o << "spawn_" << snake_case(domain) << "(__tracker.clone());\n";
-      return;
+      throw std::runtime_error("internal error: unknown concrete domain constructor");
     }
     const Domain& definition = *found->second;
-    bool exported = definition.exported;
-    o << "spawn_" << snake_case(domain) << (exported ? "(" : "(__tracker.clone()");
+    o << "construct_" << snake_case(domain) << "(";
     string constructor = trim(expression);
-    if (starts_with(constructor, "spawn ")) constructor = trim(constructor.substr(6));
     string callee; vector<string> arguments;
     std::unordered_map<string,string> named;
     if (parse_simple_call(constructor, callee, arguments)) {
@@ -15584,7 +12085,7 @@ class Generator {
         if (parse_named_argument(argument, name, value)) named[name] = value;
       }
     }
-    bool constructor_argument = !exported;
+    bool constructor_argument = false;
     {
       for (const auto& route : definition.routes) {
         auto value = named.find(route.name);
@@ -15610,10 +12111,6 @@ class Generator {
     if (constructor_argument) o << ", ";
     emit_physical_descriptor(o, construction_binding_);
     o << ");\n";
-  }
-
-  static string cluster_spawn_binding(size_t cluster, const string& domain) {
-    return "__moss_cluster_" + std::to_string(cluster) + "_" + snake_case(domain) + "_ref";
   }
 
   const Handler* find_handler(const Domain& d, const string& name) const {
@@ -16067,18 +12564,6 @@ static string ownership_effect_name(Effect effect) {
   return "READ";
 }
 
-static string domain_lowering_name(DomainLowering lowering) {
-  switch (lowering) {
-    case DomainLowering::Handler2PL: return "Handler2PL";
-    case DomainLowering::Mailbox: return "Mailbox";
-    case DomainLowering::DirectMutex: return "DirectMutex";
-    case DomainLowering::DirectRwLock: return "DirectRwLock";
-    case DomainLowering::DirectAtomic: return "DirectAtomic";
-    case DomainLowering::ClusterLocal: return "ClusterLocal";
-  }
-  return "Mailbox";
-}
-
 static ObservableEffects resolved_empty_effects() {
   ObservableEffects effects;
   effects.unresolved = false;
@@ -16113,7 +12598,6 @@ static string observable_effect_fingerprint(const ObservableEffects& effects) {
       (effects.domain_read ? "1" : "0") +
       (effects.domain_write ? "1" : "0") +
       (effects.message ? "1" : "0") +
-      (effects.await ? "1" : "0") +
       (effects.external_io ? "1" : "0") +
       (effects.may_fail ? "1" : "0") +
       (effects.may_diverge ? "1" : "0") +
@@ -16125,10 +12609,9 @@ static string statement_fingerprint_text(const Stmt& statement) {
   out << static_cast<int>(statement.kind) << ":" << statement.indent << ":"
       << compact_semantic_text(statement.a) << ":"
       << compact_semantic_text(statement.b) << ":"
-      << compact_semantic_text(statement.c) << ":"
       << compact_semantic_text(statement.message_result) << ":"
       << compact_semantic_text(statement.semantic_type) << ":"
-      << (statement.is_mutable ? "mutable" : "immutable") << ":";
+      << "statement";
   for (const auto& argument : statement.args)
     out << compact_semantic_text(argument) << ",";
   if (statement.kind == Stmt::Kind::Raw)
@@ -16197,7 +12680,7 @@ static string semantic_parameter_fingerprint(
 }
 
 static void finalize_semantic_target_facts(
-    const Program& program, const OptimizationPlan& plan,
+    const Program& program, const OptimizationPlan&,
     vector<SemanticTargetFact>& targets) {
   std::unordered_map<string,string> bodies;
   for (const auto& function : program.functions)
@@ -16294,9 +12777,6 @@ static void finalize_semantic_target_facts(
                              << handler.params.size() << "\n";
       }
     }
-    for (const auto& edge : program.semantic_await_sites)
-      if (edge.source == target.context)
-        interface_material << "await:" << edge.target_domain << "\n";
     if (target.kind == "domain") {
       auto domain = std::find_if(
           program.domains.begin(), program.domains.end(),
@@ -16305,7 +12785,7 @@ static void finalize_semantic_target_facts(
           });
       if (domain != program.domains.end())
         interface_material << "backend:"
-                           << domain_lowering_name(plan.lowering_for(*domain))
+                           << "Handler2PL"
                            << "\n";
     }
     target.semantic_interface_hash = stable_hash(interface_material.str());
@@ -16510,12 +12990,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     domain_fact.export_visibility = domain.exported ? "exported" : "private";
     domain_fact.export_kind = domain.exported ? "domain" : "private";
     domain_fact.provenance.push_back(domain_fact.semantic_identity);
-    DomainLowering lowering = plan.lowering_for(domain);
-    domain_fact.explanations.push_back(
-        "backend lowering selected: " + domain_lowering_name(lowering));
-    if (lowering == DomainLowering::Mailbox)
-      domain_fact.explanations.push_back(
-          "DirectAtomic was not selected because the complete domain did not match the conservative single scalar-action plan");
+    domain_fact.explanations.push_back("production synchronization: Handler2PL");
     targets.push_back(std::move(domain_fact));
     for (const auto& field : domain.state) {
       SemanticTargetFact field_fact;
@@ -16544,11 +13019,6 @@ static vector<SemanticTargetFact> semantic_target_facts(
         handler_fact.parameters.push_back(
             {parameter.name, parameter.type, Effect::Read});
       handler_fact.provenance.push_back(handler_fact.semantic_identity);
-      auto summary = plan.handler_effects.find(domain.name + "." + handler.name);
-      if (summary != plan.handler_effects.end())
-        handler_fact.explanations.push_back(
-            "domain state effect: " +
-            ownership_effect_name(summary->second.state_effect));
       targets.push_back(handler_fact);
       append_statement_targets(targets, handler.body, handler_fact.context,
                                &handler.observable_effects);
@@ -16835,7 +13305,6 @@ static void write_observable_effects_json(
       << ", \"domain_write\": "
       << (effects.domain_write ? "true" : "false")
       << ", \"message\": " << (effects.message ? "true" : "false")
-      << ", \"await\": " << (effects.await ? "true" : "false")
       << ", \"external_io\": "
       << (effects.external_io ? "true" : "false")
       << ", \"may_fail\": " << (effects.may_fail ? "true" : "false")
@@ -16965,48 +13434,6 @@ static std::optional<string> specialization_identity_for_call(
   return std::nullopt;
 }
 
-static vector<const SemanticAwaitSite*> awaits_for_context(
-    const Program& program, const string& context) {
-  std::set<string> pending{context};
-  std::set<string> visited;
-  vector<const SemanticAwaitSite*> result;
-  while (!pending.empty()) {
-    string current = *pending.begin();
-    pending.erase(pending.begin());
-    if (!visited.insert(current).second) continue;
-    for (const auto& site : program.semantic_await_sites)
-      if (site.source == current) result.push_back(&site);
-    for (const auto& call : program.semantic_call_edges)
-      if (call.source == current) pending.insert(call.target);
-  }
-  std::sort(result.begin(), result.end(),
-            [](const SemanticAwaitSite* left,
-               const SemanticAwaitSite* right) {
-              if (left->source != right->source)
-                return left->source < right->source;
-              if (left->line != right->line) return left->line < right->line;
-              return left->target_domain < right->target_domain;
-            });
-  return result;
-}
-
-static vector<string> transitive_await_targets(const Program& program,
-                                               const string& source_domain) {
-  std::set<string> reached;
-  std::set<string> pending{source_domain};
-  while (!pending.empty()) {
-    string current = *pending.begin();
-    pending.erase(pending.begin());
-    for (const auto& edge : program.semantic_await_edges) {
-      if (edge.source_domain != current) continue;
-      if (reached.insert(edge.target_domain).second)
-        pending.insert(edge.target_domain);
-    }
-  }
-  reached.erase(source_domain);
-  return vector<string>(reached.begin(), reached.end());
-}
-
 static string diagnostic_code_for_message(const string& message) {
   if (message.find("duplicate function") != string::npos ||
       message.find("duplicate domain") != string::npos ||
@@ -17022,13 +13449,8 @@ static string diagnostic_code_for_message(const string& message) {
       message.find("assertEqual") != string::npos ||
       message.find("test assertions") != string::npos)
     return "TEST_ASSERTION_CONFIGURATION_ERROR";
-  if (message.find("await cycle detected") != string::npos)
-    return "AWAIT_CYCLE";
   if (message.find("recursive local call cycle") != string::npos)
     return "RECURSION_CYCLE";
-  if (message.find("cannot be statically and conservatively bounded") !=
-      string::npos)
-    return "AWAIT_TARGET_UNBOUNDED";
   if (message.find("conflicting domain types across control-flow paths") !=
       string::npos)
     return "TYPE_BRANCH_CONFLICT";
@@ -17135,9 +13557,6 @@ static void write_structured_error(
   } else {
     out << "null";
   }
-  out << ", \"await_dependency_witness\": ";
-  if (code == "AWAIT_CYCLE") write_debug_json_string(out, message);
-  else out << "null";
   out << ", \"recursion_witness\": ";
   if (code == "RECURSION_CYCLE") write_debug_json_string(out, message);
   else out << "null";
@@ -17173,10 +13592,6 @@ static void write_structured_error(
     alternatives = {
         "rename the reference to an existing static symbol",
         "declare the missing symbol or concrete type"};
-  else if (code == "AWAIT_CYCLE")
-    alternatives = {
-        "remove one await dependency from the reported cycle",
-        "replace an await with an asynchronous message when no reply is required"};
   write_agent_string_array(out, alternatives);
   out << "}\n}\n";
 }
@@ -17191,7 +13606,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"capabilities\": ";
   write_agent_string_array(
       out, {"structured_diagnostics", "semantic_inspection",
-            "static_call_graph", "static_await_graph",
+            "static_call_graph",
             "ownership_effects", "observable_effects",
             "functional_optimization_explanations",
             "backend_lowering_explanations", "project_builds",
@@ -17199,7 +13614,7 @@ static void write_bootstrap_json(std::ostream& out,
             "durable_semantic_identities", "semantic_hashing",
             "impact_analysis", "incremental_verification",
             "modules", "qualified_imports", "module_interfaces",
-            "generic_specialization_identity", "instance_keyed_awaits",
+            "generic_specialization_identity", "interpreted_domains",
             "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
             "repair_actions", "static_cost_facts", "source_provenance",
             "first_order_effect_graph", "structured_execution_trace",
@@ -17221,7 +13636,6 @@ static void write_bootstrap_json(std::ostream& out,
             "moss effects <target> --source <source> --json",
             "moss ownership <target> --source <source> --json",
             "moss calls <target> --source <source> --json",
-            "moss awaits <target> --source <source> --json",
             "moss why <target> --source <source> --json",
             "moss cost <target> --source <source> --json",
             "moss inspect main --source <source> --json (includes concrete_domain_graph)",
@@ -17376,54 +13790,8 @@ static void write_callers_result(std::ostream& out, const Program& program,
   out << "]";
 }
 
-static void write_awaits_result(std::ostream& out, const Program& program,
-                                const SemanticTargetFact& target) {
-  auto sites = awaits_for_context(program, target.context);
-  out << "{\"direct_or_called_sites\": [";
-  for (size_t index = 0; index < sites.size(); ++index) {
-    if (index) out << ", ";
-    out << "{\"source\": ";
-    write_debug_json_string(out, sites[index]->source);
-    out << ", \"target_domain\": ";
-    write_debug_json_string(out, sites[index]->target_domain);
-    out << ", \"source_instance\": ";
-    write_debug_json_string(out, sites[index]->source_instance);
-    out << ", \"target_instance\": ";
-    write_debug_json_string(out, sites[index]->target_instance);
-    out << ", \"line\": " << sites[index]->line << "}";
-  }
-  out << "], \"domain_edges\": [";
-  bool first = true;
-  string domain_name = target.kind == "domain" ? target.name : "";
-  if (target.kind == "handler") {
-    auto dot = target.name.find('.');
-    domain_name = dot == string::npos ? "" : target.name.substr(0, dot);
-  }
-  for (const auto& edge : program.semantic_await_edges) {
-    if (domain_name.empty()) continue;
-    if (!domain_name.empty() && edge.source_domain != domain_name) continue;
-    if (!first) out << ", ";
-    first = false;
-    out << "{\"source_domain\": ";
-    write_debug_json_string(out, edge.source_domain);
-    out << ", \"target_domain\": ";
-    write_debug_json_string(out, edge.target_domain);
-    out << ", \"source_instance\": ";
-    write_debug_json_string(out, edge.source_instance);
-    out << ", \"target_instance\": ";
-    write_debug_json_string(out, edge.target_instance);
-    out << ", \"line\": " << edge.line << "}";
-  }
-  out << "], \"transitive_targets\": ";
-  write_agent_string_array(
-      out, domain_name.empty()
-          ? vector<string>{}
-          : transitive_await_targets(program, domain_name));
-  out << "}";
-}
-
 static void write_cost_result(std::ostream& out, const Program& program,
-                              const OptimizationPlan& plan,
+                              const OptimizationPlan&,
                               const vector<Warning>& warnings,
                               const SemanticTargetFact& target) {
   size_t specialization_count = 0;
@@ -17510,32 +13878,11 @@ static void write_cost_result(std::ostream& out, const Program& program,
   if (domain_name.empty()) {
     out << "null";
   } else {
-    DomainLowering lowering = plan.lowering_for(domain_name);
     out << "{\"domain\": ";
     write_debug_json_string(out, domain_name);
-    out << ", \"lowering\": ";
-    write_debug_json_string(out, domain_lowering_name(lowering));
-    out << ", \"lock_type\": ";
-    if (lowering == DomainLowering::Handler2PL)
-      write_debug_json_string(out, "RwLock per synchronization class");
-    else if (lowering == DomainLowering::DirectMutex)
-      write_debug_json_string(out, "Mutex");
-    else if (lowering == DomainLowering::DirectRwLock)
-      write_debug_json_string(out, "RwLock");
-    else
-      out << "null";
-    bool lock_held_across_await =
-        (lowering == DomainLowering::DirectMutex ||
-         lowering == DomainLowering::DirectRwLock) &&
-        !awaits_for_context(program, target.context).empty();
-    out << ", \"lock_held_across_await\": "
-        << (lock_held_across_await ? "true" : "false") << "}";
+    out << ", \"lowering\": \"Handler2PL\", \"lock_type\": \"RwLock per synchronization class\", \"locks_held_across_message\": true}";
   }
-  out << ", \"batched_message_regions\": "
-      << plan.batched_send_regions.size()
-      << ", \"coalesced_lock_regions\": "
-      << plan.coalesced_lock_regions.size()
-      << ", \"predictive_estimates\": null}";
+  out << ", \"predictive_estimates\": null}";
 }
 
 static void write_synchronization_plan_json(std::ostream& out, const SynchronizationPlan& plan) {
@@ -17763,10 +14110,7 @@ static bool write_semantic_query_json(
     out << ", \"callers\": ";
     write_callers_result(out, program, *target);
   }
-  if (command == "inspect" || command == "awaits") {
-    out << ", \"awaits\": ";
-    write_awaits_result(out, program, *target);
-  }
+
   if (command == "inspect" || command == "why") {
     out << ", \"explanations\": ";
     write_agent_string_array(out, target->explanations);
@@ -18145,7 +14489,7 @@ static string backend_flags_text(const vector<string>& flags) {
 static string backend_identity_payload(
     const BackendToolchainIdentity& identity) {
   std::ostringstream out;
-  out << "moss-codegen\nhandler-borrowed-reads-1\nresolved-rustc\n" << identity.rustc_executable
+  out << "moss-codegen\nsynchronous-domains-1\nresolved-rustc\n" << identity.rustc_executable
       << "\nversion-verbose-bytes\n" << identity.version_verbose.size()
       << "\n" << identity.version_verbose
       << "\nprofile\n" << identity.profile
@@ -18341,7 +14685,7 @@ struct SemanticSnapshotUnit {
   vector<string> dependencies;
 };
 
-struct SemanticSnapshotAwaitEdge {
+struct SemanticSnapshotRouteEdge {
   string source_domain;
   string target_domain;
   int line = 0;
@@ -18353,7 +14697,7 @@ struct SemanticSnapshot {
   string relative_source;
   string source_hash;
   vector<SemanticSnapshotUnit> units;
-  vector<SemanticSnapshotAwaitEdge> await_edges;
+  vector<SemanticSnapshotRouteEdge> route_edges;
 };
 
 static string read_text_file(const std::filesystem::path& path,
@@ -18469,13 +14813,16 @@ static SemanticSnapshot make_semantic_snapshot(
                const SemanticSnapshotUnit& right) {
               return left.durable_identity < right.durable_identity;
             });
-  for (const auto& edge : program.semantic_await_edges)
-    snapshot.await_edges.push_back(
-        {edge.source_domain, edge.target_domain, edge.line,
-         edge.source_instance, edge.target_instance});
-  std::sort(snapshot.await_edges.begin(), snapshot.await_edges.end(),
-            [](const SemanticSnapshotAwaitEdge& left,
-               const SemanticSnapshotAwaitEdge& right) {
+  for (const auto& edge : program.concrete_domain_graph.edges)
+    snapshot.route_edges.push_back({
+        std::find_if(program.concrete_domain_graph.instances.begin(), program.concrete_domain_graph.instances.end(),
+            [&](const auto& instance) { return instance.identity == edge.source_instance; })->domain,
+        std::find_if(program.concrete_domain_graph.instances.begin(), program.concrete_domain_graph.instances.end(),
+            [&](const auto& instance) { return instance.identity == edge.target_instance; })->domain,
+        edge.line, edge.source_instance, edge.target_instance});
+  std::sort(snapshot.route_edges.begin(), snapshot.route_edges.end(),
+            [](const SemanticSnapshotRouteEdge& left,
+               const SemanticSnapshotRouteEdge& right) {
               if (left.source_domain != right.source_domain)
                 return left.source_domain < right.source_domain;
               if (left.target_domain != right.target_domain)
@@ -18512,7 +14859,7 @@ static void write_semantic_snapshot(const ProjectManifest& manifest,
                        "cannot create semantic cache directory: " +
                            error.message(), file.string());
   std::ostringstream content;
-  content << "moss-semantic-snapshot-v1\n"
+  content << "moss-semantic-snapshot-v2\n"
           << std::quoted(snapshot.relative_source) << " "
           << std::quoted(snapshot.source_hash) << "\n";
   for (const auto& unit : snapshot.units) {
@@ -18528,8 +14875,8 @@ static void write_semantic_snapshot(const ProjectManifest& manifest,
       content << " " << std::quoted(dependency);
     content << "\n";
   }
-  for (const auto& edge : snapshot.await_edges)
-    content << "await " << std::quoted(edge.source_domain) << " "
+  for (const auto& edge : snapshot.route_edges)
+    content << "route " << std::quoted(edge.source_domain) << " "
             << std::quoted(edge.target_domain) << " " << edge.line << " "
             << std::quoted(edge.source_instance) << " "
             << std::quoted(edge.target_instance) << "\n";
@@ -18560,7 +14907,7 @@ static void write_semantic_snapshot(
                        "cannot create semantic cache directory: " +
                            error.message(), file.string());
   std::ostringstream content;
-  content << "moss-semantic-snapshot-v1\n"
+  content << "moss-semantic-snapshot-v2\n"
           << std::quoted(snapshot.relative_source) << " "
           << std::quoted(snapshot.source_hash) << "\n";
   for (const auto& unit : snapshot.units) {
@@ -18576,8 +14923,8 @@ static void write_semantic_snapshot(
       content << " " << std::quoted(dependency);
     content << "\n";
   }
-  for (const auto& edge : snapshot.await_edges)
-    content << "await " << std::quoted(edge.source_domain) << " "
+  for (const auto& edge : snapshot.route_edges)
+    content << "route " << std::quoted(edge.source_domain) << " "
             << std::quoted(edge.target_domain) << " " << edge.line << " "
             << std::quoted(edge.source_instance) << " "
             << std::quoted(edge.target_instance) << "\n";
@@ -18604,7 +14951,7 @@ static std::optional<SemanticSnapshot> read_semantic_snapshot(
   if (!input) return std::nullopt;
   string header;
   std::getline(input, header);
-  if (header != "moss-semantic-snapshot-v1") return std::nullopt;
+  if (header != "moss-semantic-snapshot-v2") return std::nullopt;
   SemanticSnapshot snapshot;
   if (!(input >> std::quoted(snapshot.relative_source) >>
         std::quoted(snapshot.source_hash))) return std::nullopt;
@@ -18626,13 +14973,13 @@ static std::optional<SemanticSnapshot> read_semantic_snapshot(
         unit.dependencies.push_back(std::move(dependency));
       }
       snapshot.units.push_back(std::move(unit));
-    } else if (record == "await") {
-      SemanticSnapshotAwaitEdge edge;
+    } else if (record == "route") {
+      SemanticSnapshotRouteEdge edge;
       if (!(input >> std::quoted(edge.source_domain) >>
             std::quoted(edge.target_domain) >> edge.line >>
             std::quoted(edge.source_instance) >>
             std::quoted(edge.target_instance))) return std::nullopt;
-      snapshot.await_edges.push_back(std::move(edge));
+      snapshot.route_edges.push_back(std::move(edge));
     } else return std::nullopt;
   }
   return snapshot;
@@ -18647,7 +14994,7 @@ struct CompiledProjectUnit {
 
 // Explicit modules are lowered into the existing whole-program semantic
 // pipeline.  The namespace pass below is deliberately source-level: it keeps
-// Moss's checker, ownership analysis, await analysis, and Rust generator as
+// Moss's checker, ownership analysis, concrete routing, and Rust generator as
 // the single semantic authority while giving declarations stable qualified
 // identities during project composition.
 struct ParsedModuleUnit {
@@ -18843,7 +15190,6 @@ static void rewrite_module_program(
       }
       statement.a = expression(statement.a);
       statement.b = expression(statement.b);
-      statement.c = expression(statement.c);
       for (auto& argument : statement.args) argument = expression(argument);
       if (!statement.text.empty()) statement.text = expression(statement.text);
     }
@@ -19057,7 +15403,6 @@ static ObservableEffects interface_effects(const string& text) {
   effects.domain_read = flag("domain_read");
   effects.domain_write = flag("domain_write");
   effects.message = flag("message");
-  effects.await = flag("await");
   effects.external_io = flag("external_io");
   effects.may_fail = flag("may_fail");
   effects.may_diverge = flag("may_diverge");
@@ -19101,17 +15446,14 @@ static void parse_generic_ir_line(const string& line, Function& function) {
                                         std::move(subject), std::move(detail),
                                         std::move(result));
   } else if (record == "generic_stmt") {
-    int kind = 0, mutable_flag = 0, declaration = 1;
+    int kind = 0;
     Stmt statement;
     size_t argument_count = 0;
-    if (!(input >> kind >> statement.line >> statement.indent >> mutable_flag >>
-          declaration >> std::quoted(statement.text) >>
+    if (!(input >> kind >> statement.line >> statement.indent >> std::quoted(statement.text) >>
           std::quoted(statement.a) >> std::quoted(statement.b) >>
-          std::quoted(statement.c) >> std::quoted(statement.semantic_type) >>
+          std::quoted(statement.semantic_type) >>
           argument_count)) return;
     statement.kind = static_cast<Stmt::Kind>(kind);
-    statement.is_mutable = mutable_flag != 0;
-    statement.declaration = declaration != 0;
     for (size_t index = 0; index < argument_count; ++index) {
       string argument;
       if (!(input >> std::quoted(argument))) return;
@@ -19132,7 +15474,7 @@ static ParsedModuleUnit load_module_interface(
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  if (text.find("\nnative_abi 3\n") == string::npos)
+  if (text.find("\nnative_abi 4\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
@@ -19395,21 +15737,7 @@ static ParsedModuleUnit load_module_interface(
       }
       continue;
     }
-    if (starts_with(line, "await target=parameter[") && current) {
-      size_t begin = string("await target=parameter[").size();
-      size_t end = line.find(']', begin);
-      if (end != string::npos) {
-        AwaitBoundary boundary;
-        boundary.parameter_index = static_cast<size_t>(
-            std::stoul(line.substr(begin, end - begin)));
-        boundary.handler = interface_field(line, "handler");
-        boundary.domain = interface_field(line, "domain");
-        string line_number = interface_field(line, "line");
-        boundary.line = line_number.empty() ? 0 : std::stoi(line_number);
-        current->await_boundaries.push_back(std::move(boundary));
-      }
-      continue;
-    }
+
     if (starts_with(line, "open_parameters") && current) {
       current->generic = true;
       current->static_dispatch = true;
@@ -19580,8 +15908,8 @@ static CompiledProjectUnit analyze_project_sources(
       }
     }
     FunctionalOptimizer(program).run(optimized);
-    OptimizationPlan plan = BackendOptimizer(program).run(optimized);
-    string rust = Generator(program, plan, true, debug_build, mode).generate();
+    OptimizationPlan plan = OptimizationPlan{optimized};
+    string rust = Generator(program, plan, debug_build, mode).generate();
     return {std::move(program), std::move(plan), std::move(warnings),
             std::move(rust)};
   } catch (const CompileError& error) {
@@ -19613,8 +15941,8 @@ static CompiledProjectUnit analyze_project_texts(
     checker.run();
     vector<Warning> warnings = checker.warnings();
     FunctionalOptimizer(program).run(optimized);
-    OptimizationPlan plan = BackendOptimizer(program).run(optimized);
-    string rust = Generator(program, plan, true, debug_build, mode).generate();
+    OptimizationPlan plan = OptimizationPlan{optimized};
+    string rust = Generator(program, plan, debug_build, mode).generate();
     return {std::move(program), std::move(plan), std::move(warnings),
             std::move(rust)};
   } catch (const CompileError& error) {
@@ -19683,7 +16011,7 @@ struct SemanticImpact {
   vector<string> affected_domains;
   vector<string> affected_tests;
   vector<string> affected_benchmarks;
-  vector<SemanticSnapshotAwaitEdge> affected_await_edges;
+  vector<SemanticSnapshotRouteEdge> affected_route_edges;
   size_t units_analyzed = 0;
   size_t units_reused = 0;
   size_t dependent_units_invalidated = 0;
@@ -19780,7 +16108,7 @@ static SemanticImpact compute_semantic_impact(
       impact.affected_domains.push_back(identity);
       // A handler is the executable member of a domain.  Report both
       // identities so callers can invalidate the concrete operation while
-      // still selecting domain-level await/backend facts.
+      // still selecting domain-level route/backend facts.
       size_t dot = unit.name.find('.');
       if (dot != string::npos) {
         string domain_name = unit.name.substr(0, dot);
@@ -19799,8 +16127,8 @@ static SemanticImpact compute_semantic_impact(
       if (starts_with(entry.first, marker))
         impact.affected_specializations.push_back(entry.first);
   }
-  auto add_await_edges = [&](const SemanticSnapshot& snapshot) {
-    for (const auto& edge : snapshot.await_edges) {
+  auto add_route_edges = [&](const SemanticSnapshot& snapshot) {
+    for (const auto& edge : snapshot.route_edges) {
       bool relevant = false;
       for (const auto& identity : impact.affected_domains)
         if (identity.find(":" + edge.source_domain) != string::npos ||
@@ -19814,19 +16142,19 @@ static SemanticImpact compute_semantic_impact(
         relevant = true;
       if (!relevant) continue;
       auto duplicate = std::find_if(
-          impact.affected_await_edges.begin(),
-          impact.affected_await_edges.end(),
-          [&](const SemanticSnapshotAwaitEdge& candidate) {
+          impact.affected_route_edges.begin(),
+          impact.affected_route_edges.end(),
+          [&](const SemanticSnapshotRouteEdge& candidate) {
             return candidate.source_domain == edge.source_domain &&
                 candidate.target_domain == edge.target_domain &&
                 candidate.line == edge.line;
           });
-      if (duplicate == impact.affected_await_edges.end())
-        impact.affected_await_edges.push_back(edge);
+      if (duplicate == impact.affected_route_edges.end())
+        impact.affected_route_edges.push_back(edge);
     }
   };
-  add_await_edges(current);
-  if (previous) add_await_edges(*previous);
+  add_route_edges(current);
+  if (previous) add_route_edges(*previous);
   auto unique_sort = [](vector<string>& values) {
     std::sort(values.begin(), values.end());
     values.erase(std::unique(values.begin(), values.end()), values.end());
@@ -19923,10 +16251,10 @@ static int run_project_impact(const ProjectManifest& manifest,
   write_agent_string_array(std::cout, impact.affected_specializations);
   std::cout << ", \"affected_domains\": ";
   write_agent_string_array(std::cout, impact.affected_domains);
-  std::cout << ", \"affected_await_dependencies\": [";
-  for (size_t index = 0; index < impact.affected_await_edges.size(); ++index) {
+  std::cout << ", \"affected_route_dependencies\": [";
+  for (size_t index = 0; index < impact.affected_route_edges.size(); ++index) {
     if (index) std::cout << ", ";
-    const auto& edge = impact.affected_await_edges[index];
+    const auto& edge = impact.affected_route_edges[index];
     std::cout << "{\"source_domain\": ";
     write_debug_json_string(std::cout, edge.source_domain);
     std::cout << ", \"target_domain\": ";
@@ -20004,45 +16332,13 @@ static Program module_program(const Program& whole, const string& module) {
   result.functional_pipelines = whole.functional_pipelines;
   result.functional_traversal_groups = whole.functional_traversal_groups;
   result.semantic_call_edges = whole.semantic_call_edges;
-  result.semantic_await_sites = whole.semantic_await_sites;
-  result.semantic_await_edges = whole.semantic_await_edges;
   result.concrete_domain_graph = whole.concrete_domain_graph;
   result.synchronization_plan = whole.synchronization_plan;
   result.domain_specializations = whole.domain_specializations;
   return result;
 }
 
-static OptimizationPlan module_plan(const OptimizationPlan& whole,
-                                    const Program& module_program_value) {
-  OptimizationPlan result = whole;
-  std::set<string> domains;
-  for (const auto& domain : module_program_value.domains) domains.insert(domain.name);
-  for (auto it = result.domain_lowerings.begin(); it != result.domain_lowerings.end();)
-    if (!domains.count(it->first)) it = result.domain_lowerings.erase(it);
-    else ++it;
-  for (auto it = result.handler_effects.begin(); it != result.handler_effects.end();) {
-    bool keep = false;
-    for (const auto& domain : domains)
-      if (starts_with(it->first, domain + ".")) keep = true;
-    if (!keep) it = result.handler_effects.erase(it);
-    else ++it;
-  }
-  for (auto it = result.atomic_handlers.begin(); it != result.atomic_handlers.end();) {
-    bool keep = false;
-    for (const auto& domain : domains)
-      if (starts_with(it->first, domain + ".")) keep = true;
-    if (!keep) it = result.atomic_handlers.erase(it);
-    else ++it;
-  }
-  vector<vector<string>> clusters;
-  for (const auto& cluster : result.domain_clusters) {
-    vector<string> local;
-    for (const auto& name : cluster) if (domains.count(name)) local.push_back(name);
-    if (!local.empty()) clusters.push_back(std::move(local));
-  }
-  result.domain_clusters = std::move(clusters);
-  return result;
-}
+static OptimizationPlan module_plan(const OptimizationPlan& whole, const Program&) { return whole; }
 
 static vector<string> module_names_for_program(const Program& program) {
   std::set<string> names;
@@ -20102,7 +16398,6 @@ static string interface_effects_text(const ObservableEffects& effects) {
       << ";domain_read=" << (effects.domain_read ? 1 : 0)
       << ";domain_write=" << (effects.domain_write ? 1 : 0)
       << ";message=" << (effects.message ? 1 : 0)
-      << ";await=" << (effects.await ? 1 : 0)
       << ";external_io=" << (effects.external_io ? 1 : 0)
       << ";may_fail=" << (effects.may_fail ? 1 : 0)
       << ";may_diverge=" << (effects.may_diverge ? 1 : 0)
@@ -20183,25 +16478,6 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " mode=" << ownership_effect_name(effect)
           << " name=" << std::quoted(function.params[index].name) << "\n";
     }
-    // Ordinary typed exports can cross a module boundary with a domain
-    // handle.  The exporting module cannot know the caller's instance, so
-    // publish the exact symbolic boundary used for link-time substitution.
-    for (const auto& statement : function.body) {
-      if (statement.kind != Stmt::Kind::AwaitMessage) continue;
-      string receiver = trim(statement.b);
-      auto parameter = std::find_if(
-          function.params.begin(), function.params.end(),
-          [&](const Param& candidate) { return candidate.name == receiver; });
-      if (parameter == function.params.end()) continue;
-      size_t index = static_cast<size_t>(parameter - function.params.begin());
-      string handler = statement.c;
-      abi << "  await target=parameter[" << index << "] handler="
-          << handler << " domain=" << parameter->type
-          << " line=" << statement.line << "\n";
-      out << "  await target=parameter[" << index << "] handler="
-          << handler << " domain=" << parameter->type
-          << " line=" << statement.line << "\n";
-    }
     if (function.generic) {
       out << "  open_parameters";
       for (size_t index = 0; index < function.params.size(); ++index)
@@ -20231,12 +16507,9 @@ static vector<std::filesystem::path> write_module_interfaces(
       for (const auto& statement : function.body) {
         out << "  generic_stmt " << static_cast<int>(statement.kind) << " "
             << statement.line << " " << statement.indent << " "
-            << (statement.is_mutable ? 1 : 0) << " "
-            << (statement.declaration ? 1 : 0) << " "
             << std::quoted(statement.text) << " "
             << std::quoted(statement.a) << " "
             << std::quoted(statement.b) << " "
-            << std::quoted(statement.c) << " "
             << std::quoted(statement.semantic_type) << " "
             << statement.args.size();
         for (const auto& argument : statement.args)
@@ -20282,10 +16555,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     for (const auto& statement : function.body) {
       out << "  generic_stmt " << static_cast<int>(statement.kind) << " "
           << statement.line << " " << statement.indent << " "
-          << (statement.is_mutable ? 1 : 0) << " "
-          << (statement.declaration ? 1 : 0) << " "
           << std::quoted(statement.text) << " " << std::quoted(statement.a)
-          << " " << std::quoted(statement.b) << " " << std::quoted(statement.c)
+          << " " << std::quoted(statement.b)
           << " " << std::quoted(statement.semantic_type) << " "
           << statement.args.size();
       for (const auto& argument : statement.args) out << " " << std::quoted(argument);
@@ -20354,11 +16625,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         interface_contents[module] << slot.str();
         out << slot.str();
       }
-      for (const auto& site : program.semantic_await_sites)
-        if (site.source == "handler:" + domain.name + "." + handler.name)
-          out << "  await target=" << site.target_domain
-              << " source_instance=" << site.source_instance
-              << " target_instance=" << site.target_instance << "\n";
+
     }
   }
   vector<std::filesystem::path> result;
@@ -20367,7 +16634,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     header << "moss-module-interface-v1\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
-           << "native_abi 3\n"
+           << "native_abi 4\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "
@@ -20625,7 +16892,7 @@ static NativeArtifact compile_native_artifact(
         }
       specialization_program.functional_pipelines = unit.program.functional_pipelines;
       string generated = Generator(
-          specialization_program, unit.plan, true, debug_build, mode, {},
+          specialization_program, unit.plan, debug_build, mode, {},
           &unit.program, true, true).generate();
       rust_changed = update_file(specialization_rust, generated) || rust_changed;
       vector<string> specialization_command = {
@@ -20663,7 +16930,7 @@ static NativeArtifact compile_native_artifact(
       // generic provider consumable from just its .mossi + concrete rlib.
       if (has_specializations && module == root_module)
         dependencies.push_back("__moss_specializations__");
-      string generated = Generator(projected, projected_plan, true, debug_build,
+      string generated = Generator(projected, projected_plan, debug_build,
                                    mode, dependencies, &unit.program, false).generate();
       rust_changed = update_file(rust_file, generated) || rust_changed;
       if (module == root_module) artifact.rust = rust_file;
@@ -21149,14 +17416,16 @@ static AffectedTestPlan select_affected_tests(
           changed.push_back(unit.durable_identity);
           uncertain = true;
         }
-      if (current.await_edges.size() != previous->await_edges.size())
+      if (current.route_edges.size() != previous->route_edges.size())
         uncertain = true;
       else {
-        for (size_t index = 0; index < current.await_edges.size(); ++index)
-          if (current.await_edges[index].source_domain !=
-                  previous->await_edges[index].source_domain ||
-              current.await_edges[index].target_domain !=
-                  previous->await_edges[index].target_domain)
+        for (size_t index = 0; index < current.route_edges.size(); ++index)
+          if (current.route_edges[index].source_domain !=
+                  previous->route_edges[index].source_domain ||
+              current.route_edges[index].target_domain !=
+                  previous->route_edges[index].target_domain ||
+              current.route_edges[index].source_instance != previous->route_edges[index].source_instance ||
+              current.route_edges[index].target_instance != previous->route_edges[index].target_instance)
             uncertain = true;
       }
     }
@@ -22860,12 +19129,12 @@ static std::optional<string> nearest_moss_project_root(
 static void usage() {
   std::cerr << "Moss v0.2 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
-            << "  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [--no-await-error-handling] [--cluster=A,B] [-o output.rs]\n"
+            << "  moss <input.moss> [-Oshared-memory] [--debug] [--dump-functional-ir] [--explain-fusion] [-o output.rs]\n"
             << "  moss --check <input.moss>\n"
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
             << "  moss agent session-report-template --json\n"
-            << "  moss inspect|type|effects|ownership|calls|awaits|why|cost <target> --source <input.moss> --json\n"
+            << "  moss inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> --json\n"
             << "  moss impact <target> [--source <input.moss>] --json\n"
             << "  moss fmt [--check] [--json]\n"
             << "  moss edit rename|replace-expression|change-argument ... --json\n"
@@ -22884,8 +19153,6 @@ static void usage() {
             << "  --emit-debug-map FILE   write the shared Moss provenance map to FILE\n"
             << "  --native-output FILE    record the intended native executable in the debug map\n"
             << "  --diagnostic-paths      prefix diagnostics with the Moss source path\n\n"
-            << "  --no-await-error-handling  legacy mailbox compatibility option\n\n"
-            << "  --cluster=A,B          legacy option; validated but does not cluster handler execution\n\n"
             << "Request/reply:\n"
             << "  message domain.Message(args...)\n"
             << "  fn Message(args...) [-> Type]\n"
@@ -22971,6 +19238,7 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
   moss::Program program = load_checked_interpreter_program(input);
   moss::FastInterpreter::Options options;
   options.trace = trace;
+  options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
   interpreter.run_main(std::cout);
   if (trace) interpreter.write_trace(std::cerr);
@@ -22982,6 +19250,7 @@ static int run_fast_interpreter_tests(const std::filesystem::path& input,
   moss::Program program = load_checked_interpreter_program(input);
   moss::FastInterpreter::Options options;
   options.trace = trace;
+  options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
   interpreter.run_tests(std::cout, filter);
   if (trace) interpreter.write_trace(std::cerr);
@@ -23152,17 +19421,15 @@ int main(int argc, char** argv) {
 
     bool check_only = false;
     bool optimize_shared_memory = false;
-    bool await_error_handling = true;
     bool dump_functional = false;
     bool explain_fusion = false;
     bool debug_build = false;
     bool diagnostic_paths = false;
     string input, output, debug_map_output, native_output;
     string query_command, query_target, query_source;
-    vector<vector<string>> requested_clusters;
     int first_argument = 1;
     static const std::set<string> semantic_commands = {
-        "inspect", "type", "effects", "ownership", "calls", "awaits",
+        "inspect", "type", "effects", "ownership", "calls",
         "why", "cost"};
     if (string(argv[1]) == "check") {
       check_only = true;
@@ -23197,28 +19464,12 @@ int main(int argc, char** argv) {
       else if (a == "-O" || a == "-Oshared-memory" || a == "--optimize-shared-memory")
         optimize_shared_memory = true;
       else if (a == "-O0") optimize_shared_memory = false;
-      else if (a == "--no-await-error-handling") await_error_handling = false;
-      else if (a == "--cluster" || moss::starts_with(a, "--cluster=")) {
-        string value;
-        if (a == "--cluster") {
-          if (++i >= argc) { usage(); return 2; }
-          value = argv[i];
-        } else {
-          value = a.substr(string("--cluster=").size());
-        }
-        auto members = moss::split_top_level(value, ',');
-        if (members.empty() || std::any_of(members.begin(), members.end(), [](const string& name) {
-              return name.empty();
-            })) {
-          std::cerr << "moss: invalid empty domain name in --cluster\n";
-          return 2;
-        }
-        requested_clusters.push_back(std::move(members));
-      }
+
       else if (a == "-o") {
         if (++i >= argc) { usage(); return 2; }
         output = argv[i];
       } else if (a == "-h" || a == "--help") { usage(); return 0; }
+      else if (!a.empty() && a.front() == '-') { std::cerr << "moss: unknown option: " << a << "\n"; return 2; }
       else if (!query_command.empty() && query_target.empty()) query_target = a;
       else if (input.empty()) input = a;
       else { std::cerr << "unexpected argument: " << a << "\n"; return 2; }
@@ -23266,12 +19517,7 @@ int main(int argc, char** argv) {
         : "moss";
     if (debug_build) {
       optimize_shared_memory = false;
-      if (!requested_clusters.empty()) {
-        std::cerr << diagnostic_source
-                  << ": error: --debug cannot be combined with --cluster; "
-                     "debug builds use the -O0 reference lowering\n";
-        return 2;
-      }
+
     }
 
     moss::OptimizationPlan plan;
@@ -23325,8 +19571,7 @@ int main(int argc, char** argv) {
                     << ": warning: " << warning.message << "\n";
       }
       moss::FunctionalOptimizer(standalone_program).run(optimize_shared_memory);
-      plan = moss::BackendOptimizer(standalone_program).run(
-          optimize_shared_memory, requested_clusters);
+      plan = moss::OptimizationPlan{optimize_shared_memory};
     }
     auto& program = *active_program;
     if (!project_query && (dump_functional || explain_fusion))
@@ -23397,7 +19642,7 @@ int main(int argc, char** argv) {
         ? string()
         : std::filesystem::absolute(native_output).lexically_normal().string();
 
-    moss::Generator gen(program, plan, await_error_handling, debug_build);
+    moss::Generator gen(program, plan, debug_build);
     string rust = gen.generate();
     std::ofstream out(output);
     if (!out) { std::cerr << "moss: cannot write " << output << "\n"; return 1; }

@@ -1,7 +1,6 @@
 # Static-DAG migration: dependencies are routes, never runtime payloads.
-# Moss stays message based. The Rust backend represents the messages with
-# lock-backed shared-memory queues; -Oshared-memory recognizes the complete
-# Counter as atomic and removes its request queue, worker, and state mutex.
+# Synchronous calls enter compiler-planned handler-level 2PL at every
+# optimization level. Each handler retains exactly its class guards until return.
 
 domain Counter:
   total = 0

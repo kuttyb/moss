@@ -1,9 +1,9 @@
-# Phase 10.5: Semantic convergence and AI introspection
+# Semantic convergence and AI introspection through Phase 10.6E
 
 This document records the current, implementation-backed semantic model and
 the facts exposed to tools and agents. It is a convergence document, not a new
-language specification. Phase 10.5 does not choose any of the still-open
-ownership, synchronization, handle, ABI, or backend-linking designs.
+language specification. The synchronous-domain decisions from 10.6A–D.1 are
+preserved; 10.6E consolidates execution and retires their superseded machinery.
 
 ## What is already implemented
 
@@ -17,9 +17,9 @@ already provides:
   placeholders, and specialized higher-order callables;
 - ownership (`READ`, `WRITE`, `CONSUME`) and observable-effect summaries,
   including `may_fail` and conservative `may_diverge`;
-- static call and await graphs, source-aware diagnostics, impact analysis, and
+- static call graphs and concrete domain routing, source-aware diagnostics, impact analysis, and
   cost facts;
-- newline-delimited Fast Debug trace events for the settled ordinary-language
+- newline-delimited Fast Debug trace events for ordinary and synchronous-domain
   execution facts.
 
 The Phase 6 API extends these existing facts rather than performing an
@@ -69,10 +69,9 @@ or **create a domain instance**.
 `spawn` is retired from source. Domains are constructed directly in `main`'s
 initial composition prefix; `domainroutes(...)` declares immutable route slots.
 
-Mailbox, queue, worker, FIFO, and await descriptions in backend and historical
-documents describe implementation choices or an earlier phase. They are not a
-new source-level API. The native backend still documents those paths because
-they remain implemented; Fast Debug does not simulate them yet.
+Earlier mailbox, worker, FIFO, and await designs are historical. Phase 10.6E
+removes their implementations and tooling metadata. The active engines are
+production handler-level 2PL and deterministic synchronous interpretation.
 
 For the converged source model, self-send and same-domain handler chaining are
 rejected. Common handler logic belongs in an ordinary helper function. Historical
@@ -98,12 +97,12 @@ immutable READ snapshots: they may be read, forwarded through another
 Self-send and same-domain handler chaining are rejected; shared logic belongs
 in ordinary helpers.
 
-The Rust emitter retains legacy mailbox/completion adapters as dormant code for
-10.6E removal. Production calls use the plan-driven synchronized entry wrapper.
+Production calls use the plan-driven synchronized entry wrapper. Phase 10.6E
+removes legacy compatibility adapters and alternate synchronization backends.
 Direct construction and route topology are now checked by the Phase 10.6B
 composition pass. Phase 10.6C implements synchronization planning. Production
-2PL lowering is implemented in 10.6D; supervision and Fast Debug domain execution
-remain deferred.
+2PL lowering is implemented in 10.6D, borrowed READs in D.1, and Fast Debug
+domain execution in E. Supervision remains deferred.
 
 ## Phase 10.6C synchronization planning
 
@@ -131,7 +130,8 @@ movement. Phase 6 `entity-v1` identities are the separate semantic-query/edit
 contract. Fast Debug trace events now carry the physical source file and the
 corresponding semantic identity when the checked AST has it, alongside function,
 line, branch, local-read/write, return, loop, and assertion events. Fast Debug
-domain execution and lock tracing remain deferred to 10.6E.
+domain execution and semantic instance/message/state/reply traces are implemented
+in 10.6E. Fast Debug deliberately does not simulate physical locks.
 Production synchronization decisions were resolved in 10.6A–C and implemented
 in 10.6D; backend test hooks report planned lock acquisitions and releases.
 The earlier “blocked by open design” status is historical.

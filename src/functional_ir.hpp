@@ -46,7 +46,6 @@ struct ObservableEffects {
   bool domain_read = false;
   bool domain_write = false;
   bool message = false;
-  bool await = false;
   bool external_io = false;
   bool may_fail = false;
   // Termination is independent of failure and externally visible effects.
@@ -58,7 +57,7 @@ struct ObservableEffects {
 
   bool fusion_safe() const {
     return !local_mutation && !domain_read && !domain_write && !message &&
-           !await && !external_io && !may_fail && !unresolved;
+           !external_io && !may_fail && !unresolved;
   }
 
   bool deterministic() const {
@@ -75,7 +74,6 @@ struct ObservableEffects {
     domain_read = domain_read || other.domain_read;
     domain_write = domain_write || other.domain_write;
     message = message || other.message;
-    await = await || other.await;
     external_io = external_io || other.external_io;
     may_fail = may_fail || other.may_fail;
     may_diverge = may_diverge || other.may_diverge;

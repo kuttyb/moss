@@ -123,7 +123,7 @@
         << "    // complete body and nested messages; restore state before release.\n"
         << "    fn " << h.name << "_shared(&self";
       for (const auto& p : h.params)
-        o << ", " << p.name << ": " << (direct_payload_reference_type(p.type) ? "&" : "") << rust_type(p.type);
+        o << ", " << p.name << ": " << rust_type(p.type);
       string ret = h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()";
       o << ") -> " << ret << " {\n"
         << "        let _abort = MossAbortOnUnwind;\n"
@@ -150,7 +150,7 @@
       debug_symbol_attributes(o, 4, native);
       o << "    fn " << h.name << "_body(&self, state: &mut " << d.name << "State<'_>";
       for (const auto& p : h.params)
-        o << ", " << p.name << ": " << (direct_payload_reference_type(p.type) ? "&" : "") << rust_type(p.type);
+        o << ", " << p.name << ": " << rust_type(p.type);
       o << ") -> " << ret << " {\n        let self_ref = self.clone();\n";
       if (h.reply_type) o << "        let mut " << result << ": " << ret << " = None;\n";
       o << "        " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
@@ -158,24 +158,19 @@
       std::unordered_map<string,string> types{{"self", d.name}};
       for (const auto& field : d.state) types[field.name] = field.type;
       for (const auto& route : d.routes) types[route.name] = route.type;
-      borrowed_parameters_.clear();
       for (const auto& p : h.params) {
         locals.insert(p.name); types[p.name] = p.type;
-        if (direct_payload_reference_type(p.type)) borrowed_parameters_.insert(p.name);
       }
       view_domain_ = true;
-      gen_stmts(o, h.body, &d, &h, result, locals, types, 3, true, true,
-                std::nullopt, false, functional_handler_context(d, h));
+      gen_stmts(o, h.body, &d, &h, result, locals, types, 3, true, false, functional_handler_context(d, h));
       view_domain_ = false;
-      borrowed_parameters_.clear();
       o << "        }\n";
       if (h.reply_type) o << "        " << result << "\n";
       o << "    }\n";
       tooling_end(o, 4, semantic_identity);
     }
     o << "}\n";
-    o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name) << "(";
-    if (!d.exported) o << "_tracker: Arc<MossTracker>, ";
+    o << (d.exported ? "pub " : "") << "fn construct_" << snake_case(d.name) << "(";
     for (const auto& route : d.routes) o << route.name << ": " << rust_type(route.type) << ", ";
     for (const auto& field : d.state) o << field.name << ": " << rust_type(field.type) << ", ";
     o << "__plan: MossPhysicalPlan) -> " << d.name << "Ref {\n"

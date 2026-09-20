@@ -342,18 +342,16 @@ lowering while the frontend evolves. Such normalization is an implementation pla
 must preserve the source meanings above and must not make backend mechanisms observable
 in Moss.
 
-With optimization enabled, the backend may implement the same domain as a legacy
-mailbox, a direct `Mutex`/`RwLock` state object, a set of `SeqCst` atomics, or a
-configured local cluster. These choices add no source category: `message` and `reply`
-remain copy boundaries, handlers remain serialized and non-reentrant, and generated
-Rust synchronization is not Moss syntax. `-O0` retains the mailbox adapter as a
-reference implementation for compatibility; the active source operation is still
-synchronous.
+Every production optimization level uses compiler-derived handler-level 2PL.
+Handlers acquire exactly their shared/exclusive synchronization classes, retain
+them through nested messages, and release them at completion. Ordinary READs
+borrow protected stored values; message/reply remain independent value boundaries.
+Fast Debug directly interprets the same checked synchronous semantics without
+simulated locks or scheduling.
 
-Phase 10.5 does not introduce self-send or same-domain handler-chaining syntax. Put
-shared handler logic in ordinary statically resolved helpers. Historical backend notes
-may mention queued self-messages; their final source-level status is intentionally
-superseded/open rather than changed by this documentation checkpoint.
+Self-send and same-domain handler chaining are rejected. Put shared handler
+logic in ordinary statically resolved helpers; earlier queued self-message designs
+are historical and superseded.
 
 ## Static iteration
 
@@ -419,11 +417,9 @@ boundary and therefore does not consume the original payload. `Copy` is only a
 backend/property distinction: primitive values may continue to be passed by
 value, but it does not weaken payload immutability.
 
-The mailbox backend materializes the independent snapshot. A synchronous
-shared-memory backend may implement the same semantics by passing a temporary
-immutable Rust reference for a nontrivial payload: the handler finishes before
-the sender can mutate its value, and the reference cannot escape the call.
-This is an implementation optimization, not a change to Moss semantics.
+The production backend establishes independent owned payloads and replies.
+Ordinary protected READs borrow under retained class guards; these references
+never escape into another domain or through a reply.
 
 Moss variables and parameters are either untyped or typed. Untyped means
 statically duck typed. Typed means annotated with either a concrete type or a

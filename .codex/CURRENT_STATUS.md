@@ -2,7 +2,79 @@
 
 Updated: 2026-09-20
 
-## Phase 10.6D.1 complete — borrowed protected READs
+## Phase 10.6E complete — staged for review
+
+Base/current HEAD: `e70943c`. Phase 10.6D is checked in as `9f49e64` and
+10.6D.1 as `b3f8a64`; neither is uncommitted work. Phase 10.6E is implemented,
+validated, and staged atop that base, not yet committed.
+
+Production now has one domain implementation: direct synchronous calls through
+plan-driven handler entries, using the unchanged safe-Rust class runtime and
+borrowed views. Legacy mailbox/worker/tracker/completion paths, coarse locks,
+atomic-domain lowering, batching, coalescing, clustering, selectors/options,
+and await IR/analysis/serialized metadata are removed. No unsafe, synchronization
+optimization, new scheduler, source syntax, or changed 10.6C algorithm was added.
+The only C traversal cleanup removes unreachable retired-Await cases.
+
+Fast Debug owns logical instances keyed by checked concrete identities, exact
+specializations, state, and immutable routes. Messages execute nested frames;
+reply terminates immediately. Independent payload/reply values and helper/method
+WRITE-through preserve checked semantics. Deterministic domain/state traces carry
+source, semantic, instance, specialization, handler, and access-path identities,
+with bounded summaries and no physical synchronization or scheduling simulation.
+Transitive source-module interpretation works; source-free Moss still requires
+production execution. Existing interpreter `for`/functional-pipeline limits remain
+explicit. No Phase 11 foreign ABI or Phase 12 supervision was introduced.
+
+Native `.mossi` ABI is **4**; old artifacts require rebuilding. Impact snapshots
+are **v2** and retain checked concrete route edges instead of await edges. Physical
+synchronization/borrow metadata remains outside provider ABI.
+
+Final validation passed after the last source change (the internal reply-slot
+rename), using a strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build:
+
+- `make`, complete `make check`, and `make examples`; generated Rust uses
+  `-D warnings`. The intentional negative use-after-transfer example is excluded.
+- 10.6A/B/B.1/C semantics, closure, exact specialization, and plan regressions.
+- 10.6D class layout/acquisition, nested/sibling ordering, primitive WRITE-through,
+  reply release, fail-closed panic/poison, source-free domains, and whole-object
+  restoration. The concurrency harness repeats five times: compatible readers
+  and disjoint writers overlap, conflicting writers serialize, and readers exclude
+  writers. These tests also passed in the preceding full-suite development run.
+- D.1 non-Clone runtime values, zero clone counters, borrow lifetime rejection,
+  original String/Vector storage, whole/nested-object READs, mixed/immutable state,
+  helper/method/functional captures, value boundaries, and source-free providers.
+- New 10.6E compiled/interpreted equivalence, exact static routes and specializations,
+  nested/sibling order, primitive/nested/helper/method state mutation, independent
+  payload/reply values, terminating reply, deterministic traces, source-module
+  closure, source-free interpreter rejection, and absent legacy implementation.
+- Functional/dataflow, module/native ABI, project, agent/introspection, Fast Debug,
+  debug-map/objdump, tooling, and all **20 Emacs ERT tests**.
+- Emacs byte compilation with warnings as errors, `sh -n tests/run.sh`,
+  `git diff --check`, and staged/HEAD whitespace checks.
+- Optional live LLDB/DAP tests were capability-skipped because process tracing
+  is unavailable. Existing objdump missing standard-library source warnings do
+  not prevent mapping checks from passing.
+
+These results supersede earlier development failures and runs invalidated by later
+edits. Temporary logs live under repository `tmp/` and are not durable evidence.
+The [retirement audit](../docs/LEGACY_RUNTIME_AUDIT.md) records the changed-file
+inventory, deleted fixtures, removed types/backends, and repository search
+classification. Remaining retired terms are migration/absence tests, explicitly
+historical records, removal/future-work descriptions, or valid unrelated names,
+ordinary collection/runtime utilities, and test threads. No stale active backend
+reference remains in the audited implementation.
+
+Phase 10.6E completes the migration to the synchronous-domain architecture.
+Production execution now has a single compiler-derived handler-level 2PL backend
+with borrowed protected reads, while retired mailbox/worker/await/commit-order and
+alternate synchronization backends have been removed. Fast Debug now executes the
+same checked synchronous domain semantics directly and deterministically, including
+static composition, routes, messages, handler state, nested calls, and terminating
+replies, without simulating physical locks or scheduling. Phase 10.6F remains for
+diagnostics, layout, and quantitative performance validation.
+
+## Historical checked-in Phase 10.6D.1 closeout — borrowed protected READs
 
 The 10.6D baseline is checked in as `9f49e64`. Phase 10.6D.1, checked in as
 `b3f8a64`, replaces
@@ -86,7 +158,7 @@ state is borrowed directly. Explicit Moss value boundaries remain by value, and
 the Phase 10.6D handler-level 2PL, rank ordering, deadlock proof, and
 conflict-serializability guarantees are unchanged.
 
-## Checked-in Phase 10.6D closeout — production handler-level 2PL
+## Historical checked-in Phase 10.6D closeout — production handler-level 2PL
 
 Commit `9f49e64` implements production handler-level 2PL from the authoritative
 `Program::synchronization_plan`. Each constructed domain owns typed leaf storage
@@ -171,7 +243,7 @@ the global `(domain_rank, class_rank)` order, establishing the failure-free
 deadlock-freedom and conflict-serializability guarantees of the synchronous-domain
 architecture. Legacy transport/runtime machinery remains for Phase 10.6E cleanup.
 
-## Current checkpoint through Phase 10.6D.1
+## Current checkpoint through Phase 10.6E
 
 Checked-in 10.6C compiler closeout: `eb4d49a`, following snapshot `486eba4`.
 The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
@@ -184,11 +256,12 @@ The 10.6D closeout is checked in as `9f49e64`, atop `3d7ccd1`.
 | 10.6C | Complete: compiler-owned `SynchronizationPlan`, including leaf effects, classes, ranks, handler sets, conflicts, and introspection. |
 | 10.6D | Complete at `9f49e64`: physical class storage, production handler-level 2PL, and primitive parameter WRITE-through. |
 | 10.6D.1 | Complete at `b3f8a64`, atop `9f49e64`: borrowed protected/immutable READs, recursive object views, no runtime Clone requirement, and independent message/reply values. |
-| Later work | Fast Debug domain execution and legacy runtime removal remain unimplemented. |
+| 10.6E | Complete and validated in the staged change: legacy runtime retired; deterministic Fast Debug domains supported. |
+| 10.6F | Diagnostics, layout, and quantitative performance validation remain future work. |
 
 Current language semantics are synchronous domain calls over the closed concrete
-graph. Legacy mailbox/worker adapters and whole-domain locks remain dormant in
-compiler source; production execution uses planned synchronization classes.
+graph. Legacy mailbox/worker adapters and alternate synchronization implementations
+have been removed; production execution uses planned synchronization classes.
 Neither asynchronous mailbox behavior nor total domain serialization defines
 the current Moss language model. Historical checkpoint
 descriptions below are implementation history, not permission to restore retired
@@ -270,7 +343,7 @@ by Phase 10.6A. The historical Phase 10.5 open-design blocker is superseded by
 the resolved decisions in 10.6A–C. Only this status file changed; compiler code
 and tests were untouched. `git diff --check` passed for this correction.
 
-## Version and commits
+## Historical version and commit chronology
 
 - Compiler version: Moss v0.2
 - Static duck-typed methods and named-trait specialization are complete on top of
@@ -423,14 +496,14 @@ and tests were untouched. `git diff --check` passed for this correction.
   discovery and workflow/safety guidance. `moss check --json` uses stable diagnostic
   categories and a uniform source/span/identity/details shape. Semantic queries accept
   exact source locations or retained semantic identities and reuse the compiler's static
-  call/concrete-domain graphs, legacy await metadata, ownership/effect summaries,
+  call/concrete-domain graphs, synchronization plans, ownership/effect summaries,
   and optimization explanations. A
   statement with no precise retained effect summary reports null rather than inheriting
   all effects from its enclosing callable.
 - Successful project checks/builds/tests/benchmarks persist a compact semantic snapshot
   under `.moss/semantic-cache-v1/`. `moss impact <target> --json` distinguishes unchanged,
   implementation-only, and semantic-interface changes and reports direct/transitive
-  dependents, affected tests/benchmarks/domains/legacy await edges, specializations, and reuse
+  dependents, affected tests/benchmarks/domains/route edges, specializations, and reuse
   counts. `moss test --affected` uses that cone during iteration and conservatively runs
   all tests when no baseline exists.
 - `moss fmt` and `moss fmt --check` provide canonical two-space Moss formatting after
@@ -450,11 +523,11 @@ and tests were untouched. `git diff --check` passed for this correction.
   generated ranges, line mappings, generated/native symbols, and provenance. Transient
   functional IR IDs are excluded. Fused functional nodes deliberately share one
   generated range while retaining all contributing origins.
-- `--debug` selects unoptimized eager lowering with legacy mailbox adapters and adds stable
+- `--debug` selects unoptimized eager lowering with planned class locking and adds stable
   function boundaries. `tools/moss-build-debug` compiles that Rust with DWARF, frame
   pointers, no stripping, and warnings denied. Concrete functions, methods, handlers,
-  and main have deterministic readable exported symbol names; mailbox transport and
-  handler implementation are separated so handler bodies also have a toolable symbol.
+  and main have deterministic readable exported symbol names; synchronized handler
+  entries and private bodies retain stable tooling identities.
 - The dependency-light Emacs `moss-mode` includes comment/string syntax, centralized
   font-lock definitions, tab-free two-space indentation, `else` dedenting, Imenu and
   defun navigation, compilation-mode check/build/run commands, read-only artifact views,
@@ -514,7 +587,7 @@ and tests were untouched. `git diff --check` passed for this correction.
   parameters are closed at each call site, recorded as specialization dependencies, and
   erased from generated Rust; unbounded callable identity is rejected.
 - `ObservableEffects` independently records local capture reads/mutation, domain
-  reads/writes, message, legacy await metadata, I/O/external effects, unresolved effects, and possible
+  reads/writes, message, I/O/external effects, unresolved effects, and possible
   failure. Transitive summaries conservatively govern fusion without changing
   READ/WRITE/CONSUME ownership inference.
 - The functional IR distinguishes dense compilation-local pipeline/node handles from
@@ -565,18 +638,15 @@ and tests were untouched. `git diff --check` passed for this correction.
 - Direct composition-prefix domain construction and `domainroutes(...)` implement
   the static concrete graph. Production handles share per-instance class storage;
   all active modes use the synchronized handler entry described above.
-- Historical mailbox `Mutex<VecDeque<_>>`/`Condvar` transport, shared cluster workers,
-  `_local` dispatch, coarse `Arc<Mutex<State>>`/`Arc<RwLock<State>>`, batching,
-  coalescing, and whole-domain atomics remain dormant source implementations for
-  10.6E cleanup. These do not determine current physical synchronization.
-- `-Oshared-memory`, `-O`, and `-O0` select `Handler2PL` for domains. Functional
-  optimization still respects the selected optimization level. Legacy cluster
-  options are validated but do not merge domains or bypass class acquisition.
+- Phase 10.6E removes legacy mailbox, worker, coarse-lock, batching, coalescing,
+  clustering, and atomic-domain implementations and their backend selectors.
+- `-Oshared-memory`, `-O`, and `-O0` use the same planned domain runtime;
+  only functional optimization depends on optimization level. Retired cluster
+  and await-error-handling options are rejected.
 - `_shared` wrappers retain planned reader/writer guards around private `_body`
   implementations. Rust checks Send/Sync legality; no unsafe storage access is used.
 - Ordinary integer `+`, `-`, `*`, `/`, integer `sum`, and generated state-update
-  equivalents lower through explicit `i64` wrapping operations. Historical atomic
-  fetch-add/fetch-sub implementations retain the same rule but are dormant.
+  equivalents lower through explicit `i64` wrapping operations.
 - Synchronous expression/statement messages, typed/inferred reply handlers, terminating
   `reply value`, and explicit normal handler completion for no-value handlers.
 - Domain-owned mutable state, synchronous handler invocation, local `let`/`var`,
@@ -584,22 +654,19 @@ and tests were untouched. `git diff --check` passed for this correction.
   superseded by 10.6D's exact handler-level class acquisition.
 - Ownership checks for direct local assignment, existing owned cross-domain payloads, nested non-primitive projections, domain state, and non-primitive replies.
 - One indentation-aware type-environment walker now serves ordinary statement checking,
-  domain-reference inference, local-call discovery, and legacy await-target resolution. It
+  domain-reference inference and local-call discovery. It
   forks `if`/`else` environments, merges only types present on every relevant path, and
   rejects conflicting concrete types. Definite same-type branch creation is carried to
   Rust lowering through explicit join metadata.
 - Static callable/effect validation remains available across handlers, methods, local
-  functions, and `main`. Legacy await-target/cycle machinery remains for compatibility
-  fixtures only; active synchronous messages do not create await edges.
-- Historical await-cycle witnesses identify the source line used for every dependency edge;
-  repeated logical edges retain their actual source sites rather than relying on one
-  arbitrary map insertion.
+  functions, and `main`. Await-target/cycle machinery is removed; retired syntax
+  is covered by migration-negative tests. The concrete route DAG and lock ranks
+  provide the active domain deadlock proof.
 - Direct and mutual recursion are rejected. Compiler-internal READ/WRITE/CONSUME summaries drive local call lowering, and conflicting aliases at a call site are Moss compile-time errors.
 - Copyable field projections retain a read effect; moving a nontrivial field consumes its containing value. Consuming method receivers lower by value rather than as shared receiver references.
 - Generated Rust compilation with warnings denied in the test suite. Active domain
-  calls complete before the following Moss statement; mailbox adapters, where still
-  selected, wait for handler completion rather than exposing asynchronous language
-  behavior.
+  calls enter synchronized wrappers directly and complete before the following
+  Moss statement.
 - Executable showcases cover method-based duck typing, two concrete named-trait
   implementations, inferred Vector/Map/Queue use, an executable optimized functional
   dataflow pipeline, and a small static job-scheduler application with domains and
@@ -640,15 +707,15 @@ and tests were untouched. `git diff --check` passed for this correction.
   is not an active language feature.
 - Reply-path completeness is checked only syntactically; fallthrough is diagnosed at runtime.
 - Production synchronization consumes the stored plan at every optimization level;
-  old backend synchronization heuristics are dormant. 10.6D.1 removes READ
+  old backend synchronization heuristics are removed. 10.6D.1 removes READ
   snapshots; static-accessor code size, slot/descriptor overhead, and conservative
   explicit-boundary copies remain possible future representation optimizations.
-- Legacy cluster configuration is type-wide and requires a single concrete instance
-  per member type, now obtained from the checked static composition.
 - The closed concrete route DAG and deterministic domain ranks are complete.
   `SynchronizationPlan` supplies class ranks and handler ClassSets; 10.6D consumes
   them for production physical class locking and handler-level 2PL.
-- Fast Debug domain execution and legacy runtime removal remain later work.
+- Fast Debug executes synchronous domains and source-module closures. Functional
+  pipelines and `for` remain unsupported interpreter constructs with precise errors;
+  source-free Moss dependencies require production execution.
 - Primitive ordinary-parameter WRITE lowering is fixed in 10.6D; the existing
   semantic effects remain authoritative.
 - Functional collection ownership is intentionally conservative. A callback that would
@@ -664,17 +731,6 @@ and tests were untouched. `git diff --check` passed for this correction.
   are not implemented.
 
 ## Known bugs and limitations
-
-- Historical batching accepted mailbox payload forms proven total without user
-  calls. Asynchronous send batching is disabled for active synchronous messages;
-  retained batch helpers do not define current language behavior.
-- Historical lock coalescing was limited to adjacent awaits in `main` and a strict
-  single-spawn/no-escape/no-other-caller proof. This legacy backend mechanism is
-  not the active production handler-level 2PL implementation.
-- Historical atomic lowering (now dormant) excludes floats, CAS loops, arbitrary expressions,
-  multi-action handlers, and cross-field invariants. One incompatible handler falls
-  the entire domain back to a coherent lock/mailbox representation; there is no hybrid
-  atomic/mailbox domain.
 
 - Static specialization currently covers method-constrained and trait-typed local
   functions in the implemented expression/call slice. Associated types, trait
@@ -828,21 +884,21 @@ Two local smoke samples of the contention program completed 20 baseline runs in 
 
 ## Immediate next tasks
 
-Phases 10.6A–D.1 are complete; final validation is recorded above.
-Phase 10 as a whole is not complete.
+Phases 10.6A–D.1 are checked in. Phase 10.6E is complete, validated, and staged
+for review as recorded above. Phase 10 as a whole is not complete.
 
-1. Review the completed 10.6D.1 change; the checked-in 10.6D baseline is `9f49e64`.
-2. Phase 10.6E: Fast Debug domain execution and removal of dormant legacy runtime
-   and synchronization implementations. No new 10.6E blocker was discovered;
-   the pre-existing provider-internal generic linkage limitation remains separate.
-3. Phase 10.6F and other deferred work: quantitative layout/storage tuning,
-   package/dependency resolution, explicit `deepCopy()`,
-   future reference facilities, and optimizer profitability/parallelism. Explicit
-   modules/imports already exist in Phase 8.
+1. Review and commit the validated Phase 10.6E change.
+2. Phase 10.6F: measure class storage/accessor code size, descriptor/slot overhead,
+   explicit-boundary copies, uncontended handler cost, contention, and nested-call
+   hold times; improve diagnostics and evaluate layout using those measurements.
+   No lock elision, early unlock, atomics, or clustering is introduced by 10.6E.
+3. Separate later work includes interpreter `for`/functional coverage, the existing
+   provider-internal generic linkage limitation, package resolution, `deepCopy()`,
+   future lexical domain scopes/concurrency ingress, and Phase 12 supervision.
 
-Do not modify the 10.6C synchronization-analysis algorithms unless a failing
-regression demonstrates an actual defect. No language-design changes are
-authorized by the 10.6D backend scope.
+The 10.6C synchronization algorithms remain authoritative and unchanged apart
+from removal of unreachable retired-Await traversal branches. No language-design
+change is authorized by this consolidation phase.
 
 ## Open design questions requiring Kutty's decision
 
@@ -1004,7 +1060,10 @@ rejected. Effect analysis reuses the canonical iterator-element resolver for loo
 bindings, so method and ownership/effect summaries agree with ordinary type analysis.
 No runtime iterator dispatch or vtable is emitted.
 
-## Phase 2.6 — Immutable Message Payloads and Shared-Memory Copy Elision
+## Historical Phase 2.6 — Immutable Message Payloads and Shared-Memory Copy Elision
+
+The physical backends below are retired in 10.6E; current production message and
+reply boundaries establish independent owned values. Payload immutability remains.
 
 Incoming handler arguments are immutable READ-only value snapshots regardless of
 concrete type. The normal ownership/effect checker rejects mutation,
@@ -1018,7 +1077,9 @@ payloads by temporary immutable reference when safe, while primitive Copy values
 remain by value. This is a backend optimization preserving identical Moss
 semantics.
 
-## Phase 10.1A — Fast Debug interpreter checkpoint
+## Historical Phase 10.1A — Fast Debug interpreter checkpoint
+
+The domain restriction below is superseded by Phase 10.6E.
 
 The checked Moss AST now has a direct Fast Debug execution backend for ordinary
 functions. `moss run --interp` and standalone `moss test --interp` execute
@@ -1037,7 +1098,7 @@ in one interpreter; compiled Moss interfaces/native modules are rejected rather
 than mixed into the run. Project closure regressions cover cross-file calls and
 verify that no Rust compiler is needed.
 
-## Phase 10.5 — Semantic convergence and AI introspection
+## Historical Phase 10.5 — Semantic convergence and AI introspection
 
 Phase 10.5 is a non-semantic tooling/documentation checkpoint. The existing
 static callable specialization, first-order effect summaries, entity-v1/source
@@ -1060,4 +1121,4 @@ by the resolved decisions in Phases 10.6A–C:
 and concrete domain ranks; 10.6C implements synchronization analysis and semantic
 effect metadata. Existing ordinary parameter WRITE effects remain authoritative.
 Phase 10.6D implements physical handler-level 2PL and primitive write-through;
-Fast Debug domain execution and legacy runtime removal remain later work.
+Phase 10.6E adds Fast Debug domain execution and removes the legacy runtime.

@@ -1,11 +1,10 @@
-# Phases 10.6C–D.1: synchronization planning and production handler-level 2PL
+# Phases 10.6C–E: synchronization planning and production handler-level 2PL
 
 Phase 10.6C implements `SynchronizationPlan`; Phase 10.6D consumes that stored
 object for production handler-level 2PL. All compilation/optimization modes use
-the same plan-driven synchronization boundary. Legacy mailbox, coarse-lock,
-atomic, batching, coalescing, and cluster implementations remain in compiler
-source for Phase 10.6E deletion, but no active handler path uses them to override
-the plan. The analysis is independent of backend optimization flags.
+the same plan-driven synchronization boundary. Phase 10.6E removes legacy mailbox, coarse-lock,
+atomic-domain, batching, coalescing, and clustering implementations.
+The analysis is independent of backend optimization flags.
 
 ```text
 closed ConcreteDomainGraph + exact DomainSpecialization records
@@ -229,13 +228,9 @@ per-instance class locks, and publishes handles only after construction. Cloned
 handles reach the same class objects. Different concrete specializations receive
 their own typed leaf representations and final per-instance descriptors.
 
-All active compiled dispatch is direct synchronous entry, including invocation
-under former mailbox/reference, atomic, and cluster option configurations.
-The legacy physical dispatch implementations are dormant, not deleted. Exported
-module bridges and nominal specialization routing also converge on synchronized
-entry. Thus no compatibility worker acknowledgement or cluster-local shortcut can
-bypass locking in the active path. A future reactivated transport would have to
-call this wrapper and acknowledge completion only after it returns.
+All compiled dispatch is direct synchronous entry. Exported provider bridges and
+nominal specialization routing converge on the same synchronized wrapper. There
+is no alternate transport, completion acknowledgement, or backend selector.
 
 ## Guard lifetime, failures, and correctness
 
@@ -288,7 +283,7 @@ monotonic rank tracking would reject this valid sequence and is not used.
 Source-free providers compile reusable handler wrappers. The final application
 passes its physical descriptor to the generated constructor through an internal
 Rust calling convention. `.mossi` exports semantic effects, not class IDs, ranks,
-ClassSets, physical lock layout, or global LockRank. Native ABI version 3 and the
+ClassSets, physical lock layout, or global LockRank. Native ABI version 4 and the
 codegen fingerprint reject obsolete compiled calling conventions and caches;
 providers built before this migration require rebuilding.
 
@@ -296,7 +291,8 @@ Existing synchronization JSON reports `physical_lowering: "handler_2pl"`.
 The human dump projects each handler's acquisitions as `(domain_rank, class_rank)`
 plus final mode and documents full-handler retention. Test-only generated lock
 hooks observe real wrapper execution without making production tracing mandatory.
-Fast Debug domain execution and lock simulation remain deferred to 10.6E.
+Fast Debug directly interprets synchronous domains without physical locks or
+scheduling. Its semantic execution does not depend on SynchronizationPlan.
 
 `check_handler_2pl.py` compiles generated Rust with warnings denied, drives real
 wrappers from backend threads, and uses barriers rather than timing benchmarks to
@@ -304,7 +300,7 @@ prove disjoint-writer and shared-reader overlap. It also covers conflicting writ
 read/write exclusion, empty footprints, class sharing/splitting, rank order,
 nested calls and descending siblings after return, state restoration, primitive
 WRITE-through, source-free providers, exact specializations, deterministic generation,
-legacy-option convergence, and fail-closed failure. A separate C++ regression
+optimization-level consistency, and fail-closed failure. A separate C++ regression
 corrupts stored plans and requires physical validation to reject them.
 
 
@@ -326,10 +322,26 @@ Generated decomposition methods move private provider fields into class storage
 without granting new Moss source-level field access. A loader off-by-one error in
 existing `public_representation field` records is corrected; synchronization
 analysis is unchanged. `.mossi` contains no view/borrow layout, Rust lifetimes, or
-synchronization policy. Native ABI version 3 requires rebuilding older providers
+synchronization policy. Native ABI version 4 requires rebuilding older providers
 so these backend-private entry points exist.
 
 Remaining representation costs are static accessor code size, slot/descriptor
 metadata, and conservative explicit-boundary copies. None require hidden READ
 cloning, additional domain locks, or unsafe access. Layout/profitability work
-remains later work. Fast Debug alignment and legacy deletion remain Phase 10.6E.
+remains later work. Fast Debug domain execution and legacy retirement are implemented in Phase 10.6E.
+
+
+## Shared frontend, two execution engines
+
+```text
+Moss source → checker / specialization / effects → ConcreteDomainGraph
+                                                   ├─ SynchronizationPlan
+                                                   │    → production: class RwLocks + borrowed views
+                                                   └─ Fast Debug: logical state + synchronous frames
+```
+
+Production entry may be invoked concurrently. Fast Debug executes one
+deterministic schedule, without lock simulation or concurrency exploration.
+Both preserve the checked value boundaries, exact routes, and terminating reply.
+Phase 10.6F remains for diagnostics, storage/layout, and quantitative performance
+validation; it does not imply permission to change synchronization semantics.

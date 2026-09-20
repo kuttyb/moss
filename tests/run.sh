@@ -10,7 +10,7 @@ fail() {
   exit 1
 }
 
-# All optimization/transport flags must converge on the authoritative 2PL path.
+# All functional optimization flags must converge on the authoritative 2PL path.
 assert_class_lowering() {
   grep -F 'struct MossClassRuntime<V> {' "$1" >/dev/null ||
     fail "$1 omitted synchronization-class storage"
@@ -45,23 +45,13 @@ compile_optimized_case() {
   rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
 }
 
-compile_cluster_case() {
-  name=$1
-  source=$2
-  cluster=$3
-  "$compiler" --check "$source"
-  "$compiler" "--cluster=$cluster" "$source" -o "$test_build/$name.rs"
-  if grep -Eq 'std::sync::mpsc|mpsc::channel' "$test_build/$name.rs"; then
-    fail "$name emitted forbidden Rust message-passing transport"
-  fi
-  rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
-}
+
 
 compile_shared_memory_case() {
   name=$1
   source=$2
   compile_optimized_case "$name" "$source"
-  grep -F 'Message optimization: direct shared-memory dispatch' \
+  grep -F 'Synchronous domain calls enter compiler-planned handler-level 2PL.' \
     "$test_build/$name.rs" >/dev/null ||
     fail "$name did not select direct shared-memory dispatch"
   grep -E 'Moss backend plan: .* = Handler2PL' \
@@ -71,21 +61,7 @@ compile_shared_memory_case() {
     fail "$name did not emit the Rust Send boundary check"
 }
 
-compile_unchecked_await_case() {
-  name=$1
-  source=$2
-  "$compiler" --check "$source"
-  "$compiler" -Oshared-memory --no-await-error-handling "$source" \
-    -o "$test_build/$name.rs"
-  assert_class_lowering "$test_build/$name.rs"
-  if grep -F 'unwrap_unchecked' "$test_build/$name.rs" >/dev/null; then
-    fail "$name bypassed fail-closed handler entry"
-  fi
-  grep -F 'Legacy unchecked-await option has no effect on fail-closed handler entry.' \
-    "$test_build/$name.rs" >/dev/null ||
-    fail "$name did not record its legacy option policy"
-  rustc -D warnings "$test_build/$name.rs" -o "$test_build/$name"
-}
+
 
 run_case() {
   name=$1
@@ -188,22 +164,7 @@ reject_case() {
   reject_source "$name" "tests/negative/$name.moss" "$expected"
 }
 
-reject_cluster() {
-  name=$1
-  source=$2
-  cluster=$3
-  expected=$4
-  stdout="$test_build/$name.stdout"
-  stderr="$test_build/$name.stderr"
-  if "$compiler" "--cluster=$cluster" --check "$source" >"$stdout" 2>"$stderr"; then
-    fail "$name unexpectedly accepted its cluster configuration"
-  fi
-  grep -F "$expected" "$stderr" >/dev/null || {
-    echo "test failure: $name diagnostic did not contain: $expected" >&2
-    sed -n '1,20p' "$stderr" >&2
-    exit 1
-  }
-}
+
 
 run_case counter examples/counter.moss 'counter: 41
 counter: 42'
@@ -262,8 +223,8 @@ run_phase4_differential phase4_domain_barrier \
   tests/phase4_domain_barrier.moss '12'
 run_phase4_differential phase4_message_barrier \
   tests/phase4_message_barrier.moss '2 1 1'
-run_phase4_differential phase4_await_barrier \
-  tests/phase4_await_barrier.moss '6'
+run_phase4_differential phase4_message_result_barrier \
+  tests/phase4_message_result_barrier.moss '6'
 run_phase4_differential phase4_materialized_message \
   tests/phase4_materialized_message.moss '12'
 run_phase4_differential phase4_terminal_boundary \
@@ -364,10 +325,10 @@ grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase4_domain_barrier_optimized.rs" >/dev/null ||
   fail 'domain-state observation did not stop fusion'
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
-  "$test_build/phase4_message_barrier_optimized.rs" >/dev/null ||
+  "$test_build/phase4_message_result_barrier_optimized.rs" >/dev/null ||
   fail 'message callback did not stop fusion'
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
-  "$test_build/phase4_await_barrier_optimized.rs" >/dev/null ||
+  "$test_build/phase4_message_result_barrier_optimized.rs" >/dev/null ||
   fail 'message callback did not stop fusion'
 [ "$(grep -c 'Moss backend: FUSED FUNCTIONAL PIPELINE' \
     "$test_build/phase4_exact_pipeline_id_optimized.rs")" -eq 1 ] ||
@@ -857,10 +818,10 @@ grep -F 'fusion stopped: observable domain READ' \
 grep -F 'fusion stopped: message send' \
   "$test_build/phase4_message.explain" >/dev/null ||
   fail 'fusion explanation omitted the message barrier'
-"$compiler" -O --explain-fusion --check tests/phase4_await_barrier.moss \
-  >"$test_build/phase4_await.explain"
+"$compiler" -O --explain-fusion --check tests/phase4_message_result_barrier.moss \
+  >"$test_build/phase4_message_result.explain"
 grep -F 'fusion stopped: message send' \
-  "$test_build/phase4_await.explain" >/dev/null ||
+  "$test_build/phase4_message_result.explain" >/dev/null ||
   fail 'fusion explanation omitted the synchronous message barrier'
 "$compiler" -O --dump-functional-ir --check \
   tests/phase4_exact_pipeline_id.moss >"$test_build/phase4_exact_pipeline_id.ir"
@@ -928,7 +889,7 @@ run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
 shared_memory_message_line=$(awk '/^  message client.Run\(\)/ { print NR; exit }' examples/shared_memory.moss)
 grep -F "// Moss line $shared_memory_message_line: message client.Run()" "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its Moss source-line annotation"
-grep -F '// Moss backend: SHARED-MEMORY DIRECT synchronous message execution' \
+grep -F 'self.state.enter(' \
   "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its synchronous direct lowering annotation"
 run_case checkout examples/checkout.moss 'charged: 75
@@ -939,8 +900,8 @@ observed: widget 1 false
 revised: widget 2 true
 verified: widget 2 true
 archive: widget 2 true'
-run_case await_main tests/await_main.moss 'main: true'
-run_case main_helper_await tests/main_helper_await.moss '9'
+run_case message_main tests/message_main.moss 'main: true'
+run_case main_helper_message tests/main_helper_message.moss '9'
 run_case branch_same_domain_type tests/branch_same_domain_type.moss '7'
 run_case phase106b_topology tests/phase106b_topology.moss '7'
 python3 tests/tooling/check_domain_handle_closure.py "$compiler"
@@ -970,19 +931,19 @@ if len(graph["edges"]) != 3:
 PY
 run_optimized_case branch_same_domain_type_optimized \
   tests/branch_same_domain_type.moss '7'
-run_case sequential_awaits tests/sequential_awaits.moss 'sequential: true'
+run_case sequential_messages tests/sequential_messages.moss 'sequential: true'
 run_case ignored_reply tests/ignored_reply.moss 'ignored reply completed'
 run_case primitive_assignment tests/primitive_assignment.moss 'primitive: 1 1'
 run_case domain_ref_message tests/domain_ref_message.moss 'ping
 ping'
 run_case fresh_message_payload tests/fresh_message_payload.moss 'fresh: 7'
 run_case fresh_reply_payload tests/fresh_reply_payload.moss 'fresh reply: 9'
-compile_case locked_mailbox_contention tests/shared_memory_contention.moss
+compile_case synchronous_call_order tests/shared_memory_contention.moss
 iteration=1
 while [ "$iteration" -le 20 ]; do
-  actual=$("$test_build/locked_mailbox_contention")
+  actual=$("$test_build/synchronous_call_order")
   [ "$actual" = 'shared total: 2000 true true' ] ||
-    fail "lock-backed mailbox lost or reordered work on iteration $iteration"
+    fail "synchronous execution changed source ordering on iteration $iteration"
   iteration=$((iteration + 1))
 done
 run_shared_memory_case shared_memory_checkout examples/checkout.moss 'charged: 75
@@ -1009,7 +970,7 @@ observed: widget 1 false
 revised: widget 2 true
 verified: widget 2 true
 archive: widget 2 true'
-grep -F 'SHARED-MEMORY DIRECT synchronous message execution' "$test_build/shared_memory_object_pipeline.rs" >/dev/null ||
+grep -F 'self.state.enter(' "$test_build/shared_memory_object_pipeline.rs" >/dev/null ||
   fail "object pipeline did not use synchronous shared-memory transport"
 run_optimized_case shared_memory_ignored_reply tests/ignored_reply.moss \
   'ignored reply completed'
@@ -1031,64 +992,6 @@ while [ "$iteration" -le 20 ]; do
     fail "shared-memory contention lost or reordered work on iteration $iteration"
   iteration=$((iteration + 1))
 done
-
-# Phase 2.5 backend planning retained for the synchronous model: batching is
-# retired because every message now completes before the next statement.
-run_optimized_case phase25_batching tests/phase25_batching.moss \
-  "$(printf 'record: 1\nrecord: 2\nrecord: 3')"
-if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
-    "$test_build/phase25_batching.rs" >/dev/null; then
-  fail "synchronous messages were incorrectly batched"
-fi
-
-compile_optimized_case phase25_batch_targets tests/phase25_batch_targets.moss
-if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
-    "$test_build/phase25_batch_targets.rs" >/dev/null; then
-  fail "messages to different receiver instances were incorrectly batched"
-fi
-compile_optimized_case phase25_batch_break tests/phase25_batch_break.moss
-if grep -F '// Moss backend: BATCHED MAILBOX SEND (' \
-    "$test_build/phase25_batch_break.rs" >/dev/null; then
-  fail "an observable payload expression did not break message batching"
-fi
-
-run_optimized_case phase25_lock_coalesce tests/phase25_lock_coalesce.moss \
-  'set set set'
-if grep -F 'COALESCED LOCK REGION' "$test_build/phase25_lock_coalesce.rs" >/dev/null; then
-  fail "retired await lock coalescing appeared in synchronous lowering"
-fi
-
-run_optimized_case phase25_lock_multi_caller tests/phase25_lock_multi_caller.moss \
-  "$(printf 'ready ready\nready ready')"
-if grep -F 'COALESCED LOCK REGION' "$test_build/phase25_lock_multi_caller.rs" >/dev/null; then
-  fail "a target with multiple callers received unsafe lock coalescing"
-fi
-
-run_optimized_case phase25_rwlock tests/phase25_rwlock.moss 'draft stable stable'
-assert_class_lowering "$test_build/phase25_rwlock.rs"
-
-run_optimized_case phase25_rwlock_read_region \
-  tests/phase25_rwlock_read_region.moss 'stable stable'
-if grep -F 'COALESCED LOCK REGION' "$test_build/phase25_rwlock_read_region.rs" >/dev/null; then
-  fail "retired await lock coalescing appeared in synchronous lowering"
-fi
-
-compile_optimized_case phase25_rwlock_contention tests/phase25_rwlock_contention.moss
-assert_class_lowering "$test_build/phase25_rwlock_contention.rs"
-iteration=1
-while [ "$iteration" -le 10 ]; do
-  actual=$("$test_build/phase25_rwlock_contention")
-  [ "$actual" = "$(printf 'consistent\nconsistent')" ] ||
-    fail "RwLock read contention changed observable results on iteration $iteration"
-  iteration=$((iteration + 1))
-done
-
-run_optimized_case phase25_atomic_counter tests/phase25_atomic_counter.moss '3 2 3 2'
-assert_class_lowering "$test_build/phase25_atomic_counter.rs"
-if grep -Eq 'MossChannel|Condvar|thread::spawn' "$test_build/phase25_atomic_counter.rs"; then
-  fail "plan-driven domain retained a mailbox, condition variable, or worker thread"
-fi
-assert_class_lowering "$test_build/phase25_atomic_counter.rs"
 
 # Moss integers wrap at their concrete i64 width. Compile both the unoptimized
 # reference and optimized lowering with Rust overflow checks explicitly enabled so
@@ -1123,7 +1026,7 @@ overflow_optimized_no_checks_output=$("$test_build/phase25_integer_overflow_no_c
 [ "$overflow_o0_output" = "$overflow_expected" ] ||
   fail "-O0 integer overflow did not follow Moss wrapping semantics"
 [ "$overflow_optimized_output" = "$overflow_expected" ] ||
-  fail "optimized atomic integer overflow did not follow Moss wrapping semantics"
+  fail "optimized integer overflow did not follow Moss wrapping semantics"
 [ "$overflow_o0_output" = "$overflow_optimized_output" ] ||
   fail "integer overflow differed between -O0 and optimized execution"
 [ "$overflow_o0_output" = "$overflow_o0_no_checks_output" ] ||
@@ -1147,80 +1050,16 @@ grep -F 'fn __moss_specialize_duck_add_0(value: i64) -> i64' \
   fail "duck-typed arithmetic did not retain both concrete call-site types"
 assert_class_lowering "$test_build/phase25_integer_overflow.rs"
 if grep -F 'unsafe {' "$test_build/phase25_integer_overflow.rs" >/dev/null; then
-  fail "integer wrapping or atomic overflow lowering used unsafe code"
+  fail "integer wrapping lowering used unsafe code"
 fi
 
-run_optimized_case phase25_atomic_bool tests/phase25_atomic_bool.moss 'true false'
-assert_class_lowering "$test_build/phase25_atomic_bool.rs"
-
-run_optimized_case phase25_atomic_swap tests/phase25_atomic_swap.moss '7'
-assert_class_lowering "$test_build/phase25_atomic_swap.rs"
-
-run_optimized_case phase25_atomic_copy_boundary \
-  tests/phase25_atomic_copy_boundary.moss 'original true'
-assert_class_lowering "$test_build/phase25_atomic_copy_boundary.rs"
-if ! grep -F '(token).clone()' "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null; then
-  fail "synchronous payload path omitted its independent value"
-fi
-grep -F 'Remember_shared(true, (token).clone())' \
-  "$test_build/phase25_atomic_copy_boundary.rs" >/dev/null ||
-  fail "atomic request did not pass its non-Copy payload by immutable reference"
-
-run_optimized_case phase25_atomic_multi_field tests/phase25_atomic_multi_field.moss \
-  '1 true'
-assert_class_lowering "$test_build/phase25_atomic_multi_field.rs"
-
-run_optimized_case phase25_atomic_invariant_fallback \
-  tests/phase25_atomic_invariant_fallback.moss '1'
-assert_class_lowering "$test_build/phase25_atomic_invariant_fallback.rs"
-run_optimized_case phase25_atomic_effect_fallback \
-  tests/phase25_atomic_effect_fallback.moss "$(printf 'incremented\n1')"
-assert_class_lowering "$test_build/phase25_atomic_effect_fallback.rs"
-compile_optimized_case phase25_atomic_external_fallback \
-  tests/phase25_atomic_external_fallback.moss
-assert_class_lowering "$test_build/phase25_atomic_external_fallback.rs"
-run_optimized_case phase25_atomic_float_fallback \
-  tests/phase25_atomic_float_fallback.moss '1.5'
-assert_class_lowering "$test_build/phase25_atomic_float_fallback.rs"
-
-compile_optimized_case phase25_atomic_contention tests/phase25_atomic_contention.moss
-assert_class_lowering "$test_build/phase25_atomic_contention.rs"
-iteration=1
-while [ "$iteration" -le 10 ]; do
-  actual=$("$test_build/phase25_atomic_contention")
-  [ "$actual" = '2000 true true' ] ||
-    fail "atomic counter lost work on contention iteration $iteration"
-  iteration=$((iteration + 1))
-done
-
-# -O0 remains the semantic reference. Compare representative optimized paths
-# with independently generated baseline 2PL executables.
-for phase25_name in phase25_batching phase25_lock_coalesce phase25_rwlock \
-                    phase25_atomic_counter phase25_atomic_bool phase25_atomic_multi_field; do
-  "$compiler" -O0 "tests/$phase25_name.moss" \
-    -o "$test_build/${phase25_name}_o0.rs"
-  grep -F 'struct MossClassRuntime<V> {' \
-    "$test_build/${phase25_name}_o0.rs" >/dev/null ||
-    fail "$phase25_name -O0 output did not retain planned synchronization"
-  assert_class_lowering "$test_build/${phase25_name}_o0.rs"
-  rustc -D warnings "$test_build/${phase25_name}_o0.rs" \
-    -o "$test_build/${phase25_name}_o0"
-  baseline_output=$("$test_build/${phase25_name}_o0")
-  optimized_output=$("$test_build/$phase25_name")
-  [ "$baseline_output" = "$optimized_output" ] ||
-    fail "$phase25_name produced different observable output under -O0 and -O"
-done
-for phase25_rust in phase25_batching phase25_lock_coalesce phase25_rwlock \
-                    phase25_atomic_counter phase25_atomic_bool \
-                    phase25_atomic_multi_field; do
-  if grep -F 'unsafe {' "$test_build/$phase25_rust.rs" >/dev/null; then
-    fail "$phase25_rust used unsafe code for a backend optimization"
-  fi
-done
+# Scalar and aggregate state semantics are covered by the 10.6D/E suites.
+# Alternate atomic/coalesced/batched backend selection tests are retired.
 
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
 reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message'"
+reject_case cluster_await_retired "await is retired: message is synchronous"
 reject_case invalid_await "await is retired: message is synchronous"
 reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
@@ -1229,7 +1068,7 @@ reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.
 reject_case main_return_value "main cannot return a value"
 run_case message_payload_copy tests/negative/message_transfer.moss "$(printf 'detached\ndetached')"
 run_case state_payload_copy tests/negative/domain_state_transfer.moss '34'
-run_case await_payload_copy tests/negative/await_object_transfer.moss '7'
+run_case message_payload_copy tests/message_object_copy.moss '7'
 run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
 run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
 run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
@@ -1317,26 +1156,26 @@ grep -F '"domain_write": true' \
 
 # Per-instance specialization remains concrete after migrating invocation to
 # synchronous messages; await edges are no longer part of the active language.
-implicit_domain_specialization_await_json="$test_build/implicit_domain_specialization_await.json"
-run_case implicit_domain_specialization_await \
-  tests/implicit_domain_specialization_await.moss ''
+implicit_domain_specialization_message_json="$test_build/implicit_domain_specialization_message.json"
+run_case implicit_domain_specialization_message \
+  tests/implicit_domain_specialization_message.moss ''
 "$compiler" inspect 'domain-specialization:Worker:intWorker' \
-  --source tests/implicit_domain_specialization_await.moss --json \
-  >"$test_build/implicit_domain_specialization_await_int.json"
+  --source tests/implicit_domain_specialization_message.moss --json \
+  >"$test_build/implicit_domain_specialization_message_int.json"
 grep -F '"name": "payload", "type": "int"' \
-  "$test_build/implicit_domain_specialization_await_int.json" >/dev/null ||
+  "$test_build/implicit_domain_specialization_message_int.json" >/dev/null ||
   fail 'implicit intWorker specialization did not infer payload: int'
 "$compiler" inspect 'domain-specialization:Worker:floatWorker' \
-  --source tests/implicit_domain_specialization_await.moss --json \
-  >"$test_build/implicit_domain_specialization_await_float.json"
+  --source tests/implicit_domain_specialization_message.moss --json \
+  >"$test_build/implicit_domain_specialization_message_float.json"
 grep -F '"name": "payload", "type": "float"' \
-  "$test_build/implicit_domain_specialization_await_float.json" >/dev/null ||
+  "$test_build/implicit_domain_specialization_message_float.json" >/dev/null ||
   fail 'implicit floatWorker specialization did not infer payload: float'
 grep -F 'struct Worker__intWorkerState' \
-  "$test_build/implicit_domain_specialization_await.rs" >/dev/null ||
+  "$test_build/implicit_domain_specialization_message.rs" >/dev/null ||
   fail 'implicit intWorker specialization did not get a concrete Rust layout'
 grep -F 'struct Worker__floatWorkerState' \
-  "$test_build/implicit_domain_specialization_await.rs" >/dev/null ||
+  "$test_build/implicit_domain_specialization_message.rs" >/dev/null ||
   fail 'implicit floatWorker specialization did not get a concrete Rust layout'
 reject_case implicit_domain_specialization_await_cycle \
   'await is retired: message is synchronous'
@@ -1398,17 +1237,10 @@ grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payl
 if ! grep -F '(data).clone()' "$test_build/phase26_direct_payload.rs" >/dev/null; then
   fail 'direct synchronous payload boundary omitted its independent value'
 fi
-run_optimized_case phase26_lock_payload tests/phase26_lock_payload.moss '7 8'
-if grep -F 'COALESCED LOCK REGION' "$test_build/phase26_lock_payload.rs" >/dev/null; then
-  fail 'retired await lock-coalescing fixture appeared in synchronous lowering'
-fi
-if grep -F 'First_locked(&mut' "$test_build/phase26_lock_payload.rs" | grep -F '.clone()' >/dev/null ||
-   grep -F 'Second_locked(&mut' "$test_build/phase26_lock_payload.rs" | grep -F '.clone()' >/dev/null; then
-  fail 'coalesced synchronous payload calls retained an unnecessary clone'
-fi
-run_case phase26_mailbox_payload tests/phase26_mailbox_payload.moss '9'
-grep -F 'Process_shared((data).clone())' "$test_build/phase26_mailbox_payload.rs" >/dev/null ||
-  fail 'compatibility option bypassed independent payload construction'
+run_optimized_case phase26_repeated_payload tests/phase26_repeated_payload.moss '7 8'
+run_case phase26_message_payload tests/phase26_message_payload.moss '9'
+grep -F 'Process_shared((data).clone())' "$test_build/phase26_message_payload.rs" >/dev/null ||
+  fail 'synchronous message omitted independent payload construction'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
 run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
   "forwarded: 10
@@ -1464,63 +1296,6 @@ reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
   "conflicting accesses to value 'counter' in call to 'increment_from': mutation overlaps with read"
-
-reject_cluster cluster_duplicate_spawn tests/shared_memory_contention.moss 'Counter,Producer' \
-  "clustered domain type 'Producer' must be spawned exactly once in main (found 2)"
-reject_cluster cluster_unknown_domain examples/counter.moss 'Counter,Missing' \
-  'unknown domain in cluster: Missing'
-reject_cluster cluster_await_cycle tests/cluster_await_cycle.moss 'Left,Right' \
-  'await is retired: message is synchronous'
-
-compile_cluster_case clustered_checkout examples/checkout.moss 'Checkout,Inventory,Payments'
-clustered_checkout_output=$("$test_build/clustered_checkout")
-[ "$clustered_checkout_output" = 'charged: 75
-order completed
-order rejected: insufficient inventory' ] || fail "clustered checkout output differed"
-assert_class_lowering "$test_build/clustered_checkout.rs"
-
-compile_cluster_case clustered_object_pipeline examples/object_pipeline.moss 'Archive,Workshop'
-clustered_object_output=$("$test_build/clustered_object_pipeline")
-[ "$clustered_object_output" = 'created: widget 1 false
-observed: widget 1 false
-revised: widget 2 true
-verified: widget 2 true
-archive: widget 2 true' ] || fail "clustered object pipeline output differed"
-assert_class_lowering "$test_build/clustered_object_pipeline.rs"
-if grep -F 'Workshop_Observe(item, (archive).clone())' \
-    "$test_build/clustered_object_pipeline.rs" >/dev/null; then
-  fail "cluster-local domain capability cloned a shared handle"
-fi
-
-compile_cluster_case cluster_mixed_fifo tests/cluster_mixed_fifo.moss 'Caller,Target'
-mixed_fifo_output=$("$test_build/cluster_mixed_fifo")
-[ "$mixed_fifo_output" = 'target: 1
-target: 3
-result: 3' ] || fail "clustered direct await overtook an older local message"
-if grep -F 'self.__moss_flush_Target_local();' "$test_build/cluster_mixed_fifo.rs" >/dev/null; then
-  fail "synchronous clustered messages retained an obsolete FIFO flush"
-fi
-
-compile_cluster_case cluster_domain_ref tests/cluster_domain_ref.moss 'Driver,Registry,Worker'
-[ "$("$test_build/cluster_domain_ref")" = 'cluster ref: ping
-cluster ref: ping' ] ||
-  fail "cluster-local domain reference did not retain capability behavior"
-assert_class_lowering "$test_build/cluster_domain_ref.rs"
-
-compile_cluster_case cluster_external_ref tests/cluster_external_ref.moss 'Driver,Relay'
-[ "$("$test_build/cluster_external_ref")" = 'external ref: ping' ] ||
-  fail "cluster-local forwarding of an external capability failed"
-assert_class_lowering "$test_build/cluster_external_ref.rs"
-
-compile_cluster_case clustered_non_reentrant tests/non_reentrant.moss 'Waiting,Dependency'
-iteration=1
-while [ "$iteration" -le 20 ]; do
-  actual=$("$test_build/clustered_non_reentrant")
-  [ "$actual" = 'start
-finish
-second' ] || fail "clustered handler execution became reentrant on iteration $iteration"
-  iteration=$((iteration + 1))
-done
 
 compile_case non_reentrant tests/non_reentrant.moss
 iteration=1
@@ -1849,5 +1624,6 @@ fi
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_handler_2pl.py "$compiler" "$test_build/phase106d"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compiler" "$test_build/phase106d1"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106e_domains.py "$compiler" "$test_build/phase106e"
 
 echo 'all Moss v0.2 tests passed'

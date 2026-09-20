@@ -1,0 +1,51 @@
+type Profile:
+  name: String
+  score: Int
+  fn add(amount: Int):
+    score = score + amount
+
+fn bump(value: Int):
+  value = value + 1
+
+fn adjust(profile: Profile):
+  profile.score = profile.score + 2
+
+domain Counter:
+  value: Int
+  record: Profile
+  fn Inc() -> Int:
+    bump(value)
+    adjust(record)
+    record.add(3)
+    reply value
+    value = 999
+  fn Get() -> Int:
+    reply value + record.score
+  fn Snapshot() -> Profile:
+    reply record
+  fn Replace():
+    record = Profile(name: "changed", score: 50)
+  fn Echo(payload: Profile) -> Profile:
+    reply payload
+
+domain App:
+  domainroutes(counter: Counter)
+  calls: Int
+  fn Run() -> Int:
+    calls = calls + 1
+    next = message counter.Inc()
+    reply next + calls
+
+fn main():
+  app = App(counter: counter, calls: 0)
+  counter = Counter(value: 0, record: Profile(name: "initial", score: 10))
+  echo message app.Run()
+  echo message counter.Get()
+  snapshot = message counter.Snapshot()
+  message counter.Replace()
+  echo snapshot.name, snapshot.score
+  payload = Profile(name: "caller", score: 7)
+  result = message counter.Echo(payload)
+  result.score = 99
+  echo payload.score, result.score
+  echo message counter.Get()

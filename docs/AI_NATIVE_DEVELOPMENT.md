@@ -30,7 +30,7 @@ transactionally against every participating file.
 
 ## Queries and identity
 
-Use `inspect`, `type`, `effects`, `ownership`, `calls`, `awaits`, `why`, and `cost` to
+Use `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, and `cost` to
 ask the compiler what it already knows. `moss impact` compares the current checked
 semantic snapshot with the previous successful check/build/test snapshot. It reports
 implementation-only versus semantic-interface changes, dependency paths, affected
@@ -81,5 +81,5 @@ persistent compiler process is deferred until startup/analysis timings show that
 materially improves the edit loop.
 Module boundaries are compiler-owned semantic contracts. Agents should inspect
 `.mossi` interfaces and semantic queries for exports, ownership modes, effects,
-specialization identity, and await instances rather than reverse-engineering
+specialization identity, and concrete route instances rather than reverse-engineering
 generated Rust.

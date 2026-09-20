@@ -1,6 +1,5 @@
-# Intentional Phase 2 error: the possible await cycle is hidden behind both
-# an ordinary local call and a branch that is false at runtime. Moss still
-# rejects the program because await-cycle checking is conservative and global.
+# Historical Phase 2 fixture, retained as a negative migration example.
+# Phase 10.6A retired source await; parsing rejects it before any topology analysis.
 
 fn wait_for_worker(worker: Worker, coordinator: Coordinator) -> Int:
   let result = await worker.Check(coordinator)

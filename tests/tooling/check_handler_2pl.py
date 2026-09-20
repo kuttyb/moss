@@ -33,7 +33,7 @@ def compile_fixture(source, flags=(), name='fixture'):
 
 def constructors(text):
     main = text[text.index('fn main() {'):]
-    return '\n'.join(line for line in main.splitlines() if 'let __tracker =' in line or ' = spawn_' in line)
+    return '\n'.join(line for line in main.splitlines() if ' = construct_' in line)
 
 
 source = repository / 'tests/phase106d_handler_2pl.moss'
@@ -51,9 +51,9 @@ assert not set(handlers['Left']['class_set']) & set(handlers['Right']['class_set
 rust, text = compile_fixture(source)
 run(['rustc', '-D', 'warnings', rust, '-o', out / 'fixture'])
 assert run([out / 'fixture']).strip() == '11 1 4 2 7'
-for n, flags in enumerate([['-O0'], ['-Oshared-memory'], ['--cluster=Store,Other'], ['--no-await-error-handling']]):
+for n, flags in enumerate([['-O0'], ['-Oshared-memory']]):
     other, generated = compile_fixture(source, flags, 'route' + str(n))
-    # Legacy mailbox/atomic/cluster selection flags cannot bypass entry.
+    # Functional optimization levels preserve the same synchronized entry.
     assert constructors(generated) == constructors(text)
     run(['rustc', '-D', 'warnings', other, '-o', out / ('route' + str(n))])
     assert run([out / ('route' + str(n))]).strip() == '11 1 4 2 7'
@@ -289,7 +289,7 @@ for source_free in (False, True):
         assert physical not in interface
 interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
-interface_path.write_text(contents.replace('native_abi 3\n', ''))
+interface_path.write_text(contents.replace('native_abi 4\n', ''))
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
 assert 'rebuild' in old and 'native calling convention' in old
 interface_path.write_text(contents)

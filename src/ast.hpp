@@ -38,16 +38,15 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, AwaitMessage, Reply, Return } kind = Kind::Raw;
-  int line = 0; int indent = 0; string text, a, b, c; vector<string> args;
+  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, Reply, Return } kind = Kind::Raw;
+  int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
   // while this records the optional destination binding.  Keeping this on
-  // the checked statement avoids lowering source `message` through an
-  // artificial send/await pair.
+  // the checked statement preserves one synchronous invocation.
   string message_result;
   vector<int> continuation_lines;
-  bool is_mutable = false; bool declaration = true; string semantic_type;
+  string semantic_type;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.
@@ -101,12 +100,7 @@ struct FunctionSpecialization {
   vector<string> parameter_types;
   string return_type;
 };
-struct AwaitBoundary {
-  size_t parameter_index = 0;
-  string handler;
-  string domain;
-  int line = 0;
-};
+
 struct DomainSpecialization {
   string source_domain;
   string instance;
@@ -141,7 +135,6 @@ struct Function {
   vector<Effect> parameter_effects;
   std::optional<StateLeafEffects> parameter_leaf_effects;
   string source_file;
-  vector<AwaitBoundary> await_boundaries;
 };
 struct Trait { string name, header; vector<TraitMethod> methods; bool exported = false; int line = 0; string source_file; };
 
@@ -164,7 +157,7 @@ struct BenchDecl {
 };
 
 // Existing checker passes populate these records while validating recursion
-// and await boundedness.  They are retained so tooling can inspect the exact
+// and concrete routing.  They are retained so tooling can inspect the exact
 // facts used by the compiler without walking the AST a second time.
 struct SemanticCallEdge {
   string source;
@@ -176,21 +169,9 @@ struct SemanticCallEdge {
   string source_file;
 };
 
-struct SemanticAwaitSite {
-  string source;
-  string target_domain;
-  int line = 0;
-  string source_instance;
-  string target_instance;
-};
 
-struct SemanticAwaitEdge {
-  string source_domain;
-  string target_domain;
-  int line = 0;
-  string source_instance;
-  string target_instance;
-};
+
+
 
 // Whole-program concrete routing topology.  These identities are semantic
 // compiler facts; generated Rust names must not be used as their identity.
@@ -248,8 +229,6 @@ struct Program {
   vector<FunctionalPipeline> functional_pipelines;
   vector<FunctionalTraversalGroup> functional_traversal_groups;
   vector<SemanticCallEdge> semantic_call_edges;
-  vector<SemanticAwaitSite> semantic_await_sites;
-  vector<SemanticAwaitEdge> semantic_await_edges;
   // Per-declared-instance facts for source domains whose untyped state and
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;

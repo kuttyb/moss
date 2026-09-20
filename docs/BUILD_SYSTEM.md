@@ -168,8 +168,8 @@ The compiler builds one concrete whole-program route graph, rejects concrete
 cycles, and assigns deterministic unique `domain_rank` ordinals. Runtime state
 initializer values do not alter this topology. Construction in ordinary control
 flow, helpers, handlers, or after the prefix is rejected. This is project
-composition metadata, not new module/import syntax; synchronization classes and
-2PL remain deferred.
+composition metadata. The derived SynchronizationPlan drives production class
+locking; Fast Debug executes the same graph directly without physical locks.
 
 For example:
 
@@ -413,15 +413,10 @@ shape.
 
 ### Message payload lowering
 
-Incoming domain payloads are immutable Moss value snapshots, including
-primitive values and domain handles; handlers cannot reassign the binding, and
-replying with the incoming value is a new legal value boundary. Mailbox-backed
-targets retain an owned copy in the queued
-message. When the planner proves a
-synchronous DirectMutex, DirectRwLock, DirectAtomic, or cluster-local call,
-nontrivial READ-only payloads are passed as temporary immutable references in
-generated Rust instead of cloned at that boundary. Primitive Copy values stay
-by value. The logical copy boundary and all observable behavior are unchanged.
+Incoming domain payloads are immutable independent values. Domain handles cannot
+be payloads. Every compiled message enters the target's plan-driven handler
+wrapper with owned payloads; replies also establish independent values. Protected
+ordinary READs use borrowed views while the handler retains its class guards.
 
 ## Failures and troubleshooting
 
@@ -456,17 +451,14 @@ written into `.mossi`. Domain handles cannot be passed or returned across an
 ordinary function or message-value boundary. Bind dependencies with
 `domainroutes` and named constructor arguments instead.
 
-The legacy cluster backend receives its state initializers and external route
-bindings from that checked composition. A requested grouping whose contraction
-creates a construction dependency cycle is rejected rather than introducing
-runtime route wiring. Implicit per-instance layouts retain the conservative
-synchronous mailbox adapter where the old backend cannot share one direct
-transport contract. Neither compatibility path changes the concrete graph.
+Every concrete specialization uses the same plan-driven runtime. Its physical
+class layout comes from the final application's SynchronizationPlan, including
+source-free providers. Fast Debug interprets the transitive source closure using
+logical state and exact routes; it requires source for every reachable Moss module.
 
 Explicit modules are checked as logical units and composed in import-DAG order.
 The Rust backend remains the materialized-code boundary; Moss does not persist
 rustc MIR. Builds emit versioned `.mossi` semantic interfaces containing public
-signatures, ownership/effect contracts, legacy await metadata where present, and
-generic semantic artifacts.
+signatures, ownership/effect contracts, static route declarations, and generic semantic artifacts.
 Optimization and the Rust toolchain fingerprint affect native artifact caches,
 not semantic module identity.

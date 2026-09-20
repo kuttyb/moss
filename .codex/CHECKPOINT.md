@@ -1,4 +1,9 @@
-# Moss implementation checkpoint
+# Historical Moss implementation checkpoint
+
+This September 11 checkpoint predates the synchronous-domain migration. Its
+mailbox, worker, await, clustering, and ordering descriptions are superseded by
+Phases 10.6A–E. See `CURRENT_STATUS.md` and `docs/SYNCHRONIZATION_PLAN.md` for
+current implementation status and architecture.
 
 Prepared 2026-09-11 for reconstruction from the public repository.
 

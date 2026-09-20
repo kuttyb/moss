@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <map>
 #include <optional>
 #include <ostream>
 #include <sstream>
@@ -34,10 +35,12 @@ class FastInterpreter {
     std::string semantic_identity;
     int line = 0;
     std::string detail;
+    std::string instance, specialization, handler, path, before, after;
   };
 
   struct Options {
     bool trace = false;
+    std::string source_file;
   };
 
   class RuntimeError : public std::runtime_error {
@@ -67,6 +70,10 @@ class FastInterpreter {
           << "\",\"line\":" << event.line;
       if (!event.detail.empty())
         out << ",\"detail\":\"" << escape(event.detail) << "\"";
+      for (const auto& field : {std::make_pair("instance", event.instance),
+          std::make_pair("specialization", event.specialization), std::make_pair("handler", event.handler),
+          std::make_pair("path", event.path), std::make_pair("before", event.before), std::make_pair("after", event.after)})
+        if (!field.second.empty()) out << ",\"" << field.first << "\":\"" << escape(field.second) << "\"";
       out << "}\n";
     }
   }
@@ -74,6 +81,7 @@ class FastInterpreter {
   void run_main(std::ostream& output) {
     if (!program_.main)
       throw RuntimeError(0, "Fast Debug requires a Moss main procedure");
+    prepare_domains();
     Frame frame;
     frame.function = "main";
     frame.source_file = program_.main->source_file;
@@ -103,13 +111,15 @@ class FastInterpreter {
 
  private:
   struct StructValue;
+  struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector, DomainHandle } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
     std::string string;
+    DomainValue* domain = nullptr;
     std::shared_ptr<StructValue> object;
     std::shared_ptr<std::vector<Value>> vector;
 
@@ -129,11 +139,23 @@ class FastInterpreter {
     std::unordered_map<std::string, Value> fields;
   };
 
+  struct DomainValue {
+    const ConcreteDomainInstance* concrete = nullptr;
+    const Domain* definition = nullptr;
+    std::unordered_map<std::string, Value> state;
+    std::unordered_map<std::string, DomainValue*> routes;
+    bool initialized = false;
+  };
+  struct Place { Value* value = nullptr; DomainValue* domain = nullptr; std::string path; };
   struct Frame {
     std::string function;
     std::string source_file;
     std::string semantic_identity;
     std::unordered_map<std::string, Value> locals;
+    std::unordered_map<std::string, Place> aliases;
+    DomainValue* domain = nullptr;
+    std::string handler;
+    bool handler_scope = false;
   };
 
   struct Flow {
@@ -144,6 +166,7 @@ class FastInterpreter {
   const Program& program_;
   Options options_;
   std::vector<TraceEvent> trace_;
+  std::map<std::string, std::unique_ptr<DomainValue>> instances_;
 
   static std::string escape(const std::string& value) {
     std::string result;
@@ -151,6 +174,7 @@ class FastInterpreter {
       if (c == '\\' || c == '"') result.push_back('\\');
       if (c == '\n') result += "\\n";
       else if (c == '\r') result += "\\r";
+      else if (c == '\t') result += "\\t";
       else result.push_back(c);
     }
     return result;
@@ -159,8 +183,13 @@ class FastInterpreter {
   void emit(const std::string& kind, const Frame& frame, int line,
             std::string detail = {}) {
     if (!options_.trace) return;
-    trace_.push_back({kind, frame.function, frame.source_file,
-                      frame.semantic_identity, line, std::move(detail)});
+    TraceEvent event;
+    event.kind = kind; event.function = frame.function; event.source_file = frame.source_file.empty() ? options_.source_file : frame.source_file;
+    event.semantic_identity = frame.semantic_identity; event.line = line;
+    event.detail = detail.substr(0, 256);
+    if (frame.domain) { event.instance = frame.domain->concrete->identity;
+      event.specialization = frame.domain->concrete->specialization; event.handler = frame.handler; }
+    trace_.push_back(std::move(event));
   }
 
   static std::string trim_copy(std::string value) {
@@ -334,11 +363,23 @@ class FastInterpreter {
                                      static_cast<std::uint64_t>(right));
   }
 
+#include "interpreter_domains.inc"
+
   Value eval(const std::string& expression, Frame& frame, int line,
              std::ostream& output) {
     std::string e = trim_copy(expression);
     while (outer_parentheses(e)) e = trim_copy(e.substr(1, e.size() - 2));
     if (e.empty()) return Value::unit();
+    if (split_operator(e, {"|>"})) throw RuntimeError(line, "Fast Debug does not support functional pipelines yet");
+    if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
+    if (auto place = locate(e, frame, line, output); place.value) {
+      if (place.domain) state_event("state_read", frame, line, place);
+      else emit("LocalRead", frame, line, e);
+      return *place.value;
+    }
+    if (frame.handler_scope && frame.domain && frame.domain->routes.count(e)) {
+      Value value; value.kind = Value::Kind::DomainHandle; value.domain = frame.domain->routes.at(e); return value;
+    }
     if (e == "true") return Value::boolean_value(true);
     if (e == "false") return Value::boolean_value(false);
     if (e == "not" || e == "!") return Value::boolean_value(false);
@@ -384,10 +425,6 @@ class FastInterpreter {
     std::string callee; std::vector<std::string> args;
     if (parse_call(e, callee, args)) {
       if (callee.find('.') == std::string::npos) {
-        if (callee == "spawn" || callee.rfind("spawn ", 0) == 0)
-          throw RuntimeError(line,
-                             "Fast Debug does not yet support domain instances; "
-                             "use the compiled backend");
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
           if (!eval(args.front(), frame, line, output).truthy()) {
@@ -427,7 +464,8 @@ class FastInterpreter {
             throw RuntimeError(line, "method receiver is not a Moss object");
           auto target = method(receiver.object->type, method_name);
           if (!target) throw RuntimeError(line, "unresolved method '" + method_name + "'");
-          return call_method(*target, receiver, method_args, frame, line, output);
+          return call_method(*target, receiver, method_args, frame, line, output,
+                             locate(member->first, frame, line, output));
         }
       }
       auto receiver = eval(member->first, frame, line, output);
@@ -528,6 +566,7 @@ class FastInterpreter {
       return left.floating == static_cast<double>(right.integer);
     if (left.kind != right.kind) return false;
     switch (left.kind) {
+      case Value::Kind::DomainHandle: return left.domain == right.domain;
       case Value::Kind::Unit: return true;
       case Value::Kind::Bool: return left.boolean == right.boolean;
       case Value::Kind::Int: return left.integer == right.integer;
@@ -554,10 +593,10 @@ class FastInterpreter {
     Value result = Value::struct_value(object.name);
     for (const auto& field : object.fields) {
       if (!field.init.empty()) result.object->fields[field.name] = eval(field.init, frame, field.line, output);
-      else result.object->fields[field.name] = Value::unit();
+      else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
     }
     for (const auto& argument : args) {
-      auto equal_sign = argument.find('=');
+      auto equal_sign = argument.find_first_of(":=");
       if (equal_sign == std::string::npos) throw RuntimeError(line, "object constructors require named fields");
       auto name = trim_copy(argument.substr(0, equal_sign));
       auto field = result.object->fields.find(name);
@@ -576,8 +615,7 @@ class FastInterpreter {
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
-    for (size_t i = 0; i < arguments.size(); ++i)
-      frame.locals[target.params[i].name] = eval(arguments[i], caller, line, output);
+    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
     emit("FunctionEnter", frame, target.line);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
@@ -591,7 +629,7 @@ class FastInterpreter {
 
   Value call_method(const Method& target, Value receiver,
                     const std::vector<std::string>& arguments, Frame& caller,
-                    int line, std::ostream& output) {
+                    int line, std::ostream& output, Place origin) {
     if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
     Frame frame;
     frame.function = target.owner + "." + target.name;
@@ -599,15 +637,17 @@ class FastInterpreter {
     frame.semantic_identity = "method:" + target.owner + "." +
         target.name + "@" + std::to_string(target.line);
     frame.locals["self"] = receiver;
-    for (const auto& field : receiver.object->fields) frame.locals[field.first] = field.second;
-    for (size_t i = 0; i < arguments.size(); ++i)
-      frame.locals[target.params[i].name] = eval(arguments[i], caller, line, output);
+    for (auto& field : receiver.object->fields)
+      frame.aliases[field.first] = {&field.second, origin.domain,
+          origin.domain ? origin.path + "." + field.first : ""};
+    if (origin.domain) frame.aliases["self"] = {&frame.locals.at("self"), origin.domain, origin.path};
+    if (target.receiver_effect == Effect::Consume && origin.value) {
+      if (origin.domain) state_event("state_consume", caller, line, origin, summary(*origin.value), "<moved>");
+      *origin.value = Value::unit();
+    }
+    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
     emit("MethodEnter", frame, target.line);
     Flow flow = execute(target.body, frame, output);
-    for (const auto& field : receiver.object->fields) {
-      auto local = frame.locals.find(field.first);
-      if (local != frame.locals.end()) receiver.object->fields[field.first] = local->second;
-    }
     Value result = flow.returned ? flow.value :
         (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
     if (!flow.returned)
@@ -620,14 +660,15 @@ class FastInterpreter {
   void assign(const std::string& target, Value value, Frame& frame, int line,
               std::ostream& output) {
     auto name = trim_copy(target);
-    if (identifier(name)) { frame.locals[name] = std::move(value); emit("LocalWrite", frame, line, name); return; }
-    auto member = top_level_member(name);
-    if (!member) throw RuntimeError(line, "unsupported assignment target '" + name + "'");
-    auto receiver = eval(member->first, frame, line, output);
-    if (receiver.kind != Value::Kind::Struct || !receiver.object)
-      throw RuntimeError(line, "field assignment receiver is not a Moss object");
-    receiver.object->fields[member->second] = std::move(value);
-    emit("StateWrite", frame, line, name);
+    auto place = locate(name, frame, line, output);
+    if (place.value) {
+      std::string before = summary(*place.value);
+      *place.value = std::move(value);
+      if (place.domain) state_event("state_write", frame, line, place, before, summary(*place.value));
+      else emit("LocalWrite", frame, line, name);
+    } else if (identifier(name)) {
+      frame.locals[name] = std::move(value); emit("LocalWrite", frame, line, name);
+    } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
   Flow execute(const std::vector<Stmt>& statements, Frame& frame,
@@ -670,6 +711,7 @@ class FastInterpreter {
         continue;
       }
       Flow flow;
+      if (compose(statement, frame, output)) { ++index; continue; }
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
@@ -695,11 +737,20 @@ class FastInterpreter {
           flow.value = statement.a.empty() ? Value::unit() : eval(statement.a, frame, statement.line, output);
           emit("Return", frame, statement.line, flow.value.display());
           return flow;
-        case Stmt::Kind::Message:
-        case Stmt::Kind::AwaitMessage:
+        case Stmt::Kind::Message: {
+          std::string invocation = statement.a + "." + statement.b + "(";
+          for (size_t i = 0; i < statement.args.size(); ++i) { if (i) invocation += ", "; invocation += statement.args[i]; }
+          Value result = message(invocation + ")", frame, statement.line, output);
+          if (!statement.message_result.empty()) assign(statement.message_result, std::move(result), frame, statement.line, output);
+          break;
+        }
         case Stmt::Kind::Reply:
+          flow.returned = true;
+          flow.value = independent(eval(statement.a, frame, statement.line, output));
+          emit("reply", frame, statement.line, summary(flow.value));
+          return flow;
         case Stmt::Kind::For:
-          throw RuntimeError(statement.line, "Fast Debug does not yet support domains, messages, or await; use the compiled backend");
+          throw RuntimeError(statement.line, "Fast Debug does not support for iteration yet");
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
@@ -746,6 +797,7 @@ inline bool FastInterpreter::Value::truthy() const {
 inline std::string FastInterpreter::Value::display() const {
   std::ostringstream out;
   switch (kind) {
+    case Kind::DomainHandle: return domain ? domain->concrete->identity : "<domain>";
     case Kind::Unit: return "()";
     case Kind::Bool: return boolean ? "true" : "false";
     case Kind::Int: return std::to_string(integer);

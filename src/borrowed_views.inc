@@ -159,8 +159,7 @@
         for (const auto& field : t.fields) types[field.name] = field.type;
         for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
         view_method_ = true;
-        gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, false,
-                  std::nullopt, true, functional_method_context(t, method));
+        gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
         if (method.result_expression) {
           auto context = functional_method_context(t, method);
           auto pipeline = method.result_functional_pipeline_ids.find(context);

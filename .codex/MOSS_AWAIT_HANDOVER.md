@@ -1,5 +1,8 @@
 # Moss `await` implementation handover
 
+Phase 10.6E removes the later mailbox/clustering implementations as well. This
+brief is retained solely as historical context, never as implementation guidance.
+
 > Historical implementation brief. Its `std::sync::mpsc` backend instructions were superseded on 2026-09-11 by the lock-backed shared-memory runtime and static domain clustering recorded in `MOSS_DESIGN.md` and `MOSS_DECISIONS.md`. Its source-level await/reply model was retired by Phase 10.6A: active Moss uses synchronous `message` and terminating `reply`; retain this file only as historical context.
 
 Repository: https://github.com/kuttyb/moss

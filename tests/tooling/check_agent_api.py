@@ -161,11 +161,9 @@ calls = query("calls", "fn:inspect")
 if calls["direct_calls"][0]["line"] != 11:
     fail("call edge omitted Moss source provenance")
 
-awaits = query("awaits", "handler:Router.Route")
-if awaits["awaits"]["transitive_targets"]:
-    fail("retired await analysis reported a dependency for synchronous message")
-if awaits["awaits"]["domain_edges"]:
-    fail("retired await analysis reported active domain edges")
+topology = query("inspect", "handler:Router.Route")["concrete_domain_graph"]
+if not topology["closed"] or not topology["edges"]:
+    fail("synchronous domain topology is missing")
 
 why = query("why", pipeline_target, optimized=True)
 explanations = "\n".join(why["explanations"])

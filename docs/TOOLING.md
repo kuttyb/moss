@@ -69,7 +69,7 @@ the full contributing provenance set.
 
 ## Debug builds
 
-`--debug` selects the `-O0` eager/mailbox reference lowering, adds stable
+`--debug` selects the `-O0` eager functional lowering and plan-driven domain runtime, adds stable
 function boundaries, and emits deterministic native symbols. It produces Rust;
 the supplied wrapper also invokes `rustc` with DWARF, frame pointers, no
 stripping, and warnings denied:
@@ -87,8 +87,7 @@ build/debug/dataflow.rs
 build/debug/dataflow.mossmap
 ```
 
-`--debug` cannot be combined with `--cluster`, because its contract is the
-unoptimized source-fidelity baseline. Optimized compilations still emit valid
+The retired `--cluster` option is removed. Optimized compilations still emit valid
 maps and retain fused provenance, but several Moss constructs may share one
 machine-code location.
 

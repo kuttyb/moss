@@ -362,3 +362,17 @@
 (provide 'moss-mode-tests)
 
 ;;; moss-mode-tests.el ends here
+
+(ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
+  (with-temp-buffer
+    (insert "spawn Worker()\nawait worker.Run()\nmessage worker.Run()\ndomainroutes(worker: Worker)\n")
+    (moss-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (should (eq (get-text-property (point) 'face) 'font-lock-warning-face))
+    (forward-line 1)
+    (should (eq (get-text-property (point) 'face) 'font-lock-warning-face))
+    (forward-line 1)
+    (should (eq (get-text-property (point) 'face) 'font-lock-keyword-face))
+    (forward-line 1)
+    (should (eq (get-text-property (point) 'face) 'font-lock-keyword-face))))

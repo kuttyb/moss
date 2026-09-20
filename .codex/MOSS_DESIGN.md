@@ -1,6 +1,12 @@
-# Moss language design
+# Historical Moss language design checkpoint
 
-This document is the authoritative record of approved Moss source-language semantics. Backend details are recorded separately so implementation choices do not accidentally become language rules.
+This document preserves an earlier approved design checkpoint. Its domain
+execution model is superseded by Phases 10.6A–E: synchronous message, terminating
+reply, static routes and concrete DAG, compiler-derived 2PL, borrowed READs, and
+deterministic Fast Debug domain interpretation. Retired spawn/await, FIFO,
+whole-domain serialization, and alternate backend descriptions below are
+historical, not current language rules. Current references are
+`docs/LANGUAGE_SYNTAX.md`, `docs/SYNCHRONIZATION_PLAN.md`, and `CURRENT_STATUS.md`.
 
 Rules under **Source-level semantics** are programmer-facing language decisions. Deferred future work is explicitly non-authoritative and must not be inferred as current syntax or behavior.
 

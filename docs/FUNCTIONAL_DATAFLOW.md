@@ -313,7 +313,7 @@ is unobservable.
 The architectural boundary is simple: if an optimization can be described as “this
 equivalent Moss computation asks for less work,” it belongs in semantic-space
 optimization. Decisions about SIMD, threads, GPUs, loop tiling, caches, instruction
-selection, LLVM, domain clustering, mailboxes, atomics, or locks belong downstream.
+selection, LLVM, and physical class locking belong downstream.
 Phase 4.6 introduces neither MLIR nor a general optimizer/plugin framework; the focused
 semantic IR remains sufficient for this bounded pass set.
 

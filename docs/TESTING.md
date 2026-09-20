@@ -316,3 +316,18 @@ Common checks:
 The intentionally failing
 [`examples/projects/phase7_failing_test`](../examples/projects/phase7_failing_test)
 is a runnable reference for actual/expected output and continued reporting.
+
+## Synchronous-domain consolidation (10.6E)
+
+`make check` runs the retained 10.6A–D.1 semantic, topology, synchronization,
+concurrency, and borrowed-read suites, plus `check_phase106e_domains.py`.
+The new suite compares compiled output with Fast Debug, checks deterministic
+nested domain traces and value independence, exercises transitive source-module
+routes, rejects source-free interpretation, and verifies generated executable
+constructs contain no retired queue/worker/await or alternate synchronization
+backend. Backend threads remain confined to production correctness harnesses;
+Fast Debug does not simulate their schedules. Retired backend-selection fixtures
+are deleted; retired source syntax remains covered by negative migration tests.
+
+The [retirement audit](LEGACY_RUNTIME_AUDIT.md) records deleted fixtures,
+remaining historical terms, and the production/interpreter boundary.

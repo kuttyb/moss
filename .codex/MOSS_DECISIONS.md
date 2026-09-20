@@ -2,6 +2,11 @@
 
 This is an append-only decision history. New decisions and revisions are added as dated entries; earlier entries remain present even when superseded.
 
+Earlier domain decisions below are historical and superseded by the approved
+10.6A–E architecture. Source await/spawn, sender FIFO, total-domain serialization,
+and mailbox/worker/alternate synchronization implementations are retired. Consult
+`CURRENT_STATUS.md` and `docs/SYNCHRONIZATION_PLAN.md` for current semantics.
+
 ## 2026-09-05 - Serialized domain message execution
 
 **Question:** What concurrency and ordering guarantees should domain message handlers expose?
