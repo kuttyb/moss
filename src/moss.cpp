@@ -177,7 +177,25 @@ static bool plain_identifier(const string& value) {
 static bool parse_member_call(const string& text, string& receiver, string& handler,
                               vector<string>& args) {
   string value = trim(text);
-  auto dot = value.find('.');
+  // A member call inside an argument is not the outer call's receiver.
+  // In particular f(message route.Run()) must check route as a message
+  // target, not as the ordinary value "f(message route".
+  size_t dot = string::npos;
+  int nesting = 0;
+  bool quoted = false, escaped = false;
+  for (size_t index = 0; index < value.size(); ++index) {
+    char c = value[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (c == '\\') escaped = true;
+      else if (c == '"') quoted = false;
+      continue;
+    }
+    if (c == '"') { quoted = true; continue; }
+    if (c == '(' || c == '[') ++nesting;
+    else if (c == ')' || c == ']') --nesting;
+    else if (c == '.' && nesting == 0) { dot = index; break; }
+  }
   auto lp = value.find('(', dot == string::npos ? 0 : dot);
   auto rp = value.rfind(')');
   if (dot == string::npos || lp == string::npos || rp != value.size() - 1 || dot >= lp)
@@ -1222,7 +1240,7 @@ class Checker {
     check_traits();
     check_objects();
     // Function results and handler replies can constrain each other through an
-    // await or a local call. Run a few non-final inference rounds before the
+    // synchronous message or local call. Run non-final inference rounds before the
     // final unresolved-type diagnostics.
     for (size_t round = 0; round < 3; ++round) {
       infer_domain_state_fields(false);
@@ -1244,8 +1262,9 @@ class Checker {
     for (const auto& d : p_.domains) check_domain(d);
     if (p_.main) check_main(*p_.main);
     check_test_and_benchmark_declarations();
-    // Await boundedness is an ordinary well-formedness rule checked for every
-    // executable body above. Graph construction below only records domain edges.
+    p_.concrete_domain_graph.closed = true;
+    // Legacy dependency metadata adapter. Concrete routing legality has already
+    // been established by the authoritative closed route graph above.
     check_global_await_cycles();
     build_functional_ir();
   }
@@ -1930,6 +1949,26 @@ class Checker {
           instance.specialization = specialization.identity();
           break;
         }
+      }
+      if (!instance.specialization_index) {
+        DomainSpecialization concrete;
+        concrete.source_domain = domain.name;
+        concrete.instance = statement.a;
+        concrete.materialized_layout = false;
+        instance.specialization_index = p_.domain_specializations.size();
+        instance.specialization = concrete.identity();
+        p_.domain_specializations.push_back(std::move(concrete));
+      }
+      auto& specialization = p_.domain_specializations.at(*instance.specialization_index);
+      for (const auto& field : domain.state)
+        specialization.state_types.emplace(field.name, field.type);
+      for (const auto& handler : domain.handlers) {
+        auto& slots = specialization.handler_parameter_types[handler.name];
+        slots.resize(handler.params.size());
+        for (size_t index = 0; index < slots.size(); ++index)
+          if (slots[index].empty()) slots[index] = handler.params[index].type;
+        if (handler.reply_type)
+          specialization.handler_reply_types.emplace(handler.name, *handler.reply_type);
       }
       instance.source_file = statement.source_file.empty() ? p_.main->source_file : statement.source_file;
       instance.line = statement.line;
@@ -7294,7 +7333,8 @@ class Checker {
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
     // from the ordinary-expression checker.
-    if (original.size() >= 2 && original.front() == '(' && original.back() == ')') {
+    if (original.size() >= 2 && original.front() == '(' && original.back() == ')' &&
+        matching_paren(original, 0) == original.size() - 1) {
       check_expression(line, original.substr(1, original.size() - 2), env);
       return;
     }
@@ -7516,6 +7556,10 @@ class Checker {
         auto existing = current_env.find(statement.a);
         if (existing != current_env.end() && contains_domain_handle(existing->second))
           err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
+        for (const auto& binding : functional_captures(statement.a, current_env))
+          if (contains_domain_handle(current_env.at(binding)))
+            err(statement.line, "domain handle '" + binding +
+                "' cannot be used as ordinary writable storage");
         check_expression(statement.line, statement.b, current_env);
         if (statement.kind == Stmt::Kind::Assign &&
             simple_identifier(statement.a) && !current_env.count(statement.a)) {
@@ -7543,12 +7587,20 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::For) {
+        auto prior = current_env.find(statement.a);
+        if (prior != current_env.end() && contains_domain_handle(prior->second))
+          err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
         check_for_source(statement.line, statement.b, current_env);
         return;
       }
 
       if (statement.kind == Stmt::Kind::Message) {
         check_static_message_receiver(statement.line, statement.a, current_env);
+        auto destination = current_env.find(statement.message_result);
+        if (!statement.message_result.empty() && destination != current_env.end() &&
+            contains_domain_handle(destination->second))
+          err(statement.source_file, statement.line,
+              "domain handle binding '" + statement.message_result + "' is immutable");
         if (current && statement.a == "self")
           err(statement.line,
               "self-send is not allowed; move shared logic to an ordinary helper function");
@@ -9278,6 +9330,16 @@ class BackendOptimizer {
 
     for (const auto& domain : program_.domains) {
       if (plan.cluster_for(domain.name)) continue;
+      // The legacy backend materializes per-instance layouts separately. Its
+      // nominal route adapter requires a common transport contract; do not
+      // promote just the unspecialized declaration and leave its instances on
+      // mailbox transport. This is a compatibility fallback, not new locking.
+      if (std::any_of(program_.domain_specializations.begin(),
+                      program_.domain_specializations.end(),
+              [&](const DomainSpecialization& specialization) {
+                return specialization.materialized_layout && specialization.source_domain == domain.name;
+              }))
+        continue;
 
       std::unordered_map<string, AtomicHandlerPlan> atomic_handlers;
       if (domain.routes.empty() && atomic_domain_plan(domain, atomic_handlers)) {
@@ -10187,15 +10249,17 @@ class Generator {
         emit_static_specializations_(emit_static_specializations),
         public_specializations_(public_specializations) {
     for (const auto& d : p.domains) domains_[d.name] = &d;
+    const Program& semantic_program = resolution_program ? *resolution_program : p;
     std::set<string> used_domain_names;
-    for (const auto& domain : p.domains) used_domain_names.insert(domain.name);
-    for (const auto& specialization : p.domain_specializations) {
+    for (const auto& domain : semantic_program.domains) used_domain_names.insert(domain.name);
+    for (const auto& specialization : semantic_program.domain_specializations) {
+      if (!specialization.materialized_layout) continue;
       auto source = std::find_if(
-          p.domains.begin(), p.domains.end(),
+          semantic_program.domains.begin(), semantic_program.domains.end(),
           [&](const Domain& domain) {
             return domain.name == specialization.source_domain;
           });
-      if (source == p.domains.end()) continue;
+      if (source == semantic_program.domains.end()) continue;
       Domain specialized = *source;
       string backend_name = specialization.source_domain + "__" +
           specialization.instance;
@@ -10229,6 +10293,7 @@ class Generator {
           handler.reply_type = reply->second;
       }
       specialized_domains_.push_back(std::move(specialized));
+      specialization_sources_[specialized_domains_.back().name] = specialization.source_domain;
       specialization_names_[specialization.source_domain + "\n" +
                             specialization.instance] =
           specialized_domains_.back().name;
@@ -10247,6 +10312,8 @@ class Generator {
   }
 
   string generate() {
+    if (!p_.concrete_domain_graph.instances.empty() && !p_.concrete_domain_graph.closed)
+      throw std::runtime_error("internal error: lowering requires a closed ConcreteDomainGraph");
     std::ostringstream o;
     o << "// Generated by Moss v0.2. Do not edit by hand.\n";
     if (plan_.needs_mailbox_runtime())
@@ -10327,10 +10394,17 @@ class Generator {
     for (const auto& f : p_.functions) gen_function(o, f);
     // Refs first because handler message enums can mention refs to later domains.
     for (const auto& d : p_.domains) gen_ref_decl(o, d);
-    for (const auto& d : specialized_domains_) gen_ref_decl(o, d);
+    for (const auto& d : specialized_domains_)
+      if (owns_specialization(d)) gen_ref_decl(o, d);
     for (const auto& d : p_.domains) gen_nominal_handle(o, d);
     for (const auto& d : p_.domains) gen_domain(o, d);
-    for (const auto& d : specialized_domains_) gen_domain(o, d);
+    for (const auto& d : p_.domains)
+      if (d.exported) gen_exported_domain_bridge(o, d);
+    for (const auto& d : specialized_domains_)
+      if (owns_specialization(d)) {
+        gen_domain(o, d);
+        if (d.exported) gen_exported_domain_bridge(o, d);
+      }
     for (size_t index = 0; index < plan_.domain_clusters.size(); ++index)
       gen_cluster(o, index, plan_.domain_clusters[index]);
     if (mode_ == ProgramGenerationMode::Tests)
@@ -10354,6 +10428,7 @@ class Generator {
   bool emit_static_specializations_ = true;
   bool public_specializations_ = false;
   bool benchmark_body_ = false;
+  bool exported_domain_bridge_body_ = false;
   // Parameters of a direct synchronous handler are represented as borrowed
   // Rust values when their Moss payload type is non-Copy.  This set is scoped
   // to the body currently being emitted and keeps ordinary helper-call
@@ -10361,6 +10436,7 @@ class Generator {
   std::set<string> borrowed_parameters_;
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
+  std::unordered_map<string,string> specialization_sources_;
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
   std::unordered_map<string, const Function*> functions_;
@@ -10375,11 +10451,17 @@ class Generator {
   size_t reply_temp_ = 0;
   size_t assertion_temp_ = 0;
 
+  bool owns_specialization(const Domain& specialized) const {
+    const string& source = specialization_sources_.at(specialized.name);
+    return std::any_of(p_.domains.begin(), p_.domains.end(),
+        [&](const Domain& domain) { return domain.name == source; });
+  }
+
   bool has_domain_specializations(const string& domain) const {
     return std::any_of(
         p_.domain_specializations.begin(), p_.domain_specializations.end(),
         [&](const DomainSpecialization& specialization) {
-          return specialization.source_domain == domain;
+          return specialization.materialized_layout && specialization.source_domain == domain;
         });
   }
 
@@ -10388,7 +10470,7 @@ class Generator {
     return std::any_of(
         p_.domain_specializations.begin(), p_.domain_specializations.end(),
         [&](const DomainSpecialization& specialization) {
-          return specialization.source_domain == source_domain &&
+          return specialization.materialized_layout && specialization.source_domain == source_domain &&
               specialization.instance == instance;
         });
   }
@@ -10908,6 +10990,20 @@ class Generator {
       const string& expression,
       const std::unordered_map<string,string>* types) const {
     string original = trim(expression);
+    if (types && starts_with(original, "message ")) {
+      string receiver, handler;
+      vector<string> arguments;
+      if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
+        auto type = types->find(receiver);
+        if (type != types->end()) {
+          auto domain = domains_.find(type->second);
+          if (domain != domains_.end())
+            if (const Handler* target = find_handler(*domain->second, handler))
+              return target->reply_type.value_or("unit");
+        }
+      }
+      return std::nullopt;
+    }
     if (auto pipeline = generated_functional_pipeline_type(original, types))
       return pipeline;
     string value = normalize_pipeline(std::move(original));
@@ -11887,6 +11983,17 @@ class Generator {
       const Handler* target_handler = find_handler(target_domain, handler);
       if (!target_handler)
         throw std::runtime_error("internal error: unresolved message expression handler");
+      if (target_domain.exported && !exported_domain_bridge_body_) {
+        std::ostringstream call;
+        call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
+        for (size_t index = 0; index < arguments.size(); ++index) {
+          if (index) call << ", ";
+          call << message_arg(arguments[index], target_handler->params.at(index).type,
+                              d, locals, types);
+        }
+        call << ")";
+        return call.str();
+      }
       bool local_cluster = d && cluster_for(*d) &&
           cluster_for(target_domain) &&
           *cluster_for(*d) == *cluster_for(target_domain);
@@ -12281,10 +12388,8 @@ class Generator {
                             size_t functional_pipeline_id = 0) const {
     string r = nominal_domain_handle_argument(
         e, type, d, locals, types, functional_pipeline_id);
-    // Domain capabilities are cheap Clone handles.  A synchronous message
-    // must not consume the caller's handle binding while passing it to a
-    // handler parameter.
-    if (domains_.count(canonical_type_name(type))) return "(" + r + ").clone()";
+    if (domains_.count(canonical_type_name(type)))
+      throw std::runtime_error("internal error: domain capability reached payload lowering");
     if (!direct_payload_reference_type(type)) return r;
     if (plain_identifier(trim(e)) && borrowed_parameters_.count(trim(e)))
       return r;
@@ -12762,11 +12867,18 @@ class Generator {
     o << "}\n\n";
 
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>");
-    for (const auto& route : d.routes)
-      o << ", " << route.name << ": " << rust_type(route.type);
-    for (const auto& field : d.state)
-      o << ", " << field.name << ": " << rust_type(field.type);
+      << (d.exported ? "(" : "(_tracker: Arc<MossTracker>");
+    bool constructor_parameter = !d.exported;
+    for (const auto& route : d.routes) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << route.name << ": " << rust_type(route.type);
+    }
+    for (const auto& field : d.state) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << field.name << ": " << rust_type(field.type);
+    }
     o << ") -> " << d.name << "Ref {\n";
     if (d.exported)
       o << "    let _tracker = Arc::new(MossTracker::new());\n";
@@ -12888,11 +13000,18 @@ class Generator {
     o << "}\n\n";
 
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "()" : "(_tracker: Arc<MossTracker>");
-    for (const auto& route : d.routes)
-      o << ", " << route.name << ": " << rust_type(route.type);
-    for (const auto& field : d.state)
-      o << ", " << field.name << ": " << rust_type(field.type);
+      << (d.exported ? "(" : "(_tracker: Arc<MossTracker>");
+    bool constructor_parameter = !d.exported;
+    for (const auto& route : d.routes) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << route.name << ": " << rust_type(route.type);
+    }
+    for (const auto& field : d.state) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << field.name << ": " << rust_type(field.type);
+    }
     o << ") -> " << d.name << "Ref {\n";
     if (d.exported)
       o << "    let _tracker = Arc::new(MossTracker::new());\n";
@@ -12948,7 +13067,8 @@ class Generator {
       o << "    " << nominal_handle_variant(routes[index]->name) << "("
         << routes[index]->name << "Ref),\n";
     o << "}\n";
-    o << "#[derive(Clone)]\nstruct " << handle << " { route: " << route << " }\n\n";
+    o << "#[derive(Clone)]\n" << (source.exported ? "pub " : "")
+      << "struct " << handle << " { route: " << route << " }\n\n";
     o << "impl From<" << source.name << "Ref> for " << handle << " {\n"
       << "    fn from(value: " << source.name << "Ref) -> Self { Self { route: "
       << route << "::Base(value) } }\n}\n";
@@ -12981,6 +13101,23 @@ class Generator {
           compatible = false;
       }
       if (!compatible) continue;
+      if (source.exported) {
+        o << "    pub fn __moss_message_" << handler.name << "(&self";
+        string arguments;
+        for (const auto& parameter : handler.params) {
+          o << ", " << parameter.name << ": " << rust_type(parameter.type);
+          if (!arguments.empty()) arguments += ", ";
+          arguments += parameter.name;
+        }
+        o << ") -> " << rust_type(handler.reply_type.value_or("unit"))
+          << " {\n        match &self.route {\n";
+        for (size_t index = 0; index < routes.size(); ++index)
+          o << "            " << route << "::"
+            << (index == 0 ? "Base" : nominal_handle_variant(routes[index]->name))
+            << "(inner) => inner.__moss_message_" << handler.name
+            << "(" << arguments << "),\n";
+        o << "        }\n    }\n";
+      }
       bool direct = direct_shared_memory(*routes.front());
       for (const auto* route_domain : routes)
         if (direct_shared_memory(*route_domain) != direct)
@@ -13043,6 +13180,33 @@ class Generator {
     o << "}\n\n";
   }
 
+  // Keep crate-private transport types behind an ordinary synchronous call.
+  // The target is already fixed by the checked route graph. This adapter does
+  // not export a Moss handle parameter or expose per-crate queue token types.
+  void gen_exported_domain_bridge(std::ostringstream& out, const Domain& domain) {
+    out << "impl " << domain.name << "Ref {\n";
+    exported_domain_bridge_body_ = true;
+    for (const auto& handler : domain.handlers) {
+      std::set<string> locals{"self"};
+      std::unordered_map<string,string> types{{"self", domain.name}};
+      string call = "message self." + handler.name + "(";
+      out << "    pub fn __moss_message_" << handler.name << "(&self";
+      for (size_t index = 0; index < handler.params.size(); ++index) {
+        const auto& parameter = handler.params[index];
+        out << ", " << parameter.name << ": " << rust_type(parameter.type);
+        locals.insert(parameter.name);
+        types[parameter.name] = parameter.type;
+        if (index) call += ", ";
+        call += parameter.name;
+      }
+      call += ")";
+      out << ") -> " << rust_type(handler.reply_type.value_or("unit")) << " {\n"
+          << "        " << expr(call, nullptr, locals, &types) << "\n    }\n";
+    }
+    exported_domain_bridge_body_ = false;
+    out << "}\n\n";
+  }
+
   void gen_domain(std::ostringstream& o, const Domain& d) {
     string domain_identity = "domain:" + d.name + "@" +
         std::to_string(d.line);
@@ -13066,6 +13230,7 @@ class Generator {
         o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
     }
     for (const auto& route : d.routes) {
+      if (cluster_for(d) && plan_.cluster_for(route.type) == cluster_for(d)) continue;
       source_comment(o, 4, route.line, route.name + ": " + route.type);
       o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
     }
@@ -13190,11 +13355,18 @@ class Generator {
 
     backend_comment(o, 0, "MESSAGE/MAILBOX worker for domain " + d.name + "; each dequeued Moss message runs to completion");
     o << (d.exported ? "pub " : "") << "fn spawn_" << snake_case(d.name)
-      << (d.exported ? "()" : "(tracker: Arc<MossTracker>");
-    for (const auto& route : d.routes)
-      o << ", " << route.name << ": " << rust_type(route.type);
-    for (const auto& field : d.state)
-      o << ", " << field.name << ": " << rust_type(field.type);
+      << (d.exported ? "(" : "(tracker: Arc<MossTracker>");
+    bool constructor_parameter = !d.exported;
+    for (const auto& route : d.routes) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << route.name << ": " << rust_type(route.type);
+    }
+    for (const auto& field : d.state) {
+      if (constructor_parameter) o << ", ";
+      constructor_parameter = true;
+      o << field.name << ": " << rust_type(field.type);
+    }
     o << ") -> " << d.name << "Ref {\n";
     if (d.exported)
       o << "    let tracker = Arc::new(MossTracker::new());\n";
@@ -13478,7 +13650,15 @@ class Generator {
     }
     o << "}\n\n";
 
-    o << "fn spawn_moss_cluster_" << cluster_index << "(tracker: Arc<MossTracker>) -> (";
+    o << "fn spawn_moss_cluster_" << cluster_index << "(tracker: Arc<MossTracker>";
+    for (const Domain* domain : members) {
+      for (const auto& route : domain->routes)
+        if (plan_.cluster_for(route.type) != std::optional<size_t>(cluster_index))
+          o << ", " << domain->name << "_" << route.name << ": " << rust_type(route.type);
+      for (const auto& field : domain->state)
+        o << ", " << domain->name << "_" << field.name << ": " << rust_type(field.type);
+    }
+    o << ") -> (";
     for (size_t index = 0; index < members.size(); ++index) {
       if (index) o << ", ";
       o << members[index]->name << "Ref";
@@ -13499,12 +13679,12 @@ class Generator {
       string stem = snake_case(domain->name);
       o << "            " << stem << "_state: RefCell::new(" << domain->name << "State {\n";
       for (const auto& field : domain->state) {
-        string init = field.init.empty() ? default_value(field.type) : expr(field.init, nullptr, {});
-        if (field.type == "string" && !init.empty() && init.front() == '"' && init.back() == '"')
-          init += ".to_string()";
         source_comment(o, 16, field.line, state_field_signature(field));
-        o << "                " << field.name << ": " << init << ",\n";
+        o << "                " << field.name << ": " << domain->name << "_" << field.name << ",\n";
       }
+      for (const auto& route : domain->routes)
+        if (plan_.cluster_for(route.type) != std::optional<size_t>(cluster_index))
+          o << "                " << route.name << ": " << domain->name << "_" << route.name << ",\n";
       o << "            }),\n";
       o << "            " << stem << "_ref: " << stem << "_runtime_ref,\n";
     }
@@ -13723,14 +13903,6 @@ class Generator {
     debug_symbol_attributes(o, 0, "moss__main");
     o << "fn main() {\n";
     o << "    let __tracker = Arc::new(MossTracker::new());\n";
-    for (size_t index = 0; index < plan_.domain_clusters.size(); ++index) {
-      o << "    let (";
-      for (size_t member = 0; member < plan_.domain_clusters[index].size(); ++member) {
-        if (member) o << ", ";
-        o << cluster_spawn_binding(index, plan_.domain_clusters[index][member]);
-      }
-      o << ") = spawn_moss_cluster_" << index << "(__tracker.clone());\n";
-    }
     std::set<string> locals;
     std::unordered_map<string,string> types;
     // Domain construction is a structural composition prefix.  Emit that
@@ -13738,7 +13910,6 @@ class Generator {
     // name a concrete instance whose source binding appears later in main.
     // This keeps source order from becoming a hidden dependency while leaving
     // ordinary executable statements in their source order.
-    vector<Stmt> ordered_body;
     vector<Stmt> constructions;
     vector<Stmt> executable;
     for (const auto& statement : m.body) {
@@ -13746,8 +13917,11 @@ class Generator {
       else executable.push_back(statement);
     }
     std::unordered_map<string,int> domain_ranks;
-    for (const auto& instance : p_.concrete_domain_graph.instances)
+    std::unordered_map<string,string> domain_identities;
+    for (const auto& instance : p_.concrete_domain_graph.instances) {
       domain_ranks[instance.binding] = instance.domain_rank;
+      domain_identities[instance.binding] = instance.identity;
+    }
     std::stable_sort(constructions.begin(), constructions.end(),
                      [&](const Stmt& left, const Stmt& right) {
                        // A route target must exist before its owner can be
@@ -13755,11 +13929,76 @@ class Generator {
                        // to target, so construction runs in reverse rank.
                        return domain_ranks[left.a] > domain_ranks[right.a];
                      });
-    ordered_body.reserve(m.body.size());
-    ordered_body.insert(ordered_body.end(), constructions.begin(), constructions.end());
-    ordered_body.insert(ordered_body.end(), executable.begin(), executable.end());
-    gen_stmts(o, ordered_body, nullptr, nullptr, "", locals, types, 1, false, false,
-              std::nullopt, false, "main");
+    // The old cluster adapter constructs one runtime object for its members.
+    // Supply state and external routes from this same checked composition,
+    // rather than constructing clusters before their dependencies exist.
+    domain_instance_bindings_.clear();
+    ambiguous_domain_instance_bindings_.clear();
+    std::set<string> emitted;
+    while (emitted.size() < constructions.size()) {
+      bool progress = false;
+      for (const auto& construction : constructions) {
+        if (emitted.count(construction.a)) continue;
+        string domain = *CheckerSpawn(construction.b);
+        auto cluster = plan_.cluster_for(domain);
+        vector<Stmt> group;
+        if (cluster) {
+          for (const auto& member : plan_.domain_clusters[*cluster])
+            for (const auto& candidate : constructions)
+              if (CheckerSpawn(candidate.b) == std::optional<string>(member)) group.push_back(candidate);
+        } else group.push_back(construction);
+        std::set<string> group_names;
+        for (const auto& member : group) group_names.insert(member.a);
+        bool ready = true;
+        for (const auto& edge : p_.concrete_domain_graph.edges)
+          for (const auto& member : group)
+            if (edge.source_instance == domain_identities.at(member.a)) {
+              auto target = std::find_if(p_.concrete_domain_graph.instances.begin(),
+                  p_.concrete_domain_graph.instances.end(), [&](const ConcreteDomainInstance& instance) {
+                    return instance.identity == edge.target_instance;
+                  });
+              if (target == p_.concrete_domain_graph.instances.end() ||
+                  (!group_names.count(target->binding) && !emitted.count(target->binding))) ready = false;
+            }
+        if (!ready) continue;
+        if (cluster) {
+          o << "    let (";
+          for (size_t index = 0; index < group.size(); ++index) {
+            if (index) o << ", ";
+            o << cluster_spawn_binding(*cluster, *CheckerSpawn(group[index].b));
+          }
+          o << ") = spawn_moss_cluster_" << *cluster << "(__tracker.clone()";
+          for (const auto& member : group) {
+            const Domain& definition = *domains_.at(*CheckerSpawn(member.b));
+            string callee; vector<string> arguments;
+            parse_simple_call(member.b, callee, arguments);
+            std::unordered_map<string,string> bindings;
+            for (const auto& argument : arguments) {
+              string name, value;
+              if (parse_named_argument(argument, name, value)) bindings[name] = value;
+            }
+            for (const auto& route : definition.routes)
+              if (plan_.cluster_for(route.type) != cluster)
+                o << ", (" << expr(bindings.at(route.name), nullptr, locals, &types) << ").clone().into()";
+            for (const auto& field : definition.state) {
+              string value = bindings.count(field.name) ? bindings.at(field.name) : field.init;
+              o << ", " << (value.empty() ? default_value(field.type) : expr(value, nullptr, locals, &types));
+            }
+          }
+          o << ");\n";
+        }
+        size_t index = 0;
+        gen_block(o, group, index, 0, nullptr, nullptr, "", locals, types, 1,
+                  false, false, std::nullopt, false, {}, "main");
+        emitted.insert(group_names.begin(), group_names.end());
+        progress = true;
+      }
+      if (!progress)
+        throw CompileError(m.line, "legacy cluster grouping creates a construction dependency cycle; choose a DAG-compatible cluster");
+    }
+    size_t index = 0;
+    gen_block(o, executable, index, 0, nullptr, nullptr, "", locals, types, 1,
+              false, false, std::nullopt, false, {}, "main");
     o << "    __tracker.wait_zero();\n";
     o << "}\n";
     tooling_end(o, 0, semantic_identity);
@@ -14296,6 +14535,26 @@ class Generator {
           }
           string recv = (s.a == "self") ? "self_ref" : expr(s.a, d, locals, &types);
           const Handler* h = target ? find_handler(*target, s.b) : nullptr;
+          if (target && target->exported) {
+            string call = "message " + s.a + "." + s.b + "(";
+            for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              if (argument) call += ", ";
+              call += s.args[argument];
+            }
+            call += ")";
+            o << indent(level);
+            if (!s.message_result.empty()) {
+              if (!locals.count(s.message_result)) o << "let ";
+              o << s.message_result << " = ";
+            }
+            o << expr(call, d, locals, &types) << ";\n";
+            if (!s.message_result.empty()) {
+              locals.insert(s.message_result);
+              types[s.message_result] = h->reply_type.value_or("unit");
+            }
+            ++i;
+            break;
+          }
           if (const BatchedSendRegion* region = plan_.batch_at(s.line)) {
             if (!target || plan_.lowering_for(*target) != DomainLowering::Mailbox ||
                 region->target_domain != target->name || region->receiver != s.a ||
@@ -14779,7 +15038,7 @@ class Generator {
     }
     const Domain& definition = *found->second;
     bool exported = definition.exported;
-    o << "spawn_" << snake_case(domain) << (exported ? "()" : "(__tracker.clone()");
+    o << "spawn_" << snake_case(domain) << (exported ? "(" : "(__tracker.clone()");
     string constructor = trim(expression);
     if (starts_with(constructor, "spawn ")) constructor = trim(constructor.substr(6));
     string callee; vector<string> arguments;
@@ -14790,7 +15049,8 @@ class Generator {
         if (parse_named_argument(argument, name, value)) named[name] = value;
       }
     }
-    if (!exported) {
+    bool constructor_argument = !exported;
+    {
       for (const auto& route : definition.routes) {
         auto value = named.find(route.name);
         if (value == named.end())
@@ -14798,11 +15058,15 @@ class Generator {
         // The checked graph has already proved nominal route compatibility.
         // Adapt the concrete storage reference to the existing route handle;
         // never use a generated type spelling to establish compatibility.
-        o << ", (" << expr(value->second, context, locals, types) << ").clone().into()";
+        if (constructor_argument) o << ", ";
+        constructor_argument = true;
+        o << "(" << expr(value->second, context, locals, types) << ").clone().into()";
       }
       for (const auto& field : definition.state) {
         auto value = named.find(field.name);
-        o << ", " << (value == named.end()
+        if (constructor_argument) o << ", ";
+        constructor_argument = true;
+        o << (value == named.end()
             ? (field.init.empty() ? default_value(field.type)
                                   : expr(field.init, context, locals, types))
             : expr(value->second, context, locals, types));
@@ -16788,7 +17052,9 @@ static bool write_semantic_query_json(
     write_cost_result(out, program, plan, warnings, *target);
   }
   if (command == "inspect") {
-    out << ", \"concrete_domain_graph\": {\"instances\": [";
+    out << ", \"concrete_domain_graph\": {\"closed\":"
+        << (program.concrete_domain_graph.closed ? "true" : "false")
+        << ",\"instances\": [";
     for (size_t index = 0; index < program.concrete_domain_graph.instances.size(); ++index) {
       if (index) out << ",";
       const auto& instance = program.concrete_domain_graph.instances[index];
@@ -17270,6 +17536,7 @@ static void annotate_program_source(Program& program, const string& source_file)
   for (auto& domain : program.domains) {
     domain.source_file = source_file;
     for (auto& field : domain.state) field.source_file = source_file;
+    for (auto& route : domain.routes) route.source_file = source_file;
     for (auto& handler : domain.handlers) {
       handler.source_file = source_file;
       annotate_body(handler.body);
@@ -17801,7 +18068,10 @@ static string rewrite_module_expression(
     }
     size_t after = end;
     while (after < expression.size() && std::isspace(static_cast<unsigned char>(expression[after]))) ++after;
-    if ((functions.count(token) || types.count(token) ||
+    size_t before = i;
+    while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
+    bool member = before > 0 && expression[before - 1] == '.';
+    if (!member && (functions.count(token) || types.count(token) ||
          (after < expression.size() && expression[after] == '(' &&
           plain_identifier(token))) &&
         after < expression.size() && expression[after] == '(')
@@ -17876,6 +18146,7 @@ static void rewrite_module_program(
   for (auto& domain : program.domains) {
     domain.name = module_symbol(module, domain.name);
     for (auto& field : domain.state) field.type = type(field.type);
+    for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
       params(handler.params);
       if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
@@ -18260,6 +18531,32 @@ static ParsedModuleUnit load_module_interface(
       }
       continue;
     }
+    if (starts_with(line, "construction_state ") && current_domain) {
+      std::istringstream fields(line.substr(19));
+      Field field;
+      fields >> std::quoted(field.name) >> std::quoted(field.type)
+             >> std::quoted(field.init);
+      if (!fields)
+        throw CompileError(0, "invalid construction state in module interface");
+      field.source_file = file.string();
+      current_domain->state.push_back(std::move(field));
+      continue;
+    }
+    if (starts_with(line, "handler_param ") && current_domain) {
+      std::istringstream fields(line.substr(14));
+      string handler_name;
+      Param parameter;
+      fields >> std::quoted(handler_name) >> std::quoted(parameter.name)
+             >> std::quoted(parameter.type);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end())
+        throw CompileError(0, "invalid handler parameter in module interface");
+      handler->params.push_back(std::move(parameter));
+      continue;
+    }
     if (starts_with(line, "export trait ")) {
       std::istringstream header(line.substr(13));
       string name;
@@ -18455,12 +18752,15 @@ static CompiledProjectUnit analyze_project_sources(
       for (const auto& entry : modules)
         public_exports[entry.first] = module_export_names(entry.second);
       validate_module_exports(modules, public_exports);
+      // Rewriting/moving one file must not erase names needed to resolve the
+      // next file's route types. Keep the source namespace immutable.
+      const auto source_modules = modules;
       for (auto& entry : modules) {
         bool external = loaded_external_modules.count(entry.first) != 0;
         if (external) program.external_modules.insert(entry.first);
         for (auto& file : entry.second.files) {
           for (auto& import : file.first.imports) import.owner_module = entry.first;
-          rewrite_module_program(file.first, entry.first, modules, public_exports);
+          rewrite_module_program(file.first, entry.first, source_modules, public_exports);
           if (file.first.main && !external) program.main_module = entry.first;
           merge_project_program(program, std::move(file.first), file.second);
         }
@@ -18936,6 +19236,8 @@ static Program module_program(const Program& whole, const string& module) {
   result.semantic_call_edges = whole.semantic_call_edges;
   result.semantic_await_sites = whole.semantic_await_sites;
   result.semantic_await_edges = whole.semantic_await_edges;
+  result.concrete_domain_graph = whole.concrete_domain_graph;
+  result.domain_specializations = whole.domain_specializations;
   return result;
 }
 
@@ -19235,6 +19537,13 @@ static vector<std::filesystem::path> write_module_interfaces(
     interface_contents[module] << "domain " << domain.name.substr(module.size() + 2)
                                << " opaque\n";
     out << "export domain " << domain.name.substr(module.size() + 2) << " opaque\n";
+    for (const auto& field : domain.state) {
+      std::ostringstream member;
+      member << "  construction_state " << std::quoted(field.name) << " "
+             << std::quoted(field.type) << " " << std::quoted(field.init) << "\n";
+      interface_contents[module] << member.str();
+      out << member.str();
+    }
     for (const auto& route : domain.routes) {
       interface_contents[module] << "  route " << route.name << ": " << route.type << "\n";
       out << "  route " << route.name << ": " << route.type << "\n";
@@ -19243,6 +19552,13 @@ static vector<std::filesystem::path> write_module_interfaces(
       out << "  handler " << handler.name << " reply="
           << handler.reply_type.value_or("unit") << " effects="
           << interface_effects_text(handler.observable_effects) << "\n";
+      for (const auto& parameter : handler.params) {
+        std::ostringstream slot;
+        slot << "  handler_param " << std::quoted(handler.name) << " "
+             << std::quoted(parameter.name) << " " << std::quoted(parameter.type) << "\n";
+        interface_contents[module] << slot.str();
+        out << slot.str();
+      }
       for (const auto& site : program.semantic_await_sites)
         if (site.source == "handler:" + domain.name + "." + handler.name)
           out << "  await target=" << site.target_domain

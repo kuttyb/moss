@@ -2,6 +2,12 @@
 
 This is the latest implemented Moss compiler currently available. It is a dependency-free C++17 front end that validates Moss source and emits standalone Rust.
 
+Domain routing is statically closed: declare dependencies with `domainroutes`,
+bind them in the initial `main` composition prefix, and invoke them with
+synchronous `message`. Handles cannot be payloads, replies, ordinary parameters,
+or stored/aliased values. See [domain syntax](docs/LANGUAGE_SYNTAX.md#closed-routing-capabilities-phase-106b1)
+and [topology introspection](docs/AGENT_API.md#closed-concrete-domain-topology).
+
 Phase 2.5 is frozen and complete. Its mailbox, batching, direct-lock, RwLock,
 atomic, and cluster lowerings are backend choices beneath one Moss semantic
 model; later language or optimizer phases belong in separate checkpoints.

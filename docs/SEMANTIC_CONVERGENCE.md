@@ -31,6 +31,13 @@ name.
 
 ## First-order effect graph after specialization
 
+Phase 10.6B.1 closes the routing universe: a handle is only a composition binding,
+route binding, or `message` receiver. Historical examples that passed handles
+to handlers/helpers or returned them through replies are superseded by declared
+`domainroutes`. Ordinary data payload and reply-by-value semantics are unchanged.
+Each graph instance refers explicitly to its concrete specialization record and
+checked source domain declaration. No synchronization plan is derived.
+
 Moss functional callables are closed statically. A named function, a statically
 bound instance method, a placeholder expression, or a higher-order callable
 parameter is resolved at its concrete call site before its effect summary is

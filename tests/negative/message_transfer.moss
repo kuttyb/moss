@@ -6,12 +6,13 @@ domain Worker
     echo payload.text
 
 domain Sender
-  on Start(worker: Worker)
+  domainroutes(worker: Worker)
+  on Start()
     var payload = Payload(text: "detached")
     message worker.Process(payload)
     echo payload.text
 
 proc main()
   let worker = Worker()
-  let sender = Sender()
-  message sender.Start(worker)
+  let sender = Sender(worker: worker)
+  message sender.Start()

@@ -294,6 +294,41 @@ unique `domain_rank` values. Runtime state initializer expressions may still use
 values. Fine-grained ranks/classes and synchronization planning are not part of this
 phase.
 
+### Closed routing capabilities (Phase 10.6B.1)
+
+A domain handle is not an ordinary Moss value. Its only source-level roles are
+a concrete binding in `main`'s initial composition prefix, the target of a named
+`domainroutes` binding, and the receiver of `message`. Route slots cannot be
+shadowed or reassigned.
+
+Handles cannot be function/method/handler parameters, message payloads, reply
+results, ordinary state fields, aggregate/collection elements, or local aliases.
+This includes untyped helpers and nested container types. Use ordinary data for
+payloads and declare dependencies structurally:
+
+```moss
+domain Worker:
+  fn Run(value: Int) -> Int:
+    reply value + 1
+
+domain Manager:
+  domainroutes(worker: Worker)
+
+  fn Run(value: Int) -> Int:
+    reply message worker.Run(value)
+
+fn main():
+  worker = Worker()
+  manager = Manager(worker: worker)
+  result = message manager.Run(41)
+  echo result
+```
+
+Every cross-domain target is attributable to a declared concrete route edge.
+Calls from `main` use its concrete composition bindings; they do not create
+additional domain-to-domain edges. Multiple slots may target the same instance.
+Ordinary execution cannot introduce another instance or routing capability.
+
 ## Rust boundary
 
 Moss source does not expose lifetimes, borrow annotations, `Arc`, `Mutex`, `Send`,
@@ -368,8 +403,9 @@ may read fields, call READ-only helpers, and forward the value through another
 explicit `message` boundary. It may not mutate or consume the incoming value,
 move it into domain state, or reassign the incoming binding. A reply is a new
 semantic value boundary, so replying with the incoming value by value is legal.
-This restriction applies to every payload type, including primitive `Copy`
-values and domain handles. Derived replies remain ordinary newly computed data:
+This restriction applies to every ordinary payload type, including primitive
+`Copy` values. Domain handles are not payload values and cannot cross either
+boundary. Derived replies remain ordinary newly computed data:
 
 ```moss
 domain Processor:

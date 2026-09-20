@@ -9,10 +9,11 @@ domain Worker
     echo payload.value
 
 domain Sender
-  on Start(worker: Worker, envelope: Envelope)
+  domainroutes(worker: Worker)
+  on Start(envelope: Envelope)
     message worker.Process(envelope.payload)
 
 proc main()
   let worker = Worker()
-  let sender = Sender()
-  message sender.Start(worker, Envelope(payload: Payload(value: 7)))
+  let sender = Sender(worker: worker)
+  message sender.Start(Envelope(payload: Payload(value: 7)))

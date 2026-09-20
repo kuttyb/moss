@@ -83,12 +83,29 @@ Updated: 2026-09-19
   member namespace. The compiler records one `ConcreteDomainGraph`, rejects concrete
   route cycles, preserves physical source provenance, and assigns deterministic unique
   whole-program `domain_rank` values. Synchronization classes and 2PL are not implemented.
+- Phase 10.6B.1 closes the handle universe in the checker: handles only occur as
+  composition bindings, declared route bindings, and message receivers. Ordinary
+  parameters/payloads, replies, state, aggregates, aliases, reassignment, and route
+  shadowing are rejected. Every instance links directly to its canonical
+  `DomainSpecialization` record, including typed instances that reuse a layout.
+  Topology JSON exposes the closed graph, source domain, specialization, concrete
+  identity, ranks, and physical edge provenance. Historical handle-passing tests
+  are replaced with route equivalents and explicit negative regressions.
+  Module namespace qualification, constructor metadata, synchronous exported
+  bridges, and legacy cluster construction consume the same checked composition.
+  No synchronization classes, LockSet/ClassSet, class ranks, or 2PL are added.
+  Validation: strict C++17 `-O2 -Werror` build, full `make check`, `make examples`
+  (generated Rust `-D warnings`), focused handle-closure/module regressions,
+  Emacs warnings-as-errors byte compilation and 19 ERT tests, shell syntax, and
+  diff whitespace checks pass. Optional live LLDB/DAP checks are capability-skipped
+  when process tracing is unavailable; debug-map and objdump checks pass.
 
 ## Approved semantics
 
 - Assignment of a uniquely owned nontrivial local transfers ownership; later source use is an error.
 - `message` payloads and `reply` results are explicit value-copy boundaries. Existing non-primitive locals, parameters, state, and projections may cross while the sender retains an independent value.
-- Primitive values and domain references remain usable after sending.
+- Ordinary primitive values remain usable after sending. Domain handles are routing
+  capabilities and cannot be sent as payloads or used as ordinary values.
 - Hidden deep copies and copy-on-write are prohibited. Independent duplication is the explicit future `deepCopy()` operation.
 - Future ordinary procedures read parameters temporarily by default; `var` permits temporary caller-visible mutation without transfer.
 - Immutable sharing, arenas, `ref object` identity, and persistent `revise` versions are deferred because retention and leak behavior is unresolved.
@@ -646,11 +663,11 @@ Handler parameter constraints are indexed by handler and parameter slot. Multi-p
 handlers can therefore specialize as tuples such as `Set[0] -> Int, Set[1] -> Float`; only
 an incompatible constraint for the same slot is rejected.
 
-Typed domain-handle parameters remain specialized by their declared nominal domain type;
-the exact spawned instance is retained only for await-graph substitution (and, where
-needed, backend instance plumbing). Generated code uses a uniform nominal handle wrapper
-to route calls to independently materialized instance layouts. Thus one handler may receive
-multiple instances of the same domain type without splitting its source-level specialization.
+Historical typed domain-handle parameter support is superseded by Phase 10.6B.1:
+handles cannot be parameters, payloads, or reply values. Concrete composition and
+declared routes retain exact instance identity; the backend nominal route wrapper
+may still route to independently materialized layouts. That wrapper is implementation
+plumbing, not a passable Moss value.
 
 ## Phase 8
 

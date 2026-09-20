@@ -448,6 +448,21 @@ by the desired build is the supported recovery. Do not repair the generated
 `.rs` or `.mossbuild` manually.
 ## Phase 8 modules
 
+Application composition closes the domain-routing universe across the checked
+module closure. Imported route declarations are structural dependencies, not
+ordinary state or payload fields. Concrete instance/specialization links and
+unique ranks belong to the final `ConcreteDomainGraph`; final ranks are never
+written into `.mossi`. Domain handles cannot be passed or returned across an
+ordinary function or message-value boundary. Bind dependencies with
+`domainroutes` and named constructor arguments instead.
+
+The legacy cluster backend receives its state initializers and external route
+bindings from that checked composition. A requested grouping whose contraction
+creates a construction dependency cycle is rejected rather than introducing
+runtime route wiring. Implicit per-instance layouts retain the conservative
+synchronous mailbox adapter where the old backend cannot share one direct
+transport contract. Neither compatibility path changes the concrete graph.
+
 Explicit modules are checked as logical units and composed in import-DAG order.
 The Rust backend remains the materialized-code boundary; Moss does not persist
 rustc MIR. Builds emit versioned `.mossi` semantic interfaces containing public

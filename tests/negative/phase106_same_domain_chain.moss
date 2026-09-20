@@ -1,10 +1,10 @@
 domain D:
-  fn A(other: D):
+  domainroutes(other: D)
+  fn A():
     message other.B()
 
   fn B():
     echo "b"
 
-fn main():
-  d = D()
-  message d.A(d)
+# Check the declaration itself; a concrete recursive route universe would
+# already be rejected as a cycle by composition checking.

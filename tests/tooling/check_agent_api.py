@@ -21,6 +21,11 @@ compiler = pathlib.Path(sys.argv[1]).resolve()
 source = root / "tests" / "phase6_agent_api.moss"
 
 
+def source_line(text: str) -> int:
+    return next(index for index, line in enumerate(source.read_text().splitlines(), 1)
+                if line.strip().startswith(text))
+
+
 def invoke(*arguments: str, expect: int = 0) -> tuple[dict[str, object], bytes]:
     completed = subprocess.run(
         [str(compiler), *arguments],
@@ -126,7 +131,7 @@ if not effects["observable_effects"]["external_io"]:
 if effects["ownership"][0]["effect"] != "READ":
     fail("effects query conflated ownership and observable effects")
 
-statement_effects = query("effects", "line:49")
+statement_effects = query("effects", f"line:{source_line('local = value + 1')}")
 if statement_effects["target"]["construct_kind"] != "binding":
     fail("statement-effect regression did not resolve the binding target")
 if statement_effects["observable_effects"] is not None:
@@ -141,7 +146,8 @@ if not contextual_callable["observable_effects"]["external_io"]:
 if contextual_callable["enclosing_callable_effects"] is not None:
     fail("callable target incorrectly reports itself as an enclosing callable")
 
-pipeline_effects = query("effects", "main@41:expression:0", optimized=True)
+pipeline_target = f"main@{source_line('observed_count =')}:expression:0"
+pipeline_effects = query("effects", pipeline_target, optimized=True)
 if not pipeline_effects["observable_effects"]["external_io"]:
     fail("precise pipeline effect summaries changed")
 if pipeline_effects["enclosing_callable_effects"] is not None:
@@ -161,12 +167,12 @@ if awaits["awaits"]["transitive_targets"]:
 if awaits["awaits"]["domain_edges"]:
     fail("retired await analysis reported active domain edges")
 
-why = query("why", "main@41:expression:0", optimized=True)
+why = query("why", pipeline_target, optimized=True)
 explanations = "\n".join(why["explanations"])
 if "fusion stopped" not in explanations or "observable callback effect" not in explanations:
     fail("why query did not reuse functional optimization explanations")
 
-location = query("type", "line:38")
+location = query("type", f"line:{source_line('worker = Worker()')}")
 if location["target"]["construct_kind"] != "binding":
     fail("source-location query did not resolve an exact semantic target")
 

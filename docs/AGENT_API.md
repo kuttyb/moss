@@ -1,5 +1,26 @@
 # Moss Agent Semantic API
 
+## Closed concrete domain topology
+
+`moss inspect main --source app.moss --json` includes `concrete_domain_graph`,
+the same checked graph used by compilation. Each instance exposes
+`concrete_instance_id` (also `identity`), `binding`, `source_domain_id`,
+`specialization_id`, `domain_rank`, `source_file`, and `line`. Edges expose
+`source_instance`, `route`, `target_instance`, `source_file`, and `line`.
+
+Every instance links to its `domain-specialization:Domain:instance` record,
+also queryable with `inspect`. Non-generic instances have concrete records too,
+but reuse the source declaration's backend layout. Internally the graph holds
+explicit references to the specialization record and source declaration, not
+reconstructed Rust type names. Module qualification remains part of domain identity.
+
+Handles cannot cross parameters, payloads, replies, or ordinary storage.
+Consequently handler message targets are declared routes, while main targets
+are concrete composition bindings. The graph's `closed` flag is set only after
+all executable bodies pass the capability checks. Route-cycle diagnostics attach to the first
+witness binding and include each edge's physical source location. Domain ranks
+are whole-program ordinals; they are not synchronization classes or `.mossi` ABI.
+
 Phase 6 exposes compiler facts and bounded development actions through one deterministic,
 vendor-independent JSON protocol. It is a view over the analyses already used for Moss
 type, ownership, effect, domain, functional, and backend decisions; edits remain exact and

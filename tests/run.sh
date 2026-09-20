@@ -912,7 +912,8 @@ grep -F '// Moss line 20: reply Quote(symbol = "MOSS", price = 12.5)' \
   fail "named constructor did not retain its '=' source syntax"
 run_case inferred_reply_one_way tests/inferred_reply_one_way.moss 'done'
 run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
-grep -F '// Moss line 21: message client.Run(counter)' "$test_build/shared_memory_example.rs" >/dev/null ||
+shared_memory_message_line=$(awk '/^  message client.Run\(\)/ { print NR; exit }' examples/shared_memory.moss)
+grep -F "// Moss line $shared_memory_message_line: message client.Run()" "$test_build/shared_memory_example.rs" >/dev/null ||
   fail "shared-memory example omitted its Moss source-line annotation"
 grep -F '// Moss backend: MESSAGE/MAILBOX version: synchronously enqueue and complete the Moss handler' \
   "$test_build/shared_memory_example.rs" >/dev/null ||
@@ -980,7 +981,8 @@ grep -F 'total: AtomicI64' "$test_build/shared_memory_example_optimized.rs" >/de
 if grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null; then
   fail "shared-memory example retained an asynchronous Client mailbox"
 fi
-grep -F '// Moss line 14: first = message counter.Add(10)' \
+shared_memory_call_line=$(awk '/^    first = message counter.Add\(10\)/ { print NR; exit }' examples/shared_memory.moss)
+grep -F "// Moss line $shared_memory_call_line: first = message counter.Add(10)" \
   "$test_build/shared_memory_example_optimized.rs" >/dev/null ||
   fail "shared-memory optimization omitted its Moss message annotation"
 grep -F '// Moss backend: ATOMIC DOMAIN synchronous message execution' \
@@ -1485,7 +1487,7 @@ grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
   "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
 
 reject_case branch_divergent_domain_types \
-  "binding 'target' has conflicting domain types across control-flow paths: Alpha and Beta"
+  "domain handles cannot be used as ordinary values or payloads"
 reject_case branch_domain_await_cycle "await is retired: message is synchronous"
 reject_case unbounded_await_handler "await is retired: message is synchronous"
 reject_case unbounded_await_main_helper "await is retired: message is synchronous"
@@ -1550,9 +1552,9 @@ archive: widget 2 true' ] || fail "clustered object pipeline output differed"
 grep -F 'self.Archive_Store_local(revised.revisions, revised.approved)' \
   "$test_build/clustered_object_pipeline.rs" >/dev/null ||
   fail "clustered one-way call did not select synchronous local dispatch"
-grep -F 'fn Workshop_Start_local(&self, archive: ArchiveLocalRef)' \
+grep -F 'fn Workshop_Start_local(&self)' \
   "$test_build/clustered_object_pipeline.rs" >/dev/null ||
-  fail "cluster-local domain capability retained its shared representation"
+  fail "cluster-local handler retained a runtime capability parameter"
 if grep -F 'Workshop_Observe(item, (archive).clone())' \
     "$test_build/clustered_object_pipeline.rs" >/dev/null; then
   fail "cluster-local domain capability cloned a shared handle"

@@ -107,6 +107,9 @@ struct AwaitBoundary {
 struct DomainSpecialization {
   string source_domain;
   string instance;
+  // Typed instances also have an exact semantic record, but can reuse the
+  // source declaration's already-concrete backend layout.
+  bool materialized_layout = true;
   string identity() const {
     return "domain-specialization:" + source_domain + ":" + instance;
   }
@@ -192,9 +195,8 @@ struct ConcreteDomainInstance {
   string binding;
   string domain;
   string specialization;
-  // Explicit reference into Program::domain_specializations for an implicitly
-  // specialized layout. Otherwise the checked source domain is the concrete
-  // (non-generic) specialization. Neither reference is a Rust type spelling.
+  // Explicit reference into Program::domain_specializations. Populated for
+  // every checked concrete instance; never a generated Rust type spelling.
   std::optional<size_t> specialization_index;
   size_t source_domain_index = 0;
   string source_file;
@@ -211,6 +213,8 @@ struct ConcreteRouteEdge {
 struct ConcreteDomainGraph {
   vector<ConcreteDomainInstance> instances;
   vector<ConcreteRouteEdge> edges;
+  // Set only after all executable bodies pass routing-capability checks.
+  bool closed = false;
 };
 
 struct ModuleImport {

@@ -1,3 +1,4 @@
+# Static-DAG migration: aliasing a handle is now rejected before branch joins.
 domain Alpha:
   fn Ping() -> int:
     reply 1

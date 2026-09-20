@@ -1,5 +1,27 @@
 # Moss module interface and ABI
 
+Domain route declarations are structural metadata. Domain handles are not ABI
+payload values: they cannot be ordinary or handler parameters, reply results,
+state data, or aggregate elements. `.mossi` retains declared route slots and
+nominal target domains; composition binds concrete instances and their exact
+specializations in the final application. Final `domain_rank` and future
+synchronization-class facts are not module ABI properties.
+
+The interface now includes `construction_state` records (member name, type,
+default initializer) and `handler_param` records (handler, parameter name, type),
+alongside existing `route` declarations. These support the same structural
+checks after provider source is removed. Rebuild older provider interfaces when
+these records are needed; missing metadata is not permission for dynamic routing.
+Exported handlers have a synchronous generated bridge that keeps crate-private
+legacy transport types inside the provider. This is backend compatibility
+plumbing, not a new Moss calling convention for passable handles.
+With provider source available, module projection retains the application's
+authoritative per-instance specialization records. Different inferred private
+layouts are materialized in their owning provider crate; application routes use
+the generated nominal adapter without redefining source type or instance identity.
+The source-free regression covers concrete exported domains. This does not add
+a new generic-domain semantic serialization format.
+
 Moss owns semantic contracts; Rust owns materialized code and native linkage.
 The build emits normal Rust artifacts for the final program and a versioned
 `<module>.mossi` semantic interface for explicit modules. `.mossi` is metadata,

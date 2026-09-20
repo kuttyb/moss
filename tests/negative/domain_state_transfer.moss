@@ -6,15 +6,16 @@ domain Worker
     reply dataset.size
 
 domain Store
+  domainroutes(worker: Worker)
   var dataset: Dataset = Dataset(size: 3)
 
-  on Send(worker: Worker) -> int
+  on Send() -> int
     let observed = message worker.Process(dataset)
     dataset.size = 4
     reply observed * 10 + dataset.size
 
 proc main()
   let worker = Worker()
-  let store = Store()
-  let result = message store.Send(worker)
+  let store = Store(worker: worker)
+  let result = message store.Send()
   echo result
