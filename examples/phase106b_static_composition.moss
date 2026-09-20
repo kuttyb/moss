@@ -1,0 +1,24 @@
+# Phase 10.6B: route topology is declared statically, while values are runtime data.
+domain Ledger:
+  balance: Int = 10
+
+  fn Read() -> Int:
+    reply balance
+
+domain Inventory:
+  domainroutes(ledger: Ledger)
+
+  fn Available() -> Int:
+    reply message ledger.Read()
+
+domain App:
+  domainroutes(inventory: Inventory, ledger: Ledger)
+
+  fn Run() -> Int:
+    reply message inventory.Available()
+
+fn main():
+  ledger = Ledger(balance: 42)
+  inventory = Inventory(ledger: ledger)
+  app = App(inventory: inventory, ledger: ledger)
+  echo message app.Run()

@@ -27,6 +27,7 @@ fn step_probe(value: Int) -> Int:
   return second
 
 fn main():
+  counter = Counter()
   meter = Meter(value = 3)
   enabled = true
   label = "ready"
@@ -39,6 +40,5 @@ fn main():
   step_probe(1)
   echo summarize(values)
 
-  counter = Counter()
   result = message counter.Add(5)
   echo result

@@ -141,7 +141,7 @@ if not contextual_callable["observable_effects"]["external_io"]:
 if contextual_callable["enclosing_callable_effects"] is not None:
     fail("callable target incorrectly reports itself as an enclosing callable")
 
-pipeline_effects = query("effects", "main@39:expression:0", optimized=True)
+pipeline_effects = query("effects", "main@41:expression:0", optimized=True)
 if not pipeline_effects["observable_effects"]["external_io"]:
     fail("precise pipeline effect summaries changed")
 if pipeline_effects["enclosing_callable_effects"] is not None:
@@ -161,7 +161,7 @@ if awaits["awaits"]["transitive_targets"]:
 if awaits["awaits"]["domain_edges"]:
     fail("retired await analysis reported active domain edges")
 
-why = query("why", "main@39:expression:0", optimized=True)
+why = query("why", "main@41:expression:0", optimized=True)
 explanations = "\n".join(why["explanations"])
 if "fusion stopped" not in explanations or "observable callback effect" not in explanations:
     fail("why query did not reuse functional optimization explanations")

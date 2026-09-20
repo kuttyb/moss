@@ -928,6 +928,22 @@ archive: widget 2 true'
 run_case await_main tests/await_main.moss 'main: true'
 run_case main_helper_await tests/main_helper_await.moss '9'
 run_case branch_same_domain_type tests/branch_same_domain_type.moss '7'
+run_case phase106b_topology tests/phase106b_topology.moss '7'
+"$compiler" inspect main --source tests/phase106b_topology.moss --json > "$test_build/phase106b_topology.inspect.json"
+python3 - "$test_build/phase106b_topology.inspect.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    graph = json.load(stream)["result"]["concrete_domain_graph"]
+instances = {item["identity"]: item for item in graph["instances"]}
+if set(instances) != {"main::ledger", "main::inventory", "main::app"}:
+    raise SystemExit("phase106b topology introspection lost concrete instances")
+if any(item["domain_rank"] is None for item in instances.values()):
+    raise SystemExit("phase106b topology introspection omitted domain rank")
+if len(graph["edges"]) != 3:
+    raise SystemExit("phase106b topology introspection lost route edges")
+PY
 run_optimized_case branch_same_domain_type_optimized \
   tests/branch_same_domain_type.moss '7'
 run_case sequential_awaits tests/sequential_awaits.moss 'sequential: true'
@@ -1601,6 +1617,12 @@ reject_case phase106_missing_reply \
   "must reply on every normal control-flow path"
 reject_case phase106_same_domain_chain \
   "same-domain handler chaining is not allowed"
+reject_case phase106b_spawn_retired \
+  "'spawn' is retired"
+reject_case phase106b_route_cycle \
+  "concrete domain route cycle detected"
+reject_case phase106b_impure_state_initializer \
+  "domain state initializers must be side-effect-free"
 reject_case await_one_way "await is retired: message is synchronous"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
 reject_case await_unknown_receiver "await is retired: message is synchronous"

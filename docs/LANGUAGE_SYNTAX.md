@@ -272,9 +272,27 @@ bindings are immutable snapshots: they may be read or forwarded, and the origina
 incoming value may be replied by value, but it may not be written, consumed, rebound,
 or moved into state. This applies to primitive and nontrivial values alike.
 
-`spawn` is the current transitional spelling for constructing a domain instance. The
-final composition/topology syntax is deferred to a later phase; fine-grained ranks and
-synchronization classes are not part of this language slice.
+Domains are constructed directly in the initial composition prefix of `main`:
+
+```moss
+ledger = Ledger()
+app = App(ledger: ledger)
+message app.run()
+```
+
+Domain dependencies are declaration-only route slots. State fields and routes share one
+member namespace:
+
+```moss
+domain App:
+  domainroutes(ledger: Ledger)
+```
+
+`spawn` is retired and reports a migration diagnostic. Construction is statically
+enumerable from `main`; route topology is a concrete whole-program DAG with deterministic
+unique `domain_rank` values. Runtime state initializer expressions may still use ordinary
+values. Fine-grained ranks/classes and synchronization planning are not part of this
+phase.
 
 ## Rust boundary
 
@@ -348,10 +366,10 @@ checkpoint and design records. Parser limitations are not new Moss semantics.
 Every incoming handler argument is an immutable value-copy snapshot. A handler
 may read fields, call READ-only helpers, and forward the value through another
 explicit `message` boundary. It may not mutate or consume the incoming value,
-move it into domain state, reassign the incoming binding, or reply with that
-same snapshot. This restriction applies to every payload type, including
-primitive `Copy` values and domain handles. Reply with newly computed data
-instead:
+move it into domain state, or reassign the incoming binding. A reply is a new
+semantic value boundary, so replying with the incoming value by value is legal.
+This restriction applies to every payload type, including primitive `Copy`
+values and domain handles. Derived replies remain ordinary newly computed data:
 
 ```moss
 domain Processor:

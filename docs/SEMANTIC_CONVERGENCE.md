@@ -58,9 +58,8 @@ The source-level model is a statically checked synchronous domain computation:
 `message` is a blocking handler invocation, `reply` terminates a handler, and
 source-level `await` is retired. In new prose, prefer **construct a domain instance**
 or **create a domain instance**.
-`spawn` is the current source spelling and remains in executable examples and
-the legacy backend; this phase does not invent a replacement constructor
-syntax.
+`spawn` is retired from source. Domains are constructed directly in `main`'s
+initial composition prefix; `domainroutes(...)` declares immutable route slots.
 
 Mailbox, queue, worker, FIFO, and await descriptions in backend and historical
 documents describe implementation choices or an earlier phase. They are not a
@@ -70,9 +69,10 @@ they remain implemented; Fast Debug does not simulate them yet.
 For the converged source model, self-send and same-domain handler chaining are
 rejected. Common handler logic belongs in an ordinary helper function. Historical
 material that discusses queued self-transfers is retained as legacy documentation.
-Concrete domain topology and
-any domain rank (`rank_D`) are whole-program/link-time concerns, not local
-handler facts, and Phase 10.5 does not choose their lowering.
+Concrete domain topology and any domain rank (`domain_rank`) are whole-program
+concerns, not local handler facts. Phase 10.6B validates the concrete route DAG
+and assigns deterministic unique instance ordinals; synchronization classes and
+2PL remain deferred.
 
 Domain-local helper scoping belongs in the language/module design discussion,
 not in an implicit dispatch rule. Existing ordinary functions and methods keep
@@ -93,8 +93,8 @@ in ordinary helpers.
 The Rust emitter still contains an isolated mailbox/completion adapter for
 physical representations selected by the existing backend planner. It waits
 for handler completion, so it does not expose asynchronous source behavior.
-`spawn` remains transitional construction syntax. Domain topology, ranks,
-compiler-derived synchronization classes/2PL, supervision, and Fast Debug
+Direct construction and route topology are now checked by the Phase 10.6B
+composition pass. Compiler-derived synchronization classes/2PL, supervision, and Fast Debug
 domain execution remain deferred to later phases.
 
 ## Account synchronization derivation (documentation vocabulary)

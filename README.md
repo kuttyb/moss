@@ -371,7 +371,8 @@ deriving a returned new value.
   queries over existing compiler facts
 - Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
 - Colon-style `type Name:` declarations with statically inferred field types
-- construction of domain instances from `main` (the current source spelling is `spawn`)
+- direct construction of statically enumerable domain instances in `main`'s composition prefix
+- declaration-only `domainroutes(...)` slots and a concrete DAG with deterministic `domain_rank`
 - Primitive and object value payloads
 - `let`, `var`, `if`/`else`, `while`, `echo`, and bare `return`
 - Nim-style `and`, `or`, `not`, `true`, and `false`
@@ -436,9 +437,11 @@ may complete normally. Incoming payloads are immutable snapshots: handlers may r
 forward them and may reply with the incoming value by value, but may not mutate,
 consume, reassign, or move them into state. `Copy` does not weaken this rule.
 
-The current `spawn` spelling for constructing a domain instance is transitional.
-Mailboxes, queues, workers, and OS threads remain backend implementation details, not
-asynchronous source semantics.
+`spawn` is retired. Construct domains directly in the initial `main` composition prefix;
+the compiler rejects construction in later execution, control flow, helpers, or handlers.
+`domainroutes(...)` declares immutable route slots, and state fields/routes share one
+member namespace. The compiler validates a concrete acyclic routing graph and assigns
+whole-program ranks; synchronization classes and 2PL remain future phases.
 
 ## Shared-memory message transport
 

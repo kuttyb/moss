@@ -71,6 +71,9 @@ domain Metrics:
     reply total_score
 
 fn main():
+  scheduler = Scheduler()
+  metrics = Metrics()
+
   # A Vector of BuildJob values is inferred from the constructors and indexing.
   builds = [BuildJob(id = 101, units = 8, urgency = 4), BuildJob(id = 102, units = 5, urgency = 2)]
   lead = builds[0]
@@ -98,9 +101,6 @@ fn main():
   pending = Queue()
   pending.push(BuildJob(id = 103, units = 3, urgency = 6))
   pending.push(BuildJob(id = 104, units = 2, urgency = 1))
-
-  scheduler = Scheduler()
-  metrics = Metrics()
 
   first_position = message scheduler.Submit(build_code, scores["build"])
   second_position = message scheduler.Submit(maintenance_code, scores["maintenance"])

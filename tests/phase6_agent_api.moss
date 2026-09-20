@@ -35,12 +35,12 @@ domain Router:
     reply value
 
 proc main():
+  worker = Worker()
+  router = Router()
   values = [1, 2, 3]
   observed_count = values |> map(noisy) |> count
   sample = Sample(value: 7)
   observed = inspect(sample)
-  worker = Worker()
-  router = Router()
   direct = wait_for(worker)
   routed = message router.Route(worker)
   echo observed_count, observed, direct, routed

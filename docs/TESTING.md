@@ -66,6 +66,12 @@ Ordinary `moss build` and `moss build --release` do not include test files or
 generate a test harness. Test declarations are included only when `moss test`
 builds its combined target under `build/test/`.
 
+When a project test constructs or calls domains, it uses the same temporary
+static-composition model as the application target. Domain instances must be
+constructed in the application's `main` composition prefix; test files add test
+declarations to the `src/**/*.moss + tests/**/*.moss` logical compilation unit,
+but do not create a second domain universe.
+
 ## Assertions
 
 Moss reserves `assert` and `assertEqual` for test assertions. User functions

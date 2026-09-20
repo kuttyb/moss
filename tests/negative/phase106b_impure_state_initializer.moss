@@ -1,0 +1,11 @@
+domain Worker:
+  fn Value() -> Int:
+    reply 1
+
+domain Cache:
+  value: Int
+
+proc main():
+  worker = Worker()
+  cache = Cache(value: message worker.Value())
+  echo cache

@@ -26,10 +26,16 @@ For concrete exports it records:
 Exported domain handlers also retain the message-payload contract: every
 incoming payload parameter has READ-only capability. It may be inspected or
 forwarded through another explicit message, but cannot be mutated, consumed,
-reassigned, stored by move, or returned as the original snapshot, regardless of
-whether its concrete type is `Copy`. This contract
+reassigned, or stored by move. A reply is a new semantic value boundary, so
+replying the incoming value by value is legal regardless of whether its
+concrete type is `Copy`. This contract
 is preserved when a module is specialized and is independent of whether the
 final backend uses a mailbox or a synchronous shared-memory reference.
+
+Exported domains may also carry structural `route name: Domain` declarations
+from `domainroutes(...)`. These describe route edges for final application
+composition but never carry a whole-program `domain_rank`; ranks are assigned
+only after `main` constructs the concrete graph.
 
 For generic exports it records the semantic body hash, open parameter positions,
 inferred structural requirements, and dependencies needed for specialization.
@@ -46,8 +52,9 @@ not to the semantic `ModuleId`. A changed Rust compiler/toolchain fingerprint
 rebuilds materialized artifacts; Moss does not promise a stable binary ABI
 across arbitrary rustc versions.
 
-Await metadata uses exact statically declared domain-instance identities. Two
-bindings created by `spawn Worker()` are separate nodes. The final composed
+Legacy await metadata uses exact statically declared domain-instance identities.
+Two bindings created by the retired `spawn Worker()` spelling were separate
+nodes. The final composed
 program unions those edges and runs the existing DFS; domain type names are
 never used as instance identity.
 

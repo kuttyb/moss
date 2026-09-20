@@ -150,6 +150,27 @@ edits against a `src` file analyze all application sources, while queries agains
 `tests` or `benches` analyze the corresponding source plus that target directory.
 This temporary linkage is not an import/module system.
 
+### Static domain composition (temporary)
+
+Domain instances are constructed directly in the initial composition prefix of
+`main`; `spawn` is retired. Domains declare immutable outbound route slots with
+`domainroutes(...)`, and route names share the domain's member namespace with
+state fields:
+
+```moss
+ledger = Ledger()
+inventory = Inventory(ledger: ledger)
+app = App(inventory: inventory, ledger: ledger)
+message app.run()
+```
+
+The compiler builds one concrete whole-program route graph, rejects concrete
+cycles, and assigns deterministic unique `domain_rank` ordinals. Runtime state
+initializer values do not alter this topology. Construction in ordinary control
+flow, helpers, handlers, or after the prefix is rejected. This is project
+composition metadata, not new module/import syntax; synchronization classes and
+2PL remain deferred.
+
 For example:
 
 ```text
@@ -393,8 +414,9 @@ shape.
 ### Message payload lowering
 
 Incoming domain payloads are immutable Moss value snapshots, including
-primitive values and domain handles; handlers cannot reassign or reply with
-the original binding. Mailbox-backed targets retain an owned copy in the queued
+primitive values and domain handles; handlers cannot reassign the binding, and
+replying with the incoming value is a new legal value boundary. Mailbox-backed
+targets retain an owned copy in the queued
 message. When the planner proves a
 synchronous DirectMutex, DirectRwLock, DirectAtomic, or cluster-local call,
 nontrivial READ-only payloads are passed as temporary immutable references in

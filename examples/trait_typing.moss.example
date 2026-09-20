@@ -16,5 +16,7 @@ domain Metrics:
     echo "metric:", value
 
 fn main():
-  metrics = spawn Metrics()
+  # Domain construction is shown directly; this illustrative file is not
+  # included in the executable examples target.
+  metrics = Metrics()
   message metrics.Record(3)

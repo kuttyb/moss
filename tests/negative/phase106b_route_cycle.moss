@@ -1,0 +1,14 @@
+domain A:
+  domainroutes(next: B)
+  fn Run():
+    message next.Run()
+
+domain B:
+  domainroutes(next: A)
+  fn Run():
+    message next.Run()
+
+fn main():
+  a = A(next: b)
+  b = B(next: a)
+  message a.Run()

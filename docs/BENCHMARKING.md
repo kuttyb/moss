@@ -88,6 +88,13 @@ Benchmark declarations and their generated harness do not enter an ordinary
 `moss build` or `moss build --release` application artifact. Benchmark-specific
 artifacts live under `build/bench/`.
 
+Domain topology is likewise taken from the application's static composition
+prefix. Benchmark files can call application declarations because the target is
+one logical uber-module, but a benchmark does not dynamically create or rewire
+domain instances. The concrete route graph and its deterministic application
+`domain_rank` values are built from the application composition; synchronization
+planning is a later compiler phase.
+
 ## Running benchmarks
 
 Run every discovered benchmark:

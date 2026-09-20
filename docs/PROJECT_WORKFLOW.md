@@ -136,6 +136,36 @@ context; expression and argument edits are rechecked across the complete context
 before any file is committed. A standalone `.moss` file outside a project remains a
 single-file compilation unit.
 
+### Static domain composition (temporary model)
+
+Moss does not yet have `module`/`import` syntax for domain wiring. Until that
+design exists, domain instances are constructed directly in the initial
+composition prefix of `main`:
+
+```moss
+proc main():
+  ledger = Ledger(balance: 100)
+  inventory = Inventory(ledger: ledger)
+  app = App(inventory: inventory, ledger: ledger)
+
+  message app.run()
+```
+
+Each domain declares its immutable outbound route slots with a declaration-only
+`domainroutes(...)` block. The compiler combines those bindings into one
+whole-program concrete route graph. Construction must be a statically enumerable
+top-level prefix: it may not occur in a branch, loop, handler, helper, collection,
+or after ordinary execution has begun. Initializer expressions may compute runtime
+state values, but they may not create domains or perform observable domain work.
+
+The graph uses concrete instance identities, not merely domain types. It must be
+acyclic, and every instance receives a deterministic unique `domain_rank` in the
+final application composition. Ranks are compiler metadata for this application;
+they are not part of a reusable domain type or `.mossi` interface. Fine-grained
+synchronization classes and lock planning are not implemented by this temporary
+model. The old `spawn` spelling is retired in active source and is retained only
+in historical documentation/backend compatibility code.
+
 ## Everyday workflow
 
 From anywhere inside the project:

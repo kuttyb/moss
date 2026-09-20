@@ -77,6 +77,12 @@ Updated: 2026-09-19
   and may be replied by value, but cannot be written or consumed. Self-send and
   same-domain handler chaining are rejected. Transitional `spawn` construction and
   legacy mailbox transport adapters remain until the topology/synchronization stages.
+- Phase 10.6B establishes static composition and concrete topology. `spawn` is retired;
+  direct domain constructors are restricted to the initial `main` composition prefix,
+  and `domainroutes(...)` declarations provide immutable route slots in the shared domain
+  member namespace. The compiler records one `ConcreteDomainGraph`, rejects concrete
+  route cycles, preserves physical source provenance, and assigns deterministic unique
+  whole-program `domain_rank` values. Synchronization classes and 2PL are not implemented.
 
 ## Approved semantics
 
@@ -257,7 +263,7 @@ Updated: 2026-09-19
 - Julia-like domain state bindings (`value = initializer`) with optional `value: Type`
   constraints, statically inferred handler reply types, and `=`-named object constructors.
 - Primitive, object, domain-reference, `seq`, `option`, and `table` types in the implemented slice.
-- Transitional domain construction from `main` via `spawn`; one OS thread and serialized lock-backed shared-memory mailbox adapter per unclustered domain in generated Rust.
+- Direct composition-prefix domain construction and `domainroutes(...)`; one OS thread and serialized lock-backed shared-memory mailbox adapter per unclustered domain in generated Rust.
 - Generated `Mutex<VecDeque<_>>`/`Condvar` request and reply transport with explicit Rust `Send` assertions and no `std::sync::mpsc` use.
 - `--cluster=A,B` static placement for single-instance domain types, with one shared worker and ingress mailbox per cluster.
 - Statically selected `_shared` cross-thread calls and `_local` same-cluster calls. Cluster-member capabilities use zero-sized local reference types; local awaits dispatch directly and local one-way calls use a single-threaded queue without synchronization.
