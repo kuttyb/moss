@@ -94,3 +94,9 @@ participate in semantic interface hashing and let source-free `.mossi` consumers
 derive the same graph-relative synchronization plan. Missing records fail closed
 with a request to rebuild the provider. They do not export synchronization classes,
 class ranks, or lock-layout ABI. See [SynchronizationPlan](SYNCHRONIZATION_PLAN.md).
+
+Concrete exported helpers similarly carry `parameter_leaf_effects` records.
+They preserve formal READ/WRITE/CONSUME paths for substitution onto a caller's
+state even when only the helper's compiled interface remains. Missing helper
+records also require rebuilding the provider; an absent body is not proof of
+an empty effect. These records participate in the semantic interface hash.

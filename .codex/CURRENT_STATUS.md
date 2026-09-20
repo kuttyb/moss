@@ -1,6 +1,41 @@
 # Moss current status
 
-Updated: 2026-09-19
+Updated: 2026-09-20
+
+## Phase 10.6C resumed-session handoff
+
+The `486eba4` snapshot contains the synchronization-plan implementation resumed
+after an interrupted session. The compiler derives leaf READ/WRITE/CONSUME
+observations, X*, ProtectedRead, leaf LockSets, equal-signature synchronization
+classes, local class ranks, handler ClassSets, and conflict witnesses from the
+closed graph's exact specializations. JSON and human dumps consume the stored
+plan. No production class-lock storage, acquisitions, or handler-level 2PL is
+emitted; those remain Phase 10.6D.
+
+This closeout preserves inferred primitive-parameter WRITE effects instead of
+downgrading them based on backend Copy representation. Compiled helper interfaces
+carry formal leaf effects, alongside handler-state records; missing records fail
+closed with a provider-rebuild diagnostic. Tests cover source/source-free effects,
+exact specialized object leaves, captures, class splitting, and primitive WRITE.
+
+Final validation passed after rebuilding with C++17 `-O2 -Wall -Wextra
+-pedantic -Werror`: full `make check`, `make examples` with generated Rust
+warnings denied, focused Python/C++ synchronization tests, all 19 Emacs ERT
+tests, warnings-as-errors Emacs byte compilation, shell syntax, and diff checks.
+Account generated Rust is byte-identical to B.1 in both `-O0` and
+`-Oshared-memory`. Optional live LLDB/DAP tests were capability-skipped because
+process tracing is unavailable; debug-map and objdump tests passed.
+No validation remains pending for this closeout. Session logs live under
+repository `tmp/` and are disposable; the outcome is recorded here durably.
+
+Known pre-existing backend limitation, reproduced using commit `d451d8a`:
+an exported concrete function in a module calling that same module's exported
+generic can reference a missing `__moss_specialize_*` symbol in its Rust crate.
+Minimal shape: exported generic `bump(value): return value`, called from exported
+concrete `append(values: Vector[Int])`. This is not introduced by synchronization
+planning. The source-free leaf-effect fixture uses concrete helpers to test its
+intended contract; provider-native generic specialization linkage needs separate
+backend work. Ordinary/generic semantic-effect tests remain enabled.
 
 ## Version and commits
 

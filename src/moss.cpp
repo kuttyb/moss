@@ -4038,17 +4038,16 @@ class Checker {
         string root = leaf.substr(0, dot);
         auto actual = substitutions.find(root);
         synchronization_require(actual != substitutions.end(), "unbound formal effect");
-        // Primitive arguments are copied into ordinary callees; writes to the
-        // callee's local parameter do not mutate the caller's primitive value.
-        Effect projected = effect;
-        if (root != "self" && copy_type(capture.roots.at(root))) projected = Effect::Read;
+        // Preserve semantic effects independently of backend representation.
+        // In particular, a primitive parameter's inferred WRITE must not be
+        // silently weakened because the current emitter passes it by value.
         string expression = actual->second;
         if (dot != string::npos) expression = "(" + expression + ")" + leaf.substr(dot);
         if (auto location = storage_location(expression, caller_env))
-          observe_leaf_access(*location, projected);
+          observe_leaf_access(*location, effect);
         else
           analyze_effect_expression(expression, caller_env, caller_params, caller_effects,
-                                    caller_receiver, caller_fields, projected);
+                                    caller_receiver, caller_fields, effect);
       }
     };
     project(capture.effects.reads, Effect::Read);

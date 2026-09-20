@@ -29,6 +29,10 @@ Repeated observations may put a leaf in several of these sets. Normalization is
 separate: `CONSUME > WRITE > READ > NONE`. Ownership still distinguishes WRITE
 from CONSUME. For synchronization, READ maps to SHARED and both WRITE and CONSUME
 map to EXCLUSIVE; absence maps to NONE.
+Projection through helpers retains inferred semantic effects for primitive
+parameters too. Planning never weakens WRITE to READ based on a Rust Copy or
+by-value representation. It does not change ordinary parameter assignment or
+implement write-through lowering.
 
 For each concrete domain:
 
@@ -102,6 +106,44 @@ Existing ownership rules reject consuming domain-owned state. The C++ plan-layer
 regression therefore supplies semantic WRITE and CONSUME observations directly
 to prove they remain distinct while producing identical EXCLUSIVE signatures;
 no source ownership exception is introduced for this test.
+
+## Account derivation
+
+The executable fixture is [`tests/phase106c_account.moss`](../tests/phase106c_account.moss).
+Its leaf sets are:
+
+| Handler | R | W | C |
+| --- | --- | --- | --- |
+| `read_config` | config_value | empty | empty |
+| `read_stats` | stats | empty | empty |
+| `record_fill` | balance, config_value, risk_limit, stats | balance, stats | empty |
+| `rename` | empty | display_name | empty |
+| `set_risk_limit` | empty | risk_limit | empty |
+
+Here `X* = {balance, display_name, risk_limit, stats}`. `config_value` is read
+but never written, so it contributes no ProtectedRead, LockSet, or class.
+`record_fill` has ProtectedRead `{balance, risk_limit, stats}` and the same
+leaf LockSet; WRITE dominates READ on balance and stats. Its synchronization
+signature is EXCLUSIVE for those two leaves and SHARED for risk_limit.
+
+In handler order `read_config, read_stats, record_fill, rename, set_risk_limit`,
+the complete class signatures are (`-` = NONE, `S` = SHARED, `X` = EXCLUSIVE):
+
+| Class rank | Member | Signature |
+| --- | --- | --- |
+| 0 | balance | `-, -, X, -, -` |
+| 1 | display_name | `-, -, -, X, -` |
+| 2 | risk_limit | `-, -, S, -, X` |
+| 3 | stats | `-, S, X, -, -` |
+
+Thus `record_fill` needs classes 0, 2, and 3; `rename` needs only class 1.
+They are disjoint. `read_stats` conflicts with `record_fill` on class 3 but
+not with itself. The test asserts these signatures against compiler JSON.
+
+Captured pipeline reads follow the same rule. In the regression
+`values |> map(_ + offset)`, both `values` and `offset` are READ. A handler
+writes `values`, so only that aggregate belongs to X*; the immutable `offset`
+capture does not become ProtectedRead merely because a callback reads it.
 
 ## Future graph contexts and traits
 

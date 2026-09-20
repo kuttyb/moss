@@ -122,10 +122,11 @@ exact matching specialization. `inspect` and `calls` additionally expose `caller
 from the same retained static call graph. No field is inferred from generated symbol
 spelling.
 
-The schema response reserves `synchronization_diagnostics` with fields for future class
-counts, roots, handlers, conflicting/disjoint pairs, and collapse culprit fields. Its
-current availability is `schema_reserved_not_derived`; the compiler does not fabricate
-lock or synchronization facts before that design is settled.
+The Phase 10.5 synchronization schema reservation is superseded by Phase 10.6C.
+`synchronization_diagnostics.availability` is now `derived`: graph-relative
+classes, handler footprints, conflict witnesses, and metrics come from the stored
+`SynchronizationPlan`. These are analysis facts, not a claim that production
+class locks or handler-level 2PL have been emitted.
 
 Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`; Moss
 does not guess a nearby semantic entity or invent a dynamic target.

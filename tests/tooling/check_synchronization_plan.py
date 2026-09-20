@@ -80,6 +80,18 @@ assert "Conflict read_stats / record_fill" in account["synchronization_dump"]
 
 with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
     root = Path(temporary)
+    source = root / "primitive_effect.moss"
+    source.write_text(
+        "fn change(value: Int):\n  value = value + 1\n\n"
+        "domain Data:\n  counter: Int\n  fn Update():\n    change(counter)\n\n"
+        "fn main():\n  data = Data(counter: 0)\n  message data.Update()\n")
+    primitive = inspect(source)["synchronization_plan"]["domains"][0]
+    assert handlers(primitive)["Update"]["write_set"] == ["counter"]
+    # Planning preserves inferred WRITE, without deciding write-through
+    # semantics or changing the production calling convention.
+    effect = json.loads(invoke("effects", "change", "--source", source, "--json").stdout)
+    assert "WRITE" in json.dumps(effect)
+
     source = root / "sharing.moss"
     base = ("domain Pair:\n  x: Int\n  y: Int\n"
             "  fn Update():\n    x = x + 1\n    y = y + 1\n"
@@ -154,7 +166,9 @@ with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
     (project / "src").mkdir(parents=True)
     (project / "moss.toml").write_text('[project]\nname = "sync"\nversion = "0.1.0"\n')
     helper = project / "src/helper.moss"
-    helper.write_text("module helper\nexport fn bump(value):\n  return value\n\nexport fn append(values: Vector[Int]) -> Int:\n  first = values[0]\n  values[0] = bump(first) + 1\n  return 0\n")
+    # Concrete helper contracts are the subject here. Provider-native calls to
+    # exported generics require a separate existing backend linkage fix.
+    helper.write_text("module helper\nexport fn bump(value: Int) -> Int:\n  return value\n\nexport fn append(values: Vector[Int]) -> Int:\n  first = values[0]\n  values[0] = bump(first) + 1\n  return 0\n")
     provider = project / "src/provider.moss"
     provider.write_text(
         "module provider\nimport helper\nexport domain Data:\n  values: Vector[Int]\n  config: Int\n"
@@ -178,6 +192,15 @@ with tempfile.TemporaryDirectory(prefix="moss-sync-plan-") as temporary:
     mixed = inspect(application, project)["synchronization_plan"]["domains"][0]
     for key in ("protected_mutable_leaves", "sync_classes", "handlers"):
         assert before[key] == mixed[key], (key, before[key], mixed[key])
+    helper_interface = project / "build/debug/helper.mossi"
+    helper_contents = helper_interface.read_text()
+    assert "parameter_leaf_effects" in helper_contents
+    helper_interface.write_text("\n".join(line for line in helper_contents.splitlines()
+                                           if "parameter_leaf_effects" not in line) + "\n")
+    missing_helper = invoke("inspect", "main", "--source", application, "--json",
+                            cwd=project, success=False)
+    assert "rebuild" in missing_helper.stdout + missing_helper.stderr
+    helper_interface.write_text(helper_contents)
     provider.rename(provider.with_suffix(".hidden"))
     after = inspect(application, project)["synchronization_plan"]["domains"][0]
     for key in ("protected_mutable_leaves", "sync_classes", "handlers", "leaf_to_class"):
