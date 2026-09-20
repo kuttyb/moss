@@ -239,7 +239,7 @@ A passing filtered result has this shape (absolute paths vary):
 {
   "protocol_version": 1,
   "schema_version": "moss-agent-1",
-  "compiler_version": "0.2.0",
+  "compiler_version": "0.1.0",
   "command": "test",
   "ok": true,
   "result": {
@@ -331,3 +331,12 @@ are deleted; retired source syntax remains covered by negative migration tests.
 
 The [retirement audit](LEGACY_RUNTIME_AUDIT.md) records deleted fixtures,
 remaining historical terms, and the production/interpreter boundary.
+
+## v0.1 closure checks
+
+`check_phase106f.py` checks metric/matrix consistency, partition explanations,
+repeatable plans and generated Rust, an expanded compiled/interpreted corpus,
+bounded semantic trace records, the clean four-module ledger project, and its
+source-free model provider. It compiles/runs tiny benchmark and optional physical
+instrumentation harnesses without timing gates. Full measurement is opt-in through
+`benchmarks/synchronization/`; results are recorded in `PERFORMANCE_10_6F.md`.

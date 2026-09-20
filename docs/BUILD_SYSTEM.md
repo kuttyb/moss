@@ -361,7 +361,7 @@ paths, compiler identity, and fingerprint depend on the system:
 {
   "protocol_version": 1,
   "schema_version": "moss-agent-1",
-  "compiler_version": "0.2.0",
+  "compiler_version": "0.1.0",
   "command": "build",
   "ok": true,
   "result": {
@@ -398,7 +398,7 @@ example.
 {
   "protocol_version": 1,
   "schema_version": "moss-agent-1",
-  "compiler_version": "0.2.0",
+  "compiler_version": "0.1.0",
   "command": "clean",
   "ok": true,
   "result": {
@@ -462,3 +462,7 @@ rustc MIR. Builds emit versioned `.mossi` semantic interfaces containing public
 signatures, ownership/effect contracts, static route declarations, and generic semantic artifacts.
 Optimization and the Rust toolchain fingerprint affect native artifact caches,
 not semantic module identity.
+
+The v0.1 native backend retains the provider filename `lib<module>.rlib` and also
+writes rustc's crate-name alias `libmoss_<module>.rlib` for transitive dependency
+discovery. These are build artifacts, not a new Moss import/package contract.

@@ -450,7 +450,7 @@ versioned `moss-agent-1` envelope:
 {
   "protocol_version": 1,
   "schema_version": "moss-agent-1",
-  "compiler_version": "0.2.0",
+  "compiler_version": "0.1.0",
   "command": "test",
   "ok": true,
   "result": {}

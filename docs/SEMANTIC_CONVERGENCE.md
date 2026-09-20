@@ -1,4 +1,4 @@
-# Semantic convergence and AI introspection through Phase 10.6E
+# Semantic convergence and AI introspection through Phase 10.6F
 
 This document records the current, implementation-backed semantic model and
 the facts exposed to tools and agents. It is a convergence document, not a new
@@ -135,3 +135,8 @@ in 10.6E. Fast Debug deliberately does not simulate physical locks.
 Production synchronization decisions were resolved in 10.6A–C and implemented
 in 10.6D; backend test hooks report planned lock acquisitions and releases.
 The earlier “blocked by open design” status is historical.
+
+Phase 10.6F closes Phase 10 as [Moss v0.1](V0_1.md), adding stored-plan diagnostic
+views and measured performance validation while preserving this language model.
+The next milestone is Phase 15 Dogfooding, followed by Phases 20–22 as described
+in the v0.1 roadmap.

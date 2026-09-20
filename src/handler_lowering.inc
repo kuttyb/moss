@@ -108,7 +108,7 @@
       o << "    " << field.name << ": " << physical_view_type(field.type) << ",\n";
       physical_leaves(field.name, field.type, leaves);
     }
-    for (const auto& route : d.routes) o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
+    for (const auto& route : d.routes) o << "    " << route.name << ": &'a " << rust_type(route.type) << ",\n";
     o << "    __lifetime: std::marker::PhantomData<&'a ()>,\n}\nenum " << d.name << "Leaf {\n";
     for (size_t index = 0; index < leaves.size(); ++index)
       o << "    L" << index << "(" << rust_type(leaves[index].second) << "),\n";
@@ -132,7 +132,7 @@
         << "        let mut state = " << d.name << "State {\n";
       for (const auto& field : d.state)
         o << "            " << field.name << ": " << physical_working_value(field.name, field.type, d.name, leaves) << ",\n";
-      for (const auto& route : d.routes) o << "            " << route.name << ": self." << route.name << ".clone(),\n";
+      for (const auto& route : d.routes) o << "            " << route.name << ": &self." << route.name << ",\n";
       o << "            __lifetime: std::marker::PhantomData,\n        };\n        let result = self." << h.name << "_body(&mut state";
       for (const auto& p : h.params) o << ", " << p.name;
       o << ");\n";
@@ -151,7 +151,7 @@
       o << "    fn " << h.name << "_body(&self, state: &mut " << d.name << "State<'_>";
       for (const auto& p : h.params)
         o << ", " << p.name << ": " << rust_type(p.type);
-      o << ") -> " << ret << " {\n        let self_ref = self.clone();\n";
+      o << ") -> " << ret << " {\n        let self_ref = self;\n";
       if (h.reply_type) o << "        let mut " << result << ": " << ret << " = None;\n";
       o << "        " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
       std::set<string> locals{"self_ref", result};

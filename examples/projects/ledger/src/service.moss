@@ -1,0 +1,11 @@
+module service
+import accounts
+import model
+
+export domain Checkout:
+  domainroutes(ledger: accounts.Ledger, journal: accounts.Journal)
+  fn Submit(order: model.Order) -> Int:
+    amount = model.quote(order)
+    balance = message ledger.Credit(order)
+    message journal.Record(amount)
+    reply balance

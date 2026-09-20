@@ -1,0 +1,14 @@
+module app
+import model
+import accounts
+import service
+
+fn main():
+  checkout = service.Checkout(ledger: ledger, journal: journal)
+  ledger = accounts.Ledger(balance: 100)
+  journal = accounts.Journal(count: 0, last: 0)
+  first = model.make_order(12, 3)
+  second = model.make_order(7, 2)
+  echo message checkout.Submit(first)
+  echo message checkout.Submit(second)
+  echo message ledger.Balance(), message journal.Count(), message journal.Last()

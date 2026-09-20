@@ -49,7 +49,7 @@ All agent commands use this top-level envelope:
 {
   "protocol_version": 1,
   "schema_version": "moss-agent-1",
-  "compiler_version": "0.2.0",
+  "compiler_version": "0.1.0",
   "command": "effects",
   "ok": true,
   "result": {}
@@ -234,7 +234,7 @@ identities. Impact snapshots retain concrete route dependencies. `moss impact` c
 semantic dependencies and invalidates generic users when their semantic body
 hash changes.
 
-## Derived synchronization diagnostics (Phase 10.6C)
+## Derived synchronization diagnostics (Phases 10.6C/F)
 
 `inspect`, `effects`, and `why` include `synchronization_plan` and
 `synchronization_dump`. Both project the checked program's authoritative plan,
@@ -256,3 +256,10 @@ handler entry/exit, state READ/WRITE/CONSUME, and terminating replies with stabl
 instance/specialization/source identities. Fast Debug uses one deterministic
 logical schedule; production lock events and contention remain separate runtime
 validation concerns. See [Fast Debug](FAST_DEBUG.md).
+
+The v0.1 diagnostic projection additionally exposes `handler_order`,
+`conflict_matrix`, `class_opportunities`, and `class_splits`. Summary metrics include
+state/protected leaves, classes, compression, handler acquisition counts, read-only
+and self-conflicting handlers, and distinct-pair concurrency opportunities.
+See [field meanings](SYNCHRONIZATION_PLAN.md#v01-diagnostic-projections-106f); these
+are views of stored facts, not a second effect or synchronization analysis.

@@ -1,0 +1,18 @@
+module model
+
+# Structural conformance: Order never declares an implements relationship.
+export trait Priced:
+  fn amount() -> Int
+
+export type Order:
+  price: Int
+  quantity: Int
+  fn amount() -> Int:
+    return price * quantity
+
+export fn quote(value: Order) -> Int:
+  return value.amount()
+
+
+export fn make_order(price: Int, quantity: Int) -> Order:
+  return Order(price: price, quantity: quantity)

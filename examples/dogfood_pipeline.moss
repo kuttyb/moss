@@ -1,0 +1,11 @@
+# Production data-cleaning seed. Fast Debug functional traversal is deferred.
+type Reading:
+  value: Int
+  fn adjusted() -> Int:
+    return value * 2
+
+fn main():
+  samples = [3, -1, 8, 0, 12]
+  total = samples |> filter(_ > 0) |> map(_ * 2) |> sum
+  accepted = samples |> filter(_ > 0) |> count
+  echo total, accepted

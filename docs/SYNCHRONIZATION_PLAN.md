@@ -343,5 +343,34 @@ Moss source → checker / specialization / effects → ConcreteDomainGraph
 Production entry may be invoked concurrently. Fast Debug executes one
 deterministic schedule, without lock simulation or concurrency exploration.
 Both preserve the checked value boundaries, exact routes, and terminating reply.
-Phase 10.6F remains for diagnostics, storage/layout, and quantitative performance
-validation; it does not imply permission to change synchronization semantics.
+Phase 10.6F adds diagnostics and quantitative validation without changing
+synchronization semantics; see [the measured report](PERFORMANCE_10_6F.md).
+
+## v0.1 diagnostic projections (10.6F)
+
+Existing `inspect`, `effects`, and `why` output adds deterministic summary metrics
+and explanations derived solely from the stored plan. Domain metrics count state
+leaves, protected leaves, classes, handlers, read-only handlers, self-conflicting
+handlers, unordered distinct handler pairs, conflicting/non-conflicting pairs, and
+the percentage non-conflicting. `class_compression_ratio = classes / |X*|` is a
+diagnostic only. Empty-denominator ratios are `null` (`n/a` in text). Read-only
+means no domain-state WRITE/CONSUME; it does not imply absence of I/O or messages.
+
+Per-handler fields count exact ClassSet size and SHARED/EXCLUSIVE acquisitions.
+`handler_order` indexes a symmetric boolean `conflict_matrix`, including diagonal
+self-conflicts. Existing `conflicts` records retain specific class/member-leaf
+witnesses. Pair summary counts exclude the diagonal.
+
+`class_opportunities` lists member count, reader/writer identities, and shared/shared
+pairs per class. Such pairs can still conflict on another class; the domain-level
+`shared_reader_pairs` count excludes those conflicts. `class_splits` gives the first
+deterministic handler whose modes distinguish each class pair. Members collapse
+into one class precisely because their complete stored mode signatures match.
+Neither sharing nor splitting is automatically a performance problem. The text
+dump includes summary counts, signatures, acquisitions, and split witnesses.
+
+Optional `moss_perf` Rust instrumentation and `MOSS_PROFILE_COMPILER` developer
+timing are documented in the [benchmark guide](../benchmarks/synchronization/README.md).
+They are off by default, do not enter `.mossi`, and do not define language behavior.
+Private handler working-state route fields now borrow their runtime handles; this
+removes measured redundant Arc clones without changing value boundaries or locks.

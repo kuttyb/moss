@@ -1,0 +1,109 @@
+# Production wrappers are invoked concurrently by the Rust benchmark harness.
+# There is no Moss concurrency-ingress syntax in this benchmark.
+fn increment(value: Int):
+  value = value + 1
+
+type Payload:
+  text: String
+  values: Vector[Int]
+
+fn first(value: Payload) -> Int:
+  return value.values[0]
+
+domain Sink:
+  fn Text(value: String) -> Int:
+    if value == "":
+      reply 0
+    reply 1
+  fn Values(value: Vector[Int]) -> Int:
+    reply value[0]
+
+domain Leaf:
+  value: Int
+  fn Work() -> Int:
+    increment(value)
+    reply value
+
+domain Middle:
+  domainroutes(child: Leaf)
+  value: Int
+  fn Work() -> Int:
+    increment(value)
+    result = message child.Work()
+    reply value + result
+
+domain Bench:
+  domainroutes(sink: Sink, middle: Middle, sibling: Leaf)
+  left: Int
+  right: Int
+  fixed: Int
+  payload: Payload
+  fn Empty() -> Int:
+    reply 7
+  fn Immutable() -> Int:
+    reply fixed
+  fn Read() -> Int:
+    reply left
+  fn Write():
+    increment(left)
+  fn Other():
+    increment(right)
+  fn Multiple() -> Int:
+    increment(right)
+    increment(left)
+    reply left + right
+  fn ReadWork() -> Int:
+    total = left
+    i = 0
+    while i < 500:
+      total = total * 3 + i
+      i = i + 1
+    reply total
+  fn WriteWork():
+    i = 0
+    while i < 500:
+      left = left * 3 + i
+      i = i + 1
+  fn OtherWork():
+    i = 0
+    while i < 500:
+      right = right * 3 + i
+      i = i + 1
+  fn TextRead() -> Int:
+    if payload.text == "":
+      reply 0
+    reply 1
+  fn VectorRead() -> Int:
+    reply payload.values[0]
+  fn ObjectRead() -> Int:
+    reply first(payload)
+  fn Change():
+    payload.text = "changed"
+    payload.values = [7]
+  fn ForwardText() -> Int:
+    reply message sink.Text(payload.text)
+  fn ForwardVector() -> Int:
+    reply message sink.Values(payload.values)
+  fn ReplyText() -> String:
+    reply payload.text
+  fn ReplyVector() -> Vector[Int]:
+    reply payload.values
+  fn Nested() -> Int:
+    increment(left)
+    result = message middle.Work()
+    reply left + result
+  fn Siblings() -> Int:
+    increment(left)
+    higher = message sibling.Work()
+    lower = message middle.Work()
+    reply left + higher + lower
+
+fn main():
+  sink = Sink()
+  child = Leaf(value: 0)
+  middle = Middle(child: child, value: 0)
+  sibling = Leaf(value: 0)
+  bench = Bench(sink: sink, middle: middle, sibling: sibling, left: 0, right: 0, fixed: 7, payload: Payload(text: "seed", values: [7]))
+  echo message bench.Empty(), message bench.Immutable(), message bench.Read()
+  message bench.Write()
+  echo message bench.Multiple(), message bench.Nested(), message bench.Siblings()

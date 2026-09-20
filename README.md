@@ -1,6 +1,6 @@
-# Moss compiler v0.2
+# Moss v0.1
 
-This is the latest implemented Moss compiler currently available. It is a dependency-free C++17 front end that validates Moss source and emits standalone Rust.
+Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Start with the [v0.1 guide](docs/V0_1.md), [performance report](docs/PERFORMANCE_10_6F.md), and [ledger seed project](examples/projects/ledger/README.md).
 
 Domain routing is statically closed: declare dependencies with `domainroutes`,
 bind them in the initial `main` composition prefix, and invoke them with
@@ -344,7 +344,7 @@ Moss reports the later use and the line where ownership transferred:
 moss:12: error: value 'original' was transferred to 'destination' at line 10. Create an explicit deep copy if both values must remain independently usable.
 ```
 
-This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy in ordinary local code. The approved `deepCopy()` operation is not implemented yet; see `.codex/MOSS_DESIGN.md` for the current contract and deferred work.
+This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy in ordinary local code. The approved `deepCopy()` operation is not implemented yet; see [language syntax](docs/LANGUAGE_SYNTAX.md) for the current contract and [v0.1 limitations](docs/V0_1.md#intentional-boundaries-and-known-friction) for deferred work.
 
 ## Implemented language slice
 
@@ -485,7 +485,7 @@ domain grouping would require a separate compiler correctness proof.
 
 ## Important status
 
-This is an early v0.2 prototype, not the compiler for the complete language we subsequently designed. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas.
+Moss v0.1 is the Phase 10 usable-language milestone. The next milestone is Phase 15 Dogfooding: write substantial Moss programs and use observed friction to guide refinement. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
@@ -534,3 +534,11 @@ For a minimal two-module project, see
 [`examples/projects/phase10_modules`](examples/projects/phase10_modules):
 `Second` imports the exported functions from `First` and can be run with
 `moss debug .` or `moss build` from that directory.
+
+## Next milestone
+
+**Phase 15 — Dogfooding:** write substantial Moss programs, identify real friction,
+and let actual usage determine the next refinements. Later milestones are
+Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision, and
+Phase 22 Agent Agency Tooling. The [v0.1 roadmap](docs/V0_1.md) preserves current
+restrictions and the future scoped-domain breadcrumb.

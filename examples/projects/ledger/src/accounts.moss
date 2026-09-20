@@ -1,0 +1,25 @@
+module accounts
+import model
+
+fn credit(balance: Int, amount: Int):
+  balance = balance + amount
+
+export domain Ledger:
+  balance: Int
+  fn Credit(order: model.Order) -> Int:
+    amount = model.quote(order)
+    credit(balance, amount)
+    reply balance
+  fn Balance() -> Int:
+    reply balance
+
+export domain Journal:
+  count: Int
+  last: Int
+  fn Record(amount: Int):
+    count = count + 1
+    last = amount
+  fn Count() -> Int:
+    reply count
+  fn Last() -> Int:
+    reply last

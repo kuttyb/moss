@@ -76,7 +76,7 @@ or physical class events in interpreter execution.
 Transitive Moss source modules remain interpreted as one checked closure.
 Source-free Moss dependencies still require production execution. Existing
 unsupported interpreter functional pipelines and `for` traversal have precise
-construct diagnostics. No Phase 11 foreign-call implementation was added.
+construct diagnostics. No Phase 20 foreign-call implementation was added.
 
 ## Test retirement and preservation
 
@@ -126,9 +126,10 @@ semantics, dormant implementation paths, and constructor helpers recognizing
 retired syntax were removed or corrected. Historical records are not current
 language authority.
 
-## Remaining work
+## Historical handoff from 10.6E
 
-Phase 10.6F should measure static accessor code size, class storage and absent-slot
+The subsequent [10.6F report](PERFORMANCE_10_6F.md) completes the measurements
+requested by this historical handoff. At the 10.6E checkpoint, Phase 10.6F was to measure static accessor code size, class storage and absent-slot
 metadata, explicit-boundary copies, uncontended handler overhead, compatible and
 conflicting contention, and nested-call hold times. Diagnostics and layout choices
 should follow those measurements. No performance guarantee, fairness guarantee,
@@ -136,6 +137,6 @@ lock optimization, or Phase 10.6F completion is claimed here.
 
 Interpreter iteration/functional coverage, the pre-existing provider-internal
 generic linkage limitation, package resolution, lexical domain scopes, future
-concurrency ingress, and supervision remain separate work. No new Phase 11/12
+concurrency ingress, and supervision remain separate work. No new Phase 20/21
 semantics were introduced. Final validation results are recorded in
 [CURRENT_STATUS](../.codex/CURRENT_STATUS.md).

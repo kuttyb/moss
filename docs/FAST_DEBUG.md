@@ -81,5 +81,5 @@ Existing unsupported expression/iteration constructs, including functional
 pipelines and `for` traversal, still produce construct-specific interpreter
 errors. There is no blanket domain/message/reply restriction or automatic native
 Moss fallback. Source-free providers remain supported by production, while Fast
-Debug requires their source. Quantitative production layout/performance work is
-Phase 10.6F; concurrency correctness remains covered by the production harness.
+Debug requires their source. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
+concurrency correctness remains covered by the production harness.

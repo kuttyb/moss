@@ -35,10 +35,10 @@ struct MossAbortOnUnwind;
 impl Drop for MossAbortOnUnwind {
     fn drop(&mut self) { if std::thread::panicking() { std::process::abort(); } }
 }
-#[cfg(test)]
+#[cfg(any(test, moss_perf))]
 static MOSS_LOCK_HOOK: std::sync::OnceLock<fn(&str, &str, &str, usize, usize, bool)> = std::sync::OnceLock::new();
 fn moss_lock_event(event: &str, instance: &str, handler: &str, domain: usize, class: usize, exclusive: bool) {
-    #[cfg(test)]
+    #[cfg(any(test, moss_perf))]
     if let Some(hook) = MOSS_LOCK_HOOK.get() { hook(event, instance, handler, domain, class, exclusive); }
 }
 impl<V> MossClassRuntime<V> {
@@ -57,6 +57,7 @@ impl<V> MossClassRuntime<V> {
     }
     fn enter(&self, name: &str) -> MossHandlerFrame<'_, V> {
         let handler = self.handlers.iter().find(|h| h.0 == name).unwrap_or_else(|| std::process::abort());
+        moss_lock_event("handler_enter", self.identity, handler.4, self.rank, usize::MAX, false);
         let mut guards = std::collections::BTreeMap::new();
         let _abort = MossAbortOnUnwind;
         let mut previous = None;
@@ -65,6 +66,31 @@ impl<V> MossClassRuntime<V> {
             previous = Some(rank);
             moss_lock_event("lock_acquire", self.identity, handler.4, self.rank, rank, exclusive);
             let lock = self.classes.get(rank).unwrap_or_else(|| std::process::abort());
+            // Instrumented builds distinguish actual WouldBlock from uncontended
+            // acquisition latency. They retain the same order/mode/lifetime.
+            #[cfg(moss_perf)]
+            let guard = if exclusive {
+                let value = match lock.try_write() {
+                    Ok(g) => g,
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        moss_lock_event("lock_contended", self.identity, handler.4, self.rank, rank, true);
+                        lock.write().unwrap_or_else(|_| std::process::abort())
+                    },
+                    Err(_) => std::process::abort(),
+                };
+                MossClassGuard::Exclusive(value)
+            } else {
+                let value = match lock.try_read() {
+                    Ok(g) => g,
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        moss_lock_event("lock_contended", self.identity, handler.4, self.rank, rank, false);
+                        lock.read().unwrap_or_else(|_| std::process::abort())
+                    },
+                    Err(_) => std::process::abort(),
+                };
+                MossClassGuard::Shared(value)
+            };
+            #[cfg(not(moss_perf))]
             let guard = if exclusive {
                 MossClassGuard::Exclusive(lock.write().unwrap_or_else(|_| std::process::abort()))
             } else {
@@ -118,9 +144,11 @@ impl<V> Drop for MossHandlerFrame<'_, V> {
         if std::thread::panicking() || !self.evacuated.is_empty() { std::process::abort(); }
         moss_lock_event("handler_complete", self.runtime.identity, self.handler.4, self.runtime.rank, usize::MAX, false);
         for &(rank, exclusive) in self.handler.1.iter().rev() {
+            moss_lock_event("lock_releasing", self.runtime.identity, self.handler.4, self.runtime.rank, rank, exclusive);
             drop(self.guards.remove(&rank));
             moss_lock_event("lock_release", self.runtime.identity, self.handler.4, self.runtime.rank, rank, exclusive);
         }
+        moss_lock_event("handler_exit", self.runtime.identity, self.handler.4, self.runtime.rank, usize::MAX, false);
     }
 }
 // Access slots own only evacuated EXCLUSIVE values. Absent is metadata, never
