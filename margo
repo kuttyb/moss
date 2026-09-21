@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""Margo: deterministic Moss package/project orchestration.
+
+Margo deliberately does not parse Moss.  It resolves packages, builds their
+existing Moss project artifacts dependency-first, and supplies compiled module
+interfaces through MOSS_MODULE_PATH to the compiler that owns module semantics.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tomllib
+
+
+class MargoError(Exception):
+    pass
+
+
+REPO = Path(__file__).resolve().parent
+MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
+
+
+def manifest_at(root: Path) -> Path:
+    for name in ("Moss.toml", "moss.toml"):
+        candidate = root / name
+        if candidate.is_file():
+            return candidate
+    raise MargoError(f"package at {root} lacks Moss.toml")
+
+
+def find_root(start: Path) -> Path:
+    path = start.resolve()
+    if path.is_file():
+        path = path.parent
+    while True:
+        try:
+            manifest_at(path)
+            return path
+        except MargoError:
+            if path.parent == path:
+                raise MargoError("no Moss.toml found in this directory or a parent")
+            path = path.parent
+
+
+def read_manifest(root: Path) -> tuple[Path, dict]:
+    manifest = manifest_at(root)
+    try:
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise MargoError(f"malformed manifest {manifest}: {error}") from error
+    package = data.get("package", data.get("project"))
+    if not isinstance(package, dict) or not isinstance(package.get("name"), str):
+        raise MargoError(f"{manifest}: [package].name (or legacy [project].name) is required")
+    if not isinstance(package.get("version"), str):
+        raise MargoError(f"{manifest}: package version is required")
+    dependencies = data.get("dependencies", {})
+    if not isinstance(dependencies, dict):
+        raise MargoError(f"{manifest}: [dependencies] must be a table")
+    return manifest, {"name": package["name"], "version": package["version"],
+                      "dependencies": dependencies}
+
+
+def margo_home() -> Path:
+    return Path(os.environ.get("MARGO_HOME", Path.home() / ".margo")).expanduser().resolve()
+
+
+def run(command: list[str], *, cwd: Path | None = None, env: dict | None = None,
+        capture: bool = False) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, cwd=cwd, env=env, text=True,
+                              capture_output=capture, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else str(error)
+        raise MargoError(f"command failed ({' '.join(command)}): {detail}") from error
+
+
+def locked_git(lock: dict, name: str, url: str) -> str | None:
+    for entry in lock.get("package", []):
+        if entry.get("name") == name and entry.get("git") == url:
+            commit = entry.get("commit")
+            if isinstance(commit, str):
+                return commit
+    return None
+
+
+def checkout_git(url: str, selector: str, home: Path) -> tuple[Path, str]:
+    safe = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+    database = home / "git" / "db" / safe
+    # A lockfile pins a full commit. If its checkout already exists, resolution
+    # is offline and must not contact the moving remote.
+    if len(selector) == 40 and all(ch in "0123456789abcdef" for ch in selector.lower()):
+        cached = home / "git" / "checkouts" / safe / selector
+        if cached.is_dir():
+            manifest_at(cached)
+            return cached.resolve(), selector
+    if not database.exists():
+        database.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", "--quiet", "--no-checkout", url, str(database)])
+    else:
+        run(["git", "-C", str(database), "fetch", "--quiet", "--tags", "origin"])
+    resolved = run(["git", "-C", str(database), "rev-parse", f"{selector}^{{commit}}"], capture=True).stdout.strip()
+    if len(resolved) != 40:
+        raise MargoError(f"Git selector {selector!r} for {url} did not resolve to a commit")
+    checkout = home / "git" / "checkouts" / safe / resolved
+    if not checkout.exists():
+        checkout.parent.mkdir(parents=True, exist_ok=True)
+        run(["git", "clone", "--quiet", "--no-checkout", str(database), str(checkout)])
+        run(["git", "-C", str(checkout), "checkout", "--quiet", "--detach", resolved])
+    manifest_at(checkout)
+    return checkout.resolve(), resolved
+
+
+class Package:
+    def __init__(self, root: Path, manifest: Path, data: dict, identity: str,
+                 source: dict):
+        self.root, self.manifest, self.data = root, manifest, data
+        self.identity, self.source = identity, source
+        self.dependencies: list[Package] = []
+
+
+def load_lock(root: Path) -> dict:
+    lock = root / "Moss.lock"
+    if not lock.exists():
+        return {}
+    try:
+        data = tomllib.loads(lock.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise MargoError(f"malformed lockfile {lock}: {error}") from error
+    if data.get("version", 1) != 1:
+        raise MargoError(f"unsupported Moss.lock version in {lock}")
+    return data
+
+
+def write_lock(root: Path, packages: list[Package]) -> None:
+    git = sorted((p for p in packages if p.source["kind"] == "git"),
+                 key=lambda p: (p.data["name"], p.source["url"], p.source["commit"]))
+    if not git:
+        return
+    lines = ["version = 1", ""]
+    for package in git:
+        lines += ["[[package]]", f'name = {package.data["name"]!r}',
+                  f'git = {package.source["url"]!r}',
+                  f'commit = {package.source["commit"]!r}', ""]
+    text = "\n".join(lines)
+    target = root / "Moss.lock"
+    if not target.exists() or target.read_text(encoding="utf-8") != text:
+        target.write_text(text, encoding="utf-8")
+
+
+def resolve_graph(root: Path) -> tuple[Package, list[Package]]:
+    lock, home = load_lock(root), margo_home()
+    by_identity: dict[str, Package] = {}
+    by_name: dict[str, str] = {}
+    visiting: list[str] = []
+
+    def visit(package_root: Path, identity: str, source: dict) -> Package:
+        if identity in visiting:
+            start = visiting.index(identity)
+            names = [by_identity[item].data["name"] for item in visiting[start:]]
+            raise MargoError("package dependency cycle: " + " -> ".join(names + [names[0]]))
+        if identity in by_identity:
+            return by_identity[identity]
+        manifest, data = read_manifest(package_root)
+        name = data["name"]
+        other = by_name.get(name)
+        if other and other != identity:
+            raise MargoError(f"conflicting package identity for {name}: {other} vs {identity}")
+        package = Package(package_root, manifest, data, identity, source)
+        by_identity[identity] = package
+        by_name[name] = identity
+        visiting.append(identity)
+        for dep_name in sorted(data["dependencies"]):
+            spec = data["dependencies"][dep_name]
+            if not isinstance(spec, dict):
+                raise MargoError(f"{manifest}: dependency {dep_name!r} must use {{ path = ... }} or {{ git = ... }}")
+            has_path, has_git = "path" in spec, "git" in spec
+            if has_path == has_git:
+                raise MargoError(f"{manifest}: dependency {dep_name!r} must specify exactly one of path or git")
+            if has_path:
+                if set(spec) != {"path"} or not isinstance(spec["path"], str):
+                    raise MargoError(f"{manifest}: path dependency {dep_name!r} must contain only a string path")
+                child_root = (package_root / spec["path"]).resolve()
+                if child_root.suffix == ".moss":
+                    raise MargoError(f"{manifest}: dependency {dep_name!r} must name a package root, not a .moss file")
+                child = visit(child_root, "path:" + str(child_root), {"kind": "path", "path": str(child_root)})
+            else:
+                allowed = {"git", "rev", "tag", "branch"}
+                if not set(spec) <= allowed or not isinstance(spec["git"], str):
+                    raise MargoError(f"{manifest}: invalid Git dependency {dep_name!r}")
+                selectors = [key for key in ("rev", "tag", "branch") if key in spec]
+                if len(selectors) > 1:
+                    raise MargoError(f"{manifest}: Git dependency {dep_name!r} may specify only one of rev, tag, branch")
+                url = spec["git"]
+                locked = locked_git(lock, dep_name, url)
+                selector = locked or (spec[selectors[0]] if selectors else "HEAD")
+                child_root, commit = checkout_git(url, selector, home)
+                child = visit(child_root, f"git:{url}#{commit}", {"kind": "git", "url": url, "commit": commit})
+            package.dependencies.append(child)
+        visiting.pop()
+        return package
+
+    root_manifest, root_data = read_manifest(root)
+    root_package = visit(root, "path:" + str(root.resolve()), {"kind": "root"})
+    ordered: list[Package] = []
+    emitted: set[str] = set()
+    def emit(package: Package) -> None:
+        for dependency in sorted(package.dependencies, key=lambda p: (p.data["name"], p.identity)):
+            emit(dependency)
+        if package.identity not in emitted:
+            emitted.add(package.identity); ordered.append(package)
+    emit(root_package)
+    write_lock(root, ordered)
+    return root_package, ordered
+
+
+def build_graph(root: Package, ordered: list[Package], release: bool, json_mode: bool) -> list[dict]:
+    artifacts: list[dict] = []
+    for package in ordered:
+        paths = [str(other.root / "build" / ("release" if release else "debug"))
+                 for other in ordered if other is not package]
+        env = dict(os.environ)
+        if paths:
+            env["MOSS_MODULE_PATH"] = os.pathsep.join(paths + ([env["MOSS_MODULE_PATH"]] if env.get("MOSS_MODULE_PATH") else []))
+        command = [str(MOSS), "build"] + (["--release"] if release else []) + ["--json"]
+        result = run(command, cwd=package.root, env=env, capture=True)
+        try:
+            payload = json.loads(result.stdout)["result"]
+        except (json.JSONDecodeError, KeyError) as error:
+            raise MargoError(f"dependency package build produced invalid Moss JSON for {package.data['name']}") from error
+        artifacts.append(payload)
+    return artifacts
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="margo")
+    parser.add_argument("command", choices=("build", "run", "test", "bench", "clean"))
+    parser.add_argument("filter", nargs="?")
+    parser.add_argument("--release", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args, rest = parser.parse_known_args()
+    if rest:
+        raise SystemExit("margo: unsupported arguments: " + " ".join(rest))
+    try:
+        root_path = find_root(Path.cwd())
+        root, ordered = resolve_graph(root_path)
+        if args.command == "clean":
+            run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
+            return 0
+        artifacts = build_graph(root, ordered, args.release, args.json)
+        if args.command == "build":
+            if args.json:
+                print(json.dumps({"schema_version": "margo-1", "ok": True,
+                    "root_package": root.data["name"], "build_order": [p.data["name"] for p in ordered],
+                    "packages": [{"name": p.data["name"], "source": p.source} for p in ordered],
+                    "artifacts": artifacts[-1]}, sort_keys=True))
+            return 0
+        if args.command == "run":
+            executable = artifacts[-1]["artifacts"]["executable"]
+            return subprocess.run([executable], cwd=root.root).returncode
+        command = [str(MOSS), args.command]
+        if args.command == "test" and args.filter: command.append(args.filter)
+        if args.command == "bench" and args.filter: command.append(args.filter)
+        if args.command == "test" and args.release: command.append("--release")
+        if args.json: command.append("--json")
+        return subprocess.run(command, cwd=root.root).returncode
+    except MargoError as error:
+        if 'args' in locals() and args.json:
+            print(json.dumps({"schema_version": "margo-1", "ok": False, "error": str(error)}))
+        else:
+            print(f"margo: error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
