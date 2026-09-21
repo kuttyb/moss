@@ -51,8 +51,9 @@ All of this is one versioned JSON envelope over the ordinary compiler truth; it 
 duplicate semantic analysis or new language syntax. Start with
 `moss agent bootstrap --json` and read [AI-native development](docs/AI_NATIVE_DEVELOPMENT.md).
 
-Phase 7 is frozen with the practical project layer: `moss build`, `moss test`, and
-`moss bench` share one manifest, compiler pipeline, profile model, semantic identity
+Phase 7 is frozen with the practical project layer. Phase 15.2 adds `margo` as the
+canonical package/project driver: `margo build`, `margo test`, and `margo bench` share
+one manifest, compiler pipeline, profile model, semantic identity
 scheme, artifact layout, and Phase 6A JSON protocol. Tests report Moss assertions at
 Moss locations; benchmarks use release compilation, robust sampling,
 toolchain-compatible saved comparisons, and complete discarded-value black boxing
@@ -72,7 +73,7 @@ without leaking Rust tooling into the normal workflow.
 make
 ```
 
-This creates `./moss`.
+This creates `./moss`; the checked-in `./margo` package driver is executable too.
 
 For the commands below, put the checkout on `PATH` with
 `export PATH="$PWD:$PATH"` or replace `moss` with the absolute path to that
@@ -81,13 +82,13 @@ binary. Phase 7 does not yet provide an installer.
 For a Moss project, the normal workflow is:
 
 ```sh
-moss build
-moss test
-moss build --release
-moss bench
+margo build
+margo test
+margo build --release
+margo bench
 ```
 
-Projects use `moss.toml` with conventional `src/`, `tests/`, and `benches/`
+Packages use `Moss.toml` (legacy `moss.toml` remains accepted) with conventional `src/`, `tests/`, and `benches/`
 directories. Start with the practical [Moss project
 workflow](docs/PROJECT_WORKFLOW.md): it provides a complete working project,
 debug and release builds, cleaning and cache behavior, tests, benchmarks,

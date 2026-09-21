@@ -5,6 +5,7 @@ examples/*.rs
 *.elc
 __pycache__/
 moss
+margo
 build/**
 examples/projects/*/build/
 examples/projects/*/.moss/

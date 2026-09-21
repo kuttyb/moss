@@ -1,4 +1,29 @@
-# Moss project and build system
+# Moss compiler and Margo project driver
+
+`moss` owns Moss parsing, modules, checks, interfaces, and Rust lowering.
+`margo` owns package manifests, path/Git acquisition, deterministic package DAGs,
+`Moss.lock`, and project workflows. Use `margo build`, `margo run`, `margo test`,
+`margo bench`, and `margo clean` for a package; the legacy `moss build/test/bench/clean`
+commands remain compatible compiler-project entry points.
+
+Margo accepts `Moss.toml` (and the older lowercase `moss.toml`). A package may use:
+
+```toml
+[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+geometry = { path = "../geometry" }
+analytics = { git = "https://example.invalid/analytics.git", tag = "v1.0" }
+```
+
+Path references name package roots, never individual `.moss` files. Git selectors
+resolve to full commits recorded deterministically in `Moss.lock`; repeated builds use
+that lock and cached checkout without following a moving branch. Git cache state lives
+under `${MARGO_HOME:-~/.margo}` while each package keeps build artifacts under its own
+`build/` directory. Registry, publishing, update, and workspace management are future
+work.
 
 Phase 8 extends the Phase 7 project layer with first-class modules while
 retaining one semantic compiler pipeline.

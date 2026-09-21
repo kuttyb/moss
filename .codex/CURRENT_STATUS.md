@@ -2,6 +2,14 @@
 
 Updated: 2026-09-20
 
+## Phase 15.2 — Margo package/project driver (in progress)
+
+Margo is being added as the package-layer driver above the existing Moss compiler
+project pipeline. The intended boundary is `margo` for `Moss.toml`/`Moss.lock`,
+path and cached Git package DAG resolution, deterministic dependency-first builds,
+and project commands; `moss` remains authoritative for modules, `.mossi`, checking,
+and lowering. Registry/publishing/update/workspace features are deliberately deferred.
+
 ## Phase 15.1 — borrowed synchronous message payload lowering (closed)
 
 The main implementation is committed as `13602ce` (`Phase 15.1: add borrowed

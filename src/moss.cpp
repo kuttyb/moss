@@ -14585,7 +14585,8 @@ static std::optional<std::filesystem::path> find_project_root(
   if (error) return std::nullopt;
   if (!std::filesystem::is_directory(start, error)) start = start.parent_path();
   while (!start.empty()) {
-    if (std::filesystem::is_regular_file(start / "moss.toml", error))
+    if (std::filesystem::is_regular_file(start / "Moss.toml", error) ||
+        std::filesystem::is_regular_file(start / "moss.toml", error))
       return start;
     std::filesystem::path parent = start.parent_path();
     if (parent == start) break;
@@ -14615,14 +14616,15 @@ static ProjectManifest load_project_manifest(
   if (!root)
     throw ProjectError(
         "PROJECT_MANIFEST_ERROR",
-        "no moss.toml was found in this directory or any parent");
+        "no Moss.toml was found in this directory or any parent");
   ProjectManifest manifest;
   manifest.root = *root;
-  manifest.manifest_file = manifest.root / "moss.toml";
+  manifest.manifest_file = std::filesystem::is_regular_file(manifest.root / "Moss.toml")
+      ? manifest.root / "Moss.toml" : manifest.root / "moss.toml";
   std::ifstream input(manifest.manifest_file);
   if (!input)
     throw ProjectError(
-        "PROJECT_MANIFEST_ERROR", "cannot read moss.toml",
+        "PROJECT_MANIFEST_ERROR", "cannot read Moss.toml",
         manifest.manifest_file.string());
   string section;
   string line;
@@ -14643,13 +14645,18 @@ static ProjectManifest load_project_manifest(
     if (line.empty()) continue;
     if (line.front() == '[' && line.back() == ']') {
       section = trim(line.substr(1, line.size() - 2));
-      if (section != "project" && section != "build")
+      if (section != "project" && section != "package" && section != "build" &&
+          section != "dependencies")
         throw ProjectError(
             "PROJECT_MANIFEST_ERROR",
             "unknown manifest section '[" + section + "]'",
             manifest.manifest_file.string(), line_number);
       continue;
     }
+    // Dependency acquisition is owned by Margo.  The compiler accepts this
+    // package metadata so its legacy project entry points remain compatible,
+    // but never interprets package sources or dependencies itself.
+    if (section == "dependencies") continue;
     size_t equals = line.find('=');
     if (equals == string::npos || section.empty())
       throw ProjectError(
@@ -14659,8 +14666,8 @@ static ProjectManifest load_project_manifest(
     string key = trim(line.substr(0, equals));
     string value = manifest_string_value(
         line.substr(equals + 1), line_number, manifest.manifest_file);
-    if (section == "project" && key == "name") manifest.name = value;
-    else if (section == "project" && key == "version")
+    if ((section == "project" || section == "package") && key == "name") manifest.name = value;
+    else if ((section == "project" || section == "package") && key == "version")
       manifest.version = value;
     else if (section == "build" && key == "source")
       manifest.source = value;
@@ -14672,11 +14679,11 @@ static ProjectManifest load_project_manifest(
   }
   if (manifest.name.empty())
     throw ProjectError(
-        "PROJECT_MANIFEST_ERROR", "[project].name is required",
+        "PROJECT_MANIFEST_ERROR", "[package].name (or legacy [project].name) is required",
         manifest.manifest_file.string());
   if (manifest.version.empty())
     throw ProjectError(
-        "PROJECT_MANIFEST_ERROR", "[project].version is required",
+        "PROJECT_MANIFEST_ERROR", "[package].version (or legacy [project].version) is required",
         manifest.manifest_file.string());
   if (manifest.source.empty() || manifest.source.is_absolute())
     throw ProjectError(
@@ -16227,11 +16234,22 @@ static CompiledProjectUnit analyze_project_sources(
       for (const auto& entry : modules)
         for (const auto& import : entry.second.imports)
           if (!modules.count(import.name)) requested_imports.insert(import.name);
-      for (const auto& interface_file : compiled_interface_candidates(manifest)) {
-        ParsedModuleUnit provider = load_module_interface(interface_file);
-        if (!requested_imports.count(provider.name) || modules.count(provider.name)) continue;
-        loaded_external_modules.insert(provider.name);
-        modules.emplace(provider.name, std::move(provider));
+      // Interfaces may themselves import another package interface.  Resolve
+      // that declared module closure from the existing MOSS_MODULE_PATH rather
+      // than requiring a package driver to fold provider source into this
+      // compilation unit.
+      bool loaded = true;
+      while (loaded) {
+        loaded = false;
+        for (const auto& interface_file : compiled_interface_candidates(manifest)) {
+          ParsedModuleUnit provider = load_module_interface(interface_file);
+          if (!requested_imports.count(provider.name) || modules.count(provider.name)) continue;
+          loaded_external_modules.insert(provider.name);
+          for (const auto& import : provider.imports)
+            requested_imports.insert(import.name);
+          modules.emplace(provider.name, std::move(provider));
+          loaded = true;
+        }
       }
       for (const auto& name : requested_imports)
         if (!modules.count(name))
@@ -19524,7 +19542,8 @@ static std::optional<string> nearest_moss_project_root(
   if (error) return std::nullopt;
   if (!std::filesystem::is_directory(start, error)) start = start.parent_path();
   while (!start.empty()) {
-    if (std::filesystem::is_regular_file(start / "moss.toml", error))
+    if (std::filesystem::is_regular_file(start / "Moss.toml", error) ||
+        std::filesystem::is_regular_file(start / "moss.toml", error))
       return start.string();
     std::filesystem::path parent = start.parent_path();
     if (parent == start) break;

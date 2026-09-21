@@ -1,5 +1,24 @@
 # Moss project workflow
 
+## Margo package driver
+
+For package work, use `margo` from a directory below `Moss.toml`:
+
+```sh
+margo build
+margo run
+margo test
+margo bench
+margo clean
+```
+
+Margo resolves package dependencies before calling the existing Moss project
+compiler. `path = "../package"` dependencies are live local package roots;
+Git dependencies are cached in `${MARGO_HOME:-~/.margo}` and resolved commits are
+frozen in `Moss.lock`. Moss still owns source modules, `import`, `.mossi`, and all
+language checking. Legacy `moss build`, `moss test`, and `moss bench` remain direct
+compiler-project compatibility commands.
+
 This is the starting point for building, testing, and benchmarking a Moss
 project. The project commands invoke the same compiler pipeline as direct
 single-file compilation, but manage generated Rust, native binaries, source
