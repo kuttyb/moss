@@ -1235,6 +1235,7 @@ printf '%s\n' "$interp_trace" | grep -F '"event":"Return"' >/dev/null ||
   fail 'fast interpreter trace omitted return events'
 if command -v python3 >/dev/null 2>&1; then
   PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_margo.py "$compiler"
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_module_provider_ambiguity.py "$compiler"
   python3 tests/tooling/check_phase10_fast_debug_project.py "$compiler" ||
     fail 'fast interpreter did not execute the complete project source closure'
 fi

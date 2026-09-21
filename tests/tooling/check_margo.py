@@ -112,6 +112,23 @@ shutil.rmtree(geometry / "build")
 cached_math = next((home / "git" / "checkouts").glob("*/*/build/debug"))
 run([moss, "build"], geometry, env=dict(env, MOSS_MODULE_PATH=str(cached_math)))
 
+# Margo exposes package artifact roots but does not resolve Moss imports. Two
+# packages may publish the same module until App asks Moss to import it.
+utils_a, utils_b = root / "utils-a", root / "utils-b"
+write_package(utils_a, "UtilsA", "module Utils\n\nexport fn value() -> Int:\n  1\n")
+write_package(utils_b, "UtilsB", "module Utils\n\nexport fn value() -> Int:\n  2\n")
+ambiguous = root / "ambiguous"
+write_package(ambiguous, "Ambiguous", "module App\nimport Utils\n\nfn main():\n  echo Utils.value()\n",
+              '\n[dependencies]\nUtilsA = { path = "../utils-a" }\nUtilsB = { path = "../utils-b" }\n')
+ambiguous_result = run([margo, "build", "--json"], ambiguous, expected=1, env=env)
+ambiguous_error = json.loads(ambiguous_result.stdout)["error"]
+assert "MODULE_IMPORT_AMBIGUOUS" in ambiguous_error
+utils_paths = sorted(str(path.resolve()) for path in
+                     (utils_a / "build" / "debug" / "Utils.mossi",
+                      utils_b / "build" / "debug" / "Utils.mossi"))
+assert all(path in ambiguous_error for path in utils_paths)
+assert ambiguous_error.index(utils_paths[0]) < ambiguous_error.index(utils_paths[1])
+
 # Cycle diagnostics are package-layer diagnostics, before compilation.
 left, right = root / "left", root / "right"
 write_package(left, "Left", "fn main():\n  echo 1\n", '\n[dependencies]\nRight = { path = "../right" }\n')

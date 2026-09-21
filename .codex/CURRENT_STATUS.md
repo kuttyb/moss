@@ -23,6 +23,15 @@ hermetic Margo regression, and `make examples` pass. The full `make check` run p
 the compiler, package/module, Fast Debug, tooling, and Emacs checks before the same
 environment-dependent real LLDB/DAP initial-handshake failure; it was not weakened.
 
+Phase 15.2 resolver hardening additionally requires every requested external Moss
+module identity to select exactly one canonical `.mossi` provider. Overlapping paths
+to the same artifact deduplicate; unrelated duplicate exports remain legal until an
+import requests that module; direct and transitive duplicate providers now produce a
+deterministic `MODULE_IMPORT_AMBIGUOUS` diagnostic listing canonical interface paths.
+The selected interface is carried to native lowering so its `.rlib` is paired from the
+same provider directory. No package-qualified import syntax or Margo-side import
+resolution was introduced.
+
 ## Phase 15.1 — borrowed synchronous message payload lowering (closed)
 
 The main implementation is committed as `13602ce` (`Phase 15.1: add borrowed

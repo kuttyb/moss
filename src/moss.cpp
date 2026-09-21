@@ -15391,6 +15391,10 @@ struct CompiledProjectUnit {
   OptimizationPlan plan;
   vector<Warning> warnings;
   string rust;
+  // The source-free provider selected during semantic module resolution. This
+  // is carried to native lowering so its rlib cannot be found independently
+  // by a later filename scan.
+  std::map<string,std::filesystem::path> external_module_interfaces;
 };
 
 // Explicit modules are lowered into the existing whole-program semantic
@@ -16199,11 +16203,68 @@ static vector<std::filesystem::path> compiled_interface_candidates(
     for (std::filesystem::recursive_directory_iterator it(root, error), end;
          !error && it != end; it.increment(error))
       if (it->is_regular_file(error) && it->path().extension() == ".mossi")
-        result.push_back(it->path());
+        {
+          std::error_code canonical_error;
+          auto path = std::filesystem::weakly_canonical(it->path(), canonical_error);
+          result.push_back(canonical_error ? it->path().lexically_normal()
+                                           : path.lexically_normal());
+        }
   }
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
   return result;
+}
+
+struct CompiledModuleProvider {
+  string module;
+  std::filesystem::path interface_file;
+};
+
+// Module names in source are semantic identities. A filename is merely an
+// artifact convention, so read the declared module_id before considering a
+// compiled provider for an import.
+static vector<CompiledModuleProvider> compiled_module_providers(
+    const ProjectManifest& manifest) {
+  vector<CompiledModuleProvider> providers;
+  for (const auto& file : compiled_interface_candidates(manifest)) {
+    string text = read_text_file(file, "MOSS_INTERFACE_ERROR");
+    providers.push_back({interface_module_name(text, file), file});
+  }
+  std::sort(providers.begin(), providers.end(),
+            [](const CompiledModuleProvider& left,
+               const CompiledModuleProvider& right) {
+              return std::tie(left.module, left.interface_file) <
+                     std::tie(right.module, right.interface_file);
+            });
+  providers.erase(std::unique(providers.begin(), providers.end(),
+                              [](const CompiledModuleProvider& left,
+                                 const CompiledModuleProvider& right) {
+                                return left.module == right.module &&
+                                       left.interface_file == right.interface_file;
+                              }),
+                  providers.end());
+  return providers;
+}
+
+static const CompiledModuleProvider* unique_compiled_module_provider(
+    const vector<CompiledModuleProvider>& providers, const ModuleImport& import) {
+  auto begin = std::lower_bound(
+      providers.begin(), providers.end(), import.name,
+      [](const CompiledModuleProvider& provider, const string& name) {
+        return provider.module < name;
+      });
+  auto end = begin;
+  while (end != providers.end() && end->module == import.name) ++end;
+  if (begin == end) return nullptr;
+  if (std::next(begin) == end) return &*begin;
+  std::ostringstream message;
+  message << "ambiguous imported module '" << import.name << "'\nprovided by:";
+  for (auto provider = begin; provider != end; ++provider)
+    message << "\n  " << provider->interface_file.string();
+  CompileError error(import.line, message.str());
+  error.code = "MODULE_IMPORT_AMBIGUOUS";
+  error.source_file = import.source_file;
+  throw error;
 }
 
 static CompiledProjectUnit analyze_project_sources(
@@ -16215,8 +16276,9 @@ static CompiledProjectUnit analyze_project_sources(
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
-    std::set<string> requested_imports;
+    std::map<string,ModuleImport> requested_imports;
     std::set<string> loaded_external_modules;
+    std::map<string,std::filesystem::path> external_module_interfaces;
     bool has_explicit_modules = false;
     for (const auto& source : sources) {
       std::ifstream input(source);
@@ -16240,29 +16302,43 @@ static CompiledProjectUnit analyze_project_sources(
     // Load it into the semantic namespace, but keep it out of this build's
     // declaration set so its Rust implementation is consumed from its rlib.
     if (has_explicit_modules) {
+      auto request_import = [&](const ModuleImport& import) {
+        if (!modules.count(import.name)) requested_imports.emplace(import.name, import);
+      };
       for (const auto& entry : modules)
         for (const auto& import : entry.second.imports)
-          if (!modules.count(import.name)) requested_imports.insert(import.name);
+          request_import(import);
       // Interfaces may themselves import another package interface.  Resolve
       // that declared module closure from the existing MOSS_MODULE_PATH rather
       // than requiring a package driver to fold provider source into this
       // compilation unit.
+      const auto providers = compiled_module_providers(manifest);
       bool loaded = true;
       while (loaded) {
         loaded = false;
-        for (const auto& interface_file : compiled_interface_candidates(manifest)) {
-          ParsedModuleUnit provider = load_module_interface(interface_file);
-          if (!requested_imports.count(provider.name) || modules.count(provider.name)) continue;
-          loaded_external_modules.insert(provider.name);
+        for (const auto& requested : requested_imports) {
+          const string& name = requested.first;
+          if (modules.count(name)) continue;
+          const auto* selected = unique_compiled_module_provider(
+              providers, requested.second);
+          if (!selected) continue;
+          ParsedModuleUnit provider = load_module_interface(selected->interface_file);
+          // The provider map was indexed by the interface's module_id; retain
+          // that invariant here rather than accepting a filename coincidence.
+          if (provider.name != name)
+            throw CompileError(requested.second.line,
+                "compiled provider identity changed while resolving module '" + name + "'");
+          loaded_external_modules.insert(name);
+          external_module_interfaces.emplace(name, selected->interface_file);
           for (const auto& import : provider.imports)
-            requested_imports.insert(import.name);
-          modules.emplace(provider.name, std::move(provider));
+            request_import(import);
+          modules.emplace(name, std::move(provider));
           loaded = true;
         }
       }
       for (const auto& name : requested_imports)
-        if (!modules.count(name))
-          throw CompileError(1, "imported module '" + name +
+        if (!modules.count(name.first))
+          throw CompileError(name.second.line, "imported module '" + name.first +
                              "' was not found in source or compiled interfaces");
     }
     if (has_explicit_modules) {
@@ -16332,7 +16408,7 @@ static CompiledProjectUnit analyze_project_sources(
     OptimizationPlan plan = OptimizationPlan{optimized};
     string rust = Generator(program, plan, debug_build, mode).generate();
     return {std::move(program), std::move(plan), std::move(warnings),
-            std::move(rust)};
+            std::move(rust), std::move(external_module_interfaces)};
   } catch (const CompileError& error) {
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
@@ -16365,7 +16441,7 @@ static CompiledProjectUnit analyze_project_texts(
     OptimizationPlan plan = OptimizationPlan{optimized};
     string rust = Generator(program, plan, debug_build, mode).generate();
     return {std::move(program), std::move(plan), std::move(warnings),
-            std::move(rust)};
+            std::move(rust), {}};
   } catch (const CompileError& error) {
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
@@ -17357,24 +17433,27 @@ static NativeArtifact compile_native_artifact(
       if (module == root_module) artifact.rust = rust_file;
     }
     for (const auto& external : unit.program.external_modules) {
-      // External providers live in Margo's resolved MOSS_MODULE_PATH, not in
-      // this package's output directory. Reuse the compiler's authoritative
-      // interface discovery rather than treating package source as local.
-      for (const auto& interface_file : compiled_interface_candidates(manifest)) {
-        if (interface_file.stem().string() != external) continue;
-        std::filesystem::path rlib = interface_file;
-        rlib.replace_extension(".rlib");
-        if (!std::filesystem::is_regular_file(rlib))
-          rlib = interface_file.parent_path() /
-              ("lib" + interface_file.stem().string() + ".rlib");
-        if (std::filesystem::is_regular_file(rlib)) {
-          module_rlib[external] = rlib;
-          // Source-free providers need the same transitive rustc discovery
-          // alias as locally compiled modules; it is not provider ABI data.
-          auto alias = directory / ("lib" + tooling_name("moss_" + external) + ".rlib");
-          if (alias.lexically_normal() != rlib.lexically_normal())
-            std::filesystem::copy_file(rlib, alias, std::filesystem::copy_options::overwrite_existing);
-        }
+      // Pair native code with the exact .mossi interface selected during
+      // semantic import resolution. Never re-scan by filename here: another
+      // package may legitimately publish a different artifact with the same
+      // module spelling.
+      auto selected = unit.external_module_interfaces.find(external);
+      if (selected == unit.external_module_interfaces.end())
+        throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
+                           "no selected provider for imported module '" + external + "'");
+      const auto& interface_file = selected->second;
+      std::filesystem::path rlib = interface_file;
+      rlib.replace_extension(".rlib");
+      if (!std::filesystem::is_regular_file(rlib))
+        rlib = interface_file.parent_path() /
+            ("lib" + interface_file.stem().string() + ".rlib");
+      if (std::filesystem::is_regular_file(rlib)) {
+        module_rlib[external] = rlib;
+        // Source-free providers need the same transitive rustc discovery
+        // alias as locally compiled modules; it is not provider ABI data.
+        auto alias = directory / ("lib" + tooling_name("moss_" + external) + ".rlib");
+        if (alias.lexically_normal() != rlib.lexically_normal())
+          std::filesystem::copy_file(rlib, alias, std::filesystem::copy_options::overwrite_existing);
       }
     }
   } else {
