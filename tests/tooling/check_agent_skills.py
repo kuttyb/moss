@@ -162,9 +162,10 @@ def main() -> int:
     for capability in (
         "semantic_inspection",
         "semantic_edits",
-        "impact_analysis",
-        "affected_tests",
-        "structured_execution_trace",
+            "impact_analysis",
+            "affected_tests",
+            "fast_debug",
+            "structured_execution_trace",
         "synchronization_plan",
         "package_project_driver",
         "package_dependencies",
@@ -184,6 +185,10 @@ def main() -> int:
     }.items():
         if capability not in catalog or marker not in catalog[capability].get("entrypoint", ""):
             fail(f"live {capability} discovery lacks current Margo/Moss routing")
+    fast_debug = catalog.get("fast_debug", {})
+    if not any(command in fast_debug.get("entrypoint", "")
+               for command in ("moss run --interp", "moss debug")):
+        fail("live fast_debug discovery lacks a current Fast Debug command")
     actions = {item["name"]: item for item in bootstrap["actions"]}
     for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
         if action not in actions or not actions[action]["command"].startswith("margo "):
@@ -197,6 +202,11 @@ def main() -> int:
     schema_names = {item["name"] for item in schema["schema"]["command_schemas"]}
     if "package_project_driver" not in schema_names:
         fail("agent schema does not describe the Margo package driver")
+    if "moss agent session-report-template --json" not in " ".join(workflow.split()):
+        fail("moss-agent-workflow no longer advertises the session-report command")
+    session = agent_document(compiler, "session-report-template")["result"]
+    if not session.get("session_report_questions"):
+        fail("live session-report-template omitted its structured questions")
 
     lower_language = language.lower()
     for obsolete in ("sender fifo", "total commit order", "worker queue", "mailbox"):
