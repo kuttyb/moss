@@ -1,3 +1,4 @@
+# A closed routing topology must be acyclic, even before messages execute.
 domain A:
   domainroutes(next: B)
   fn Run():

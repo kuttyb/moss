@@ -1,2 +1,0 @@
-proc main()
-  let result = await missing.Work()

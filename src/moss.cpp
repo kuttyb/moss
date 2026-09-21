@@ -3198,7 +3198,7 @@ class Checker {
                 }
               }
               if (statement.kind == Stmt::Kind::Message &&
-                  !statement.message_result.empty() && handler->reply_type)
+                  !statement.message_result.empty() && handler && handler->reply_type)
                 env[statement.message_result] = *handler->reply_type;
             }
           }

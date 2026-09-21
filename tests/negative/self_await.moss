@@ -1,8 +1,0 @@
-domain Worker
-  on Work() -> bool
-    let result = message self.Work()
-    reply result
-
-proc main()
-  let worker = Worker()
-  message worker.Work()

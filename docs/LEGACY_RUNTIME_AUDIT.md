@@ -1,4 +1,9 @@
-# Phase 10.6E retirement audit
+# Historical: Phase 10.6E retirement audit
+
+This is a superseded implementation-history record, not current source guidance.
+The v0.1 peer-review cleanup subsequently removed redundant migration fixtures
+and the old error example listed below. Current examples use static composition,
+declared routes, synchronous `message`, and terminating `reply`.
 
 Base: `e70943c`; production 2PL was checked in at `9f49e64` and borrowed
 READs at `b3f8a64`. This record describes the Phase 10.6E change, not Phase

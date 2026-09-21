@@ -1,0 +1,7 @@
+domain Worker:
+  fn Work(value: Int) -> Bool:
+    reply true
+
+fn main():
+  worker = Worker()
+  result = message worker.Work()

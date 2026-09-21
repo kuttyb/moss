@@ -1,3 +1,4 @@
+# Positive value-boundary regression under current synchronous semantics.
 domain Worker
   on Notify(text: string)
     echo text

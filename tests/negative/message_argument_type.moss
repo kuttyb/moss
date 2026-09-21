@@ -1,0 +1,7 @@
+domain Worker:
+  fn Work(value: Int) -> Int:
+    reply value + 1
+
+fn main():
+  worker = Worker()
+  result = message worker.Work("not an integer")

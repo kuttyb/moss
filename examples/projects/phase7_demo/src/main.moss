@@ -1,6 +1,6 @@
 # A complete Moss project can keep its executable, unit tests, and small
 # benchmarks together while it is young. Larger projects may use tests/ and
-# benches/ for independently compiled suites.
+# benches/ for discovered suites that share the project's source declarations.
 
 fn add(left: int, right: int) -> int:
   left + right

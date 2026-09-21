@@ -1,7 +1,0 @@
-domain Worker
-  on Ping()
-    echo "ping"
-
-fn main():
-  worker = Worker()
-  await worker.Ping()

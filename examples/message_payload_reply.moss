@@ -1,0 +1,18 @@
+# Incoming payloads are immutable. A reply establishes a new value boundary:
+# replying with either an ordinary record or a primitive payload is legal.
+type Payload:
+  value: Int
+
+domain Echo:
+  fn Record(payload: Payload) -> Payload:
+    reply payload
+
+  fn Number(value: Int) -> Int:
+    reply value
+
+fn main():
+  echoer = Echo()
+  original = Payload(value: 7)
+  copy = message echoer.Record(original)
+  number = message echoer.Number(9)
+  echo original.value, copy.value, number

@@ -1,3 +1,4 @@
+# Shared handler logic belongs in an ordinary helper, not another handler.
 domain D:
   domainroutes(other: D)
   fn A():

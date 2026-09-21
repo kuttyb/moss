@@ -316,20 +316,21 @@ Additional examples:
 - `examples/counter.moss` demonstrates synchronous calls and protected state updates.
 - `examples/shared_memory.moss` shows synchronous Moss calls through plan-driven handler entry.
 - `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
-- `examples/object_pipeline.moss` creates and mutates an object inside one domain, passes it through that domain's handlers, and sends a primitive snapshot to another domain.
+- `examples/object_pipeline.moss` computes an object value inside a domain and sends a primitive snapshot through a declared route.
+- `examples/message_payload_reply.moss` shows legal by-value replies of immutable record and primitive payloads.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
-The intentional programs under `examples/errors` showcase Phase 2 diagnostics rather
+The intentional programs under `examples/errors` showcase current Moss diagnostics rather
 than Rust backend failures:
 
-- [historical await-cycle diagnostic](examples/errors/await_cycle.moss) records the retired pre-10.6A model.
+- [concrete route cycle](examples/errors/domain_route_cycle.moss) rejects a cyclic static composition and identifies its route bindings.
 - [recursive local call](examples/errors/recursive_call.moss) has a base case but is rejected because Phase 2 has no recursion.
 - [conflicting call access](examples/errors/conflicting_access.moss) passes one binding as both WRITE and READ; two READ uses remain legal in `phase2_safety.moss`.
 
 Inspect them directly:
 
 ```sh
-./moss --check examples/errors/await_cycle.moss
+./moss --check examples/errors/domain_route_cycle.moss
 ./moss --check examples/errors/recursive_call.moss
 ./moss --check examples/errors/conflicting_access.moss
 ```
@@ -422,8 +423,7 @@ reserved = message inventory.Reserve(quantity)
 message logger.Record(reserved)
 ```
 
-Source-level `await` is retired. Replace `value = await receiver.Handler(...)` with
-`value = message receiver.Handler(...)`; the compiler reports this migration directly.
+Use `value = message receiver.Handler(...)` when the handler returns a value.
 
 Ordinary local functions use `fn` and can omit types when inference is unambiguous:
 

@@ -1,0 +1,15 @@
+# Invalid static topology: app -> service -> audit -> app.
+# The diagnostic identifies each concrete instance and route binding.
+domain App:
+  domainroutes(service: Service)
+
+domain Service:
+  domainroutes(audit: Audit)
+
+domain Audit:
+  domainroutes(owner: App)
+
+fn main():
+  app = App(service: service)
+  service = Service(audit: audit)
+  audit = Audit(owner: app)

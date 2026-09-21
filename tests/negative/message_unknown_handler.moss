@@ -1,0 +1,7 @@
+domain Worker:
+  fn Work() -> Bool:
+    reply true
+
+fn main():
+  worker = Worker()
+  result = message worker.Missing()

@@ -1,0 +1,8 @@
+# A no-value synchronous message completes before execution proceeds.
+domain Worker:
+  fn Notify():
+    echo "notified"
+
+fn main():
+  worker = Worker()
+  result = message worker.Notify()

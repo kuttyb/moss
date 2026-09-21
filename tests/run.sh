@@ -5,6 +5,9 @@ compiler=${1:-./moss}
 test_build=${2:-build/tests}
 mkdir -p "$test_build"
 
+# Peer-review source hygiene: only focused migration fixtures contain retired syntax.
+python3 tests/tooling/check_retired_syntax.py --self-test
+
 fail() {
   echo "test failure: $*" >&2
   exit 1
@@ -884,7 +887,7 @@ grep -F '// Moss line 13: value: Int = 3' "$test_build/inferred_frontend.rs" >/d
 grep -F '// Moss line 20: reply Quote(symbol = "MOSS", price = 12.5)' \
   "$test_build/inferred_frontend.rs" >/dev/null ||
   fail "named constructor did not retain its '=' source syntax"
-run_case inferred_reply_one_way tests/inferred_reply_one_way.moss 'done'
+run_case inferred_reply_statement tests/inferred_reply_statement.moss 'done'
 run_case shared_memory_example examples/shared_memory.moss 'shared total: 10 42'
 shared_memory_message_line=$(awk '/^  message client.Run\(\)/ { print NR; exit }' examples/shared_memory.moss)
 grep -F "// Moss line $shared_memory_message_line: message client.Run()" "$test_build/shared_memory_example.rs" >/dev/null ||
@@ -951,13 +954,13 @@ order completed
 order rejected: insufficient inventory'
 assert_class_lowering "$test_build/shared_memory_checkout.rs"
 if grep -F 'tx: MossSender<CheckoutMsg>' "$test_build/shared_memory_checkout.rs" >/dev/null; then
-  fail "synchronous checkout retained an asynchronous mailbox"
+  fail "synchronous checkout retained removed asynchronous transport"
 fi
 run_shared_memory_case shared_memory_example_optimized examples/shared_memory.moss \
   'shared total: 10 42'
 assert_class_lowering "$test_build/shared_memory_example_optimized.rs"
 if grep -F 'tx: MossSender<ClientMsg>' "$test_build/shared_memory_example_optimized.rs" >/dev/null; then
-  fail "shared-memory example retained an asynchronous Client mailbox"
+  fail "shared-memory example retained removed asynchronous Client transport"
 fi
 shared_memory_call_line=$(awk '/^    first = message counter.Add\(10\)/ { print NR; exit }' examples/shared_memory.moss)
 grep -F "// Moss line $shared_memory_call_line: first = message counter.Add(10)" \
@@ -975,7 +978,7 @@ grep -F 'let result = __moss_body_' "$test_build/shared_memory_object_pipeline.r
 run_optimized_case shared_memory_ignored_reply tests/ignored_reply.moss \
   'ignored reply completed'
 if grep -F 'tx: MossSender<WorkerMsg>' "$test_build/shared_memory_ignored_reply.rs" >/dev/null; then
-  fail "ignored reply call retained an asynchronous mailbox"
+  fail "ignored reply call retained removed asynchronous transport"
 fi
 run_optimized_case shared_memory_domain_ref tests/domain_ref_message.moss 'ping
 ping'
@@ -983,7 +986,7 @@ run_shared_memory_case shared_memory_contention tests/shared_memory_contention.m
   'shared total: 2000 true true'
 assert_class_lowering "$test_build/shared_memory_contention.rs"
 if grep -F 'tx: MossSender<ProducerMsg>' "$test_build/shared_memory_contention.rs" >/dev/null; then
-  fail "contention case retained an asynchronous Producer mailbox"
+  fail "contention case retained removed asynchronous Producer transport"
 fi
 iteration=1
 while [ "$iteration" -le 20 ]; do
@@ -1059,19 +1062,17 @@ fi
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
 reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message'"
-reject_case cluster_await_retired "await is retired: message is synchronous"
-reject_case invalid_await "await is retired: message is synchronous"
 reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
 reject_case conflicting_reply_types "conflicting reply types in handler 'Worker.Maybe'"
 reject_case main_return_value "main cannot return a value"
-run_case message_payload_copy tests/negative/message_transfer.moss "$(printf 'detached\ndetached')"
-run_case state_payload_copy tests/negative/domain_state_transfer.moss '34'
+run_case message_payload_copy tests/message_payload_snapshot.moss "$(printf 'detached\ndetached')"
+run_case state_payload_copy tests/state_payload_snapshot.moss '34'
 run_case message_payload_copy tests/message_object_copy.moss '7'
-run_case reply_payload_copy tests/negative/object_reply_transfer.moss '7'
-run_case nested_payload_copy tests/negative/nested_object_transfer.moss '7'
-run_case string_payload_copy tests/negative/string_transfer.moss 'fresh'
+run_case reply_payload_copy tests/reply_payload_snapshot.moss '7'
+run_case nested_payload_copy tests/nested_payload_snapshot.moss '7'
+run_case string_payload_copy tests/string_payload_snapshot.moss 'fresh'
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
 run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'
 phase47_element_effects_json="$test_build/phase47_element_effects.json"
@@ -1094,28 +1095,28 @@ run_case implicit_domain_parameter_specialization \
   tests/implicit_domain_parameter_specialization.moss "$(printf '10\n20')"
 run_case_either_order implicit_domain_parameter_multiple_instances \
   tests/implicit_domain_parameter_multiple_instances.moss '10' '2.5'
-run_case implicit_domain_typed_parameter_instances \
-  tests/implicit_domain_typed_parameter_instances.moss ''
+run_case specialized_domain_routes \
+  tests/specialized_domain_routes.moss ''
 grep -F 'left: WorkerHandle' \
-  "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null ||
+  "$test_build/specialized_domain_routes.rs" >/dev/null ||
   fail 'static route lost the specialized Worker backend handle'
 if grep -F 'fn Ping_shared(&self, worker: Worker__' \
-    "$test_build/implicit_domain_typed_parameter_instances.rs" >/dev/null; then
+    "$test_build/specialized_domain_routes.rs" >/dev/null; then
   fail 'typed domain parameter specialization leaked a declared instance identity'
 fi
-run_case nominal_handle_conversion_paths \
-  tests/nominal_handle_conversion_paths.moss "$(printf '1\n2')"
+run_case domain_name_collision_routes \
+  tests/domain_name_collision_routes.moss "$(printf '1\n2')"
 grep -F 'fn take(value: i64)' \
-  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  "$test_build/domain_name_collision_routes.rs" >/dev/null ||
   fail 'ordinary helper must receive the message result, not a handle'
 grep -E 'fn Send\(&self, (mut )?value: i64\)' \
-  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  "$test_build/domain_name_collision_routes.rs" >/dev/null ||
   fail 'ordinary method must receive the message result, not a handle'
 grep -F 'worker: AHandle' \
-  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  "$test_build/domain_name_collision_routes.rs" >/dev/null ||
   fail 'static route lost the specialized A backend handle'
 grep -F 'struct A__helper__specialized_' \
-  "$test_build/nominal_handle_conversion_paths.rs" >/dev/null ||
+  "$test_build/domain_name_collision_routes.rs" >/dev/null ||
   fail 'specialized A/helper backend layout was not disambiguated from nominal A__helper'
 "$compiler" inspect 'domain-specialization:Box:intBox' \
   --source tests/implicit_domain_specialization.moss --json \
@@ -1154,8 +1155,7 @@ grep -F '"domain_write": true' \
   "$test_build/implicit_domain_specialization_effects.json" >/dev/null ||
   fail 'implicit Box Set did not retain its WRITE effect summary'
 
-# Per-instance specialization remains concrete after migrating invocation to
-# synchronous messages; await edges are no longer part of the active language.
+# Exact per-instance state and handler specialization.
 implicit_domain_specialization_message_json="$test_build/implicit_domain_specialization_message.json"
 run_case implicit_domain_specialization_message \
   tests/implicit_domain_specialization_message.moss ''
@@ -1177,8 +1177,6 @@ grep -F 'struct Worker__intWorkerRuntime' \
 grep -F 'struct Worker__floatWorkerRuntime' \
   "$test_build/implicit_domain_specialization_message.rs" >/dev/null ||
   fail 'implicit floatWorker specialization did not get a concrete Rust layout'
-reject_case implicit_domain_specialization_await_cycle \
-  'await is retired: message is synchronous'
 
 reject_case phase47_mutation_during_for \
   "cannot structurally mutate collection 'values' during an active READ traversal"
@@ -1194,18 +1192,29 @@ run_case generic_method_effects tests/generic_method_effects.moss '12 5'
 run_case phase2_safety examples/phase2_safety.moss \
   "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original')"
 
-# Phase 10.1A: the checked Moss AST executes directly without rustc.
-interp_basic_output=$($compiler run --interp tests/phase10_interpreter_basic.moss)
-[ "$interp_basic_output" = '13 5' ] || fail 'fast interpreter basic execution differed'
-interp_struct_output=$($compiler run --interp tests/phase10_interpreter_structs.moss)
-
-# Phase 10.6A: synchronous message expressions and terminating replies.
+# Synchronous message expressions and terminating replies.
 run_case phase106_sync_smoke tests/phase106_sync_smoke.moss 'set
 next
 7'
 run_case phase106_reply_control tests/phase106_reply_control.moss 'after'
-reject_source phase106_await_retired tests/phase106_await_retired.moss \
-  "await is retired: message is synchronous"
+run_case message_unit_result tests/message_unit_result.moss 'notified'
+run_case payload_reply_example examples/message_payload_reply.moss '7 7 9'
+reject_case message_unknown_receiver "message target 'missing' is not a concrete composition binding"
+reject_case message_unknown_handler "domain Worker has no message handler 'Missing'"
+reject_case message_wrong_arity "message Worker.Work expects 1 arguments, got 0"
+reject_case message_argument_type "argument 1 to message Worker.Work has type 'string', expected 'int'"
+reject_source example_domain_route_cycle examples/errors/domain_route_cycle.moss \
+  "concrete domain route cycle detected"
+
+# Retired syntax diagnostics: these are the only source migration fixtures.
+reject_case await_retired "await is retired: message is synchronous"
+reject_case spawn_retired "'spawn' is retired"
+
+# Fast Debug: the checked Moss AST executes directly without rustc.
+interp_basic_output=$($compiler run --interp tests/phase10_interpreter_basic.moss)
+[ "$interp_basic_output" = '13 5' ] || fail 'fast interpreter basic execution differed'
+interp_struct_output=$($compiler run --interp tests/phase10_interpreter_structs.moss)
+
 [ "$interp_struct_output" = '9' ] || fail 'fast interpreter struct execution differed'
 interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
@@ -1254,10 +1263,10 @@ reject_case phase26_payload_consume \
   "cannot CONSUME incoming message payload 'payload'"
 reject_case phase26_payload_state_store \
   "cannot CONSUME incoming message payload 'payload'"
-run_case phase26_payload_reply tests/negative/phase26_payload_reply.moss '1'
+run_case phase26_payload_reply tests/payload_reply_record.moss '1'
 reject_case phase26_payload_alias_reply \
   "cannot CONSUME incoming message payload 'payload'"
-run_case phase26_payload_reply_copy tests/negative/phase26_payload_reply_copy.moss '1'
+run_case phase26_payload_reply_copy tests/payload_reply_primitive.moss '1'
 reject_case phase26_payload_rebind \
   "cannot WRITE incoming message payload 'payload'"
 reject_case phase26_payload_rebind_copy \
@@ -1274,13 +1283,6 @@ grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
 
 reject_case branch_divergent_domain_types \
   "domain handles cannot be used as ordinary values or payloads"
-reject_case branch_domain_await_cycle "await is retired: message is synchronous"
-reject_case unbounded_await_handler "await is retired: message is synchronous"
-reject_case unbounded_await_main_helper "await is retired: message is synchronous"
-reject_case direct_await_cycle "await is retired: message is synchronous"
-reject_case transitive_await_cycle "await is retired: message is synchronous"
-reject_case function_await_cycle "await is retired: message is synchronous"
-reject_case repeated_await_cycle_edges "await is retired: message is synchronous"
 reject_case recursive_function "recursive local call cycle: recurse -> recurse"
 reject_case mutually_recursive_functions "recursive local call cycle: first -> second -> first"
 reject_case write_read_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
@@ -1290,8 +1292,6 @@ reject_case consume_write_alias "conflicting accesses to value 'item' in call to
 reject_case double_consume_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with transfer"
 reject_case nontrivial_field_move "value 'packet' was transferred"
 reject_case branch_join_consume "value 'item' was transferred"
-reject_source example_await_cycle examples/errors/await_cycle.moss \
-  "await is retired: message is synchronous"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
@@ -1321,22 +1321,16 @@ reject_source fallthrough tests/fallthrough.moss \
   "must reply on every normal control-flow path"
 reject_case phase106_missing_reply \
   "must reply on every normal control-flow path"
-reject_case phase106_same_domain_chain \
+reject_case same_domain_handler_message \
   "same-domain handler chaining is not allowed"
-reject_case phase106b_spawn_retired \
-  "'spawn' is retired"
-reject_case phase106b_route_cycle \
+reject_case domain_route_cycle \
   "concrete domain route cycle detected"
 reject_case phase106b_impure_state_initializer \
   "domain state initializers must be side-effect-free"
 reject_case phase106b_route_reassign \
   "domain route 'worker' is immutable"
-reject_case await_one_way "await is retired: message is synchronous"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
-reject_case await_unknown_receiver "await is retired: message is synchronous"
-reject_case await_unknown_handler "await is retired: message is synchronous"
-reject_case await_wrong_arity "await is retired: message is synchronous"
-reject_case self_await "self-send is not allowed"
+reject_case self_send_rejected "self-send is not allowed"
 reject_case duck_missing_method "missing required method 'describe'"
 reject_case duck_wrong_method_arity "wrong arity for required method 'describe'"
 reject_case duck_incompatible_method_argument "method 'draw' is incompatible with argument types (string)"
@@ -1351,7 +1345,6 @@ reject_case implicit_domain_parameter_conflict_zero \
   "handler 'Set' parameter 0"
 reject_case implicit_domain_parameter_conflict_one \
   "handler 'Set' parameter 1"
-reject_case typed_domain_parameter_await_cycle "await is retired: message is synchronous"
 reject_case domain_handle_prefix_collision_message "domain handles cannot be passed as handler payloads"
 reject_case domain_handle_prefix_collision_function "domain handles cannot be passed as ordinary function parameters"
 reject_case domain_handle_prefix_collision_method "domain handles cannot be passed as ordinary method parameters"
@@ -1388,8 +1381,6 @@ reject_case functional_recursion \
   "recursive local call cycle: recurse -> recurse"
 reject_case functional_hof_recursion \
   "recursive local call cycle: recurse -> recurse"
-reject_case functional_await_cycle \
-  "await is retired: message is synchronous"
 reject_case functional_callback_alias \
   "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
 reject_case functional_placeholder_noncopy_identity \

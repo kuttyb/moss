@@ -2,6 +2,45 @@
 
 Updated: 2026-09-20
 
+## Moss v0.1 peer-review hygiene cleanup
+
+Active examples, projects, benchmark sources, and semantic regressions now use
+current static construction, declared routes, synchronous messages, and replies.
+Retired source syntax remains only at `tests/negative/await_retired.moss:8` and
+`tests/negative/spawn_retired.moss:7`, one migration token each. Historical docs
+remain explicitly labeled; the old cycle error example was replaced with a
+concrete three-instance route-cycle example.
+
+Twelve redundant rejection-only fixtures were removed. Four useful old cases
+were rewritten as current message target/handler/arity negatives and a positive
+no-value call. Self-send, same-domain chaining, route-cycle and specialization
+fixtures now have descriptive current names. Seven currently valid payload-copy
+and reply fixtures were moved out of `negative/`; two obsolete reply-error
+examples became one positive reply-by-value example. Current topology, closure,
+ownership, functional, synchronization, 2PL, module, and Fast Debug coverage is
+preserved. `tests/README.md` documents the current test groups.
+
+The new source-hygiene gate runs before the suite, rejects unallowlisted tokens
+including comments/nested examples, verifies both migration fixtures, and has
+self-tests. The cleanup exposed a real error-path bug: unknown expression-valued
+message handlers were dereferenced during signature inference. A one-line null
+guard restores the existing missing-handler diagnostic; no valid-program semantics
+or production backend code changed.
+
+Validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror`, the initial full
+suite, all examples with Rust warnings denied, all four project examples in
+debug/release, module/ledger Fast Debug output equivalence, test/benchmark demo,
+intentional failures, source audit/self-tests and Emacs byte compilation passed.
+The final full-suite rerun after descriptive fixture renames passed, including
+all current A/B/B.1/C/D/D.1/E/F/F.1, ownership/functional, native/2PL,
+Fast Debug, module/project, agent, source-map/objdump and 20 Emacs ERT checks.
+Live LLDB/DAP tests retain their capability skip because process tracing is
+unavailable. `sh -n tests/run.sh` and staged/unstaged Git whitespace checks pass.
+The final audit reports exactly the two source occurrences listed above and no
+active example or benchmark occurrences. No validation remains pending.
+Logs are under repository `tmp/` and disposable. This is hygiene only:
+no Phase 15 work, automatic release re-closure, or release/tag publication.
+
 ## Phase 10.6F.1 checked in as `f1dd43e` — awaiting review and explicit v0.1 re-closure
 
 The provisional Phase 10 closeout (`a907336`, status `94fca2c`) was reopened for
