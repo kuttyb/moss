@@ -45,6 +45,11 @@ moss_skill_contract:
   general_first_class_closures: unsupported
   legacy_runtime_model: forbidden
   bootstrap_contract: required
+  project_driver: margo
+  project_manifest: Moss.toml
+  project_lockfile: Moss.lock
+  package_resolution: path-git
+  module_resolution: moss-compiler
 ```
 
 ## Do / do not
@@ -239,9 +244,24 @@ not fuse.
 
 ## Modules and projects
 
-A project uses `moss.toml` and conventional `src/`, `tests/`, and `benches/`
-directories. Without explicit modules, a target's participating files form one
-temporary global compilation unit. Explicit modules use current syntax:
+A package root has `Moss.toml`, an optional deterministic `Moss.lock`, and
+conventional `src/`, `tests/`, and `benches/` directories. **Margo resolves
+packages; Moss resolves modules.** Use Margo for the package graph and project
+commands; Moss remains the parser, checker, `.mossi` interface loader, and semantic
+authority. Package dependencies are package roots, never individual `.moss` files:
+
+```toml
+[dependencies]
+geometry = { path = "../geometry" }
+math = { git = "https://github.com/example/math", tag = "v1" }
+```
+
+Git selectors resolve to concrete commits recorded in `Moss.lock`; Margo reuses its
+global source cache at `${MARGO_HOME:-~/.margo}`. This is enough package context for
+source work—see `docs/PROJECT_WORKFLOW.md` for operational details.
+
+Without explicit modules, a target's participating files form one temporary global
+compilation unit. Explicit modules use current syntax:
 
 ```moss
 module pricing
@@ -260,9 +280,14 @@ fn main():
 
 Declarations are private unless exported. Imports are acyclic and symbols are
 qualified. The normal project entry is one application `main`. Compiled providers may
-be consumed through their `.mossi` interface and native artifact when the project
-workflow makes them source-free; Fast Debug requires reachable Moss source. See
-`docs/MODULES.md` and `docs/PROJECT_WORKFLOW.md` for the operational details.
+be consumed through their `.mossi` interface and paired native artifact when Margo
+makes them source-free; Fast Debug requires reachable Moss source. A requested
+external module must have exactly one `.mossi` provider in Margo's resolved dependency
+environment. Two reachable packages may both export `Utils` until source writes
+`import Utils`; that import then fails with `MODULE_IMPORT_AMBIGUOUS`. Moss source has
+no package-qualified import syntax: Margo chooses reachable packages, then Moss
+resolves imports among their module interfaces. See `docs/MODULES.md` and
+`docs/PROJECT_WORKFLOW.md` for deeper details.
 
 ## Synchronization mental model
 

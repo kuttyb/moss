@@ -1,6 +1,6 @@
 # Moss current status
 
-Updated: 2026-09-20
+Updated: 2026-09-21
 
 ## Phase 15.2 — Margo package/project driver (closed)
 
@@ -31,6 +31,22 @@ deterministic `MODULE_IMPORT_AMBIGUOUS` diagnostic listing canonical interface p
 The selected interface is carried to native lowering so its `.rlib` is paired from the
 same provider directory. No package-qualified import syntax or Margo-side import
 resolution was introduced.
+
+## Phase 15 — agent onboarding hardening
+
+The fresh-agent chain is now `AGENTS.md` → repository-local Moss skills → live
+`moss agent bootstrap --json`. `AGENTS.md` tells an agent how to build/use `./moss`,
+then routes package/project work to Margo and semantic/module/compiler work to Moss.
+The skills and versioned bootstrap expose `Moss.toml`, `Moss.lock`, path/Git packages,
+canonical `margo build|run|test|bench|clean`, and retained Moss semantic tools. Skill
+contracts are checked against live bootstrap/capability/schema facts, including Margo,
+semantic edits, impact/affected tests, synchronization introspection, Fast Debug, and
+trace support. This is discoverability/drift protection only; no Phase 22 work or
+language/package semantic change was started. Validation: strict C++17 `-Werror`,
+agent Skill/bootstrap/schema regressions, focused Margo regression, and `make examples`
+pass. `make check` reaches its existing sandbox LLDB/DAP initial-handshake limitation
+only after the compiler, package/module, Fast Debug, tooling, and Emacs checks pass;
+that integration test was not weakened.
 
 ## Phase 15.1 — borrowed synchronous message payload lowering (closed)
 

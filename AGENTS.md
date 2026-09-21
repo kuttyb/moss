@@ -6,10 +6,18 @@ When working with Moss:
 
 1. Load repository-local `moss-language` and `moss-agent-workflow` from
    `.agents/skills/`.
-2. Before substantive Moss edits, run `moss agent bootstrap --json`.
-3. Treat that live result and Moss semantic APIs as authoritative.
-4. Do not infer Moss semantics from generated Rust or historical compiler source when
-   a semantic API exists.
+2. Ensure the repository compiler is available. Use `./moss` when `moss` is not on
+   `PATH`; run `make` first if `./moss` has not been built.
+3. Before substantive Moss edits, run `./moss agent bootstrap --json` (or
+   `moss agent bootstrap --json` when available on `PATH`).
+4. Treat that live result and Moss semantic APIs as authoritative. Do not infer Moss
+   semantics from generated Rust or historical compiler source when a semantic API
+   exists.
+5. Use Margo for package/project operations: `./margo build`, `./margo run`,
+   `./margo test`, `./margo bench`, and `./margo clean`.
+6. Use Moss for language/compiler/agent operations: `moss check`, `inspect`, `type`,
+   `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and
+   `debug`.
 
 ## Temporary files and Git
 

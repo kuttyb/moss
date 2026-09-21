@@ -20,12 +20,26 @@ Codex select it from its description. Use `$moss-agent-workflow` for compiler er
 Moss debugging, or agent-driven edits. The project `AGENTS.md` points agents to both,
 but deliberately does not duplicate their contents.
 
-The skills are agent guidance, not a second language specification. The checked
-compiler, its diagnostics, and current regression suite remain authoritative. Run
-`moss agent bootstrap --json` for live capability discovery; use the skills to avoid
-learning retired syntax or backend details by accident. The valid language-skill
-example is mirrored in a fixture and compiled with strict generated-Rust warnings by
-`tests/tooling/check_agent_skills.py`.
+The discovery hierarchy is intentionally small:
+
+```text
+AGENTS.md
+    ↓
+repository-local skills
+    ↓
+live moss agent bootstrap --json
+```
+
+`AGENTS.md` tells a fresh agent how to build/use `./moss`, load both skills, and run
+bootstrap. The skills give compact current guidance; bootstrap, capabilities, and
+schema discovery are the live capability contract. Margo owns packages and projects
+(`margo build|run|test|bench|clean`); Moss owns modules, `.mossi` interfaces, checking,
+semantic queries, and lowering. The skills are agent guidance, not a second language
+specification. The checked compiler, its diagnostics, and current regression suite
+remain authoritative. Run `moss agent bootstrap --json` for live discovery; use the
+skills to avoid learning retired syntax or backend details by accident. The valid
+language-skill example is mirrored in a fixture and compiled with strict generated-Rust
+warnings by `tests/tooling/check_agent_skills.py`.
 
 This is a small dogfooding aid pulled forward from future Phase 22 work. It does not
 complete Phase 22: measured skill effectiveness, systematic rewrite-bearing

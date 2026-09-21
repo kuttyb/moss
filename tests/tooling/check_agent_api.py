@@ -68,7 +68,8 @@ schema, _ = invoke("agent", "schema", "--json")
 if "semantic_inspection" not in capabilities["result"]["capabilities"]:
     fail("capability discovery omitted semantic inspection")
 for capability in ("impact_analysis", "formatter", "semantic_edits",
-                    "repair_actions", "static_cost_facts"):
+                    "repair_actions", "static_cost_facts", "package_project_driver",
+                    "package_dependencies", "package_lockfile"):
     if capability not in capabilities["result"]["capabilities"]:
         fail(f"capability discovery omitted {capability}")
 if not schema["result"]["schema"]["diagnostic_codes_are_stable"]:
@@ -77,6 +78,19 @@ if "impact" not in schema["result"]["schema"]["project_result_kinds"]:
     fail("schema discovery omitted impact result kind")
 if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:
     fail("bootstrap omitted the generated-Rust safety rule")
+catalog = {item["id"]: item for item in capabilities["result"]["capability_catalog"]}
+if catalog["package_project_driver"]["entrypoint"] != "margo build|run|test|bench|clean":
+    fail("Margo is not the canonical package/project capability entrypoint")
+actions = {item["name"]: item for item in bootstrap["result"]["actions"]}
+for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
+    if action not in actions or not actions[action]["command"].startswith("margo "):
+        fail(f"bootstrap omitted canonical Margo action {action}")
+for capability in ("package_project_driver", "package_dependencies", "package_lockfile"):
+    if not bootstrap["result"]["capability_flags"].get(capability):
+        fail(f"bootstrap did not flag {capability} as available")
+schema_names = {item["name"] for item in schema["result"]["schema"]["command_schemas"]}
+if "package_project_driver" not in schema_names:
+    fail("agent schema omitted the Margo package/project contract")
 
 checked, checked_bytes = invoke("check", str(source), "--json")
 _, repeated_check = invoke("check", str(source), "--json")

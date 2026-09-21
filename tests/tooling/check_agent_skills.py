@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import json
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,8 @@ SKILLS = ROOT / ".agents" / "skills"
 LANGUAGE = SKILLS / "moss-language" / "SKILL.md"
 WORKFLOW = SKILLS / "moss-agent-workflow" / "SKILL.md"
 EXAMPLE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_skill_example.moss"
+AGENTS = ROOT / "AGENTS.md"
+MARGO = ROOT / "margo"
 
 
 def fail(message: str) -> None:
@@ -50,6 +53,19 @@ def extract_valid_example(text: str) -> str:
 
 def run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
+
+
+def agent_document(compiler: Path, command: str) -> dict[str, object]:
+    completed = run([str(compiler), "agent", command, "--json"], ROOT)
+    if completed.returncode != 0:
+        fail(f"agent {command} failed:\n{completed.stdout}{completed.stderr}")
+    try:
+        document = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        fail(f"agent {command} emitted invalid JSON: {error}")
+    if not document.get("ok"):
+        fail(f"agent {command} reported failure: {document}")
+    return document
 
 
 def main() -> int:
@@ -89,6 +105,11 @@ def main() -> int:
             "recursion": "unsupported",
             "general_first_class_closures": "unsupported",
             "legacy_runtime_model": "forbidden",
+            "project_driver": "margo",
+            "project_manifest": "Moss.toml",
+            "project_lockfile": "Moss.lock",
+            "package_resolution": "path-git",
+            "module_resolution": "moss-compiler",
         },
         "moss-language",
     )
@@ -103,9 +124,79 @@ def main() -> int:
             "generated_rust": "implementation-artifact",
             "fast_debug": "checked-moss-interpreter",
             "trace": "newline-delimited-json",
+            "project_driver": "margo",
+            "project_manifest": "Moss.toml",
+            "project_lockfile": "Moss.lock",
+            "package_resolution": "path-git",
+            "module_resolution": "moss-compiler",
+            "semantic_oracle": "moss-agent-1",
         },
         "moss-agent-workflow",
     )
+
+    agents = AGENTS.read_text(encoding="utf-8")
+    for marker in (
+        "moss-language",
+        "moss-agent-workflow",
+        "./moss agent bootstrap --json",
+        "run `make` first",
+        "./margo build",
+        "./margo run",
+        "./margo test",
+        "./margo bench",
+        "./margo clean",
+    ):
+        if marker not in agents:
+            fail(f"AGENTS.md no longer routes a fresh agent to: {marker}")
+    if not MARGO.is_file() or not MARGO.stat().st_mode & 0o111:
+        fail("repository Margo package driver is unavailable to a fresh agent")
+
+    bootstrap = agent_document(compiler, "bootstrap")["result"]
+    capabilities = agent_document(compiler, "capabilities")["result"]
+    schema = agent_document(compiler, "schema")["result"]
+    if bootstrap["language_version"] != "moss-0.1":
+        fail("live bootstrap disagrees with the moss-language version contract")
+    if bootstrap["agent_protocol_version"] != 1:
+        fail("live bootstrap disagrees with the moss-agent-1 workflow contract")
+    capability_names = set(capabilities["capabilities"])
+    for capability in (
+        "semantic_inspection",
+        "semantic_edits",
+        "impact_analysis",
+        "affected_tests",
+        "structured_execution_trace",
+        "synchronization_plan",
+        "package_project_driver",
+        "package_dependencies",
+        "package_lockfile",
+    ):
+        if capability not in capability_names:
+            fail(f"live capability discovery omitted {capability}")
+    for capability in ("package_project_driver", "package_dependencies", "package_lockfile"):
+        if not bootstrap["capability_flags"].get(capability):
+            fail(f"bootstrap did not flag {capability} as available")
+    catalog = {item["id"]: item for item in capabilities["capability_catalog"]}
+    for capability, marker in {
+        "package_project_driver": "margo build|run|test|bench|clean",
+        "package_dependencies": "Moss.toml",
+        "package_lockfile": "Moss.lock",
+        "module_interfaces": "margo build --json",
+    }.items():
+        if capability not in catalog or marker not in catalog[capability].get("entrypoint", ""):
+            fail(f"live {capability} discovery lacks current Margo/Moss routing")
+    actions = {item["name"]: item for item in bootstrap["actions"]}
+    for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
+        if action not in actions or not actions[action]["command"].startswith("margo "):
+            fail(f"bootstrap does not expose canonical Margo action {action}")
+    if not any("Margo for package/project operations" in step
+               for step in bootstrap["recommended_workflow"]):
+        fail("bootstrap workflow does not route package work to Margo")
+    if not any("Moss owns module/.mossi/semantic truth" in step
+               for step in bootstrap["recommended_workflow"]):
+        fail("bootstrap workflow does not preserve Moss semantic/module authority")
+    schema_names = {item["name"] for item in schema["schema"]["command_schemas"]}
+    if "package_project_driver" not in schema_names:
+        fail("agent schema does not describe the Margo package driver")
 
     lower_language = language.lower()
     for obsolete in ("sender fifo", "total commit order", "worker queue", "mailbox"):
@@ -138,7 +229,7 @@ def main() -> int:
         if executed.returncode != 0 or executed.stdout != "5\n":
             fail(f"skill example produced unexpected output: {executed.stdout}{executed.stderr}")
 
-    print("Moss agent skills passed discovery, drift, and live-example checks")
+    print("Moss agent skills passed bootstrap, Margo-discovery, drift, and live-example checks")
     return 0
 
 

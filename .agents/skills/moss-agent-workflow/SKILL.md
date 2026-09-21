@@ -1,6 +1,6 @@
 ---
 name: moss-agent-workflow
-description: Work efficiently on a Moss repository using the compiler-first moss-agent-1 workflow: bootstrap, structured diagnostics, semantic queries, formatting, impact, tests, Fast Debug, and traces. Use for Moss compiler errors, debugging, or agent-driven Moss edits.
+description: "Work efficiently on a Moss repository using the compiler-first moss-agent-1 workflow: bootstrap, structured diagnostics, semantic queries, formatting, impact, tests, Fast Debug, and traces. Use for Moss compiler errors, debugging, or agent-driven Moss edits."
 metadata:
   language: moss-0.1
   skill-version: "1"
@@ -54,6 +54,12 @@ moss_workflow_contract:
   synchronization_introspection: inspect-effects-why
   module_interface_truth: mossi-semantic-interface
   structured_json: preferred
+  project_driver: margo
+  project_manifest: Moss.toml
+  project_lockfile: Moss.lock
+  package_resolution: path-git
+  module_resolution: moss-compiler
+  semantic_oracle: moss-agent-1
 ```
 
 ## Start a Moss task
@@ -193,13 +199,42 @@ message/reply events, patch, then replay. Existing traces carry source and seman
 identity; they are not a physical lock, contention, or schedule simulator. Do not claim
 trace slicing/query features that the compiler has not exposed.
 
-## Projects and backend artifacts
+## Packages/projects versus semantic/compiler operations
 
-For normal project work, use `moss build`, `moss test`, and `moss bench`; they share the
-manifest, checked program, semantic identities, profile handling, and backend cache.
+Use **Margo** for package/project orchestration:
+
+```sh
+margo build
+margo run
+margo test
+margo bench
+margo clean
+```
+
+`Moss.toml` is the package manifest; `Moss.lock` freezes resolved Git commits.
+Dependencies may be local package roots (`{ path = "../geometry" }`) or Git sources
+with `rev`, `tag`, or `branch`. Margo resolves that package graph and supplies artifact
+roots. Moss still owns module declarations/imports, `.mossi` semantic interfaces,
+checking, specialization, and lowering. Existing `moss build`, `moss test`, `moss
+bench`, and `moss clean` are compatibility project paths, not the canonical package
+workflow.
+
+Use **Moss** directly for semantic/compiler work:
+
+```sh
+moss check path/to/file.moss --json
+moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json
+moss impact <target> --source <source> --json
+moss edit rename|replace-expression|change-argument ... --json
+moss fmt
+moss test --affected --json
+moss debug <project-or-source> --trace
+```
+
 Generated Rust is useful for compiler/backend work and native debugging, but it is an
 implementation artifact for Moss application changes. Prefer Moss diagnostics,
-`mossmap` provenance, and semantic queries first.
+`mossmap` provenance, and semantic queries first. Use `margo test` for full root-package
+verification after reduced Moss `test --affected` iteration.
 
 Use release builds for benchmark work. A baseline comparison records compiler, profile,
 machine, and backend toolchain identity. Do not treat an incompatible baseline as a

@@ -13470,10 +13470,13 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"affected_tests", "Conservative semantic-impact selected verification.", "moss test --affected --json"},
       {"static_cost_facts", "Known materialization, traversal, specialization, message-materialization, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
       {"synchronization_plan", "Concrete graph plus R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and conflict witnesses.", "moss inspect|effects|why <target> --source <source> --json"},
-      {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "moss build --json -> result.artifacts.module_interfaces"},
+      {"package_project_driver", "Resolve Moss packages and orchestrate project build, run, test, benchmark, and clean operations.", "margo build|run|test|bench|clean"},
+      {"package_dependencies", "Resolve local path and Git package dependencies declared in Moss.toml.", "Moss.toml [dependencies] with path or git/rev/tag/branch"},
+      {"package_lockfile", "Freeze resolved Git dependency commits deterministically.", "Moss.lock"},
+      {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
       {"fast_debug", "Direct execution of checked reachable Moss source when behavior is wrong.", "moss run --interp <source> | moss debug <project-or-source>"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
-      {"project_workflow", "Build, test, and benchmark results using the shared protocol envelope.", "moss build|test|bench --json"},
+      {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean"},
   };
   return catalog;
 }
@@ -13848,7 +13851,8 @@ static void write_bootstrap_json(std::ostream& out,
             "repair_actions", "static_cost_facts", "source_provenance",
             "first_order_effect_graph", "structured_execution_trace",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
-            "domain_ranks"});
+            "domain_ranks", "package_project_driver", "package_dependencies",
+            "package_lockfile"});
   out << ",\n    \"capability_catalog\": ";
   write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
   out << ",\n    \"capability_flags\": {"
@@ -13858,7 +13862,10 @@ static void write_bootstrap_json(std::ostream& out,
          "\"formatter\": true, "
          "\"semantic_edits\": true, "
          "\"repair_actions\": true, "
-         "\"cost_facts\": true}";
+         "\"cost_facts\": true, "
+         "\"package_project_driver\": true, "
+         "\"package_dependencies\": true, "
+         "\"package_lockfile\": true}";
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",
@@ -13875,10 +13882,15 @@ static void write_bootstrap_json(std::ostream& out,
             "moss edit replace-expression <entity-id> <expression> --json",
             "moss edit change-argument <call-id> <index> <expression> --json",
             "moss fmt [--check] [--json]",
-            "moss build [--release] [--json]",
+            "margo build [--release] [--json]",
+            "margo run [--release]",
+            "margo test [filter] [--release] [--json]",
+            "margo bench [filter] [--json]",
+            "margo clean",
+            "Moss.toml package manifest; Moss.lock resolved Git dependency lock",
             "module-qualified imports and versioned .mossi interfaces",
-            "moss test [filter] [--affected] [--json]",
-            "moss bench [filter] [--json]"});
+            "moss test --affected [--json] (semantic reduced verification)",
+            "moss build|test|bench|clean (project-command compatibility paths)"});
   out << ",\n    \"semantic_queries\": ["
          "{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},"
@@ -13893,9 +13905,11 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"format\",\"command\":\"moss fmt [--check] [--json]\",\"purpose\":\"canonical source formatting\"},"
          "{\"name\":\"semantic_edit\",\"command\":\"moss edit rename|replace-expression|change-argument ... --json\",\"purpose\":\"exact compiler-resolved source edit\"},"
          "{\"name\":\"affected_test\",\"command\":\"moss test --affected --json\",\"purpose\":\"conservative impact-selected verification\"},"
-         "{\"name\":\"project_build\",\"command\":\"moss build [--release] --json\",\"purpose\":\"deterministic project artifact/build result\"},"
-         "{\"name\":\"project_test\",\"command\":\"moss test [filter] [--json]\",\"purpose\":\"Moss-native tests\"},"
-         "{\"name\":\"project_bench\",\"command\":\"moss bench [filter] [--json]\",\"purpose\":\"release benchmark and baseline result\"}]";
+         "{\"name\":\"package_build\",\"command\":\"margo build [--release] [--json]\",\"purpose\":\"canonical package build and dependency resolution\"},"
+         "{\"name\":\"package_run\",\"command\":\"margo run [--release]\",\"purpose\":\"canonical package build and execution\"},"
+         "{\"name\":\"package_test\",\"command\":\"margo test [filter] [--release] [--json]\",\"purpose\":\"canonical root-package test execution\"},"
+         "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
+         "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"}]";
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
@@ -13903,15 +13917,16 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
       out, {"Run moss agent bootstrap --json before modifying Moss source.",
-            "Run moss check --json.",
+            "Use Margo for package/project operations: margo build|run|test|bench|clean.",
+            "Run moss check --json before guessing at a Moss error.",
             "Use inspect, why, effects, ownership, and cost as needed.",
             "Edit Moss source, never generated Rust.",
             "Run moss fmt.",
             "Run moss impact <target> --json.",
             "Run moss test --affected during iteration.",
-            "Run the full moss test suite when appropriate.",
+            "Run the full root-package tests with margo test when appropriate.",
             "Prefer structured --json output for automation.",
-            "Use moss build and moss bench inside a Moss project."});
+            "Moss owns module/.mossi/semantic truth; Margo supplies package artifacts."});
   out << ",\n    \"workflow_hints\": ["
          "{\"question\":\"What is this symbol or concrete domain instance?\",\"capability\":\"inspect\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"question\":\"What type or specialization did this resolve to?\",\"capability\":\"type\",\"command\":\"moss type <target> --source <source> --json\"},"
@@ -13921,6 +13936,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},"
          "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
+         "{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
          "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
   out << ",\n    \"safety_rules\": ";
@@ -13944,7 +13960,8 @@ static void write_bootstrap_json(std::ostream& out,
   write_debug_json_string(
       out,
       "This repository uses Moss.\n\nBefore changing Moss source, run:\n\n"
-      "    moss agent bootstrap --json\n\nUse Moss semantic queries and "
+      "    ./moss agent bootstrap --json\n\nUse Margo for package/project "
+      "operations (./margo build|run|test|bench|clean). Use Moss semantic queries and "
       "structured diagnostics instead of reverse-engineering generated "
       "Rust.\n\nAfter edits, follow the workflow returned by bootstrap.");
   if (command == "schema") {
@@ -14026,7 +14043,14 @@ static void write_bootstrap_json(std::ostream& out,
         {"EDIT_ARGUMENT_INVALID", "EDIT_TARGET_STALE", "QUERY_TARGET_NOT_FOUND"});
     out << ',';
     write_agent_command_schema(
-        out, "project_build_test_bench", "Build, test, and benchmark a project through the shared compiler pipeline.",
+        out, "package_project_driver", "Resolve packages and build, run, test, benchmark, or clean the root project through Margo.",
+        {"Margo project command"}, {"--json", "--release", "filter"},
+        "Margo project result with resolved package dependency/artifact facts",
+        {"package identity", "resolved Git commit", "module artifact identities"},
+        {"package dependency cycle", "lockfile error", "dependency acquisition/build failure"});
+    out << ',';
+    write_agent_command_schema(
+        out, "project_build_test_bench_compatibility", "Use Moss's retained compatibility project commands when a compiler-only workflow requires them.",
         {"project command"}, {"--json", "--release", "filter", "--affected", "baseline options"},
         "moss-agent-1 envelope with project artifacts/results",
         {"test", "bench", "module", "specialization project identities"},
@@ -14048,7 +14072,7 @@ static void write_bootstrap_json(std::ostream& out,
     out << ',';
     write_agent_command_schema(
         out, "module_interface", "Discover .mossi semantic interface artifacts from a successful module project build.",
-        {"moss build --json"}, {},
+        {"margo build --json"}, {},
         "build result.artifacts.module_interfaces paths; .mossi holds semantic export truth",
         {"module identity", "specialization identity"},
         {"PROJECT_MANIFEST_ERROR", "incompatible provider interface"});
