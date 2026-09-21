@@ -58,6 +58,7 @@ class CompilerStageTimer {
 };
 
 static constexpr const char* kCompilerVersion = "0.1.0";
+static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
 
@@ -13328,6 +13329,71 @@ static void write_agent_string_array(std::ostream& out,
   out << "]";
 }
 
+struct AgentCapabilityDescriptor {
+  const char* id;
+  const char* purpose;
+  const char* entrypoint;
+};
+
+static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
+  static const vector<AgentCapabilityDescriptor> catalog = {
+      {"structured_diagnostics", "Stable machine-readable Moss diagnostics, locations, identities, and repair alternatives.", "moss check <source> --json"},
+      {"semantic_queries", "Checked-program type, ownership, effect, call, explanation, and cost facts.", "moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
+      {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
+      {"impact_analysis", "Changed semantic facts, dependents, affected tests, and reuse facts.", "moss impact <target> --source <source> --json"},
+      {"formatter", "Canonical Moss formatting or formatting drift detection.", "moss fmt [--check] [--json]"},
+      {"semantic_edits", "Exact compiler-resolved rename, expression, or argument edits.", "moss edit rename|replace-expression|change-argument ... --json"},
+      {"affected_tests", "Conservative semantic-impact selected verification.", "moss test --affected --json"},
+      {"static_cost_facts", "Known materialization, traversal, specialization, message-copy, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
+      {"synchronization_plan", "Concrete graph plus R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and conflict witnesses.", "moss inspect|effects|why <target> --source <source> --json"},
+      {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "moss build --json -> result.artifacts.module_interfaces"},
+      {"fast_debug", "Direct execution of checked reachable Moss source when behavior is wrong.", "moss run --interp <source> | moss debug <project-or-source>"},
+      {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
+      {"project_workflow", "Build, test, and benchmark results using the shared protocol envelope.", "moss build|test|bench --json"},
+  };
+  return catalog;
+}
+
+static void write_agent_capability_catalog(std::ostream& out, bool detailed) {
+  out << "[";
+  const auto& catalog = agent_capability_catalog();
+  for (size_t index = 0; index < catalog.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"id\":";
+    write_debug_json_string(out, catalog[index].id);
+    if (detailed) {
+      out << ",\"purpose\":";
+      write_debug_json_string(out, catalog[index].purpose);
+      out << ",\"entrypoint\":";
+      write_debug_json_string(out, catalog[index].entrypoint);
+    }
+    out << "}";
+  }
+  out << "]";
+}
+
+static void write_agent_command_schema(
+    std::ostream& out, const string& name, const string& purpose,
+    const vector<string>& required, const vector<string>& optional,
+    const string& response_shape, const vector<string>& identities,
+    const vector<string>& failures) {
+  out << "{\"name\":";
+  write_debug_json_string(out, name);
+  out << ",\"purpose\":";
+  write_debug_json_string(out, purpose);
+  out << ",\"required_inputs\":";
+  write_agent_string_array(out, required);
+  out << ",\"optional_inputs\":";
+  write_agent_string_array(out, optional);
+  out << ",\"response_shape\":";
+  write_debug_json_string(out, response_shape);
+  out << ",\"stable_identifiers\":";
+  write_agent_string_array(out, identities);
+  out << ",\"common_failure_modes\":";
+  write_agent_string_array(out, failures);
+  out << "}";
+}
+
 static void write_observable_effects_json(
     std::ostream& out, const ObservableEffects& effects) {
   out << "{\"local_capture_read\": "
@@ -13634,7 +13700,12 @@ static void write_bootstrap_json(std::ostream& out,
                                  const string& command,
                                  const std::optional<string>& project_root) {
   write_agent_envelope_begin(out, "agent " + command, true);
-  out << "  \"result\": {\n    \"project_root\": ";
+  out << "  \"result\": {\n    \"language_version\": ";
+  write_debug_json_string(out, kMossLanguageVersion);
+  out << ",\n    \"agent_protocol_version\": " << kAgentProtocolVersion;
+  out << ",\n    \"compiler_version\": ";
+  write_debug_json_string(out, kCompilerVersion);
+  out << ",\n    \"project_root\": ";
   if (project_root) write_debug_json_string(out, *project_root);
   else out << "null";
   out << ",\n    \"capabilities\": ";
@@ -13654,6 +13725,8 @@ static void write_bootstrap_json(std::ostream& out,
             "first_order_effect_graph", "structured_execution_trace",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
             "domain_ranks"});
+  out << ",\n    \"capability_catalog\": ";
+  write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
   out << ",\n    \"capability_flags\": {"
          "\"impact_analysis\": true, "
          "\"incremental_verification\": true, "
@@ -13682,6 +13755,27 @@ static void write_bootstrap_json(std::ostream& out,
             "module-qualified imports and versioned .mossi interfaces",
             "moss test [filter] [--affected] [--json]",
             "moss bench [filter] [--json]"});
+  out << ",\n    \"semantic_queries\": ["
+         "{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},"
+         "{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},"
+         "{\"name\":\"effects\",\"purpose\":\"READ/WRITE/CONSUME and separate observable effects; includes synchronization plan\",\"command\":\"moss effects <target> --source <source> --json\"},"
+         "{\"name\":\"ownership\",\"purpose\":\"inferred access capability and its checked reason\",\"command\":\"moss ownership <target> --source <source> --json\"},"
+         "{\"name\":\"calls\",\"purpose\":\"direct statically resolved callers and callees\",\"command\":\"moss calls <target> --source <source> --json\"},"
+         "{\"name\":\"why\",\"purpose\":\"stored functional, backend, and synchronization decision explanations\",\"command\":\"moss why <target> --source <source> --json\"},"
+         "{\"name\":\"cost\",\"purpose\":\"known static cost facts, not runtime predictions\",\"command\":\"moss cost <target> --source <source> --json\"},"
+         "{\"name\":\"impact\",\"purpose\":\"changed semantic unit, dependents, affected tests, and reuse facts\",\"command\":\"moss impact <target> --source <source> --json\"}]";
+  out << ",\n    \"actions\": ["
+         "{\"name\":\"check\",\"command\":\"moss check <source> --json\",\"purpose\":\"structured Moss diagnostics\"},"
+         "{\"name\":\"format\",\"command\":\"moss fmt [--check] [--json]\",\"purpose\":\"canonical source formatting\"},"
+         "{\"name\":\"semantic_edit\",\"command\":\"moss edit rename|replace-expression|change-argument ... --json\",\"purpose\":\"exact compiler-resolved source edit\"},"
+         "{\"name\":\"affected_test\",\"command\":\"moss test --affected --json\",\"purpose\":\"conservative impact-selected verification\"},"
+         "{\"name\":\"project_build\",\"command\":\"moss build [--release] --json\",\"purpose\":\"deterministic project artifact/build result\"},"
+         "{\"name\":\"project_test\",\"command\":\"moss test [filter] [--json]\",\"purpose\":\"Moss-native tests\"},"
+         "{\"name\":\"project_bench\",\"command\":\"moss bench [filter] [--json]\",\"purpose\":\"release benchmark and baseline result\"}]";
+  out << ",\n    \"debugging_features\": ["
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
+         "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
+  out << ",\n    \"discovery\": {\"capabilities_command\": \"moss agent capabilities --json\", \"schema_command\": \"moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
       out, {"Run moss agent bootstrap --json before modifying Moss source.",
@@ -13694,12 +13788,34 @@ static void write_bootstrap_json(std::ostream& out,
             "Run the full moss test suite when appropriate.",
             "Prefer structured --json output for automation.",
             "Use moss build and moss bench inside a Moss project."});
+  out << ",\n    \"workflow_hints\": ["
+         "{\"question\":\"What is this symbol or concrete domain instance?\",\"capability\":\"inspect\",\"command\":\"moss inspect <target> --source <source> --json\"},"
+         "{\"question\":\"What type or specialization did this resolve to?\",\"capability\":\"type\",\"command\":\"moss type <target> --source <source> --json\"},"
+         "{\"question\":\"What does this READ, WRITE, or CONSUME?\",\"capability\":\"effects\",\"command\":\"moss effects <target> --source <source> --json\"},"
+         "{\"question\":\"What access capability does this call require?\",\"capability\":\"ownership\",\"command\":\"moss ownership <target> --source <source> --json\"},"
+         "{\"question\":\"What direct calls and callers are known?\",\"capability\":\"calls\",\"command\":\"moss calls <target> --source <source> --json\"},"
+         "{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},"
+         "{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},"
+         "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
+         "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
+         "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
   out << ",\n    \"safety_rules\": ";
   write_agent_string_array(
       out, {"Do not edit generated Rust.",
             "Do not infer dynamic targets; Moss dispatch is statically closed.",
             "Treat synchronous message as an explicit domain value boundary; await is retired.",
+            "Do not self-send or chain handlers on the same domain; use an ordinary helper.",
+            "Domain handles are static routing capabilities and do not cross ordinary value boundaries.",
+            "Do not write locks or dynamically create domains; the compiler owns synchronization and topology.",
             "Preserve Moss diagnostics and source provenance."});
+  out << ",\n    \"language_constraints\": ";
+  write_agent_string_array(
+      out, {"message is synchronous and reply terminates a handler",
+            "await and spawn are retired source syntax",
+            "incoming message payloads are immutable snapshots",
+            "domain routes and concrete instances are statically composed",
+            "traits are structural and dispatch/specialization are static",
+            "ordinary recursion and general first-class closures are unsupported in v0.1"});
   out << ",\n    \"agents_md_snippet\": ";
   write_debug_json_string(
       out,
@@ -13707,11 +13823,7 @@ static void write_bootstrap_json(std::ostream& out,
       "    moss agent bootstrap --json\n\nUse Moss semantic queries and "
       "structured diagnostics instead of reverse-engineering generated "
       "Rust.\n\nAfter edits, follow the workflow returned by bootstrap.");
-  if (command == "capabilities") {
-    out << ",\n    \"discovery\": {\"schema_command\": "
-        << "\"moss agent schema --json\", \"protocol_vendor\": "
-        << "\"Moss\"}";
-  } else if (command == "schema") {
+  if (command == "schema") {
     out << ",\n    \"schema\": {\"envelope_fields\": ";
     write_agent_string_array(
         out, {"protocol_version", "schema_version", "compiler_version",
@@ -13739,7 +13851,84 @@ static void write_bootstrap_json(std::ostream& out,
            "\"legal_alternatives\"], "
            "\"identity_contracts\": {"
            "\"debug_provenance\": \"build/source-layout scoped\", "
-           "\"durable_semantic_entity\": \"entity-v1\"}}";
+           "\"durable_semantic_entity\": \"entity-v1\"}, "
+           "\"command_schemas\": [";
+    write_agent_command_schema(
+        out, "agent_bootstrap", "Discover the concise live Moss agent capability manifest.",
+        {"--json"}, {}, "moss-agent-1 envelope with result manifest",
+        {"language_version", "agent_protocol_version", "compiler_version"},
+        {"AGENT_COMMAND_INVALID", "AGENT_ARGUMENT_INVALID"});
+    out << ',';
+    write_agent_command_schema(
+        out, "agent_capabilities", "Discover detailed capability purposes and entrypoints.",
+        {"--json"}, {}, "moss-agent-1 envelope with capability_catalog",
+        {"capability id"}, {"AGENT_COMMAND_INVALID", "AGENT_ARGUMENT_INVALID"});
+    out << ',';
+    write_agent_command_schema(
+        out, "agent_schema", "Discover machine contracts for public agent-facing command groups.",
+        {"--json"}, {}, "moss-agent-1 envelope with schema.command_schemas",
+        {"identity contracts"}, {"AGENT_COMMAND_INVALID", "AGENT_ARGUMENT_INVALID"});
+    out << ',';
+    write_agent_command_schema(
+        out, "check", "Check Moss and return stable structured diagnostics.",
+        {"source", "--json"}, {}, "moss-agent-1 envelope with diagnostics or error",
+        {"source_identity when available"},
+        {"MOSS_COMPILE_ERROR", "OWNERSHIP_USE_AFTER_CONSUME", "TYPE_INFERENCE_FAILED"});
+    out << ',';
+    write_agent_command_schema(
+        out, "semantic_query", "Inspect existing checked facts; operations are inspect, type, effects, ownership, calls, why, and cost.",
+        {"operation", "target", "--source", "--json"}, {"-O"},
+        "moss-agent-1 envelope with target plus operation-specific facts",
+        {"entity-v1", "source_identity", "specialization_identity"},
+        {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND"});
+    out << ',';
+    write_agent_command_schema(
+        out, "impact", "Report changed semantic facts, dependents, affected tests, and incremental reuse.",
+        {"target", "--json"}, {"--source"}, "moss-agent-1 envelope with impact result",
+        {"entity-v1", "test/benchmark project identities"},
+        {"IMPACT_JSON_REQUIRED", "IMPACT_TARGET_INVALID", "IMPACT_SOURCE_REQUIRED"});
+    out << ',';
+    write_agent_command_schema(
+        out, "format", "Canonicalize Moss source or report formatting drift.",
+        {}, {"--check", "--json", "source"},
+        "moss-agent-1 envelope in JSON mode with changed file ranges",
+        {"physical source path"}, {"FORMAT_SOURCE_REQUIRED", "MOSS_COMPILE_ERROR"});
+    out << ',';
+    write_agent_command_schema(
+        out, "semantic_edit", "Perform an exact compiler-resolved rename, expression replacement, or argument replacement.",
+        {"operation", "semantic identity", "operands", "--json"}, {"--source"},
+        "moss-agent-1 envelope with changed files and resulting identity",
+        {"entity-v1", "physical source ranges"},
+        {"EDIT_ARGUMENT_INVALID", "EDIT_TARGET_STALE", "QUERY_TARGET_NOT_FOUND"});
+    out << ',';
+    write_agent_command_schema(
+        out, "project_build_test_bench", "Build, test, and benchmark a project through the shared compiler pipeline.",
+        {"project command"}, {"--json", "--release", "filter", "--affected", "baseline options"},
+        "moss-agent-1 envelope with project artifacts/results",
+        {"test", "bench", "module", "specialization project identities"},
+        {"PROJECT_MANIFEST_ERROR", "TEST_DISCOVERY_ERROR", "BENCHMARK_CONFIGURATION_ERROR"});
+    out << ',';
+    write_agent_command_schema(
+        out, "synchronization_introspection", "Read the authoritative graph-relative SynchronizationPlan through inspect, effects, or why.",
+        {"semantic query inputs"}, {},
+        "synchronization_plan with instances, R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and witnesses",
+        {"concrete_instance_id", "specialization_id", "class_id", "handler_identity"},
+        {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND"});
+    out << ',';
+    write_agent_command_schema(
+        out, "fast_debug", "Execute checked reachable Moss source directly; trace is an optional deterministic semantic event stream.",
+        {"source or project"}, {"--trace"},
+        "program output; --trace emits newline-delimited JSON on stderr",
+        {"source_identity", "entity-v1 where emitted"},
+        {"unsupported interpreter construct", "source-free provider requires source"});
+    out << ',';
+    write_agent_command_schema(
+        out, "module_interface", "Discover .mossi semantic interface artifacts from a successful module project build.",
+        {"moss build --json"}, {},
+        "build result.artifacts.module_interfaces paths; .mossi holds semantic export truth",
+        {"module identity", "specialization identity"},
+        {"PROJECT_MANIFEST_ERROR", "incompatible provider interface"});
+    out << "]}";
   } else if (command == "session-report-template") {
     out << ",\n    \"session_report_questions\": ";
     write_agent_string_array(

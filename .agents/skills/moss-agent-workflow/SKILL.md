@@ -9,10 +9,33 @@ metadata:
 
 # Moss agent workflow — current v0.1
 
+## Fresh Agent Bootstrap
+
+This is the required start of every fresh Moss task:
+
+1. Load `moss-language`.
+2. Load `moss-agent-workflow`.
+3. Run `moss agent bootstrap --json`.
+4. Read its language/compiler/protocol versions, capabilities, semantic queries,
+   actions, debugging features, safety rules, language constraints, and recommended
+   workflow.
+5. If an unfamiliar capability is reported, run `moss agent capabilities --json`
+   and/or `moss agent schema --json` for its purpose, inputs, response shape, stable
+   identities, and common failure modes.
+6. Only then inspect or edit Moss source.
+
+The language skill declares `moss-0.1`. Compare it with bootstrap's
+`result.language_version`; a mismatch means the skill may be stale. Refresh live
+discovery and report the mismatch rather than trusting historical guidance.
+
 Use the compiler as the authority on Moss semantics. This skill is a compact operating
 procedure for an agent working on `.moss` source; it complements `moss-language`,
 which explains the current language surface. Do not infer Moss behavior from generated
 Rust or historical fixtures when a checked compiler fact is available.
+
+> Do not learn Moss through trial-and-error compilation when the compiler can answer
+> the question directly. Do not infer Moss semantics from generated Rust when a
+> semantic API exists.
 
 ## Machine-checkable workflow contract
 
@@ -26,14 +49,20 @@ moss_workflow_contract:
   generated_rust: implementation-artifact
   fast_debug: checked-moss-interpreter
   trace: newline-delimited-json
+  fresh_agent_bootstrap: required
+  capability_discovery: agent-capabilities-and-schema
+  synchronization_introspection: inspect-effects-why
+  module_interface_truth: mossi-semantic-interface
+  structured_json: preferred
 ```
 
 ## Start a Moss task
 
-1. Read repository `AGENTS.md` and load `moss-language` for any Moss source work.
-2. Run `moss agent bootstrap --json` near the start of a new task. It returns the
-   versioned `moss-agent-1` envelope, available capabilities, safety rules, and the
-   current recommended workflow.
+1. Read repository `AGENTS.md`, load both Moss skills, and complete **Fresh Agent
+   Bootstrap** above.
+2. Use the versioned `moss-agent-1` bootstrap result as the live capability manifest;
+   use `capabilities` and `schema` for progressive detail rather than compiler-source
+   archaeology.
 3. Inspect the relevant source and make the smallest edit that expresses the intended
    Moss change. Do not edit generated Rust.
 4. Check the program first. For a standalone source, use
@@ -75,6 +104,39 @@ When `--source` belongs to a project, queries use the same logical source contex
 the target: `src` sees all application sources, a test source sees `src + tests`, and a
 benchmark source sees `src + benches`. A source outside a project remains standalone.
 The requested physical path still disambiguates a result.
+
+### Question → capability
+
+| Question | Use |
+| --- | --- |
+| What is this symbol, construct, route, or concrete instance? | `inspect` |
+| What type or specialization did it resolve to? | `type` |
+| What does it READ / WRITE / CONSUME, and what observable effects occur? | `effects` |
+| What capability does this parameter or call require? | `ownership` |
+| What direct callers/callees are statically known? | `calls` |
+| Why did a semantic, fusion, backend, or synchronization choice occur? | `why` |
+| What static work/copy/materialization/backend facts are known? | `cost` |
+| What could this edit invalidate or which tests could it affect? | `impact` then `test --affected` |
+| What topology, classes, ranks, modes, or conflict witnesses are derived? | `inspect`, `effects`, or `why` → `synchronization_plan` |
+| What happened during checked execution? | Fast Debug with `--trace` |
+
+Use `moss agent schema --json` when a route's inputs or result shape are unclear.
+
+### Synchronization and module truth
+
+Never reconstruct Moss synchronization by reading generated Rust if the compiler can
+expose the synchronization plan directly. `inspect`, `effects`, and `why` include
+`synchronization_plan` and `synchronization_dump`. The structured plan contains the
+concrete domain instance and specialization identity, `domain_rank`, handler R/W/C,
+X*, `ProtectedRead`, `LockSet`, class membership/`ClassSet`, SHARED/EXCLUSIVE mode,
+`class_rank`, and conflict matrix/witness facts. These are compiler-owned plan facts;
+they are the first place to ask why handlers conflict.
+
+For modules and source-free providers, **Moss source plus the `.mossi` semantic
+interface is the language/module truth**. Run `moss build --json` to discover emitted
+`result.artifacts.module_interfaces`; inspect that semantic interface and its reported
+exports/effects/specializations before generated Rust. There is no separate source-free
+Fast Debug fallback: it requires reachable Moss source.
 
 ## Edit, format, and verify
 

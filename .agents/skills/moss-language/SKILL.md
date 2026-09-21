@@ -21,6 +21,11 @@ languages, or old Moss source. The compiler and its current regression suite are
 authoritative. If this skill disagrees with a compiler diagnostic, trust the
 compiler, keep the program semantically valid, and report the skill drift.
 
+Before substantive Moss work, load `moss-agent-workflow` and run
+`moss agent bootstrap --json`. This skill's `moss-0.1` contract must agree with the
+running compiler's `result.language_version`; if it does not, use live bootstrap,
+capabilities, and schema discovery before proceeding.
+
 ## Machine-checkable guidance contract
 
 ```yaml
@@ -39,6 +44,7 @@ moss_skill_contract:
   recursion: unsupported
   general_first_class_closures: unsupported
   legacy_runtime_model: forbidden
+  bootstrap_contract: required
 ```
 
 ## Do / do not

@@ -2,11 +2,14 @@
 
 ## Moss source guidance
 
-- When editing or generating `.moss` source, load the repository-local
-  `moss-language` and `moss-agent-workflow` skills from `.agents/skills/`.
-  They describe current Moss v0.1, not historical syntax. Use compiler diagnostics
-  and `moss agent bootstrap --json` as the authority rather than inferring Moss from
-  Rust or obsolete tests.
+When working with Moss:
+
+1. Load repository-local `moss-language` and `moss-agent-workflow` from
+   `.agents/skills/`.
+2. Before substantive Moss edits, run `moss agent bootstrap --json`.
+3. Treat that live result and Moss semantic APIs as authoritative.
+4. Do not infer Moss semantics from generated Rust or historical compiler source when
+   a semantic API exists.
 
 ## Temporary files and Git
 
