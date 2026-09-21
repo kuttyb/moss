@@ -2,10 +2,12 @@
 
 Updated: 2026-09-20
 
-## Phase 15.1 — borrowed synchronous message payload lowering (complete; validation environment note below)
+## Phase 15.1 — borrowed synchronous message payload lowering (closed)
 
-The Phase 15.1 implementation is in the working tree and has not yet been
-committed. Internal synchronous `_shared` handler contracts now pass non-Copy
+The main implementation is committed as `13602ce` (`Phase 15.1: add borrowed
+lowering for synchronous message payloads`). This closure patch repairs `moss cost`
+parsing for the current `materializes N bytes` diagnostic and adds a JSON regression.
+Internal synchronous `_shared` handler contracts pass non-Copy
 ordinary payloads as `&T` and object payloads as `&impl MossAccess_T`.
 `MessagePayloadLowering` is the backend representation decision: `CopyValue`,
 `BorrowOwned`, `BorrowView`, or `MaterializeOwned`. The checked Moss rule is

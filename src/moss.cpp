@@ -13468,7 +13468,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"formatter", "Canonical Moss formatting or formatting drift detection.", "moss fmt [--check] [--json]"},
       {"semantic_edits", "Exact compiler-resolved rename, expression, or argument edits.", "moss edit rename|replace-expression|change-argument ... --json"},
       {"affected_tests", "Conservative semantic-impact selected verification.", "moss test --affected --json"},
-      {"static_cost_facts", "Known materialization, traversal, specialization, message-copy, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
+      {"static_cost_facts", "Known materialization, traversal, specialization, message-materialization, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
       {"synchronization_plan", "Concrete graph plus R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and conflict witnesses.", "moss inspect|effects|why <target> --source <source> --json"},
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "moss build --json -> result.artifacts.module_interfaces"},
       {"fast_debug", "Direct execution of checked reachable Moss source when behavior is wrong.", "moss run --interp <source> | moss debug <project-or-source>"},
@@ -14195,14 +14195,17 @@ static void write_cost_result(std::ostream& out, const Program& program,
   bool first_copy = true;
   for (const auto& warning : warnings) {
     if (warning.code != "MESSAGE_PAYLOAD_COPY_LARGE") continue;
-    size_t marker = warning.message.find("copies ");
+    const string materialization_marker = "materializes ";
+    size_t marker = warning.message.find(materialization_marker);
     size_t end = marker == string::npos
-        ? string::npos : warning.message.find(" bytes", marker + 7);
+        ? string::npos
+        : warning.message.find(" bytes", marker + materialization_marker.size());
     if (marker == string::npos || end == string::npos) continue;
     if (!first_copy) out << ", ";
     first_copy = false;
     out << "{\"line\": " << warning.line << ", \"bytes\": "
-        << warning.message.substr(marker + 7, end - marker - 7)
+        << warning.message.substr(marker + materialization_marker.size(),
+                                  end - marker - materialization_marker.size())
         << ", \"known_statically\": true}";
   }
   out << "], \"source_traversals\": " << traversals

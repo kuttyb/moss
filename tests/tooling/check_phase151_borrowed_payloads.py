@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Phase 15.1: internal synchronous messages borrow stable payloads."""
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -39,6 +40,14 @@ assert "Forward_shared((state.packet).clone())" not in text
 assert "Process_shared((packet).__moss_value())" not in text
 assert "Process_shared((packet).clone())" not in text
 
+# `moss cost` describes physical materialization, not every semantic message
+# boundary. The internal borrowed hops above therefore have no large-payload
+# materialization fact.
+borrowed_cost = json.loads(run([
+    compiler, "cost", "main", "--source", source, "--json"
+]))
+assert borrowed_cost["result"]["cost_facts"]["message_copy_sizes"] == []
+
 # The only Packet materialization in this program is not a message argument:
 # it is the independent reply produced by the normal Moss reply boundary.
 start = text.index("fn __moss_body_Middle_Forward")
@@ -62,3 +71,17 @@ assert "pub fn __moss_message_Receive(&self, payload: Payload)" in external
 assert "self.Receive_shared(&(payload))" in external
 assert "boundary.__moss_message_Receive((data).clone())" in external
 print("Phase 15.1 exported payload bridge retains an owned materialization boundary.")
+
+# The deliberately exported large-payload boundary remains owned. Its warning
+# must round-trip through the machine-readable cost fact despite the legacy
+# public `message_copy_sizes` field name.
+large_source = repo / "tests/large_payload_warning.moss"
+owned_cost = json.loads(run([
+    compiler, "cost", "main", "--source", large_source, "--json"
+]))
+sizes = owned_cost["result"]["cost_facts"]["message_copy_sizes"]
+assert sizes and any(
+    item["bytes"] == 1088 and item["known_statically"] is True
+    for item in sizes
+), sizes
+print("Phase 15.1 cost facts distinguish borrowed hops from owned materialization.")
