@@ -75,7 +75,8 @@ def run(command: list[str], *, cwd: Path | None = None, env: dict | None = None,
         return subprocess.run(command, cwd=cwd, env=env, text=True,
                               capture_output=capture, check=True)
     except (OSError, subprocess.CalledProcessError) as error:
-        detail = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else str(error)
+        detail = ((error.stderr or error.stdout or "").strip()
+                  if isinstance(error, subprocess.CalledProcessError) else str(error))
         raise MargoError(f"command failed ({' '.join(command)}): {detail}") from error
 
 
@@ -218,14 +219,20 @@ def resolve_graph(root: Path) -> tuple[Package, list[Package]]:
     return root_package, ordered
 
 
+def package_environment(root: Package, ordered: list[Package], release: bool) -> dict:
+    paths = [str(package.root / "build" / ("release" if release else "debug"))
+             for package in ordered if package is not root]
+    env = dict(os.environ)
+    if paths:
+        env["MOSS_MODULE_PATH"] = os.pathsep.join(
+            paths + ([env["MOSS_MODULE_PATH"]] if env.get("MOSS_MODULE_PATH") else []))
+    return env
+
+
 def build_graph(root: Package, ordered: list[Package], release: bool, json_mode: bool) -> list[dict]:
     artifacts: list[dict] = []
     for package in ordered:
-        paths = [str(other.root / "build" / ("release" if release else "debug"))
-                 for other in ordered if other is not package]
-        env = dict(os.environ)
-        if paths:
-            env["MOSS_MODULE_PATH"] = os.pathsep.join(paths + ([env["MOSS_MODULE_PATH"]] if env.get("MOSS_MODULE_PATH") else []))
+        env = package_environment(package, ordered, release)
         command = [str(MOSS), "build"] + (["--release"] if release else []) + ["--json"]
         result = run(command, cwd=package.root, env=env, capture=True)
         try:
@@ -252,6 +259,7 @@ def main() -> int:
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
         artifacts = build_graph(root, ordered, args.release, args.json)
+        environment = package_environment(root, ordered, args.release)
         if args.command == "build":
             if args.json:
                 print(json.dumps({"schema_version": "margo-1", "ok": True,
@@ -261,13 +269,13 @@ def main() -> int:
             return 0
         if args.command == "run":
             executable = artifacts[-1]["artifacts"]["executable"]
-            return subprocess.run([executable], cwd=root.root).returncode
+            return subprocess.run([executable], cwd=root.root, env=environment).returncode
         command = [str(MOSS), args.command]
         if args.command == "test" and args.filter: command.append(args.filter)
         if args.command == "bench" and args.filter: command.append(args.filter)
         if args.command == "test" and args.release: command.append("--release")
         if args.json: command.append("--json")
-        return subprocess.run(command, cwd=root.root).returncode
+        return subprocess.run(command, cwd=root.root, env=environment).returncode
     except MargoError as error:
         if 'args' in locals() and args.json:
             print(json.dumps({"schema_version": "margo-1", "ok": False, "error": str(error)}))

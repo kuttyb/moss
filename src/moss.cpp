@@ -15525,6 +15525,14 @@ static string rewrite_module_expression(
       i = end;
       continue;
     }
+    // Test assertions are compiler-recognized builtins, never module-local
+    // functions. Keeping their source spelling also lets explicit-module test
+    // targets share the normal assertion checker and Rust lowering.
+    if (token == "assert" || token == "assertEqual") {
+      result += token;
+      i = end;
+      continue;
+    }
     size_t cursor = end;
     while (cursor < expression.size() && std::isspace(static_cast<unsigned char>(expression[cursor]))) ++cursor;
     if (cursor < expression.size() && expression[cursor] == '.') {
@@ -15581,6 +15589,7 @@ static void rewrite_module_program(
       if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
         string callee = trim(statement.a);
         if (callee.find('.') == string::npos && plain_identifier(callee) &&
+            callee != "assert" && callee != "assertEqual" &&
             !starts_with(callee, module + "__"))
           statement.a = module_symbol(module, callee);
         else {
@@ -17348,7 +17357,10 @@ static NativeArtifact compile_native_artifact(
       if (module == root_module) artifact.rust = rust_file;
     }
     for (const auto& external : unit.program.external_modules) {
-      for (const auto& interface_file : artifact.module_interfaces) {
+      // External providers live in Margo's resolved MOSS_MODULE_PATH, not in
+      // this package's output directory. Reuse the compiler's authoritative
+      // interface discovery rather than treating package source as local.
+      for (const auto& interface_file : compiled_interface_candidates(manifest)) {
         if (interface_file.stem().string() != external) continue;
         std::filesystem::path rlib = interface_file;
         rlib.replace_extension(".rlib");

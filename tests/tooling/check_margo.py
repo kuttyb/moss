@@ -39,9 +39,6 @@ write_package(math, "Math", """module Math
 
 export fn value() -> Int:
   40
-
-fn main():
-  echo value()
 """)
 run(["git", "init", "-q"], math)
 run(["git", "config", "user.email", "margo@example.invalid"], math)
@@ -53,20 +50,23 @@ commit = run(["git", "rev-parse", "HEAD"], math).stdout.strip()
 
 geometry = root / "geometry"
 write_package(geometry, "Geometry", """module Geometry
+import Math
 
 export fn answer() -> Int:
-  42
-
-fn main():
-  echo answer()
+  Math.value() + 2
 """, f'''\n[dependencies]\nMath = {{ git = "{math.as_uri()}", tag = "v1" }}\n''')
 
 app = root / "app"
 write_package(app, "App", """module App
+import Geometry
 
 fn main():
-  echo 42
+  echo Geometry.answer()
 """, '''\n[dependencies]\nGeometry = { path = "../geometry" }\n''')
+(app / "tests").mkdir()
+(app / "tests" / "answer.moss").write_text('import Geometry\n\ntest "dependency answer":\n  assertEqual(Geometry.answer(), 42)\n', encoding="utf-8")
+(app / "benches").mkdir()
+(app / "benches" / "answer.moss").write_text('import Geometry\n\nbench "dependency answer":\n  value = Geometry.answer()\n  value + 0\n', encoding="utf-8")
 env = dict(**__import__("os").environ, MARGO_HOME=str(home), MOSS=str(moss))
 
 first = run([margo, "build", "--json"], app, env=env)
@@ -74,14 +74,28 @@ result = json.loads(first.stdout)
 assert result["ok"] is True
 assert result["build_order"] == ["Math", "Geometry", "App"]
 assert result["packages"][0]["source"]["commit"] == commit
+# These are compiled provider contracts, not a folded Moss source unit.  The
+# concrete Rust consumers name their imported module crate and do not contain
+# the provider implementation.
+geometry_rust = (geometry / "build" / "debug" / "Geometry.rs").read_text(encoding="utf-8")
+app_rust = (app / "build" / "debug" / "App.rs").read_text(encoding="utf-8")
+assert "extern crate moss_Math;" in geometry_rust
+assert "fn Math__value" not in geometry_rust
+assert "extern crate moss_Geometry;" in app_rust
+assert "fn Geometry__answer" not in app_rust
 lock = (app / "Moss.lock").read_text(encoding="utf-8")
 assert commit in lock and "git =" in lock
 assert run([margo, "run"], app, env=env).stdout.strip() == "42"
 
-# Exercise test/bench forwarding on the existing conventional package fixture.
-demo = repo / "examples" / "projects" / "phase7_demo"
-run([margo, "test"], demo, env=env)
-run([margo, "bench", "external arithmetic"], demo, env=env)
+# Margo, not ambient shell state, supplies the source-free module roots to
+# project test/bench commands. A direct compiler test without that environment
+# proves the following Margo invocation is exercising the package handoff.
+without_dependencies = dict(env)
+without_dependencies.pop("MOSS_MODULE_PATH", None)
+missing = run([moss, "test"], app, expected=1, env=without_dependencies)
+assert "imported module 'Geometry' was not found" in missing.stderr
+run([margo, "test"], app, env=env)
+run([margo, "bench", "dependency answer"], app, env=env)
 
 # Once the exact revision is cached, a repeat must not need a changing tag or
 # branch resolution. Removing the original remote proves cache/lock reuse.
@@ -94,7 +108,9 @@ assert not (app / "build").exists()
 
 # The existing compiler command remains a direct compatibility path for a
 # package manifest; Margo owns dependency acquisition, Moss owns compilation.
-run([moss, "build"], geometry, env=dict(env, MOSS_MODULE_PATH=str(home / "git" / "checkouts")))
+shutil.rmtree(geometry / "build")
+cached_math = next((home / "git" / "checkouts").glob("*/*/build/debug"))
+run([moss, "build"], geometry, env=dict(env, MOSS_MODULE_PATH=str(cached_math)))
 
 # Cycle diagnostics are package-layer diagnostics, before compilation.
 left, right = root / "left", root / "right"

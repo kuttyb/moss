@@ -4,14 +4,24 @@ Updated: 2026-09-20
 
 ## Phase 15.2 — Margo package/project driver (closed)
 
-Margo is implemented by `44b5c99` and executable closure `53cf425`. `margo` owns
-`Moss.toml`/`Moss.lock`, local path and cached Git resolution, deterministic
-dependency-first package builds, and build/run/test/bench/clean orchestration; `moss`
-remains authoritative for modules, `.mossi`, checking, and lowering. Hermetic local
-Git tests cover a mixed transitive path+Git DAG, tag-to-commit locking, cache reuse
-after remote removal, deterministic order, run/test/bench/clean, and package cycles.
-The normal suite reaches only the existing sandbox LLDB/DAP handshake limitation.
-Registry, publishing, updating, and workspace management remain deliberately deferred.
+Margo is implemented by `44b5c99` and executable closure `53cf425`. The package-to-
+module closure additionally proves a real source-free chain: Git `Math` emits its
+`.mossi`/rlib, path `Geometry` imports it through Margo's resolved module environment,
+and root `App` imports `Geometry` and runs to `42`. One reused deterministic package
+environment now supplies dependency artifact roots to build/run/test/bench; the root
+test and benchmark both call `Geometry`, and deliberately fail without that environment.
+The offline locked-cache rebuild repeats the actual import chain after the original Git
+remote is removed; the lockfile remains byte-identical. Generated consumer crates are
+checked to reference provider crates rather than fold provider source. `moss` remains
+authoritative for modules, `.mossi`, checking, and lowering; Margo owns only manifests,
+resolution, cache, ordering, and orchestration. Registry, publishing, updating, and
+workspace management remain deliberately deferred. The normal suite reaches only the
+existing sandbox LLDB/DAP handshake limitation.
+
+Closure validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror`, the focused
+hermetic Margo regression, and `make examples` pass. The full `make check` run passes
+the compiler, package/module, Fast Debug, tooling, and Emacs checks before the same
+environment-dependent real LLDB/DAP initial-handshake failure; it was not weakened.
 
 ## Phase 15.1 — borrowed synchronous message payload lowering (closed)
 
