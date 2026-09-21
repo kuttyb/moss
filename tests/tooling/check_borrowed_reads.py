@@ -97,7 +97,9 @@ assert 'V: Clone' not in text and 'Default::default()' not in text
 assert not re.search(r'#\[derive\(Clone\)\]\s*enum \w+Leaf', text)
 assert 'moss_read_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
 assert 'value: &impl MossAccess_Record' in text
-assert 'Accept_shared((state.record).__moss_value())' in text
+# Phase 15.1 lends the decomposed state view to the internal synchronous
+# handler instead of reconstructing an owned Record at this message boundary.
+assert 'Accept_shared(&(state.record))' in text
 assert 'Some((state.record).__moss_value())' in text
 assert 'unsafe' not in text and 'dyn ' not in text
 repeat = out / 'repeat.rs'
@@ -126,7 +128,7 @@ assert needle in text
 instrumented = text.replace(needle, needle + '\ncheck_read_pointers(state.record.__moss_field_profile().__moss_field_name(), state.record.__moss_field_profile().__moss_field_values());', 1)
 needle = next(line for line in text.splitlines() if line.startswith('fn __moss_body_Reader_Accept('))
 assert needle in instrumented
-instrumented = instrumented.replace(needle, needle + "\nEXPECTED_READ_POINTERS.with(|expected| { if let Some((n,v)) = *expected.borrow() { assert_ne!(value.profile.name.as_ptr() as usize, n); assert_ne!(value.profile.values.as_ptr() as usize, v); } });", 1)
+instrumented = instrumented.replace(needle, needle + "\nEXPECTED_READ_POINTERS.with(|expected| { if let Some((n,v)) = *expected.borrow() { assert_eq!(value.__moss_field_profile().__moss_field_name().as_ptr() as usize, n); assert_eq!(value.__moss_field_profile().__moss_field_values().as_ptr() as usize, v); } });", 1)
 needle = 'fn __moss_view_inspect_record(value: &impl MossAccess_Record) -> i64 {'
 assert needle in instrumented
 instrumented = instrumented.replace(needle, needle + '\ncheck_read_pointers(value.__moss_field_profile().__moss_field_name(), value.__moss_field_profile().__moss_field_values());')

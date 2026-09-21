@@ -1,0 +1,47 @@
+type Profile:
+  name: String
+  values: Vector[Int]
+
+  fn score() -> Int:
+    return values |> sum
+
+type Packet:
+  profile: Profile
+  count: Int
+
+  fn score() -> Int:
+    return profile.score() + count
+
+fn inspect(packet: Packet) -> Int:
+  return packet.score()
+
+domain Sink:
+  fn Process(packet: Packet) -> Int:
+    reply inspect(packet)
+
+domain Middle:
+  domainroutes(sink: Sink)
+
+  fn Forward(packet: Packet) -> Int:
+    received = message sink.Process(packet)
+    # Forwarding is a new semantic message boundary, not a move from packet.
+    again = inspect(packet)
+    reply received + again
+
+domain Producer:
+  domainroutes(middle: Middle)
+
+  packet: Packet
+
+  fn Run() -> Int:
+    value = message middle.Forward(packet)
+    # The synchronous nested calls finished before this write; they observed
+    # the stable pre-write packet through borrowed static views.
+    packet.profile.name = "changed"
+    reply value
+
+fn main():
+  sink = Sink()
+  middle = Middle(sink: sink)
+  producer = Producer(middle: middle, packet: Packet(profile: Profile(name: "large", values: [1, 2, 3]), count: 4))
+  echo message producer.Run()

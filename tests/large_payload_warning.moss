@@ -28,7 +28,7 @@ type Large = object
   p: Word
   q: Word
 
-domain Worker
+export domain Worker
   on Store(payload: Large)
     echo payload.a.a
 

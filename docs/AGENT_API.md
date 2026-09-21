@@ -68,7 +68,8 @@ moss check src/main.moss --json
 ```
 
 Successful checks return a diagnostics array, including warnings such as
-`MESSAGE_PAYLOAD_COPY_LARGE`. Compile failures return stable category codes such as
+`MESSAGE_PAYLOAD_COPY_LARGE` when the selected boundary physically materializes a
+payload. Compile failures return stable category codes such as
 `OWNERSHIP_USE_AFTER_CONSUME`, `RECURSION_CYCLE`, and
 `TYPE_INFERENCE_FAILED`. Human diagnostics remain the
 default for `moss --check source.moss` and `moss check source.moss`.
@@ -173,7 +174,7 @@ accelerator, not source-of-truth input.
 
 `moss cost <target> --source file.moss --json` exposes factual costs already known to
 the compiler: functional materialization/traversals, semantic work eliminated, static
-message-copy sizes, specialization counts, and selected domain backend/lock facts. It
+message-materialization sizes, specialization counts, and selected domain backend/lock facts. It
 does not predict runtime performance.
 
 ## Canonical formatting and semantic edits

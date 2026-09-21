@@ -34,12 +34,14 @@ black-box overhead. The baseline has the same logical data and work:
   disjoint writes deliberately serialize. Empty/immutable cases need no lock.
 - `rust`: straightforward typed per-field RwLocks and direct state access.
 
-Copy cases establish independent String/Vector payload/reply values in every
-implementation. Borrow cases inspect length/first element, including a whole-object
-READ helper, so increased input size does not add useful scanning work. Inputs are
-16, 4,096, and 1,048,576 String bytes / Vector elements. Destruction of replies is
-included. The typed Rust baseline does not reproduce Moss's descriptor/view maps;
-that difference is the overhead being measured, not omitted logical work.
+Internal synchronous message cases lend stable String/Vector payloads in the Moss,
+coarse, and fine implementations; they measure the Phase 15.1 zero-copy path.
+Reply cases still establish independent owned values and therefore retain their
+materialization cost. Inputs are 16, 4,096, and 1,048,576 String bytes / Vector
+elements. The message-vs-reply pair is the reproducible local comparison for payload
+materialization cost; no timing is a correctness gate. The typed Rust baseline does
+not reproduce Moss's descriptor/view maps; that difference is the overhead being
+measured, not omitted logical work.
 
 `--borrow-routes` is a reproducible benchmark-only transformation for evaluating
 the old compiler's redundant private route/self Arc clones. It does not alter

@@ -146,7 +146,7 @@
       if (plan) for (const auto& candidate : plan->handlers) if (candidate.name == h.name) hp = &candidate;
       string state_type = d.name + h.name + "State";
       o << "impl " << d.name << "Ref {\n    #[inline]\n    fn " << h.name << "_shared(&self";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
       string ret = h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()";
       o << ") -> " << ret << " {\n";
       if (!hp) { o << "        std::process::abort() // Uninstantiated source template.\n    }\n}\n"; continue; }
@@ -226,8 +226,11 @@
     o << ((d.exported || p_.explicit_module) ? "pub " : "") << "trait " << d.name << "Messages {\n";
     for (const auto& h : d.handlers) {
       for (const string& prefix : {string(""), string("__moss_message_")}) {
+        bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
-        for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+        for (const auto& p : h.params)
+          o << ", " << (shared ? shared_message_parameter(p)
+                                 : p.name + ": " + rust_type(p.type));
         o << ") -> " << (prefix.empty() ? (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") : rust_type(h.reply_type.value_or("unit"))) << ";\n";
       }
     }
@@ -270,11 +273,15 @@
       source_comment(o, 0, h.line, handler_signature(h));
       // Generic provider bodies are monomorphized in the final application;
       // exported native symbols are possible only for nongeneric bodies.
-      bool generic_body = bodyargs != "'_";
+      bool generic_body = bodyargs != "'_" || std::any_of(
+          h.params.begin(), h.params.end(), [&](const Param& parameter) {
+            return borrowed_message_type(parameter.type) &&
+                view_object_type(parameter.type);
+          });
       debug_symbol_attributes(o, 0, native, !generic_body);
       o << ((d.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_body_" << d.name << "_" << h.name
         << "(state: &mut " << state_type << "<" << bodyargs << ">";
-      for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+      for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
       o << ") -> " << (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") << " {\n";
       string result = reply_binding(d, h);
       if (h.reply_type) o << "    let mut " << result << " = None;\n";
@@ -285,8 +292,17 @@
       for (const auto& r : d.routes) types[r.name] = r.type;
       for (const auto& p : h.params) { locals.insert(p.name); types[p.name] = p.type; }
       view_domain_ = true; view_domain_access_ = true;
+      write_through_parameters_.clear(); view_parameters_.clear();
+      borrowed_message_parameters_.clear();
+      for (const auto& p : h.params) {
+        if (!borrowed_message_type(p.type)) continue;
+        borrowed_message_parameters_.insert(p.name);
+        if (view_object_type(p.type)) view_parameters_.insert(p.name);
+      }
       gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, functional_handler_context(d, h));
       view_domain_ = false; view_domain_access_ = false;
+      borrowed_message_parameters_.clear(); view_parameters_.clear();
+      write_through_parameters_.clear();
       o << "    }\n";
       if (h.reply_type) o << "    " << result << "\n";
       o << "}\n"; tooling_end(o, 0, semantic_identity);
@@ -305,13 +321,17 @@
           compatible &= rust_type(h.params[i].type) == rust_type(other->params[i].type);
       }
       for (const string& prefix : {string(""), string("__moss_message_")}) {
+        bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
-        for (const auto& p : h.params) o << ", " << p.name << ": " << rust_type(p.type);
+        for (const auto& p : h.params)
+          o << ", " << (shared ? shared_message_parameter(p)
+                                 : p.name + ": " + rust_type(p.type));
         o << ") -> " << (prefix.empty() ? (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") : rust_type(h.reply_type.value_or("unit")))
           << " { ";
         if (!compatible) { o << "std::process::abort() }\n"; continue; }
         o << "self." << h.name << "_shared(";
-        for (const auto& p : h.params) o << p.name << ", ";
+        for (const auto& p : h.params)
+          o << shared_message_forward_argument(p, !shared) << ", ";
         o << ")";
         if (!prefix.empty() && h.reply_type) o << ".unwrap_or_else(|| std::process::abort())";
         o << " }\n";

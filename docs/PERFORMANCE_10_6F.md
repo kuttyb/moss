@@ -204,7 +204,7 @@ change was made.** BTreeMap node placement is also allocator-dependent.
 | Tiny-handler metadata, guard maps, take/restore, absent-slot/restore scaffolding | Deferred optimization | Material fixed overhead; future typed/static layout work needs wider measurements and correctness coverage. |
 | Possible false sharing | Deferred optimization | Probe provides no padding benefit; retain compact layout. |
 | Nested ancestor hold amplification | Deferred optimization | Intentional 2PL retention; early unlock needs a separate equivalence proof. |
-| Explicit large payload/reply copy cost | Deferred optimization | Independent value semantics are mandatory; no alias shortcut. |
+| Explicit large payload/reply copy cost | Revised by Phase 15.1 | Replies and owned/exported boundaries materialize values; stable internal synchronous message payloads borrow safely. |
 | Cross-module generic/structural dispatch and qualified statement-call friction | Phase 15 usage issue | Use concrete exported helpers/factories; record failing forms rather than redesign modules. |
 | Trace growth, limited interpreter traversal/library surface | Phase 15 usage/tooling issue | Keep bounded events; future slicing/coverage guided by real programs. |
 

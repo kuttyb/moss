@@ -38,9 +38,11 @@ struct PlainState { left: i64, right: i64, text: String, values: Vec<i64> }
 struct Coarse { state: RwLock<PlainState>, middle: RwLock<i64>, child: RwLock<i64>, sibling: RwLock<i64>, fixed: i64 }
 struct Fine { left: RwLock<i64>, right: RwLock<i64>, text: RwLock<String>, values: RwLock<Vec<i64>>, middle: RwLock<i64>, child: RwLock<i64>, sibling: RwLock<i64>, fixed: i64 }
 fn bump(x: &mut i64) { *x = x.wrapping_add(1); }
-// Message sinks own their input, as Moss message payloads do.
-#[inline(never)] fn sink_text(x: String) -> i64 { if x.is_empty() { 0 } else { 1 } }
-#[inline(never)] fn sink_values(x: Vec<i64>) -> i64 { x[0] }
+// Internal synchronous Moss messages preserve value semantics while the current
+// backend lends stable READ-only payloads. Keep the baseline's message sinks
+// borrowed too; reply cases below remain the owned-value comparison.
+#[inline(never)] fn sink_text(x: &String) -> i64 { if x.is_empty() { 0 } else { 1 } }
+#[inline(never)] fn sink_values(x: &Vec<i64>) -> i64 { x[0] }
 fn nested(left: &mut i64, middle: &RwLock<i64>, child: &RwLock<i64>, sibling: &RwLock<i64>, siblings: bool) -> i64 {
     bump(left);
     let higher = if siblings { let mut s = sibling.write().unwrap(); bump(&mut s); *s } else { 0 };
@@ -64,7 +66,7 @@ impl Coarse {
             _ => { let s = self.state.read().unwrap(); match case {
                 Read => { black_box(s.left); }, Readers | Mixed => { black_box(work(s.left)); },
                 Text => { black_box(if s.text.is_empty() { 0i64 } else { 1 }); }, Vector | Object => { black_box(s.values[0]); },
-                MessageText => { black_box(sink_text(s.text.clone())); }, MessageVector => { black_box(sink_values(s.values.clone())); },
+                MessageText => { black_box(sink_text(&s.text)); }, MessageVector => { black_box(sink_values(&s.values)); },
                 ReplyText => { black_box(s.text.clone()); }, ReplyVector => { black_box(s.values.clone()); }, _ => unreachable!() }
             }
         }
@@ -84,8 +86,8 @@ impl Fine {
             Disjoint => { let lock = if lane % 2 == 0 { &self.left } else { &self.right }; let mut a = lock.write().unwrap(); *a = work(*a); },
             Text => { black_box(if self.text.read().unwrap().is_empty() { 0i64 } else { 1 }); },
             Vector | Object => { black_box(self.values.read().unwrap()[0]); },
-            MessageText => { let x = self.text.read().unwrap(); black_box(sink_text(x.clone())); },
-            MessageVector => { let x = self.values.read().unwrap(); black_box(sink_values(x.clone())); },
+            MessageText => { let x = self.text.read().unwrap(); black_box(sink_text(&x)); },
+            MessageVector => { let x = self.values.read().unwrap(); black_box(sink_values(&x)); },
             ReplyText => { black_box(self.text.read().unwrap().clone()); }, ReplyVector => { black_box(self.values.read().unwrap().clone()); },
             Nested | Siblings => { let mut a = self.left.write().unwrap(); black_box(nested(&mut a, &self.middle, &self.child, &self.sibling, matches!(case, Siblings))); }
         }

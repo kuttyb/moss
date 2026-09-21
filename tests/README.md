@@ -18,6 +18,10 @@ Start with these groups:
   and `negative/message_argument_type.moss`.
 - **Capability closure and ownership:** `tooling/check_domain_handle_closure.py`,
   the alias/consume negatives, and `negative/phase26_payload_*.moss`.
+- **Borrowed synchronous payload lowering:** `phase151_borrowed_message_payloads.moss`,
+  `phase151_exported_payload.moss`, and
+  `tooling/check_phase151_borrowed_payloads.py` prove that internal `_shared`
+  calls borrow stable owned/state views while exported bridges retain ownership.
 - **Synchronization planning and production 2PL:**
   `tooling/check_synchronization_plan.py`, `tooling/check_handler_2pl.py`,
   and the D.1/E/F/F.1 structure, module, and native execution checks in `run.sh`.

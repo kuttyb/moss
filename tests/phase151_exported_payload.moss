@@ -1,0 +1,11 @@
+export type Payload:
+  text: String
+
+export domain Boundary:
+  fn Receive(payload: Payload) -> Bool:
+    reply payload.text == "ok"
+
+fn main():
+  boundary = Boundary()
+  data = Payload(text: "ok")
+  echo message boundary.Receive(data)

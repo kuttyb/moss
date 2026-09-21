@@ -6037,17 +6037,32 @@ class Checker {
     return total;
   }
 
-  void warn_payload(int line, const string& type) {
+  void warn_payload(int line, const string& type, bool materializes = true) {
+    // A Moss message is always a semantic value boundary.  The warning is a
+    // physical-cost fact, so an internal `_shared` borrow must not report a
+    // clone that the selected backend representation does not perform.
+    if (!materializes) return;
     std::set<string> visiting;
     auto size = static_payload_size(type, visiting);
     if (!size || *size <= 1024) return;
-    string message = "message payload copies " + std::to_string(*size) +
-        " bytes across a domain boundary";
+    string message = "message payload materializes " + std::to_string(*size) +
+        " bytes at an owned domain boundary";
     if (std::any_of(warnings_.begin(), warnings_.end(), [&](const Warning& warning) {
           return warning.line == line && warning.message == message;
         })) return;
     Warning warning{line, std::move(message), "MESSAGE_PAYLOAD_COPY_LARGE", {}};
     warnings_.push_back(std::move(warning));
+  }
+
+  bool message_payload_materializes(const string& receiver,
+                                    const OwnershipEnv& env) const {
+    auto type = env.types.find(receiver);
+    if (type == env.types.end()) return true;
+    auto domain = domains_.find(canonical_type_name(type->second));
+    // This mirrors the generator's explicit exported/native bridge decision.
+    // A missing domain is conservatively an ownership boundary; checked Moss
+    // messages normally reach the non-exported synchronous `_shared` path.
+    return domain == domains_.end() || domain->second->exported;
   }
 
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
@@ -6580,7 +6595,8 @@ class Checker {
             if (arg_index < handler->params.size()) {
               require_cross_domain_value(s.line, arg, handler->params[arg_index].type,
                                          env, "");
-              warn_payload(s.line, handler->params[arg_index].type);
+              warn_payload(s.line, handler->params[arg_index].type,
+                           message_payload_materializes(s.a, env));
             }
           }
           if (!s.message_result.empty()) {
@@ -9061,6 +9077,11 @@ class Generator {
   bool view_domain_access_ = false;
   bool view_method_ = false;
   std::set<string> view_parameters_;
+  // Non-Copy incoming message parameters use a borrowed internal ABI.  This
+  // is physical lowering metadata only: the checked Moss fact remains an
+  // immutable value snapshot.  Keeping the set while rendering a handler
+  // prevents a forwarded String/Vector/etc. from becoming &&T.
+  std::set<string> borrowed_message_parameters_;
   mutable bool mutable_projection_ = false;
   bool debug_build_ = false;
   ProgramGenerationMode mode_ = ProgramGenerationMode::Application;
@@ -9069,10 +9090,6 @@ class Generator {
   bool public_specializations_ = false;
   bool benchmark_body_ = false;
   bool exported_domain_bridge_body_ = false;
-  // Parameters of a direct synchronous handler are represented as borrowed
-  // Rust values when their Moss payload type is non-Copy.  This set is scoped
-  // to the body currently being emitted and keeps ordinary helper-call
-  // lowering from adding a second borrow to an already borrowed parameter.
   std::unordered_map<string, const Domain*> domains_;
   vector<Domain> specialized_domains_;
   std::unordered_map<string,string> specialization_sources_;
@@ -9391,6 +9408,13 @@ class Generator {
     string actual_type = generated_expr_type(argument, types).value_or("");
     if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
       return rendered;
+    // Non-object payloads arrive through the internal handler ABI as `&T`.
+    // Preserve that borrow when handing it to a READ helper. Object payloads
+    // retain the extra reference below because view helpers take
+    // `&impl MossAccess_T`.
+    if (effect == Effect::Read && borrowed_message_parameter(argument) &&
+        !view_object_type(actual_type))
+      return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
@@ -9407,6 +9431,9 @@ class Generator {
     Effect effect = method_effect(method, index);
     string type = method.params[index].type;
     if (effect == Effect::Consume || (effect != Effect::Write && !borrowable_type(type))) return rendered;
+    if (effect == Effect::Read && borrowed_message_parameter(argument) &&
+        !view_object_type(generated_expr_type(argument, types).value_or("")))
+      return rendered;
     if (effect == Effect::Write) return "&mut (" + write_call_place(argument, d, locals, types) + ")";
     return "&(" + read_call_place(argument, d, locals, types) + ")";
   }
@@ -10629,7 +10656,9 @@ class Generator {
       rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
-        rendered << message_arg(arguments[index], target_handler->params.at(index).type, d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
+        rendered << shared_message_arg(arguments[index], target_handler->params.at(index).type,
+                                       d, locals, types,
+                                       message_argument_plans ? message_argument_plans->at(index) : 0);
       }
       rendered << ")";
       if (target_handler->reply_type)
@@ -10670,6 +10699,8 @@ class Generator {
             generated_split_binary(e, {"==", "!=", "<=", ">=", "<", ">"})) {
       string left = expr(comparison->left, d, locals, types);
       string right = expr(comparison->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(comparison->left, left, types);
+      right = value_from_borrowed_message_parameter(comparison->right, right, types);
       auto left_type = generated_expr_type(comparison->left, types);
       auto right_type = generated_expr_type(comparison->right, types);
       if (left_type && canonical_type_name(*left_type) == "float" &&
@@ -10687,6 +10718,8 @@ class Generator {
       if (!binary) continue;
       string left = expr(binary->left, d, locals, types);
       string right = expr(binary->right, d, locals, types);
+      left = value_from_borrowed_message_parameter(binary->left, left, types);
+      right = value_from_borrowed_message_parameter(binary->right, right, types);
       auto left_type = generated_expr_type(binary->left, types);
       auto right_type = generated_expr_type(binary->right, types);
       bool integer_operation = left_type && right_type &&
@@ -10976,6 +11009,62 @@ class Generator {
     return candidate;
   }
 
+  // Message values have one Moss-level rule (an immutable value snapshot),
+  // but two backend representations.  The owned form is retained at an ABI
+  // boundary and for replies.  The borrowed forms are valid only while an
+  // internal synchronous `_shared` call is active; Handler2PL retains every
+  // guard needed by a state view until that nested call returns.
+  enum class MessagePayloadLowering {
+    CopyValue,
+    BorrowOwned,
+    BorrowView,
+    MaterializeOwned,
+  };
+
+  bool borrowed_message_parameter(const string& expression) const {
+    return plain_identifier(trim(expression)) &&
+        borrowed_message_parameters_.count(trim(expression));
+  }
+
+  bool borrowed_message_type(const string& type) const {
+    const string concrete = canonical_type_name(type);
+    return !concrete.empty() && !copy_type(concrete) && concrete != "_";
+  }
+
+  string shared_message_parameter(const Param& parameter) const {
+    const string type = canonical_type_name(parameter.type);
+    if (!borrowed_message_type(type))
+      return parameter.name + ": " + rust_type(type);
+    // A view is a static access capability. The internal ABI receives an
+    // immutable reference whether this is an owned object, a temporary state
+    // projection, or an already-borrowed incoming payload.
+    if (view_object_type(type))
+      return parameter.name + ": &impl " + access_trait(type);
+    return parameter.name + ": &" + rust_type(type);
+  }
+
+  string shared_message_forward_argument(const Param& parameter,
+                                         bool from_owned_boundary) const {
+    if (!borrowed_message_type(parameter.type)) return parameter.name;
+    // An exported/native boundary owns its Rust argument.  It deliberately
+    // materializes that boundary, then lends it to the controlled internal
+    // call.  `_shared` forwarding already receives the required borrowed or
+    // access-view representation.
+    return from_owned_boundary ? "&" + parameter.name : parameter.name;
+  }
+
+  MessagePayloadLowering message_payload_lowering(
+      const string& expression, const string& type, const Domain* d,
+      const std::set<string>& locals,
+      const std::unordered_map<string,string>* types,
+      bool owned_boundary) const {
+    if (owned_boundary) return MessagePayloadLowering::MaterializeOwned;
+    if (!borrowed_message_type(type)) return MessagePayloadLowering::CopyValue;
+    if (is_object_view(expression, d, locals, types))
+      return MessagePayloadLowering::BorrowView;
+    return MessagePayloadLowering::BorrowOwned;
+  }
+
   string message_arg(const string& e, const string& type, const Domain* d,
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
@@ -10989,6 +11078,42 @@ class Generator {
     // the generated clone is an implementation of that boundary, never an
     // implicit copy for an ordinary local call.
     return "(" + r + ").clone()";
+  }
+
+  string shared_message_arg(const string& e, const string& type,
+                            const Domain* d, const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types = nullptr,
+                            size_t functional_pipeline_id = 0) const {
+    const auto lowering = message_payload_lowering(
+        e, type, d, locals, types, false);
+    string rendered = nominal_domain_handle_argument(
+        e, type, d, locals, types, functional_pipeline_id);
+    switch (lowering) {
+      case MessagePayloadLowering::CopyValue:
+        return rendered;
+      case MessagePayloadLowering::BorrowOwned:
+        // A temporary owner is naturally extended through this synchronous
+        // call.  No clone implements the Moss snapshot here.
+        return borrowed_message_parameter(e) ? trim(e) : "&(" + rendered + ")";
+      case MessagePayloadLowering::BorrowView:
+        // An incoming object payload is already `&impl MossAccess_T` and can
+        // be forwarded directly. State projections are compact values holding
+        // field borrows, so lend the temporary view for this nested call.
+        return borrowed_message_parameter(e) ? trim(e) : "&(" + rendered + ")";
+      case MessagePayloadLowering::MaterializeOwned:
+        break;
+    }
+    throw std::runtime_error("internal error: shared message selected owned boundary");
+  }
+
+  string value_from_borrowed_message_parameter(
+      const string& source, const string& rendered,
+      const std::unordered_map<string,string>* types) const {
+    auto type = generated_expr_type(source, types);
+    if (borrowed_message_parameter(source) && type &&
+        !view_object_type(*type))
+      return "*(" + rendered + ")";
+    return rendered;
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
@@ -11328,8 +11453,7 @@ class Generator {
 
         o << "    fn " << handler.name << "_shared(&self";
         for (const auto& parameter : handler.params)
-          o << ", " << parameter.name << ": "
-            << rust_type(parameter.type);
+          o << ", " << shared_message_parameter(parameter);
         o << ") -> " << (handler.reply_type ? "Option<" + rust_type(*handler.reply_type) + ">" : "()")
           << " {\n        match &self.route {\n";
         for (size_t index = 0; index < routes.size(); ++index) {

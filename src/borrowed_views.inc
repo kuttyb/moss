@@ -178,6 +178,23 @@
           << "    fn __moss_field_" << field.name << "_mut(&mut self) -> &mut " << result << " { &mut self." << field.name << " }\n";
       }
       o << "}\n";
+      // `_shared` handlers accept a logical object access capability.  This
+      // forwarding implementation lets an owned value lend `&T` directly to
+      // that ABI, and also lets an incoming generic view forward as `&P`
+      // without rebuilding an owned object.
+      o << "impl<T: " << trait << " + ?Sized> " << trait << " for &T {\n";
+      for (const auto& field : t.fields) {
+        string result = rust_type(field.type);
+        if (view_object_type(field.type)) {
+          o << "    type Field_" << field.name << " = T::Field_" << field.name << ";\n";
+          result = "Self::Field_" + field.name;
+        }
+        o << "    fn __moss_field_" << field.name << "(&self) -> &" << result
+          << " { (*self).__moss_field_" << field.name << "() }\n"
+          << "    fn __moss_field_" << field.name << "_mut(&mut self) -> &mut " << result
+          << " { std::process::abort() }\n";
+      }
+      o << "}\n";
     }
     string generics, bounds;
     for (size_t i = 0; i < t.fields.size(); ++i) {

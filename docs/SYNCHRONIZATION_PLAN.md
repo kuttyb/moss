@@ -216,13 +216,16 @@ virtual dispatch, Arc/COW value substitution, or new Moss borrowing syntax. Sour
 traits remain compile-time structural constraints. Ordinary helper/callable and
 functional pipeline reads execute under the already-held handler guards.
 
-Explicit `message` and `reply` boundaries establish independent values. Owned
-payloads enter target handlers; no Rust reference into caller domain storage
-crosses a message. For a borrowed aggregate, `__moss_value` constructs the owned
-boundary value by copying its leaves. It is called for value boundaries, never
-handler entry or an ordinary READ call. Trivial primitive copies remain
-observationally irrelevant. Conservative boundary copies may later be optimized
-with an equivalence proof; ordinary READ has no hidden snapshot cost.
+Explicit `message` and `reply` boundaries establish independent **semantic**
+values. Replies and exported/native message bridges materialize owned values.
+For an internal synchronous `_shared` message, Phase 15.1 may pass a stable
+immutable Rust borrow or a static aggregate view instead of calling
+`__moss_value`. The receiver is statically READ-only, the borrow cannot escape,
+and the sender's Handler2PL guards remain live for the entire nested call, so
+the representation is observationally identical to a copied snapshot. A
+borrowed aggregate is materialized only when it crosses an owned boundary such
+as a reply. Trivial primitive copies remain observationally irrelevant; ordinary
+READ has no hidden snapshot cost.
 
 Composition constructs descendants before owners, fully initializes state and
 per-instance class locks, and publishes handles only after construction. Cloned

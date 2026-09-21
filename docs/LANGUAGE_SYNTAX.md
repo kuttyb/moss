@@ -417,9 +417,14 @@ boundary and therefore does not consume the original payload. `Copy` is only a
 backend/property distinction: primitive values may continue to be passed by
 value, but it does not weaken payload immutability.
 
-The production backend establishes independent owned payloads and replies.
-Ordinary protected READs borrow under retained class guards; these references
-never escape into another domain or through a reply.
+`message` and `reply` remain **semantic** by-value boundaries. The production backend
+materializes an owned reply and materializes an owned message payload at exported/native
+or other ownership boundaries. For an internal synchronous `_shared` message, it may
+instead lend a stable immutable Rust value or static state view for the duration of the
+complete nested call. That temporary borrow is observationally equivalent to the Moss
+snapshot: the receiver is READ-only, it cannot escape, and retained class guards keep
+all reachable state leaves stable until the call returns. Ordinary protected READs use
+the same view machinery; no Rust reference can escape through a `message` or `reply`.
 
 Moss variables and parameters are either untyped or typed. Untyped means
 statically duck typed. Typed means annotated with either a concrete type or a

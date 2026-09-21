@@ -2,6 +2,44 @@
 
 Updated: 2026-09-20
 
+## Phase 15.1 — borrowed synchronous message payload lowering (complete; validation environment note below)
+
+The Phase 15.1 implementation is in the working tree and has not yet been
+committed. Internal synchronous `_shared` handler contracts now pass non-Copy
+ordinary payloads as `&T` and object payloads as `&impl MossAccess_T`.
+`MessagePayloadLowering` is the backend representation decision: `CopyValue`,
+`BorrowOwned`, `BorrowView`, or `MaterializeOwned`. The checked Moss rule is
+unchanged: messages are immutable value snapshots, payload WRITE/CONSUME remains
+illegal, forwarding remains legal, and replies remain owned value boundaries.
+
+Borrowed state projections reuse the existing static `MossAccess_*` / `*View`
+representation. Handler2PL retains the sender guards throughout nested messages,
+so a callee can read the same stable leaves without `__moss_value()` reconstruction
+or a deep clone. Exported/native message bridges intentionally retain an owned
+payload and lend it only to their internal shared body. Large-payload warnings are
+now emitted only for a planned owned materialization boundary.
+
+Focused checks passed with the current compiler build: strict C++17 `-O0` and
+`-O2 -Wall -Wextra -pedantic -Werror`; `check_borrowed_reads.py`; new
+`check_phase151_borrowed_payloads.py`; Phase 10.6F's broad compiled/interpreted
+and source-free module regression; generated Rust `-D warnings`; and shell/Git
+whitespace checks. The first full `make check` exposed a generated comparison of
+an incoming borrowed `String` against an owned literal; lowering now dereferences
+borrowed non-object payloads in value comparisons/operators, and the affected F
+regression passes. The final suite reached the optional real LLDB/DAP test after
+all compiler, Phase 15.1, module/project, agent, source-map, and Emacs checks
+passed, but the sandboxed adapter exited during its initial handshake
+(`Connection shut down by remote side while waiting for reply to initial handshake
+packet`). This is the existing environment-dependent process-tracing integration,
+not a Phase 15.1 assertion; it was not weakened. `make examples` passed.
+
+The benchmark harness compared detached baseline `7661ffc` with the Phase 15.1
+working tree, three repetitions at one thread and 200 iterations. Moss-backend
+1 MiB internal messages changed from approximately 44.34 us to 0.364 us for
+String and 408.0 us to 0.402 us for Vector, consistent with removing deep
+materialization. These are small-machine evidence, not a correctness gate; raw
+data is disposable under `tmp/phase151/`.
+
 ## Repository-owned Moss agent onboarding skills
 
 Two small current-v0.1 agent skills now live at the repository-local Codex

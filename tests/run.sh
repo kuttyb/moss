@@ -1238,21 +1238,22 @@ if command -v python3 >/dev/null 2>&1; then
     fail 'fast interpreter did not execute the complete project source closure'
 fi
 
-# Incoming payloads remain immutable semantic values. Phase 10.6D.1 explicitly
-# establishes their independent storage before entering the target domain.
+# Incoming payloads remain immutable semantic values. Phase 15.1 may represent
+# an internal synchronous boundary as a stable borrow; replies and exported
+# bridges remain independently owned boundaries.
 run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8'
-grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: Payload)" \
+grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: &impl MossAccess_Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'direct handler did not receive an independent non-Copy payload'
-grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'direct call did not establish the by-value payload'
-if ! grep -F '(data).clone()' "$test_build/phase26_direct_payload.rs" >/dev/null; then
-  fail 'direct synchronous payload boundary omitted its independent value'
+  fail 'direct handler did not receive the internal borrowed payload ABI'
+grep -F 'worker.Process_shared(&(data))' "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'direct call did not lend its stable non-Copy payload'
+if grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payload.rs" >/dev/null; then
+  fail 'direct synchronous payload message still cloned its stable value'
 fi
 run_optimized_case phase26_repeated_payload tests/phase26_repeated_payload.moss '7 8'
 run_case phase26_message_payload tests/phase26_message_payload.moss '9'
-grep -F 'Process_shared((data).clone())' "$test_build/phase26_message_payload.rs" >/dev/null ||
-  fail 'synchronous message omitted independent payload construction'
+grep -F 'Process_shared(&(data))' "$test_build/phase26_message_payload.rs" >/dev/null ||
+  fail 'synchronous internal message did not borrow its stable payload'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
 run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
   "forwarded: 10
@@ -1281,7 +1282,7 @@ grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/n
 warning_stdout="$test_build/large_payload_warning.stdout"
 warning_stderr="$test_build/large_payload_warning.stderr"
 "$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
-grep -F 'warning: message payload copies 1088 bytes across a domain boundary' \
+grep -F 'warning: message payload materializes 1088 bytes at an owned domain boundary' \
   "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
 
 reject_case branch_divergent_domain_types \
@@ -1618,6 +1619,7 @@ fi
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_handler_2pl.py "$compiler" "$test_build/phase106d"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compiler" "$test_build/phase106d1"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase151_borrowed_payloads.py "$compiler" "$test_build/phase151"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106e_domains.py "$compiler" "$test_build/phase106e"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106f.py "$compiler" "$test_build/phase106f"
