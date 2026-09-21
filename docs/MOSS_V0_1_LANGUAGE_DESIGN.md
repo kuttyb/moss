@@ -13,7 +13,7 @@ September 2026
 
 ## Abstract
 
-Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. The central concurrency abstraction is the domain: a statically composed owner of mutable state entered only through synchronous message. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives the protected mutable state, partitions that state into synchronization classes, and emits direct typed RwLock<ClassState> fields. Handlers acquire exactly their statically known classes in rank order and hold them through the complete handler, including nested messages. This supports a structural deadlock-freedom argument for Moss-managed locks and domain-local conflict serializability for protected state. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
+Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. The central concurrency abstraction is the domain: a statically composed owner of mutable state entered only through synchronous message. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives the protected mutable state, partitions that state into synchronization classes, and emits direct typed RwLock<ClassState> fields. Handlers acquire exactly their statically known classes in rank order and hold them through the complete handler, including nested messages. This supports a structural deadlock-freedom argument for Moss-managed locks and domain-local conflict serializability for protected state. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, zero-copy borrowed lowering for eligible synchronous inter-domain message payloads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
 
 ## Contents
 
@@ -115,6 +115,8 @@ This distinction is important for dogfooding. Tree walks, parsers, compiler pass
 
 A domain owns mutable state and exposes handlers as the only externally callable operations on that state. A domain is not defined by a mailbox or worker thread. In the final v0.1 model, a domain is a static ownership and synchronization boundary.
 
+Domain handlers use the same `fn` declaration syntax as ordinary functions; being declared inside a `domain` makes them message-entry handlers. Moss does not use a separate `on` handler keyword.
+
 The paper uses one running example throughout:
 
 ```moss
@@ -125,21 +127,21 @@ domain Account:
   stats: Stats
   config_value: Int
 
-  on rename(name):
+  fn rename(name):
     display_name = name
 
-  on set_risk_limit(limit):
+  fn set_risk_limit(limit):
     risk_limit = limit
 
-  on record_fill(fill):
+  fn record_fill(fill):
     balance = balance + fill.amount
     stats = update_stats(stats, fill)
     validate_risk(balance, risk_limit)
 
-  on read_stats():
+  fn read_stats():
     reply stats
 
-  on read_config():
+  fn read_config():
     reply config_value
 ```
 
@@ -153,7 +155,7 @@ Domains are wired in an initial composition prefix. A domain declares outbound r
 domain App:
   domainroutes(account: Account, logger: Logger)
 
-  on run():
+  fn run():
     receipt = message account.read_stats()
     message logger.record(receipt)
 
@@ -206,9 +208,31 @@ This point is part of the language model, not merely a non-claim hidden in the p
 
 ### 9 By-value domain boundaries
 
-Message arguments and reply results are semantic by-value boundaries. The programmer can rely on independence even if the backend implements the boundary with a move, return-value optimization, storage reuse, or another copy-elision technique.
+Message arguments and reply results are **semantic by-value boundaries**. The programmer can rely on value independence across a domain boundary: a callee cannot retain a mutable alias into the caller's state, mutate the caller's payload through an alias, or consume the caller's incoming snapshot.
 
-A Rust reference into one domain's state never becomes another domain's message payload. Callables themselves do not cross message or reply. This keeps the cross-domain boundary first-order and prevents dynamic route/callable capability propagation.
+By-value semantics do **not** require a physical copy on every synchronous message.
+
+Because `message` is synchronous and incoming payloads are immutable and non-consuming, the shared-memory backend may lower an eligible inter-domain payload to an immutable Rust borrow such as `&T`, or to a typed borrowed view for decomposed state. The borrow exists only for the dynamic extent of the synchronous message call and cannot escape into Moss-visible state.
+
+Conceptually:
+
+```text
+Moss semantics:
+    caller value --by-value message boundary--> immutable callee snapshot
+
+Possible Rust lowering:
+    caller storage --temporary &T / borrowed view--> callee
+```
+
+The two are observationally equivalent under the Moss rules: the receiver cannot mutate or consume the payload, cannot retain the borrow after the call, and the sender resumes only after the callee returns.
+
+This optimization also applies transitively to forwarding when the same payload is passed through a chain of synchronous messages and the compiler can prove the borrow remains valid. If those conditions are not available, the backend conservatively materializes an owned value instead.
+
+Small `Copy` values may simply be passed by value. Foreign/native boundaries and other cases where the compiler cannot prove safe borrow lifetime or representation also materialize an owned value.
+
+Replies are different: the caller uses the result after the callee has returned, so reply results remain owned semantic values rather than borrowed results.
+
+A Rust borrow used to implement a message is therefore a **physical lowering detail**, not a source-level Moss reference. Moss exposes no cross-domain mutable alias, source-level lifetime, or borrowed-message type. Callables themselves do not cross message or reply. This keeps the cross-domain boundary first-order while allowing the native backend to avoid unnecessary copies.
 
 ### 10 Observable effects beyond domain state
 
@@ -493,7 +517,7 @@ Therefore `record_fill` acquires A and B exclusively and C shared. `rename` is s
 Suppose a cache handler is conceptually:
 
 ```moss
-on get(key):
+fn get(key):
   if !entries.contains(key):
     entries[key] = compute(key)
   reply entries[key]
@@ -555,7 +579,7 @@ This formulation is stronger and more precise than saying merely that "construct
 
 Ordinary calls may preserve caller storage identity according to inferred parameter effects. The compiler checks `read`/`write`/`consume` capabilities and rejects overlapping aliases when one side may write or consume.
 
-Domain boundaries deliberately break ordinary alias identity. A message argument establishes an independent semantic value; so does a reply result. The backend may optimize the physical transfer when it can prove observational equivalence, but cross-domain mutable aliases are not part of the language model.
+Domain boundaries deliberately break ordinary Moss alias identity. A message argument establishes an independent semantic value; so does a reply result. For an eligible synchronous message, the backend may represent that semantic value temporarily with an immutable Rust borrow or typed borrowed view when it can prove observational equivalence and non-escape. This physical borrow does not become a Moss alias and cannot outlive the message call. Replies remain owned results. Cross-domain mutable aliases are not part of the language model.
 
 ### 29 Failure model and proof scope
 
@@ -572,7 +596,7 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Moss derives domain-state synchronization from specialized may-effects rather than user-written locks.
 - Protected domain state is conflict-serializable under the stated failure-free assumptions.
 - Moss-managed domain lock deadlock is structurally excluded under the closed-graph/rank assumptions.
-- Message/reply boundaries are semantically by value and do not expose cross-domain aliases.
+- Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values.
 
 #### Non-claims
 
@@ -657,15 +681,33 @@ The first correct 2PL backend interpreted synchronization metadata at runtime us
 
 That overhead was classified as a v0.1 blocker because the compiler already knew every class, mode, and leaf statically. Phase 10.6F.1 replaced runtime plan interpretation with static typed lowering. The result is an important implementation lesson: the compiler should execute the planning work at compile time and emit ordinary direct Rust, not carry a generic synchronization interpreter into the production hot path.
 
-### 34 Borrowed protected reads
+### 34 Borrowed protected reads and zero-copy message lowering
 
-A second correction removed hidden deep copies of protected READ state. Protected reads now borrow directly from the data owned by the retained shared guard; immutable-after-publication reads borrow directly from immutable storage. Whole and nested objects are represented with typed borrowed views when needed.
+One correction removed hidden deep copies of protected READ state. Protected reads borrow directly from the data owned by the retained shared guard; immutable-after-publication reads borrow directly from immutable storage. Whole and nested objects are represented with typed borrowed views when needed.
 
-Message and reply boundaries still materialize independent values. The optimization therefore preserves the language-level distinction:
+The same principle now applies to eligible synchronous inter-domain message payloads.
 
-> ordinary READ => borrow; message/reply => independent semantic value.
+At the Moss level, a message still establishes a by-value immutable snapshot. At the Rust lowering level, however, the compiler may represent that snapshot with a temporary immutable borrow when all required conditions are statically known:
 
-No unsafe Rust was introduced for the final v0.1 backend.
+- the message call is synchronous;
+- the receiver only has immutable, non-consuming access to the incoming payload;
+- the source storage remains valid and stable for the complete call;
+- the borrow cannot escape, be stored, or become a Moss-visible alias; and
+- the target is an internal lowering where the compiler controls both sides of the call.
+
+For an ordinary owned value, this can lower to an `&T`. For protected or decomposed domain state, the compiler can reuse the typed borrowed-view machinery already used for protected READs. Small Rust `Copy` values may continue to pass directly by value.
+
+Nested forwarding can remain zero-copy as well. If domain A sends a payload to B and B synchronously forwards that incoming payload to C, the backend may propagate the same immutable borrow through the nested call chain as long as its lifetime remains statically contained.
+
+The optimization is deliberately conservative. If the compiler cannot prove the borrow representation safe—for example at a foreign/native boundary, for an unstable temporary, or where an owned representation is otherwise required—it materializes an owned value.
+
+Replies are not borrowed across the handler boundary. A caller must be able to use a reply after the callee has completed and released its guards, so reply lowering produces an owned semantic result.
+
+The language-level distinction is therefore:
+
+> ordinary READ => borrow where possible; synchronous message => by-value semantics, borrow physically where safe; reply => owned value.
+
+This optimization introduces no Moss reference syntax, no user-visible lifetimes, and no cross-domain mutable aliases. Safe Rust remains responsible for validating the generated physical borrow relationships.
 
 ### 35 From asynchronous actors to synchronous domains
 
@@ -816,13 +858,13 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Domain handles | Routing capabilities, not ordinary values |
 | Message | Synchronous, blocking, expression-valued |
 | Reply | Terminating, by-value semantic result |
-| Payloads | Incoming snapshots immutable; forwarding/reply creates new value boundaries |
+| Payloads | Incoming snapshots are semantically by value and immutable; eligible synchronous message payloads may lower to non-escaping Rust borrows/views; replies remain owned values |
 | Consistency | Domain-local protected-state conflict serializability; no global SC across independent domains |
 | External effects | Ordered by ordinary synchronous program dependencies; no global total order |
 | Synchronization | Compiler-derived classes; exact handler `ClassSet` known before body |
 | Locking | Static-footprint strict 2PL; no upgrades; full-handler hold |
 | Deadlock order | Lexicographic `(domain_rank, class_rank)` for currently held Moss locks |
-| Physical backend | Static typed safe Rust, `RwLock<ClassState>` per synchronization class |
+| Physical backend | Static typed safe Rust, `RwLock<ClassState>` per synchronization class, borrowed protected READs, and borrowed synchronous message payloads where safe |
 | Fast Debug | Deterministic semantic interpreter; no lock/thread simulation |
 | Ingress | Source-level concurrent root creation intentionally deferred |
 | Failure | Unexpected failure is fail-closed; supervision deferred |
@@ -840,7 +882,7 @@ The formal claims rely on the following conditions:
 7. Parent locks remain held across nested synchronous messages.
 8. Every nested message follows a route to a greater domain rank.
 9. Initialization writes happen-before concurrent handler execution observes the domain instance.
-10. Message/reply value boundaries do not leak mutable aliases between domains.
+10. Message/reply value boundaries do not leak Moss-visible mutable aliases between domains; any physical Rust borrow used to lower a synchronous message is immutable, non-escaping, and bounded by the call.
 11. Normal handler exit leaves every domain-owned value ownership-valid.
 12. Serializability claims are for failure-free completed handlers; unexpected failure is fail-closed in v0.1.
 13. Foreign code does not acquire hidden Moss-state aliases or violate Moss-managed lock-order assumptions; detailed interop remains future work.
