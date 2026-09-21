@@ -1,0 +1,284 @@
+---
+name: moss-language
+description: Write, review, or debug current Moss v0.1 source (.moss, Moss projects, modules, domains, messages, traits, ownership/effects, and functional pipelines). Use before editing Moss; do not infer Moss from Rust or historical fixtures.
+metadata:
+  language: moss-0.1
+  skill-version: "1"
+  validation: tests/tooling/check_agent_skills.py
+---
+
+# Moss language — current v0.1
+
+Moss is a statically compiled, inference-driven language. Write ordinary source
+with little type or synchronization ceremony; the compiler specializes and closes
+the reachable program before native generation. Mutable shared state lives in
+domains. Cross-domain work uses synchronous `message` calls. Programmers do not
+write locks: the compiler derives effects, synchronization classes, and a safe
+acquisition order before emitting safe Rust.
+
+Prefer the current constructs below over guesses imported from Rust, actor
+languages, or old Moss source. The compiler and its current regression suite are
+authoritative. If this skill disagrees with a compiler diagnostic, trust the
+compiler, keep the program semantically valid, and report the skill drift.
+
+## Machine-checkable guidance contract
+
+```yaml
+moss_skill_contract:
+  language_version: moss-0.1
+  skill_version: 1
+  message: synchronous-blocking
+  await: retired
+  spawn: retired
+  domain_handles: routing-capabilities
+  self_send: forbidden
+  same_domain_message: forbidden
+  locks: compiler-derived
+  traits: structural-compile-time
+  parameter_effects: inferred-read-write-consume
+  recursion: unsupported
+  general_first_class_closures: unsupported
+  legacy_runtime_model: forbidden
+```
+
+## Do / do not
+
+Do:
+
+- Construct every domain statically in the initial composition prefix of `main`.
+- Declare a domain's outbound dependencies with `domainroutes(...)`, then bind
+  those named routes at construction.
+- Use `message target.Handler(args...)` for every cross-domain handler call.
+- Use `reply value` to terminate a value-returning handler.
+- Put reuse within one domain in an ordinary helper function; calls are statically
+  resolved.
+- Let the compiler infer `READ`, `WRITE`, and `CONSUME` parameter effects. Make
+  a separate local binding when only scratch mutation is intended.
+- Use structural traits and concrete operations rather than nominal declarations.
+- Use named functions for nontrivial pipeline logic. Tiny supported placeholder
+  expressions are appropriate for small pipeline stages.
+- Keep domain handles in the static routing topology and ask the compiler for
+  semantic facts when unsure.
+
+Do not write or simulate:
+
+- `await`: it is retired. Use synchronous `message` directly.
+- `spawn`: it is retired. Construct a domain in `main`'s composition prefix.
+- Lock, mutex, or RwLock syntax: there is no source-level lock programming model.
+- `message self.X(...)`: self-send is illegal. Extract ordinary helper logic.
+- A handler-to-handler `message` on the same domain: use an ordinary helper.
+- A domain handle as a function or handler argument, payload, reply, local alias,
+  state value, or collection element: declare a `domainroutes` dependency instead.
+- Domain construction in a loop, branch, helper, handler, or collection.
+- Runtime/dynamic dispatch, nominal `implements Trait`, user-written `mut`,
+  `inout`, or `write` parameter annotations, Rust-style generic type variables,
+  general first-class closures, or ordinary recursion.
+
+## Retired syntax
+
+`await` and `spawn` are both retired. Migration is a direct syntax change, not an
+alternate execution model:
+
+```moss
+# Old — rejected
+result = await worker.Get()
+
+# Current
+result = message worker.Get()
+```
+
+```moss
+# Old — rejected
+worker = spawn Worker()
+
+# Current, in main's initial composition prefix
+worker = Worker()
+```
+
+Do not retain either spelling in new source. A current compiler diagnostic points
+to the corresponding replacement.
+
+## Domains, routes, messages, and replies
+
+A domain owns mutable shared state. Treat it as a coarse architectural subsystem,
+not one domain per record, user, or object. Concrete instances are fixed by the
+initial `main` composition prefix. A `domainroutes` declaration supplies immutable
+outbound route slots; state names and route names share one member namespace.
+The compiler turns all bound routes into a closed concrete topology, so no ordinary
+value operation may create, copy, or store a routing capability.
+
+`message` is synchronous and blocking. It can be used for a value or as a statement:
+
+```moss
+current = message database.Lookup(key)
+message logger.Record(current)
+```
+
+The caller continues only after the target handler terminates. A handler declared
+with a value result must `reply` on every normal path. `reply expr` establishes a
+new semantic value boundary and terminates that handler immediately. A no-value
+handler may complete normally.
+
+Incoming handler arguments are immutable value snapshots. A handler may read an
+incoming payload, pass it to a READ-only helper, use it to compute data, forward it
+through another `message`, or reply with it by value. It may not write, consume,
+rebind, or move the payload into state. This is a Moss semantic rule for every
+payload type; whether a backend representation is cheap to copy does not relax it.
+
+There is no self-send and no same-domain handler chaining. Put shared handler
+implementation in an ordinary helper with normal lexical/module scope. The helper
+may operate on compiler-approved state access; it is not another domain boundary.
+
+### Complete current example
+
+The following listing is intentionally mirrored by
+`tests/tooling/fixtures/moss_language_skill_example.moss` and is compiled by the
+skill drift test.
+
+<!-- moss-skill-valid-example:start -->
+```moss
+fn add(left, right):
+  return left + right
+
+domain Audit:
+  total = 0
+
+  fn Record(amount: Int):
+    total = add(total, amount)
+
+domain Account:
+  balance = 0
+
+  domainroutes(audit: Audit)
+
+  fn Deposit(amount: Int) -> Int:
+    balance = add(balance, amount)
+    message audit.Record(amount)
+    reply balance
+
+fn main():
+  audit = Audit()
+  account = Account(audit: audit)
+  value = message account.Deposit(5)
+  echo value
+```
+<!-- moss-skill-valid-example:end -->
+
+`Account` has one declared static route to `Audit`; `Deposit` blocks until
+`Record` completes. `add` is an ordinary helper. Its parameter effects are inferred
+from its body and use, while the state writes are ordinary domain-state mutation.
+No source lock or routing capability is passed as data.
+
+## Ownership and inferred effects
+
+Moss tracks access modes as `READ`, `WRITE`, and `CONSUME`. They are compiler facts,
+not parameter modifiers a programmer writes. For example, assigning a primitive
+parameter can infer a caller-visible WRITE:
+
+```moss
+fn increment(value):
+  value = value + 1
+```
+
+When only local scratch mutation is intended, create local storage instead:
+
+```moss
+fn inspect(value):
+  current = value
+  current = current + 1
+  return current
+```
+
+An rvalue cannot satisfy a WRITE or CONSUME requirement. When two arguments overlap
+the same storage, the allowed combinations are `READ + READ` only. `READ + WRITE`,
+`READ + CONSUME`, `WRITE + WRITE`, `WRITE + CONSUME`, and `CONSUME + CONSUME` are
+rejected. Do not work around these diagnostics with invented copies or annotations;
+restructure storage, calls, or intent explicitly.
+
+Moss does not make arbitrary implicit deep copies. Cross-domain `message` arguments
+and `reply` results are explicit semantic value boundaries. Internally protected
+domain reads are compiler-managed borrows, not hidden snapshots, and such borrows
+cannot escape through a message or reply.
+
+## Traits, specialization, and calls
+
+Traits are structural compile-time predicates, not nominal memberships. Do not write
+`implements Printable`. Define the operations a trait requires; a concrete type
+satisfies the trait when its statically specialized structure supplies those
+operations. This does not create a runtime trait object, vtable, or dynamic dispatch.
+
+Moss follows: **infer all the way, then close statically**. Untyped parameters are
+statically duck typed, never runtime dynamic values. Before native generation the
+compiler resolves all reachable concrete specializations, call targets, methods, and
+structural requirements. Prefer inference and concrete use sites over Rust-style
+generic type-variable ceremony. Ordinary recursion is not supported in v0.1; rewrite
+the algorithm iteratively or report the current language limitation rather than adding
+recursive source.
+
+## Functional/dataflow code
+
+The currently supported pipeline operations are `map`, `filter`, `reduce`, `sum`,
+`count`, `any`, and `all`. Use named functions for substantial stage logic. Supported
+small placeholders include forms such as `_ > 0`, `_ * scale`, and `_.score()`.
+Captured values participate in effect inference; a capture that would write or consume
+is not a loophole. A higher-order helper is allowed only when its callable parameter
+specializes to a statically known target. General lambda values, escaping closures,
+and dynamic callable dispatch are not Moss v0.1 features.
+
+Pipelines are eager source semantics. The optimizer may fuse or avoid intermediate
+work only when inferred effects, failure, and divergence facts prove it equivalent.
+An observable `message` is an effect boundary: do not assume a transformation can move
+across it. Use compiler `why` output rather than guessing why a pipeline did or did
+not fuse.
+
+## Modules and projects
+
+A project uses `moss.toml` and conventional `src/`, `tests/`, and `benches/`
+directories. Without explicit modules, a target's participating files form one
+temporary global compilation unit. Explicit modules use current syntax:
+
+```moss
+module pricing
+
+export fn notional(value: Int) -> Int:
+  value * 2
+```
+
+```moss
+module app
+import pricing
+
+fn main():
+  echo pricing.notional(21)
+```
+
+Declarations are private unless exported. Imports are acyclic and symbols are
+qualified. The normal project entry is one application `main`. Compiled providers may
+be consumed through their `.mossi` interface and native artifact when the project
+workflow makes them source-free; Fast Debug requires reachable Moss source. See
+`docs/MODULES.md` and `docs/PROJECT_WORKFLOW.md` for the operational details.
+
+## Synchronization mental model
+
+Write domain state, route declarations, and handlers. The compiler infers
+READ/WRITE/CONSUME effects, derives synchronization classes and ordered acquisition,
+then emits direct Rust locking. Conflicting handlers in one domain are synchronized;
+unrelated domains are not a promise of one global total order. A synchronous message
+creates program order between its caller and completed handler.
+
+Never attempt to solve a synchronization diagnostic by adding a lock. Moss has no lock
+syntax. Restructure ownership, a route, a domain boundary, or the handler's effects.
+
+## Fast checklist before writing Moss
+
+1. Is mutable shared state inside an appropriately coarse domain?
+2. Are all domain instances and routes statically constructed in `main`?
+3. Is every cross-domain operation a synchronous `message` through a declared route?
+4. Is same-domain reuse an ordinary helper?
+5. Are payloads ordinary values, never domain handles?
+6. Are parameter and alias effects allowed by the inferred ownership contract?
+7. Did you avoid retired syntax, locks, nominal traits, recursion, and invented
+   dynamic/generic/closure features?
+
+For live facts, run `moss agent bootstrap --json`, then use structured diagnostics
+and semantic queries. The companion `moss-agent-workflow` skill specifies that loop.

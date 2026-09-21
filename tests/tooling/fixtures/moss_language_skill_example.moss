@@ -1,0 +1,24 @@
+fn add(left, right):
+  return left + right
+
+domain Audit:
+  total = 0
+
+  fn Record(amount: Int):
+    total = add(total, amount)
+
+domain Account:
+  balance = 0
+
+  domainroutes(audit: Audit)
+
+  fn Deposit(amount: Int) -> Int:
+    balance = add(balance, amount)
+    message audit.Record(amount)
+    reply balance
+
+fn main():
+  audit = Audit()
+  account = Account(audit: audit)
+  value = message account.Deposit(5)
+  echo value

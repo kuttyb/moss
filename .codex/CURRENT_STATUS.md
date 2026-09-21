@@ -2,6 +2,33 @@
 
 Updated: 2026-09-20
 
+## Repository-owned Moss agent onboarding skills
+
+Two small current-v0.1 agent skills now live at the repository-local Codex
+discovery path `.agents/skills/`: `moss-language` and `moss-agent-workflow`.
+Their compact hand-maintained bodies are the canonical copies; `AGENTS.md` only
+routes Moss-source agents to them. `moss-language` teaches static construction,
+`domainroutes`, synchronous `message`, terminating `reply`, immutable payloads,
+domain-handle closure, structural traits, inferred READ/WRITE/CONSUME, supported
+functional callables, modules, and common rejected patterns. It explicitly marks
+`await` and `spawn` retired. `moss-agent-workflow` teaches the existing
+`moss-agent-1` bootstrap/JSON-query/format/impact/affected-test/Fast-Debug-trace
+loop and keeps generated Rust as an implementation artifact.
+
+`tests/tooling/check_agent_skills.py` verifies both `SKILL.md` metadata and their
+machine-readable current-language markers, rejects stale runtime terminology in the
+language skill, checks that its advertised listing exactly matches a checked fixture,
+then checks, lowers, compiles generated Rust with `-D warnings`, and executes that
+example. The check runs at the start of `tests/run.sh`; the existing retired-syntax
+gate remains unchanged. `docs/AGENT_SKILLS.md` documents the discovery convention
+and explicitly reserves broader measured onboarding/repair/trace work for Phase 22.
+
+Validation after these documentation/tooling-only changes: strict C++17
+`-std=c++17 -O2 -Wall -Wextra -pedantic -Werror` rebuild, focused skill check,
+`make check`, `make examples`, `sh -n tests/run.sh`, and staged/unstaged
+`git diff --check` passed. No Moss semantic, backend, or Phase 10 implementation
+changed. This is a low-risk dogfooding aid; Phase 22 is not complete.
+
 ## Moss v0.1 peer-review hygiene cleanup
 
 Active examples, projects, benchmark sources, and semantic regressions now use

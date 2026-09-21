@@ -8,6 +8,9 @@ mkdir -p "$test_build"
 # Peer-review source hygiene: only focused migration fixtures contain retired syntax.
 python3 tests/tooling/check_retired_syntax.py --self-test
 
+# Repository-local agent skills carry current source guidance and a checked example.
+python3 tests/tooling/check_agent_skills.py "$compiler"
+
 fail() {
   echo "test failure: $*" >&2
   exit 1

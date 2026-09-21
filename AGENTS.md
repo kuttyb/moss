@@ -1,5 +1,13 @@
 # Moss repository instructions
 
+## Moss source guidance
+
+- When editing or generating `.moss` source, load the repository-local
+  `moss-language` and `moss-agent-workflow` skills from `.agents/skills/`.
+  They describe current Moss v0.1, not historical syntax. Use compiler diagnostics
+  and `moss agent bootstrap --json` as the authority rather than inferring Moss from
+  Rust or obsolete tests.
+
 ## Temporary files and Git
 
 - Use `<repository-root>/tmp/` for temporary files and validation logs rather

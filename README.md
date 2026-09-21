@@ -111,6 +111,15 @@ source queries `src + benches`; standalone files outside a project remain single
 Automation and coding agents can discover the structured protocol first with
 `moss agent bootstrap --json`.
 
+### Coding-agent onboarding
+
+Repository-local Codex Skills live in [`.agents/skills`](.agents/skills): load
+[`moss-language`](.agents/skills/moss-language/SKILL.md) before writing `.moss`, and
+[`moss-agent-workflow`](.agents/skills/moss-agent-workflow/SKILL.md) for the
+compiler-first edit/check/debug loop. They teach current v0.1 syntax and explicitly
+avoid retired source and backend assumptions; the compiler remains authoritative.
+See [agent onboarding skills](docs/AGENT_SKILLS.md) for discovery and validation.
+
 The short agent loop is:
 
 ```sh
