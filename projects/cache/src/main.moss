@@ -1,0 +1,252 @@
+# Fixed-capacity Int -> Int cache with round-robin eviction and domain wrapper
+
+type Cache:
+  capacity: Int
+  count: Int
+  evict_idx: Int
+  keys: Vector [Int]
+  values: Vector [Int]
+
+  fn size() -> Int:
+    return count
+
+  fn contains(key: Int) -> Bool:
+    var i = 0
+    while i < count:
+      if keys [i] == key:
+        return true
+      i = i + 1
+    return false
+
+  fn get(key: Int, default_val: Int) -> Int:
+    var i = 0
+    while i < count:
+      if keys [i] == key:
+        return values [i]
+      i = i + 1
+    return default_val
+
+  fn put(key: Int, val: Int):
+    var i = 0
+    while i < count:
+      if keys [i] == key:
+        values [i] = val
+        return
+      i = i + 1
+
+    if count < capacity:
+      keys.push(key)
+      values.push(val)
+      count = count + 1
+    else:
+      idx = evict_idx
+      keys [idx] = key
+      values [idx] = val
+      evict_idx = (evict_idx + 1) % capacity
+
+  fn clear():
+    while count > 0:
+      keys.pop()
+      values.pop()
+      count = count - 1
+    evict_idx = 0
+
+  fn sum() -> Int:
+    var total = 0
+    var i = 0
+    while i < count:
+      total = total + values [i]
+      i = i + 1
+    return total
+
+  fn sum_values() -> Int:
+    return sum()
+
+fn new_cache(capacity: Int) -> Cache:
+  return Cache(capacity: capacity, count: 0, evict_idx: 0, keys: Vector [Int](), values: Vector [Int]())
+
+domain CacheDomain:
+  cache: Cache
+
+  fn Put(key: Int, val: Int):
+    cache.put(key, val)
+
+  fn Get(key: Int, default_val: Int) -> Int:
+    reply cache.get(key, default_val)
+
+test "initial empty state":
+  var c = new_cache(3)
+  assertEqual(c.size(), 0)
+  assertEqual(c.contains(1), false)
+  assertEqual(c.get(1, 0 - 1), 0 - 1)
+  assertEqual(c.sum(), 0)
+
+test "insertion/retrieval":
+  var c = new_cache(3)
+  c.put(1, 10)
+  assertEqual(c.size(), 1)
+  assertEqual(c.get(1, 0 - 1), 10)
+  c.put(2, 20)
+  assertEqual(c.size(), 2)
+  assertEqual(c.get(1, 0 - 1), 10)
+  assertEqual(c.get(2, 0 - 1), 20)
+
+test "overwrite of existing key":
+  var c = new_cache(3)
+  c.put(1, 10)
+  c.put(2, 20)
+  c.put(1, 15)
+  assertEqual(c.size(), 2)
+  assertEqual(c.get(1, 0 - 1), 15)
+  assertEqual(c.get(2, 0 - 1), 20)
+  c.put(3, 30)
+  assertEqual(c.size(), 3)
+  c.put(2, 25)
+  assertEqual(c.size(), 3)
+  assertEqual(c.get(2, 0 - 1), 25)
+  assertEqual(c.get(1, 0 - 1), 15)
+  assertEqual(c.get(3, 0 - 1), 30)
+
+test "missing-key/default lookup":
+  var c = new_cache(3)
+  c.put(1, 10)
+  assertEqual(c.get(99, 0 - 1), 0 - 1)
+  assertEqual(c.get(99, 42), 42)
+  assertEqual(c.get(100, 0), 0)
+
+test "capacity reached":
+  var c = new_cache(3)
+  c.put(1, 10)
+  c.put(2, 20)
+  c.put(3, 30)
+  assertEqual(c.size(), 3)
+  assert(c.contains(1))
+  assert(c.contains(2))
+  assert(c.contains(3))
+  assertEqual(c.get(1, 0 - 1), 10)
+  assertEqual(c.get(2, 0 - 1), 20)
+  assertEqual(c.get(3, 0 - 1), 30)
+
+test "first eviction":
+  var c = new_cache(3)
+  c.put(1, 10)
+  c.put(2, 20)
+  c.put(3, 30)
+  c.put(4, 40)
+  assertEqual(c.size(), 3)
+  assertEqual(c.contains(1), false)
+  assertEqual(c.contains(2), true)
+  assertEqual(c.contains(3), true)
+  assertEqual(c.contains(4), true)
+  assertEqual(c.get(1, 0 - 1), 0 - 1)
+  assertEqual(c.get(4, 0 - 1), 40)
+
+test "repeated eviction and wraparound":
+  var c = new_cache(3)
+  c.put(1, 10)
+  c.put(2, 20)
+  c.put(3, 30)
+  # Slot 0 evicted (key 1)
+  c.put(4, 40)
+  assertEqual(c.contains(1), false)
+  assertEqual(c.contains(4), true)
+  # Slot 1 evicted (key 2)
+  c.put(5, 50)
+  assertEqual(c.contains(2), false)
+  assertEqual(c.contains(5), true)
+  # Slot 2 evicted (key 3)
+  c.put(6, 60)
+  assertEqual(c.contains(3), false)
+  assertEqual(c.contains(6), true)
+  # Wraparound: Slot 0 evicted (key 4)
+  c.put(7, 70)
+  assertEqual(c.contains(4), false)
+  assertEqual(c.contains(7), true)
+  assertEqual(c.size(), 3)
+  assertEqual(c.get(5, 0 - 1), 50)
+  assertEqual(c.get(6, 0 - 1), 60)
+  assertEqual(c.get(7, 0 - 1), 70)
+
+test "contains":
+  var c = new_cache(2)
+  assertEqual(c.contains(1), false)
+  c.put(1, 10)
+  assertEqual(c.contains(1), true)
+  assertEqual(c.contains(2), false)
+  c.put(2, 20)
+  assertEqual(c.contains(1), true)
+  assertEqual(c.contains(2), true)
+  c.put(3, 30)
+  assertEqual(c.contains(1), false)
+  assertEqual(c.contains(2), true)
+  assertEqual(c.contains(3), true)
+
+test "size":
+  var c = new_cache(3)
+  assertEqual(c.size(), 0)
+  c.put(1, 10)
+  assertEqual(c.size(), 1)
+  c.put(2, 20)
+  assertEqual(c.size(), 2)
+  c.put(1, 15)
+  assertEqual(c.size(), 2)
+  c.put(3, 30)
+  assertEqual(c.size(), 3)
+  c.put(4, 40)
+  assertEqual(c.size(), 3)
+  c.put(5, 50)
+  assertEqual(c.size(), 3)
+
+test "clear":
+  var c = new_cache(3)
+  c.put(1, 10)
+  c.put(2, 20)
+  c.put(3, 30)
+  assertEqual(c.size(), 3)
+  c.clear()
+  assertEqual(c.size(), 0)
+  assertEqual(c.contains(1), false)
+  assertEqual(c.contains(2), false)
+  assertEqual(c.contains(3), false)
+  assertEqual(c.get(1, 0 - 1), 0 - 1)
+  assertEqual(c.sum(), 0)
+  c.put(10, 100)
+  assertEqual(c.size(), 1)
+  assertEqual(c.get(10, 0 - 1), 100)
+
+test "sum of current values":
+  var c = new_cache(3)
+  assertEqual(c.sum(), 0)
+  c.put(1, 10)
+  assertEqual(c.sum(), 10)
+  c.put(2, 20)
+  assertEqual(c.sum(), 30)
+  c.put(1, 15)
+  assertEqual(c.sum(), 35)
+  c.put(3, 30)
+  assertEqual(c.sum(), 65)
+  c.put(4, 40)
+  assertEqual(c.sum(), 90)
+  c.clear()
+  assertEqual(c.sum(), 0)
+
+test "domain Put / Get":
+  var c = new_cache(2)
+  c.put(10, 100)
+  c.put(20, 200)
+  assertEqual(c.get(10, 0 - 1), 100)
+  assertEqual(c.get(20, 0 - 1), 200)
+  assertEqual(c.get(30, 0 - 1), 0 - 1)
+
+fn main():
+  cache_dom = CacheDomain(cache: Cache(capacity: 2, count: 0, evict_idx: 0, keys: [], values: []))
+
+  message cache_dom.Put(1, 100)
+  message cache_dom.Put(2, 200)
+  v1 = message cache_dom.Get(1, 0 - 1)
+  v2 = message cache_dom.Get(2, 0 - 1)
+  v3 = message cache_dom.Get(3, 0 - 1)
+  assertEqual(v1, 100)
+  assertEqual(v2, 200)
+  assertEqual(v3, 0 - 1)
+  echo "Cache and CacheDomain operations successfully verified."

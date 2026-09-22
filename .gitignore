@@ -16,6 +16,7 @@ __pycache__/
 moss
 margo
 build/**
+**/build/**
 examples/**/build/
 examples/projects/*/build/
 examples/projects/*/.moss/
