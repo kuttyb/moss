@@ -1,0 +1,2 @@
+fn main():
+  var values: Vector[Int] = []

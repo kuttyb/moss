@@ -438,7 +438,7 @@
       if (h.reply_type) o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
     }
     for (const auto& f : d.state) decompose_physical_value(o, f.name, f.type, f.name);
-    o << "    " << d.name << "Ref { state: Arc::new(" << d.name << "Runtime {\n";
+    o << "    " << d.name << "Ref { state: std::sync::Arc::new(" << d.name << "Runtime {\n";
     for (const auto& cls : plan->classes) {
       o << "        class" << cls.class_rank << ": std::sync::RwLock::new(" << d.name << "Class" << cls.class_rank << " { ";
       for (const auto& leaf : cls.member_leaves) o << physical_leaf_binding(leaf) << ", ";

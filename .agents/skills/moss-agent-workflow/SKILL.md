@@ -94,6 +94,22 @@ language-design conclusion from generated Rust: valid Moss may expose a backend
 lowering bug. Never turn a workaround into an “idiomatic Moss architecture” claim
 until a minimal reproducer establishes the underlying limitation.
 
+For unfamiliar operators or collection construction, prefer:
+
+```text
+bootstrap/source_surface
+        ↓
+canonical docs/skill
+        ↓
+minimal moss check --json probe
+        ↓
+classify
+```
+
+An absent guessed spelling is not proof that a construct is absent. Compiler
+internals are for repairing an established compiler issue, not the first
+language-discovery surface for a Moss programmer or fresh agent.
+
 ## Start a Moss task
 
 1. Read repository `AGENTS.md`, load both Moss skills, and complete **Fresh Agent

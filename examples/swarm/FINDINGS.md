@@ -6,9 +6,9 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 13
+- Distinct findings: 16
 - Open: 0
-- Fixed: 12
+- Fixed: 15
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 5
 
@@ -18,6 +18,7 @@ Completed swarm experiments:
 - [Python / BinaryHeap](Python/BinaryHeap/)
 - [Python / Counter](Python/Counter/)
 - [Julia / Accumulator](Julia/Accumulator/)
+- [Python / HashMap](Python/HashMap/)
 
 ## Updating this ledger
 
@@ -34,6 +35,10 @@ Each new `examples/swarm/...` experiment should:
 
 Count distinct findings, not occurrences. A future independent reproduction adds
 an observation; it does not create another finding ID.
+
+The HashMap experiment is a Moss open-addressing collection experiment placed in
+the Python swarm area. It is not recorded as a source-faithful or line-by-line
+translation of a pinned CPython `dict` implementation.
 
 ## SWARM-001 — Vector count result fails in arithmetic
 
@@ -526,3 +531,115 @@ queue.push(1)
 The frontend now records explicit `let` bindings and rejects direct, indexed,
 member, and mutating-receiver WRITE access with `IMMUTABLE_LOCAL_MUTATION` and
 the legal alternative to declare `var` when mutation is intended.
+
+## SWARM-014 — Integer remainder operator unavailable
+
+- Status: Fixed
+- Category: Language / arithmetic surface
+- First observed: [Python / HashMap](Python/HashMap/)
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_014_integer_remainder.moss` plus typed-negative cases
+under `tests/negative/`, invoked by `tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+idx = mixed % cap
+```
+
+### Observed behavior
+
+The original compiler did not recognize `%` as arithmetic, so inference failed.
+
+### Workaround
+
+```moss
+idx = mixed - (mixed / cap) * cap
+```
+
+### Notes
+
+Moss now supports `Int % Int -> Int`. It follows the existing truncating integer
+division model, including signed remainder behavior, and lowers with the matching
+wrapping integer operation.
+
+## SWARM-015 — Moss type name collided with Rust backend imports
+
+- Status: Fixed
+- Category: Compiler / native symbol hygiene
+- First observed: [Python / HashMap](Python/HashMap/)
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_015_backend_symbol_hygiene.moss`, invoked by
+`tests/run.sh` with native Rust `-D warnings` compilation.
+
+### Minimal reproducer
+
+```moss
+type HashMap:
+  value: Int
+```
+
+### Observed behavior
+
+Moss checking succeeded, but generated Rust imported `std::collections::HashMap`
+and then emitted the Moss object with the same unqualified name, causing native
+name collision errors.
+
+### Workaround
+
+```moss
+type IntHashMap:
+  ...
+```
+
+### Notes
+
+Generated runtime collection and synchronization types are now fully qualified.
+The regression also covers legal Moss types named `VecDeque` and `Arc`; the live
+HashMap experiment has restored its natural `HashMap` type name.
+
+## SWARM-017 — No natural statically typed empty Vector construction
+
+- Status: Fixed
+- Category: Missing language / collection construction primitive
+- First observed: [Python / HashMap](Python/HashMap/)
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_017_typed_empty_vector.moss` and typed-constructor/local
+annotation negatives under `tests/negative/`, invoked by `tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+var values = Vector[Int]()
+```
+
+### Observed behavior
+
+The original source had no empty typed Vector expression. Attempting a local
+annotation such as `var values: Vector[Int] = []` was parsed as a malformed
+binding rather than rejected clearly.
+
+### Workaround
+
+```moss
+var values = [0]
+values.pop()
+```
+
+### Notes
+
+`Vector[T]()` is now the built-in empty typed Vector constructor. General local
+type annotations remain unsupported and receive
+`LOCAL_TYPE_ANNOTATION_UNSUPPORTED` with the constructor as a legal alternative.

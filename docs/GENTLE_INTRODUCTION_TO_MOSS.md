@@ -105,14 +105,9 @@ fn main():
   name = "Moss"
 ```
 
-You can write it when you want to:
-
-```moss
-fn main():
-  count: Int = 10
-```
-
-Moss is statically checked even when you leave the annotation out. Omitting a type does not make the value dynamically typed.
+Moss is statically checked even when you leave the annotation out. Omitting a
+type does not make the value dynamically typed. Local annotations such as
+`var count: Int = 10` are not part of v0.1; use inference instead.
 
 Explicit local declarations are available when mutability matters:
 
@@ -125,6 +120,9 @@ fn main():
 
 `let` is an explicitly immutable local; `var` is an explicitly mutable local.
 Ordinary `x = value` remains the usual inferred binding form.
+
+Integer arithmetic uses `+`, `-`, `*`, `/`, and `%`. The `%` operator is
+integer remainder and follows the same truncating signed-division model as `/`.
 
 ---
 
@@ -155,6 +153,17 @@ fn main():
 
   for value in values:
     echo value
+```
+
+When an empty vector has no elements from which to infer its type, use the
+built-in typed constructor:
+
+```moss
+fn main():
+  values = [1, 2, 3]
+  var pending = Vector[Int]()
+
+  pending.push(10)
 ```
 
 The native compiler supports `for`. The current Fast Debug interpreter is still smaller than the production execution engine and does not yet execute `for` traversal.

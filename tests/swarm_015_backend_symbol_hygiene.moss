@@ -1,0 +1,23 @@
+type HashMap:
+  value: Int
+
+  fn read() -> Int:
+    return value
+
+type VecDeque:
+  value: Int
+
+  fn read() -> Int:
+    return value
+
+type Arc:
+  value: Int
+
+  fn read() -> Int:
+    return value
+
+fn main():
+  hash_map = HashMap(value: 1)
+  queue = VecDeque(value: 2)
+  arc = Arc(value: 3)
+  echo hash_map.read(), queue.read(), arc.read()

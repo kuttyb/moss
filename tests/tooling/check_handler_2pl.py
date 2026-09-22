@@ -67,8 +67,8 @@ mod phase106d {
     use std::sync::{Barrier, Mutex, OnceLock};
     static SECOND_CALLER: OnceLock<Barrier> = OnceLock::new();
     static ACQUISITIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    static COMPLETION: OnceLock<Mutex<Option<Arc<Barrier>>>> = OnceLock::new();
-    static OVERLAP: OnceLock<Mutex<Option<Arc<Barrier>>>> = OnceLock::new();
+    static COMPLETION: OnceLock<Mutex<Option<std::sync::Arc<Barrier>>>> = OnceLock::new();
+    static OVERLAP: OnceLock<Mutex<Option<std::sync::Arc<Barrier>>>> = OnceLock::new();
     thread_local! { static HELD: std::cell::RefCell<Vec<(usize, usize)>> = const { std::cell::RefCell::new(Vec::new()) }; }
     fn hook(event: &str, _instance: &str, handler: &str, domain: usize, class: usize, _exclusive: bool) {
         if event == "lock_acquire" {
@@ -92,7 +92,7 @@ mod phase106d {
         }
     }
     fn pair(a: StoreRef, b: StoreRef, left: fn(&StoreRef), right: fn(&StoreRef)) {
-        *OVERLAP.get().unwrap().lock().unwrap() = Some(Arc::new(Barrier::new(2)));
+        *OVERLAP.get().unwrap().lock().unwrap() = Some(std::sync::Arc::new(Barrier::new(2)));
         let a = std::thread::Builder::new().name("overlap-a".into()).spawn(move || left(&a)).unwrap();
         let b = std::thread::Builder::new().name("overlap-b".into()).spawn(move || right(&b)).unwrap();
         a.join().unwrap(); b.join().unwrap();
@@ -116,7 +116,7 @@ mod phase106d {
         assert!(split.state.class0.try_write().is_ok());
         assert!(split.state.class1.try_write().is_ok());
         for _ in 0..20 {
-            *OVERLAP.get().unwrap().lock().unwrap() = Some(Arc::new(Barrier::new(2)));
+            *OVERLAP.get().unwrap().lock().unwrap() = Some(std::sync::Arc::new(Barrier::new(2)));
             let x = split.clone(); let y = split.clone();
             let x = std::thread::Builder::new().name("overlap-x".into()).spawn(move || x.X_shared()).unwrap();
             let y = std::thread::Builder::new().name("overlap-y".into()).spawn(move || y.Y_shared()).unwrap();
@@ -154,9 +154,9 @@ mod phase106d {
         let acquisitions = ACQUISITIONS.load(std::sync::atomic::Ordering::SeqCst);
         assert_eq!(store.Fixed_shared(), Some(7));
         assert_eq!(ACQUISITIONS.load(std::sync::atomic::Ordering::SeqCst), acquisitions);
-        let gate = Arc::new(Barrier::new(2));
+        let gate = std::sync::Arc::new(Barrier::new(2));
         *COMPLETION.get().unwrap().lock().unwrap() = Some(gate.clone());
-        let returned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let returned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let flag = returned.clone();
         let target = store.clone();
         let caller = std::thread::spawn(move || {
@@ -169,7 +169,7 @@ mod phase106d {
         assert!(store.state.class0.try_read().is_err());
         assert!(store.state.class2.try_write().is_err());
         SECOND_CALLER.set(Barrier::new(2)).unwrap();
-        let second_returned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let second_returned = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let second_flag = second_returned.clone();
         let target = store.clone();
         let second = std::thread::Builder::new().name("blocked-reader".into()).spawn(move || {

@@ -1,4 +1,4 @@
-# A pure Moss Int-to-Int IntHashMap implemented with Open Addressing and Linear Probing.
+# A pure Moss Int-to-Int HashMap implemented with Open Addressing and Linear Probing.
 # Uses Structure-of-Arrays (parallel primitive vectors) for cache-friendly,
 # flat storage without recursive types or dynamic dispatch.
 
@@ -8,7 +8,7 @@ trait MapLike:
   fn contains(key: Int) -> Bool
   fn get(key: Int, default_val: Int) -> Int
 
-type IntHashMap:
+type HashMap:
   cap: Int
   count: Int
   keys: Vector [Int]
@@ -30,8 +30,7 @@ type IntHashMap:
     if k < 0:
       k = 0 - k
     mixed = k * 31 + 17
-    quotient = mixed / cap
-    var idx = mixed - quotient * cap
+    var idx = mixed % cap
     if idx < 0:
       idx = idx + cap
     return idx
@@ -110,12 +109,9 @@ type IntHashMap:
     return false
 
   fn resize(new_cap: Int):
-    var saved_keys = [0]
-    saved_keys.pop()
-    var saved_values = [0]
-    saved_values.pop()
-    var saved_states = [0]
-    saved_states.pop()
+    var saved_keys = Vector [Int]()
+    var saved_values = Vector [Int]()
+    var saved_states = Vector [Int]()
 
     var i = 0
     while i < cap:
@@ -183,8 +179,7 @@ type IntHashMap:
     count = 0
 
   fn keys_vector() -> Vector [Int]:
-    var result = [0]
-    result.pop()
+    var result = Vector [Int]()
     var i = 0
     while i < cap:
       if states [i] == 1:
@@ -193,8 +188,7 @@ type IntHashMap:
     return result
 
   fn values_vector() -> Vector [Int]:
-    var result = [0]
-    result.pop()
+    var result = Vector [Int]()
     var i = 0
     while i < cap:
       if states [i] == 1:
@@ -202,23 +196,20 @@ type IntHashMap:
       i = i + 1
     return result
 
-fn hash_map(initial_capacity: Int) -> IntHashMap:
+fn hash_map(initial_capacity: Int) -> HashMap:
   var capacity = initial_capacity
   if capacity < 4:
     capacity = 4
-  var k = [0]
-  k.pop()
-  var v = [0]
-  v.pop()
-  var s = [0]
-  s.pop()
+  var k = Vector [Int]()
+  var v = Vector [Int]()
+  var s = Vector [Int]()
   var i = 0
   while i < capacity:
     k.push(0)
     v.push(0)
     s.push(0)
     i = i + 1
-  return IntHashMap(cap: capacity, count: 0, keys: k, values: v, states: s)
+  return HashMap(cap: capacity, count: 0, keys: k, values: v, states: s)
 
 # Trait helper functions for structural specialization
 fn map_size(m: MapLike) -> Int:
@@ -295,6 +286,37 @@ test "reuses tombstone slots on subsequent insert":
   hm.put(10, 100)
   assertEqual(hm.size(), 2)
   assertEqual(hm.get(10, -1), 100)
+
+test "probes a collision chain":
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(9, 90)
+  hm.put(17, 170)
+
+  assertEqual(hm.get(1, -1), 10)
+  assertEqual(hm.get(9, -1), 90)
+  assertEqual(hm.get(17, -1), 170)
+
+test "looks up and updates beyond a tombstone":
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(9, 90)
+  hm.put(17, 170)
+  hm.remove(1)
+
+  assertEqual(hm.get(9, -1), 90)
+  assertEqual(hm.get(17, -1), 170)
+  assertEqual(hm.put(9, 900), false)
+  assertEqual(hm.size(), 2)
+  assertEqual(hm.get(9, -1), 900)
+
+test "normalizes negative keys in a collision chain":
+  hm = hash_map(8)
+  hm.put(5, 50)
+  hm.put(-5, -50)
+
+  assertEqual(hm.get(5, -1), 50)
+  assertEqual(hm.get(-5, -1), -50)
 
 test "dynamically resizes when exceeding load factor threshold":
   hm = hash_map(4)

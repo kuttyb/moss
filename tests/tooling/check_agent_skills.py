@@ -19,6 +19,7 @@ WORKFLOW = SKILLS / "moss-agent-workflow" / "SKILL.md"
 EXAMPLE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_skill_example.moss"
 SOURCE_SURFACE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface.moss"
 IMMUTABLE_LET = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_immutable_let.moss"
+LOCAL_ANNOTATION = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_local_annotation.moss"
 FAST_DEBUG_CONTAINER_FIELD = ROOT / "tests" / "tooling" / "fixtures" / "moss_fast_debug_container_field_limit.moss"
 AGENTS = ROOT / "AGENTS.md"
 MARGO = ROOT / "margo"
@@ -209,6 +210,12 @@ def main() -> int:
         fail("bootstrap source surface no longer exposes mutable var syntax")
     if surface.get("operators", {}).get("boolean_negation") != "not expression":
         fail("bootstrap source surface no longer exposes not expression")
+    operators = surface.get("operators", {})
+    if operators.get("arithmetic") != ["+", "-", "*", "/", "%"] or operators.get("integer_remainder") != "%":
+        fail("bootstrap source surface no longer exposes integer remainder")
+    collections = surface.get("collections", {})
+    if collections.get("empty_typed_vector") != "Vector[T]()" or collections.get("local_type_annotations") is not False:
+        fail("bootstrap source surface no longer exposes typed empty Vector construction")
     if surface.get("domains", {}).get("fn_inside_domain") != "handler":
         fail("bootstrap source surface no longer distinguishes domain handlers")
     debug_features = {item["name"]: item for item in bootstrap["debugging_features"]}
@@ -256,6 +263,9 @@ def main() -> int:
     immutable_let = run([str(compiler), "check", str(IMMUTABLE_LET), "--json"], ROOT)
     if immutable_let.returncode == 0 or "IMMUTABLE_LOCAL_MUTATION" not in immutable_let.stdout:
         fail("explicit let mutation was not rejected by the advertised source surface")
+    local_annotation = run([str(compiler), "check", str(LOCAL_ANNOTATION), "--json"], ROOT)
+    if local_annotation.returncode == 0 or "LOCAL_TYPE_ANNOTATION_UNSUPPORTED" not in local_annotation.stdout:
+        fail("unsupported local annotation did not receive its advertised diagnostic")
     fast_debug_limit = run([str(compiler), "run", "--interp", str(FAST_DEBUG_CONTAINER_FIELD)], ROOT)
     if fast_debug_limit.returncode == 0 or "method receiver is not a Moss object" not in fast_debug_limit.stderr:
         fail("Fast Debug container-field limitation metadata no longer matches execution")

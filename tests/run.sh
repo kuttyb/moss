@@ -213,6 +213,16 @@ reject_case swarm_013_immutable_let_direct 'cannot mutate immutable local'
 reject_case swarm_013_immutable_let_receiver 'cannot mutate immutable local'
 reject_case swarm_013_immutable_let_member 'cannot mutate immutable local'
 reject_case swarm_013_immutable_let_index 'cannot mutate immutable local'
+run_case swarm_014_integer_remainder tests/swarm_014_integer_remainder.moss '1'
+run_case swarm_015_backend_symbol_hygiene tests/swarm_015_backend_symbol_hygiene.moss '1 2 3'
+run_case swarm_017_typed_empty_vector tests/swarm_017_typed_empty_vector.moss '4'
+run_case field_replacement_receiver_available tests/field_replacement_receiver_available.moss '3'
+reject_case swarm_014_remainder_float "integer remainder operands must have type 'Int'"
+reject_case swarm_014_remainder_string "integer remainder operands must have type 'Int'"
+reject_case swarm_017_typed_empty_vector_unknown 'invalid typed Vector constructor'
+reject_case swarm_017_typed_empty_vector_arity 'invalid typed Vector constructor'
+reject_case swarm_017_local_type_annotation 'local type annotations are not supported'
+reject_case field_replacement_rhs_consumed 'was consumed'
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"
@@ -755,7 +765,7 @@ grep -F "FUNCTIONAL INTERMEDIATE 'materialized' MATERIALIZED; reason: multiple c
     "$test_build/phase46_scope_rewrites_optimized.rs")" -eq 2 ] ||
   fail 'cross-binding count did not remove only its dead map callback'
 
-grep -F 'fn __moss_specialize_transform_0(xs: &Vec<i64>) -> Vec<i64>' \
+grep -F 'fn __moss_specialize_transform_0(xs: &std::vec::Vec<i64>) -> std::vec::Vec<i64>' \
   "$test_build/phase4_hof_optimized.rs" >/dev/null ||
   fail 'static higher-order helper did not erase its compile-time callable parameter'
 [ "$(grep -c '^fn __moss_specialize_transform_' \
@@ -1252,6 +1262,8 @@ interp_struct_output=$($compiler run --interp tests/phase10_interpreter_structs.
 [ "$interp_struct_output" = '9' ] || fail 'fast interpreter struct execution differed'
 interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
+interp_remainder_output=$($compiler run --interp tests/swarm_014_integer_remainder.moss)
+[ "$interp_remainder_output" = '1' ] || fail 'fast interpreter integer remainder execution differed'
 interp_test_output=$($compiler test --interp tests/phase10_interpreter_tests.moss)
 printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
   fail 'fast interpreter test runner did not report passing tests'

@@ -1,0 +1,14 @@
+type FieldReplacementHolder:
+  values: Vector[Int]
+
+  fn replace(next: Vector[Int]):
+    values = next
+
+  fn size() -> Int:
+    return values |> count
+
+fn main():
+  holder = FieldReplacementHolder(values: [1, 2])
+  replacement = [3, 4, 5]
+  holder.replace(replacement)
+  echo holder.size()

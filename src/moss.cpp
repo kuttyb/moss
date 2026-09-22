@@ -198,6 +198,19 @@ static bool parse_simple_call(const string& text, string& callee, vector<string>
   return true;
 }
 
+// Built-in typed collection construction is an expression form, not general
+// local annotation syntax or generic nominal construction. Keep this syntax
+// recognition shared between semantic and native paths.
+static std::optional<string> typed_empty_vector_constructor(const string& text) {
+  string callee;
+  vector<string> args;
+  if (!parse_simple_call(text, callee, args) || !args.empty()) return std::nullopt;
+  string type = canonical_type_name(callee);
+  if (!starts_with(type, "vector[") || !ends_with(type, "]"))
+    return std::nullopt;
+  return type;
+}
+
 static bool plain_identifier(const string& value) {
   string s = trim(value);
   if (s.empty() || !(std::isalpha(static_cast<unsigned char>(s.front())) || s.front() == '_')) return false;
@@ -1039,6 +1052,11 @@ class Parser {
       if (eq == string::npos) fail(L, is_var ? "local var requires an initializer" : "let requires an initializer");
       s.a = trim(rest.substr(0, eq));
       s.b = trim(rest.substr(eq + 1));
+      if (s.a.find(':') != string::npos) {
+        throw CompileError(L.no,
+            "local type annotations are not supported in this form; use inferred local syntax such as 'var values = Vector[Int]()'",
+            "LOCAL_TYPE_ANNOTATION_UNSUPPORTED");
+      }
       if (starts_with(s.b, "await ")) {
         fail(L, "await is retired: message is synchronous; use '" + s.a +
              " = message receiver.Handler(...)'");
@@ -1574,7 +1592,7 @@ class Checker {
       }
       derive_expression_constraints(function, ii);
     }
-    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/"}})
+    for (const auto& ops : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"}, {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(e, ops)) {
         auto left_type = constraint_expression_type(function, binary->first);
         auto right_type = constraint_expression_type(function, binary->second);
@@ -2631,6 +2649,7 @@ class Checker {
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
     if (plain_identifier(e) && functions_.count(e))
       return "callable:" + e;
+    if (auto typed_vector = typed_empty_vector_constructor(e)) return *typed_vector;
     if (e == "Map()") return string("map");
     if (e == "Queue()") return string("queue");
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
@@ -2647,13 +2666,16 @@ class Checker {
     }
     if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
-    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/"})) {
+    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/", "%"})) {
       auto left = inferred_expr_type(arithmetic->first, env);
       auto right = inferred_expr_type(arithmetic->second, env);
       if (left && right) {
         if (*left == *right && starts_with(*left, "_generic:")) return *left;
         if (*left == "string" && *right == "string" && e.find('+') != string::npos)
           return string("string");
+        if (arithmetic->first.empty() || arithmetic->second.empty()) return std::nullopt;
+        if (split_binary(e, {"%"}) && (*left != "int" || *right != "int"))
+          return std::nullopt;
         if ((*left == "int" || *left == "float") &&
             (*right == "int" || *right == "float"))
           return (*left == "float" || *right == "float") ? "float" : "int";
@@ -2924,7 +2946,7 @@ class Checker {
     vector<string> args;
     if (!parse_simple_call(normalized, constructor, args)) {
       for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                           {"+", "-", "*", "/"}}) {
+                                                           {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(normalized, operators)) {
           constrain_constructor_fields(line, binary->first, env);
           constrain_constructor_fields(line, binary->second, env);
@@ -3724,14 +3746,14 @@ class Checker {
       for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
-          auto binary = split_binary(trim(expression), {"+", "-", "*", "/"});
+          auto binary = split_binary(trim(expression), {"+", "-", "*", "/", "%"});
           if (binary) {
             for (const auto& p : function.params) {
               if (trim(binary->first) == p.name && trim(binary->second) == p.name) {
                 function.generic = true;
                 function.static_dispatch = true;
                 string e = trim(expression);
-                string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : "/";
+                string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : e.find('/') != string::npos ? "/" : "%";
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
               }
@@ -3864,13 +3886,13 @@ class Checker {
       if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
-        auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/"});
+        auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
         if (binary) for (const auto& p : function.params)
           if (p.type.empty() && trim(binary->first) == p.name && trim(binary->second) == p.name) {
             function.generic = true;
             function.static_dispatch = true;
             string be = trim(*function.result_expression);
-            string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : "/";
+            string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : be.find('/') != string::npos ? "/" : "%";
             function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
             function.generic_results[p.name] = p.name;
             function.return_type = "_generic:" + p.name;
@@ -4755,7 +4777,7 @@ class Checker {
     }
 
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
+                                                         {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
@@ -4785,7 +4807,7 @@ class Checker {
     }
 
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
+                                                         {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
@@ -5167,7 +5189,7 @@ class Checker {
       return;
     }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}})
+                                                         {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
         collect_local_call_sites(line, binary->second, env, implicit_owner, calls);
@@ -5622,15 +5644,14 @@ class Checker {
     for (const auto& operators :
          vector<vector<string>>{{" or ", " and "},
                                 {"==", "!=", "<=", ">=", "<", ">"},
-                                {"+", "-"}, {"*", "/"}}) {
+                                {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
             binary->first, env, domain_fields, implicit_object));
         effects.merge(observable_expression_effects(
             binary->second, env, domain_fields, implicit_object));
         if (operators.front() == "*") {
-          auto division = split_binary(value, {"/"});
-          if (division) effects.may_fail = true;
+          if (split_binary(value, {"/", "%"})) effects.may_fail = true;
         }
         return effects;
       }
@@ -6504,8 +6525,14 @@ class Checker {
       check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
       return;
     }
+    if (auto typed_vector = typed_empty_vector_constructor(value)) {
+      if (!valid_type(*typed_vector))
+        err(line, "invalid typed Vector constructor '" + value + "'",
+            "INVALID_TYPED_VECTOR_CONSTRUCTOR");
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
+                                                         {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
         check_ownership_expression(line, binary->second, env, Effect::Read);
@@ -7122,7 +7149,7 @@ class Checker {
             param.type + "'");
       if (concrete_actual && has_constraint(*function->second, param.name)) {
         for (const auto& op : constraint_details(*function->second, param.name)) {
-          if ((op == "+" || op == "-" || op == "*" || op == "/") && !numeric_type(actual_type) && !(op == "+" && actual_type == "string"))
+          if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric_type(actual_type) && !(op == "+" && actual_type == "string"))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
           if (op == "[]" && !(starts_with(actual_type, "vector[") || starts_with(actual_type, "map[") || starts_with(actual_type, "queue[")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
@@ -7443,12 +7470,22 @@ class Checker {
     }
     for (const auto& operators : vector<vector<string>>{{" and ", " or "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
-      if (auto binary = split_binary(value, operators)) {
-        check_expression(line, binary->first, env);
-        check_expression(line, binary->second, env);
-        return;
-      }
+                                                         {"+", "-", "*", "/", "%"}}) {
+        if (auto binary = split_binary(value, operators)) {
+          check_expression(line, binary->first, env);
+          check_expression(line, binary->second, env);
+          if (binary->first.empty() || binary->second.empty())
+            err(line, "invalid arithmetic expression");
+          if (split_binary(value, {"%"})) {
+            auto left = inferred_expr_type(binary->first, env);
+            auto right = inferred_expr_type(binary->second, env);
+            if (!left || !right || canonical_type_name(*left) != "int" ||
+                canonical_type_name(*right) != "int")
+              err(line, "integer remainder operands must have type 'Int'",
+                  "TYPE_MISMATCH");
+          }
+          return;
+        }
     }
     string receiver, handler;
     vector<string> args;
@@ -7544,6 +7581,12 @@ class Checker {
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (auto typed_vector = typed_empty_vector_constructor(value)) {
+        if (!valid_type(*typed_vector))
+          err(line, "invalid typed Vector constructor '" + value + "'",
+              "INVALID_TYPED_VECTOR_CONSTRUCTOR");
+        return;
+      }
       if (objects_.count(callee) || callee == "Map" || callee == "Queue") {
         for (const auto& arg : args) {
           string field_name, field_value;
@@ -9328,8 +9371,6 @@ class Generator {
       o << "use " << crate << "::*;\n";
     }
     if (!rust_dependencies_.empty()) o << "\n";
-    o << "use std::collections::{HashMap, VecDeque};\n";
-    o << "use std::sync::Arc;\n";
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
@@ -9569,26 +9610,26 @@ class Generator {
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "string") return "String";
-    if (x == "vector") return "Vec<T>";
-    if (x == "map") return "HashMap<K, V>";
-    if (x == "queue") return "VecDeque<T>";
+    if (x == "vector") return "std::vec::Vec<T>";
+    if (x == "map") return "std::collections::HashMap<K, V>";
+    if (x == "queue") return "std::collections::VecDeque<T>";
     if (x == "unit") return "()";
     if (domains_.count(x))
       return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
     if (objects_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
-      return "Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
-    if (starts_with(x, "vector[") && ends_with(x, "]")) return "Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
-    if (starts_with(x, "queue[") && ends_with(x, "]")) return "VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
+      return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
+    if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
+    if (starts_with(x, "queue[") && ends_with(x, "]")) return "std::collections::VecDeque<" + rust_type(x.substr(6, x.size()-7)) + ">";
     if (starts_with(x, "map[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(4, x.size()-5), ',');
-      return "HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
+      return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     if (starts_with(x, "option[") && ends_with(x, "]"))
       return "Option<" + rust_type(x.substr(7, x.size()-8)) + ">";
     if (starts_with(x, "table[") && ends_with(x, "]")) {
       auto ps = split_top_level(x.substr(6, x.size()-7), ',');
-      return "HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
+      return "std::collections::HashMap<" + rust_type(ps[0]) + ", " + rust_type(ps[1]) + ">";
     }
     return x;
   }
@@ -9608,8 +9649,8 @@ class Generator {
     if (t == "float") return "0.0";
     if (t == "bool") return "false";
     if (t == "string") return "String::new()";
-    if (starts_with(t, "seq[")) return "Vec::new()";
-    if (starts_with(t, "table[")) return "HashMap::new()";
+    if (starts_with(t, "seq[")) return "std::vec::Vec::new()";
+    if (starts_with(t, "table[")) return "std::collections::HashMap::new()";
     if (starts_with(t, "option[")) return "None";
     auto object = objects_.find(t);
     if (object != objects_.end()) {
@@ -9806,7 +9847,7 @@ class Generator {
           char previous = expression[before - 1];
           if (previous == '(' || previous == '[' || previous == '{' ||
               previous == ',' || previous == '+' || previous == '-' ||
-              previous == '*' || previous == '/' || previous == '<' ||
+              previous == '*' || previous == '/' || previous == '%' || previous == '<' ||
               previous == '>' || previous == '=' || previous == '!')
             continue;
         }
@@ -9990,6 +10031,7 @@ class Generator {
     }
     if (plain_identifier(value) && functions_.count(value))
       return "callable:" + value;
+    if (auto typed_vector = typed_empty_vector_constructor(value)) return *typed_vector;
     size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
     if (generated_integer_literal(value))
       return string("int");
@@ -10092,7 +10134,7 @@ class Generator {
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
-    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/"}}) {
+    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(value, operators);
       if (!binary) continue;
       auto left = generated_expr_type(binary->left, types);
@@ -10731,7 +10773,7 @@ class Generator {
       string item_ref = "__moss_item_ref_" + std::to_string(stage_number);
       string value = "__moss_value_" + std::to_string(stage_number);
       bool item_copy = copy_type(current_type);
-      out << "        let mut " << output << " = Vec::new();\n"
+      out << "        let mut " << output << " = std::vec::Vec::new();\n"
           << "        for " << item_ref << " in " << current_collection
           << ".iter() {\n"
           << "            let " << value << " = "
@@ -10866,7 +10908,7 @@ class Generator {
         << "        let __moss_pipeline_source = &("
         << expr(pipeline.source, domain, locals, types) << ");\n";
     if (!terminal)
-      out << "        let mut __moss_result = Vec::new();\n";
+      out << "        let mut __moss_result = std::vec::Vec::new();\n";
     else if (last_kind == FunctionalNodeKind::Reduce)
       out << "        let mut __moss_result = "
           << expr(last->arguments.front(), domain, locals, types) << ";\n";
@@ -11104,8 +11146,12 @@ class Generator {
       if (e.front() == '+') e.erase(e.begin());
       return e + "_i64";
     }
-    if (e == "Map()") return "HashMap::new()";
-    if (e == "Queue()") return "VecDeque::new()";
+    if (auto typed_vector = typed_empty_vector_constructor(e)) {
+      string element = trim(typed_vector->substr(7, typed_vector->size() - 8));
+      return "std::vec::Vec::<" + rust_type(element) + ">::new()";
+    }
+    if (e == "Map()") return "std::collections::HashMap::new()";
+    if (e == "Queue()") return "std::collections::VecDeque::new()";
     if (e.size() >= 2 && e.front() == '(' && e.back() == ')' &&
         matching_paren(e, 0) == e.size() - 1)
       return "(" + expr(e.substr(1, e.size() - 2), d, locals, types) + ")";
@@ -11137,7 +11183,7 @@ class Generator {
         left = generated_integer_literal_as_float(comparison->left);
       return "(" + left + ") " + comparison->op + " (" + right + ")";
     }
-    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/"}}) {
+    for (const auto& operators : vector<vector<string>>{{"+", "-"}, {"*", "/", "%"}}) {
       auto binary = generated_split_binary(e, operators);
       if (!binary) continue;
       string left = expr(binary->left, d, locals, types);
@@ -11152,7 +11198,8 @@ class Generator {
       if (integer_operation) {
         string method = binary->op == "+" ? "wrapping_add"
             : binary->op == "-" ? "wrapping_sub"
-            : binary->op == "*" ? "wrapping_mul" : "wrapping_div";
+            : binary->op == "*" ? "wrapping_mul"
+            : binary->op == "/" ? "wrapping_div" : "wrapping_rem";
         return "(" + left + ")." + method + "(" + right + ")";
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&
@@ -11212,9 +11259,9 @@ class Generator {
             return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
           }
           if (member_name == "keys" && member_arguments.empty())
-            return "(" + receiver_expression + ").keys().cloned().collect::<Vec<_>>()";
+            return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
           if (member_name == "values" && member_arguments.empty())
-            return "(" + receiver_expression + ").values().cloned().collect::<Vec<_>>()";
+            return "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
         }
         if (concrete == "queue" || starts_with(concrete, "queue["))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
@@ -11686,14 +11733,14 @@ class Generator {
       auto ops = constraint_ops(f, f.params[index].name);
       string parameter_rust_type;
       if (!specialization && pt.empty() && !ops.empty()) {
-        if (ops.count("[]")) parameter_rust_type = "Vec<T_" + f.params[index].name + ">";
+        if (ops.count("[]")) parameter_rust_type = "std::vec::Vec<T_" + f.params[index].name + ">";
         else parameter_rust_type = "T_" + f.params[index].name;
       } else if (!specialization && pt == "vector") {
-        parameter_rust_type = "Vec<T_" + f.params[index].name + ">";
+        parameter_rust_type = "std::vec::Vec<T_" + f.params[index].name + ">";
       } else if (!specialization && pt == "queue") {
-        parameter_rust_type = "VecDeque<T_" + f.params[index].name + ">";
+        parameter_rust_type = "std::collections::VecDeque<T_" + f.params[index].name + ">";
       } else if (!specialization && pt == "map") {
-        parameter_rust_type = "HashMap<K_" + f.params[index].name + ", V_" + f.params[index].name + ">";
+        parameter_rust_type = "std::collections::HashMap<K_" + f.params[index].name + ", V_" + f.params[index].name + ">";
       } else {
         parameter_rust_type = rust_type(pt);
       }
@@ -11779,7 +11826,7 @@ class Generator {
 
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
     o << "#[derive(Clone)]\n" << (d.exported ? "pub " : "") << "struct " << d.name << "Ref {\n"
-      << "    state: Arc<" << d.name << "Runtime>,\n";
+      << "    state: std::sync::Arc<" << d.name << "Runtime>,\n";
     for (const auto& route : d.routes)
       o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
     o << "}\n\n";
@@ -12036,7 +12083,7 @@ class Generator {
           "bench", benchmark.semantic_identity);
       o << "    for _ in 0..WARMUP { for _ in 0..ITERATIONS { std::hint::black_box("
         << function_name << "()); } }\n";
-      o << "    let mut samples: Vec<u128> = Vec::with_capacity(SAMPLES);\n";
+      o << "    let mut samples: std::vec::Vec<u128> = std::vec::Vec::with_capacity(SAMPLES);\n";
       o << "    for _ in 0..SAMPLES {\n";
       o << "        let started = std::time::Instant::now();\n";
       o << "        for _ in 0..ITERATIONS { std::hint::black_box("
@@ -12048,7 +12095,7 @@ class Generator {
       o << "    let p25 = samples[SAMPLES / 4];\n";
       o << "    let median = samples[SAMPLES / 2];\n";
       o << "    let p75 = samples[(SAMPLES * 3) / 4];\n";
-      o << "    let sample_text = samples.iter().map(|value| value.to_string()).collect::<Vec<_>>().join(\",\");\n";
+      o << "    let sample_text = samples.iter().map(|value| value.to_string()).collect::<std::vec::Vec<_>>().join(\",\");\n";
       o << "    println!(\"MOSS_BENCH|{}|{}|{}|{}|{}|{}|{}|{}|{}\", "
         << "__moss_protocol_hex(" << rust_string_literal(benchmark.semantic_identity)
         << "), __moss_protocol_hex(" << rust_string_literal(benchmark.name)
@@ -14286,6 +14333,10 @@ static void write_structured_error(
     alternatives = {
         "declare the local with `var` if mutation is intended",
         "keep the `let` binding and use it only through READ access"};
+  else if (code == "LOCAL_TYPE_ANNOTATION_UNSUPPORTED")
+    alternatives = {
+        "use inferred local syntax: var value = expression",
+        "for an empty typed Vector use: var values = Vector[Int]()"};
   write_agent_string_array(out, alternatives);
   out << "}\n}\n";
 }
@@ -14338,9 +14389,9 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"boolean_negation\":\"not expression\"},"
+         "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\"},"
-         "\"collections\":[\"Vector\",\"Map\",\"Queue\"]}";
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false}}";
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",

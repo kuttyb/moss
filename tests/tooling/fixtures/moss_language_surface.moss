@@ -8,4 +8,10 @@ fn main():
   ready = false
   assert(not ready)
 
+  var values = Vector[Int]()
+  values.push(7)
+  remainder = 17 % 5
+  assertEqual(values[0], 7)
+  assertEqual(remainder, 2)
+
   echo total

@@ -1,0 +1,22 @@
+fn remainder_identity(value: Int, divisor: Int) -> Int:
+  return value % divisor
+
+fn same_remainder(left, right):
+  return left % right
+
+fn main():
+  assertEqual(7 % 3, 1)
+  assertEqual(8 % 4, 0)
+  assertEqual(1 % 8, 1)
+  assertEqual((0 - 7) % 3, -1)
+  assertEqual(7 % -3, 1)
+  assertEqual(10 + 7 % 3, 11)
+  assertEqual((10 + 7) % 3, 2)
+  assertEqual(2 * 7 % 5, 4)
+  assertEqual(same_remainder(7, 3), 1)
+  var probe = 0
+  while probe % 3 != 2:
+    probe = probe + 1
+  assertEqual(probe, 2)
+  if remainder_identity(7, 3) == 1:
+    echo 1

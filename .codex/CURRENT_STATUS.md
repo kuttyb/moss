@@ -46,6 +46,20 @@ handshake failure after the compiler, tooling, and Emacs suites pass; it was not
 weakened. The optional Julia Accumulator merge source remains a separate
 source-level follow-up, while the direct Map API regressions pass.
 
+The current HashMap dogfooding follow-up adds `Int % Int`, Rust backend symbol
+hygiene for Moss names such as `HashMap`/`VecDeque`/`Arc`, and the empty typed
+`Vector[T]()` constructor; unsupported local annotations now report
+`LOCAL_TYPE_ANNOTATION_UNSUPPORTED`. The HashMap collision/tombstone tests pass
+(13 project tests), and SWARM-014, SWARM-015, and SWARM-017 are recorded as fixed.
+The reported owned-field replacement receiver consume was reduced to a passing
+control: the RHS is consumed while the receiver remains available, so no
+SWARM-016 was allocated. Strict C++17 `-Werror`, focused native/FAST Debug,
+agent API/skill, HashMap project, and `make examples` validation pass. `make check`
+reaches the sandbox LLDB/DAP handshake failure. A direct `tests/run.sh` pass that
+skips that environment gate reaches a separate pre-existing Phase 10.6F native
+failure (`&String == String`); the same failure reproduces with the base HEAD
+compiler and is unrelated to this HashMap repair.
+
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 
 Closed at the Phase 15.3 implementation plus closeout commit: eligible leading

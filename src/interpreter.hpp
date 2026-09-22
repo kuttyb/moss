@@ -244,7 +244,19 @@ class FastInterpreter {
       if (parens || brackets || braces) continue;
       for (const auto& op : operators) {
         if (pos + op.size() <= input.size() && input.compare(pos, op.size(), op) == 0) {
-          if ((op == "-" || op == "+") && pos == 0) continue;
+          if (op == "-" || op == "+") {
+            size_t before = pos;
+            while (before > 0 && std::isspace(static_cast<unsigned char>(input[before - 1])))
+              --before;
+            if (before == 0) continue;
+            char previous = input[before - 1];
+            if (previous == '(' || previous == '[' || previous == '{' ||
+                previous == ',' || previous == ':' || previous == '+' ||
+                previous == '-' || previous == '*' || previous == '/' ||
+                previous == '%' || previous == '=' || previous == '<' ||
+                previous == '>' || previous == '!' || previous == '|')
+              continue;
+          }
           return std::make_pair(trim_copy(input.substr(0, pos)),
                                 trim_copy(input.substr(pos + op.size())));
         }
@@ -408,7 +420,7 @@ class FastInterpreter {
       return compare(binary->first, binary->second, e, frame, line, output);
     if (auto binary = split_operator(e, {"+", "-"}))
       return arithmetic(binary->first, binary->second, e, frame, line, output);
-    if (auto binary = split_operator(e, {"*", "/"}))
+    if (auto binary = split_operator(e, {"*", "/", "%"}))
       return arithmetic(binary->first, binary->second, e, frame, line, output);
     if (!e.empty() && e.front() == '-' && e.size() > 1) {
       Value value = eval(e.substr(1), frame, line, output);
@@ -425,6 +437,9 @@ class FastInterpreter {
     std::string callee; std::vector<std::string> args;
     if (parse_call(e, callee, args)) {
       if (callee.find('.') == std::string::npos) {
+        if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
+            callee.size() > 8 && callee.back() == ']')
+          return Value::vector_value({});
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
           if (!eval(args.front(), frame, line, output).truthy()) {
@@ -537,7 +552,7 @@ class FastInterpreter {
                    const std::string& whole, Frame& frame, int line,
                    std::ostream& output) {
     std::string op = operator_between(whole, left_text, right_text,
-                                      {"+", "-", "*", "/"});
+                                      {"+", "-", "*", "/", "%"});
     auto left = eval(left_text, frame, line, output), right = eval(right_text, frame, line, output);
     if (op == "+" && left.kind == Value::Kind::String && right.kind == Value::Kind::String)
       return Value::string_value(left.string + right.string);
@@ -545,9 +560,12 @@ class FastInterpreter {
       if (op == "+") return Value::int_value(wrapping_add(left.integer, right.integer));
       if (op == "-") return Value::int_value(wrapping_sub(left.integer, right.integer));
       if (op == "*") return Value::int_value(wrapping_mul(left.integer, right.integer));
-      if (right.integer == 0) throw RuntimeError(line, "integer division by zero");
+      if (right.integer == 0)
+        throw RuntimeError(line, op == "%" ? "integer remainder by zero"
+                                                   : "integer division by zero");
       if (left.integer == std::numeric_limits<std::int64_t>::min() && right.integer == -1)
-        return Value::int_value(std::numeric_limits<std::int64_t>::min());
+        return Value::int_value(op == "%" ? 0 : std::numeric_limits<std::int64_t>::min());
+      if (op == "%") return Value::int_value(left.integer % right.integer);
       return Value::int_value(left.integer / right.integer);
     }
     double l = left.kind == Value::Kind::Int ? left.integer : left.floating;
@@ -555,6 +573,7 @@ class FastInterpreter {
     if (op == "+") return Value::float_value(l + r);
     if (op == "-") return Value::float_value(l - r);
     if (op == "*") return Value::float_value(l * r);
+    if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
     if (r == 0.0) throw RuntimeError(line, "floating-point division by zero");
     return Value::float_value(l / r);
   }

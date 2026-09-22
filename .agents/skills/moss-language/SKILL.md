@@ -94,6 +94,27 @@ with `return`; `message` crosses domains. Every `fn` declared directly inside a
 ordinary helper `return`. Reusable implementation logic belongs in an ordinary
 non-domain function.
 
+### Arithmetic and empty collections
+
+Current integer arithmetic uses `+`, `-`, `*`, `/`, and `%`:
+
+```moss
+remainder = value % capacity
+```
+
+`%` is integer remainder and follows Moss's truncating integer-division
+semantics; it is not Python floor-modulo. Use a literal when elements establish
+their type, and the typed built-in constructor when an empty vector needs one:
+
+```moss
+values = [1, 2, 3]
+var pending = Vector[Int]()
+```
+
+`Vector[T]()` is a built-in collection constructor, not general generic nominal
+construction. Local type annotations such as `var values: Vector[Int] = []` are
+not supported in v0.1; use inferred locals and `Vector[Int]()` instead.
+
 ```moss
 fn adjusted(value: Int) -> Int:
   return value + 1

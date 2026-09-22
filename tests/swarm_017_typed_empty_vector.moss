@@ -1,0 +1,19 @@
+type Item:
+  value: Int
+
+fn empty_items() -> Vector [Item]:
+  return Vector [Item]()
+
+fn main():
+  var values = Vector [Int]()
+  floats = Vector [Float]()
+  names = Vector [String]()
+  items = Vector [Item]()
+  assertEqual(values |> count, 0)
+  assertEqual(floats |> count, 0)
+  assertEqual(names |> count, 0)
+  assertEqual(items |> count, 0)
+  values.push(4)
+  assertEqual(values [0], 4)
+  assertEqual(empty_items() |> count, 0)
+  echo values [0]

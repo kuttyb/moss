@@ -87,6 +87,11 @@ if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
 surface = bootstrap["result"].get("source_surface", {})
 if surface.get("operators", {}).get("boolean_negation") != "not expression":
     fail("bootstrap source surface omitted boolean negation")
+if surface.get("operators", {}).get("arithmetic") != ["+", "-", "*", "/", "%"]:
+    fail("bootstrap source surface omitted integer remainder")
+collections = surface.get("collections", {})
+if collections.get("empty_typed_vector") != "Vector[T]()" or collections.get("local_type_annotations") is not False:
+    fail("bootstrap source surface omitted typed empty Vector construction")
 if surface.get("locals", {}).get("immutable") != "let x = expression":
     fail("bootstrap source surface omitted immutable locals")
 if surface.get("domains", {}).get("fn_inside_domain") != "handler":
