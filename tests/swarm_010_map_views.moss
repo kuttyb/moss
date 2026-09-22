@@ -1,0 +1,17 @@
+fn main():
+  scores = Map()
+  scores["alice"] = 7
+  scores["bob"] = 9
+
+  key_count = 0
+  for key in scores.keys():
+    assert(key == key)
+    key_count = key_count + 1
+
+  values = scores.values()
+  total = values |> sum
+  traversed = 0
+  for value in scores.values():
+    traversed = traversed + value
+
+  echo key_count, total, traversed

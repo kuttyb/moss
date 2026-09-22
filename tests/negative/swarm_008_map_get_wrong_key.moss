@@ -1,0 +1,4 @@
+fn main():
+  scores = Map()
+  scores["alice"] = 7
+  echo scores.get(1, 0)

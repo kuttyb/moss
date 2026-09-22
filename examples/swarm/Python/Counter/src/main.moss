@@ -1,37 +1,33 @@
 # A bounded String-to-Int Counter translated from CPython's collections.Counter.
 type Counter:
   counts: Map [String, Int]
-  total_count: Int
 
   # CPython Counter.__missing__: a missing key should read as zero.
   fn get(key: String) -> Int:
-    return counts [key]
+    return counts.get(key, 0)
 
   # CPython _count_elements: read, add, and write the per-key count.
   fn increment_by(key: String, amount: Int) -> Int:
-    next = counts [key] + amount
+    next = counts.get(key, 0) + amount
     counts [key] = next
-    total_count = total_count + amount
     return next
 
   fn increment(key: String) -> Int:
-    increment_by(key, 1)
-    return counts [key]
+    return increment_by(key, 1)
 
   fn decrement(key: String) -> Int:
-    increment_by(key, -1)
-    return counts [key]
+    return increment_by(key, -1)
 
   fn total() -> Int:
-    return total_count
+    return counts.values() |> sum
 
 fn empty_counter() -> Counter:
-  return Counter(counts: Map(), total_count: 0)
+  return Counter(counts: Map())
 
 test "updates an existing counter key":
   counts = Map()
   counts ["apple"] = 2
-  counter = Counter(counts: counts, total_count: 2)
+  counter = Counter(counts: counts)
 
   assertEqual(counter.increment("apple"), 3)
   assertEqual(counter.increment_by("apple", 4), 7)

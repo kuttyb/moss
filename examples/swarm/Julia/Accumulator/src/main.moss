@@ -1,39 +1,38 @@
 # A bounded String-to-Int Accumulator translated from DataStructures.jl.
 type Accumulator:
   data: Map [String, Int]
-  total_count: Int
 
-  # Julia get(map, key, zero(Int)) would return zero for an absent key.
-  # Direct indexing is retained here to expose the unsupported missing-key case.
   fn get(key: String) -> Int:
-    return data [key]
+    return data.get(key, 0)
+
+  fn keys() -> Vector [String]:
+    return data.keys()
 
   fn increment_by(key: String, amount: Int) -> Int:
-    next = data [key] + amount
+    next = data.get(key, 0) + amount
     data [key] = next
-    total_count = total_count + amount
     return next
 
   fn increment(key: String) -> Int:
-    increment_by(key, 1)
-    return data [key]
+    return increment_by(key, 1)
 
   fn decrement(key: String) -> Int:
-    increment_by(key, -1)
-    return data [key]
+    return increment_by(key, -1)
 
-  # Secondary control only: Julia's sum(values(data)) is not expressible by
-  # the current Map surface, so this maintained value is not source-faithful.
   fn total() -> Int:
-    return total_count
+    return data.values() |> sum
+
+  fn merge(other: Accumulator):
+    for key in other.keys():
+      self.increment_by(key, other.get(key))
 
 fn empty_accumulator() -> Accumulator:
-  return Accumulator(data: Map(), total_count: 0)
+  return Accumulator(data: Map())
 
 test "updates an existing accumulated key":
   data = Map()
   data ["apple"] = 2
-  accumulator = Accumulator(data: data, total_count: 2)
+  accumulator = Accumulator(data: data)
 
   assertEqual(accumulator.increment("apple"), 3)
   assertEqual(accumulator.increment_by("apple", 4), 7)
@@ -64,6 +63,24 @@ test "decrements a missing key below zero":
   accumulator.decrement("x")
   assertEqual(accumulator.get("x"), -1)
   assertEqual(accumulator.total(), -1)
+
+test "merges accumulated keys":
+  left_data = Map()
+  left_data ["apple"] = 2
+  left_data ["pear"] = 1
+  left = Accumulator(data: left_data)
+
+  right_data = Map()
+  right_data ["apple"] = 3
+  right_data ["banana"] = 4
+  right = Accumulator(data: right_data)
+
+  left.merge(right)
+
+  assertEqual(left.get("apple"), 5)
+  assertEqual(left.get("pear"), 1)
+  assertEqual(left.get("banana"), 4)
+  assertEqual(left.total(), 10)
 
 fn main():
   accumulator = empty_accumulator()

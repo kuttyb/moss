@@ -196,6 +196,10 @@ run_case swarm_004_indexed_binary tests/swarm_004_indexed_binary.moss "$(printf 
 run_case swarm_005_implicit_method_return tests/swarm_005_implicit_method_return.moss "$(printf '5\n9')"
 run_case swarm_006_empty_map_context tests/swarm_006_empty_map_context.moss '1'
 run_case swarm_007_map_string_key tests/swarm_007_map_string_key.moss '7'
+run_case swarm_008_map_default_lookup tests/swarm_008_map_default_lookup.moss "$(printf '3\n0\nred\nunknown')"
+run_case swarm_010_map_views tests/swarm_010_map_views.moss '2 16 16'
+reject_case swarm_008_map_get_wrong_key 'map get key type mismatch'
+reject_case swarm_008_map_get_wrong_default 'map get default type mismatch'
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"

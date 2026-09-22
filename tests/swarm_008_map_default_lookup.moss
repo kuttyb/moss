@@ -1,0 +1,11 @@
+fn main():
+  values = Map()
+  values["apple"] = 3
+
+  labels = Map()
+  labels["apple"] = "red"
+
+  echo values.get("apple", 0)
+  echo values.get("pear", 0)
+  echo labels.get("apple", "unknown")
+  echo labels.get("pear", "unknown")

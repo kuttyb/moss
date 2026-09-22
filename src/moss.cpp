@@ -155,6 +155,19 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+// Map built-ins need the concrete key/value types in the checker and native
+// backend. Keep that decoding in one place so their type and lowering rules
+// cannot drift apart.
+static std::optional<std::pair<string, string>> map_key_value_types(
+    const string& type) {
+  string concrete = canonical_type_name(type);
+  if (!starts_with(concrete, "map[") || !ends_with(concrete, "]"))
+    return std::nullopt;
+  auto parts = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
+  if (parts.size() != 2) return std::nullopt;
+  return std::make_pair(trim(parts[0]), trim(parts[1]));
+}
+
 static bool parse_index(const string& text, string& base, string& index) {
   string value = trim(text);
   if (value.empty() || value.back() != ']') return false;
@@ -213,7 +226,7 @@ static bool parse_member_call(const string& text, string& receiver, string& hand
     if (c == '"') { quoted = true; continue; }
     if (c == '(' || c == '[') ++nesting;
     else if (c == ')' || c == ']') --nesting;
-    else if (c == '.' && nesting == 0) { dot = index; break; }
+    else if (c == '.' && nesting == 0) dot = index;
   }
   auto lp = value.find('(', dot == string::npos ? 0 : dot);
   auto rp = value.rfind(')');
@@ -1925,7 +1938,7 @@ class Checker {
 
   void check_main(const MainProc& m) {
     std::unordered_map<string,string> env;
-    check_stmts(m.body, env, nullptr, nullptr);
+    env = check_stmts(m.body, std::move(env), nullptr, nullptr);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
@@ -2191,7 +2204,7 @@ class Checker {
         err(test.source_file, test.line,
             "duplicate test name '" + test.name + "'");
       TypeEnv env;
-      check_stmts(test.body, env, nullptr, nullptr);
+      env = check_stmts(test.body, std::move(env), nullptr, nullptr);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
       check_ownership(test.body, std::move(ownership), nullptr, nullptr);
@@ -2202,7 +2215,7 @@ class Checker {
         err(benchmark.source_file, benchmark.line,
             "duplicate benchmark name '" + benchmark.name + "'");
       TypeEnv env;
-      check_stmts(benchmark.body, env, nullptr, nullptr);
+      env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
       check_ownership(benchmark.body, std::move(ownership), nullptr, nullptr);
@@ -2745,6 +2758,14 @@ class Checker {
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
+        if (auto map_types = map_key_value_types(*base)) {
+          if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "keys" && method_args.empty())
+            return "vector[" + map_types->first + "]";
+          if (method_name == "values" && method_args.empty())
+            return "vector[" + map_types->second + "]";
+        }
         vector<string> argument_types;
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
@@ -2950,6 +2971,19 @@ class Checker {
 
   static bool concrete_environment_type(const string& type) {
     return !type.empty() && !starts_with(type, "_");
+  }
+
+  void refine_map_index_assignment_type(const string& target,
+                                        const string& value,
+                                        TypeEnv& env) const {
+    string base, index;
+    if (!parse_index(target, base, index)) return;
+    auto container = env.find(base);
+    if (container == env.end() || container->second != "map") return;
+    auto key_type = inferred_expr_type(index, env);
+    auto value_type = inferred_expr_type(value, env);
+    if (key_type && value_type)
+      container->second = "map[" + *key_type + "," + *value_type + "]";
   }
 
   // This is the common control-flow join for inference, ordinary checking,
@@ -4789,10 +4823,18 @@ class Checker {
         bool is_if = statement.kind == Stmt::Kind::If;
         ++index;
         auto child_env = env;
-        if (statement.kind == Stmt::Kind::For)
-          child_env[statement.a] =
-              iterator_element_type(statement.line, statement.b, env)
-                  .value_or("_value");
+        if (statement.kind == Stmt::Kind::For) {
+          // Effect discovery can run before a local Map() has learned its
+          // key/value types from indexed writes. Checking later revisits this
+          // source with the concrete environment; use a conservative unknown
+          // element here instead of rejecting that provisional pass.
+          if (inferred_expr_type(statement.b, env))
+            child_env[statement.a] =
+                iterator_element_type(statement.line, statement.b, env)
+                    .value_or("_value");
+          else
+            child_env[statement.a] = "_value";
+        }
         std::optional<std::map<string,StorageLocation>> saved_aliases;
         if (leaf_effect_capture_ && statement.kind == Stmt::Kind::For &&
             !copy_type(child_env.at(statement.a))) {
@@ -4857,6 +4899,7 @@ class Checker {
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, Effect::Read);
           if (auto type = inferred_expr_type(statement.b, env)) env[statement.a] = *type;
+          refine_map_index_assignment_type(statement.a, statement.b, env);
           ++index;
           break;
         }
@@ -6789,6 +6832,7 @@ class Checker {
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);
           }
+          refine_map_index_assignment_type(s.a, s.b, env.types);
           ++index;
           break;
         }
@@ -7375,6 +7419,29 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        if (auto map_types = map_key_value_types(*receiver_type)) {
+          if (handler == "get") {
+            if (args.size() != 2)
+              err(line, "map get expects key and default arguments");
+            auto key_type = inferred_expr_type(args[0], env);
+            auto default_type = inferred_expr_type(args[1], env);
+            if (!key_type || !same_type(map_types->first, *key_type))
+              err(line, "map get key type mismatch");
+            if (!default_type || !same_type(map_types->second, *default_type))
+              err(line, "map get default type mismatch");
+            check_expression(line, receiver, env);
+            for (const auto& arg : args) check_expression(line, arg, env);
+            return;
+          }
+          if (handler == "keys" || handler == "values") {
+            if (!args.empty())
+              err(line, "map " + handler + " expects no arguments");
+            check_expression(line, receiver, env);
+            return;
+          }
+        }
+      }
       auto it = env.find(receiver);
       if (it != env.end() && domains_.count(it->second))
         err(line, "naked cross-domain call '" + receiver + "." + handler +
@@ -9912,6 +9979,14 @@ class Generator {
     if (parse_member_call(value, receiver, method_name, method_args)) {
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
+        if (auto map_types = map_key_value_types(*receiver_type)) {
+          if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "keys" && method_args.empty())
+            return "vector[" + map_types->first + "]";
+          if (method_name == "values" && method_args.empty())
+            return "vector[" + map_types->second + "]";
+        }
         vector<string> argument_types;
         for (const auto& argument : method_args)
           argument_types.push_back(nominalized_generated_argument_type(
@@ -10980,6 +11055,23 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (auto map_types = map_key_value_types(concrete)) {
+          if (member_name == "get" && member_arguments.size() == 2) {
+            string key = expr(member_arguments[0], d, locals, types);
+            if (map_types->first == "string")
+              key = "(" + key + ").as_str()";
+            else
+              key = "&( " + key + " )";
+            string fallback = expr(member_arguments[1], d, locals, types);
+            if (!copy_type(map_types->second))
+              fallback = "(" + fallback + ").clone()";
+            return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
+          }
+          if (member_name == "keys" && member_arguments.empty())
+            return "(" + receiver_expression + ").keys().cloned().collect::<Vec<_>>()";
+          if (member_name == "values" && member_arguments.empty())
+            return "(" + receiver_expression + ").values().cloned().collect::<Vec<_>>()";
+        }
         if (concrete == "queue" || starts_with(concrete, "queue["))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
         if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
