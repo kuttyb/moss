@@ -113,4 +113,4 @@ When working with Moss:
 - **Full Autonomy**: Execute shell commands, file inspections, and edits without prompting for per-step confirmation.
 - **Sandboxing**: Stay strictly within the workspace root. Never access or modify paths outside this directory.
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
-- **Git Boundary**: You may run git diff, status, and local staging. You must NEVER run `git commit` or `git push`.
+- **Git Boundary**: You may stage files and create local git commits when explicitly directed by the user. You must NEVER run `git push`.

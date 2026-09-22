@@ -1,0 +1,373 @@
+# Fixed-capacity rolling event window with Map totals, Vector window, and FIFO alert queue
+
+type RollingWindow:
+  capacity: Int
+  threshold: Int
+  count: Int
+  head: Int
+  categories: Vector [Int]
+  values: Vector [Int]
+  totals: Map [Int, Int]
+  alert_queue: Vector [Int]
+  alert_head: Int
+  alert_count: Int
+
+  fn size() -> Int:
+    return count
+
+  fn window_sum() -> Int:
+    return values |> sum
+
+  fn category_total(cat: Int) -> Int:
+    return totals.get(cat, 0)
+
+  fn contains_category(cat: Int) -> Bool:
+    var i = 0
+    while i < count:
+      if categories [i] == cat:
+        return true
+      i = i + 1
+    return false
+
+  fn next_alert(default_val: Int) -> Int:
+    if alert_count == 0:
+      return default_val
+    var val = alert_queue [alert_head]
+    alert_head = alert_head + 1
+    alert_count = alert_count - 1
+    return val
+
+  fn record(cat: Int, val: Int):
+    if count < capacity:
+      var cur = totals.get(cat, 0)
+      var new_tot = cur + val
+      totals [cat] = new_tot
+      categories.push(cat)
+      values.push(val)
+      count = count + 1
+      if new_tot >= threshold:
+        alert_queue.push(cat)
+        alert_count = alert_count + 1
+    else:
+      var old_idx = head
+      var old_cat = categories [old_idx]
+      var old_val = values [old_idx]
+
+      var old_cat_tot = totals.get(old_cat, 0)
+      totals [old_cat] = old_cat_tot - old_val
+
+      var cur_tot = totals.get(cat, 0)
+      var new_tot2 = cur_tot + val
+      totals [cat] = new_tot2
+
+      categories [old_idx] = cat
+      values [old_idx] = val
+      head = (head + 1) % capacity
+
+      if new_tot2 >= threshold:
+        alert_queue.push(cat)
+        alert_count = alert_count + 1
+
+  fn clear():
+    while count > 0:
+      categories.pop()
+      values.pop()
+      count = count - 1
+    while alert_count > 0:
+      alert_queue.pop()
+      alert_count = alert_count - 1
+    head = 0
+    totals = Map()
+    alert_head = 0
+    alert_count = 0
+
+fn empty_window(cap: Int, thresh: Int) -> RollingWindow:
+  return RollingWindow(capacity: cap, threshold: thresh, count: 0, head: 0, categories: [], values: [], totals: Map(), alert_queue: [], alert_head: 0, alert_count: 0)
+
+domain RollingWindowDomain:
+  window: RollingWindow
+
+  fn Record(cat: Int, val: Int):
+    window.record(cat, val)
+
+  fn CategoryTotal(cat: Int) -> Int:
+    reply window.category_total(cat)
+
+  fn WindowSum() -> Int:
+    reply window.window_sum()
+
+  fn NextAlert(default_val: Int) -> Int:
+    reply window.next_alert(default_val)
+
+  fn Size() -> Int:
+    reply window.size()
+
+  fn ContainsCategory(cat: Int) -> Bool:
+    reply window.contains_category(cat)
+
+test "initial empty state":
+  var w = empty_window(3, 100)
+  assertEqual(w.size(), 0)
+  assertEqual(w.window_sum(), 0)
+  assertEqual(w.contains_category(1), false)
+  assertEqual(w.category_total(1), 0)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "one event":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  assertEqual(w.size(), 1)
+  assertEqual(w.window_sum(), 10)
+  assertEqual(w.contains_category(1), true)
+  assertEqual(w.category_total(1), 10)
+  assertEqual(w.contains_category(2), false)
+
+test "multiple categories":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(3, 30)
+  assertEqual(w.size(), 3)
+  assertEqual(w.category_total(1), 10)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.category_total(3), 30)
+  assertEqual(w.window_sum(), 60)
+
+test "repeated category updates":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(1, 20)
+  assertEqual(w.size(), 2)
+  assertEqual(w.category_total(1), 30)
+  assertEqual(w.window_sum(), 30)
+
+test "capacity reached without eviction":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(3, 30)
+  assertEqual(w.size(), 3)
+  assertEqual(w.window_sum(), 60)
+  assertEqual(w.contains_category(1), true)
+  assertEqual(w.contains_category(2), true)
+  assertEqual(w.contains_category(3), true)
+
+test "first eviction":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(1, 5)
+  assertEqual(w.category_total(1), 15)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.window_sum(), 35)
+  w.record(3, 7)
+  assertEqual(w.size(), 3)
+  assertEqual(w.category_total(1), 5)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.category_total(3), 7)
+  assertEqual(w.window_sum(), 32)
+  assertEqual(w.contains_category(1), true)
+
+test "several successive evictions":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(3, 30)
+  w.record(4, 40)
+  assertEqual(w.category_total(1), 0)
+  assertEqual(w.contains_category(1), false)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.category_total(3), 30)
+  assertEqual(w.category_total(4), 40)
+  assertEqual(w.window_sum(), 90)
+  w.record(5, 50)
+  assertEqual(w.category_total(2), 0)
+  assertEqual(w.contains_category(2), false)
+  assertEqual(w.category_total(3), 30)
+  assertEqual(w.category_total(4), 40)
+  assertEqual(w.category_total(5), 50)
+  assertEqual(w.window_sum(), 120)
+
+test "circular wraparound":
+  var w = empty_window(3, 100)
+  var i = 1
+  while i <= 9:
+    w.record(i, i * 10)
+    i = i + 1
+  assertEqual(w.size(), 3)
+  assertEqual(w.contains_category(7), true)
+  assertEqual(w.contains_category(8), true)
+  assertEqual(w.contains_category(9), true)
+  assertEqual(w.category_total(7), 70)
+  assertEqual(w.category_total(8), 80)
+  assertEqual(w.category_total(9), 90)
+  assertEqual(w.window_sum(), 240)
+
+test "category totals after eviction":
+  var w = empty_window(3, 100)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(1, 15)
+  assertEqual(w.category_total(1), 25)
+  w.record(3, 30)
+  assertEqual(w.category_total(1), 15)
+  assertEqual(w.contains_category(1), true)
+  w.record(4, 40)
+  assertEqual(w.category_total(2), 0)
+  assertEqual(w.contains_category(2), false)
+
+test "window_sum":
+  var w = empty_window(3, 100)
+  assertEqual(w.window_sum(), 0)
+  w.record(1, 5)
+  assertEqual(w.window_sum(), 5)
+  w.record(2, 15)
+  assertEqual(w.window_sum(), 20)
+  w.record(3, 25)
+  assertEqual(w.window_sum(), 45)
+  w.record(4, 35)
+  assertEqual(w.window_sum(), 75)
+
+test "alert below threshold":
+  var w = empty_window(3, 50)
+  w.record(1, 20)
+  w.record(1, 20)
+  assertEqual(w.category_total(1), 40)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "threshold crossing":
+  var w = empty_window(3, 50)
+  w.record(1, 20)
+  w.record(1, 20)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+  w.record(1, 15)
+  assertEqual(w.category_total(1), 55)
+  assertEqual(w.next_alert(0 - 1), 1)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "FIFO ordering of multiple alerts":
+  var w = empty_window(4, 15)
+  w.record(1, 20)
+  w.record(2, 30)
+  w.record(3, 25)
+  assertEqual(w.next_alert(0 - 1), 1)
+  assertEqual(w.next_alert(0 - 1), 2)
+  assertEqual(w.next_alert(0 - 1), 3)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "empty alert default":
+  var w = empty_window(3, 10)
+  assertEqual(w.next_alert(0 - 999), 0 - 999)
+
+test "contains_category":
+  var w = empty_window(2, 100)
+  assertEqual(w.contains_category(5), false)
+  w.record(5, 50)
+  assertEqual(w.contains_category(5), true)
+  w.record(6, 60)
+  assertEqual(w.contains_category(5), true)
+  w.record(7, 70)
+  assertEqual(w.contains_category(5), false)
+  assertEqual(w.contains_category(6), true)
+  assertEqual(w.contains_category(7), true)
+
+test "size":
+  var w = empty_window(3, 100)
+  assertEqual(w.size(), 0)
+  w.record(1, 10)
+  assertEqual(w.size(), 1)
+  w.record(2, 20)
+  assertEqual(w.size(), 2)
+  w.record(3, 30)
+  assertEqual(w.size(), 3)
+  w.record(4, 40)
+  assertEqual(w.size(), 3)
+
+test "clear":
+  var w = empty_window(3, 15)
+  w.record(1, 20)
+  w.record(2, 30)
+  assertEqual(w.size(), 2)
+  assertEqual(w.window_sum(), 50)
+  assertEqual(w.next_alert(0 - 1), 1)
+  w.clear()
+  assertEqual(w.size(), 0)
+  assertEqual(w.window_sum(), 0)
+  assertEqual(w.contains_category(1), false)
+  assertEqual(w.contains_category(2), false)
+  assertEqual(w.category_total(1), 0)
+  assertEqual(w.category_total(2), 0)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "reuse after clear":
+  var w = empty_window(3, 15)
+  w.record(1, 20)
+  w.clear()
+  assertEqual(w.size(), 0)
+  w.record(10, 100)
+  w.record(20, 200)
+  assertEqual(w.size(), 2)
+  assertEqual(w.window_sum(), 300)
+  assertEqual(w.category_total(10), 100)
+  assertEqual(w.category_total(20), 200)
+  assertEqual(w.next_alert(0 - 1), 10)
+  assertEqual(w.next_alert(0 - 1), 20)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "domain operations":
+  var w = empty_window(3, 15)
+  w.record(1, 10)
+  w.record(2, 20)
+  w.record(1, 5)
+  assertEqual(w.category_total(1), 15)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.window_sum(), 35)
+  assertEqual(w.next_alert(0 - 1), 2)
+  assertEqual(w.size(), 3)
+  assertEqual(w.contains_category(1), true)
+  assertEqual(w.contains_category(3), false)
+  w.record(3, 7)
+  assertEqual(w.category_total(1), 5)
+  assertEqual(w.category_total(2), 20)
+  assertEqual(w.category_total(3), 7)
+  assertEqual(w.window_sum(), 32)
+  assertEqual(w.next_alert(0 - 1), 1)
+
+fn main():
+  var d = RollingWindowDomain(window: empty_window(3, 15))
+
+  message d.Record(1, 10)
+  message d.Record(2, 20)
+  message d.Record(1, 5)
+
+  var t1 = message d.CategoryTotal(1)
+  var t2 = message d.CategoryTotal(2)
+  var s1 = message d.WindowSum()
+  var a1 = message d.NextAlert(0 - 1)
+  var sz1 = message d.Size()
+  var has1 = message d.ContainsCategory(1)
+  var has3 = message d.ContainsCategory(3)
+
+  assertEqual(t1, 15)
+  assertEqual(t2, 20)
+  assertEqual(s1, 35)
+  assertEqual(a1, 2)
+  assertEqual(sz1, 3)
+  assertEqual(has1, true)
+  assertEqual(has3, false)
+
+  message d.Record(3, 7)
+
+  var t1_after = message d.CategoryTotal(1)
+  var t2_after = message d.CategoryTotal(2)
+  var t3_after = message d.CategoryTotal(3)
+  var s2 = message d.WindowSum()
+  var a2 = message d.NextAlert(0 - 1)
+
+  assertEqual(t1_after, 5)
+  assertEqual(t2_after, 20)
+  assertEqual(t3_after, 7)
+  assertEqual(s2, 32)
+  assertEqual(a2, 1)
+
+  echo "RollingWindow and RollingWindowDomain operations successfully verified."
