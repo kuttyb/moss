@@ -1,0 +1,10 @@
+domain Worker:
+  fn Ping() -> Int:
+    reply 1
+
+test "cannot compose here":
+  worker = Worker()
+  assertEqual(1, 1)
+
+fn main():
+  echo 1

@@ -330,6 +330,9 @@ fn main():
   echo values[0]
 ```
 
+Vectors support `push(item)`, `pop()`, indexed reads (`vec[i]`) and writes
+(`vec[i] = item`). Use `vec |> count` for cardinality.
+
 Contained types are inferred:
 
 ```moss
@@ -363,7 +366,8 @@ fn main():
 The key and value types are inferred from use.
 `get(key, default)` is the safe/defaulted lookup; `map[key]` remains strict and
 expects the key to exist. `keys()` and `values()` produce ordinary eager `Vector`
-snapshots. Map iteration order is unspecified.
+snapshots. Map iteration order is unspecified. Map supports indexed writes
+(`map[key] = value`), but v0.1 has no deletion operation.
 
 ### Queue
 
@@ -745,6 +749,13 @@ fn main():
 Constructor argument order does not matter because fields and routes are named.
 
 The beginning of `main` establishes the concrete domain instances and their connections. After that, normal execution proceeds.
+
+This composition prefix is also the one domain topology for a program: a
+`test "name":` block is not another composition root. Constructor state
+initializers must be side-effect-free. The current checker permits pure ordinary
+helper calls there, but rejects messages, domain access, I/O, failing, divergent,
+and unresolved work. See `docs/TESTING.md` for how tests participate in the
+project's composed program.
 
 ### Messages have value semantics
 

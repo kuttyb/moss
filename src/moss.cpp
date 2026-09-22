@@ -14354,6 +14354,11 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"project_root\": ";
   if (project_root) write_debug_json_string(out, *project_root);
   else out << "null";
+  out << ",\n    \"canonical_docs\": {"
+         "\"practical_language_guide\": \"docs/GENTLE_INTRODUCTION_TO_MOSS.md\","
+         "\"formal_language_design\": \"docs/MOSS_V0_1_LANGUAGE_DESIGN.md\","
+         "\"project_workflow\": \"docs/PROJECT_WORKFLOW.md\","
+         "\"testing\": \"docs/TESTING.md\"}";
   out << ",\n    \"tool_invocation\": {"
          "\"compiler\": {\"repo_local\": \"./moss\", \"path_name\": \"moss\", \"build_if_missing\": \"make\"},"
          "\"project_driver\": {\"repo_local\": \"./margo\", \"path_name\": \"margo\"},"
@@ -14399,8 +14404,14 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
          "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
-         "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\"},"
-         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false}}";
+         "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected\"}},"
+         "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
+  out << ",\n    \"project_surface\": {"
+         "\"manifest\": \"Moss.toml\","
+         "\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\","
+         "\"source_directory\": \"src\","
+         "\"project_driver\": \"./margo\"}";
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",
@@ -14453,6 +14464,8 @@ static void write_bootstrap_json(std::ostream& out,
   write_agent_string_array(
       out, {"In a repository checkout, prefer ./moss and ./margo; run make if ./moss is missing.",
             "Run ./moss agent bootstrap --json before modifying Moss source.",
+            "For fresh Moss source-writing or unfamiliar language work, inspect source_surface; read canonical_docs.practical_language_guide when practical context is needed.",
+            "For project-layout questions, inspect project_surface; read canonical_docs.project_workflow when more detail is needed.",
             "Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean.",
             "Run moss check --json before guessing at a Moss error.",
             "Use inspect, why, effects, ownership, and cost as needed.",
@@ -14472,6 +14485,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},"
          "{\"question\":\"Does Moss support this source construct, and what is the canonical form?\",\"capability\":\"language_surface\",\"command\":\"moss agent bootstrap --json\"},"
+         "{\"question\":\"Which guide should I use for practical Moss source syntax and idioms?\",\"capability\":\"language_surface\",\"command\":\"canonical_docs.practical_language_guide\"},"
+         "{\"question\":\"What is the minimal Moss project layout or manifest?\",\"capability\":\"package_project_driver\",\"command\":\"project_surface, then canonical_docs.project_workflow\"},"
          "{\"question\":\"Is this a Moss semantic restriction, frontend bug, native lowering bug, or Fast Debug limitation?\",\"capability\":\"language_surface\",\"command\":\"source_surface, moss check --json, ownership/effects/why, a minimal probe, then native verification\"},"
          "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
          "{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},"

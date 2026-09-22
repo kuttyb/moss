@@ -24,6 +24,10 @@ SOURCE_SURFACE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surfac
 IMMUTABLE_LET = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_immutable_let.moss"
 LOCAL_ANNOTATION = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_local_annotation.moss"
 FAST_DEBUG_CONTAINER_FIELD = ROOT / "tests" / "tooling" / "fixtures" / "moss_fast_debug_container_field_limit.moss"
+DISCOVERY_COLLECTIONS = ROOT / "tests" / "tooling" / "fixtures" / "moss_discovery_collections.moss"
+COMPOSITION_PURE_HELPER = ROOT / "tests" / "tooling" / "fixtures" / "moss_composition_initializer_pure_helper.moss"
+TEST_COMPOSITION_ROOT_REJECTED = ROOT / "tests" / "tooling" / "fixtures" / "moss_test_domain_composition_root_rejected.moss"
+IMPURE_COMPOSITION_INITIALIZER = ROOT / "tests" / "negative" / "phase106b_impure_state_initializer.moss"
 AGENTS = ROOT / "AGENTS.md"
 MARGO = ROOT / "margo"
 
@@ -121,6 +125,11 @@ def main() -> int:
             "package_resolution": "path-git",
             "module_resolution": "moss-compiler",
             "source_surface": "bootstrap-discoverable",
+            "canonical_docs": "bootstrap-discoverable",
+            "project_surface": "bootstrap-discoverable",
+            "collection_operations": "bootstrap-discoverable",
+            "test_domain_topology": "bootstrap-discoverable",
+            "composition_initializers": "bootstrap-discoverable",
             "domain_fn": "handler",
             "explicit_let": "immutable",
             "explicit_var": "mutable",
@@ -145,6 +154,11 @@ def main() -> int:
             "module_resolution": "moss-compiler",
             "semantic_oracle": "moss-agent-1",
             "source_surface": "bootstrap-discoverable",
+            "canonical_docs": "bootstrap-discoverable",
+            "project_surface": "bootstrap-discoverable",
+            "collection_operations": "bootstrap-discoverable",
+            "test_domain_topology": "bootstrap-discoverable",
+            "composition_initializers": "bootstrap-discoverable",
             "gap_classification": "minimal-reproducer-first",
         },
         "moss-agent-workflow",
@@ -266,6 +280,50 @@ def main() -> int:
         fail("bootstrap source surface no longer exposes typed empty Vector construction")
     if surface.get("domains", {}).get("fn_inside_domain") != "handler":
         fail("bootstrap source surface no longer distinguishes domain handlers")
+    collections = surface.get("collections", {})
+    vector = collections.get("Vector", {})
+    if (vector.get("construction") != {"literal": "[a, b, c]", "empty_typed": "Vector[T]()"}
+            or vector.get("methods") != ["push(item)", "pop()"]
+            or vector.get("indexing") != {"read": "vec[i]", "write": "vec[i] = item"}
+            or vector.get("cardinality") != "vec |> count"):
+        fail("bootstrap collection surface no longer exposes Vector operations")
+    map_surface = collections.get("Map", {})
+    if (map_surface.get("construction") != {"inferred": "Map()"}
+            or map_surface.get("indexing") != {"read": "map[key]", "write": "map[key] = value"}
+            or map_surface.get("methods") != ["get(key, default)", "keys()", "values()"]
+            or map_surface.get("iteration_note") != "keys() and values() return eager owned Vector snapshots"
+            or map_surface.get("deletion_supported") is not False):
+        fail("bootstrap collection surface no longer exposes Map operations")
+    queue = collections.get("Queue", {})
+    if queue.get("construction") != {"inferred": "Queue()"} or queue.get("methods") != ["push(item)", "pop()"]:
+        fail("bootstrap collection surface no longer exposes Queue operations")
+    tests_surface = surface.get("tests", {})
+    if (tests_surface.get("syntax") != 'test "name":'
+            or tests_surface.get("assertions") != ["assert(condition)", "assertEqual(actual, expected)"]
+            or tests_surface.get("domain_topology") != {
+                "test_blocks_are_composition_roots": False,
+                "composition_root": "main initial composition prefix",
+            }):
+        fail("bootstrap source surface no longer exposes test/domain topology")
+    composition = surface.get("domains", {}).get("composition", {})
+    if composition.get("domain_instances") != "constructed statically in main's initial composition prefix":
+        fail("bootstrap source surface no longer exposes domain composition location")
+    if "side-effect-free" not in composition.get("initializer_rule", ""):
+        fail("bootstrap source surface no longer exposes composition initializer restriction")
+    if bootstrap.get("canonical_docs") != {
+        "practical_language_guide": "docs/GENTLE_INTRODUCTION_TO_MOSS.md",
+        "formal_language_design": "docs/MOSS_V0_1_LANGUAGE_DESIGN.md",
+        "project_workflow": "docs/PROJECT_WORKFLOW.md",
+        "testing": "docs/TESTING.md",
+    }:
+        fail("bootstrap canonical documentation routing drifted")
+    if bootstrap.get("project_surface") != {
+        "manifest": "Moss.toml",
+        "minimal_manifest": '[project]\nname = "app"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n',
+        "source_directory": "src",
+        "project_driver": "./margo",
+    }:
+        fail("bootstrap project surface drifted")
     debug_features = {item["name"]: item for item in bootstrap["debugging_features"]}
     if "for traversal is not currently supported" not in debug_features.get("fast_debug", {}).get("limitations", []):
         fail("Fast Debug discovery omitted its verified for-traversal limitation")
@@ -295,6 +353,26 @@ def main() -> int:
         fail("moss-agent-workflow no longer requires gap classification")
     if "Every `fn` declared directly inside a\n`domain` is a **handler**" not in language:
         fail("moss-language no longer explains that domain fn is a handler")
+    for marker in (
+        "`canonical_docs.practical_language_guide`",
+        "`Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`",
+        "`Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup",
+        "`Queue`: `queue.push(item)` and `queue.pop()`",
+        "A test block is not a separate domain\ncomposition root",
+        "state initializer must be side-effect-free",
+        "accept a pure ordinary helper call",
+    ):
+        if marker not in language:
+            fail(f"moss-language no longer agrees with bootstrap discovery: {marker}")
+    for marker in (
+        "bootstrap/source_surface",
+        "canonical_docs.practical_language_guide",
+        "bootstrap/project_surface",
+        "canonical_docs.project_workflow",
+        "Do not filesystem-search arbitrary examples",
+    ):
+        if marker not in workflow:
+            fail(f"moss-agent-workflow no longer routes discovery through: {marker}")
 
     lower_language = language.lower()
     for obsolete in ("sender fifo", "total commit order", "worker queue", "mailbox"):
@@ -310,6 +388,20 @@ def main() -> int:
     source_surface = run([str(compiler), "check", str(SOURCE_SURFACE), "--json"], ROOT)
     if source_surface.returncode != 0:
         fail(f"advertised source surface failed Moss checking:\n{source_surface.stdout}{source_surface.stderr}")
+    discovery_collections = run([str(compiler), "check", str(DISCOVERY_COLLECTIONS), "--json"], ROOT)
+    if discovery_collections.returncode != 0:
+        fail(f"advertised collection operations failed Moss checking:\n{discovery_collections.stdout}{discovery_collections.stderr}")
+    composition_pure_helper = run([str(compiler), "check", str(COMPOSITION_PURE_HELPER), "--json"], ROOT)
+    if composition_pure_helper.returncode != 0:
+        fail(f"documented direct/pure-helper composition initialization failed Moss checking:\n{composition_pure_helper.stdout}{composition_pure_helper.stderr}")
+    test_composition_root = run([str(compiler), "check", str(TEST_COMPOSITION_ROOT_REJECTED), "--json"], ROOT)
+    if (test_composition_root.returncode == 0
+            or "domain construction is allowed only in the main composition prefix" not in test_composition_root.stdout):
+        fail("test/domain topology discovery no longer matches the compiler")
+    impure_composition_initializer = run([str(compiler), "check", str(IMPURE_COMPOSITION_INITIALIZER), "--json"], ROOT)
+    if (impure_composition_initializer.returncode == 0
+            or "domain state initializers must be side-effect-free" not in impure_composition_initializer.stdout):
+        fail("composition initializer discovery no longer matches the compiler")
     immutable_let = run([str(compiler), "check", str(IMMUTABLE_LET), "--json"], ROOT)
     if immutable_let.returncode == 0 or "IMMUTABLE_LOCAL_MUTATION" not in immutable_let.stdout:
         fail("explicit let mutation was not rejected by the advertised source surface")

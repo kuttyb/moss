@@ -13,7 +13,7 @@ If `./moss` is missing, run `make` first. The first live discovery command is
 `./moss agent bootstrap --json`. Bare `moss` or `margo` are valid only when
 those executables are already available on `PATH`.
 
-1. **Load Skills and Docs**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`. For the primary language guide, syntax, collections, project layout, and domain idioms, consult `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
+1. **Load Skills and Docs**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`. For fresh Moss source-writing or unfamiliar language work, `docs/GENTLE_INTRODUCTION_TO_MOSS.md` is the primary practical guide; use the bootstrap's `canonical_docs` routing for formal, project, or testing detail as needed.
 2. **Run Discovery**: Run `./moss agent bootstrap --json` (or `moss agent bootstrap --json` if on `PATH`). Run `make` first if `./moss` is not yet built.
 3. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
 4. **Tooling Split**:

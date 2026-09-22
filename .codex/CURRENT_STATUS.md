@@ -2,6 +2,29 @@
 
 Updated: 2026-09-21
 
+## Discovery-only follow-up — fresh-agent cache experiment
+
+Uncommitted discovery work extends live `moss agent bootstrap --json` with
+canonical-document routing, collection operation metadata, a compact
+`project_surface`, test/domain-topology facts, and the composition-initializer
+rule. The skills and Gentle Introduction route unfamiliar Moss-writing work
+through bootstrap and the practical guide before a minimal probe; arbitrary
+example search is explicitly deferred. Drift checks cover the new structured
+facts and compiler probes for collection operations, test composition, and
+initializer behavior.
+
+Important live-result nuance: direct state construction and a pure ordinary
+helper initializer both check successfully. The actual restriction is
+side-effect-free initialization; messages, domain access, I/O, failing,
+divergent, and unresolved work are rejected. No compiler, interpreter, cache,
+SWARM, or example/project implementation changed.
+
+Completed validation: `make`; bootstrap/capabilities/schema JSON; both agent
+drift checks; focused compiler probes; `make examples`; `sh -n tests/run.sh`;
+and `git diff --check`. `make check` passed the new agent checks and all reached
+compiler/tooling/Emacs suites, then stopped at the existing environment-specific
+real LLDB/DAP initial-handshake failure; it was not changed.
+
 ## Phase 15.4 — Julia → Moss Swarm: BinaryHeap
 
 The bounded pure-Moss `Int` min-heap experiment is complete under

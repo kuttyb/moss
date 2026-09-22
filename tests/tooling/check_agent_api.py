@@ -94,10 +94,55 @@ if surface.get("operators", {}).get("arithmetic") != ["+", "-", "*", "/", "%"]:
 collections = surface.get("collections", {})
 if collections.get("empty_typed_vector") != "Vector[T]()" or collections.get("local_type_annotations") is not False:
     fail("bootstrap source surface omitted typed empty Vector construction")
+vector = collections.get("Vector", {})
+if (vector.get("construction") != {"literal": "[a, b, c]", "empty_typed": "Vector[T]()"}
+        or vector.get("methods") != ["push(item)", "pop()"]
+        or vector.get("indexing") != {"read": "vec[i]", "write": "vec[i] = item"}
+        or vector.get("cardinality") != "vec |> count"):
+    fail("bootstrap collection surface omitted Vector operations")
+map_surface = collections.get("Map", {})
+if (map_surface.get("construction") != {"inferred": "Map()"}
+        or map_surface.get("indexing") != {"read": "map[key]", "write": "map[key] = value"}
+        or map_surface.get("methods") != ["get(key, default)", "keys()", "values()"]
+        or map_surface.get("iteration_note") != "keys() and values() return eager owned Vector snapshots"
+        or map_surface.get("deletion_supported") is not False):
+    fail("bootstrap collection surface omitted Map operations")
+queue = collections.get("Queue", {})
+if queue.get("construction") != {"inferred": "Queue()"} or queue.get("methods") != ["push(item)", "pop()"]:
+    fail("bootstrap collection surface omitted Queue operations")
 if surface.get("locals", {}).get("immutable") != "let x = expression":
     fail("bootstrap source surface omitted immutable locals")
 if surface.get("domains", {}).get("fn_inside_domain") != "handler":
     fail("bootstrap source surface omitted domain handler distinction")
+tests_surface = surface.get("tests", {})
+if (tests_surface.get("syntax") != 'test "name":'
+        or tests_surface.get("assertions") != ["assert(condition)", "assertEqual(actual, expected)"]
+        or tests_surface.get("domain_topology") != {
+            "test_blocks_are_composition_roots": False,
+            "composition_root": "main initial composition prefix",
+        }):
+    fail("bootstrap source surface omitted test/domain topology")
+composition = surface.get("domains", {}).get("composition", {})
+if composition.get("domain_instances") != "constructed statically in main's initial composition prefix":
+    fail("bootstrap source surface omitted domain composition location")
+if "side-effect-free" not in composition.get("initializer_rule", ""):
+    fail("bootstrap source surface omitted composition initializer restriction")
+canonical_docs = bootstrap["result"].get("canonical_docs", {})
+if canonical_docs != {
+    "practical_language_guide": "docs/GENTLE_INTRODUCTION_TO_MOSS.md",
+    "formal_language_design": "docs/MOSS_V0_1_LANGUAGE_DESIGN.md",
+    "project_workflow": "docs/PROJECT_WORKFLOW.md",
+    "testing": "docs/TESTING.md",
+}:
+    fail("bootstrap canonical documentation routing drifted")
+project_surface = bootstrap["result"].get("project_surface", {})
+if project_surface != {
+    "manifest": "Moss.toml",
+    "minimal_manifest": '[project]\nname = "app"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n',
+    "source_directory": "src",
+    "project_driver": "./margo",
+}:
+    fail("bootstrap project surface drifted")
 debug_features = {item["name"]: item for item in bootstrap["result"]["debugging_features"]}
 if "for traversal is not currently supported" not in debug_features["fast_debug"].get("limitations", []):
     fail("Fast Debug discovery omitted its verified for traversal limitation")

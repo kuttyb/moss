@@ -1,0 +1,13 @@
+type Cache:
+  capacity: Int
+
+fn new_cache(capacity: Int) -> Cache:
+  return Cache(capacity: capacity)
+
+domain CacheDomain:
+  cache: Cache
+
+fn main():
+  direct = CacheDomain(cache: Cache(capacity: 2))
+  via_helper = CacheDomain(cache: new_cache(3))
+  echo 1

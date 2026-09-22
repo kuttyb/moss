@@ -51,6 +51,11 @@ moss_skill_contract:
   package_resolution: path-git
   module_resolution: moss-compiler
   source_surface: bootstrap-discoverable
+  canonical_docs: bootstrap-discoverable
+  project_surface: bootstrap-discoverable
+  collection_operations: bootstrap-discoverable
+  test_domain_topology: bootstrap-discoverable
+  composition_initializers: bootstrap-discoverable
   domain_fn: handler
   explicit_let: immutable
   explicit_var: mutable
@@ -58,8 +63,11 @@ moss_skill_contract:
 
 ## Core source surface
 
-Use live bootstrap's compact `source_surface` before guessing a spelling. The
-high-frequency current forms are:
+Use live bootstrap's compact `source_surface` before guessing a spelling. For
+fresh Moss source-writing or unfamiliar language work, bootstrap's
+`canonical_docs.practical_language_guide` points to the Gentle Introduction;
+read it when practical context is needed rather than treating every task as a
+full-document reading assignment. The high-frequency current forms are:
 
 ```moss
 x = expression        # usual inferred binding
@@ -142,16 +150,36 @@ views, and bare `Map` is not itself a `for` source.
 ### Collection operations reference
 
 - `Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`. Cardinality is `vec |> count` or manual tracking. Operations like `.len()`, `.size()`, `.remove()`, or `.clear()` do not exist.
-- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = val`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. Deletion/removal operations (`.remove()`, `.delete()`, `.clear()`) do not exist in v0.1.
+- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. Deletion/removal operations (`.remove()`, `.delete()`, `.clear()`) do not exist in v0.1.
 - `Queue`: `queue.push(item)` and `queue.pop()`.
 
 For full examples, see `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
+
+## Tests, topology, and composition initializers
+
+The test form is `test "name":`, with `assert(condition)` and
+`assertEqual(actual, expected)`. A test block is not a separate domain
+composition root: concrete domain instances belong to `main`'s initial static
+composition prefix. Test files participate in the appropriate logical test
+compilation unit, so they can verify behavior of that one composed topology;
+see `docs/TESTING.md` for test-project details.
+
+Domain construction uses direct named member bindings in that prefix. A domain
+state initializer must be side-effect-free: messages, domain access, I/O,
+failing, divergent, and unresolved work are rejected. The current checker does
+accept a pure ordinary helper call in such an initializer, so do not mistake the
+restriction for a ban on every helper. Use `source_surface.domains.composition`
+for the compact live rule, then reduce an unfamiliar initializer to a minimal
+`moss check --json` probe.
 
 ## Do / do not
 
 Do:
 
 - Construct every domain statically in the initial composition prefix of `main`.
+- Keep domain state initializers side-effect-free; a pure ordinary helper is
+  permitted, but a constructor initializer cannot perform message, domain, I/O,
+  failing, divergent, or unresolved work.
 - Declare a domain's outbound dependencies with `domainroutes(...)`, then bind
   those named routes at construction.
 - Use `message target.Handler(args...)` for every cross-domain handler call.

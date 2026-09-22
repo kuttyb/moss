@@ -68,8 +68,42 @@ moss_workflow_contract:
   module_resolution: moss-compiler
   semantic_oracle: moss-agent-1
   source_surface: bootstrap-discoverable
+  canonical_docs: bootstrap-discoverable
+  project_surface: bootstrap-discoverable
+  collection_operations: bootstrap-discoverable
+  test_domain_topology: bootstrap-discoverable
+  composition_initializers: bootstrap-discoverable
   gap_classification: minimal-reproducer-first
 ```
+
+## Route unfamiliar questions through discovery
+
+For unfamiliar source syntax, collection APIs, tests, domains, or composition:
+
+```text
+bootstrap/source_surface
+        ↓
+canonical_docs.practical_language_guide when more context is needed
+        ↓
+structured diagnostic or semantic query
+        ↓
+minimal moss check --json probe
+        ↓
+classify
+```
+
+For project-layout or manifest questions, use:
+
+```text
+bootstrap/project_surface
+        ↓
+canonical_docs.project_workflow when more detail is needed
+```
+
+Do not filesystem-search arbitrary examples before these discovery surfaces.
+The Gentle Introduction is the primary practical guide for fresh Moss-writing
+work, not mandatory full reading for compiler-internals or narrowly targeted
+tasks.
 
 ## Before declaring a language/compiler gap
 
@@ -101,17 +135,25 @@ language-design conclusion from generated Rust: valid Moss may expose a backend
 lowering bug. Never turn a workaround into an “idiomatic Moss architecture” claim
 until a minimal reproducer establishes the underlying limitation.
 
-For unfamiliar operators or collection construction, prefer:
+For unfamiliar operators, collection APIs, test/domain topology, or composition
+initializers, prefer:
 
 ```text
 bootstrap/source_surface
         ↓
-canonical docs/skill
+canonical_docs.practical_language_guide / moss-language
+        ↓
+structured diagnostic or semantic query
         ↓
 minimal moss check --json probe
         ↓
 classify
 ```
+
+For a project-layout question, inspect `project_surface` before reading
+`canonical_docs.project_workflow`. Do not search arbitrary examples to discover
+basic collection operations, the minimal `Moss.toml`, test topology, or the
+composition-prefix initializer rule.
 
 An absent guessed spelling is not proof that a construct is absent. Compiler
 internals are for repairing an established compiler issue, not the first

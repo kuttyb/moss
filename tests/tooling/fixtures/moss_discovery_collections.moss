@@ -1,0 +1,20 @@
+fn main():
+  values = [1, 2]
+  empty = Vector[Int]()
+  empty.push(3)
+  empty[0] = values[1]
+  popped = empty.pop()
+  value_count = values |> count
+
+  entries = Map()
+  entries["one"] = 1
+  strict = entries["one"]
+  fallback = entries.get("missing", 0)
+  keys = entries.keys()
+  mapped_values = entries.values()
+
+  pending = Queue()
+  pending.push(4)
+  queued = pending.pop()
+
+  echo popped, value_count, strict, fallback, keys, mapped_values, queued
