@@ -124,6 +124,7 @@ class FastInterpreter {
     std::shared_ptr<std::vector<Value>> vector;
     std::shared_ptr<std::vector<Value>> queue;
     std::shared_ptr<std::vector<std::pair<Value, Value>>> map;
+    std::string element_type;
 
     static Value unit();
     static Value boolean_value(bool value);
@@ -131,7 +132,7 @@ class FastInterpreter {
     static Value float_value(double value);
     static Value string_value(std::string value);
     static Value struct_value(std::string type);
-    static Value vector_value(std::vector<Value> values);
+    static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value queue_value();
     static Value map_value();
     bool truthy() const;
@@ -428,7 +429,8 @@ class FastInterpreter {
       if (!parse_call(stages[stage_index], callee, args)) callee = stages[stage_index];
       if (callee == "sum") {
         if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
-        Value total = Value::int_value(0);
+        Value total = (current.element_type == "Float" || current.element_type == "float")
+            ? Value::float_value(0.0) : Value::int_value(0);
         for (const auto& value : *current.vector) {
           if (value.kind == Value::Kind::Float || total.kind == Value::Kind::Float) {
             double left = total.kind == Value::Kind::Float ? total.floating : total.integer;
@@ -448,7 +450,8 @@ class FastInterpreter {
           Value transformed = invoke_pipeline_callable(args.front(), {value}, frame, line, output);
           if (callee == "map" || transformed.truthy()) values.push_back(callee == "map" ? transformed : value);
         }
-        current = Value::vector_value(std::move(values));
+        current = Value::vector_value(std::move(values),
+                                      callee == "filter" ? current.element_type : std::string{});
       } else if (callee == "reduce") {
         if (current.kind != Value::Kind::Vector || args.size() != 2)
           throw RuntimeError(line, "invalid checked pipeline stage 'reduce'");
@@ -462,8 +465,8 @@ class FastInterpreter {
         bool result = callee == "all";
         for (const auto& value : *current.vector) {
           bool predicate = invoke_pipeline_callable(args.front(), {value}, frame, line, output).truthy();
-          if (callee == "any" && predicate) { result = true; break; }
-          if (callee == "all" && !predicate) { result = false; break; }
+          if (callee == "any" && predicate) result = true;
+          if (callee == "all" && !predicate) result = false;
         }
         current = Value::boolean_value(result);
       } else throw RuntimeError(line, "unsupported checked pipeline stage '" + callee + "'");
@@ -536,7 +539,7 @@ class FastInterpreter {
       if (callee.find('.') == std::string::npos) {
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
-          return Value::vector_value({});
+          return Value::vector_value({}, callee.substr(7, callee.size() - 8));
         if (callee == "Queue" && args.empty()) return Value::queue_value();
         if (callee == "Map" && args.empty()) return Value::map_value();
         if (callee == "assert") {
@@ -591,14 +594,15 @@ class FastInterpreter {
           if (receiver.kind == Value::Kind::Map) {
             if (method_name == "get" && method_args.size() == 2) {
               Value key = eval(method_args[0], frame, line, output);
+              Value fallback = eval(method_args[1], frame, line, output);
               for (const auto& entry : *receiver.map)
-                if (equal(entry.first, key)) return entry.second;
-              return eval(method_args[1], frame, line, output);
+                if (equal(entry.first, key)) return independent(entry.second);
+              return fallback;
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
               std::vector<Value> values;
               for (const auto& entry : *receiver.map)
-                values.push_back(method_name == "keys" ? entry.first : entry.second);
+                values.push_back(independent(method_name == "keys" ? entry.first : entry.second));
               return Value::vector_value(std::move(values));
             }
           }
@@ -952,9 +956,11 @@ inline FastInterpreter::Value FastInterpreter::Value::struct_value(std::string t
   result.object->type = std::move(type);
   return result;
 }
-inline FastInterpreter::Value FastInterpreter::Value::vector_value(std::vector<Value> values) {
+inline FastInterpreter::Value FastInterpreter::Value::vector_value(std::vector<Value> values,
+                                                                     std::string element_type) {
   Value result; result.kind = Kind::Vector;
   result.vector = std::make_shared<std::vector<Value>>(std::move(values));
+  result.element_type = std::move(element_type);
   return result;
 }
 inline FastInterpreter::Value FastInterpreter::Value::queue_value() {

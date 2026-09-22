@@ -1,0 +1,43 @@
+fn fallback() -> Int:
+  echo 99
+  return 5
+
+type ValueHolder:
+  entries: Map[Int, Vector[Int]]
+  current: Vector[Int]
+
+  fn get_owned() -> Int:
+    current = entries.get(1, Vector[Int]())
+    current.push(2)
+    original = entries.get(1, Vector[Int]())
+    return original |> count
+
+  fn values_owned() -> Int:
+    snapshot = entries.values()
+    current = snapshot[0]
+    current.push(3)
+    stored = entries.get(1, Vector[Int]())
+    return stored |> count
+
+type KeyHolder:
+  entries: Map[String, Int]
+  snapshot: Vector[String]
+
+  fn keys_owned() -> Int:
+    snapshot = entries.keys()
+    snapshot[0] = "changed"
+    return entries.get("live", 0)
+
+fn main():
+  counts = Map()
+  counts[1] = 7
+  echo counts.get(1, fallback())
+  first = ValueHolder(entries: Map(), current: Vector[Int]())
+  first.entries[1] = [1]
+  echo first.get_owned()
+  second = ValueHolder(entries: Map(), current: Vector[Int]())
+  second.entries[1] = [1]
+  echo second.values_owned()
+  keys = KeyHolder(entries: Map(), snapshot: Vector[String]())
+  keys.entries["live"] = 7
+  echo keys.keys_owned()

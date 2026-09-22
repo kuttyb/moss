@@ -140,7 +140,13 @@
     if (type == "Float" || type == "float") return Value::float_value(0);
     if (type == "Bool" || type == "bool") return Value::boolean_value(false);
     if (type == "String" || type == "string") return Value::string_value("");
-    if (type.rfind("vector", 0) == 0 || type.rfind("Vector", 0) == 0) return Value::vector_value({});
+    if (type.rfind("vector", 0) == 0 || type.rfind("Vector", 0) == 0) {
+      auto open = type.find('[');
+      auto close = type.rfind(']');
+      return Value::vector_value({}, open != std::string::npos && close > open
+                                      ? type.substr(open + 1, close - open - 1)
+                                      : std::string{});
+    }
     if (type.rfind("queue", 0) == 0 || type.rfind("Queue", 0) == 0) return Value::queue_value();
     if (type.rfind("map", 0) == 0 || type.rfind("Map", 0) == 0) return Value::map_value();
     if (auto object = object_type(type)) return construct(*object, {}, frame, line, output);

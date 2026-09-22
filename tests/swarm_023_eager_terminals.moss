@@ -1,0 +1,8 @@
+fn check(value: Int) -> Bool:
+  echo value
+  return value > 1
+
+fn main():
+  values = [1, 2, 3]
+  echo values |> any(check)
+  echo values |> all(check)

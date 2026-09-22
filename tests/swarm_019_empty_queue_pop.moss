@@ -1,0 +1,9 @@
+type Holder:
+  pending: Queue[Int]
+
+  fn take() -> Int:
+    return pending.pop()
+
+fn main():
+  holder = Holder(pending: Queue())
+  echo holder.take()

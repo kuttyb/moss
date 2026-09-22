@@ -8,6 +8,12 @@ fn add(left: Int, right: Int) -> Int:
   return left + right
 
 fn main():
+  empty_floats = Vector[Float]()
+  empty_ints = Vector[Int]()
+  float_sum = empty_floats |> sum
+  int_sum = empty_ints |> sum
+  assertEqual(float_sum, 0.0)
+  assertEqual(int_sum, 0)
   values = [1, 2, 3]
   echo values |> map(double) |> sum
   echo values |> filter(positive) |> count

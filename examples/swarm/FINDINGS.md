@@ -160,8 +160,8 @@ ordinary negative literals.
 - Status: Fixed
 - Category: Compiler / expression or indexing inference
 - First observed: [Python / BinaryHeap](Python/BinaryHeap/)
-- Also observed: `projects/cache` (sibling-field indexed WRITE)
-- Observation count: 2
+- Also observed: —
+- Observation count: 1
 
 Fix commit: `85b00d6` (`Fix SWARM-004 indexed binary checking`)
 
@@ -425,10 +425,10 @@ finding concerns traversal of all Map values (and therefore key/value merge).
 - Status: Fixed
 - Category: Compiler / native lowering
 - First observed: PriorityQueue swarm dogfooding
-- Also observed: —
-- Observation count: 1
+- Also observed: `projects/cache` (sibling-field indexed WRITE)
+- Observation count: 2
 
-Fix commit: pending current working-tree repair.
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
 
 Regression: `tests/swarm_011_sibling_field_borrow.moss`, invoked by
 `tests/run.sh` and compiled with `rustc -D warnings`.
@@ -466,101 +466,6 @@ The native lowering now emits a compiler-generated temporary for a proven pure
 Copy-valued sibling read before creating the WRITE borrow. This preserves valid
 Moss source evaluation without requiring the programmer to schedule Rust borrows.
 
-## SWARM-018 — Empty Queue construction missed concrete context
-
-- Status: Fixed
-- Category: Compiler / frontend type inference
-- First observed: `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_018_queue_context.moss` and constructor negatives under
-`tests/negative/`, invoked by `tests/run.sh`.
-
-`Queue()` is now specialized by a concrete `Queue[T]` object-field or domain-state
-context, matching `Map()` behavior.
-
-## SWARM-019 — Collection pop source contract leaked Rust Option
-
-- Status: Fixed
-- Category: Compiler / native lowering and Fast Debug
-- First observed: `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_019_collection_pop.moss` and
-`tests/swarm_019_empty_pop.moss`.
-
-The frontend's `pop() -> T` contract now extracts `Vec::pop()` / `VecDeque::pop_front()`
-through the normal fail-closed path. Empty pops fail in both native execution and
-Fast Debug rather than exposing an Option value.
-
-## SWARM-020 — Typed empty Vector constructor was effect-unresolved
-
-- Status: Fixed
-- Category: Compiler / observable-effect analysis
-- First observed: `projects/cache`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_020_typed_vector_factory.moss`.
-
-`Vector[T]()` is a pure built-in constructor. Pure helpers may contain normal
-local bindings and multiple statements when their observable effects are known.
-
-## SWARM-021 — Fast Debug omitted collection dispatch through object fields
-
-- Status: Fixed
-- Category: Fast Debug / interpreter parity
-- First observed: `projects/cache` and `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_021_field_collections.moss`.
-
-Fast Debug now executes supported Vector, Queue, and Map operations reached through
-checked object fields, including collection indexing.
-
-## SWARM-022 — Fast Debug could not initialize concrete Map state
-
-- Status: Fixed
-- Category: Fast Debug / interpreter parity
-- First observed: `projects/cache` and `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_022_fast_debug_map_state.moss`.
-
-Concrete `Map[Int, Int]` and `Map[String, Int]` state values, including maps nested
-inside an ordinary state object, now receive logical empty Map values in Fast Debug.
-
-## SWARM-023 — Fast Debug omitted checked functional pipelines
-
-- Status: Fixed
-- Category: Fast Debug / interpreter parity
-- First observed: `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/swarm_023_fast_debug_pipelines.moss`.
-
-Fast Debug now executes the current eager `map`, `filter`, `reduce`, `sum`, `count`,
-`any`, and `all` pipeline family.
-
-## SWARM-024 — Built-in collection arguments leaked malformed Rust
-
-- Status: Fixed
-- Category: Compiler / frontend validation
-- First observed: `projects/rolling_window`
-- Also observed: —
-- Observation count: 1
-
-Regression: `tests/negative/swarm_018_queue_constructor_arguments.moss` and
-`tests/negative/swarm_018_map_constructor_arguments.moss`.
-
-Unsupported `Queue(items: [])` and `Map(items: [])` are rejected by Moss with a
-stable built-in-constructor diagnostic; they are not missing language features.
-
 ## SWARM-012 — `not` expression was not consistently typed as Bool
 
 - Status: Fixed
@@ -569,7 +474,7 @@ stable built-in-constructor diagnostic; they are not missing language features.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: pending current working-tree repair.
+Fix commit: `4f8462c` (`Changes`)
 
 Regression: `tests/swarm_012_not_bool.moss` and the three typed-negative cases
 under `tests/negative/`, invoked by `tests/run.sh`.
@@ -602,7 +507,7 @@ and String operands are rejected with a direct Bool type diagnostic.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: pending current working-tree repair.
+Fix commit: `4f8462c` (`Changes`)
 
 Regression: `tests/swarm_013_immutable_let_positive.moss` plus direct,
 mutating-receiver, member, and indexed negatives under `tests/negative/`, invoked
@@ -641,7 +546,7 @@ the legal alternative to declare `var` when mutation is intended.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: pending current working-tree repair.
+Fix commit: `86208fb` (`Implemented the HashMap dogfooding repairs in the working tree.`)
 
 Regression: `tests/swarm_014_integer_remainder.moss` plus typed-negative cases
 under `tests/negative/`, invoked by `tests/run.sh`.
@@ -676,7 +581,7 @@ wrapping integer operation.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: pending current working-tree repair.
+Fix commit: `86208fb` (`Implemented the HashMap dogfooding repairs in the working tree.`)
 
 Regression: `tests/swarm_015_backend_symbol_hygiene.moss`, invoked by
 `tests/run.sh` with native Rust `-D warnings` compilation.
@@ -715,7 +620,7 @@ HashMap experiment has restored its natural `HashMap` type name.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: pending current working-tree repair.
+Fix commit: `86208fb` (`Implemented the HashMap dogfooding repairs in the working tree.`)
 
 Regression: `tests/swarm_017_typed_empty_vector.moss` and typed-constructor/local
 annotation negatives under `tests/negative/`, invoked by `tests/run.sh`.
@@ -744,3 +649,116 @@ values.pop()
 `Vector[T]()` is now the built-in empty typed Vector constructor. General local
 type annotations remain unsupported and receive
 `LOCAL_TYPE_ANNOTATION_UNSUPPORTED` with the constructor as a legal alternative.
+
+## SWARM-018 — Empty Queue construction missed concrete context
+
+- Status: Fixed
+- Category: Compiler / frontend type inference
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_018_queue_context.moss` and constructor negatives under
+`tests/negative/`, invoked by `tests/run.sh`.
+
+`Queue()` is now specialized by a concrete `Queue[T]` object-field or domain-state
+context, matching `Map()` behavior.
+
+## SWARM-019 — Collection pop source contract leaked Rust Option
+
+- Status: Fixed
+- Category: Compiler / native lowering and Fast Debug
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_019_collection_pop.moss`,
+`tests/swarm_019_empty_pop.moss`, and `tests/swarm_019_empty_queue_pop.moss`.
+
+The frontend's `pop() -> T` contract now extracts `Vec::pop()` / `VecDeque::pop_front()`
+through the normal fail-closed path. Empty Vector and Queue pops fail in both native
+execution and Fast Debug rather than exposing an Option value.
+
+## SWARM-020 — Typed empty Vector constructor was effect-unresolved
+
+- Status: Fixed
+- Category: Compiler / observable-effect analysis
+- First observed: `projects/cache`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_020_typed_vector_factory.moss`.
+
+`Vector[T]()` is a pure built-in constructor. Pure helpers may contain normal
+local bindings and multiple statements when their observable effects are known.
+
+## SWARM-021 — Fast Debug omitted collection dispatch through object fields
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/cache` and `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_021_field_collections.moss` and
+`tests/swarm_021_map_value_semantics.moss`.
+
+Fast Debug now executes supported Vector, Queue, and Map operations reached through
+checked object fields, including collection indexing and Map `get`, `keys`, and
+`values` value/snapshot behavior.
+
+## SWARM-022 — Fast Debug could not initialize concrete Map state
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/cache` and `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_022_fast_debug_map_state.moss`.
+
+Concrete `Map[Int, Int]` and `Map[String, Int]` state values, including maps nested
+inside an ordinary state object, now receive logical empty Map values in Fast Debug.
+
+## SWARM-023 — Fast Debug omitted checked functional pipelines
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/swarm_023_fast_debug_pipelines.moss` and
+`tests/swarm_023_eager_terminals.moss`.
+
+Fast Debug now executes the current eager `map`, `filter`, `reduce`, `sum`, `count`,
+`any`, and `all` pipeline family. Terminal predicates execute in source order even
+when their Boolean result is already known; typed empty Float vectors sum to Float zero.
+
+## SWARM-024 — Built-in collection arguments leaked malformed Rust
+
+- Status: Fixed
+- Category: Compiler / frontend validation
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Regression: `tests/negative/swarm_024_queue_constructor_arguments.moss` and
+`tests/negative/swarm_024_map_constructor_arguments.moss`.
+
+Unsupported `Queue(items: [])` and `Map(items: [])` are rejected by Moss with a
+stable built-in-constructor diagnostic; they are not missing language features.

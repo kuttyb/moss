@@ -8,7 +8,12 @@ type Box:
     items[0] = items[0]
     pending.push(value)
     counts["x"] = value
-    return items.pop() + pending.pop() + counts["x"]
+    found = counts.get("x", 0)
+    names = counts.keys()
+    values = counts.values()
+    if names[0] == "x":
+      return items.pop() + pending.pop() + counts["x"] + found + values[0] + 1
+    return 0
 
 fn main():
   holder = Box(items: [], pending: Queue(), counts: Map())

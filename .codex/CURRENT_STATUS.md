@@ -1559,3 +1559,16 @@ and concrete domain ranks; 10.6C implements synchronization analysis and semanti
 effect metadata. Existing ordinary parameter WRITE effects remain authoritative.
 Phase 10.6D implements physical handler-level 2PL and primitive write-through;
 Phase 10.6E adds Fast Debug domain execution and removes the legacy runtime.
+
+## Fast Debug parity follow-up
+
+Fast Debug now preserves eager source traversal for `any` and `all`, evaluates
+`Map.get` defaults eagerly, and returns independent Map `get`, `keys`, and
+`values` results. Typed empty vectors retain their element type in Fast Debug so
+`Vector[Float]()` sums to Float zero. Focused native/Fast Debug regressions cover
+these semantics, Map operations through object fields, and empty Queue pop
+fail-closed parity.
+
+`tests/run.sh ./moss` reaches the known unrelated Phase 10.6F `&String == String`
+native lowering failure after all focused additions pass. `make check` reaches the
+known environment-specific LLDB/DAP real-integration handshake failure first.
