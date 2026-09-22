@@ -2,6 +2,29 @@
 
 Updated: 2026-09-22
 
+## Dogfood compiler/interpreter repair batch
+
+Completed in the current working tree: SWARM-011 now also hoists proven-safe
+Copy sibling reads for indexed writes; empty `Queue()` uses concrete field/state
+context; invalid built-in `Queue(...)`/`Map(...)` arguments are rejected before
+lowering; `Vector[T]()` is pure to observable-effect analysis; and native
+Vector/Queue `pop()` preserves Moss's `T` contract with fail-closed empty-pop
+behavior. Fast Debug now supports the current collection operations through
+object fields, concrete Map state (including nested object state), and eager
+`map`/`filter`/`reduce`/`sum`/`count`/`any`/`all` pipelines. It remains limited
+for `for` traversal.
+
+`projects/cache` now writes directly through `evict_idx`; `projects/rolling_window`
+uses `Queue[Int]` for alerts while preserving the separately committed clear/reuse
+cleanup. Both projects pass Margo test/build/run and `moss debug`.
+
+Completed validation: `make`; focused check/native/Fast Debug regressions;
+`tests/run.sh` through all new regressions and the existing suite until the known
+unrelated Phase 10.6F `&String == String` native failure; bootstrap/capabilities/
+schema; agent API/skill checks; `make examples`; and shell/whitespace checks.
+`make check` repeated the new regression pass and reached the existing
+environment-dependent LLDB/DAP handshake failure; it was not changed.
+
 ## Discovery-only follow-up — fresh-agent cache experiment
 
 Discovery work in commit `95f5552` extends live `moss agent bootstrap --json` with

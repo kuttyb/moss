@@ -8,8 +8,7 @@ type RollingWindow:
   categories: Vector [Int]
   values: Vector [Int]
   totals: Map [Int, Int]
-  alert_queue: Vector [Int]
-  alert_head: Int
+  alert_queue: Queue [Int]
   alert_count: Int
 
   fn size() -> Int:
@@ -32,8 +31,7 @@ type RollingWindow:
   fn next_alert(default_val: Int) -> Int:
     if alert_count == 0:
       return default_val
-    var val = alert_queue [alert_head]
-    alert_head = alert_head + 1
+    var val = alert_queue.pop()
     alert_count = alert_count - 1
     return val
 
@@ -75,12 +73,11 @@ type RollingWindow:
       count = count - 1
     head = 0
     totals = Map()
-    alert_queue = []
-    alert_head = 0
+    alert_queue = Queue()
     alert_count = 0
 
 fn empty_window(cap: Int, thresh: Int) -> RollingWindow:
-  return RollingWindow(capacity: cap, threshold: thresh, count: 0, head: 0, categories: [], values: [], totals: Map(), alert_queue: [], alert_head: 0, alert_count: 0)
+  return RollingWindow(capacity: cap, threshold: thresh, count: 0, head: 0, categories: [], values: [], totals: Map(), alert_queue: Queue(), alert_count: 0)
 
 domain RollingWindowDomain:
   window: RollingWindow

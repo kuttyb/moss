@@ -389,6 +389,14 @@ An attractive future possibility is an inner scope that statically imports an ou
 
 ## Part II - Formal Model and Safety Arguments
 
+### Concrete built-in collection types
+
+Moss v0.1 has no user-defined/source generic type variables or templates. This
+does not prohibit concrete uses of built-in collection types: `Vector[Int]`,
+`Map[String, Int]`, and `Queue[Int]` are concrete type positions, not generic
+programming. Locals are normally inferred; `Vector[T]()` is the supported typed
+empty-vector constructor, while local declaration annotations remain unsupported.
+
 ### 18 Static objects of the model
 
 For a checked graph context $G$, let $D$ range over concrete domain instances. Each instance has a concrete specialization and a finite set of handlers $H_D$.

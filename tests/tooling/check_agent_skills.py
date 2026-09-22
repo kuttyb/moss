@@ -338,8 +338,8 @@ def main() -> int:
     debug_features = {item["name"]: item for item in bootstrap["debugging_features"]}
     if "for traversal is not currently supported" not in debug_features.get("fast_debug", {}).get("limitations", []):
         fail("Fast Debug discovery omitted its verified for-traversal limitation")
-    if "container methods reached through object fields are not currently supported" not in debug_features.get("fast_debug", {}).get("limitations", []):
-        fail("Fast Debug discovery omitted its verified container-field limitation")
+    if "container methods reached through object fields are not currently supported" in debug_features.get("fast_debug", {}).get("limitations", []):
+        fail("Fast Debug discovery retained a repaired container-field limitation")
     actions = {item["name"]: item for item in bootstrap["actions"]}
     for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
         if action not in actions or not actions[action]["command"].startswith("margo "):
@@ -419,9 +419,9 @@ def main() -> int:
     local_annotation = run([str(compiler), "check", str(LOCAL_ANNOTATION), "--json"], ROOT)
     if local_annotation.returncode == 0 or "LOCAL_TYPE_ANNOTATION_UNSUPPORTED" not in local_annotation.stdout:
         fail("unsupported local annotation did not receive its advertised diagnostic")
-    fast_debug_limit = run([str(compiler), "run", "--interp", str(FAST_DEBUG_CONTAINER_FIELD)], ROOT)
-    if fast_debug_limit.returncode == 0 or "method receiver is not a Moss object" not in fast_debug_limit.stderr:
-        fail("Fast Debug container-field limitation metadata no longer matches execution")
+    fast_debug_field = run([str(compiler), "run", "--interp", str(FAST_DEBUG_CONTAINER_FIELD)], ROOT)
+    if fast_debug_field.returncode != 0 or fast_debug_field.stdout != "1\n":
+        fail("Fast Debug container-field support does not match checked execution")
 
     tmp_root = ROOT / "tmp"
     tmp_root.mkdir(exist_ok=True)

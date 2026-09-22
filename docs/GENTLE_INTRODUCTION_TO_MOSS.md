@@ -754,7 +754,10 @@ This composition prefix is also the one domain topology for a program: a
 `test "name":` block is not another composition root. Constructor state
 initializers must be side-effect-free. The current checker permits pure ordinary
 helper calls there, but rejects messages, domain access, I/O, failing, divergent,
-and unresolved work. See `docs/TESTING.md` for how tests participate in the
+and unresolved work. Here, **unresolved** means an expression or call whose
+relevant observable effects cannot be statically established; it does not mean
+ordinary local computation, local bindings, multi-statement pure helpers, or
+normal value allocation. See `docs/TESTING.md` for how tests participate in the
 project's composed program.
 
 ### Messages have value semantics
@@ -977,9 +980,10 @@ to get a structured execution trace.
 
 Fast Debug intentionally runs Moss semantics directly rather than simulating the production locking implementation.
 
-Current v0.1 Fast Debug also does not yet execute every production construct. In
-particular, functional pipelines, `for` traversal, and container methods reached
-through object fields still require the production backend.
+Current v0.1 Fast Debug also does not yet execute every production construct. `for`
+traversal still requires the production backend. Supported collection operations,
+including those reached through object fields, and the current eager functional
+pipeline surface execute directly in Fast Debug.
 
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 

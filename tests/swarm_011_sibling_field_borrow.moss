@@ -9,8 +9,13 @@ type Holder:
   fn update_last() -> Int:
     return update_at(values, size - 1)
 
+  fn replace_last(value: Int) -> Int:
+    values[size - 1] = value
+    values[size - 1] = value + 1
+    return values[size - 1]
+
 fn main():
   holder = Holder(values: [1, 2], size: 2)
   other = [0, 0]
   position = 1
-  echo holder.update_last(), update_at(other, position)
+  echo holder.update_last(), update_at(other, position), holder.replace_last(7)

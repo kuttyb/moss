@@ -6,9 +6,9 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 16
+- Distinct findings: 23
 - Open: 0
-- Fixed: 15
+- Fixed: 22
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 5
 
@@ -160,8 +160,8 @@ ordinary negative literals.
 - Status: Fixed
 - Category: Compiler / expression or indexing inference
 - First observed: [Python / BinaryHeap](Python/BinaryHeap/)
-- Also observed: —
-- Observation count: 1
+- Also observed: `projects/cache` (sibling-field indexed WRITE)
+- Observation count: 2
 
 Fix commit: `85b00d6` (`Fix SWARM-004 indexed binary checking`)
 
@@ -442,6 +442,12 @@ return update_at(values, size - 1)
 where `values` requires WRITE access and `size - 1` reads a sibling field of
 the same object.
 
+The same lowering class also includes a natural indexed write:
+
+```moss
+items[idx + 1] = value
+```
+
 ### Observed behavior
 
 The Moss checker accepted the call, but native lowering emitted a mutable Rust
@@ -459,6 +465,101 @@ return update_at(values, position)
 The native lowering now emits a compiler-generated temporary for a proven pure
 Copy-valued sibling read before creating the WRITE borrow. This preserves valid
 Moss source evaluation without requiring the programmer to schedule Rust borrows.
+
+## SWARM-018 — Empty Queue construction missed concrete context
+
+- Status: Fixed
+- Category: Compiler / frontend type inference
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_018_queue_context.moss` and constructor negatives under
+`tests/negative/`, invoked by `tests/run.sh`.
+
+`Queue()` is now specialized by a concrete `Queue[T]` object-field or domain-state
+context, matching `Map()` behavior.
+
+## SWARM-019 — Collection pop source contract leaked Rust Option
+
+- Status: Fixed
+- Category: Compiler / native lowering and Fast Debug
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_019_collection_pop.moss` and
+`tests/swarm_019_empty_pop.moss`.
+
+The frontend's `pop() -> T` contract now extracts `Vec::pop()` / `VecDeque::pop_front()`
+through the normal fail-closed path. Empty pops fail in both native execution and
+Fast Debug rather than exposing an Option value.
+
+## SWARM-020 — Typed empty Vector constructor was effect-unresolved
+
+- Status: Fixed
+- Category: Compiler / observable-effect analysis
+- First observed: `projects/cache`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_020_typed_vector_factory.moss`.
+
+`Vector[T]()` is a pure built-in constructor. Pure helpers may contain normal
+local bindings and multiple statements when their observable effects are known.
+
+## SWARM-021 — Fast Debug omitted collection dispatch through object fields
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/cache` and `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_021_field_collections.moss`.
+
+Fast Debug now executes supported Vector, Queue, and Map operations reached through
+checked object fields, including collection indexing.
+
+## SWARM-022 — Fast Debug could not initialize concrete Map state
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/cache` and `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_022_fast_debug_map_state.moss`.
+
+Concrete `Map[Int, Int]` and `Map[String, Int]` state values, including maps nested
+inside an ordinary state object, now receive logical empty Map values in Fast Debug.
+
+## SWARM-023 — Fast Debug omitted checked functional pipelines
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_023_fast_debug_pipelines.moss`.
+
+Fast Debug now executes the current eager `map`, `filter`, `reduce`, `sum`, `count`,
+`any`, and `all` pipeline family.
+
+## SWARM-024 — Built-in collection arguments leaked malformed Rust
+
+- Status: Fixed
+- Category: Compiler / frontend validation
+- First observed: `projects/rolling_window`
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/negative/swarm_018_queue_constructor_arguments.moss` and
+`tests/negative/swarm_018_map_constructor_arguments.moss`.
+
+Unsupported `Queue(items: [])` and `Map(items: [])` are rejected by Moss with a
+stable built-in-constructor diagnostic; they are not missing language features.
 
 ## SWARM-012 — `not` expression was not consistently typed as Bool
 

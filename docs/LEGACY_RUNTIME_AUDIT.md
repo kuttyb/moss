@@ -81,8 +81,9 @@ or physical class events in interpreter execution.
 
 Transitive Moss source modules remain interpreted as one checked closure.
 Source-free Moss dependencies still require production execution. Existing
-unsupported interpreter functional pipelines and `for` traversal have precise
-construct diagnostics. No Phase 20 foreign-call implementation was added.
+interpreter `for` traversal has a precise construct diagnostic. Fast Debug now
+executes the checked eager functional pipeline surface. No Phase 20 foreign-call
+implementation was added.
 
 ## Test retirement and preservation
 

@@ -146,8 +146,8 @@ if project_surface != {
 debug_features = {item["name"]: item for item in bootstrap["result"]["debugging_features"]}
 if "for traversal is not currently supported" not in debug_features["fast_debug"].get("limitations", []):
     fail("Fast Debug discovery omitted its verified for traversal limitation")
-if "container methods reached through object fields are not currently supported" not in debug_features["fast_debug"].get("limitations", []):
-    fail("Fast Debug discovery omitted its verified container-field limitation")
+if "container methods reached through object fields are not currently supported" in debug_features["fast_debug"].get("limitations", []):
+    fail("Fast Debug discovery retained a repaired container-field limitation")
 actions = {item["name"]: item for item in bootstrap["result"]["actions"]}
 for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
     if action not in actions or not actions[action]["command"].startswith("margo "):

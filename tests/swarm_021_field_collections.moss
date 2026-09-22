@@ -1,0 +1,15 @@
+type Box:
+  items: Vector[Int]
+  pending: Queue[Int]
+  counts: Map[String, Int]
+
+  fn add(value: Int) -> Int:
+    items.push(value)
+    items[0] = items[0]
+    pending.push(value)
+    counts["x"] = value
+    return items.pop() + pending.pop() + counts["x"]
+
+fn main():
+  holder = Box(items: [], pending: Queue(), counts: Map())
+  echo holder.add(3)

@@ -1,0 +1,14 @@
+type Box:
+  pending: Queue[Int]
+
+domain Line:
+  pending: Queue[Int]
+
+  fn take() -> Int:
+    pending.push(4)
+    reply pending.pop()
+
+fn main():
+  line = Line(pending: Queue())
+  holder = Box(pending: Queue())
+  echo message line.take()

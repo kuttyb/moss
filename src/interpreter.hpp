@@ -114,7 +114,7 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector, DomainHandle } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -122,6 +122,8 @@ class FastInterpreter {
     DomainValue* domain = nullptr;
     std::shared_ptr<StructValue> object;
     std::shared_ptr<std::vector<Value>> vector;
+    std::shared_ptr<std::vector<Value>> queue;
+    std::shared_ptr<std::vector<std::pair<Value, Value>>> map;
 
     static Value unit();
     static Value boolean_value(bool value);
@@ -130,6 +132,8 @@ class FastInterpreter {
     static Value string_value(std::string value);
     static Value struct_value(std::string type);
     static Value vector_value(std::vector<Value> values);
+    static Value queue_value();
+    static Value map_value();
     bool truthy() const;
     std::string display() const;
   };
@@ -375,6 +379,98 @@ class FastInterpreter {
                                      static_cast<std::uint64_t>(right));
   }
 
+  static std::vector<std::string> split_pipeline(const std::string& input) {
+    std::vector<std::string> result;
+    int parens = 0, brackets = 0; bool quoted = false; size_t start = 0;
+    for (size_t i = 0; i + 1 < input.size(); ++i) {
+      char c = input[i];
+      if (c == '"') quoted = !quoted;
+      if (quoted) continue;
+      if (c == '(') ++parens; else if (c == ')') --parens;
+      else if (c == '[') ++brackets; else if (c == ']') --brackets;
+      if (!parens && !brackets && c == '|' && input[i + 1] == '>') {
+        result.push_back(trim_copy(input.substr(start, i - start)));
+        start = i + 2; ++i;
+      }
+    }
+    if (start) result.push_back(trim_copy(input.substr(start)));
+    return result;
+  }
+
+  Value invoke_pipeline_callable(const std::string& callable,
+                                 const std::vector<Value>& values,
+                                 Frame& frame, int line, std::ostream& output) {
+    Frame callback = frame;
+    std::vector<std::string> names;
+    for (size_t i = 0; i < values.size(); ++i) {
+      std::string name = "__moss_pipeline_arg_" + std::to_string(i);
+      callback.locals[name] = values[i]; names.push_back(name);
+    }
+    if (values.size() == 1) callback.locals["_"] = values.front();
+    if (auto fn = function(trim_copy(callable)))
+      return call(*fn, names, callback, line, output);
+    if (callable.find('_') != std::string::npos)
+      return eval(callable, callback, line, output);
+    std::string invocation = callable + "(";
+    for (size_t i = 0; i < names.size(); ++i) {
+      if (i) invocation += ", ";
+      invocation += names[i];
+    }
+    return eval(invocation + ")", callback, line, output);
+  }
+
+  Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
+                      int line, std::ostream& output) {
+    if (stages.size() < 2) return Value::unit();
+    Value current = eval(stages.front(), frame, line, output);
+    for (size_t stage_index = 1; stage_index < stages.size(); ++stage_index) {
+      std::string callee; std::vector<std::string> args;
+      if (!parse_call(stages[stage_index], callee, args)) callee = stages[stage_index];
+      if (callee == "sum") {
+        if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline sum requires a Vector");
+        Value total = Value::int_value(0);
+        for (const auto& value : *current.vector) {
+          if (value.kind == Value::Kind::Float || total.kind == Value::Kind::Float) {
+            double left = total.kind == Value::Kind::Float ? total.floating : total.integer;
+            double right = value.kind == Value::Kind::Float ? value.floating : value.integer;
+            total = Value::float_value(left + right);
+          } else total = Value::int_value(wrapping_add(total.integer, value.integer));
+        }
+        current = total;
+      } else if (callee == "count") {
+        if (current.kind != Value::Kind::Vector) throw RuntimeError(line, "pipeline count requires a Vector");
+        current = Value::int_value(static_cast<std::int64_t>(current.vector->size()));
+      } else if (callee == "map" || callee == "filter") {
+        if (current.kind != Value::Kind::Vector || args.size() != 1)
+          throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
+        std::vector<Value> values;
+        for (const auto& value : *current.vector) {
+          Value transformed = invoke_pipeline_callable(args.front(), {value}, frame, line, output);
+          if (callee == "map" || transformed.truthy()) values.push_back(callee == "map" ? transformed : value);
+        }
+        current = Value::vector_value(std::move(values));
+      } else if (callee == "reduce") {
+        if (current.kind != Value::Kind::Vector || args.size() != 2)
+          throw RuntimeError(line, "invalid checked pipeline stage 'reduce'");
+        Value reduced = eval(args[0], frame, line, output);
+        for (const auto& value : *current.vector)
+          reduced = invoke_pipeline_callable(args[1], {reduced, value}, frame, line, output);
+        current = reduced;
+      } else if (callee == "any" || callee == "all") {
+        if (current.kind != Value::Kind::Vector || args.size() != 1)
+          throw RuntimeError(line, "invalid checked pipeline stage '" + callee + "'");
+        bool result = callee == "all";
+        for (const auto& value : *current.vector) {
+          bool predicate = invoke_pipeline_callable(args.front(), {value}, frame, line, output).truthy();
+          if (callee == "any" && predicate) { result = true; break; }
+          if (callee == "all" && !predicate) { result = false; break; }
+        }
+        current = Value::boolean_value(result);
+      } else throw RuntimeError(line, "unsupported checked pipeline stage '" + callee + "'");
+    }
+    return current;
+  }
+
 #include "interpreter_domains.inc"
 
   Value eval(const std::string& expression, Frame& frame, int line,
@@ -382,7 +478,8 @@ class FastInterpreter {
     std::string e = trim_copy(expression);
     while (outer_parentheses(e)) e = trim_copy(e.substr(1, e.size() - 2));
     if (e.empty()) return Value::unit();
-    if (split_operator(e, {"|>"})) throw RuntimeError(line, "Fast Debug does not support functional pipelines yet");
+    if (auto stages = split_pipeline(e); !stages.empty())
+      return eval_pipeline(stages, frame, line, output);
     if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
     if (auto place = locate(e, frame, line, output); place.value) {
       if (place.domain) state_event("state_read", frame, line, place);
@@ -440,6 +537,8 @@ class FastInterpreter {
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
           return Value::vector_value({});
+        if (callee == "Queue" && args.empty()) return Value::queue_value();
+        if (callee == "Map" && args.empty()) return Value::map_value();
         if (callee == "assert") {
           if (args.size() != 1) throw RuntimeError(line, "assert expects one argument");
           if (!eval(args.front(), frame, line, output).truthy()) {
@@ -475,6 +574,34 @@ class FastInterpreter {
         std::string method_name; std::vector<std::string> method_args;
         if (parse_call(member->second, method_name, method_args)) {
           auto receiver = eval(member->first, frame, line, output);
+          if (receiver.kind == Value::Kind::Vector || receiver.kind == Value::Kind::Queue) {
+            auto values = receiver.kind == Value::Kind::Vector ? receiver.vector : receiver.queue;
+            if (method_name == "push" && method_args.size() == 1) {
+              values->push_back(eval(method_args.front(), frame, line, output));
+              return Value::unit();
+            }
+            if (method_name == "pop" && method_args.empty()) {
+              if (values->empty()) throw RuntimeError(line, "pop from empty collection");
+              Value result = receiver.kind == Value::Kind::Queue ? values->front() : values->back();
+              if (receiver.kind == Value::Kind::Queue) values->erase(values->begin());
+              else values->pop_back();
+              return result;
+            }
+          }
+          if (receiver.kind == Value::Kind::Map) {
+            if (method_name == "get" && method_args.size() == 2) {
+              Value key = eval(method_args[0], frame, line, output);
+              for (const auto& entry : *receiver.map)
+                if (equal(entry.first, key)) return entry.second;
+              return eval(method_args[1], frame, line, output);
+            }
+            if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
+              std::vector<Value> values;
+              for (const auto& entry : *receiver.map)
+                values.push_back(method_name == "keys" ? entry.first : entry.second);
+              return Value::vector_value(std::move(values));
+            }
+          }
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
             throw RuntimeError(line, "method receiver is not a Moss object");
           auto target = method(receiver.object->type, method_name);
@@ -603,6 +730,19 @@ class FastInterpreter {
         if (!left.vector || !right.vector || left.vector->size() != right.vector->size()) return !left.vector && !right.vector;
         for (size_t i = 0; i < left.vector->size(); ++i) if (!equal((*left.vector)[i], (*right.vector)[i])) return false;
         return true;
+      case Value::Kind::Queue:
+        if (!left.queue || !right.queue || left.queue->size() != right.queue->size()) return !left.queue && !right.queue;
+        for (size_t i = 0; i < left.queue->size(); ++i) if (!equal((*left.queue)[i], (*right.queue)[i])) return false;
+        return true;
+      case Value::Kind::Map:
+        if (!left.map || !right.map || left.map->size() != right.map->size()) return !left.map && !right.map;
+        for (const auto& entry : *left.map) {
+          bool found = false;
+          for (const auto& other : *right.map)
+            if (equal(entry.first, other.first) && equal(entry.second, other.second)) { found = true; break; }
+          if (!found) return false;
+        }
+        return true;
     }
     return false;
   }
@@ -679,6 +819,18 @@ class FastInterpreter {
   void assign(const std::string& target, Value value, Frame& frame, int line,
               std::ostream& output) {
     auto name = trim_copy(target);
+    auto bracket = name.find('[');
+    if (bracket != std::string::npos && name.back() == ']') {
+      Value receiver = eval(name.substr(0, bracket), frame, line, output);
+      if (receiver.kind == Value::Kind::Map && receiver.map) {
+        Value key = eval(name.substr(bracket + 1, name.size() - bracket - 2), frame, line, output);
+        for (auto& entry : *receiver.map) {
+          if (equal(entry.first, key)) { entry.second = std::move(value); return; }
+        }
+        receiver.map->push_back({std::move(key), std::move(value)});
+        return;
+      }
+    }
     auto place = locate(name, frame, line, output);
     if (place.value) {
       std::string before = summary(*place.value);
@@ -805,12 +957,24 @@ inline FastInterpreter::Value FastInterpreter::Value::vector_value(std::vector<V
   result.vector = std::make_shared<std::vector<Value>>(std::move(values));
   return result;
 }
+inline FastInterpreter::Value FastInterpreter::Value::queue_value() {
+  Value result; result.kind = Kind::Queue;
+  result.queue = std::make_shared<std::vector<Value>>();
+  return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::map_value() {
+  Value result; result.kind = Kind::Map;
+  result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
+  return result;
+}
 inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Bool) return boolean;
   if (kind == Kind::Int) return integer != 0;
   if (kind == Kind::Float) return floating != 0.0;
   if (kind == Kind::String) return !string.empty();
   if (kind == Kind::Vector) return vector && !vector->empty();
+  if (kind == Kind::Queue) return queue && !queue->empty();
+  if (kind == Kind::Map) return map && !map->empty();
   return kind != Kind::Unit;
 }
 inline std::string FastInterpreter::Value::display() const {
@@ -830,6 +994,12 @@ inline std::string FastInterpreter::Value::display() const {
         out << (*vector)[i].display();
       }
       out << "]";
+      return out.str();
+    case Kind::Queue:
+      out << "Queue(" << (queue ? std::to_string(queue->size()) : "0") << ")";
+      return out.str();
+    case Kind::Map:
+      out << "Map(" << (map ? std::to_string(map->size()) : "0") << ")";
       return out.str();
   }
   return "()";

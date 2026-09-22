@@ -1,0 +1,14 @@
+fn take_vector(values: Vector[Int]) -> Int:
+  return values.pop()
+
+fn take_queue(values: Queue[Int]) -> Int:
+  return values.pop()
+
+fn main():
+  values = [1, 2]
+  queue = Queue()
+  queue.push(3)
+  queue.push(4)
+  first = take_vector(values)
+  second = take_queue(queue)
+  echo first + values.pop(), second + queue.pop()

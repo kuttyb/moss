@@ -1,0 +1,17 @@
+type State:
+  values: Vector[Int]
+
+fn make_state(seed: Int) -> State:
+  next = seed + 1
+  values = Vector[Int]()
+  return State(values: values)
+
+domain D:
+  state: State
+
+  fn count() -> Int:
+    reply state.values |> count
+
+fn main():
+  d = D(state: make_state(4))
+  echo message d.count()

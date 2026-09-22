@@ -432,9 +432,13 @@ trait. Moss has no dynamic typing. All required type and operation relationships
 are resolved and verified at compile time.
 
 Generic and template variables may exist internally in the compiler, but they
-are not part of normal Moss source syntax. Collection element, key, and value
-types are inferred internally for `Vector`, `Map`, and `Queue`; source code does
-not write `Vector[T]` or `Map[K, V]`.
+are not part of normal Moss source syntax. Moss has no user-defined/source
+generic type variables or templates in v0.1. Concrete applications of the
+built-in collection types may appear where a concrete type is needed, such as
+fields, parameters, and returns: `Vector[Int]`, `Map[String, Int]`, and
+`Queue[Int]`. Ordinary locals are normally inferred. `Vector[T]()` is the
+special built-in typed empty-vector constructor; local declaration annotations
+such as `var values: Vector[Int] = []` remain unsupported.
 
 Method requirements inferred from an untyped parameter retain the method name,
 arity, argument relationships, and relevant result relationship. Each concrete

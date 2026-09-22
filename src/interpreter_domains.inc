@@ -12,6 +12,15 @@
       result.vector = std::make_shared<std::vector<Value>>();
       for (const auto& value : *source.vector) result.vector->push_back(independent(value));
     }
+    if (source.queue) {
+      result.queue = std::make_shared<std::vector<Value>>();
+      for (const auto& value : *source.queue) result.queue->push_back(independent(value));
+    }
+    if (source.map) {
+      result.map = std::make_shared<std::vector<std::pair<Value, Value>>>();
+      for (const auto& entry : *source.map)
+        result.map->push_back({independent(entry.first), independent(entry.second)});
+    }
     return result;
   }
 
@@ -19,6 +28,10 @@
     if (value.kind == Value::Kind::Struct) return value.object ? value.object->type : "<struct>";
     if (value.kind == Value::Kind::Vector)
       return "Vector(size=" + std::to_string(value.vector ? value.vector->size() : 0) + ")";
+    if (value.kind == Value::Kind::Queue)
+      return "Queue(size=" + std::to_string(value.queue ? value.queue->size() : 0) + ")";
+    if (value.kind == Value::Kind::Map)
+      return "Map(size=" + std::to_string(value.map ? value.map->size() : 0) + ")";
     return value.display().substr(0, 256);
   }
 
@@ -48,6 +61,9 @@
       place = {&frame.domain->state.at(root), frame.domain, root};
     else return {};
     while (end < expression.size()) {
+      while (end < expression.size() &&
+             std::isspace(static_cast<unsigned char>(expression[end]))) ++end;
+      if (end == expression.size()) break;
       if (expression[end] == '.') {
         size_t start = ++end;
         while (end < expression.size() && (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
@@ -63,13 +79,22 @@
           if (expression[end] == ']') --depth;
           if (depth) ++end;
         }
-        if (depth || !place.value->vector) return {};
+        if (depth) return {};
         auto index = eval(expression.substr(start, end - start), frame, line, output);
-        if (index.kind != Value::Kind::Int || index.integer < 0 ||
-            static_cast<size_t>(index.integer) >= place.value->vector->size())
-          throw RuntimeError(line, "vector index out of bounds");
-        place.value = &place.value->vector->at(static_cast<size_t>(index.integer));
-        if (place.domain) place.path += "[" + std::to_string(index.integer) + "]";
+        if (place.value->map) {
+          bool found = false;
+          for (auto& entry : *place.value->map) {
+            if (equal(entry.first, index)) { place.value = &entry.second; found = true; break; }
+          }
+          if (!found) throw RuntimeError(line, "missing map key");
+        } else {
+          auto values = place.value->vector ? place.value->vector : place.value->queue;
+          if (!values || index.kind != Value::Kind::Int || index.integer < 0 ||
+              static_cast<size_t>(index.integer) >= values->size())
+            throw RuntimeError(line, "vector index out of bounds");
+          place.value = &values->at(static_cast<size_t>(index.integer));
+          if (place.domain) place.path += "[" + std::to_string(index.integer) + "]";
+        }
         ++end;
       } else return {};
     }
@@ -116,6 +141,8 @@
     if (type == "Bool" || type == "bool") return Value::boolean_value(false);
     if (type == "String" || type == "string") return Value::string_value("");
     if (type.rfind("vector", 0) == 0 || type.rfind("Vector", 0) == 0) return Value::vector_value({});
+    if (type.rfind("queue", 0) == 0 || type.rfind("Queue", 0) == 0) return Value::queue_value();
+    if (type.rfind("map", 0) == 0 || type.rfind("Map", 0) == 0) return Value::map_value();
     if (auto object = object_type(type)) return construct(*object, {}, frame, line, output);
     throw RuntimeError(line, "Fast Debug cannot initialize state type '" + type + "'");
   }

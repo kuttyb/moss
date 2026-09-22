@@ -1,0 +1,16 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+fn positive(value: Int) -> Bool:
+  return value > 0
+
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+fn main():
+  values = [1, 2, 3]
+  echo values |> map(double) |> sum
+  echo values |> filter(positive) |> count
+  echo values |> reduce(0, add)
+  echo values |> any(_ > 2)
+  echo values |> all(_ > 0)

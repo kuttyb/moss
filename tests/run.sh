@@ -200,9 +200,11 @@ run_case swarm_008_map_default_lookup tests/swarm_008_map_default_lookup.moss "$
 run_case swarm_010_map_views tests/swarm_010_map_views.moss '2 16 16'
 reject_case swarm_008_map_get_wrong_key 'map get key type mismatch'
 reject_case swarm_008_map_get_wrong_default 'map get default type mismatch'
-run_case swarm_011_sibling_field_borrow tests/swarm_011_sibling_field_borrow.moss '1 1'
+run_case swarm_011_sibling_field_borrow tests/swarm_011_sibling_field_borrow.moss '1 1 8'
 grep -F 'let __moss_call_argument_' "$test_build/swarm_011_sibling_field_borrow.rs" >/dev/null ||
   fail 'swarm_011 did not pre-evaluate sibling READ before WRITE borrow'
+grep -F 'let __moss_index_' "$test_build/swarm_011_sibling_field_borrow.rs" >/dev/null ||
+  fail 'swarm_011 did not pre-evaluate sibling index before WRITE borrow'
 reject_case swarm_011_overlapping_access 'conflicting access'
 run_case swarm_012_not_bool tests/swarm_012_not_bool.moss '1'
 reject_case swarm_012_not_int "not operand must have type 'Bool'"
@@ -216,6 +218,21 @@ reject_case swarm_013_immutable_let_index 'cannot mutate immutable local'
 run_case swarm_014_integer_remainder tests/swarm_014_integer_remainder.moss '1'
 run_case swarm_015_backend_symbol_hygiene tests/swarm_015_backend_symbol_hygiene.moss '1 2 3'
 run_case swarm_017_typed_empty_vector tests/swarm_017_typed_empty_vector.moss '4'
+run_case swarm_018_queue_context tests/swarm_018_queue_context.moss '4'
+run_case swarm_019_collection_pop tests/swarm_019_collection_pop.moss '3 7'
+run_case swarm_020_typed_vector_factory tests/swarm_020_typed_vector_factory.moss '0'
+run_case swarm_021_field_collections tests/swarm_021_field_collections.moss '9'
+run_case swarm_022_fast_debug_map_state tests/swarm_022_fast_debug_map_state.moss '0'
+run_case swarm_023_fast_debug_pipelines tests/swarm_023_fast_debug_pipelines.moss "$(printf '12\n3\n6\ntrue\ntrue')"
+reject_case swarm_018_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
+reject_case swarm_018_map_constructor_arguments 'built-in Map constructor takes no arguments'
+compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss
+if "$test_build/swarm_019_empty_pop" >/dev/null 2>&1; then
+  fail 'native empty collection pop unexpectedly returned'
+fi
+if "$compiler" run --interp tests/swarm_019_empty_pop.moss >/dev/null 2>&1; then
+  fail 'Fast Debug empty collection pop unexpectedly returned'
+fi
 run_case field_replacement_receiver_available tests/field_replacement_receiver_available.moss '3'
 reject_case swarm_014_remainder_float "integer remainder operands must have type 'Int'"
 reject_case swarm_014_remainder_string "integer remainder operands must have type 'Int'"
@@ -1264,6 +1281,11 @@ interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
 interp_remainder_output=$($compiler run --interp tests/swarm_014_integer_remainder.moss)
 [ "$interp_remainder_output" = '1' ] || fail 'fast interpreter integer remainder execution differed'
+for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines; do
+  native_output=$("$test_build/$interp_case")
+  interp_output=$($compiler run --interp "tests/$interp_case.moss")
+  [ "$interp_output" = "$native_output" ] || fail "fast interpreter $interp_case execution differed"
+done
 interp_test_output=$($compiler test --interp tests/phase10_interpreter_tests.moss)
 printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
   fail 'fast interpreter test runner did not report passing tests'

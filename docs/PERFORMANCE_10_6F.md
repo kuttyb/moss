@@ -236,7 +236,7 @@ The clean four-module ledger builds/runs and directly interprets to the same out
 its typed model also works as a source-free production provider. Structural trait
 specialization is separately exercised by the existing traits seed; cross-module
 generic use remains limited. Functional analytics has its own production seed,
-because Fast Debug pipeline execution is still unsupported.
+because the production seed also measures native optimized pipeline lowering.
 
 The optional index trace-size sample performs five deterministic runs per size.
 It checks expected output and exact trace hashes, not a timing threshold:

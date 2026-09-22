@@ -2117,7 +2117,11 @@ class Checker {
               fail_at(statement,
                       "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
             auto actual = inferred_expr_type(pair.second, binding_types);
-            if (actual && !field->type.empty() && !same_type(field->type, *actual))
+            bool contextual_empty_collection = actual &&
+                ((*actual == "map" && starts_with(field->type, "map[")) ||
+                 (*actual == "queue" && starts_with(field->type, "queue[")));
+            if (actual && !field->type.empty() && !contextual_empty_collection &&
+                !same_type(field->type, *actual))
               fail_at(statement, "state member '" + pair.first + "' has type '" + field->type +
                               "' but initializer has type '" + *actual + "'");
           }
@@ -2994,8 +2998,9 @@ class Checker {
       if (!actual) continue;
       string inferred = canonical_type_name(*actual);
       if (field->type.empty()) field->type = inferred;
-      else if (inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) {
-        // An empty Map() has no intrinsic key/value evidence.  A concrete
+      else if ((inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
+               (inferred == "queue" && starts_with(canonical_type_name(field->type), "queue["))) {
+        // Empty Map()/Queue() have no intrinsic element evidence. A concrete
         // object field is the narrow contextual type that supplies it.
         continue;
       }
@@ -5720,7 +5725,7 @@ class Checker {
         effects.may_fail = true;
         return effects;
       }
-      if (objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
+      if (typed_empty_vector_constructor(value) || objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
           callee == "Map" || callee == "Queue")
         return effects;
       effects.unresolved = true;
@@ -7587,7 +7592,13 @@ class Checker {
               "INVALID_TYPED_VECTOR_CONSTRUCTOR");
         return;
       }
-      if (objects_.count(callee) || callee == "Map" || callee == "Queue") {
+      if (callee == "Map" || callee == "Queue") {
+        if (!args.empty())
+          err(line, "built-in " + callee + " constructor takes no arguments; use " +
+              callee + "()", "BUILTIN_COLLECTION_CONSTRUCTOR_ARGUMENTS");
+        return;
+      }
+      if (objects_.count(callee)) {
         for (const auto& arg : args) {
           string field_name, field_value;
           if (!parse_named_argument(arg, field_name, field_value))
@@ -11279,8 +11290,21 @@ class Generator {
             rendered << method_call_argument(*method, index, member_arguments[index], d, locals, types);
           }
           rendered << ")";
-          return rendered.str();
+          string result = rendered.str();
+          if ((concrete == "vector" || starts_with(concrete, "vector[") ||
+               concrete == "queue" || starts_with(concrete, "queue[")) &&
+              (member_name == "pop" || member_name == "pop_front"))
+            result += ".unwrap_or_else(|| std::process::abort())";
+          return result;
         }
+        if ((concrete == "vector" || starts_with(concrete, "vector[") ||
+             concrete == "queue" || starts_with(concrete, "queue[")) &&
+            (member_name == "pop" || member_name == "pop_front") &&
+            member_arguments.empty())
+          return receiver_expression + "." +
+              viewed_method_name(member_receiver, member_name, member_arguments,
+                                 d, locals, types) +
+              "().unwrap_or_else(|| std::process::abort())";
       }
       // Trait/duck-typed calls are already statically specialized by the
       // checker; retain their ordinary Rust method spelling when the concrete
@@ -12426,10 +12450,30 @@ class Generator {
           }
           string lhs;
           string lhs_base, lhs_index;
+          string index_temporary;
+          if (parse_index(s.a, lhs_base, lhs_index) && view_method_ && d &&
+              is_pure_state_read_expression(lhs_index)) {
+            auto index_type = generated_expr_type(lhs_index, &types);
+            bool reads_sibling = false;
+            for (const auto& field : d->state) {
+              if (field.name != lhs_base &&
+                  expression_mentions_identifier(lhs_index, field.name)) {
+                reads_sibling = true;
+                break;
+              }
+            }
+            if (index_type && copy_type(*index_type) && reads_sibling) {
+              index_temporary = "__moss_index_" +
+                  std::to_string(call_argument_temp_++);
+              o << indent(level) << "let " << index_temporary << " = "
+                << expr(lhs_index, d, locals, &types) << ";\n";
+            }
+          }
           if (parse_index(s.a, lhs_base, lhs_index)) {
             bool string_index = lhs_index.size() >= 2 && lhs_index.front() == '"' &&
                 lhs_index.back() == '"';
-            string ir = string_index ? lhs_index : expr(lhs_index, d, locals, &types);
+            string ir = !index_temporary.empty() ? index_temporary :
+                (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
             auto base_type = generated_expr_type(lhs_base, &types);
             bool map_index = base_type &&
                 (canonical_type_name(*base_type) == "map" ||
@@ -12468,8 +12512,12 @@ class Generator {
               forget_domain_instance_binding(s.a);
           } else {
             string mb, mi;
-            if (parse_index(s.a, mb, mi) && types.count(mb) &&
-                (types.at(mb) == "map" || starts_with(types.at(mb), "map["))) {
+            bool map_assignment = parse_index(s.a, mb, mi);
+            auto map_assignment_type = map_assignment
+                ? generated_expr_type(mb, &types) : std::optional<string>{};
+            if (map_assignment && map_assignment_type &&
+                (canonical_type_name(*map_assignment_type) == "map" ||
+                 starts_with(canonical_type_name(*map_assignment_type), "map["))) {
               string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
                   ? mi + ".to_string()" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
@@ -12596,6 +12644,12 @@ class Generator {
             if (benchmark_body_) o << ")";
           }
           o << ")";
+          auto receiver_type = !s.b.empty()
+              ? generated_expr_type(s.a, &types) : std::optional<string>{};
+          if (!s.b.empty() && s.b == "pop" && receiver_type &&
+              (starts_with(canonical_type_name(*receiver_type), "vector[") ||
+               starts_with(canonical_type_name(*receiver_type), "queue[")))
+            o << ".unwrap_or_else(|| std::process::abort())";
           if (benchmark_body_) o << ")";
           o << ";\n";
           ++i;
@@ -14404,9 +14458,9 @@ static void write_bootstrap_json(std::ostream& out,
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
          "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
-         "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected\"}},"
+         "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
-         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
   out << ",\n    \"project_surface\": {"
          "\"manifest\": \"Moss.toml\","
          "\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\","
@@ -14457,7 +14511,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
          "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"}]";
   out << ",\n    \"debugging_features\": ["
-         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\",\"container methods reached through object fields are not currently supported\"]},"
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";

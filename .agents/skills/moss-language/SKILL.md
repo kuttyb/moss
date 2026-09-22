@@ -119,9 +119,12 @@ values = [1, 2, 3]
 var pending = Vector[Int]()
 ```
 
-`Vector[T]()` is a built-in collection constructor, not general generic nominal
-construction. Local type annotations such as `var values: Vector[Int] = []` are
-not supported in v0.1; use inferred locals and `Vector[Int]()` instead.
+Moss has no user-defined/source generic type variables or templates. Concrete
+built-in collection types such as `Vector[Int]`, `Map[String, Int]`, and
+`Queue[Int]` may appear in concrete type positions; `Vector[T]()` is a built-in
+typed empty-vector constructor, not general generic nominal construction. Local
+type annotations such as `var values: Vector[Int] = []` are not supported in
+v0.1; use inferred locals and `Vector[Int]()` instead.
 
 ```moss
 fn adjusted(value: Int) -> Int:
@@ -166,7 +169,10 @@ see `docs/TESTING.md` for test-project details.
 
 Domain construction uses direct named member bindings in that prefix. A domain
 state initializer must be side-effect-free: messages, domain access, I/O,
-failing, divergent, and unresolved work are rejected. The current checker does
+failing, divergent, and unresolved work are rejected. “Unresolved” means the
+compiler cannot statically establish an expression or call's relevant observable
+effects; it does not mean locals, ordinary local computation, normal allocation,
+or a multi-statement pure helper. The current checker does
 accept a pure ordinary helper call in such an initializer, so do not mistake the
 restriction for a ban on every helper. Use `source_surface.domains.composition`
 for the compact live rule, then reduce an unfamiliar initializer to a minimal

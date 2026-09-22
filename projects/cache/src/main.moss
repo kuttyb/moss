@@ -39,9 +39,8 @@ type Cache:
       values.push(val)
       count = count + 1
     else:
-      idx = evict_idx
-      keys [idx] = key
-      values [idx] = val
+      keys [evict_idx] = key
+      values [evict_idx] = val
       evict_idx = (evict_idx + 1) % capacity
 
   fn clear():

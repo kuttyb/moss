@@ -289,10 +289,9 @@ production facility and needs source for Fast Debug. The interpreter has explici
 feature limits, so an unsupported construct reports a Moss-level limitation rather
 than silently switching execution engines.
 
-Current verified limits include `for` traversal and a container method reached through
-an object field (for example `holder.values.push(1)`). When either is involved, use
-`margo test` or `margo run` for native validation rather than inferring a Moss source
-restriction from the Fast Debug error.
+Current verified limits include `for` traversal. Supported built-in collection
+operations reached through object fields and the current eager functional pipeline
+surface execute in Fast Debug; use native validation as well when checking parity.
 
 With `--trace`, Fast Debug writes newline-delimited JSON events to standard error.
 Use a bounded trace to diagnose logical behavior: reproduce, inspect the relevant

@@ -1,0 +1,13 @@
+type State:
+  int_counts: Map[Int, Int]
+  string_counts: Map[String, Int]
+
+domain D:
+  state: State
+
+  fn total() -> Int:
+    reply 0
+
+fn main():
+  d = D(state: State(int_counts: Map(), string_counts: Map()))
+  echo message d.total()
