@@ -1,0 +1,9 @@
+type Counter:
+  counts: Map [String, Int]
+
+fn empty_counter() -> Counter:
+  return Counter(counts: Map())
+
+fn main():
+  empty_counter()
+  echo 1

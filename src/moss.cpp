@@ -2937,6 +2937,11 @@ class Checker {
       if (!actual) continue;
       string inferred = canonical_type_name(*actual);
       if (field->type.empty()) field->type = inferred;
+      else if (inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) {
+        // An empty Map() has no intrinsic key/value evidence.  A concrete
+        // object field is the narrow contextual type that supplies it.
+        continue;
+      }
       else if (!same_type(field->type, inferred))
         err(line, "field '" + constructor + "." + field->name + "' has conflicting inferred types '" +
             field->type + "' and '" + inferred + "'");
