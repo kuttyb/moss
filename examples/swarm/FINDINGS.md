@@ -6,17 +6,18 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 9
-- Open: 1
+- Distinct findings: 10
+- Open: 2
 - Fixed: 7
 - Not-a-bug / agent misunderstanding: 1
-- Independently reproduced by multiple experiments: 4
+- Independently reproduced by multiple experiments: 5
 
 Completed swarm experiments:
 
 - [Julia / BinaryHeap](Julia/BinaryHeap/)
 - [Python / BinaryHeap](Python/BinaryHeap/)
 - [Python / Counter](Python/Counter/)
+- [Julia / Accumulator](Julia/Accumulator/)
 
 ## Updating this ledger
 
@@ -305,8 +306,8 @@ a compiler-lowering mismatch, not an intended Counter behavior.
 - Status: Open
 - Category: Missing standard collection primitive
 - First observed: [Python / Counter](Python/Counter/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Julia / Accumulator](Julia/Accumulator/)
+- Observation count: 2
 
 ### Minimal reproducer
 
@@ -368,3 +369,38 @@ current source.
 The original observation conflated an intermediate draft failure with an
 implicit method-statement restriction. Returning a helper directly remains the
 separate SWARM-005 observation.
+
+## SWARM-010 — Map values are not statically iterable
+
+- Status: Open
+- Category: Missing standard collection primitive
+- First observed: [Julia / Accumulator](Julia/Accumulator/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+for value in data:
+  sum = sum + value
+```
+
+where `data` is `Map[String, Int]`.
+
+### Observed behavior
+
+The compiler rejects the loop with `MOSS_COMPILE_ERROR`: `type
+'map[string,int]' is not statically iterable; expected Vector, range, or
+Iterator`. The source-faithful `data |> sum` probe likewise does not produce an
+Int value.
+
+### Workaround
+
+None for source-faithful `sum(values(data))` or `merge!` behavior. The Julia
+Accumulator control maintains a secondary `total_count` only to test existing-key
+mutation; it does not establish Map aggregation.
+
+### Notes
+
+This is distinct from SWARM-008: a default lookup answers one key, whereas this
+finding concerns traversal of all Map values (and therefore key/value merge).

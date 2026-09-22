@@ -29,8 +29,15 @@ key insertion no longer need experiment workarounds; SWARM-008 remains open and
 SWARM-009 remains an agent misunderstanding. The current ledger contains nine
 findings (one open, seven fixed, one agent misunderstanding). The Julia
 `Accumulator` experiment remains separate. Focused regressions, all three
-swarm projects, and `make examples` pass; `make check` reaches only the existing
+swarm project checks/builds, and `make examples` pass; the Counter's missing-key
+tests remain intentional bounded failures. `make check` reaches only the existing
 sandbox LLDB/DAP handshake failure after the compiler and tooling suites pass.
+
+The Julia `Accumulator` experiment under `examples/swarm/Julia/Accumulator/`
+is a bounded failure: its existing-key control passes, while three missing-key
+tests and `main` fail at absent Map reads; check/build pass. It independently
+reproduces SWARM-008 and adds SWARM-010 for non-iterable Map values, bringing
+the ledger to ten findings (two open, seven fixed, one agent misunderstanding).
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 

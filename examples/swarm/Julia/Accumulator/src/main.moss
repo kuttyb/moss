@@ -1,0 +1,71 @@
+# A bounded String-to-Int Accumulator translated from DataStructures.jl.
+type Accumulator:
+  data: Map [String, Int]
+  total_count: Int
+
+  # Julia get(map, key, zero(Int)) would return zero for an absent key.
+  # Direct indexing is retained here to expose the unsupported missing-key case.
+  fn get(key: String) -> Int:
+    return data [key]
+
+  fn increment_by(key: String, amount: Int) -> Int:
+    next = data [key] + amount
+    data [key] = next
+    total_count = total_count + amount
+    return next
+
+  fn increment(key: String) -> Int:
+    increment_by(key, 1)
+    return data [key]
+
+  fn decrement(key: String) -> Int:
+    increment_by(key, -1)
+    return data [key]
+
+  # Secondary control only: Julia's sum(values(data)) is not expressible by
+  # the current Map surface, so this maintained value is not source-faithful.
+  fn total() -> Int:
+    return total_count
+
+fn empty_accumulator() -> Accumulator:
+  return Accumulator(data: Map(), total_count: 0)
+
+test "updates an existing accumulated key":
+  data = Map()
+  data ["apple"] = 2
+  accumulator = Accumulator(data: data, total_count: 2)
+
+  assertEqual(accumulator.increment("apple"), 3)
+  assertEqual(accumulator.increment_by("apple", 4), 7)
+  assertEqual(accumulator.decrement("apple"), 6)
+  assertEqual(accumulator.get("apple"), 6)
+  assertEqual(accumulator.total(), 6)
+
+test "reads a missing key as zero":
+  accumulator = empty_accumulator()
+  assertEqual(accumulator.get("missing"), 0)
+
+test "accumulates missing keys and preserves negatives":
+  accumulator = empty_accumulator()
+  accumulator.increment("apple")
+  accumulator.increment("apple")
+  accumulator.increment("banana")
+  assertEqual(accumulator.get("apple"), 2)
+  assertEqual(accumulator.get("banana"), 1)
+  assertEqual(accumulator.get("pear"), 0)
+  assertEqual(accumulator.total(), 3)
+
+  accumulator.decrement("apple")
+  assertEqual(accumulator.get("apple"), 1)
+  assertEqual(accumulator.total(), 2)
+
+test "decrements a missing key below zero":
+  accumulator = empty_accumulator()
+  accumulator.decrement("x")
+  assertEqual(accumulator.get("x"), -1)
+  assertEqual(accumulator.total(), -1)
+
+fn main():
+  accumulator = empty_accumulator()
+  accumulator.increment("apple")
+  echo accumulator.get("apple"), accumulator.get("missing"), accumulator.total()
