@@ -1,0 +1,13 @@
+type Counter:
+  counts: Map [String, Int]
+
+  fn set(key: String, value: Int):
+    counts[key] = value
+
+  fn get(key: String) -> Int:
+    return counts[key]
+
+fn main():
+  counter = Counter(counts: Map())
+  counter.set("apple", 7)
+  echo counter.get("apple")

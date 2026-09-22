@@ -12186,8 +12186,19 @@ class Generator {
           } else {
             string mb, mi;
             if (parse_index(s.a, mb, mi) && types.count(mb) &&
-                (types.at(mb) == "map" || starts_with(types.at(mb), "map[")))
-              o << indent(level) << "(" << place_expr(mb, d, locals, &types) << ").insert(" << ((mi.size() >= 2 && mi.front() == '"' && mi.back() == '"') ? mi + ".to_string()" : expr(mi, d, locals, &types)) << ", " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+                (types.at(mb) == "map" || starts_with(types.at(mb), "map["))) {
+              string key = mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'
+                  ? mi + ".to_string()" : expr(mi, d, locals, &types);
+              auto key_type = generated_expr_type(mi, &types);
+              if (key_type && !copy_type(*key_type) &&
+                  !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
+                key = "(" + key + ").clone()";
+              o << indent(level) << "(" << place_expr(mb, d, locals, &types)
+                << ").insert(" << key << ", "
+                << expr(s.b, d, locals, &types,
+                        statement_functional_pipeline_id(s, functional_context, 0))
+                << ");\n";
+            }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
             else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
