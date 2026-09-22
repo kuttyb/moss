@@ -6,16 +6,17 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 5
-- Open: 5
-- Fixed: 0
+- Distinct findings: 9
+- Open: 8
+- Fixed: 1
 - Not-a-bug / agent misunderstanding: 0
-- Independently reproduced by multiple experiments: 3
+- Independently reproduced by multiple experiments: 4
 
 Completed swarm experiments:
 
 - [Julia / BinaryHeap](Julia/BinaryHeap/)
 - [Python / BinaryHeap](Python/BinaryHeap/)
+- [Python / Counter](Python/Counter/)
 
 ## Updating this ledger
 
@@ -35,11 +36,16 @@ an observation; it does not create another finding ID.
 
 ## SWARM-001 — Vector count result fails in arithmetic
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Julia / BinaryHeap](Julia/BinaryHeap/)
 - Also observed: [Python / BinaryHeap](Python/BinaryHeap/)
 - Observation count: 2
+
+Fix commit: `50ff4b7` (`Fix SWARM-001 parenthesized pipeline inference`)
+
+Regression: `tests/swarm_001_parenthesized_pipeline.moss`, invoked by
+`tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -108,8 +114,9 @@ The observation is from native lowering, not source checking.
 - Status: Open
 - Category: Tooling / formatter
 - First observed: [Julia / BinaryHeap](Julia/BinaryHeap/)
-- Also observed: [Python / BinaryHeap](Python/BinaryHeap/)
-- Observation count: 2
+- Also observed: [Python / BinaryHeap](Python/BinaryHeap/),
+  [Python / Counter](Python/Counter/)
+- Observation count: 3
 
 ### Minimal reproducer
 
@@ -172,8 +179,8 @@ The ledger does not assert a compiler root cause beyond the observed error.
 - Status: Open
 - Category: Compiler / type inference
 - First observed: [Python / BinaryHeap](Python/BinaryHeap/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Python / Counter](Python/Counter/)
+- Observation count: 2
 
 ### Minimal reproducer
 
@@ -196,3 +203,138 @@ return current
 
 This was valid for the Python heap because the helper mutation was the important
 effect and `current` was already known. Do not generalize beyond that case.
+
+## SWARM-006 — Empty Map construction ignores declared field specialization
+
+- Status: Open
+- Category: Compiler / type inference
+- First observed: [Python / Counter](Python/Counter/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Counter:
+  counts: Map[String, Int]
+
+fn empty_counter() -> Counter:
+  return Counter(counts: Map())
+```
+
+### Observed behavior
+
+The compiler reports conflicting inferred types `map[string,int]` and `map`.
+The explicitly declared field specialization does not establish the empty
+constructor's key and value types.
+
+### Workaround
+
+Create a local `Map()`, establish its type with one inert indexed assignment,
+then pass that typed local to the object constructor.
+
+### Notes
+
+The seed is not a substitute for Counter's missing-key behavior. It only makes
+the otherwise concrete Map construction checkable.
+
+## SWARM-007 — Map write borrows a String key instead of owning it
+
+- Status: Open
+- Category: Compiler / lowering
+- First observed: [Python / Counter](Python/Counter/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Counter:
+  counts: Map[String, Int]
+
+  fn set(key: String):
+    counts[key] = 1
+```
+
+### Observed behavior
+
+The source checks, but native Rust lowering passes `&String` to map insertion,
+which requires an owned `String`.
+
+### Workaround
+
+```moss
+stored_key = "" + key
+counts[stored_key] = 1
+```
+
+### Notes
+
+The value-producing string expression gives the backend an owned key. This is
+a compiler-lowering mismatch, not an intended Counter behavior.
+
+## SWARM-008 — Map lacks a missing-key/default lookup surface
+
+- Status: Open
+- Category: Missing standard collection primitive
+- First observed: [Python / Counter](Python/Counter/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+return counts[key]
+```
+
+### Observed behavior
+
+A missing map key reaches the native index operation and fails with `no entry
+found for key`. `counts.contains(key)` is rejected as an invalid collection
+operation, and `counts.get(key, 0)` cannot infer its return type.
+
+### Workaround
+
+None within the experiment's constraints. Pre-populating all behavioral keys
+would hide the required Counter operation and was deliberately not used.
+
+### Notes
+
+This blocks the required `get("missing") == 0` behavior. The entry records a
+collection-surface gap, not a claim about the intended design of all maps.
+
+## SWARM-009 — Type methods cannot reuse another type method as a statement
+
+- Status: Open
+- Category: Compiler / method dispatch
+- First observed: [Python / Counter](Python/Counter/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Counter:
+  fn increment_by(key: String, amount: Int) -> Int:
+    return 0
+
+  fn increment(key: String) -> Int:
+    increment_by(key, 1)
+    return 0
+```
+
+### Observed behavior
+
+The implicit statement call reports `unknown local function 'increment_by'`.
+Using `self.increment_by(key, 1)` reports `local member calls are not
+implemented`.
+
+### Workaround
+
+Duplicate the small read-modify-write body in the bounded `increment` and
+`decrement` methods.
+
+### Notes
+
+Returning the helper directly also reproduces `SWARM-005`; this entry records
+the distinct statement/member-call limitation.

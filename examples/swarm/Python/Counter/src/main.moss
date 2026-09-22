@@ -1,0 +1,82 @@
+# A bounded String-to-Int Counter translated from CPython's collections.Counter.
+type Counter:
+  counts: Map [String, Int]
+  total_count: Int
+
+  # CPython Counter.__missing__: a missing key should read as zero.
+  fn get(key: String) -> Int:
+    return counts [key]
+
+  # CPython _count_elements: read, add, and write the per-key count.
+  fn increment_by(key: String, amount: Int) -> Int:
+    next = counts [key] + amount
+    stored_key = "" + key
+    counts [stored_key] = next
+    total_count = total_count + amount
+    return next
+
+  fn increment(key: String) -> Int:
+    next = counts [key] + 1
+    stored_key = "" + key
+    counts [stored_key] = next
+    total_count = total_count + 1
+    return next
+
+  fn decrement(key: String) -> Int:
+    next = counts [key] - 1
+    stored_key = "" + key
+    counts [stored_key] = next
+    total_count = total_count - 1
+    return next
+
+  fn total() -> Int:
+    return total_count
+
+fn empty_counter() -> Counter:
+  counts = Map()
+  # Map() obtains its concrete key/value types from indexed assignment.
+  # This inert entry establishes Map[String, Int] without pre-populating a
+  # behavioral test key.
+  counts ["__counter_type_seed__"] = 0
+  return Counter(counts: counts, total_count: 0)
+
+test "reads a missing key as zero":
+  counter = empty_counter()
+  assertEqual(counter.get("missing"), 0)
+
+test "counts increments, amounts, and decrements":
+  counter = empty_counter()
+  counter.increment("apple")
+  counter.increment("apple")
+  counter.increment("banana")
+  assertEqual(counter.get("apple"), 2)
+  assertEqual(counter.get("banana"), 1)
+  assertEqual(counter.get("pear"), 0)
+  assertEqual(counter.total(), 3)
+
+  counter.increment_by("apple", 4)
+  assertEqual(counter.get("apple"), 6)
+  assertEqual(counter.total(), 7)
+
+  counter.decrement("apple")
+  assertEqual(counter.get("apple"), 5)
+  assertEqual(counter.total(), 6)
+
+test "permits negative counts and reuse after reads":
+  counter = empty_counter()
+  counter.decrement("x")
+  assertEqual(counter.get("x"), 0 - 1)
+  assertEqual(counter.total(), 0 - 1)
+  counter.increment_by("x", 3)
+  counter.increment("pear")
+  assertEqual(counter.get("x"), 2)
+  assertEqual(counter.get("pear"), 1)
+  assertEqual(counter.total(), 3)
+
+fn main():
+  counter = empty_counter()
+  counter.increment("apple")
+  counter.increment("apple")
+  counter.increment("banana")
+  counter.decrement("apple")
+  echo counter.get("apple"), counter.get("banana"), counter.get("pear"), counter.total()
