@@ -111,6 +111,231 @@
       << ", self.state.rank, " << rank << ", " << (exclusive ? "true" : "false") << ");\n";
   }
 
+  static vector<Stmt> path_branch_body(const Handler& h, bool then_branch) {
+    if (h.body.empty() || h.body.front().kind != Stmt::Kind::If || h.body.front().indent != 0)
+      return {};
+    const auto& branch = h.body.front();
+    size_t then_begin = 1, then_end = then_begin;
+    while (then_end < h.body.size() && h.body[then_end].indent > branch.indent) ++then_end;
+    size_t else_begin = then_end, else_end = then_end;
+    if (then_end < h.body.size() && h.body[then_end].kind == Stmt::Kind::Else &&
+        h.body[then_end].indent == branch.indent) {
+      else_begin = then_end + 1; else_end = else_begin;
+      while (else_end < h.body.size() && h.body[else_end].indent > branch.indent) ++else_end;
+    }
+    size_t begin = then_branch ? then_begin : else_begin;
+    size_t end = then_branch ? then_end : else_end;
+    vector<Stmt> result;
+    for (size_t i = begin; i < end; ++i) {
+      Stmt statement = h.body[i]; statement.indent -= branch.indent + 1;
+      result.push_back(std::move(statement));
+    }
+    const size_t suffix = else_begin == then_end ? then_end : else_end;
+    for (size_t i = suffix; i < h.body.size(); ++i) result.push_back(h.body[i]);
+    return result;
+  }
+
+  HandlerSynchronizationPlan path_fragment_plan(
+      const DomainSynchronizationPlan& plan, const HandlerSynchronizationPlan& whole,
+      const StateLeafEffects& effects) const {
+    HandlerSynchronizationPlan fragment;
+    fragment.name = whole.name; fragment.handler_identity = whole.handler_identity;
+    fragment.effects = effects;
+    fragment.exclusive_set = effects.writes;
+    fragment.exclusive_set.insert(effects.consumes.begin(), effects.consumes.end());
+    for (const auto& leaf : effects.reads)
+      if (plan.protected_mutable_leaves.count(leaf)) fragment.protected_read_set.insert(leaf);
+    fragment.lock_set = fragment.exclusive_set;
+    fragment.lock_set.insert(fragment.protected_read_set.begin(), fragment.protected_read_set.end());
+    for (const auto& leaf : fragment.lock_set) {
+      const size_t cls = plan.leaf_to_class.at(leaf);
+      fragment.class_modes.emplace(cls, whole.class_modes.at(cls));
+    }
+    return fragment;
+  }
+
+  void emit_path_state_definition(std::ostringstream& o, const Domain& d,
+                                  const HandlerSynchronizationPlan& hp,
+                                  const string& state_type) {
+    string generic = "'a", bodyargs = "'_";
+    for (const auto& f : d.state) if (typed_field_used(f, hp) && view_object_type(f.type)) {
+      generic += ", F_" + f.name + ": " + access_trait(f.type);
+      bodyargs += ", impl " + access_trait(f.type);
+    }
+    for (const auto& r : d.routes) {
+      generic += ", R_" + r.name + ": " + canonical_type_name(r.type) + "Messages";
+      bodyargs += ", impl " + canonical_type_name(r.type) + "Messages";
+    }
+    o << "struct " << state_type << "<" << generic << "> {\n";
+    for (const auto& f : d.state) if (typed_field_used(f, hp)) {
+      bool writes = false;
+      for (const auto* set : {&hp.effects.writes, &hp.effects.consumes})
+        for (const auto& leaf : *set) writes |= leaf == f.name || starts_with(leaf, f.name + ".");
+      o << "    " << f.name << ": ";
+      if (view_object_type(f.type)) o << "F_" << f.name;
+      else o << "&'a " << (writes ? "mut " : "") << rust_type(f.type);
+      o << ",\n";
+    }
+    for (const auto& r : d.routes) o << "    " << r.name << ": &'a R_" << r.name << ",\n";
+    o << "    __lifetime: std::marker::PhantomData<&'a ()>,\n}\n";
+  }
+
+  void emit_path_body(std::ostringstream& o, const Domain& d, const Handler& h,
+                      const HandlerSynchronizationPlan& hp, const string& tag,
+                      const vector<Stmt>& body) {
+    const string state_type = d.name + h.name + tag + "State";
+    emit_path_state_definition(o, d, hp, state_type);
+    string bodyargs = "'_";
+    for (const auto& f : d.state) if (typed_field_used(f, hp) && view_object_type(f.type))
+      bodyargs += ", impl " + access_trait(f.type);
+    for (const auto& r : d.routes)
+      bodyargs += ", impl " + canonical_type_name(r.type) + "Messages";
+    o << "fn __moss_body_" << d.name << "_" << h.name << "_" << tag
+      << "(state: &mut " << state_type << "<" << bodyargs << ">";
+    for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
+    o << ") -> " << (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") << " {\n";
+    string result = reply_binding(d, h);
+    if (h.reply_type) o << "    let mut " << result << " = None;\n";
+    o << "    " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
+    std::set<string> locals{result}; std::unordered_map<string,string> types{{"self", d.name}};
+    for (const auto& f : d.state) types[f.name] = f.type;
+    for (const auto& r : d.routes) types[r.name] = r.type;
+    for (const auto& p : h.params) { locals.insert(p.name); types[p.name] = p.type; }
+    view_domain_ = true; view_domain_access_ = true; write_through_parameters_.clear();
+    view_parameters_.clear(); borrowed_message_parameters_.clear();
+    for (const auto& p : h.params) if (borrowed_message_type(p.type)) {
+      borrowed_message_parameters_.insert(p.name);
+      if (view_object_type(p.type)) view_parameters_.insert(p.name);
+    }
+    gen_stmts(o, body, &d, &h, result, locals, types, 2, true, false,
+              functional_handler_context(d, h));
+    view_domain_ = false; view_domain_access_ = false; borrowed_message_parameters_.clear();
+    view_parameters_.clear(); write_through_parameters_.clear();
+    o << "    }\n";
+    if (h.reply_type) o << "    " << result << "\n";
+    o << "}\n";
+  }
+
+  void emit_path_acquire(std::ostringstream& o, const HandlerSynchronizationPlan& h,
+                         const DomainSynchronizationPlan& plan,
+                         const std::map<size_t, SynchronizationMode>& modes,
+                         int spaces) const {
+    const string pad(spaces, ' ');
+    for (const auto& entry : modes) {
+      const size_t rank = plan.classes.at(entry.first).class_rank;
+      const bool exclusive = entry.second == SynchronizationMode::Exclusive;
+      const string r = std::to_string(rank), mode = exclusive ? "write" : "read";
+      typed_event(o, "lock_acquire", h, r, exclusive);
+      o << pad << "#[cfg(not(moss_perf))]\n" << pad << "let "
+        << (exclusive ? "mut " : "") << "__class" << r
+        << " = moss_" << mode << "_or_abort(&self.state.class" << r << ");\n"
+        << pad << "#[cfg(moss_perf)]\n" << pad << "let "
+        << (exclusive ? "mut " : "") << "__class" << r
+        << " = match self.state.class" << r << ".try_" << mode << "() {\n"
+        << pad << "    Ok(guard) => guard,\n" << pad
+        << "    Err(std::sync::TryLockError::WouldBlock) => {\n";
+      typed_event(o, "lock_contended", h, r, exclusive);
+      o << pad << "        moss_" << mode << "_or_abort(&self.state.class" << r << ")\n"
+        << pad << "    },\n" << pad << "    Err(_) => std::process::abort(),\n"
+        << pad << "};\n" << pad << "let __abort" << r << " = MossAbortOnUnwind;\n";
+      typed_event(o, "lock_acquired", h, r, exclusive);
+    }
+  }
+
+  void emit_path_release(std::ostringstream& o, const HandlerSynchronizationPlan& h,
+                         const DomainSynchronizationPlan& plan,
+                         const std::map<size_t, SynchronizationMode>& modes) const {
+    for (auto entry = modes.rbegin(); entry != modes.rend(); ++entry) {
+      const string rank = std::to_string(plan.classes.at(entry->first).class_rank);
+      const bool exclusive = entry->second == SynchronizationMode::Exclusive;
+      typed_event(o, "lock_releasing", h, rank, exclusive);
+      o << "        drop(__class" << rank << ");\n";
+      typed_event(o, "lock_release", h, rank, exclusive);
+    }
+  }
+
+  void emit_path_values_and_state(std::ostringstream& o, const Domain& d,
+                                  const HandlerSynchronizationPlan& fragment,
+                                  const DomainSynchronizationPlan& plan,
+                                  const string& state_type) const {
+    for (const auto& entry : fragment.class_modes)
+      o << "        let __values" << entry.first << " = &"
+        << (entry.second == SynchronizationMode::Exclusive ? "mut " : "")
+        << "*__class" << entry.first << ";\n";
+    o << "        let mut state = " << state_type << " {\n";
+    for (const auto& f : d.state) if (typed_field_used(f, fragment))
+      o << "            " << f.name << ": " << typed_view(f.name, f.type, plan, fragment, false) << ",\n";
+    for (const auto& r : d.routes) o << "            " << r.name << ": &self." << r.name << ",\n";
+    o << "            __lifetime: std::marker::PhantomData,\n        };\n";
+  }
+
+  void emit_path_sensitive_wrapper(std::ostringstream& o, const Domain& d, const Handler& h,
+                                    const DomainSynchronizationPlan& plan,
+                                    const HandlerSynchronizationPlan& hp) {
+    const auto& placement = hp.path_placement;
+    const auto condition = path_fragment_plan(plan, hp, placement.condition_effects);
+    const auto then_fragment = path_fragment_plan(plan, hp, placement.then_effects);
+    const auto else_fragment = path_fragment_plan(plan, hp, placement.else_effects);
+    auto retained_entry = [&](const std::set<size_t>& cancelled) {
+      auto result = placement.entry_modes;
+      for (const auto rank : cancelled) result.erase(rank);
+      return result;
+    };
+    typed_event(o, "handler_enter", hp);
+    emit_path_acquire(o, hp, plan, placement.entry_modes, 8);
+    o << "        let __abort_body = MossAbortOnUnwind;\n";
+    // The condition view is scoped so rank-forced but untouched entry guards
+    // can be cancelled in the selected continuation before any later acquire.
+    o << "        let __moss_branch = {\n";
+    emit_path_values_and_state(o, d, condition, plan, d.name + h.name + "ConditionState");
+    std::set<string> locals; std::unordered_map<string,string> types{{"self", d.name}};
+    for (const auto& f : d.state) types[f.name] = f.type;
+    for (const auto& r : d.routes) types[r.name] = r.type;
+    for (const auto& p : h.params) { locals.insert(p.name); types[p.name] = p.type; }
+    view_domain_ = true; view_domain_access_ = true;
+    o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
+    view_domain_ = false; view_domain_access_ = false;
+    o << "        let result = if __moss_branch {\n";
+    for (const auto rank : placement.cancel_then) {
+      const string r = std::to_string(plan.classes.at(rank).class_rank);
+      typed_event(o, "lock_cancelled", hp, r, false);
+      o << "        drop(__class" << r << ");\n";
+    }
+    emit_path_acquire(o, hp, plan, placement.then_modes, 8);
+    o << "        let __moss_then_result = {\n";
+    emit_path_values_and_state(o, d, then_fragment, plan, d.name + h.name + "ThenState");
+    o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Then(&mut state";
+    for (const auto& p : h.params) o << ", " << p.name;
+    o << ");\n";
+    if (h.reply_type) o << "        if result.is_none() { std::process::abort(); }\n";
+    o << "        result\n        };\n";
+    typed_event(o, "handler_complete", hp);
+    emit_path_release(o, hp, plan, placement.then_modes);
+    emit_path_release(o, hp, plan, retained_entry(placement.cancel_then));
+    o << "        __moss_then_result\n";
+    o << "        } else {\n";
+    for (const auto rank : placement.cancel_else) {
+      const string r = std::to_string(plan.classes.at(rank).class_rank);
+      typed_event(o, "lock_cancelled", hp, r, false);
+      o << "        drop(__class" << r << ");\n";
+    }
+    emit_path_acquire(o, hp, plan, placement.else_modes, 8);
+    o << "        let __moss_else_result = {\n";
+    emit_path_values_and_state(o, d, else_fragment, plan, d.name + h.name + "ElseState");
+    o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Else(&mut state";
+    for (const auto& p : h.params) o << ", " << p.name;
+    o << ");\n";
+    if (h.reply_type) o << "        if result.is_none() { std::process::abort(); }\n";
+    o << "        result\n        };\n";
+    typed_event(o, "handler_complete", hp);
+    emit_path_release(o, hp, plan, placement.else_modes);
+    emit_path_release(o, hp, plan, retained_entry(placement.cancel_else));
+    o << "        __moss_else_result\n";
+    o << "        };\n";
+    typed_event(o, "handler_exit", hp);
+    o << "        result\n";
+  }
+
   void gen_planned_domain(std::ostringstream& o, const Domain& d) {
     const auto* plan = typed_domain_plan(d);
     const string identity = "domain:" + d.name + "@" + std::to_string(d.line);
@@ -150,6 +375,12 @@
       string ret = h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()";
       o << ") -> " << ret << " {\n";
       if (!hp) { o << "        std::process::abort() // Uninstantiated source template.\n    }\n}\n"; continue; }
+      if (hp->path_placement.enabled) {
+        emit_path_sensitive_wrapper(o, d, h, *plan, *hp);
+        o << "    }\n";
+        o << "}\n";
+        continue;
+      }
       typed_event(o, "handler_enter", *hp);
       for (const auto& entry : hp->class_modes) {
         size_t rank = plan->classes.at(entry.first).class_rank;
@@ -278,6 +509,7 @@
             return borrowed_message_type(parameter.type) &&
                 view_object_type(parameter.type);
           });
+      if (plan && hp->path_placement.enabled) o << "#[allow(dead_code)]\n";
       debug_symbol_attributes(o, 0, native, !generic_body);
       o << ((d.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_body_" << d.name << "_" << h.name
         << "(state: &mut " << state_type << "<" << bodyargs << ">";
@@ -306,6 +538,17 @@
       o << "    }\n";
       if (h.reply_type) o << "    " << result << "\n";
       o << "}\n"; tooling_end(o, 0, semantic_identity);
+      // The wrapper below selects one statically typed continuation.  The
+      // duplicated suffix is intentional: it keeps a path-touched guard live
+      // beyond the source CFG join without a runtime guard descriptor.
+      if (plan && hp->path_placement.enabled) {
+        auto condition = path_fragment_plan(*plan, *hp, hp->path_placement.condition_effects);
+        auto then_fragment = path_fragment_plan(*plan, *hp, hp->path_placement.then_effects);
+        auto else_fragment = path_fragment_plan(*plan, *hp, hp->path_placement.else_effects);
+        emit_path_state_definition(o, d, condition, d.name + h.name + "ConditionState");
+        emit_path_body(o, d, h, then_fragment, "Then", path_branch_body(h, true));
+        emit_path_body(o, d, h, else_fragment, "Else", path_branch_body(h, false));
+      }
     }
   }
 

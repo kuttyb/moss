@@ -12,7 +12,7 @@ closed ConcreteDomainGraph + exact DomainSpecialization records
                           ↓
                   SynchronizationPlan
                           ↓
-                  Phase 10.6D physical class locking and handler entry
+             physical class locking and Phase 15.3 static placement
 ```
 
 `Program::synchronization_plan` is the authoritative object. The builder takes a
@@ -182,10 +182,16 @@ in a separate immutable struct. Identical concrete layouts can share a Rust type
 while their instances own independent state and locks. Different specializations
 receive their own checked layouts.
 
-`Handler_shared` is the single synchronized entry wrapper. It emits straight-line
-read/write acquisitions against known class fields, in increasing class rank,
-then invokes a typed borrowed handler body. Guards remain live through the entire
-body and nested messages. Reply values are established before the guards drop.
+`Handler_shared` is the single synchronized entry wrapper. It emits direct typed
+read/write acquisitions against known class fields. Phase 15.3 may split an eligible
+leading conditional into typed continuations: condition and universally-needed
+classes acquire at entry, branch-only classes acquire after the condition when their
+rank is above every still-held class, and rank-forced untouched guards may be
+cancelled on the opposite arm. A potential loop acquisition is hoisted to its
+preheader; unresolved branch classes are hoisted above a prior `message`, `echo`, or
+other observable action. No runtime held-set, descriptor, or upgrade exists.
+Touched guards remain live through the complete continuation and nested messages;
+reply values are established before touched guards drop.
 An empty ClassSet emits no lock acquisition. There are no runtime plans, handler
 searches, class/leaf maps, guard maps, evacuated sets or restoration vectors.
 Ordinary helpers and functional stages acquire no additional domain locks.

@@ -1620,6 +1620,7 @@ else
 fi
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_handler_2pl.py "$compiler" "$test_build/phase106d"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase153_path_placement.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compiler" "$test_build/phase106d1"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase151_borrowed_payloads.py "$compiler" "$test_build/phase151"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106e_domains.py "$compiler" "$test_build/phase106e"

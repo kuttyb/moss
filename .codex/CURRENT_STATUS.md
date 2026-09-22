@@ -2,6 +2,16 @@
 
 Updated: 2026-09-21
 
+## Phase 15.3 — Path-Sensitive Synchronization Placement
+
+Complete pending commit: the stored synchronization plan records static leading-
+branch placement, generated Rust uses typed continuation splitting, and untouched
+rank-forced guards can cancel. Strict C++17 `-Werror`, focused lowering/runtime
+coverage, and `make examples` pass. `make check` reaches only the existing
+sandbox LLDB/DAP initial-handshake failure after compiler, synchronization,
+package/module, Fast Debug, tooling, and Emacs checks pass; that test was not
+weakened. The representative branch fixture generates 23,138 bytes of Rust.
+
 ## Phase 15.2 — Margo package/project driver (closed)
 
 Margo is implemented by `44b5c99` and executable closure `53cf425`. The package-to-

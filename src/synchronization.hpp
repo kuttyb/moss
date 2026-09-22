@@ -52,6 +52,18 @@ struct HandlerSynchronizationPlan {
   StateLeafSet exclusive_set, protected_read_set, lock_set;
   // Class ordinals are deliberately a different type/container from leaves.
   std::map<size_t, SynchronizationMode> class_modes;
+  // Phase 15.3 keeps ClassSet as the conservative semantic footprint, while
+  // recording a statically typed split for the simple top-level conditional
+  // shape that production lowering can represent without a runtime held-set.
+  // The three effect summaries are checked frontend facts, not Rust plans.
+  struct PathPlacement {
+    bool enabled = false;
+    int branch_line = 0;
+    StateLeafEffects condition_effects, then_effects, else_effects;
+    std::map<size_t, SynchronizationMode> entry_modes, then_modes, else_modes;
+    std::set<size_t> cancel_then, cancel_else;
+    std::string reason;
+  } path_placement;
   bool self_conflict() const { return !exclusive_set.empty(); }
 };
 struct DomainSynchronizationPlan {

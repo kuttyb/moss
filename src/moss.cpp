@@ -4075,6 +4075,151 @@ class Checker {
     return capture.effects;
   }
 
+  // These helpers deliberately reuse the checked effect traversal.  Path
+  // placement is a backend choice; it must not become a second effect system.
+  StateLeafEffects specialized_handler_body_effects(
+      const Domain& domain, const Handler& handler, const vector<Stmt>& body,
+      const DomainSpecialization* specialization) const {
+    Handler fragment = handler;
+    fragment.body = body;
+    return specialized_handler_effects(domain, fragment, specialization);
+  }
+
+  StateLeafEffects specialized_handler_expression_effects(
+      const Domain& domain, const Handler& handler, const string& expression,
+      const DomainSpecialization* specialization) const {
+    LeafEffectCapture capture;
+    std::unordered_map<string,string> env;
+    std::set<string> fields;
+    for (const auto& field : domain.state) {
+      string type = specialization ? specialization->state_types.at(field.name) : field.type;
+      capture.roots[field.name] = type;
+      env[field.name] = type;
+      fields.insert(field.name);
+    }
+    for (size_t i = 0; i < handler.params.size(); ++i)
+      env[handler.params[i].name] = specialization
+          ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
+    for (const auto& route : domain.routes) env[route.name] = route.type;
+    LeafCaptureScope scope(leaf_effect_capture_, &capture);
+    vector<Effect> unused(handler.params.size(), Effect::Read);
+    Effect unused_receiver = Effect::Read;
+    analyze_effect_expression(expression, env, handler.params, unused,
+                              unused_receiver, fields, Effect::Read);
+    return capture.effects;
+  }
+
+  static vector<Stmt> normalized_statement_slice(const vector<Stmt>& body,
+                                                  size_t begin, size_t end,
+                                                  int parent_indent) {
+    vector<Stmt> result;
+    for (size_t i = begin; i < end; ++i) {
+      Stmt statement = body[i];
+      statement.indent -= parent_indent;
+      result.push_back(std::move(statement));
+    }
+    return result;
+  }
+
+  static size_t statement_subtree_end(const vector<Stmt>& body, size_t begin) {
+    const int indent = body.at(begin).indent;
+    size_t end = begin + 1;
+    while (end < body.size() && body[end].indent > indent) ++end;
+    return end;
+  }
+
+  static std::map<size_t, SynchronizationMode> path_class_modes(
+      const DomainSynchronizationPlan& domain, const HandlerSynchronizationPlan& whole,
+      const StateLeafEffects& effects) {
+    std::map<size_t, SynchronizationMode> result;
+    for (const auto* leaves : {&effects.reads, &effects.writes, &effects.consumes}) {
+      for (const auto& leaf : *leaves) {
+        auto member = domain.leaf_to_class.find(leaf);
+        if (member == domain.leaf_to_class.end()) continue;
+        auto mode = whole.class_modes.find(member->second);
+        synchronization_require(mode != whole.class_modes.end(), "path class absent from static ClassSet");
+        result.emplace(member->second, mode->second);
+      }
+    }
+    return result;
+  }
+
+  void derive_path_placement(const Domain& domain, const Handler& source,
+                             const DomainSpecialization& specialization,
+                             DomainSynchronizationPlan& planned,
+                             HandlerSynchronizationPlan& whole) const {
+    // Continuation splitting is intentionally bounded to a handler whose
+    // first executable statement is a top-level if.  This is the shape in
+    // which the condition has no predecessor-local bindings to transport and
+    // all path state can stay statically typed. Other CFG shapes retain the
+    // already-correct conservative entry plan.
+    if (source.body.empty() || source.body.front().kind != Stmt::Kind::If ||
+        source.body.front().indent != 0) {
+      whole.path_placement.reason = "conservative entry placement: no eligible leading conditional";
+      return;
+    }
+    const auto& branch = source.body.front();
+    size_t then_begin = 1;
+    size_t then_end = then_begin;
+    while (then_end < source.body.size() && source.body[then_end].indent > branch.indent) ++then_end;
+    size_t else_begin = then_end, else_end = then_end;
+    if (then_end < source.body.size() && source.body[then_end].kind == Stmt::Kind::Else &&
+        source.body[then_end].indent == branch.indent) {
+      else_begin = then_end + 1;
+      else_end = else_begin;
+      while (else_end < source.body.size() && source.body[else_end].indent > branch.indent) ++else_end;
+    }
+    const size_t suffix_begin = else_begin == then_end ? then_end : else_end;
+    auto then_body = normalized_statement_slice(source.body, then_begin, then_end, branch.indent + 1);
+    auto else_body = normalized_statement_slice(source.body, else_begin, else_end, branch.indent + 1);
+    auto suffix = normalized_statement_slice(source.body, suffix_begin, source.body.size(), 0);
+    then_body.insert(then_body.end(), suffix.begin(), suffix.end());
+    else_body.insert(else_body.end(), suffix.begin(), suffix.end());
+
+    auto& placement = whole.path_placement;
+    placement.enabled = true;
+    placement.branch_line = branch.line;
+    placement.condition_effects = specialized_handler_expression_effects(
+        domain, source, branch.a, &specialization);
+    placement.then_effects = specialized_handler_body_effects(
+        domain, source, then_body, &specialization);
+    placement.else_effects = specialized_handler_body_effects(
+        domain, source, else_body, &specialization);
+    auto condition = path_class_modes(planned, whole, placement.condition_effects);
+    auto then_modes = path_class_modes(planned, whole, placement.then_effects);
+    auto else_modes = path_class_modes(planned, whole, placement.else_effects);
+    placement.entry_modes = condition;
+    // A class needed regardless of the selected continuation is still an
+    // entry acquisition. Phase 15.3 defers branch-only classes, not every
+    // first use.
+    for (const auto& entry : then_modes)
+      if (else_modes.count(entry.first)) placement.entry_modes.emplace(entry);
+    auto hoist_for_rank = [&] {
+      size_t highest = 0;
+      bool has_entry = false;
+      for (const auto& entry : placement.entry_modes) {
+        highest = std::max(highest, entry.first); has_entry = true;
+      }
+      bool changed = false;
+      for (const auto* modes : {&then_modes, &else_modes})
+        for (const auto& entry : *modes)
+          if (!placement.entry_modes.count(entry.first) && has_entry && entry.first <= highest) {
+            placement.entry_modes.emplace(entry); changed = true;
+          }
+      return changed;
+    };
+    while (hoist_for_rank()) {}
+    for (const auto& entry : then_modes)
+      if (!placement.entry_modes.count(entry.first)) placement.then_modes.emplace(entry);
+    for (const auto& entry : else_modes)
+      if (!placement.entry_modes.count(entry.first)) placement.else_modes.emplace(entry);
+    for (const auto& entry : placement.entry_modes) {
+      if (!condition.count(entry.first) && !then_modes.count(entry.first)) placement.cancel_then.insert(entry.first);
+      if (!condition.count(entry.first) && !else_modes.count(entry.first)) placement.cancel_else.insert(entry.first);
+    }
+    placement.reason = "leading conditional continuation split; rank-forced entries may cancel untouched guards";
+  }
+
   void build_synchronization_plan(const ConcreteDomainGraph& graph) {
     synchronization_require(graph.closed, "graph is not closed");
     SynchronizationPlan plan;
@@ -4108,6 +4253,12 @@ class Checker {
         planned.handlers.push_back(std::move(h));
       }
       derive_domain_synchronization(planned);
+      for (auto& handler : planned.handlers) {
+        auto source = std::find_if(domain.handlers.begin(), domain.handlers.end(),
+            [&](const Handler& candidate) { return candidate.name == handler.name; });
+        synchronization_require(source != domain.handlers.end(), "missing source handler for path placement");
+        derive_path_placement(domain, *source, specialization, planned, handler);
+      }
       plan.domains.push_back(std::move(planned));
     }
     std::sort(plan.domains.begin(), plan.domains.end(),
@@ -14339,6 +14490,37 @@ static void write_synchronization_plan_json(std::ostream& out, const Synchroniza
         write_debug_json_string(out, domain.classes.at(entry.first).class_id); out << ':';
         write_debug_json_string(out, synchronization_mode_name(entry.second));
       }
+      out << "},\"path_placement\":{";
+      write_debug_json_string(out, "kind"); out << ':';
+      write_debug_json_string(out, handler.path_placement.enabled
+          ? "leading_conditional_continuation_split" : "entry");
+      out << ",\"branch_line\":" << handler.path_placement.branch_line;
+      auto write_modes = [&](const std::map<size_t, SynchronizationMode>& modes) {
+        out << '{'; bool first_mode = true;
+        for (const auto& entry : modes) {
+          if (!first_mode) out << ',';
+          first_mode = false;
+          write_debug_json_string(out, domain.classes.at(entry.first).class_id); out << ':';
+          write_debug_json_string(out, synchronization_mode_name(entry.second));
+        }
+        out << '}';
+      };
+      out << ",\"entry\":"; write_modes(handler.path_placement.entry_modes);
+      out << ",\"then\":"; write_modes(handler.path_placement.then_modes);
+      out << ",\"else\":"; write_modes(handler.path_placement.else_modes);
+      out << ",\"cancel_then\":[";
+      first = true; for (const auto rank : handler.path_placement.cancel_then) {
+        if (!first) out << ',';
+        first = false;
+        write_debug_json_string(out, domain.classes.at(rank).class_id);
+      }
+      out << "],\"cancel_else\":[";
+      first = true; for (const auto rank : handler.path_placement.cancel_else) {
+        if (!first) out << ',';
+        first = false;
+        write_debug_json_string(out, domain.classes.at(rank).class_id);
+      }
+      out << "],\"reason\":"; write_debug_json_string(out, handler.path_placement.reason);
       out << "},\"class_set_size\":" << handler.class_modes.size()
           << ",\"shared_acquisitions\":" << shared_acquisitions(handler)
           << ",\"exclusive_acquisitions\":" << handler.class_modes.size() - shared_acquisitions(handler)
@@ -14450,10 +14632,18 @@ static string synchronization_plan_dump(const SynchronizationPlan& plan) {
       out << "  ClassSet (rank order):";
       for (const auto& entry : h.class_modes)
         out << ' ' << domain.classes.at(entry.first).class_id << '=' << synchronization_mode_name(entry.second);
-      out << "\n  Production entry acquisitions:\n";
-      for (const auto& entry : h.class_modes)
+      out << "\n  Static acquisition placement:\n";
+      const auto& entry_modes = h.path_placement.enabled ? h.path_placement.entry_modes : h.class_modes;
+      for (const auto& entry : entry_modes)
         out << "    (domain_rank=" << domain.domain_rank << ", class_rank="
             << domain.classes.at(entry.first).class_rank << ") " << synchronization_mode_name(entry.second) << '\n';
+      if (h.path_placement.enabled) {
+        out << "  branch line " << h.path_placement.branch_line << " then acquisitions:";
+        for (const auto& entry : h.path_placement.then_modes) out << ' ' << domain.classes.at(entry.first).class_id;
+        out << "\n  branch line " << h.path_placement.branch_line << " else acquisitions:";
+        for (const auto& entry : h.path_placement.else_modes) out << ' ' << domain.classes.at(entry.first).class_id;
+        out << "\n  untouched cancellations are statically emitted before later branch acquisition.\n";
+      }
       out << "  Hold through complete handler and nested messages; release at completion.\n";
       out << "  acquisitions: " << h.class_modes.size() << " (SHARED=" << shared_acquisitions(h)
           << " EXCLUSIVE=" << h.class_modes.size() - shared_acquisitions(h) << ")\n";
