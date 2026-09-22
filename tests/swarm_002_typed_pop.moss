@@ -1,0 +1,13 @@
+type Box:
+  fn pop() -> Int:
+    return 7
+
+fn main():
+  holder = Box()
+  values = [1, 2]
+  queue = Queue()
+  queue.push(3)
+  queue.push(4)
+  values.pop()
+  queue.pop()
+  echo holder.pop()

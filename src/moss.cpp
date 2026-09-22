@@ -10843,9 +10843,6 @@ class Generator {
             e, d, locals, types, functional_pipeline_id))
       return *functional;
     e = normalize_pipeline(std::move(e));
-    if (e.size() >= 6 && e.find(".pop()") != string::npos) {
-      auto pos = e.find(".pop()"); e.replace(pos, 6, ".pop_front()");
-    }
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e == "None") return "None";

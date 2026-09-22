@@ -184,6 +184,13 @@ run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
 run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
 run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
 run_case swarm_001_parenthesized_pipeline tests/swarm_001_parenthesized_pipeline.moss '4 2'
+run_case swarm_002_typed_pop tests/swarm_002_typed_pop.moss '7'
+grep -F 'holder.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
+  fail 'swarm_002 user pop did not retain its method spelling'
+grep -F 'values.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
+  fail 'swarm_002 Vector pop did not retain Vec lowering'
+grep -F 'queue.pop_front()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
+  fail 'swarm_002 Queue pop did not use VecDeque lowering'
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"
