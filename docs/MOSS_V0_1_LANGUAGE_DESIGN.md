@@ -13,7 +13,7 @@ September 2026
 
 ## Abstract
 
-Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. The central concurrency abstraction is the domain: a statically composed owner of mutable state entered only through synchronous message. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives the protected mutable state, partitions that state into synchronization classes, and emits direct typed RwLock<ClassState> fields. Handlers acquire exactly their statically known classes in rank order and hold them through the complete handler, including nested messages. This supports a structural deadlock-freedom argument for Moss-managed locks and domain-local conflict serializability for protected state. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, zero-copy borrowed lowering for eligible synchronous inter-domain message payloads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
+Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. The central concurrency abstraction is the domain: a statically composed owner of mutable state entered only through synchronous message. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives the protected mutable state, partitions that state into synchronization classes, and emits direct typed RwLock<ClassState> fields. Handlers acquire exactly their statically known classes in rank order and hold them through the complete handler, including nested messages. This supports a structural deadlock-freedom argument for Moss-managed locks and whole-execution conflict serializability for failure-free same-domain handler executions that dynamically conflict on domain-owned semantic locations. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, zero-copy borrowed lowering for eligible synchronous inter-domain message payloads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
 
 ## Contents
 
@@ -192,7 +192,7 @@ message logger.record(stats)
 
 There is no domain-level `await` and no fire-and-forget send in v0.1. A `message` in statement position simply discards the result; it remains synchronous.
 
-`reply` is terminating. Its expression is evaluated while the handler's synchronization is still held; an independent semantic result is established; the handler terminates; its locks are released; then the caller resumes. No statement after a taken reply executes.
+`reply` is terminating. Its expression is evaluated before handler completion; an independent semantic result is established; the handler terminates; then the caller resumes. The implementation must retain any synchronization required to preserve the whole-execution serialization guarantee of Section 8, and any guard that physically backs a borrowed lowering, through reply materialization. In the v0.1 full-hold lowering, all guards acquired for the handler remain held until the independent reply result has been established and the handler completes. No statement after a taken reply executes.
 
 Incoming message payloads are immutable snapshots. Handlers may read them, forward them through another message (creating a new value boundary), or reply with them (again creating a new value boundary), but may not mutate or consume the original incoming snapshot.
 
@@ -200,12 +200,15 @@ Incoming message payloads are immutable snapshots. Handlers may read them, forwa
 
 Moss intentionally does not promise sequential consistency across the entire domain graph.
 
-Within one domain, failure-free completed handler executions are conflict-serializable with respect to that domain's protected mutable state. Conflicting handlers serialize; handlers whose synchronization footprints are compatible may overlap. Synchronous calls impose ordinary source order along a call chain: if handler A calls B and waits for its reply, B completes before A continues.
+At the language level, an executed state access targets a **domain-owned semantic location**. Two failure-free handler executions on the same domain **dynamically conflict** when they both actually access the same semantic location and at least one of those executed accesses writes or consumes it. Conflict is therefore defined by the accesses that occur in the execution, not by the compiler's conservative static may-footprint, synchronization classes, or lock layout.
 
-Across independent domains, however, there is no single global order of all observable actions. Two handlers executing concurrently in different domains may produce effects that downstream observers see in different orders unless the program establishes an ordering through synchronous dependencies. Moss therefore provides domain-local conflict serializability and explicit synchronous program order, not graph-wide sequential consistency or a multi-domain transaction.
+Failure-free completed handler executions on one domain admit a **single conflict-serialization order** for their domain-owned state: the observed protected-state behavior is equivalent to a serial execution in that order. For every pair that dynamically conflicts, their **whole executions** are ordered consistently with that same serial order: all actions of one precede all actions of the other. For this guarantee, a handler's whole execution includes its own state accesses, nested synchronous messages and their descendant executions, observable non-domain effects such as `echo`, and reply materialization before handler completion. Nonconflicting executions need not be ordered as wholes and may overlap or interleave.
 
-This point is part of the language model, not merely a non-claim hidden in the proof section.
+The v0.1 backend is deliberately more conservative than this semantic contract. It maps semantic locations to a finite set of static analysis leaves, derives a statically inferred `ClassSet`, acquires that complete set before the body, and holds those guards through completion. Two executions can therefore serialize even when their realized semantic accesses would not dynamically conflict. That extra serialization is an implementation consequence of conservative synchronization, not source-level Moss semantics.
 
+Synchronous calls also impose ordinary source order along a call chain: if handler A calls B and waits for its reply, B completes before A continues. Across independent domains, however, there is no single global order of all observable actions. Two independently executing handlers may produce effects that downstream observers see in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. Moss therefore does not promise graph-wide sequential consistency or a multi-domain transaction. Whole-execution ordering between conflicting same-domain executions does not prevent unrelated third-party handlers in descendant domains from running where their own synchronization permits.
+
+This distinction between semantic conflict and conservative implementation footprint is part of the language model, not merely a non-claim hidden in the proof section.
 ### 9 By-value domain boundaries
 
 Message arguments and reply results are **semantic by-value boundaries**. The programmer can rely on value independence across a domain boundary: a callee cannot retain a mutable alias into the caller's state, mutate the caller's payload through an alias, or consume the caller's incoming snapshot.
@@ -232,16 +235,15 @@ Small `Copy` values may simply be passed by value. Foreign/native boundaries and
 
 Replies are different: the caller uses the result after the callee has returned, so reply results remain owned semantic values rather than borrowed results.
 
-A Rust borrow used to implement a message is therefore a **physical lowering detail**, not a source-level Moss reference. Moss exposes no cross-domain mutable alias, source-level lifetime, or borrowed-message type. Callables themselves do not cross message or reply. This keeps the cross-domain boundary first-order while allowing the native backend to avoid unnecessary copies.
+A Rust borrow used to implement a message is therefore a **physical lowering detail**, not a source-level Moss reference. If the borrowed payload is backed by protected domain state, the guard protecting that storage must remain held for the complete dynamic extent of the synchronous message call; a guard may not be dropped while a borrowed view derived from it remains live. Moss exposes no cross-domain mutable alias, source-level lifetime, or borrowed-message type. Callables themselves do not cross message or reply. This keeps the cross-domain boundary first-order while allowing the native backend to avoid unnecessary copies.
 
 ### 10 Observable effects beyond domain state
 
-Synchronization effects and all observable effects are not the same thing. Moss derives `read`/`write`/`consume` over domain-owned state because those effects drive synchronization. We separately write $O(h)$ for the observable non-domain-state effects of handler h: output such as echo, and in future versions foreign I/O or system effects crossing an interoperability boundary.
+Synchronization effects and all observable effects are not the same thing. Moss derives `read`/`write`/`consume` over domain-owned state because those effects drive synchronization. We separately write $O(h)$ for the observable non-domain-state effects of handler h: output such as `echo`, and in future versions foreign I/O or system effects crossing an interoperability boundary.
 
-The v0.1 lock planner does not partition on $O(h)$. Such effects occur while the handler's locks are held because locks span the complete handler. Synchronous source order is preserved within one execution chain, but Moss does not impose a total order on $O(h)$ across independent concurrently executing domains.
+The v0.1 lock planner does not partition on $O(h)$; observable effects are not themselves synchronization-footprint elements. They are nevertheless part of the **whole execution** defined in Section 8. Therefore, when two same-domain handler executions dynamically conflict on a domain-owned semantic location, their $O(h)$ actions, nested messages, state accesses, and reply materialization are ordered consistently with the domain's single conflict-serialization order.
 
-Making $O(h)$ explicit prevents a common misunderstanding: domain-state serializability is not a claim that every externally visible effect in the application participates in one transaction order.
-
+This does not create a global order on observable effects. Nonconflicting executions may overlap and their $O(h)$ actions may interleave; independently executing handlers in different domains may expose $O(h)$ effects in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. The v0.1 full-hold implementation realizes the stronger same-domain guarantee by keeping the handler's acquired guards across its complete body, including nested messages and `echo`.
 ### 11 Safety by restriction: Rust strengths plus additional static concurrency constraints
 
 Moss compiles to safe Rust and relies on Rust's memory-safety and data-race guarantees in safe code. The contribution is not that Moss somehow makes Rust's existing guarantees conditional or stronger in every dimension. Rather, Moss removes additional concurrency choices from normal source code.
@@ -389,38 +391,40 @@ An attractive future possibility is an inner scope that statically imports an ou
 
 ### 18 Static objects of the model
 
-For a checked graph context $G$, let $D$ range over concrete domain instances. Each instance has a concrete specialization, a finite set of handlers $H_D$, and a finite set of state leaves $L_D$. Route edges form a concrete directed acyclic graph.
+For a checked graph context $G$, let $D$ range over concrete domain instances. Each instance has a concrete specialization and a finite set of handlers $H_D$.
 
-The implementation currently plans over the checked handlers present in each concrete specialization rather than performing a whole-program handler-reachability prune first. Consequently, an unreachable declared handler can conservatively inflate the mutable universe and class partition. Reachability pruning is a semantics-preserving future compiler optimization; the proof below does not rely on it.
+The **semantic locations** of $D$ are the domain-owned storage identities addressed by executed Moss operations. They define source-level conflict. A scalar field ordinarily denotes one semantic location. An element- or key-addressed aggregate operation may denote an element/key-specific semantic location, while an operation whose meaning concerns aggregate-wide state may denote an aggregate-wide location or a set of locations. The language therefore does **not** promise that operations on distinct keys or elements of the same aggregate conflict or are ordered merely because they belong to that aggregate; a program may rely on such ordering only when the executions access a common semantic location or some other Moss ordering rule establishes it. Semantic locations are not required to coincide with the compiler's physical lock partition.
+
+For static synchronization analysis, the compiler also constructs a finite set of **analysis leaves** $L_D$. Every potentially executed domain-state access is conservatively mapped to one or more analysis leaves that cover its semantic location. In v0.1 a runtime-indexed aggregate may conservatively map many distinct semantic locations to one analysis leaf such as `entries`; a future compiler may refine that mapping without changing Moss source semantics.
+
+Route edges form a concrete directed acyclic graph. The implementation currently plans over the checked handlers present in each concrete specialization rather than performing a whole-program handler-reachability prune first. Consequently, an unreachable declared handler can conservatively inflate the mutable universe and class partition. Reachability pruning is a semantics-preserving future compiler optimization; the proof below does not rely on it.
 
 A deterministic topological linearization assigns each concrete instance a unique `domain_rank(D)`. If the graph contains edge $D \rightarrow E$, then:
 
 $$
 \operatorname{domain\_rank}(D) < \operatorname{domain\_rank}(E).
 $$
-
 ### 19 State effects and observable effects
 
-For handler $h \in H_D$, static effect analysis derives may-effect sets:
+For handler $h \in H_D$, static effect analysis derives may-effect sets over the finite analysis leaves:
 
 $$
 R_D(h),\; W_D(h),\; C_D(h) \subseteq L_D,
 $$
 
-representing domain-owned leaves that may be read, written, or consumed on any control-flow path.
+representing analysis leaves that may be read, written, or consumed on any control-flow path. Soundness requires every executed semantic state access to be covered by the corresponding static analysis leaf/effect; the analysis representation may be coarser than the semantic location actually accessed.
 
-The analysis is conservative and currently path-insensitive at the handler-summary level: effects are unioned across branches. If one branch writes a cache entry and another only reads it, the handler may still require exclusive synchronization on every invocation. This is a known conservative bound, not a claim of per-execution minimal locking.
+The analysis is conservative and currently path-insensitive at the handler-summary level: effects are unioned across branches. If one branch writes a cache entry and another only reads it, the handler may still require exclusive synchronization on every invocation. Likewise, accesses to distinct aggregate elements may map to one coarse analysis leaf in v0.1. These are conservative bounds, not claims about source-level conflict granularity or per-execution minimal locking.
 
-We separately use $O(h)$ for observable non-domain-state effects. $O$ is part of the semantic discussion but does not drive the v0.1 synchronization partition. It is therefore possible for domain-local state to be serializable while independent domains produce externally visible effects in different orders.
+We separately use $O(h)$ for observable non-domain-state effects. $O$ does not drive the v0.1 synchronization partition. Under the Section 8 contract, however, $O(h)$ is part of the whole execution: for each dynamically conflicting same-domain pair, their observable actions are ordered consistently with the same domain conflict-serialization order. Independently executing handlers in different domains still have no global $O(h)$ order unless an explicit synchronous dependency or a relevant same-domain conflict establishes one.
 
-Semantic effects on a leaf normalize as:
+Static effects on an analysis leaf normalize as:
 
 $$
 \text{consume} > \text{write} > \text{read} > \text{none}.
 $$
 
 `consume` remains distinct from `write` for ownership, even though both require exclusive synchronization.
-
 ### 20 Mutable universe and protected reads
 
 Define the exclusive leaf set for a handler:
@@ -435,7 +439,7 @@ $$
 X_D^* = \bigcup_{g \in H_D} X_D(g).
 $$
 
-Only leaves in $X_D^*$ receive synchronization classes. A leaf outside $X_D^*$ is immutable after publication with respect to the checked handler set and may be read without a runtime domain lock once publication is established.
+Only analysis leaves in $X_D^*$ receive synchronization classes. An analysis leaf outside $X_D^*$ is immutable after publication with respect to the checked handler set and may be read without a runtime domain lock once publication is established.
 
 Protected reads are:
 
@@ -443,7 +447,7 @@ $$
 \operatorname{ProtectedRead}_D(h) = R_D(h) \cap X_D^*.
 $$
 
-The leaf-level lock footprint is:
+The analysis-leaf lock footprint is:
 
 $$
 \operatorname{LockSet}_D(h) = X_D(h) \cup \operatorname{ProtectedRead}_D(h).
@@ -459,15 +463,15 @@ $$
 \text{none} \mapsto \text{none}.
 $$
 
-For each leaf $\ell \in X_D^*$, define its synchronization-mode signature over a deterministic ordering of handlers:
+For each analysis leaf $\ell \in X_D^*$, define its synchronization-mode signature over a deterministic ordering of handlers:
 
 $$
 \sigma_D(\ell) = \langle m(h_1, \ell), \ldots, m(h_n, \ell) \rangle.
 $$
 
-Two leaves belong to the same synchronization class iff their complete signatures are equal. This is a compiler partitioning policy, not source-level semantics or module ABI.
+Two analysis leaves belong to the same synchronization class iff their complete signatures are equal. This is a compiler partitioning policy, not source-level semantics or module ABI.
 
-Let $\operatorname{class}_D(\ell)$ map a protected leaf to its class. Then:
+Let $\operatorname{class}_D(\ell)$ map a protected analysis leaf to its class. Then:
 
 $$
 \operatorname{ClassSet}_D(h) = \{\operatorname{class}_D(\ell) \mid \ell \in \operatorname{LockSet}_D(h)\}.
@@ -523,22 +527,20 @@ fn get(key):
   reply entries[key]
 ```
 
-The handler may write entries, so its normalized synchronization mode for that class is exclusive on every invocation, even when the requested key is already present. Moss v0.1 deliberately accepts this conservative cost in exchange for a complete precomputed ClassSet, no lock upgrade, and simple whole-handler 2PL.
+The v0.1 analysis may map the runtime-indexed `entries[key]` locations to one aggregate analysis leaf `entries`. Because the handler may write that leaf, its normalized synchronization mode for the resulting class is exclusive on every invocation, even when the requested key is already present or another invocation addresses a different key. Moss v0.1 deliberately accepts this conservative cost in exchange for a complete precomputed `ClassSet`, no lock upgrade, and simple whole-handler 2PL.
 
-A future path-sensitive design could specialize paths or split handlers, but it would need to preserve the same observable semantics and deadlock argument. The paper does not claim v0.1 produces the weakest lock mode for each dynamic execution.
-
+This aggregate coarsening is not source semantics. If two executions access different semantic key locations and no aggregate-wide operation makes those locations conflict, a future compiler may allow them to overlap by refining the analysis/locking representation. Likewise, a future path-sensitive design may avoid synchronization for untaken branches. Such optimizations must preserve Section 8's single conflict-serialization order, whole-execution ordering for every realized dynamic conflict, and the deadlock argument. The paper does not claim v0.1 produces the weakest lock mode, smallest lock set, or finest aggregate partition for each dynamic execution.
 ### 24 Static-footprint strict two-phase locking
 
 Each handler knows its complete `ClassSet` before the body begins. It acquires exactly that set in increasing local `class_rank`, then holds every acquired class until terminating `reply` or normal handler completion. There are no shared-to-exclusive upgrades.
 
 This has the static-footprint property often associated with conservative 2PL: the required lock set is known before body execution. However, Moss acquires locks sequentially rather than atomically preclaiming an all-or-none set. Consequently, local class order remains necessary for deadlock freedom.
 
-**Theorem 24.1 (Domain-local conflict serializability).** Assume the state-effect summaries are sound, every protected access occurs under the mode prescribed by the handler's synchronization classes, and locks are held through handler completion. Then failure-free completed handler executions on one domain are conflict-serializable with respect to the domain's protected state.
+**Theorem 24.1 (Whole-execution conflict serializability).** Assume the static state-effect summaries soundly cover every executed semantic state access; accesses to the same domain-owned semantic location are covered by a common analysis leaf; every protected analysis-leaf access occurs under the mode prescribed by the handler's synchronization classes; each handler acquires its complete static `ClassSet` before executing its body; acquired classes are held through reply materialization or normal handler completion; and nested messages are synchronous. Then the failure-free completed handler executions on any one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair is ordered as whole executions consistently with that same order, in the sense of Section 8.
 
-**Argument.** Every conflicting protected access shares a synchronization class with at least one exclusive mode. `RwLock` compatibility therefore orders the conflicting accesses. Strict hold-to-completion prevents a handler from exposing a partial protected-state serialization point and later reacquiring a conflicting class. Standard 2PL conflict-serializability reasoning applies to the protected domain state [3].
+**Argument.** The protected-state projection of v0.1 is strict two-phase locking over the compiler's analysis leaves: every handler acquires its complete static lock set before body execution and releases only at completion. Standard 2PL therefore yields an acyclic precedence graph and a single serial order equivalent to the protected-state behavior [3]. If two executions dynamically conflict, they actually access the same domain-owned semantic location and at least one writes or consumes it. By sound semantic-location coverage, those accesses map to a common analysis leaf; by sound may-effect analysis, the corresponding synchronization class appears in both static `ClassSet`s with incompatible modes. Because the incompatible class is held for the complete handler body, those two body intervals cannot overlap. Nested messages are synchronous and complete within the interval, observable $O(h)$ effects occur within the interval, and reply materialization completes before the interval ends. Thus every dynamically conflicting pair is ordered as whole executions, and that pairwise whole-execution order is consistent with the same single serialization order established by 2PL.
 
-This theorem is intentionally local to protected state. It does not make a nested multi-domain call tree into an atomic transaction, nor does it impose one total order on $O(h)$ across independent domains.
-
+Static may-footprints, coarse aggregate leaves, and class partitioning can make the implementation serialize executions that would not dynamically conflict on their realized semantic locations. That extra ordering is permitted but is not source-level conflict semantics. Conversely, this theorem does not turn the synchronous descendant call tree into a transaction with respect to unrelated third-party executions in descendant domains, nor does it impose a total order on $O(h)$ across independent domains.
 ### 25 Global lock rank and deadlock freedom
 
 Each synchronization class has a deterministic local `class_rank_D(C)`. Define:
@@ -583,10 +585,11 @@ Domain boundaries deliberately break ordinary Moss alias identity. A message arg
 
 ### 29 Failure model and proof scope
 
-Unexpected failure semantics are not yet a language-level supervision model. v0.1 fails closed: the production backend aborts on unexpected handler failure or poisoned synchronization rather than releasing possibly inconsistent state and continuing.
+Unexpected failure semantics are not yet a language-level supervision model. v0.1 **fails closed**: the production backend aborts on unexpected handler failure or poisoned synchronization rather than releasing possibly inconsistent protected state and continuing Moss execution.
 
-All serializability and normal-exit state-validity arguments in this paper are scoped to failure-free completed handlers. Phase 21 is reserved for explicit error propagation and supervision semantics.
+More specifically, a failing handler does not release or weaken guards protecting state it has modified and then permit another Moss handler to observe those partial protected-state updates before process termination. v0.1 does not provide rollback: nested synchronous messages, `echo`, or other observable effects that completed before the unexpected failure may already have occurred.
 
+All serializability and normal-exit state-validity arguments in this paper are scoped to failure-free completed handlers. The fail-closed rule above is a separate failure-containment property of the v0.1 lowering. Phase 21 is reserved for explicit error propagation, supervision, rollback/recovery choices, and their interaction with synchronization.
 ### 30 Claims and non-claims
 
 #### Claims
@@ -594,9 +597,10 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Safe Rust remains the physical memory-safety substrate for generated production code.
 - Moss statically closes concrete domain routing in v0.1.
 - Moss derives domain-state synchronization from specialized may-effects rather than user-written locks.
-- Protected domain state is conflict-serializable under the stated failure-free assumptions.
+- Failure-free completed executions on one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair—defined by actually accessing the same domain-owned semantic location with at least one write/consume—is ordered as whole executions consistently with that order, including nested synchronous messages, reply materialization, and $O(h)$ effects.
 - Moss-managed domain lock deadlock is structurally excluded under the closed-graph/rank assumptions.
-- Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values.
+- Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values. A guard backing a borrowed protected payload remains held for the complete synchronous call.
+- In the v0.1 fail-closed lowering, an unexpectedly failing handler does not release modified protected state and allow another Moss handler to observe those partial protected-state updates before process termination.
 
 #### Non-claims
 
@@ -605,10 +609,10 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Moss does not provide one transaction spanning descendant domains or arbitrary external effects.
 - Moss does not guarantee fairness, starvation freedom, lock-free progress, or bounded waiting.
 - v0.1 does not define a source-level concurrent-ingress mechanism.
-- v0.1 does not yet define supervision, rollback, restart, or recovery after unexpected handler failure.
+- v0.1 does not yet define supervision, rollback, restart, or recovery after unexpected handler failure; already-completed nested messages or observable effects are not rolled back by fail-closed abort.
 - The deadlock proof covers Moss-managed locks, not arbitrary future foreign locks acquired invisibly by external code.
-- The synchronization partition is not guaranteed workload-optimal or path-minimal.
-
+- Static may-effect footprints, analysis-leaf boundaries, `ClassSet` overlap, synchronization-class boundaries, aggregate coarsening, and the current full-handler hold policy are not the source-level definition of handler conflict; they may conservatively serialize executions that do not dynamically conflict.
+- The synchronization partition is not guaranteed workload-optimal, path-minimal, or aggregate-element-minimal.
 ## Part III - Implementation Design, Corrections, and Measurements
 
 ### 31 Compilation pipeline
@@ -692,6 +696,7 @@ At the Moss level, a message still establishes a by-value immutable snapshot. At
 - the message call is synchronous;
 - the receiver only has immutable, non-consuming access to the incoming payload;
 - the source storage remains valid and stable for the complete call;
+- if the source storage is protected domain state, the guard protecting that storage remains held for the complete call;
 - the borrow cannot escape, be stored, or become a Moss-visible alias; and
 - the target is an internal lowering where the compiler controls both sides of the call.
 
@@ -707,7 +712,7 @@ The language-level distinction is therefore:
 
 > ordinary READ => borrow where possible; synchronous message => by-value semantics, borrow physically where safe; reply => owned value.
 
-This optimization introduces no Moss reference syntax, no user-visible lifetimes, and no cross-domain mutable aliases. Safe Rust remains responsible for validating the generated physical borrow relationships.
+This optimization introduces no Moss reference syntax, no user-visible lifetimes, and no cross-domain mutable aliases. Retaining a guard that backs a borrowed protected payload is a lowering invariant even if a future synchronization optimizer otherwise permits earlier release of unrelated guards. Safe Rust remains responsible for validating the generated physical borrow relationships.
 
 ### 35 From asynchronous actors to synchronous domains
 
@@ -762,8 +767,15 @@ The current paper therefore treats the threaded measurements as implementation v
 
 More synchronization classes expose more potential parallelism but also mean more native lock acquisitions. The v0.1 signature partition is intentionally workload-agnostic. Dogfooding may reveal domains where class coarsening would outperform maximal static separation under realistic contention.
 
-Nested synchronous messages also lengthen ancestor critical sections because parent guards remain held while descendants run. Instrumented Phase 10 measurements found descendant time dominating ancestor hold time in a representative nested sample. That behavior is expected under the baseline proof and is documented rather than hidden. Early unlock would require a separate observational-equivalence argument and is not part of v0.1.
+Nested synchronous messages also lengthen ancestor critical sections because the v0.1 lowering keeps parent guards held while descendants run. Instrumented Phase 10 measurements found descendant time dominating ancestor hold time in a representative nested sample. That behavior is expected under the baseline proof and is documented rather than hidden.
 
+The full static footprint, aggregate coarsening, and full-handler hold are implementation/proof choices, not source-level conflict semantics. A future path-sensitive optimizer may defer acquisition for unresolved branches, refine aggregate locations, cancel a conservatively acquired guard once the realized path proves it untouched, or release touched guards earlier. Such an optimizer must preserve both the single conflict-serialization order and the whole-execution ordering required by Section 8.
+
+That imposes constraints on **both sides** of an observable effect. Deferred acquisition of a guard that may later establish a dynamic conflict cannot cross an earlier nested `message`, `echo`, or other irreversible observable action whose ordering would need to belong to that whole execution; if the relevant path is still unresolved, the optimizer must conservatively establish the necessary ordering before the observable action. Symmetrically, releasing or downgrading a touched guard before a later nested message or observable effect can expose an order inconsistent with whole-execution serialization.
+
+The optimizer must also preserve the ordinary **two-phase rule** explicitly: once any touched guard is released or downgraded, that handler execution may perform no later Moss-managed guard acquisition or mode upgrade. Releasing or downgrading the first touched guard therefore begins the shrinking phase. By contrast, a guard known to be untouched on the realized execution may be **cancelled at any point**. Such cancellation does not begin the shrinking phase and does not itself forbid later acquisitions, provided the remaining rank-order and observable-effect constraints are still satisfied.
+
+Early release must also preserve Section 29's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the v0.1 full-hold lowering would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. None of these early-release, deferred-acquisition, aggregate-refinement, or path-precision optimizations are part of v0.1.
 ### 40 Modules: semantic ABI, physical lowering at the consumer
 
 Source-free providers export semantic information needed for downstream specialization and effect analysis. The final consumer builds the concrete graph, derives synchronization, and emits typed lock-owned state. Physical classes and Rust lifetimes are deliberately absent from the semantic module ABI.
@@ -781,7 +793,7 @@ Other conservative bounds include path-insensitive may-effects and coarse treatm
 | Stage | Earlier idea | v0.1 resolution |
 |---|---|---|
 | Domain execution | Mailbox, queue, worker, await | Synchronous direct message |
-| Ordering | Per-domain total commit order | Domain-local conflict serializability; no graph-wide total order |
+| Ordering | Per-domain total commit order | Single same-domain conflict-serialization order; dynamically conflicting pairs ordered as wholes; no graph-wide total order |
 | Topology | Handles could still flow dynamically | Closed static concrete routing graph |
 | Synchronization | Coarse/alternate backends | Compiler-derived classes + handler-level 2PL |
 | READ lowering | Hidden snapshots/clones | Borrowed protected views |
@@ -858,35 +870,36 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Domain handles | Routing capabilities, not ordinary values |
 | Message | Synchronous, blocking, expression-valued |
 | Reply | Terminating, by-value semantic result |
-| Payloads | Incoming snapshots are semantically by value and immutable; eligible synchronous message payloads may lower to non-escaping Rust borrows/views; replies remain owned values |
-| Consistency | Domain-local protected-state conflict serializability; no global SC across independent domains |
-| External effects | Ordered by ordinary synchronous program dependencies; no global total order |
-| Synchronization | Compiler-derived classes; exact handler `ClassSet` known before body |
-| Locking | Static-footprint strict 2PL; no upgrades; full-handler hold |
+| Payloads | Incoming snapshots are semantically by value and immutable; eligible synchronous message payloads may lower to non-escaping Rust borrows/views; a guard backing protected borrowed storage remains held for the complete call; replies remain owned values |
+| Consistency | Failure-free completed executions on one domain admit one conflict-serialization order for domain-owned state; a dynamically conflicting pair (same actually accessed semantic location, at least one write/consume) is ordered as whole executions consistently with that order; nonconflicting executions may overlap; no global SC across independent domains |
+| External effects | Nested messages, reply materialization, and $O(h)$ participate in the whole-execution order of dynamically conflicting same-domain handlers according to the same domain conflict-serialization order; nonconflicting/independent executions have no global total order |
+| Synchronization | Compiler-derived finite analysis leaves, static may-footprints, and classes; semantic locations define conflict, while v0.1 may conservatively map many semantic locations (for example aggregate keys) to one analysis leaf |
+| Locking | v0.1 uses static-footprint strict 2PL, no upgrades, and full-handler hold as a conservative implementation/proof strategy |
 | Deadlock order | Lexicographic `(domain_rank, class_rank)` for currently held Moss locks |
 | Physical backend | Static typed safe Rust, `RwLock<ClassState>` per synchronization class, borrowed protected READs, and borrowed synchronous message payloads where safe |
 | Fast Debug | Deterministic semantic interpreter; no lock/thread simulation |
 | Ingress | Source-level concurrent root creation intentionally deferred |
-| Failure | Unexpected failure is fail-closed; supervision deferred |
+| Failure | Unexpected failure is fail-closed: modified protected state is not released for observation by another Moss handler before process termination; prior nested/observable effects are not rolled back; supervision deferred |
 
 ## Appendix B - Proof assumptions checklist
 
 The formal claims rely on the following conditions:
 
-1. Static effect analysis conservatively contains every relevant handler state read/write/consume, including specialized helper and capture effects.
-2. Concrete domain routes are closed; legal messages cannot introduce unseen targets.
-3. The concrete route graph is acyclic and deterministically topologically ranked.
-4. Every protected leaf belongs to exactly one synchronization class derived from its complete handler-mode signature.
-5. Every handler acquires exactly its ClassSet in increasing class rank before executing protected accesses.
-6. No shared-to-exclusive upgrade occurs.
-7. Parent locks remain held across nested synchronous messages.
-8. Every nested message follows a route to a greater domain rank.
-9. Initialization writes happen-before concurrent handler execution observes the domain instance.
-10. Message/reply value boundaries do not leak Moss-visible mutable aliases between domains; any physical Rust borrow used to lower a synchronous message is immutable, non-escaping, and bounded by the call.
-11. Normal handler exit leaves every domain-owned value ownership-valid.
-12. Serializability claims are for failure-free completed handlers; unexpected failure is fail-closed in v0.1.
-13. Foreign code does not acquire hidden Moss-state aliases or violate Moss-managed lock-order assumptions; detailed interop remains future work.
-
+1. Every executed domain-state semantic access is conservatively covered by the compiler's finite analysis-leaf representation, and accesses to the same semantic location are covered by a common analysis leaf.
+2. Static effect analysis conservatively contains every relevant handler state read/write/consume over those analysis leaves, including specialized helper and capture effects.
+3. Concrete domain routes are closed; legal messages cannot introduce unseen targets.
+4. The concrete route graph is acyclic and deterministically topologically ranked.
+5. Every protected analysis leaf belongs to exactly one synchronization class derived from its complete handler-mode signature.
+6. Every handler acquires exactly its static `ClassSet` in increasing class rank before executing its body.
+7. No shared-to-exclusive upgrade occurs.
+8. Every acquired handler class remains held through terminating reply materialization or normal handler completion; consequently parent guards remain held across nested synchronous messages and $O(h)$ effects in the v0.1 lowering.
+9. Nested messages are synchronous: a descendant handler completes before its caller continues.
+10. Every nested message follows a route to a greater domain rank.
+11. Initialization writes happen-before concurrent handler execution observes the domain instance.
+12. Message/reply value boundaries do not leak Moss-visible mutable aliases between domains; any physical Rust borrow used to lower a synchronous message is immutable, non-escaping, and bounded by the call. If such a borrow is backed by protected state, its protecting guard remains held for the complete call.
+13. Normal handler exit leaves every domain-owned value ownership-valid.
+14. Serializability claims are for failure-free completed handlers. For unexpected failure, the v0.1 fail-closed lowering does not release or weaken guards protecting modified state and then permit another Moss handler to observe those partial protected-state updates before process termination; already-completed nested messages or observable effects are not rolled back.
+15. Foreign code does not acquire hidden Moss-state aliases or violate Moss-managed lock-order assumptions; detailed interop remains future work.
 ## Appendix C - Moss v0.1 milestone map
 
 | Milestone | Result |
