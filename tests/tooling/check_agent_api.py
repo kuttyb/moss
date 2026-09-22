@@ -69,7 +69,7 @@ if "semantic_inspection" not in capabilities["result"]["capabilities"]:
     fail("capability discovery omitted semantic inspection")
 for capability in ("impact_analysis", "formatter", "semantic_edits",
                     "repair_actions", "static_cost_facts", "package_project_driver",
-                    "package_dependencies", "package_lockfile", "language_surface",
+                    "package_dependencies", "package_lockfile", "tool_invocation", "language_surface",
                     "fast_debug"):
     if capability not in capabilities["result"]["capabilities"]:
         fail(f"capability discovery omitted {capability}")
@@ -84,6 +84,8 @@ if catalog["package_project_driver"]["entrypoint"] != "margo build|run|test|benc
     fail("Margo is not the canonical package/project capability entrypoint")
 if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
     fail("language surface discovery lacks its bootstrap entrypoint")
+if catalog["tool_invocation"]["entrypoint"] != "moss agent bootstrap --json":
+    fail("tool invocation discovery lacks its bootstrap entrypoint")
 surface = bootstrap["result"].get("source_surface", {})
 if surface.get("operators", {}).get("boolean_negation") != "not expression":
     fail("bootstrap source surface omitted boolean negation")
@@ -108,9 +110,22 @@ for action in ("package_build", "package_run", "package_test", "package_bench", 
 for capability in ("package_project_driver", "package_dependencies", "package_lockfile"):
     if not bootstrap["result"]["capability_flags"].get(capability):
         fail(f"bootstrap did not flag {capability} as available")
+if not bootstrap["result"]["capability_flags"].get("tool_invocation"):
+    fail("bootstrap did not flag tool_invocation as available")
+if bootstrap["result"].get("tool_invocation") != {
+    "compiler": {"repo_local": "./moss", "path_name": "moss", "build_if_missing": "make"},
+    "project_driver": {"repo_local": "./margo", "path_name": "margo"},
+    "preferred_in_checkout": "repo_local",
+    "path_names_allowed": True,
+    "path_fallback": "PATH",
+    "bootstrap_command": "./moss agent bootstrap --json",
+}:
+    fail("bootstrap tool_invocation metadata drifted")
 schema_names = {item["name"] for item in schema["result"]["schema"]["command_schemas"]}
 if "package_project_driver" not in schema_names:
     fail("agent schema omitted the Margo package/project contract")
+if "tool_invocation" not in schema_names:
+    fail("agent schema omitted repository-local tool invocation")
 
 checked, checked_bytes = invoke("check", str(source), "--json")
 _, repeated_check = invoke("check", str(source), "--json")

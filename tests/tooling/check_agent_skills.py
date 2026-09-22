@@ -144,12 +144,26 @@ def main() -> int:
         "moss-agent-workflow",
     )
 
+    for marker in (
+        "Ensure `./moss` exists; run `make` if it does not.",
+        "Run `./moss agent bootstrap --json`.",
+        "Read its `tool_invocation`",
+        "Use `./margo` for package/project work",
+        "prefer `./moss` and `./margo`",
+        "Bare `moss` and\n`margo` are valid when",
+    ):
+        if marker not in workflow:
+            fail(f"moss-agent-workflow no longer exposes invocation contract: {marker}")
+
     agents = AGENTS.read_text(encoding="utf-8")
     for marker in (
         "moss-language",
         "moss-agent-workflow",
         "./moss agent bootstrap --json",
         "run `make` first",
+        "compiler: `./moss`",
+        "project driver: `./margo`",
+        "Bare `moss` or `margo` are valid only when",
         "./margo build",
         "./margo run",
         "./margo test",
@@ -183,10 +197,11 @@ def main() -> int:
         "package_project_driver",
         "package_dependencies",
         "package_lockfile",
+        "tool_invocation",
     ):
         if capability not in capability_names:
             fail(f"live capability discovery omitted {capability}")
-    for capability in ("package_project_driver", "package_dependencies", "package_lockfile"):
+    for capability in ("package_project_driver", "package_dependencies", "package_lockfile", "tool_invocation"):
         if not bootstrap["capability_flags"].get(capability):
             fail(f"bootstrap did not flag {capability} as available")
     catalog = {item["id"]: item for item in capabilities["capability_catalog"]}
@@ -196,9 +211,25 @@ def main() -> int:
         "package_lockfile": "Moss.lock",
         "module_interfaces": "margo build --json",
         "language_surface": "moss agent bootstrap --json",
+        "tool_invocation": "moss agent bootstrap --json",
     }.items():
         if capability not in catalog or marker not in catalog[capability].get("entrypoint", ""):
             fail(f"live {capability} discovery lacks current Margo/Moss routing")
+    invocation = bootstrap.get("tool_invocation", {})
+    if invocation.get("compiler") != {
+        "repo_local": "./moss", "path_name": "moss", "build_if_missing": "make"
+    }:
+        fail("bootstrap tool_invocation compiler contract drifted")
+    if invocation.get("project_driver") != {
+        "repo_local": "./margo", "path_name": "margo"
+    }:
+        fail("bootstrap tool_invocation project-driver contract drifted")
+    if (invocation.get("preferred_in_checkout") != "repo_local" or
+            not invocation.get("path_names_allowed") or
+            invocation.get("path_fallback") != "PATH"):
+        fail("bootstrap tool_invocation checkout/PATH policy drifted")
+    if invocation.get("bootstrap_command") != "./moss agent bootstrap --json":
+        fail("bootstrap tool_invocation bootstrap command drifted")
     fast_debug = catalog.get("fast_debug", {})
     if not any(command in fast_debug.get("entrypoint", "")
                for command in ("moss run --interp", "moss debug")):
@@ -236,6 +267,8 @@ def main() -> int:
     schema_names = {item["name"] for item in schema["schema"]["command_schemas"]}
     if "package_project_driver" not in schema_names:
         fail("agent schema does not describe the Margo package driver")
+    if "tool_invocation" not in schema_names:
+        fail("agent schema does not describe repository-local tool invocation")
     if "moss agent session-report-template --json" not in " ".join(workflow.split()):
         fail("moss-agent-workflow no longer advertises the session-report command")
     session = agent_document(compiler, "session-report-template")["result"]

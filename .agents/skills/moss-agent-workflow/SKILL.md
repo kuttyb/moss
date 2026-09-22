@@ -13,16 +13,23 @@ metadata:
 
 This is the required start of every fresh Moss task:
 
-1. Load `moss-language`.
-2. Load `moss-agent-workflow`.
-3. Run `moss agent bootstrap --json`.
-4. Read its language/compiler/protocol versions, capabilities, semantic queries,
+1. Read repository `AGENTS.md`.
+2. Ensure `./moss` exists; run `make` if it does not.
+3. Load `moss-language`.
+4. Load `moss-agent-workflow`.
+5. Run `./moss agent bootstrap --json`.
+6. Read its `tool_invocation`, language/compiler/protocol versions, capabilities, semantic queries,
    actions, debugging features, safety rules, language constraints, and recommended
    workflow.
-5. If an unfamiliar capability is reported, run `moss agent capabilities --json`
+7. If an unfamiliar capability is reported, run `./moss agent capabilities --json`
    and/or `moss agent schema --json` for its purpose, inputs, response shape, stable
    identities, and common failure modes.
-6. Only then inspect or edit Moss source.
+8. Use `./margo` for package/project work and `./moss` for language and semantic work.
+9. Only then inspect or edit Moss source.
+
+In a repository checkout, prefer `./moss` and `./margo`. Bare `moss` and
+`margo` are valid when those executables are already available on `PATH`; the
+bootstrap contract treats them as logical tool names, not different tools.
 
 The language skill declares `moss-0.1`. Compare it with bootstrap's
 `result.language_version`; a mismatch means the skill may be stale. Refresh live

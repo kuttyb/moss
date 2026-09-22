@@ -13979,6 +13979,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"static_cost_facts", "Known materialization, traversal, specialization, message-materialization, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
       {"synchronization_plan", "Concrete graph plus R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and conflict witnesses.", "moss inspect|effects|why <target> --source <source> --json"},
       {"package_project_driver", "Resolve Moss packages and orchestrate project build, run, test, benchmark, and clean operations.", "margo build|run|test|bench|clean"},
+      {"tool_invocation", "Discover the repository-local Moss compiler and Margo project driver, how to build the compiler if absent, and when PATH-installed names may be used.", "moss agent bootstrap --json"},
       {"package_dependencies", "Resolve local path and Git package dependencies declared in Moss.toml.", "Moss.toml [dependencies] with path or git/rev/tag/branch"},
       {"package_lockfile", "Freeze resolved Git dependency commits deterministically.", "Moss.lock"},
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
@@ -14353,6 +14354,13 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"project_root\": ";
   if (project_root) write_debug_json_string(out, *project_root);
   else out << "null";
+  out << ",\n    \"tool_invocation\": {"
+         "\"compiler\": {\"repo_local\": \"./moss\", \"path_name\": \"moss\", \"build_if_missing\": \"make\"},"
+         "\"project_driver\": {\"repo_local\": \"./margo\", \"path_name\": \"margo\"},"
+         "\"preferred_in_checkout\": \"repo_local\","
+         "\"path_names_allowed\": true,"
+         "\"path_fallback\": \"PATH\","
+         "\"bootstrap_command\": \"./moss agent bootstrap --json\"} ";
   out << ",\n    \"capabilities\": ";
   write_agent_string_array(
       out, {"structured_diagnostics", "semantic_inspection",
@@ -14371,7 +14379,7 @@ static void write_bootstrap_json(std::ostream& out,
             "first_order_effect_graph", "structured_execution_trace",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
             "domain_ranks", "package_project_driver", "package_dependencies",
-            "package_lockfile"});
+            "package_lockfile", "tool_invocation"});
   out << ",\n    \"capability_catalog\": ";
   write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
   out << ",\n    \"capability_flags\": {"
@@ -14385,7 +14393,8 @@ static void write_bootstrap_json(std::ostream& out,
          "\"language_surface\": true, "
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
-         "\"package_lockfile\": true}";
+         "\"package_lockfile\": true, "
+         "\"tool_invocation\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
@@ -14442,8 +14451,9 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"discovery\": {\"capabilities_command\": \"moss agent capabilities --json\", \"schema_command\": \"moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
-      out, {"Run moss agent bootstrap --json before modifying Moss source.",
-            "Use Margo for package/project operations: margo build|run|test|bench|clean.",
+      out, {"In a repository checkout, prefer ./moss and ./margo; run make if ./moss is missing.",
+            "Run ./moss agent bootstrap --json before modifying Moss source.",
+            "Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean.",
             "Run moss check --json before guessing at a Moss error.",
             "Use inspect, why, effects, ownership, and cost as needed.",
             "Edit Moss source, never generated Rust.",
@@ -14465,6 +14475,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"Is this a Moss semantic restriction, frontend bug, native lowering bug, or Fast Debug limitation?\",\"capability\":\"language_surface\",\"command\":\"source_surface, moss check --json, ownership/effects/why, a minimal probe, then native verification\"},"
          "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
          "{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},"
+         "{\"question\":\"How do I invoke Moss tools in this repository checkout?\",\"capability\":\"tool_invocation\",\"command\":\"./moss agent bootstrap --json\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
          "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
   out << ",\n    \"safety_rules\": ";
@@ -14488,7 +14499,8 @@ static void write_bootstrap_json(std::ostream& out,
   write_debug_json_string(
       out,
       "This repository uses Moss.\n\nBefore changing Moss source, run:\n\n"
-      "    ./moss agent bootstrap --json\n\nUse Margo for package/project "
+      "    ./moss agent bootstrap --json\n\nUse the repository-local tools: ./moss for language/semantic work and "
+      "./margo for package/project "
       "operations (./margo build|run|test|bench|clean). Use Moss semantic queries and "
       "structured diagnostics instead of reverse-engineering generated "
       "Rust.\n\nAfter edits, follow the workflow returned by bootstrap.");
@@ -14569,6 +14581,12 @@ static void write_bootstrap_json(std::ostream& out,
         "moss-agent-1 envelope with changed files and resulting identity",
         {"entity-v1", "physical source ranges"},
         {"EDIT_ARGUMENT_INVALID", "EDIT_TARGET_STALE", "QUERY_TARGET_NOT_FOUND"});
+    out << ',';
+    write_agent_command_schema(
+        out, "tool_invocation", "Discover repository-local Moss tools, how to build the compiler if absent, and PATH fallback names.",
+        {}, {},
+        "result.tool_invocation with compiler ./moss, project driver ./margo, and make guidance",
+        {"repo-local executable names"}, {"compiler checkout missing"});
     out << ',';
     write_agent_command_schema(
         out, "package_project_driver", "Resolve packages and build, run, test, benchmark, or clean the root project through Margo.",

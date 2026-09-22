@@ -69,6 +69,18 @@ without leaking Rust tooling into the normal workflow.
 
 ## Install and project workflow
 
+### Agent / tool discovery
+
+Working with Moss from a repository checkout:
+
+```sh
+make                         # if ./moss has not been built
+./moss agent bootstrap --json
+```
+
+The bootstrap response describes the current language and tool capabilities.
+See [AGENTS.md](AGENTS.md) for the repository agent workflow.
+
 ```sh
 make
 ```

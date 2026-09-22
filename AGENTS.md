@@ -4,6 +4,15 @@
 
 Every agent session must execute the following startup sequence before inspecting or editing Moss code:
 
+Repository-local tools:
+
+- compiler: `./moss`
+- project driver: `./margo`
+
+If `./moss` is missing, run `make` first. The first live discovery command is
+`./moss agent bootstrap --json`. Bare `moss` or `margo` are valid only when
+those executables are already available on `PATH`.
+
 1. **Load Skills**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`.
 2. **Run Discovery**: Run `./moss agent bootstrap --json` (or `moss agent bootstrap --json` if on `PATH`). Run `make` first if `./moss` is not yet built.
 3. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
