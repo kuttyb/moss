@@ -2,6 +2,16 @@
 
 Updated: 2026-09-21
 
+## Phase 15.4 — Julia → Moss Swarm: BinaryHeap
+
+The bounded pure-Moss `Int` min-heap experiment is complete under
+`examples/swarm/Julia/BinaryHeap/`. It translates Julia's hole-moving heap
+algorithm with zero-based indexes and passes four project tests plus native build/run
+(`1 2 5 7`). The README records two bounded implementation/tooling workarounds:
+an explicit arithmetic `size` because `Vector |> count` cannot currently infer in an
+arithmetic expression, and `take_min` because a user method named `pop` mislowers as
+`pop_front`. No compiler or language code changed.
+
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 
 Closed at the Phase 15.3 implementation plus closeout commit: eligible leading
