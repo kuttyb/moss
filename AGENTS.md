@@ -13,10 +13,11 @@ If `./moss` is missing, run `make` first. The first live discovery command is
 `./moss agent bootstrap --json`. Bare `moss` or `margo` are valid only when
 those executables are already available on `PATH`.
 
-1. **Load Skills and Docs**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`. For fresh Moss source-writing or unfamiliar language work, `docs/GENTLE_INTRODUCTION_TO_MOSS.md` is the primary practical guide; use the bootstrap's `canonical_docs` routing for formal, project, or testing detail as needed.
+1. **Load Skills**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`.
 2. **Run Discovery**: Run `./moss agent bootstrap --json` (or `moss agent bootstrap --json` if on `PATH`). Run `make` first if `./moss` is not yet built.
-3. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
-4. **Tooling Split**:
+3. **Follow Discovery Routing**: For fresh Moss source-writing or unfamiliar language work, use `result.canonical_docs.practical_language_guide` as the primary practical guide. Use the other `canonical_docs` entries for formal semantics, project workflow, or testing detail as needed.
+4. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
+5. **Tooling Split**:
    - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, and `./margo clean`.
    - Use `moss` for language, semantic queries, diagnostics, and formatting: `moss check`, `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and `debug`.
 
@@ -25,11 +26,12 @@ those executables are already available on `PATH`.
 Before reporting a Moss language/compiler/API feature as missing:
 
 1. Consult `moss-language`.
-2. Run and read `moss agent bootstrap --json`; use capabilities/schema if needed.
-3. Check current canonical docs/examples: consult `docs/GENTLE_INTRODUCTION_TO_MOSS.md` for syntax, collections, project layout, and domains, and `docs/MOSS_V0_1_LANGUAGE_DESIGN.md` for formal semantics.
-4. Reduce uncertainty to the smallest Moss probe and run `moss check --json`.
-5. If native lowering is implicated, verify with `margo build`, `margo test`, or `margo run`.
-6. Classify the result before recording a SWARM finding.
+2. Run and read `moss agent bootstrap --json`; inspect `source_surface` and use capabilities/schema if needed.
+3. Use the relevant `canonical_docs` entry when more context is needed: the practical guide for source syntax and collections, or the formal/project/testing guide for its corresponding detail.
+4. Read the structured diagnostic or use a semantic query where applicable.
+5. Reduce uncertainty to the smallest Moss probe and run `moss check --json`.
+6. If native lowering is implicated, verify with `margo build`, `margo test`, or `margo run`.
+7. Classify the result before recording a SWARM finding.
 
 
 Failure of one guessed spelling is not evidence that the underlying feature is

@@ -1,10 +1,10 @@
 # Moss current status
 
-Updated: 2026-09-21
+Updated: 2026-09-22
 
 ## Discovery-only follow-up — fresh-agent cache experiment
 
-Uncommitted discovery work extends live `moss agent bootstrap --json` with
+Discovery work in commit `95f5552` extends live `moss agent bootstrap --json` with
 canonical-document routing, collection operation metadata, a compact
 `project_surface`, test/domain-topology facts, and the composition-initializer
 rule. The skills and Gentle Introduction route unfamiliar Moss-writing work
@@ -24,6 +24,10 @@ drift checks; focused compiler probes; `make examples`; `sh -n tests/run.sh`;
 and `git diff --check`. `make check` passed the new agent checks and all reached
 compiler/tooling/Emacs suites, then stopped at the existing environment-specific
 real LLDB/DAP initial-handshake failure; it was not changed.
+
+Routing/status cleanup validation repeated both agent checks, `make`, `make
+examples`, and the shell/whitespace checks; `make check` again reached only that
+same unchanged LLDB/DAP environment failure.
 
 ## Phase 15.4 — Julia → Moss Swarm: BinaryHeap
 

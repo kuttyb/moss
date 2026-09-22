@@ -205,6 +205,17 @@ def main() -> int:
     ):
         if marker not in agents:
             fail(f"AGENTS.md no longer routes a fresh agent to: {marker}")
+    startup = agents.split("## Before declaring a Moss gap", 1)[0]
+    load_skills = startup.find("**Load Skills**")
+    run_discovery = startup.find("**Run Discovery**")
+    follow_routing = startup.find("**Follow Discovery Routing**")
+    if min(load_skills, run_discovery, follow_routing) < 0 or not load_skills < run_discovery < follow_routing:
+        fail("AGENTS.md no longer orders skills, bootstrap, and discovery routing")
+    if "result.canonical_docs.practical_language_guide" not in startup:
+        fail("AGENTS.md no longer routes fresh source work through bootstrap canonical docs")
+    status = (ROOT / ".codex" / "CURRENT_STATUS.md").read_text(encoding="utf-8")
+    if "Uncommitted discovery work" in status:
+        fail("CURRENT_STATUS.md retains stale uncommitted discovery wording")
     if not MARGO.is_file() or not MARGO.stat().st_mode & 0o111:
         fail("repository Margo package driver is unavailable to a fresh agent")
 
