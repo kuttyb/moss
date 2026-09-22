@@ -73,11 +73,9 @@ type RollingWindow:
       categories.pop()
       values.pop()
       count = count - 1
-    while alert_count > 0:
-      alert_queue.pop()
-      alert_count = alert_count - 1
     head = 0
     totals = Map()
+    alert_queue = []
     alert_head = 0
     alert_count = 0
 
@@ -312,6 +310,26 @@ test "reuse after clear":
   assertEqual(w.category_total(20), 200)
   assertEqual(w.next_alert(0 - 1), 10)
   assertEqual(w.next_alert(0 - 1), 20)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+
+test "clear after partial alert consumption does not leak stale alerts":
+  var w = empty_window(3, 15)
+  w.record(1, 20)
+  w.record(2, 30)
+  assertEqual(w.next_alert(0 - 1), 1)
+  w.clear()
+  assertEqual(w.size(), 0)
+  assertEqual(w.window_sum(), 0)
+  assertEqual(w.category_total(1), 0)
+  assertEqual(w.category_total(2), 0)
+  assertEqual(w.contains_category(1), false)
+  assertEqual(w.contains_category(2), false)
+  assertEqual(w.next_alert(0 - 1), 0 - 1)
+  w.record(3, 25)
+  assertEqual(w.size(), 1)
+  assertEqual(w.window_sum(), 25)
+  assertEqual(w.category_total(3), 25)
+  assertEqual(w.next_alert(0 - 1), 3)
   assertEqual(w.next_alert(0 - 1), 0 - 1)
 
 test "domain operations":
