@@ -1,0 +1,1222 @@
+Work from current repository HEAD.
+
+Current HashMap dogfooding experiment:
+
+```text
+examples/swarm/Python/HashMap/
+```
+
+Current checked-in implementation is a pure Moss `Int -> Int` open-addressing hash map with linear probing.
+
+This phase is evidence-driven follow-up from that experiment.
+
+## Goals
+
+Complete five bounded improvements:
+
+```text
+1. Add integer `%` arithmetic support.
+2. Fix backend symbol hygiene so Moss types may legally be named HashMap,
+   VecDeque, Arc, etc.
+3. Reduce and, if confirmed, fix owned-field replacement incorrectly consuming
+   the receiver.
+4. Add a natural typed-empty-Vector construction surface and reject misleading
+   unsupported local type-annotation syntax cleanly.
+5. Improve language discovery so agents can discover operators and collection
+   construction without reading compiler internals.
+```
+
+Also strengthen the HashMap experiment's collision regressions and reconcile the SWARM ledger.
+
+Do not expand this into a general parser/type-system redesign.
+
+---
+
+# 1. Reconcile current HEAD first
+
+Read:
+
+```text
+examples/swarm/FINDINGS.md
+examples/swarm/Python/HashMap/
+AGENTS.md
+.agents/skills/moss-language/SKILL.md
+.agents/skills/moss-agent-workflow/SKILL.md
+```
+
+Check recent commits before allocating SWARM IDs.
+
+At the current known HEAD, findings end at SWARM-013. Therefore the expected new sequence is approximately:
+
+```text
+SWARM-014 — `%` arithmetic operator unavailable
+SWARM-015 — Moss type name collides with Rust backend imports
+SWARM-016 — owned field replacement consumes receiver
+SWARM-017 — no natural statically typed empty Vector construction
+```
+
+But allocate IDs from the actual ledger at implementation time.
+
+Never renumber or reuse an existing ID.
+
+For SWARM-016, do not create/close the finding until the minimal reproducer confirms the reported behavior.
+
+---
+
+# 2. Strengthen the HashMap experiment before compiler changes
+
+The current HashMap tests do not strongly exercise actual linear-probing collisions.
+
+For capacity 8 under the experiment's current hash:
+
+```text
+1
+9
+17
+```
+
+share the same initial bucket.
+
+Add explicit collision tests.
+
+## Collision chain
+
+Test approximately:
+
+```moss
+hm = hash_map(8)
+
+hm.put(1, 10)
+hm.put(9, 90)
+hm.put(17, 170)
+
+assertEqual(hm.get(1, -1), 10)
+assertEqual(hm.get(9, -1), 90)
+assertEqual(hm.get(17, -1), 170)
+```
+
+## Lookup across tombstone
+
+Test:
+
+```moss
+hm.put(1, 10)
+hm.put(9, 90)
+hm.put(17, 170)
+
+hm.remove(1)
+
+assertEqual(hm.get(9, -1), 90)
+assertEqual(hm.get(17, -1), 170)
+```
+
+This is the real tombstone-search case.
+
+## Existing key behind tombstone
+
+Important regression:
+
+```moss
+hm.put(1, 10)
+hm.put(9, 90)
+
+hm.remove(1)
+
+hm.put(9, 900)
+
+assertEqual(hm.size(), 1)
+assertEqual(hm.get(9, -1), 900)
+```
+
+The insertion algorithm must continue probing after the tombstone before deciding to reuse it, otherwise it could duplicate key `9`.
+
+## Negative collision
+
+Because the current hash normalizes negative keys, also test a pair such as:
+
+```text
+5
+-5
+```
+
+if they share the same initial bucket under the current algorithm.
+
+Do not rely on iteration order in any test.
+
+Keep these experiment tests even after compiler repairs.
+
+---
+
+# 3. SWARM — add integer `%`
+
+The HashMap agent attempted:
+
+```moss
+idx = mixed % cap
+```
+
+and Moss produced inference failure.
+
+Current expression handling supports:
+
+```text
++ - * /
+```
+
+but not `%`.
+
+This is genuine language friction from numerical/data-structure dogfooding.
+
+## Scope
+
+Add:
+
+```moss
+Int % Int -> Int
+```
+
+Do not add Float `%` in this phase unless the existing arithmetic architecture makes it essentially free and semantics are already unambiguous.
+
+This phase's required feature is integer remainder.
+
+## Semantics
+
+Match Moss's existing integer division model.
+
+For nonzero `b`:
+
+```text
+a == (a / b) * b + (a % b)
+```
+
+where `/` retains its existing integer truncation behavior.
+
+Therefore `%` is **integer remainder**, not a separately defined mathematical floor-modulo operation.
+
+For example, if Moss integer division truncates toward zero:
+
+```text
+ 7 % 3 == 1
+-7 % 3 == -1
+```
+
+Do not silently adopt Python's floor-modulo semantics unless Moss integer division already follows that model.
+
+Document the semantics clearly.
+
+## Division/remainder by zero
+
+Use the same static/runtime policy that current integer division uses for division by zero.
+
+Do not create an unrelated arithmetic error model in this task.
+
+## Compiler paths
+
+Handle `%` everywhere arithmetic expression structure is represented or traversed.
+
+Inspect at least:
+
+```text
+expression splitting / recognition
+inferred_expr_type
+check_expression
+generic constraint derivation
+static specialization constraints
+ownership traversal
+effect traversal
+local-call traversal
+native generated expression typing
+Rust lowering
+Fast Debug arithmetic evaluation
+formatter
+semantic queries where operators are surfaced
+```
+
+Do not patch only codegen.
+
+## Native lowering
+
+Preserve Moss integer-overflow conventions.
+
+For Rust, ordinary `%` is acceptable only if it matches Moss's established integer remainder and exceptional-value semantics.
+
+Pay attention to the signed minimum-value / `-1` edge case if Moss integer division already has special wrapping behavior.
+
+Keep `/` and `%` mutually consistent.
+
+## Regressions
+
+At minimum:
+
+```moss
+assertEqual(7 % 3, 1)
+assertEqual(8 % 4, 0)
+assertEqual(1 % 8, 1)
+```
+
+Also cover signed behavior:
+
+```moss
+assertEqual((0 - 7) % 3, -1)
+```
+
+or the equivalent natural unary-negation syntax if that feature has landed.
+
+Test precedence:
+
+```moss
+assertEqual(10 + 7 % 3, 11)
+assertEqual((10 + 7) % 3, 2)
+assertEqual(2 * 7 % 5, 4)
+```
+
+`%` should have the same precedence tier as `*` and `/`.
+
+Also test `%` inside:
+
+```text
+return expression
+if/while condition composition
+generic/static function specialization where appropriate
+Fast Debug
+```
+
+Reject invalid operand types with `TYPE_MISMATCH`.
+
+## Update HashMap
+
+After `%` is supported, replace the arithmetic workaround with natural Moss:
+
+```moss
+var idx = mixed % cap
+if idx < 0:
+  idx = idx + cap
+```
+
+Preserve the experiment README's historical workaround in the SWARM ledger, but the live implementation should use `%`.
+
+---
+
+# 4. SWARM — Rust backend symbol hygiene
+
+The HashMap experiment originally declared:
+
+```moss
+type HashMap:
+  ...
+```
+
+Moss checking succeeded.
+
+Generated Rust imports:
+
+```rust
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+```
+
+and emitted the Moss object as:
+
+```rust
+struct HashMap { ... }
+impl HashMap { ... }
+```
+
+causing rustc E0116/name collision.
+
+This is a backend compiler bug.
+
+Moss source names must not be constrained by incidental Rust implementation imports.
+
+## Required invariant
+
+Legal Moss user symbols must not collide with Rust runtime/helper/import names introduced by the backend.
+
+A Moss programmer should be able to write:
+
+```moss
+type HashMap:
+  value: Int
+```
+
+without knowing that the compiler uses Rust `HashMap` internally.
+
+## Preferred implementation
+
+Prefer fully qualified Rust standard-library paths for backend implementation types, for example:
+
+```rust
+std::collections::HashMap<...>
+std::collections::HashMap::new()
+std::collections::VecDeque<...>
+std::collections::VecDeque::new()
+std::sync::Arc<...>
+std::sync::Arc::new(...)
+```
+
+and remove broad user-visible imports where practical.
+
+This is preferable to merely aliasing:
+
+```rust
+HashMap as __MossHashMap
+```
+
+because a Moss user could eventually choose that alias as well unless Moss owns a formally reserved generated namespace.
+
+Do not invent a broad name-mangling framework if fully qualifying backend library symbols solves the proven issue.
+
+## Regression
+
+Create native regressions for at least:
+
+```moss
+type HashMap:
+  value: Int
+
+type VecDeque:
+  value: Int
+
+type Arc:
+  value: Int
+```
+
+Construct and use each object.
+
+They must:
+
+```text
+pass moss check
+lower normally
+compile under rustc -D warnings
+execute correctly
+```
+
+Also ensure built-in:
+
+```text
+Map
+Queue
+domain runtime Arc usage
+```
+
+still lower successfully.
+
+## Restore the HashMap experiment name
+
+After this compiler bug is fixed, rename the dogfooding object back from:
+
+```moss
+IntHashMap
+```
+
+to:
+
+```moss
+HashMap
+```
+
+unless there is an independent Moss-language naming conflict.
+
+This demonstrates the bug is genuinely fixed rather than merely hidden.
+
+Its factory may remain:
+
+```moss
+hash_map(...)
+```
+
+No need to rename built-in Moss `Map`.
+
+---
+
+# 5. Reduce the owned-field replacement observation
+
+The agent originally attempted behavior equivalent to:
+
+```moss
+keys = next_keys
+values = next_values
+states = next_states
+```
+
+inside a method and reported that this caused the receiver to become CONSUME, making a subsequent method call fail with:
+
+```text
+OWNERSHIP_USE_AFTER_CONSUME
+```
+
+Do not assume this is intended.
+
+Create a minimal reproducer before changing compiler behavior.
+
+For example:
+
+```moss
+type Holder:
+  values: Vector[Int]
+
+  fn replace(next: Vector[Int]):
+    values = next
+
+  fn size() -> Int:
+    return values |> count
+
+fn main():
+  holder = Holder(values: [1, 2])
+  replacement = [3, 4, 5]
+
+  holder.replace(replacement)
+  echo holder.size()
+```
+
+Adjust minimally for current valid call/effect syntax.
+
+## Intended ownership model to verify
+
+Replacing an owned field should conceptually be:
+
+```text
+receiver / field: WRITE
+RHS owned value:  CONSUME
+receiver itself: remains AVAILABLE
+```
+
+The old field value is replaced/dropped.
+
+The RHS moves into the field.
+
+That operation should not consume the whole receiver merely because the field type is owned.
+
+If the current compiler behaves this way already, classify the HashMap observation as an agent misunderstanding or a more specific expression interaction and reduce further.
+
+If the reproducer confirms receiver CONSUME, treat it as a compiler ownership/effect bug and fix it.
+
+## Required positive behavior if bug confirmed
+
+Natural code such as:
+
+```moss
+values = next
+return values |> count
+```
+
+must remain able to use the receiver afterward.
+
+At the call site, the consumed RHS must still obey ownership:
+
+```moss
+holder.replace(replacement)
+```
+
+may make `replacement` unavailable afterward if its value moved into the field.
+
+Do not weaken ownership transfer of the RHS.
+
+## Regression if fixed
+
+Test:
+
+```text
+owned field replacement
+receiver remains available
+RHS becomes consumed where appropriate
+subsequent receiver method call works
+```
+
+Also retain a negative use-after-consume test for the moved RHS.
+
+---
+
+# 6. Typed empty Vector construction
+
+The HashMap agent wanted a statically known empty vector and attempted:
+
+```moss
+var values: Vector[Int] = []
+```
+
+Current local-declaration grammar does not support local type annotations in that form.
+
+The workaround:
+
+```moss
+var values = [0]
+values.pop()
+```
+
+is poor source ergonomics.
+
+Provide a natural way to construct an empty statically typed Vector without introducing general local annotation syntax.
+
+## Preferred surface
+
+Add:
+
+```moss
+Vector[Int]()
+```
+
+as an empty typed Vector expression.
+
+Then natural code becomes:
+
+```moss
+var values = Vector[Int]()
+values.push(10)
+```
+
+This reuses Moss's existing type-specialization spelling:
+
+```text
+Vector[Int]
+```
+
+without introducing a new local-binding grammar.
+
+## Scope
+
+Required:
+
+```moss
+Vector[Int]()
+Vector[Float]()
+Vector[String]()
+Vector[UserType]()
+```
+
+where the element type is otherwise legal.
+
+Do not implement generic user-defined nominal constructors through this syntax.
+
+This is a built-in collection constructor.
+
+## Optional consistency
+
+If the same implementation path makes these trivial and semantically obvious:
+
+```moss
+Queue[Int]()
+Map[String, Int]()
+```
+
+may also be supported.
+
+But do not broaden the task substantially merely for symmetry.
+
+`Vector[T]()` is the required surface from dogfooding evidence.
+
+If implementing Map/Queue would require substantial new checker/lowering logic, defer them.
+
+## Compiler behavior
+
+`Vector[T]()` must statically resolve to:
+
+```text
+vector[T]
+```
+
+and lower to an empty Rust vector.
+
+Fast Debug must construct the corresponding empty Moss vector.
+
+Effects are pure.
+
+No implicit value copies.
+
+## Regressions
+
+At minimum:
+
+```moss
+fn main():
+  var values = Vector[Int]()
+  assertEqual(values |> count, 0)
+  values.push(4)
+  assertEqual(values[0], 4)
+```
+
+Also use it inside an object constructor or function return.
+
+Negative cases:
+
+```text
+unknown element type
+malformed specialization
+wrong type arity
+```
+
+should fail in Moss diagnostics.
+
+## Update HashMap
+
+Replace:
+
+```moss
+var saved_keys = [0]
+saved_keys.pop()
+```
+
+with:
+
+```moss
+var saved_keys = Vector[Int]()
+```
+
+and equivalent occurrences.
+
+This is important dogfooding proof for the feature.
+
+---
+
+# 7. Reject unsupported local type annotation syntax clearly
+
+Do **not** silently interpret:
+
+```moss
+var values: Vector[Int] = []
+```
+
+as a binding whose name is:
+
+```text
+values: Vector[Int]
+```
+
+If local annotations remain unsupported, reject them at parse/check time.
+
+Use a focused structured diagnostic, e.g.:
+
+```text
+LOCAL_TYPE_ANNOTATION_UNSUPPORTED
+```
+
+Message approximately:
+
+```text
+local type annotations are not supported in this form
+```
+
+With useful alternatives:
+
+```text
+use inferred local syntax: var values = expression
+for an empty typed Vector use: var values = Vector[Int]()
+```
+
+Likewise reject:
+
+```moss
+let x: Int = 3
+```
+
+cleanly if local annotations are not part of v0.1.
+
+Do not accidentally introduce general local annotation semantics in this task.
+
+---
+
+# 8. Expand `source_surface` operator discovery
+
+The agent had to inspect compiler internals to determine whether `%` existed.
+
+That should not be necessary.
+
+Extend:
+
+```sh
+moss agent bootstrap --json
+```
+
+`source_surface` with a compact operator section.
+
+After this phase it should communicate current truth, approximately:
+
+```json
+"operators": {
+  "arithmetic": ["+", "-", "*", "/", "%"],
+  "integer_remainder": "%",
+  "boolean_negation": "not expression",
+  "comparison": ["==", "!=", "<", "<=", ">", ">="]
+}
+```
+
+If general unary numeric negation has landed, expose it accurately as well.
+
+Do not enumerate the complete grammar.
+
+---
+
+# 9. Expand collection-construction discovery
+
+Add to `source_surface` something approximately:
+
+```json
+"collections": {
+  "builtins": ["Vector", "Map", "Queue"],
+  "vector_literal": "[a, b, c]",
+  "empty_typed_vector": "Vector[T]()",
+  "local_type_annotations": false
+}
+```
+
+If typed Map/Queue constructors are implemented here, advertise them accurately.
+
+Do not advertise unsupported syntax.
+
+---
+
+# 10. Improve `moss-language`
+
+Update:
+
+```text
+.agents/skills/moss-language/SKILL.md
+```
+
+Add small sections for:
+
+## Arithmetic
+
+Show:
+
+```moss
+a + b
+a - b
+a * b
+a / b
+a % b
+```
+
+State `%` is integer remainder and follows Moss integer-division semantics.
+
+Do not call it Python modulo if signed behavior differs.
+
+## Empty typed Vector
+
+Show:
+
+```moss
+var values = Vector[Int]()
+```
+
+versus:
+
+```moss
+values = [1, 2, 3]
+```
+
+Do not teach `[0]; pop()` after the constructor is available.
+
+## Local annotations
+
+Clearly state whether:
+
+```moss
+var x: Int = ...
+```
+
+is unsupported in v0.1.
+
+If unsupported, say so explicitly.
+
+## Backend names
+
+Do not document Rust-name restrictions because there should be none after the hygiene fix.
+
+---
+
+# 11. Improve the Gentle Introduction
+
+Update:
+
+```text
+docs/GENTLE_INTRODUCTION_TO_MOSS.md
+```
+
+Keep this minimal.
+
+In arithmetic, mention `%`.
+
+In Vector construction, show:
+
+```moss
+values = [1, 2, 3]
+var pending = Vector[Int]()
+```
+
+Explain that the second form is useful when the collection begins empty and its element type cannot be inferred from elements.
+
+Do not add a large generic-types discussion.
+
+Do not tell users about Rust `HashMap`, `VecDeque`, or `Arc`.
+
+Those are backend details.
+
+---
+
+# 12. Agent workflow lesson
+
+Update `moss-agent-workflow` only slightly.
+
+Add:
+
+> When bootstrap does not expose an operator or construction form, use a minimal Moss probe before reading compiler internals. Absence from one attempted spelling is not proof of absence, but compiler source should not be the first language-discovery mechanism.
+
+The preferred loop is:
+
+```text
+bootstrap/source_surface
+        ↓
+canonical docs/skill
+        ↓
+minimal moss check --json probe
+        ↓
+classify
+```
+
+Compiler internals are appropriate when fixing the compiler after the issue is established, not as the normal language-discovery surface for a fresh Moss programmer/agent.
+
+---
+
+# 13. Diagnostics / drift tests
+
+Extend:
+
+```text
+tests/tooling/check_agent_skills.py
+tests/tooling/check_agent_api.py
+```
+
+Assert that bootstrap advertises:
+
+```text
+%
+Vector[T]()
+local type annotation support status
+```
+
+according to current truth.
+
+Extend the source-surface fixture to compile something like:
+
+```moss
+fn main():
+  var values = Vector[Int]()
+  values.push(7)
+
+  remainder = 17 % 5
+
+  assertEqual(values[0], 7)
+  assertEqual(remainder, 2)
+```
+
+Add a negative fixture proving unsupported:
+
+```moss
+var values: Vector[Int] = []
+```
+
+produces the intended structured diagnostic rather than creating a malformed binding name.
+
+---
+
+# 14. SWARM ledger reconciliation
+
+Add the HashMap experiment to:
+
+```text
+Completed swarm experiments
+```
+
+Clarify its provenance accurately.
+
+This is a Moss HashMap dogfooding implementation placed under the Python swarm area; do not claim it is a line-by-line or source-faithful CPython `dict` translation unless the experiment actually records a pinned upstream implementation and bounded translation source.
+
+Add findings for confirmed issues.
+
+Expected categories:
+
+```text
+% missing:
+  Language / arithmetic surface
+
+Rust HashMap collision:
+  Compiler / native symbol hygiene
+
+receiver consumed by field replacement:
+  Compiler / ownership/effect inference
+  ONLY if minimal repro confirms it
+
+typed empty Vector:
+  Missing language/collection construction primitive
+```
+
+Preserve the original workarounds:
+
+```text
+x - (x / cap) * cap
+renaming HashMap -> IntHashMap
+in-place field mutation
+[0] followed by pop()
+```
+
+After each fix, update the HashMap implementation to natural syntax but retain historical evidence in the ledger.
+
+---
+
+# 15. Validate effect inference after HashMap cleanup
+
+Once `%`, typed empty Vector, and any confirmed field-replacement fix land, the HashMap source should become substantially more natural.
+
+Verify semantic queries for representative methods:
+
+```text
+hash_index      READ
+contains        READ
+get             READ
+put_internal    WRITE
+resize          WRITE
+put             WRITE
+remove          WRITE
+clear           WRITE
+```
+
+Do not hard-code these values into the language if inference legitimately reports a more precise representation, but investigate any surprising `CONSUME` of the receiver.
+
+The point is to confirm that HashMap no longer needs architecture-changing workarounds merely to appease ownership inference.
+
+---
+
+# 16. Native/backend validation
+
+Explicitly compile a Moss program containing:
+
+```moss
+type HashMap:
+  value: Int
+
+type VecDeque:
+  value: Int
+
+type Arc:
+  value: Int
+```
+
+under:
+
+```text
+rustc -D warnings
+```
+
+Also compile normal programs using:
+
+```text
+Map
+Queue
+domains
+```
+
+to prove fully qualifying backend Rust symbols did not regress standard lowering.
+
+---
+
+# 17. HashMap end-state
+
+The final experiment should preferably contain natural Moss resembling:
+
+```moss
+type HashMap:
+  ...
+
+  fn hash_index(key: Int) -> Int:
+    ...
+    var idx = mixed % cap
+    ...
+
+  fn resize(new_cap: Int):
+    var saved_keys = Vector[Int]()
+    var saved_values = Vector[Int]()
+    var saved_states = Vector[Int]()
+    ...
+```
+
+If the owned-field-replacement compiler bug is confirmed and fixed, prefer natural replacement of rebuilt vectors over artificially popping/pushing the receiver fields merely to preserve receiver ownership.
+
+However, choose whichever resize algorithm is clearest after the compiler fix; do not rewrite working algorithmic structure merely for stylistic symmetry.
+
+---
+
+# 18. Scope restrictions
+
+Do not in this phase:
+
+```text
+add general local type annotations
+add arbitrary generic nominal construction
+add Float modulo unless trivial and clearly specified
+change integer division semantics
+change incoming message-payload semantics
+weaken linear ownership
+introduce unrestricted aliases
+build a general Rust-name mangling subsystem unless required
+change domain concurrency semantics
+fix unrelated Fast Debug features
+add tuples/destructuring
+add compound assignment
+```
+
+This is a bounded HashMap-driven repair.
+
+---
+
+# 19. Validation
+
+Run focused tests first.
+
+Then:
+
+```sh
+make
+
+python3 tests/tooling/check_agent_skills.py ./moss
+python3 tests/tooling/check_agent_api.py ./moss
+
+make examples
+make check
+
+sh -n tests/run.sh
+git diff --check
+```
+
+Run the HashMap project explicitly:
+
+```sh
+cd examples/swarm/Python/HashMap
+../../../.../margo test
+../../../.../margo run
+```
+
+Use the correct repository-relative Margo invocation for the actual environment.
+
+Require all HashMap tests, including new collision/tombstone regressions, to pass.
+
+For native symbol hygiene, compile generated Rust with:
+
+```text
+-D warnings
+```
+
+If `make check` ends only at the already-known LLDB/DAP sandbox handshake failure, report that precisely.
+
+Do not weaken that test.
+
+---
+
+# 20. Suggested commit structure
+
+Prefer bounded commits such as:
+
+```text
+Add SWARM integer remainder support
+
+Harden Rust backend symbol hygiene
+
+Fix owned-field replacement effects
+```
+
+only if the repro confirms that bug.
+
+Then:
+
+```text
+Add typed empty Vector construction
+
+Harden arithmetic and collection discovery
+
+Reconcile HashMap swarm evidence
+```
+
+Exact grouping may vary, but keep compiler fixes independently reviewable.
+
+---
+
+# 21. Final report
+
+Report:
+
+```text
+Base HEAD
+
+HashMap regressions
+  collision chain
+  tombstone lookup
+  existing-key-behind-tombstone
+  negative-key collision
+  final test count
+
+Integer %
+  semantics
+  checker/inference changes
+  native lowering
+  Fast Debug
+  signed/precedence tests
+  SWARM ID
+
+Backend hygiene
+  original HashMap failure
+  implementation strategy
+  HashMap / VecDeque / Arc regressions
+  SWARM ID
+
+Owned field replacement
+  minimal reproducer
+  confirmed bug or agent misunderstanding
+  exact receiver/RHS effects
+  fix if needed
+  SWARM status
+
+Typed empty Vector
+  Vector[T]() implementation
+  Fast Debug/native parity
+  unsupported local-annotation diagnostic
+  HashMap cleanup
+  SWARM ID
+
+Discovery/docs
+  bootstrap source_surface
+  language_surface
+  moss-language
+  workflow
+  Gentle Introduction
+  drift tests
+
+Ledger
+  HashMap experiment entry
+  findings added/reproduced/fixed
+  updated counts
+
+Validation
+  strict C++ build
+  focused regressions
+  HashMap margo test/run
+  agent skill/API checks
+  make examples
+  make check
+  known environmental failure if any
+
+commit SHA(s)
+working-tree status
+```
+
+Central Phase 15.5 principle:
+
+```text
+Real dogfooding friction should either become natural Moss or produce a precise
+Moss diagnostic.
+
+Programmers and agents should not need to know Rust backend imports, manufacture
+typed collections with dummy elements, or inspect compiler source merely to
+discover ordinary arithmetic syntax.
+```
+
