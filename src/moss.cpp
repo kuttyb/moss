@@ -2559,8 +2559,22 @@ class Checker {
       else if (c == ']') ++sq; else if (c == '[') --sq;
       if (par != 0 || br != 0 || sq != 0) continue;
       for (const auto& op : operators) {
-        if (i + op.size() <= expression.size() &&
-            expression.compare(i, op.size(), op) == 0)
+        if (i + op.size() > expression.size() ||
+            expression.compare(i, op.size(), op) != 0)
+          continue;
+        if ((op == "+" || op == "-") && [&] {
+              size_t before = i;
+              while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1])))
+                --before;
+              if (before == 0) return true;
+              char prior = expression[before - 1];
+              return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
+                  prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
+                  prior == '/' || prior == '%' || prior == '=' || prior == '<' ||
+                  prior == '>' || prior == '!' || prior == '|';
+            }())
+          continue;
+        if (i + op.size() <= expression.size())
           return std::make_pair(trim(expression.substr(0, i)),
                                 trim(expression.substr(i + op.size())));
       }
@@ -2603,6 +2617,20 @@ class Checker {
         else if (canonical_type_name(element) != canonical_type_name(*t)) return std::nullopt;
       }
       return "vector[" + element + "]";
+    }
+    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
+      return string("bool");
+    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/"})) {
+      auto left = inferred_expr_type(arithmetic->first, env);
+      auto right = inferred_expr_type(arithmetic->second, env);
+      if (left && right) {
+        if (*left == *right && starts_with(*left, "_generic:")) return *left;
+        if (*left == "string" && *right == "string" && e.find('+') != string::npos)
+          return string("string");
+        if ((*left == "int" || *left == "float") &&
+            (*right == "int" || *right == "float"))
+          return (*left == "float" || *right == "float") ? "float" : "int";
+      }
     }
     string index_base, index_expr;
     if (parse_index(e, index_base, index_expr)) {
@@ -2758,20 +2786,6 @@ class Checker {
       }
     }
 
-    if (auto comparison = split_binary(e, {"==", "!=", "<=", ">=", "<", ">"}))
-      return string("bool");
-    if (auto arithmetic = split_binary(e, {"+", "-", "*", "/"})) {
-      auto left = inferred_expr_type(arithmetic->first, env);
-      auto right = inferred_expr_type(arithmetic->second, env);
-      if (left && right) {
-        if (left == right && starts_with(*left, "_generic:")) return *left;
-        if (*left == "string" && *right == "string" && e.find('+') != string::npos)
-          return string("string");
-        if ((*left == "int" || *left == "float") &&
-            (*right == "int" || *right == "float"))
-          return (*left == "float" || *right == "float") ? "float" : "int";
-      }
-    }
     return std::nullopt;
   }
 
@@ -4684,6 +4698,17 @@ class Checker {
       return;
     }
 
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
+
     string base, index;
     if (parse_index(value, base, index)) {
       analyze_effect_expression(base, env, params, parameter_effects,
@@ -5529,6 +5554,22 @@ class Checker {
     }
 
     string value = normalize_pipeline(original);
+    for (const auto& operators :
+         vector<vector<string>>{{" or ", " and "},
+                                {"==", "!=", "<=", ">=", "<", ">"},
+                                {"+", "-"}, {"*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        effects.merge(observable_expression_effects(
+            binary->first, env, domain_fields, implicit_object));
+        effects.merge(observable_expression_effects(
+            binary->second, env, domain_fields, implicit_object));
+        if (operators.front() == "*") {
+          auto division = split_binary(value, {"/"});
+          if (division) effects.may_fail = true;
+        }
+        return effects;
+      }
+    }
     string index_base, index_expression;
     if (parse_index(value, index_base, index_expression)) {
       effects.may_fail = true;
@@ -5598,22 +5639,6 @@ class Checker {
         return effects;
       effects.unresolved = true;
       return effects;
-    }
-    for (const auto& operators :
-         vector<vector<string>>{{" or ", " and "},
-                                {"==", "!=", "<=", ">=", "<", ">"},
-                                {"+", "-"}, {"*", "/"}}) {
-      if (auto binary = split_binary(value, operators)) {
-        effects.merge(observable_expression_effects(
-            binary->first, env, domain_fields, implicit_object));
-        effects.merge(observable_expression_effects(
-            binary->second, env, domain_fields, implicit_object));
-        if (operators.front() == "*") {
-          auto division = split_binary(value, {"/"});
-          if (division) effects.may_fail = true;
-        }
-        return effects;
-      }
     }
     for (const auto& field : domain_fields)
       if (expression_uses(value, field)) effects.domain_read = true;
@@ -6410,6 +6435,14 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        check_ownership_expression(line, binary->first, env, Effect::Read);
+        check_ownership_expression(line, binary->second, env, Effect::Read);
+        return;
+      }
+    }
     if (requested != Effect::Read) {
       auto location = storage_location(value, env.types);
       if (location && env.message_payloads.count(location->root)) {
@@ -6588,14 +6621,6 @@ class Checker {
       check_ownership_expression(line, value.substr(0, dot), env,
                                  projection_effect(value, requested, env.types));
       return;
-    }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
-      if (auto binary = split_binary(value, operators)) {
-        check_ownership_expression(line, binary->first, env, Effect::Read);
-        check_ownership_expression(line, binary->second, env, Effect::Read);
-        return;
-      }
     }
     require_available(line, value, env);
   }
@@ -7330,6 +7355,15 @@ class Checker {
     }
     if (check_functional_pipeline(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
+    for (const auto& operators : vector<vector<string>>{{" and ", " or "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
+                                                         {"+", "-", "*", "/"}}) {
+      if (auto binary = split_binary(value, operators)) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        return;
+      }
+    }
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
@@ -7413,14 +7447,6 @@ class Checker {
         for (const auto& arg : args) check_expression(line, arg, env);
       }
       return;
-    }
-    for (const auto& operators : vector<vector<string>>{{" and ", " or "}, {"==", "!=", "<=", ">=", "<", ">"},
-                                                         {"+", "-", "*", "/"}}) {
-      if (auto binary = split_binary(value, operators)) {
-        check_expression(line, binary->first, env);
-        check_expression(line, binary->second, env);
-        return;
-      }
     }
     for (const auto& binding : functional_captures(value, env))
       if (contains_domain_handle(env.at(binding)))

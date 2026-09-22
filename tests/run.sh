@@ -192,6 +192,7 @@ grep -F 'values.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 Vector pop did not retain Vec lowering'
 grep -F 'queue.pop_front()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 Queue pop did not use VecDeque lowering'
+run_case swarm_004_indexed_binary tests/swarm_004_indexed_binary.moss "$(printf 'true\n5\ntrue')"
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"

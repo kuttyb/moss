@@ -1,0 +1,9 @@
+fn main():
+  data = [2, 3, 4, 5]
+  a = 0
+  b = 1
+  i = 1
+  limit = 5
+  echo data[a] <= data[b]
+  echo data[a] + data[b]
+  echo data[i + 1] < limit
