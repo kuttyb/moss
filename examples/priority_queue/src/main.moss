@@ -1,0 +1,220 @@
+# Python-inspired PriorityQueue (Binary Min-Heap) in Moss.
+# Demonstrates:
+# - Array/list-backed binary min-heap following CPython Lib/heapq.py.
+# - Structural traits: Prioritized predicate duck-typed by concrete task/job types.
+# - Iterative sift-up and sift-down using while loops (no ordinary recursion).
+# - Domain encapsulation: JobScheduler domain owns priority queue state with synchronous handlers.
+
+trait Prioritized:
+  fn priority() -> Int
+
+type Task:
+  id: Int
+  urgency: Int
+
+  fn priority() -> Int:
+    return urgency
+
+type Job:
+  name_id: Int
+  cost: Int
+
+  fn priority() -> Int:
+    return cost
+
+fn is_higher_priority(a: Prioritized, b: Prioritized) -> Bool:
+  return a.priority() < b.priority()
+
+# Iterative CPython _siftdown: follows parents toward root, moving larger parents down.
+fn sift_up_data(data: Vector [Int], position: Int) -> Int:
+  current = position
+  new_item = data [current]
+  while current > 0:
+    parent = (current - 1) / 2
+    parent_item = data [parent]
+    if new_item < parent_item:
+      data [current] = parent_item
+      current = parent
+    else:
+      data [current] = new_item
+      return current
+  data [current] = new_item
+  return current
+
+# Iterative CPython _siftup: moves smaller child up to vacancy, then places new_item.
+fn sift_down_data(data: Vector [Int], end: Int, position: Int) -> Int:
+  current = position
+  new_item = data [current]
+  child = current * 2 + 1
+  while child < end:
+    right = child + 1
+    if right < end:
+      if data [right] < data [child]:
+        child = right
+    if data [child] < new_item:
+      data [current] = data [child]
+      current = child
+      child = current * 2 + 1
+    else:
+      data [current] = new_item
+      return current
+  data [current] = new_item
+  return current
+
+# Standalone array-backed binary min-heap object.
+type PriorityQueue:
+  data: Vector [Int]
+  size: Int
+
+  fn len() -> Int:
+    return size
+
+  fn is_empty() -> Bool:
+    return size == 0
+
+  fn peek() -> Int:
+    if size == 0:
+      return 0 - 1
+    return data [0]
+
+  fn push(item: Int) -> Int:
+    data.push(item)
+    size = size + 1
+    pos = size - 1
+    return sift_up_data(data, pos)
+
+  fn pop() -> Int:
+    if size == 0:
+      return 0 - 1
+    last_idx = size - 1
+    last_item = data [last_idx]
+    data.pop()
+    size = size - 1
+    if size > 0:
+      min_item = data [0]
+      data [0] = last_item
+      cur_end = size
+      sift_down_data(data, cur_end, 0)
+      return min_item
+    return last_item
+
+fn empty_queue() -> PriorityQueue:
+  return PriorityQueue(data: [], size: 0)
+
+# Domain wrapper encapsulating priority queue inside state-owning domain.
+domain JobScheduler:
+  data: Vector [Int]
+  size: Int
+  total_scheduled: Int
+  total_completed: Int
+
+  fn ScheduleJob(priority: Int):
+    item = priority + 0
+    data.push(item)
+    size = size + 1
+    total_scheduled = total_scheduled + 1
+    pos = size - 1
+    sift_up_data(data, pos)
+
+  fn NextJob() -> Int:
+    if size == 0:
+      reply 0 - 1
+    last_idx = size - 1
+    last_item = data [last_idx]
+    data.pop()
+    size = size - 1
+    total_completed = total_completed + 1
+    if size > 0:
+      min_item = data [0]
+      data [0] = last_item
+      cur_end = size
+      sift_down_data(data, cur_end, 0)
+      reply min_item
+    reply last_item
+
+  fn PeekJob() -> Int:
+    if size == 0:
+      reply 0 - 1
+    reply data [0]
+
+  fn PendingCount() -> Int:
+    reply size
+
+  fn IsEmpty() -> Bool:
+    reply size == 0
+
+  fn CompletedCount() -> Int:
+    reply total_completed
+
+test "priority queue basic heap property and repeated pop order":
+  pq = empty_queue()
+  pq.push(20)
+  pq.push(5)
+  pq.push(15)
+  pq.push(1)
+  pq.push(8)
+
+  assertEqual(pq.len(), 5)
+  assertEqual(pq.peek(), 1)
+  assertEqual(pq.pop(), 1)
+  assertEqual(pq.pop(), 5)
+  assertEqual(pq.pop(), 8)
+  assertEqual(pq.pop(), 15)
+  assertEqual(pq.pop(), 20)
+  assert(pq.is_empty())
+
+test "priority queue edge cases: empty and single element":
+  pq = empty_queue()
+  assert(pq.is_empty())
+  assertEqual(pq.len(), 0)
+  assertEqual(pq.peek(), 0 - 1)
+  assertEqual(pq.pop(), 0 - 1)
+
+  pq.push(42)
+  assertEqual(pq.is_empty(), false)
+  assertEqual(pq.len(), 1)
+  assertEqual(pq.peek(), 42)
+  assertEqual(pq.pop(), 42)
+  assert(pq.is_empty())
+
+test "custom structs duck-typing Prioritized trait":
+  t1 = Task(id: 101, urgency: 3)
+  t2 = Task(id: 102, urgency: 8)
+  j1 = Job(name_id: 1, cost: 2)
+  j2 = Job(name_id: 2, cost: 5)
+
+  assert(is_higher_priority(t1, t2))
+  assertEqual(is_higher_priority(t2, t1), false)
+  assert(is_higher_priority(j1, j2))
+
+  pq = empty_queue()
+  pq.push(t1.priority())
+  pq.push(t2.priority())
+  pq.push(j1.priority())
+  pq.push(j2.priority())
+
+  assertEqual(pq.pop(), 2)
+  assertEqual(pq.pop(), 3)
+  assertEqual(pq.pop(), 5)
+  assertEqual(pq.pop(), 8)
+
+test "maps CPython parent shift to Moss integer division":
+  assertEqual((5 / 2), 2)
+  assertEqual((7 - 1) / 2, 3)
+
+fn main():
+  sched = JobScheduler(data: [], size: 0, total_scheduled: 0, total_completed: 0)
+
+  message sched.ScheduleJob(25)
+  message sched.ScheduleJob(10)
+  message sched.ScheduleJob(30)
+  message sched.ScheduleJob(5)
+
+  echo "Peek job:", message sched.PeekJob()
+  echo "Pending:", message sched.PendingCount()
+  echo "Next 1:", message sched.NextJob()
+  echo "Next 2:", message sched.NextJob()
+  echo "Next 3:", message sched.NextJob()
+  echo "Next 4:", message sched.NextJob()
+  echo "Is empty:", message sched.IsEmpty()
+  echo "Completed:", message sched.CompletedCount()
