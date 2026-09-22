@@ -2671,7 +2671,10 @@ class Checker {
         return "range[int]";
       auto function = functions_.find(callee);
       if (function == functions_.end() && current_object_) {
-        auto method = resolve_method(current_object_->name, callee, {});
+        vector<string> argument_types;
+        for (const auto& argument : args)
+          argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
+        auto method = resolve_method(current_object_->name, callee, argument_types);
         if (method && method->return_type) return *method->return_type;
       }
       if (function != functions_.end() && function->second->return_type) {

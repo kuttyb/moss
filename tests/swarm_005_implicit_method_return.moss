@@ -1,0 +1,17 @@
+type Example:
+  fn helper(left: Int, right: Int) -> Int:
+    return left + right
+
+  fn zero() -> Int:
+    return 9
+
+  fn run() -> Int:
+    return helper(2, 3)
+
+  fn run_zero() -> Int:
+    return zero()
+
+fn main():
+  value = Example()
+  echo value.run()
+  echo value.run_zero()
