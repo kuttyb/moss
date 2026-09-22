@@ -121,6 +121,11 @@ if bootstrap["result"].get("tool_invocation") != {
     "bootstrap_command": "./moss agent bootstrap --json",
 }:
     fail("bootstrap tool_invocation metadata drifted")
+discovery = bootstrap["result"].get("discovery", {})
+if discovery.get("capabilities_command") != "./moss agent capabilities --json":
+    fail("bootstrap discovery capabilities command is not repo-local")
+if discovery.get("schema_command") != "./moss agent schema --json":
+    fail("bootstrap discovery schema command is not repo-local")
 schema_names = {item["name"] for item in schema["result"]["schema"]["command_schemas"]}
 if "package_project_driver" not in schema_names:
     fail("agent schema omitted the Margo package/project contract")

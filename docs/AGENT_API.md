@@ -31,7 +31,7 @@ validated. It is not a daemon, MCP server, or replacement compiler pipeline.
 Start an automated Moss session with:
 
 ```sh
-moss agent bootstrap --json
+./moss agent bootstrap --json
 ```
 
 The result contains protocol and compiler versions, the nearest project root when a
@@ -39,9 +39,12 @@ The result contains protocol and compiler versions, the nearest project root whe
 safety rules. Schema and capability discovery are also available:
 
 ```sh
-moss agent capabilities --json
-moss agent schema --json
+./moss agent capabilities --json
+./moss agent schema --json
 ```
+
+In a repository checkout use `./moss`; bare `moss` is valid when the executable
+is already on `PATH`.
 
 All agent commands use this top-level envelope:
 
@@ -212,9 +215,16 @@ Repositories may use this intentionally short snippet:
 ```text
 This repository uses Moss.
 
+If ./moss has not been built, run:
+
+    make
+
 Before modifying Moss source, run:
 
-    moss agent bootstrap --json
+    ./moss agent bootstrap --json
+
+Use ./moss for language/semantic operations and ./margo for project operations.
+Bare moss/margo are valid when already on PATH.
 
 Use Moss structured diagnostics and semantic queries rather than
 reverse-engineering or editing generated Rust.

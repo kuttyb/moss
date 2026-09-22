@@ -22,7 +22,7 @@ This is the required start of every fresh Moss task:
    actions, debugging features, safety rules, language constraints, and recommended
    workflow.
 7. If an unfamiliar capability is reported, run `./moss agent capabilities --json`
-   and/or `moss agent schema --json` for its purpose, inputs, response shape, stable
+   and/or `./moss agent schema --json` for its purpose, inputs, response shape, stable
    identities, and common failure modes.
 8. Use `./margo` for package/project work and `./moss` for language and semantic work.
 9. Only then inspect or edit Moss source.

@@ -122,7 +122,7 @@ queries all application files, a `tests` source queries `src + tests`, and a `be
 source queries `src + benches`; standalone files outside a project remain single-file.
 
 Automation and coding agents can discover the structured protocol first with
-`moss agent bootstrap --json`.
+`./moss agent bootstrap --json` from a repository checkout.
 
 ### Coding-agent onboarding
 
@@ -136,11 +136,11 @@ See [agent onboarding skills](docs/AGENT_SKILLS.md) for discovery and validation
 The short agent loop is:
 
 ```sh
-moss agent bootstrap --json
-moss check src/main.moss --json
-moss fmt
-moss impact fn:changed --json
-moss test --affected
+./moss agent bootstrap --json
+./moss check src/main.moss --json
+./moss fmt
+./moss impact fn:changed --json
+./moss test --affected
 ```
 
 See [the agent API](docs/AGENT_API.md) for durable IDs, semantic edits, repair actions,

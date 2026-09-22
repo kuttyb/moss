@@ -14448,7 +14448,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\",\"container methods reached through object fields are not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
-  out << ",\n    \"discovery\": {\"capabilities_command\": \"moss agent capabilities --json\", \"schema_command\": \"moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
+  out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
       out, {"In a repository checkout, prefer ./moss and ./margo; run make if ./moss is missing.",
