@@ -19,6 +19,9 @@ two-stage `sift_up` port passes four project tests plus native build/run
 (`1 1 2 5 7`). It independently rediscovered the count-arithmetic, `pop` lowering,
 and unary-negative formatter issues, and recorded two Python-specific rewrites for
 indexed-child comparison and direct helper returns. No frozen Julia source changed.
+The canonical Phase 15 swarm findings ledger is now
+`examples/swarm/FINDINGS.md`; it contains 5 distinct open findings, 3 independently
+reproduced across both Julia and Python BinaryHeap experiments.
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 
