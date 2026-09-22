@@ -3,7 +3,7 @@
 This small dogfooding experiment translates the core algorithm of
 JuliaCollections/DataStructures.jl's `BinaryHeap` into a pure Moss `Int`
 min-heap. It deliberately implements only empty construction, `push`, `peek`,
-`take_min` (the equivalent of `pop`), and the small `count`/`empty` helpers
+`pop`, and the small `count`/`empty` helpers
 required by the example.
 
 ## Source
@@ -33,7 +33,7 @@ parent(i) = (i - 1) / 2
 The implementation retains Julia's hole-moving shape: it saves the inserted or
 replacement value, moves parents or smaller children into the hole, and stores
 the saved value once. The last vector element is read before `Vector.pop()` removes it.
-As in the bounded source experiment, calling `take_min` or `peek` on an empty heap
+As in the bounded source experiment, calling `pop` or `peek` on an empty heap
 is outside the exercised contract.
 
 ## What worked naturally
@@ -48,29 +48,15 @@ is outside the exercised contract.
 - The tests cover the requested ordering sequence, duplicates, negatives, a
   single element, and reuse after pops.
 
-## Friction and workaround
+## Historical friction (resolved)
 
-**Moss implementation/compiler limitation — vector length in arithmetic.** The
-natural current spelling, `data |> count`, checks as a terminal or comparison,
-but the probe `return (data |> count) + 1` is rejected with
-`TYPE_INFERENCE_FAILED: cannot infer the type of this return expression`.
-The heap needs arithmetic lengths to derive the last index and child bounds.
-
-The bounded workaround is the explicit `size: Int` field, updated beside each
-successful vector `push`/`pop`. This is not a sentinel element, does not hide the
-algorithm behind another collection, and keeps all heap ordering/mutation in
-Moss. It is an experiment observation, not a language-change proposal.
-
-**Moss implementation/compiler limitation — user method named `pop`.** A direct
-`fn pop() -> Int` form checks, but native lowering resolves calls as a collection
-`pop_front` operation on `BinaryHeap`, which does not exist. The experiment calls
-the equivalent operation `take_min` instead. This is a naming workaround only;
-the method still performs the source algorithm's `heappop!` behavior.
-
-**Tooling/diagnostic problem — unary negative in `assertEqual`.** The checker
-accepts `assertEqual(heap.take_min(), -4)`, but the formatter reports that it
-cannot infer the assertion operand types. The two negative expected values are
-therefore written as `0 - 4`, while the heap still receives ordinary `-4` inputs.
+The original experiment used an explicit `size: Int`, `take_min`, and `0 - 4`
+assertions because `(data |> count) + 1`, `fn pop()`, and
+`assertEqual(heap.take_min(), -4)` respectively exposed SWARM-001, SWARM-002,
+and SWARM-003. They were fixed later in `50ff4b7`, `b0d17e4`, and `814df22`.
+The checked-in heap now uses `data |> count`, `pop`, and ordinary negative
+literals; the historical forms remain documented in the
+[findings ledger](../../FINDINGS.md).
 
 ## Run
 

@@ -1,7 +1,9 @@
 # A bounded Int min-heap translated from CPython's Lib/heapq.py.
 type BinaryHeap:
   data: Vector [Int]
-  size: Int
+
+  fn count() -> Int:
+    return data |> count
 
   # CPython _siftdown: follow parents toward start, moving them down once.
   fn sift_down(start: Int, position: Int) -> Int:
@@ -21,7 +23,7 @@ type BinaryHeap:
 
   # CPython _siftup: move the smaller-child path to a leaf, then sift back.
   fn sift_up(position: Int) -> Int:
-    end = size
+    end = count()
     start = position
     new_item = data [position]
     current = position
@@ -29,31 +31,25 @@ type BinaryHeap:
     while child < end:
       right = child + 1
       if right < end:
-        right_item = data [right]
-        child_item = data [child]
-        if right_item <= child_item:
+        if data [right] <= data [child]:
           child = right
       data [current] = data [child]
       current = child
       child = current * 2 + 1
     data [current] = new_item
-    sift_down(start, current)
-    return current
+    return sift_down(start, current)
 
   fn push(value: Int) -> Int:
     data.push(value)
-    size = size + 1
-    sift_down(0, size - 1)
-    return size
+    return sift_down(0, count() - 1)
 
   fn peek() -> Int:
     return data [0]
 
-  fn take_min() -> Int:
-    last_item = data [size - 1]
+  fn pop() -> Int:
+    last_item = data [count() - 1]
     data.pop()
-    size = size - 1
-    if size > 0:
+    if count() > 0:
       result = data [0]
       data [0] = last_item
       sift_up(0)
@@ -61,7 +57,7 @@ type BinaryHeap:
     return last_item
 
 fn empty_heap() -> BinaryHeap:
-  return BinaryHeap(data: [], size: 0)
+  return BinaryHeap(data: [])
 
 test "orders the Python heapq push and pop sequence":
   heap = empty_heap()
@@ -71,10 +67,10 @@ test "orders the Python heapq push and pop sequence":
   heap.push(1)
 
   assertEqual(heap.peek(), 1)
-  assertEqual(heap.take_min(), 1)
-  assertEqual(heap.take_min(), 2)
-  assertEqual(heap.take_min(), 5)
-  assertEqual(heap.take_min(), 7)
+  assertEqual(heap.pop(), 1)
+  assertEqual(heap.pop(), 2)
+  assertEqual(heap.pop(), 5)
+  assertEqual(heap.pop(), 7)
 
 test "handles duplicates and negative values":
   heap = empty_heap()
@@ -83,23 +79,23 @@ test "handles duplicates and negative values":
   heap.push(3)
   heap.push(-4)
 
-  assertEqual(heap.take_min(), 0 - 4)
-  assertEqual(heap.take_min(), 0 - 4)
-  assertEqual(heap.take_min(), 3)
-  assertEqual(heap.take_min(), 3)
+  assertEqual(heap.pop(), -4)
+  assertEqual(heap.pop(), -4)
+  assertEqual(heap.pop(), 3)
+  assertEqual(heap.pop(), 3)
 
 test "supports a single element and reuse after pop":
   heap = empty_heap()
   heap.push(9)
   assertEqual(heap.peek(), 9)
-  assertEqual(heap.take_min(), 9)
+  assertEqual(heap.pop(), 9)
 
   heap.push(4)
   heap.push(-1)
-  assertEqual(heap.take_min(), 0 - 1)
+  assertEqual(heap.pop(), -1)
   heap.push(2)
-  assertEqual(heap.take_min(), 2)
-  assertEqual(heap.take_min(), 4)
+  assertEqual(heap.pop(), 2)
+  assertEqual(heap.pop(), 4)
 
 test "maps CPython parent shift to Moss integer division":
   assertEqual((5 / 2), 2)
@@ -111,4 +107,4 @@ fn main():
   heap.push(2)
   heap.push(7)
   heap.push(1)
-  echo heap.peek(), heap.take_min(), heap.take_min(), heap.take_min(), heap.take_min()
+  echo heap.peek(), heap.pop(), heap.pop(), heap.pop(), heap.pop()

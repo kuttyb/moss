@@ -1,15 +1,13 @@
 # A small Int min-heap translated from the core array algorithm used by
-# JuliaCollections/DataStructures.jl. `size` is maintained explicitly because
-# Moss's current `count` terminal cannot be used as an arithmetic index.
+# JuliaCollections/DataStructures.jl.
 type BinaryHeap:
   data: Vector [Int]
-  size: Int
 
   fn count() -> Int:
-    return size
+    return data |> count
 
   fn empty() -> Bool:
-    return size == 0
+    return count() == 0
 
   fn peek() -> Int:
     return data [0]
@@ -33,14 +31,12 @@ type BinaryHeap:
   fn percolate_down(start: Int) -> Int:
     value = data [start]
     position = start
-    while position * 2 + 1 < size:
+    while position * 2 + 1 < count():
       left = position * 2 + 1
       right = left + 1
       child = left
-      if right < size:
-        right_value = data [right]
-        left_value = data [left]
-        if right_value < left_value:
+      if right < count():
+        if data [right] < data [left]:
           child = right
       child_value = data [child]
       if child_value >= value:
@@ -53,23 +49,21 @@ type BinaryHeap:
 
   fn push(value: Int) -> Int:
     data.push(value)
-    size = size + 1
-    percolate_up(size - 1)
-    return size
+    percolate_up(count() - 1)
+    return count()
 
-  fn take_min() -> Int:
+  fn pop() -> Int:
     result = data [0]
-    last = size - 1
+    last = count() - 1
     replacement = data [last]
     data.pop()
-    size = size - 1
-    if size > 0:
+    if count() > 0:
       data [0] = replacement
       percolate_down(0)
     return result
 
 fn empty_heap() -> BinaryHeap:
-  return BinaryHeap(data: [], size: 0)
+  return BinaryHeap(data: [])
 
 test "orders the Julia BinaryHeap push and pop sequence":
   heap = empty_heap()
@@ -79,10 +73,10 @@ test "orders the Julia BinaryHeap push and pop sequence":
   heap.push(1)
 
   assertEqual(heap.peek(), 1)
-  assertEqual(heap.take_min(), 1)
-  assertEqual(heap.take_min(), 2)
-  assertEqual(heap.take_min(), 5)
-  assertEqual(heap.take_min(), 7)
+  assertEqual(heap.pop(), 1)
+  assertEqual(heap.pop(), 2)
+  assertEqual(heap.pop(), 5)
+  assertEqual(heap.pop(), 7)
   assert(heap.empty())
 
 test "handles duplicates and negative values":
@@ -92,24 +86,24 @@ test "handles duplicates and negative values":
   heap.push(3)
   heap.push(-4)
 
-  assertEqual(heap.take_min(), 0 - 4)
-  assertEqual(heap.take_min(), 0 - 4)
-  assertEqual(heap.take_min(), 3)
-  assertEqual(heap.take_min(), 3)
+  assertEqual(heap.pop(), -4)
+  assertEqual(heap.pop(), -4)
+  assertEqual(heap.pop(), 3)
+  assertEqual(heap.pop(), 3)
 
 test "supports a single element and reuse after pop":
   heap = empty_heap()
   heap.push(9)
   assertEqual(heap.peek(), 9)
-  assertEqual(heap.take_min(), 9)
+  assertEqual(heap.pop(), 9)
   assert(heap.empty())
 
   heap.push(4)
   heap.push(-1)
-  assertEqual(heap.take_min(), 0 - 1)
+  assertEqual(heap.pop(), -1)
   heap.push(2)
-  assertEqual(heap.take_min(), 2)
-  assertEqual(heap.take_min(), 4)
+  assertEqual(heap.pop(), 2)
+  assertEqual(heap.pop(), 4)
 
 test "uses truncating zero-based parent division":
   assertEqual((5 / 2), 2)
@@ -121,4 +115,4 @@ fn main():
   heap.push(2)
   heap.push(7)
   heap.push(1)
-  echo heap.take_min(), heap.take_min(), heap.take_min(), heap.take_min()
+  echo heap.pop(), heap.pop(), heap.pop(), heap.pop()

@@ -7,30 +7,30 @@ Updated: 2026-09-21
 The bounded pure-Moss `Int` min-heap experiment is complete under
 `examples/swarm/Julia/BinaryHeap/`. It translates Julia's hole-moving heap
 algorithm with zero-based indexes and passes four project tests plus native build/run
-(`1 2 5 7`). The README records three bounded implementation/tooling workarounds:
-an explicit arithmetic `size` because `Vector |> count` cannot currently infer in an
-arithmetic expression, and `take_min` because a user method named `pop` mislowers as
-`pop_front`, plus `0 - 4` expected values because unary-negative `assertEqual` values
-confuse the formatter. No compiler or language code changed.
+(`1 2 5 7`). SWARM-001 through SWARM-003 are now fixed, so the checked-in source
+uses `Vector |> count`, `pop`, and ordinary negative literals; its README preserves
+the original observations as historical records.
 
 The independent CPython `heapq` experiment under
 `examples/swarm/Python/BinaryHeap/` is also complete. Its zero-based `sift_down` /
 two-stage `sift_up` port passes four project tests plus native build/run
-(`1 1 2 5 7`). It independently rediscovered the count-arithmetic, `pop` lowering,
-and unary-negative formatter issues, and recorded two Python-specific rewrites for
-indexed-child comparison and direct helper returns. No frozen Julia source changed.
+(`1 1 2 5 7`). SWARM-004 and SWARM-005 are now also fixed, so the checked-in
+Python port uses direct indexed comparisons and helper returns. No frozen Julia
+source changed.
 The canonical Phase 15 swarm findings ledger is
 `examples/swarm/FINDINGS.md`. Its BinaryHeap baseline recorded five findings,
 three independently reproduced across the Julia and Python ports.
 
 The isolated Agent A Python `Counter` Map experiment is a bounded failure under
 `examples/swarm/Python/Counter/`: Map-backed construction and mutation check/build,
-but missing-key-as-zero cannot be expressed with the supported Map surface. It added
-four open findings (SWARM-006 through SWARM-009) and independently reproduced
-SWARM-003 and SWARM-005. SWARM-001 is fixed by `50ff4b7`; SWARM-009 was
-reclassified as an agent misunderstanding after focused Counter controls. The
-current ledger contains nine findings (seven open, one fixed, one agent
-misunderstanding). The Julia `Accumulator` experiment remains separate.
+but missing-key-as-zero cannot be expressed with the supported Map surface.
+SWARM-006 and SWARM-007 are fixed, so direct `Map()` field construction and String
+key insertion no longer need experiment workarounds; SWARM-008 remains open and
+SWARM-009 remains an agent misunderstanding. The current ledger contains nine
+findings (one open, seven fixed, one agent misunderstanding). The Julia
+`Accumulator` experiment remains separate. Focused regressions, all three
+swarm projects, and `make examples` pass; `make check` reaches only the existing
+sandbox LLDB/DAP handshake failure after the compiler and tooling suites pass.
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 

@@ -10,8 +10,7 @@ type Counter:
   # CPython _count_elements: read, add, and write the per-key count.
   fn increment_by(key: String, amount: Int) -> Int:
     next = counts [key] + amount
-    stored_key = "" + key
-    counts [stored_key] = next
+    counts [key] = next
     total_count = total_count + amount
     return next
 
@@ -20,19 +19,14 @@ type Counter:
     return counts [key]
 
   fn decrement(key: String) -> Int:
-    increment_by(key, 0 - 1)
+    increment_by(key, -1)
     return counts [key]
 
   fn total() -> Int:
     return total_count
 
 fn empty_counter() -> Counter:
-  counts = Map()
-  # Map() obtains its concrete key/value types from indexed assignment.
-  # This inert entry establishes Map[String, Int] without pre-populating a
-  # behavioral test key.
-  counts ["__counter_type_seed__"] = 0
-  return Counter(counts: counts, total_count: 0)
+  return Counter(counts: Map(), total_count: 0)
 
 test "updates an existing counter key":
   counts = Map()
@@ -70,8 +64,8 @@ test "counts increments, amounts, and decrements":
 test "permits negative counts and reuse after reads":
   counter = empty_counter()
   counter.decrement("x")
-  assertEqual(counter.get("x"), 0 - 1)
-  assertEqual(counter.total(), 0 - 1)
+  assertEqual(counter.get("x"), -1)
+  assertEqual(counter.total(), -1)
   counter.increment_by("x", 3)
   counter.increment("pear")
   assertEqual(counter.get("x"), 2)

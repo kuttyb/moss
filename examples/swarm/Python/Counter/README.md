@@ -40,7 +40,7 @@ the natural Counter operation that the tests show is not presently available.
 ## What works for an existing key
 
 - A Moss type can hold concrete `Map[String, Int]` state.
-- Indexed assignment establishes concrete Map key/value types.
+- Contextual field typing establishes concrete Map key/value types for `Map()`.
 - Existing-key lookup, read-modify-write, `increment`, `increment_by`, and
   `decrement` execute successfully in the `updates an existing counter key`
   control test.
@@ -68,21 +68,22 @@ by iterating over Map values; `total_count` is maintained incrementally.
 
 - Natural Moss attempt: `Counter(counts: Map(), total_count: 0)` for a field
   declared `Map[String, Int]`.
-- Diagnostic: `field 'Counter.counts' has conflicting inferred types
+- Original diagnostic: `field 'Counter.counts' has conflicting inferred types
   'map[string,int]' and 'map'`.
-- Rewrite: initialize a local `Map()`, assign one inert type-seed entry, then
-  pass that typed local to the constructor.
-- Outcome: the source checks. The seed is not a behavioral test key and does
+- Original rewrite: initialize a local `Map()`, assign one inert type-seed
+  entry, then pass that typed local to the constructor.
+- Outcome: fixed later in `629757b`; the checked-in source now uses
+  `Counter(counts: Map(), total_count: 0)` directly. The historical seed did
   not implement missing-key behavior.
 
 ### Map write from a String method parameter
 
 - Natural Moss attempt: `counts[key] = next` in an ordinary type method.
-- Result: source checks, but native lowering passes `&String` to Rust map
+- Original result: source checks, but native lowering passes `&String` to Rust map
   insertion, which requires an owned `String`.
-- Rewrite: `stored_key = "" + key` before indexed assignment.
-- Outcome: native compilation succeeds. This is recorded as a compiler
-  lowering finding rather than a source-language feature.
+- Original rewrite: `stored_key = "" + key` before indexed assignment.
+- Outcome: fixed later in `b099e42`; natural `counts[key] = next` now lowers
+  with the required owned key materialization.
 
 ### Method-to-method reuse
 
@@ -94,14 +95,13 @@ intermediate-draft misunderstanding (SWARM-009), not a Moss method-call limit.
 ### Unary negative formatter issue
 
 The negative-count assertion initially used `-1` and reproduced `SWARM-003`.
-The checked source uses `0 - 1` so `moss fmt` can complete; this does not affect
-the Map blocker.
+It was fixed later in `814df22`; the checked source uses `-1` directly.
 
 ## Validation
 
 From this project directory, using repository-local tools:
 
-- `moss fmt src/main.moss`: passes with the documented negative-literal form.
+- `moss fmt src/main.moss`: passes with ordinary negative literals.
 - `moss check src/main.moss --json`: passes.
 - `margo build`: passes.
 - `margo test`: `1 passed / 3 failed`; the existing-key control passes, while

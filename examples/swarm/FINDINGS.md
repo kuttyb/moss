@@ -7,8 +7,8 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 9
-- Open: 7
-- Fixed: 1
+- Open: 1
+- Fixed: 7
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 4
 
@@ -75,11 +75,15 @@ its result in this arithmetic composition.
 
 ## SWARM-002 — User method named `pop` mislowers as collection pop
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / lowering or name resolution
 - First observed: [Julia / BinaryHeap](Julia/BinaryHeap/)
 - Also observed: [Python / BinaryHeap](Python/BinaryHeap/)
 - Observation count: 2
+
+Fix commit: `b0d17e4` (`Fix SWARM-002 typed pop lowering`)
+
+Regression: `tests/swarm_002_typed_pop.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -111,12 +115,17 @@ The observation is from native lowering, not source checking.
 
 ## SWARM-003 — Unary negative assertion operand confuses formatter
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / formatter
 - First observed: [Julia / BinaryHeap](Julia/BinaryHeap/)
 - Also observed: [Python / BinaryHeap](Python/BinaryHeap/),
   [Python / Counter](Python/Counter/)
 - Observation count: 3
+
+Fix commit: `814df22` (`Fix SWARM-003 unary-minus formatting`)
+
+Regression: `tests/tooling/check_swarm_003_formatter.py`, invoked by
+`tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -142,11 +151,15 @@ ordinary negative literals.
 
 ## SWARM-004 — Direct comparison of two indexed Vector reads fails
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / expression or indexing inference
 - First observed: [Python / BinaryHeap](Python/BinaryHeap/)
 - Also observed: —
 - Observation count: 1
+
+Fix commit: `85b00d6` (`Fix SWARM-004 indexed binary checking`)
+
+Regression: `tests/swarm_004_indexed_binary.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -176,11 +189,16 @@ The ledger does not assert a compiler root cause beyond the observed error.
 
 ## SWARM-005 — Direct return of helper call fails inference
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Python / BinaryHeap](Python/BinaryHeap/)
 - Also observed: [Python / Counter](Python/Counter/)
 - Observation count: 2
+
+Fix commit: `6718255` (`Fix SWARM-005 implicit method return inference`)
+
+Regression: `tests/swarm_005_implicit_method_return.moss`, invoked by
+`tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -206,11 +224,16 @@ effect and `current` was already known. Do not generalize beyond that case.
 
 ## SWARM-006 — Empty Map construction ignores declared field specialization
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Python / Counter](Python/Counter/)
 - Also observed: —
 - Observation count: 1
+
+Fix commit: `629757b` (`Fix SWARM-006 empty Map contextual typing`)
+
+Regression: `tests/swarm_006_empty_map_context.moss`, invoked by
+`tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -240,11 +263,15 @@ the otherwise concrete Map construction checkable.
 
 ## SWARM-007 — Map write borrows a String key instead of owning it
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / lowering
 - First observed: [Python / Counter](Python/Counter/)
 - Also observed: —
 - Observation count: 1
+
+Fix commit: `b099e42` (`Fix SWARM-007 Map String key lowering`)
+
+Regression: `tests/swarm_007_map_string_key.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
