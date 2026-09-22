@@ -7,10 +7,18 @@ Updated: 2026-09-21
 The bounded pure-Moss `Int` min-heap experiment is complete under
 `examples/swarm/Julia/BinaryHeap/`. It translates Julia's hole-moving heap
 algorithm with zero-based indexes and passes four project tests plus native build/run
-(`1 2 5 7`). The README records two bounded implementation/tooling workarounds:
+(`1 2 5 7`). The README records three bounded implementation/tooling workarounds:
 an explicit arithmetic `size` because `Vector |> count` cannot currently infer in an
 arithmetic expression, and `take_min` because a user method named `pop` mislowers as
-`pop_front`. No compiler or language code changed.
+`pop_front`, plus `0 - 4` expected values because unary-negative `assertEqual` values
+confuse the formatter. No compiler or language code changed.
+
+The independent CPython `heapq` experiment under
+`examples/swarm/Python/BinaryHeap/` is also complete. Its zero-based `sift_down` /
+two-stage `sift_up` port passes three project tests plus native build/run
+(`1 1 2 5 7`). It independently rediscovered the count-arithmetic, `pop` lowering,
+and unary-negative formatter issues, and recorded two Python-specific rewrites for
+indexed-child comparison and direct helper returns. No frozen Julia source changed.
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 
