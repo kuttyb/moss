@@ -16,7 +16,10 @@ The translation uses `heappush`, `heappop`, `_siftdown`, and `_siftup` only.
 
 Python and Moss both use zero-based indexing, so the source relationships carry
 over directly: the left child is `2 * position + 1`, the right child is one
-greater, and the parent is `(position - 1) / 2`.
+greater. CPython computes the parent as `(pos - 1) >> 1`; Moss uses
+`(position - 1) / 2`. For the nonnegative indices reachable in this heap
+algorithm, those calculations are equivalent. The project test verifies the
+Moss integer-division behavior relied on by this translation.
 
 `push` appends and calls `sift_down(0, size - 1)`. `take_min` removes the
 last vector element, installs it at the root when needed, and calls `sift_up`.

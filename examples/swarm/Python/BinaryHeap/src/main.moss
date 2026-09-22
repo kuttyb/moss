@@ -101,6 +101,10 @@ test "supports a single element and reuse after pop":
   assertEqual(heap.take_min(), 2)
   assertEqual(heap.take_min(), 4)
 
+test "maps CPython parent shift to Moss integer division":
+  assertEqual((5 / 2), 2)
+  assertEqual((7 - 1) / 2, 3)
+
 fn main():
   heap = empty_heap()
   heap.push(5)

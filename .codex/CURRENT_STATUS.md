@@ -15,7 +15,7 @@ confuse the formatter. No compiler or language code changed.
 
 The independent CPython `heapq` experiment under
 `examples/swarm/Python/BinaryHeap/` is also complete. Its zero-based `sift_down` /
-two-stage `sift_up` port passes three project tests plus native build/run
+two-stage `sift_up` port passes four project tests plus native build/run
 (`1 1 2 5 7`). It independently rediscovered the count-arithmetic, `pop` lowering,
 and unary-negative formatter issues, and recorded two Python-specific rewrites for
 indexed-child comparison and direct helper returns. No frozen Julia source changed.
