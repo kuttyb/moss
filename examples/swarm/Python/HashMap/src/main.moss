@@ -1,4 +1,4 @@
-# A pure Moss Int-to-Int HashMap implemented with Open Addressing and Linear Probing.
+# A pure Moss Int-to-Int IntHashMap implemented with Open Addressing and Linear Probing.
 # Uses Structure-of-Arrays (parallel primitive vectors) for cache-friendly,
 # flat storage without recursive types or dynamic dispatch.
 
@@ -8,7 +8,7 @@ trait MapLike:
   fn contains(key: Int) -> Bool
   fn get(key: Int, default_val: Int) -> Int
 
-type HashMap:
+type IntHashMap:
   cap: Int
   count: Int
   keys: Vector [Int]
@@ -126,6 +126,7 @@ type HashMap:
 
     old_cap = cap
     cap = new_cap
+    count = 0
     var clear_idx = 0
     while clear_idx < old_cap:
       keys.pop()
@@ -201,7 +202,7 @@ type HashMap:
       i = i + 1
     return result
 
-fn hash_map(initial_capacity: Int) -> HashMap:
+fn hash_map(initial_capacity: Int) -> IntHashMap:
   var capacity = initial_capacity
   if capacity < 4:
     capacity = 4
@@ -217,7 +218,7 @@ fn hash_map(initial_capacity: Int) -> HashMap:
     v.push(0)
     s.push(0)
     i = i + 1
-  return HashMap(cap: capacity, count: 0, keys: k, values: v, states: s)
+  return IntHashMap(cap: capacity, count: 0, keys: k, values: v, states: s)
 
 # Trait helper functions for structural specialization
 fn map_size(m: MapLike) -> Int:
