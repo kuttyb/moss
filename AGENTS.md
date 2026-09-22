@@ -1,5 +1,32 @@
 # Moss repository instructions
 
+## Mandatory Session Startup
+
+Every agent session must execute the following startup sequence before inspecting or editing Moss code:
+
+1. **Load Skills**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`.
+2. **Run Discovery**: Run `./moss agent bootstrap --json` (or `moss agent bootstrap --json` if on `PATH`). Run `make` first if `./moss` is not yet built.
+3. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
+4. **Tooling Split**:
+   - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, and `./margo clean`.
+   - Use `moss` for language, semantic queries, diagnostics, and formatting: `moss check`, `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and `debug`.
+
+### Key Language Rules Cheat Sheet
+
+- **Structural Traits**: Traits are compile-time structural predicates (duck typed), never nominal declarations (no `implements Trait`). Specialization is static; no runtime trait objects, dynamic dispatch, or vtables.
+- **Inferred Effects**: Parameter effects (`READ`, `WRITE`, `CONSUME`) are inferred by the compiler. Never write parameter mutation modifiers (`mut`, `inout`, `write`). Overlapping arguments are restricted to `READ + READ`.
+- **Synchronous Communication**: Domains communicate strictly via synchronous, blocking `message target.Handler(args...)`. Value-returning handlers must terminate with `reply expr`. Self-send (`message self.X(...)`) and same-domain handler-to-handler messages are illegal (use ordinary helper functions).
+- **Static Closed Routing**: Domains own mutable shared state and are constructed statically in `main`'s composition prefix. Outbound routes are declared with `domainroutes(...)` and bound at construction. Domain handles are static routing capabilities, not data values (cannot be passed as args/payloads/replies, or stored in collections/state).
+- **Concurrency & Locks**: Programmers never write lock syntax. The compiler derives synchronization classes and `(domain_rank, class_rank)` lock ordering for safe, deadlock-free 2PL.
+- **No Ordinary Recursion**: Ordinary recursion is unsupported in v0.1; express algorithms iteratively or via supported pipeline operations (`map`, `filter`, `reduce`).
+- **Retired Syntax**: `await` and `spawn` are retired. Use synchronous `message` and static construction in `main`.
+
+### Fast Debug Workflow
+
+- **Deterministic Semantic Execution**: Run `moss run --interp <source>` or `moss debug <project-or-source>` to execute checked Moss code directly without rustc compilation.
+- **Structured Traces**: Use `--trace` (`moss run --interp --trace <source>` or `moss debug <target> --trace`) to stream newline-delimited JSON events (function/handler entry/exit, state access, branch, message/reply, assertions) on stderr.
+- **Query the Compiler**: Do not use interactive debuggers (e.g. LLDB) or guess semantics from generated Rust. Use semantic queries (`moss inspect`, `moss why`, `moss effects`, `moss ownership`, `moss calls`) to diagnose behavior and compiler decisions.
+
 ## Moss source guidance
 
 When working with Moss:
