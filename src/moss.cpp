@@ -19085,25 +19085,26 @@ static string canonicalize_code_spacing(const string& input) {
         token == ">" || token == "<=" || token == ">=" ||
         token == "->" || token == "|>";
   };
+  auto unary_minus_at = [&](size_t index) {
+    if (tokens[index].text != "-") return false;
+    if (index == 0) return true;
+    const string& previous = tokens[index - 1].text;
+    return is_binary(previous) || previous == "(" || previous == "[" ||
+        previous == "{" || previous == "," || previous == ":";
+  };
   string result;
   for (size_t index = 0; index < tokens.size(); ++index) {
     const Token& token = tokens[index];
     const string previous = index ? tokens[index - 1].text : string();
-    bool unary_minus = token.text == "-" &&
-        (index == 0 || is_binary(previous) || previous == "(" ||
-         previous == "[" || previous == "{" || previous == "," ||
-         previous == ":");
+    bool unary_minus = unary_minus_at(index);
+    bool previous_unary_minus = index > 0 && unary_minus_at(index - 1);
     bool space_before = !result.empty();
     if (token.text == ")" || token.text == "]" || token.text == "}" ||
         token.text == "," || token.text == ":" || token.text == "." ||
         token.text == "(")
       space_before = false;
     if (previous == "(" || previous == "[" || previous == "{" ||
-        previous == "." ||
-        (previous == "-" && index > 1 &&
-         (is_binary(tokens[index - 2].text) ||
-          tokens[index - 2].text == "(" ||
-          tokens[index - 2].text == "[")))
+        previous == "." || previous_unary_minus)
       space_before = false;
     if (unary_minus) space_before = index != 0 && previous != "(" &&
         previous != "[" && previous != "{" && previous != ".";
