@@ -13,7 +13,7 @@ If `./moss` is missing, run `make` first. The first live discovery command is
 `./moss agent bootstrap --json`. Bare `moss` or `margo` are valid only when
 those executables are already available on `PATH`.
 
-1. **Load Skills**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`.
+1. **Load Skills and Docs**: Load repository-local skills `$moss-language` and `$moss-agent-workflow` from `.agents/skills/`. For the primary language guide, syntax, collections, project layout, and domain idioms, consult `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
 2. **Run Discovery**: Run `./moss agent bootstrap --json` (or `moss agent bootstrap --json` if on `PATH`). Run `make` first if `./moss` is not yet built.
 3. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
 4. **Tooling Split**:
@@ -26,10 +26,11 @@ Before reporting a Moss language/compiler/API feature as missing:
 
 1. Consult `moss-language`.
 2. Run and read `moss agent bootstrap --json`; use capabilities/schema if needed.
-3. Check current canonical docs/examples.
+3. Check current canonical docs/examples: consult `docs/GENTLE_INTRODUCTION_TO_MOSS.md` for syntax, collections, project layout, and domains, and `docs/MOSS_V0_1_LANGUAGE_DESIGN.md` for formal semantics.
 4. Reduce uncertainty to the smallest Moss probe and run `moss check --json`.
 5. If native lowering is implicated, verify with `margo build`, `margo test`, or `margo run`.
 6. Classify the result before recording a SWARM finding.
+
 
 Failure of one guessed spelling is not evidence that the underlying feature is
 absent. An ownership diagnostic is not evidence for an architectural Moss idiom.

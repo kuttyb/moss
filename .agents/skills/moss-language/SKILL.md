@@ -139,6 +139,14 @@ For a typed `Map[K, V]`, strict indexing is `map[key]`; defaulted lookup is
 `Vector` snapshots and have unspecified order. They are not borrowed iterator
 views, and bare `Map` is not itself a `for` source.
 
+### Collection operations reference
+
+- `Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`. Cardinality is `vec |> count` or manual tracking. Operations like `.len()`, `.size()`, `.remove()`, or `.clear()` do not exist.
+- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = val`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. Deletion/removal operations (`.remove()`, `.delete()`, `.clear()`) do not exist in v0.1.
+- `Queue`: `queue.push(item)` and `queue.pop()`.
+
+For full examples, see `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
+
 ## Do / do not
 
 Do:
@@ -332,8 +340,18 @@ not fuse.
 ## Modules and projects
 
 A package root has `Moss.toml`, an optional deterministic `Moss.lock`, and
-conventional `src/`, `tests/`, and `benches/` directories. **Margo resolves
-packages; Moss resolves modules.** Use Margo for the package graph and project
+conventional `src/`, `tests/`, and `benches/` directories. A minimal `Moss.toml` is:
+
+```toml
+[project]
+name = "my-project"
+version = "0.1.0"
+
+[build]
+source = "src"
+```
+
+**Margo resolves packages; Moss resolves modules.** Use Margo for the package graph and project
 commands; Moss remains the parser, checker, `.mossi` interface loader, and semantic
 authority. Package dependencies are package roots, never individual `.moss` files:
 
