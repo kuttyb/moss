@@ -27,9 +27,10 @@ The isolated Agent A Python `Counter` Map experiment is a bounded failure under
 `examples/swarm/Python/Counter/`: Map-backed construction and mutation check/build,
 but missing-key-as-zero cannot be expressed with the supported Map surface. It added
 four open findings (SWARM-006 through SWARM-009) and independently reproduced
-SWARM-003 and SWARM-005. SWARM-001 is fixed by `50ff4b7`; the current ledger
-contains nine findings (eight open, one fixed). The Julia `Accumulator`
-experiment remains separate.
+SWARM-003 and SWARM-005. SWARM-001 is fixed by `50ff4b7`; SWARM-009 was
+reclassified as an agent misunderstanding after focused Counter controls. The
+current ledger contains nine findings (seven open, one fixed, one agent
+misunderstanding). The Julia `Accumulator` experiment remains separate.
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 

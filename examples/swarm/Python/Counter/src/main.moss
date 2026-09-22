@@ -16,18 +16,12 @@ type Counter:
     return next
 
   fn increment(key: String) -> Int:
-    next = counts [key] + 1
-    stored_key = "" + key
-    counts [stored_key] = next
-    total_count = total_count + 1
-    return next
+    increment_by(key, 1)
+    return counts [key]
 
   fn decrement(key: String) -> Int:
-    next = counts [key] - 1
-    stored_key = "" + key
-    counts [stored_key] = next
-    total_count = total_count - 1
-    return next
+    increment_by(key, 0 - 1)
+    return counts [key]
 
   fn total() -> Int:
     return total_count
@@ -39,6 +33,17 @@ fn empty_counter() -> Counter:
   # behavioral test key.
   counts ["__counter_type_seed__"] = 0
   return Counter(counts: counts, total_count: 0)
+
+test "updates an existing counter key":
+  counts = Map()
+  counts ["apple"] = 2
+  counter = Counter(counts: counts, total_count: 2)
+
+  assertEqual(counter.increment("apple"), 3)
+  assertEqual(counter.increment_by("apple", 4), 7)
+  assertEqual(counter.decrement("apple"), 6)
+  assertEqual(counter.get("apple"), 6)
+  assertEqual(counter.total(), 6)
 
 test "reads a missing key as zero":
   counter = empty_counter()

@@ -37,13 +37,17 @@ requiring Map-entry iteration merely to implement `total()`.
 The source starts with direct map indexing in `get`, intentionally preserving
 the natural Counter operation that the tests show is not presently available.
 
-## What worked naturally
+## What works for an existing key
 
 - A Moss type can hold concrete `Map[String, Int]` state.
 - Indexed assignment establishes concrete Map key/value types.
-- Integer read-modify-write arithmetic and the bounded `total_count` update
-  type-check.
-- String literals work as map keys.
+- Existing-key lookup, read-modify-write, `increment`, `increment_by`, and
+  `decrement` execute successfully in the `updates an existing counter key`
+  control test.
+- Explicit `total_count` maintenance executes successfully for those updates.
+
+This experiment does **not** establish that Moss can naturally compute `total()`
+by iterating over Map values; `total_count` is maintained incrementally.
 
 ## Friction encountered
 
@@ -82,15 +86,10 @@ the natural Counter operation that the tests show is not presently available.
 
 ### Method-to-method reuse
 
-- Natural Moss attempt: have `increment` call `increment_by`.
-- Result: an implicit statement call reports `unknown local function
-  'increment_by'`; `self.increment_by(...)` reports `local member calls are
-  not implemented`. Returning the helper directly also reproduces the existing
-  `SWARM-005` inference issue.
-- Rewrite: duplicate the small three-line read-modify-write body in
-  `increment` and `decrement`.
-- Outcome: the type-checking path proceeds, but this is an implementation
-  limitation distinct from the missing-key blocker.
+The original draft temporarily treated `increment_by(key, 1)` as unavailable.
+A focused String-argument and all-`Int` reproduction both check, as does the
+current Counter's implicit call. This was reclassified as the agent’s
+intermediate-draft misunderstanding (SWARM-009), not a Moss method-call limit.
 
 ### Unary negative formatter issue
 
@@ -105,8 +104,9 @@ From this project directory, using repository-local tools:
 - `moss fmt src/main.moss`: passes with the documented negative-literal form.
 - `moss check src/main.moss --json`: passes.
 - `margo build`: passes.
-- `margo test`: expected bounded failure, `0 passed / 3 failed`, each due to
-  the first missing `Map` key.
+- `margo test`: `1 passed / 3 failed`; the existing-key control passes, while
+  the three required Counter tests remain expected failures at their first
+  missing `Map` key.
 - `margo run`: expected bounded failure, `no entry found for key`.
 
 No compiler, runtime, language, or collection implementation was changed for

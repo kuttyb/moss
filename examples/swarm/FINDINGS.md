@@ -7,9 +7,9 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 9
-- Open: 8
+- Open: 7
 - Fixed: 1
-- Not-a-bug / agent misunderstanding: 0
+- Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 4
 
 Completed swarm experiments:
@@ -303,10 +303,10 @@ would hide the required Counter operation and was deliberately not used.
 This blocks the required `get("missing") == 0` behavior. The entry records a
 collection-surface gap, not a claim about the intended design of all maps.
 
-## SWARM-009 — Type methods cannot reuse another type method as a statement
+## SWARM-009 — Counter method reuse was an agent misunderstanding
 
-- Status: Open
-- Category: Compiler / method dispatch
+- Status: Agent misunderstanding
+- Category: Agent misunderstanding
 - First observed: [Python / Counter](Python/Counter/)
 - Also observed: —
 - Observation count: 1
@@ -323,18 +323,21 @@ type Counter:
     return 0
 ```
 
-### Observed behavior
+### Verification
 
-The implicit statement call reports `unknown local function 'increment_by'`.
-Using `self.increment_by(key, 1)` reports `local member calls are not
-implemented`.
+The minimal String-argument reproduction checks. An all-`Int` equivalent also
+checks, as does the Counter's `increment_by(key, 1)` statement call. Existing
+BinaryHeap methods already supplied independent examples of valid implicit
+method calls.
 
-### Workaround
+### Original draft response
 
-Duplicate the small read-modify-write body in the bounded `increment` and
-`decrement` methods.
+The initial Counter draft duplicated the small read-modify-write body after an
+intermediate diagnostic. That duplication is not required by the verified
+current source.
 
 ### Notes
 
-Returning the helper directly also reproduces `SWARM-005`; this entry records
-the distinct statement/member-call limitation.
+The original observation conflated an intermediate draft failure with an
+implicit method-statement restriction. Returning a helper directly remains the
+separate SWARM-005 observation.
