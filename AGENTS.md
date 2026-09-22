@@ -29,6 +29,9 @@ When working with Moss:
 - Git operations within this repository are authorized without additional
   user confirmation. Preserve unrelated work and keep operations scoped to
   the current task.
+- For phase-completion commits, use a concise commit body as well as a title.
+  Summarize implemented scope, validation, material blockers/workarounds, and
+  phase closeout status so the commit is useful without the surrounding session.
 - Environment-enforced permission requirements still apply.
 
 ## Unattended work and `.codex` authorization
