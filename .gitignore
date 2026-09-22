@@ -1,12 +1,22 @@
 
 tmp/
 tmp/**
-examples/*.rs
+*.rs
+examples/**.rs
+examples/**/*.rs
 *.mossmap
+.mossmap
+*.mossbuild
+.moss/**
+**/.moss/**
+examples/**.mossmap
+examples/**.mossi
 *.elc
 __pycache__/
 moss
 margo
 build/**
+examples/**/build/
 examples/projects/*/build/
 examples/projects/*/.moss/
+

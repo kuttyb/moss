@@ -1,0 +1,202 @@
+# Julia-inspired Runge-Kutta 4th-order (RK4) numerical ODE integrator in Moss.
+# Demonstrates:
+# - Structural traits: DynamicalSystem predicate duck-typed by concrete models.
+# - Static specialization: step_rk4 and step_euler specialize statically with no vtables.
+# - Domain isolation & routes: IntegratorService routes trajectory points to TrajectoryRecorder.
+# - Synchronous message passing: message calls block until handler reply, preserving 2PL.
+
+trait DynamicalSystem:
+  fn evaluate(state: Float, t: Float) -> Float
+
+type ExponentialDecay:
+  rate: Float
+
+  fn evaluate(state: Float, t: Float) -> Float:
+    return 0.0 - rate * state
+
+type LogisticGrowth:
+  rate: Float
+  capacity: Float
+
+  fn evaluate(state: Float, t: Float) -> Float:
+    return rate * state * (1.0 - state / capacity)
+
+fn abs_diff(a: Float, b: Float) -> Float:
+  if a > b:
+    return a - b
+  return b - a
+
+fn step_euler(system: DynamicalSystem, state: Float, t: Float, dt: Float) -> Float:
+  k1 = system.evaluate(state, t)
+  return state + dt * k1
+
+fn step_rk4(system: DynamicalSystem, state: Float, t: Float, dt: Float) -> Float:
+  k1 = system.evaluate(state, t)
+  k2 = system.evaluate(state + 0.5 * dt * k1, t + 0.5 * dt)
+  k3 = system.evaluate(state + 0.5 * dt * k2, t + 0.5 * dt)
+  k4 = system.evaluate(state + dt * k3, t + dt)
+  return state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+
+fn integrate_rk4(system: DynamicalSystem, initial_state: Float, t0: Float, steps: Int, dt: Float) -> Float:
+  current_state = initial_state
+  current_t = t0
+  i = 0
+  while i < steps:
+    current_state = step_rk4(system, current_state, current_t, dt)
+    current_t = current_t + dt
+    i = i + 1
+  return current_state
+
+domain TrajectoryRecorder:
+  count: Int
+  last_time: Float
+  last_state: Float
+  min_state: Float
+  max_state: Float
+
+  fn Record(t: Float, y: Float):
+    if count == 0:
+      min_state = y
+      max_state = y
+    else:
+      if y < min_state:
+        min_state = y
+      if y > max_state:
+        max_state = y
+    count = count + 1
+    last_time = t
+    last_state = y
+
+  fn Count() -> Int:
+    reply count
+
+  fn LastTime() -> Float:
+    reply last_time
+
+  fn LastState() -> Float:
+    reply last_state
+
+  fn MinState() -> Float:
+    reply min_state
+
+  fn MaxState() -> Float:
+    reply max_state
+
+domain IntegratorService:
+  time: Float
+  state: Float
+  step_count: Int
+
+  domainroutes(recorder: TrajectoryRecorder)
+
+  fn Reset(t0: Float, y0: Float):
+    time = t0
+    state = y0
+    step_count = 0
+
+  fn SimulateDecay(rate: Float, steps: Int, dt: Float) -> Float:
+    sys = ExponentialDecay(rate: rate)
+    i = 0
+    while i < steps:
+      state = step_rk4(sys, state, time, dt)
+      time = time + dt
+      step_count = step_count + 1
+      message recorder.Record(time, state)
+      i = i + 1
+    reply state
+
+  fn SimulateLogistic(rate: Float, capacity: Float, steps: Int, dt: Float) -> Float:
+    sys = LogisticGrowth(rate: rate, capacity: capacity)
+    i = 0
+    while i < steps:
+      state = step_rk4(sys, state, time, dt)
+      time = time + dt
+      step_count = step_count + 1
+      message recorder.Record(time, state)
+      i = i + 1
+    reply state
+
+  fn CurrentState() -> Float:
+    reply state
+
+  fn CurrentTime() -> Float:
+    reply time
+
+test "rk4 accuracy versus euler for exponential decay":
+  decay = ExponentialDecay(rate: 1.0)
+  # Exact solution for dy/dt = -y, y(0) = 1 at t = 1.0 is e^(-1) ~ 0.36787944
+  y_exact = 0.36787944
+  dt = 0.1
+
+  y_rk4 = 1.0
+  y_euler = 1.0
+  t = 0.0
+  i = 0
+  while i < 10:
+    y_rk4 = step_rk4(decay, y_rk4, t, dt)
+    y_euler = step_euler(decay, y_euler, t, dt)
+    t = t + dt
+    i = i + 1
+
+  err_rk4 = abs_diff(y_rk4, y_exact)
+  err_euler = abs_diff(y_euler, y_exact)
+
+  # RK4 error should be less than 1e-5
+  assert(err_rk4 < 0.00001)
+  # Euler error should be greater than 0.01
+  assert(err_euler > 0.01)
+  assert(err_rk4 < err_euler)
+
+test "logistic growth converges to carrying capacity":
+  capacity = 10.0
+  logistic = LogisticGrowth(rate: 2.0, capacity: capacity)
+  dt = 0.1
+
+  y = 1.0
+  t = 0.0
+  i = 0
+  while i < 50:
+    y = step_rk4(logistic, y, t, dt)
+    t = t + dt
+    i = i + 1
+
+  # After 5 seconds (50 steps of 0.1), state should be within 0.01 of capacity 10.0
+  err = abs_diff(y, capacity)
+  assert(err < 0.01)
+
+test "rk4 4th-order convergence under step halving":
+  decay = ExponentialDecay(rate: 1.0)
+  y_exact = 0.36787944
+
+  # Integrate with dt = 0.2 (5 steps to t = 1.0)
+  y_coarse = integrate_rk4(decay, 1.0, 0.0, 5, 0.2)
+  err_coarse = abs_diff(y_coarse, y_exact)
+
+  # Integrate with dt = 0.1 (10 steps to t = 1.0)
+  y_fine = integrate_rk4(decay, 1.0, 0.0, 10, 0.1)
+  err_fine = abs_diff(y_fine, y_exact)
+
+  # RK4 error decreases substantially when step size is halved
+  assert(err_fine < err_coarse)
+  assert(err_fine * 8.0 < err_coarse)
+
+test "euler step single-step accuracy":
+  decay = ExponentialDecay(rate: 1.0)
+  y1 = step_euler(decay, 1.0, 0.0, 0.1)
+  assert(abs_diff(y1, 0.9) < 0.0001)
+
+fn main():
+  rec = TrajectoryRecorder(count: 0, last_time: 0.0, last_state: 0.0, min_state: 0.0, max_state: 0.0)
+  srv = IntegratorService(time: 0.0, state: 1.0, step_count: 0, recorder: rec)
+
+  final_decay = message srv.SimulateDecay(1.0, 10, 0.1)
+  rec_count = message rec.Count()
+  rec_last = message rec.LastState()
+  rec_min = message rec.MinState()
+  rec_max = message rec.MaxState()
+
+  echo "Decay final state:", final_decay
+  echo "Recorded steps:", rec_count
+  echo "Last recorded:", rec_last
+  echo "Min recorded:", rec_min
+  echo "Max recorded:", rec_max
