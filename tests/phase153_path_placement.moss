@@ -1,15 +1,16 @@
 domain Branchy:
   a_marker: Int
   m_left: Int
+  tail: Int
   z_right: Int
 
   fn Update() -> Int:
     if a_marker > 0:
       m_left = m_left + 1
-      reply m_left
     else:
       z_right = z_right + 1
-      reply z_right
+    tail = tail + 1
+    reply tail
 
   fn TouchLeft():
     m_left = m_left + 1
@@ -21,5 +22,5 @@ domain Branchy:
     a_marker = a_marker + 1
 
 fn main():
-  branchy = Branchy(a_marker: 1, m_left: 10, z_right: 20)
+  branchy = Branchy(a_marker: 1, m_left: 10, tail: 0, z_right: 20)
   echo message branchy.Update()

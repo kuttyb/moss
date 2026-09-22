@@ -298,7 +298,8 @@
     o << "        let result = if __moss_branch {\n";
     for (const auto rank : placement.cancel_then) {
       const string r = std::to_string(plan.classes.at(rank).class_rank);
-      typed_event(o, "lock_cancelled", hp, r, false);
+      typed_event(o, "lock_cancelled", hp, r,
+                  placement.entry_modes.at(rank) == SynchronizationMode::Exclusive);
       o << "        drop(__class" << r << ");\n";
     }
     emit_path_acquire(o, hp, plan, placement.then_modes, 8);
@@ -316,7 +317,8 @@
     o << "        } else {\n";
     for (const auto rank : placement.cancel_else) {
       const string r = std::to_string(plan.classes.at(rank).class_rank);
-      typed_event(o, "lock_cancelled", hp, r, false);
+      typed_event(o, "lock_cancelled", hp, r,
+                  placement.entry_modes.at(rank) == SynchronizationMode::Exclusive);
       o << "        drop(__class" << r << ");\n";
     }
     emit_path_acquire(o, hp, plan, placement.else_modes, 8);

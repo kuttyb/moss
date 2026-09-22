@@ -183,13 +183,15 @@ while their instances own independent state and locks. Different specializations
 receive their own checked layouts.
 
 `Handler_shared` is the single synchronized entry wrapper. It emits direct typed
-read/write acquisitions against known class fields. Phase 15.3 may split an eligible
-leading conditional into typed continuations: condition and universally-needed
-classes acquire at entry, branch-only classes acquire after the condition when their
-rank is above every still-held class, and rank-forced untouched guards may be
-cancelled on the opposite arm. A potential loop acquisition is hoisted to its
-preheader; unresolved branch classes are hoisted above a prior `message`, `echo`, or
-other observable action. No runtime held-set, descriptor, or upgrade exists.
+read/write acquisitions against known class fields. The checked-in Phase 15.3
+optimization is deliberately bounded to an eligible **leading top-level
+conditional**: condition and universally-needed classes acquire at entry,
+branch-only classes acquire after the condition when their rank is above every
+still-held class, and rank-forced untouched guards may be cancelled on the
+opposite arm. A condition with a `message`, external observable effect, or
+unresolved observable effect falls back to the full entry plan. Other CFG shapes
+also fall back conservatively. A potential loop acquisition is therefore outside
+the loop body. No runtime held-set, descriptor, or upgrade exists.
 Touched guards remain live through the complete continuation and nested messages;
 reply values are established before touched guards drop.
 An empty ClassSet emits no lock acquisition. There are no runtime plans, handler

@@ -4159,6 +4159,28 @@ class Checker {
       return;
     }
     const auto& branch = source.body.front();
+    // A condition is evaluated before a branch-local acquisition.  Reuse the
+    // authoritative observable-effect walk rather than recognizing messages
+    // with a string test here: an observable condition must retain the full
+    // entry ClassSet so no managed lock is acquired after O(h).
+    TypeEnv condition_env;
+    std::set<string> domain_fields;
+    for (const auto& field : domain.state) {
+      condition_env[field.name] = specialization.state_types.at(field.name);
+      domain_fields.insert(field.name);
+    }
+    for (size_t i = 0; i < source.params.size(); ++i)
+      condition_env[source.params[i].name] =
+          specialization.handler_parameter_types.at(source.name).at(i);
+    for (const auto& route : domain.routes) condition_env[route.name] = route.type;
+    const ObservableEffects condition_observables =
+        observable_expression_effects(branch.a, condition_env, domain_fields);
+    if (condition_observables.message || condition_observables.external_io ||
+        condition_observables.unresolved) {
+      whole.path_placement.reason =
+          "conservative entry placement: leading condition crosses observable-action barrier";
+      return;
+    }
     size_t then_begin = 1;
     size_t then_end = then_begin;
     while (then_end < source.body.size() && source.body[then_end].indent > branch.indent) ++then_end;
