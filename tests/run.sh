@@ -183,6 +183,7 @@ run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf 
 run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
 run_case collections_and_methods_showcase examples/collections_and_methods.moss "$(printf 'lead code: 106 12\ntest score: 12')"
 run_case functional_dataflow_showcase examples/functional_dataflow.moss 'pipeline total: 42'
+run_case swarm_001_parenthesized_pipeline tests/swarm_001_parenthesized_pipeline.moss '4 2'
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"

@@ -1,0 +1,9 @@
+fn count_plus_one(values: Vector[Int]) -> Int:
+  return (values |> count) + 1
+
+fn count_minus_one(values: Vector[Int]) -> Int:
+  return ((values |> count)) - 1
+
+fn main():
+  values = [10, 20, 30]
+  echo count_plus_one(values), count_minus_one(values)

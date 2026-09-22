@@ -262,6 +262,17 @@ static size_t matching_paren(const string& text, size_t open) {
   return string::npos;
 }
 
+// Parentheses are grouping only when they enclose the complete expression.
+// Normalize that common case before expression-kind recognition so, for
+// example, `(values |> count)` has the same type as `values |> count`.
+static string strip_redundant_outer_parentheses(string value) {
+  value = trim(std::move(value));
+  while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
+         matching_paren(value, 0) == value.size() - 1)
+    value = trim(value.substr(1, value.size() - 2));
+  return value;
+}
+
 static size_t top_level_assignment(const string& text) {
   int par = 0, br = 0, sq = 0;
   bool in_str = false, esc = false;
@@ -2559,7 +2570,7 @@ class Checker {
 
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
-    string original = trim(expression);
+    string original = strip_redundant_outer_parentheses(expression);
     if (starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> args;
@@ -2575,17 +2586,7 @@ class Checker {
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return functional;
-    string e = normalize_pipeline(std::move(original));
-    while (e.size() >= 2 && e.front() == '(' && e.back() == ')') {
-      int depth = 0;
-      bool wraps = true;
-      for (size_t i = 0; i < e.size(); ++i) {
-        if (e[i] == '(') ++depth;
-        else if (e[i] == ')' && --depth == 0 && i + 1 != e.size()) { wraps = false; break; }
-      }
-      if (!wraps) break;
-      e = trim(e.substr(1, e.size() - 2));
-    }
+    string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
     if (plain_identifier(e) && functions_.count(e))
       return "callable:" + e;
@@ -9818,7 +9819,7 @@ class Generator {
   std::optional<string> generated_expr_type(
       const string& expression,
       const std::unordered_map<string,string>* types) const {
-    string original = trim(expression);
+    string original = strip_redundant_outer_parentheses(expression);
     if (types && starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> arguments;
@@ -9835,10 +9836,7 @@ class Generator {
     }
     if (auto pipeline = generated_functional_pipeline_type(original, types))
       return pipeline;
-    string value = normalize_pipeline(std::move(original));
-    while (value.size() >= 2 && value.front() == '(' && value.back() == ')' &&
-           matching_paren(value, 0) == value.size() - 1)
-      value = trim(value.substr(1, value.size() - 2));
+    string value = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
     if (value == "true" || value == "false") return string("bool");
     if (value == "None") return string("_none");
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
@@ -10737,10 +10735,13 @@ class Generator {
       return std::nullopt;
     const FunctionalPipeline* planned =
         planned_functional_pipeline(functional_pipeline_id);
+    // A pipeline nested in an ordinary expression does not have a standalone
+    // statement plan.  It still has fully checked semantics, so use the
+    // baseline eager lowering rather than requiring an unrelated outer
+    // expression to masquerade as a pipeline statement.
     if (!planned)
-      throw std::runtime_error(
-          "internal error: typed functional pipeline reached Rust generation "
-          "without its exact functional_pipeline_id");
+      return gen_eager_functional_pipeline(*pipeline, domain, locals, types,
+                                           nullptr);
     LoweredFunctionalPipeline lowered =
         lower_functional_semantic_plan(*pipeline, *planned);
     if (planned->virtual_upstream_pipeline_id) {
