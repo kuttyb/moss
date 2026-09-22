@@ -1,0 +1,6 @@
+fn main():
+  let value = 1
+  assertEqual(value, 1)
+  var queue = Queue()
+  queue.push(1)
+  echo 1

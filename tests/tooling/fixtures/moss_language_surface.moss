@@ -1,0 +1,11 @@
+fn main():
+  let start = 0
+  var total = 0
+
+  for i in range(start, 4):
+    total = total + i
+
+  ready = false
+  assert(not ready)
+
+  echo total

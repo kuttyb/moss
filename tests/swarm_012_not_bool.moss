@@ -1,0 +1,13 @@
+type Probe:
+  fn is_empty() -> Bool:
+    return false
+
+fn main():
+  ready = false
+  nested_ready = true
+  assert(not ready)
+  assert(not (3 > 5))
+  assert(not not nested_ready)
+  probe = Probe()
+  assert(not probe.is_empty())
+  echo 1

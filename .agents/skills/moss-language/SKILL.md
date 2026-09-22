@@ -50,7 +50,73 @@ moss_skill_contract:
   project_lockfile: Moss.lock
   package_resolution: path-git
   module_resolution: moss-compiler
+  source_surface: bootstrap-discoverable
+  domain_fn: handler
+  explicit_let: immutable
+  explicit_var: mutable
 ```
+
+## Core source surface
+
+Use live bootstrap's compact `source_surface` before guessing a spelling. The
+high-frequency current forms are:
+
+```moss
+x = expression        # usual inferred binding
+let x = expression    # explicitly immutable local
+var x = expression    # explicitly mutable local
+
+if condition:
+  ...
+else:
+  ...
+
+while condition:
+  ...
+
+for item in expression:
+  ...
+
+for i in range(start, end):
+  ...
+for i in range(start, end, step):
+  ...
+
+if not ready:
+  ...
+```
+
+`let` cannot be reassigned or used as the writable receiver of a mutating
+operation; use `var` when mutation is intended. `Vector`, `Map`, and `Queue`
+are the current built-in collections. Ordinary functions use `fn` and return
+with `return`; `message` crosses domains. Every `fn` declared directly inside a
+`domain` is a **handler**, so a value-returning handler uses `reply`, not an
+ordinary helper `return`. Reusable implementation logic belongs in an ordinary
+non-domain function.
+
+```moss
+fn adjusted(value: Int) -> Int:
+  return value + 1
+
+domain Counter:
+  value = 0
+
+  fn Increment() -> Int:
+    value = adjusted(value)
+    reply value
+```
+
+An ownership diagnostic describes the access requirements of the attempted
+expression. It does not by itself prove that the surrounding data structure or
+architecture is unsupported. Before substantially restructuring an approach,
+reduce it and ask `moss ownership`, `moss effects`, and `moss check
+<minimal-reproducer> --json`. For example, one `Vector[Task]` ownership error
+does not establish that Moss requires primitive IDs instead of objects.
+
+For a typed `Map[K, V]`, strict indexing is `map[key]`; defaulted lookup is
+`map.get(key, default)`. `map.keys()` and `map.values()` return eager owned
+`Vector` snapshots and have unspecified order. They are not borrowed iterator
+views, and bare `Map` is not itself a `for` source.
 
 ## Do / do not
 

@@ -114,6 +114,18 @@ fn main():
 
 Moss is statically checked even when you leave the annotation out. Omitting a type does not make the value dynamically typed.
 
+Explicit local declarations are available when mutability matters:
+
+```moss
+fn main():
+  let name = "Moss"
+  var count = 0
+  count = count + 1
+```
+
+`let` is an explicitly immutable local; `var` is an explicitly mutable local.
+Ordinary `x = value` remains the usual inferred binding form.
+
 ---
 
 ## 2. Branches and Loops
@@ -146,6 +158,20 @@ fn main():
 ```
 
 The native compiler supports `for`. The current Fast Debug interpreter is still smaller than the production execution engine and does not yet execute `for` traversal.
+
+Ranges use the same form:
+
+```moss
+for i in range(0, 10):
+  echo i
+```
+
+Boolean negation is written with `not`:
+
+```moss
+if not ready:
+  echo "waiting"
+```
 
 ---
 
@@ -319,9 +345,16 @@ fn main():
   scores["test"] = 9
 
   echo scores["compile"]
+  echo scores.get("missing", 0)
+
+  keys = scores.keys()
+  values = scores.values()
 ```
 
 The key and value types are inferred from use.
+`get(key, default)` is the safe/defaulted lookup; `map[key]` remains strict and
+expects the key to exist. `keys()` and `values()` produce ordinary eager `Vector`
+snapshots. Map iteration order is unspecified.
 
 ### Queue
 
@@ -574,6 +607,22 @@ by-value message semantics
 
 The important rule is that the domain owns its state. Other code interacts with that state only through the domain's handlers.
 
+A `fn` declared directly inside a domain is a handler, not a private ordinary
+method. A value-returning handler uses `reply`. Put reusable ordinary helper
+logic outside the domain and call it normally:
+
+```moss
+fn adjusted(value: Int) -> Int:
+  return value + 1
+
+domain Counter:
+  value = 0
+
+  fn Increment() -> Int:
+    value = adjusted(value)
+    reply value
+```
+
 For example:
 
 ```moss
@@ -773,13 +822,13 @@ You normally do not need to think about either file while writing application co
 
 ## 12. Projects
 
-A Moss project has a `moss.toml` file.
+A Moss package has a `Moss.toml` manifest and optional deterministic `Moss.lock`.
 
 A minimal project looks like:
 
 ```text
 hello/
-  moss.toml
+  Moss.toml
   src/
     main.moss
 ```
@@ -799,7 +848,7 @@ An explicit-module project might grow into:
 
 ```text
 hello/
-  moss.toml
+  Moss.toml
   src/
     main.moss
     pricing.moss
@@ -808,15 +857,20 @@ hello/
 
 Those files do not have to correspond one-to-one with modules. Several source files may declare the same module.
 
-Current v0.1 project commands still live under `moss`, for example:
+Use **Margo** for current package/project work:
 
 ```sh
-moss build
-moss test
-moss debug .
+margo build
+margo run
+margo test
+margo bench
+margo clean
 ```
 
-A separate Cargo-like project/package driver named **Margo** is planned, but is not part of current v0.1.
+Margo resolves packages and dependencies; Moss remains the authority for source
+modules, imports, checking, interfaces, and semantic tooling. Legacy `moss build`
+and `moss test` compatibility paths may remain available, but are not the canonical
+project workflow.
 
 ---
 
@@ -903,7 +957,9 @@ to get a structured execution trace.
 
 Fast Debug intentionally runs Moss semantics directly rather than simulating the production locking implementation.
 
-Current v0.1 Fast Debug also does not yet execute every production construct. In particular, functional pipelines and `for` traversal still require the production backend.
+Current v0.1 Fast Debug also does not yet execute every production construct. In
+particular, functional pipelines, `for` traversal, and container methods reached
+through object fields still require the production backend.
 
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 

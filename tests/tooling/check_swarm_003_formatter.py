@@ -13,6 +13,9 @@ SOURCE = """fn main():
   assertEqual(x,-4)
   values=[-4,-1]
   y=3*-4
+  ready=false
+  assert(not ready)
+  assert(not (3>5))
   echo x
   echo values[0]
   echo values[1]
@@ -23,6 +26,9 @@ EXPECTED = """fn main():
   assertEqual(x, -4)
   values = [-4, -1]
   y = 3 * -4
+  ready = false
+  assert(not ready)
+  assert(not (3 > 5))
   echo x
   echo values [0]
   echo values [1]

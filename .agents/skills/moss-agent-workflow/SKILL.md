@@ -60,7 +60,39 @@ moss_workflow_contract:
   package_resolution: path-git
   module_resolution: moss-compiler
   semantic_oracle: moss-agent-1
+  source_surface: bootstrap-discoverable
+  gap_classification: minimal-reproducer-first
 ```
+
+## Before declaring a language/compiler gap
+
+Use this flow before creating a SWARM finding or turning a workaround into an
+architectural recommendation:
+
+```text
+attempted form fails
+        ↓
+discover canonical Moss syntax (bootstrap source_surface / language skill)
+        ↓
+read the structured diagnostic
+        ↓
+use a semantic query where applicable
+        ↓
+construct the smallest reproducer
+        ↓
+native verification if backend lowering is implicated
+        ↓
+classify
+```
+
+Classify the result precisely: supported under different Moss syntax,
+ergonomic/syntax-sugar omission, standard collection/API gap, intended ownership
+rule, intended domain rule, compiler frontend/type-checking bug, compiler
+native-lowering bug, Fast Debug coverage gap, agent misunderstanding, or genuine
+language-design gap. Only distinct real issues receive SWARM IDs. Never infer a
+language-design conclusion from generated Rust: valid Moss may expose a backend
+lowering bug. Never turn a workaround into an “idiomatic Moss architecture” claim
+until a minimal reproducer establishes the underlying limitation.
 
 ## Start a Moss task
 
@@ -191,6 +223,11 @@ some Moss functions with native Moss execution. A source-free provider remains a
 production facility and needs source for Fast Debug. The interpreter has explicit
 feature limits, so an unsupported construct reports a Moss-level limitation rather
 than silently switching execution engines.
+
+Current verified limits include `for` traversal and a container method reached through
+an object field (for example `holder.values.push(1)`). When either is involved, use
+`margo test` or `margo run` for native validation rather than inferring a Moss source
+restriction from the Fast Debug error.
 
 With `--trace`, Fast Debug writes newline-delimited JSON events to standard error.
 Use a bounded trace to diagnose logical behavior: reproduce, inspect the relevant

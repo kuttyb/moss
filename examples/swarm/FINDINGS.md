@@ -6,9 +6,9 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 10
-- Open: 2
-- Fixed: 7
+- Distinct findings: 13
+- Open: 0
+- Fixed: 12
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 5
 
@@ -303,11 +303,16 @@ a compiler-lowering mismatch, not an intended Counter behavior.
 
 ## SWARM-008 — Map lacks a missing-key/default lookup surface
 
-- Status: Open
+- Status: Fixed
 - Category: Missing standard collection primitive
 - First observed: [Python / Counter](Python/Counter/)
 - Also observed: [Julia / Accumulator](Julia/Accumulator/)
 - Observation count: 2
+
+Fix commit: `2d787ef` (`Changes`; adds `Map.get(key, default)`).
+
+Regression: `tests/swarm_008_map_default_lookup.moss` plus typed-negative
+cases, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -370,13 +375,18 @@ The original observation conflated an intermediate draft failure with an
 implicit method-statement restriction. Returning a helper directly remains the
 separate SWARM-005 observation.
 
-## SWARM-010 — Map values are not statically iterable
+## SWARM-010 — Map lacks iterable key/value views
 
-- Status: Open
+- Status: Fixed
 - Category: Missing standard collection primitive
 - First observed: [Julia / Accumulator](Julia/Accumulator/)
 - Also observed: —
 - Observation count: 1
+
+Fix commit: `2d787ef` (`Changes`; adds eager `Map.keys()` / `Map.values()`
+snapshots).
+
+Regression: `tests/swarm_010_map_views.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -404,3 +414,115 @@ mutation; it does not establish Map aggregation.
 
 This is distinct from SWARM-008: a default lookup answers one key, whereas this
 finding concerns traversal of all Map values (and therefore key/value merge).
+
+## SWARM-011 — Valid sibling-field call lowers to Rust borrow conflict
+
+- Status: Fixed
+- Category: Compiler / native lowering
+- First observed: PriorityQueue swarm dogfooding
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_011_sibling_field_borrow.moss`, invoked by
+`tests/run.sh` and compiled with `rustc -D warnings`.
+
+### Minimal reproducer
+
+```moss
+return update_at(values, size - 1)
+```
+
+where `values` requires WRITE access and `size - 1` reads a sibling field of
+the same object.
+
+### Observed behavior
+
+The Moss checker accepted the call, but native lowering emitted a mutable Rust
+borrow for `values` before reading `size`, and rustc rejected it with E0502.
+
+### Workaround
+
+```moss
+position = size - 1
+return update_at(values, position)
+```
+
+### Notes
+
+The native lowering now emits a compiler-generated temporary for a proven pure
+Copy-valued sibling read before creating the WRITE borrow. This preserves valid
+Moss source evaluation without requiring the programmer to schedule Rust borrows.
+
+## SWARM-012 — `not` expression was not consistently typed as Bool
+
+- Status: Fixed
+- Category: Compiler / frontend type checking
+- First observed: PriorityQueue swarm dogfooding
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_012_not_bool.moss` and the three typed-negative cases
+under `tests/negative/`, invoked by `tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+assert(not ready)
+```
+
+### Observed behavior
+
+Native lowering recognized `not`, while frontend inference did not consistently
+report the expression as `Bool`; `assert` then rejected a valid condition.
+
+### Workaround
+
+Use an equality comparison such as `assertEqual(ready, false)`.
+
+### Notes
+
+`not Bool -> Bool` now works for nested and grouped Boolean expressions. Numeric
+and String operands are rejected with a direct Bool type diagnostic.
+
+## SWARM-013 — Explicit `let` mutation escaped to rustc
+
+- Status: Fixed
+- Category: Compiler / frontend ownership checking
+- First observed: PriorityQueue swarm dogfooding
+- Also observed: —
+- Observation count: 1
+
+Fix commit: pending current working-tree repair.
+
+Regression: `tests/swarm_013_immutable_let_positive.moss` plus direct,
+mutating-receiver, member, and indexed negatives under `tests/negative/`, invoked
+by `tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+let queue = Queue()
+queue.push(1)
+```
+
+### Observed behavior
+
+Moss checking accepted the mutation and native Rust later rejected the immutable
+binding with E0596.
+
+### Workaround
+
+```moss
+var queue = Queue()
+queue.push(1)
+```
+
+### Notes
+
+The frontend now records explicit `let` bindings and rejects direct, indexed,
+member, and mutating-receiver WRITE access with `IMMUTABLE_LOCAL_MUTATION` and
+the legal alternative to declare `var` when mutation is intended.

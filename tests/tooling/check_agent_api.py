@@ -69,7 +69,8 @@ if "semantic_inspection" not in capabilities["result"]["capabilities"]:
     fail("capability discovery omitted semantic inspection")
 for capability in ("impact_analysis", "formatter", "semantic_edits",
                     "repair_actions", "static_cost_facts", "package_project_driver",
-                    "package_dependencies", "package_lockfile"):
+                    "package_dependencies", "package_lockfile", "language_surface",
+                    "fast_debug"):
     if capability not in capabilities["result"]["capabilities"]:
         fail(f"capability discovery omitted {capability}")
 if not schema["result"]["schema"]["diagnostic_codes_are_stable"]:
@@ -81,6 +82,20 @@ if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:
 catalog = {item["id"]: item for item in capabilities["result"]["capability_catalog"]}
 if catalog["package_project_driver"]["entrypoint"] != "margo build|run|test|bench|clean":
     fail("Margo is not the canonical package/project capability entrypoint")
+if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
+    fail("language surface discovery lacks its bootstrap entrypoint")
+surface = bootstrap["result"].get("source_surface", {})
+if surface.get("operators", {}).get("boolean_negation") != "not expression":
+    fail("bootstrap source surface omitted boolean negation")
+if surface.get("locals", {}).get("immutable") != "let x = expression":
+    fail("bootstrap source surface omitted immutable locals")
+if surface.get("domains", {}).get("fn_inside_domain") != "handler":
+    fail("bootstrap source surface omitted domain handler distinction")
+debug_features = {item["name"]: item for item in bootstrap["result"]["debugging_features"]}
+if "for traversal is not currently supported" not in debug_features["fast_debug"].get("limitations", []):
+    fail("Fast Debug discovery omitted its verified for traversal limitation")
+if "container methods reached through object fields are not currently supported" not in debug_features["fast_debug"].get("limitations", []):
+    fail("Fast Debug discovery omitted its verified container-field limitation")
 actions = {item["name"]: item for item in bootstrap["result"]["actions"]}
 for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
     if action not in actions or not actions[action]["command"].startswith("margo "):

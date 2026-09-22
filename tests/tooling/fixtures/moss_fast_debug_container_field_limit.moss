@@ -1,0 +1,11 @@
+type Holder:
+  values: Vector [Int]
+
+  fn append_one() -> Int:
+    values.push(1)
+    return 1
+
+fn main():
+  holder = Holder(values: [0])
+  holder.append_one()
+  echo 1

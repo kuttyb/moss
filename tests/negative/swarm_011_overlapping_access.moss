@@ -1,0 +1,7 @@
+fn overwrite_from(values: Vector[Int], source: Vector[Int]) -> Int:
+  values[0] = 9
+  return source[0]
+
+fn main():
+  values = [0]
+  overwrite_from(values, values)

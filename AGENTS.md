@@ -11,6 +11,22 @@ Every agent session must execute the following startup sequence before inspectin
    - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, and `./margo clean`.
    - Use `moss` for language, semantic queries, diagnostics, and formatting: `moss check`, `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and `debug`.
 
+## Before declaring a Moss gap
+
+Before reporting a Moss language/compiler/API feature as missing:
+
+1. Consult `moss-language`.
+2. Run and read `moss agent bootstrap --json`; use capabilities/schema if needed.
+3. Check current canonical docs/examples.
+4. Reduce uncertainty to the smallest Moss probe and run `moss check --json`.
+5. If native lowering is implicated, verify with `margo build`, `margo test`, or `margo run`.
+6. Classify the result before recording a SWARM finding.
+
+Failure of one guessed spelling is not evidence that the underlying feature is
+absent. An ownership diagnostic is not evidence for an architectural Moss idiom.
+Do not infer a language-design conclusion from generated Rust: it may expose a
+backend compiler bug even when Moss source semantics are valid.
+
 ### Key Language Rules Cheat Sheet
 
 - **Structural Traits**: Traits are compile-time structural predicates (duck typed), never nominal declarations (no `implements Trait`). Specialization is static; no runtime trait objects, dynamic dispatch, or vtables.
@@ -86,4 +102,3 @@ When working with Moss:
 - **Sandboxing**: Stay strictly within the workspace root. Never access or modify paths outside this directory.
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **Git Boundary**: You may run git diff, status, and local staging. You must NEVER run `git commit` or `git push`.
-

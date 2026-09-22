@@ -200,6 +200,19 @@ run_case swarm_008_map_default_lookup tests/swarm_008_map_default_lookup.moss "$
 run_case swarm_010_map_views tests/swarm_010_map_views.moss '2 16 16'
 reject_case swarm_008_map_get_wrong_key 'map get key type mismatch'
 reject_case swarm_008_map_get_wrong_default 'map get default type mismatch'
+run_case swarm_011_sibling_field_borrow tests/swarm_011_sibling_field_borrow.moss '1 1'
+grep -F 'let __moss_call_argument_' "$test_build/swarm_011_sibling_field_borrow.rs" >/dev/null ||
+  fail 'swarm_011 did not pre-evaluate sibling READ before WRITE borrow'
+reject_case swarm_011_overlapping_access 'conflicting access'
+run_case swarm_012_not_bool tests/swarm_012_not_bool.moss '1'
+reject_case swarm_012_not_int "not operand must have type 'Bool'"
+reject_case swarm_012_not_float "not operand must have type 'Bool'"
+reject_case swarm_012_not_string "not operand must have type 'Bool'"
+run_case swarm_013_immutable_let_positive tests/swarm_013_immutable_let_positive.moss '1'
+reject_case swarm_013_immutable_let_direct 'cannot mutate immutable local'
+reject_case swarm_013_immutable_let_receiver 'cannot mutate immutable local'
+reject_case swarm_013_immutable_let_member 'cannot mutate immutable local'
+reject_case swarm_013_immutable_let_index 'cannot mutate immutable local'
 run_phase4_differential functional_basics_showcase \
   examples/functional_basics.moss \
   "$(printf 'transformed: 14 18\nsource still available: -3 4')"

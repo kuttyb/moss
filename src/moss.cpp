@@ -1334,6 +1334,11 @@ class Checker {
     throw CompileError(line, msg);
   }
 
+  [[noreturn]] void err(int line, const string& msg,
+                        const string& diagnostic_code) const {
+    throw CompileError(line, msg, diagnostic_code);
+  }
+
   [[noreturn]] void err(const string& source_file, int line,
                         const string& msg) const {
     CompileError error(line, msg);
@@ -2492,6 +2497,10 @@ class Checker {
   struct OwnershipEnv {
     std::unordered_map<string,string> types;
     std::set<string> state_fields;
+    // `let` is an explicit source-level immutability declaration.  Keep this
+    // beside the ownership environment so invalid source is rejected before
+    // native Rust happens to enforce the same representation detail.
+    std::set<string> immutable_locals;
     // Incoming handler arguments are immutable message snapshots.  This is
     // an authoritative ownership capability consumed by the ordinary
     // READ/WRITE/CONSUME checker; it is not a parser-level convention.
@@ -2614,6 +2623,11 @@ class Checker {
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return functional;
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    if (starts_with(e, "not ")) {
+      auto operand = inferred_expr_type(trim(e.substr(4)), env);
+      return operand && canonical_type_name(*operand) == "bool"
+          ? std::optional<string>("bool") : std::nullopt;
+    }
     if (auto type = obvious_expr_type(e, env)) return canonical_type_name(*type);
     if (plain_identifier(e) && functions_.count(e))
       return "callable:" + e;
@@ -6486,6 +6500,10 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    if (starts_with(value, "not ")) {
+      check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/"}}) {
       if (auto binary = split_binary(value, operators)) {
@@ -6496,6 +6514,11 @@ class Checker {
     }
     if (requested != Effect::Read) {
       auto location = storage_location(value, env.types);
+      if (requested == Effect::Write && location &&
+          env.immutable_locals.count(location->root))
+        err(line, "cannot mutate immutable local '" + location->root +
+                "'; declare it with `var` if mutation is intended",
+            "IMMUTABLE_LOCAL_MUTATION");
       if (location && env.message_payloads.count(location->root)) {
         if (requested == Effect::Write)
           err(line, "cannot WRITE incoming message payload '" +
@@ -6790,6 +6813,8 @@ class Checker {
           else type = inferred_expr_type(s.b, env.types);
 
           env.types[s.a] = type.value_or("_value");
+          if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
+          else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
           ++index;
           break;
@@ -6802,7 +6827,7 @@ class Checker {
             auto dot = s.a.rfind('.');
             if (dot != string::npos)
               check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
-            else if (simple_identifier(s.a) && env.message_payloads.count(s.a))
+            else if (simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
           string source = trim(s.b);
@@ -7030,6 +7055,7 @@ class Checker {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
             std::to_string(args.size()));
+      check_expression(line, args.front(), env);
       auto condition = inferred_expr_type(args.front(), env);
       if (!condition || canonical_type_name(*condition) != "bool")
         err(line, "assert condition must have type 'bool'");
@@ -7407,6 +7433,14 @@ class Checker {
     }
     if (check_functional_pipeline(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
+    if (starts_with(value, "not ")) {
+      string operand = trim(value.substr(4));
+      check_expression(line, operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
+      if (!operand_type || canonical_type_name(*operand_type) != "bool")
+        err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{" and ", " or "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/"}}) {
@@ -9380,6 +9414,7 @@ class Generator {
   std::unordered_map<string, DomainInstanceBinding> domain_instance_bindings_;
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
+  mutable size_t call_argument_temp_ = 0;
 
   bool owns_specialization(const Domain& specialized) const {
     const string& source = specialization_sources_.at(specialized.name);
@@ -9948,6 +9983,11 @@ class Generator {
           !starts_with(local->second, "_"))
         return canonical_type_name(local->second);
     }
+    if (starts_with(value, "not ")) {
+      auto operand = generated_expr_type(trim(value.substr(4)), types);
+      return operand && canonical_type_name(*operand) == "bool"
+          ? std::optional<string>("bool") : std::nullopt;
+    }
     if (plain_identifier(value) && functions_.count(value))
       return "callable:" + value;
     size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
@@ -10075,6 +10115,110 @@ class Generator {
       out << (types[index].empty() ? "unresolved" : types[index]);
     }
     return out.str();
+  }
+
+  static bool expression_mentions_identifier(const string& expression,
+                                             const string& identifier) {
+    bool quoted = false, escaped = false;
+    for (size_t index = 0; index < expression.size();) {
+      char value = expression[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (value == '\\') escaped = true;
+        else if (value == '"') quoted = false;
+        ++index;
+        continue;
+      }
+      if (value == '"') { quoted = true; ++index; continue; }
+      if (!(std::isalpha(static_cast<unsigned char>(value)) || value == '_')) {
+        ++index;
+        continue;
+      }
+      size_t end = index + 1;
+      while (end < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+              expression[end] == '_')) ++end;
+      if (expression.compare(index, end - index, identifier) == 0) return true;
+      index = end;
+    }
+    return false;
+  }
+
+  static bool is_pure_state_read_expression(const string& expression) {
+    string value = trim(expression);
+    // This prelude is solely a Rust evaluation-order repair.  Do not move a
+    // source call or message across an earlier WRITE argument.
+    if (starts_with(value, "message ")) return false;
+    string callee, receiver, method;
+    vector<string> arguments;
+    return !parse_simple_call(value, callee, arguments) &&
+        !parse_member_call(value, receiver, method, arguments);
+  }
+
+  string render_known_function_call(
+      const Function& function, const string& name, const vector<string>& arguments,
+      const Domain* domain, const std::set<string>& locals,
+      const std::unordered_map<string,string>* types) const {
+    vector<string> temporaries(arguments.size());
+    if (domain) {
+      for (size_t write_index = 0;
+           write_index < arguments.size() && write_index < function.params.size();
+           ++write_index) {
+        if (function_effect(function, write_index) != Effect::Write) continue;
+        string written = trim(arguments[write_index]);
+        bool writes_direct_field = !locals.count(written) &&
+            std::any_of(domain->state.begin(), domain->state.end(),
+                        [&](const Field& field) { return field.name == written; });
+        if (!writes_direct_field) continue;
+        for (size_t read_index = write_index + 1;
+             read_index < arguments.size() && read_index < function.params.size();
+             ++read_index) {
+          if (!is_pure_state_read_expression(arguments[read_index]))
+            continue;
+          auto argument_type = generated_expr_type(arguments[read_index], types);
+          if (!argument_type || !copy_type(*argument_type))
+            continue;
+          bool reads_sibling = false;
+          for (const auto& field : domain->state) {
+            if (field.name != written &&
+                expression_mentions_identifier(arguments[read_index], field.name)) {
+              reads_sibling = true;
+              break;
+            }
+          }
+          if (reads_sibling)
+            temporaries[read_index] = "__moss_call_argument_" +
+                std::to_string(call_argument_temp_++);
+        }
+      }
+    }
+
+    std::ostringstream call;
+    call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    size_t emitted_arguments = 0;
+    for (size_t index = 0; index < arguments.size(); ++index) {
+      bool compile_time_callable = generated_expr_type(arguments[index], types)
+          .value_or("").rfind("callable:", 0) == 0;
+      if (compile_time_callable) continue;
+      if (emitted_arguments++) call << ", ";
+      if (!temporaries[index].empty()) call << temporaries[index];
+      else call << function_call_argument(function, index, arguments[index],
+                                          domain, locals, types);
+    }
+    call << ")";
+    bool needs_prelude = std::any_of(
+        temporaries.begin(), temporaries.end(),
+        [](const string& temporary) { return !temporary.empty(); });
+    if (!needs_prelude) return call.str();
+
+    std::ostringstream lowered;
+    lowered << "{ ";
+    for (size_t index = 0; index < arguments.size(); ++index)
+      if (!temporaries[index].empty())
+        lowered << "let " << temporaries[index] << " = "
+                << expr(arguments[index], domain, locals, types) << "; ";
+    lowered << call.str() << " }";
+    return lowered.str();
   }
 
   string emitted_function_name(
@@ -11167,6 +11311,9 @@ class Generator {
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
         bool known_function = functions_.count(head);
+        if (known_function)
+          return render_known_function_call(*functions_.at(head), head, call_args,
+                                            d, locals, types);
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << viewed_function_name(head, call_args, d, locals, types) << "(";
         size_t emitted_arguments = 0;
@@ -11176,10 +11323,7 @@ class Generator {
                   "callable:", 0) == 0;
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
-          if (known_function)
-            r << function_call_argument(*functions_.at(head), i, call_args[i], d, locals, types);
-          else
-            r << expr(call_args[i], d, locals, types);
+          r << expr(call_args[i], d, locals, types);
         }
         r << ")"; return r.str();
       }
@@ -12337,6 +12481,14 @@ class Generator {
             break;
           }
           bool known_function = functions_.count(s.a);
+          if (s.b.empty() && known_function && !benchmark_body_) {
+            o << indent(level)
+              << render_known_function_call(*functions_.at(s.a), s.a, s.args,
+                                           d, locals, &types)
+              << ";\n";
+            ++i;
+            break;
+          }
           bool implicit_method = in_function && d && objects_.count(d->name) &&
               s.b.empty() && !known_function;
           o << indent(level);
@@ -13770,6 +13922,7 @@ struct AgentCapabilityDescriptor {
 static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
   static const vector<AgentCapabilityDescriptor> catalog = {
       {"structured_diagnostics", "Stable machine-readable Moss diagnostics, locations, identities, and repair alternatives.", "moss check <source> --json"},
+      {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
       {"semantic_queries", "Checked-program type, ownership, effect, call, explanation, and cost facts.", "moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
       {"impact_analysis", "Changed semantic facts, dependents, affected tests, and reuse facts.", "moss impact <target> --source <source> --json"},
@@ -13995,6 +14148,8 @@ static string diagnostic_code_for_message(const string& message) {
   if (message.find("conflicting") != string::npos &&
       message.find("access") != string::npos)
     return "OWNERSHIP_CONFLICTING_ACCESS";
+  if (message.find("cannot mutate immutable local") != string::npos)
+    return "IMMUTABLE_LOCAL_MUTATION";
   if (message.find("cannot infer") != string::npos)
     return "TYPE_INFERENCE_FAILED";
   if (message.find("unknown") != string::npos)
@@ -14127,6 +14282,10 @@ static void write_structured_error(
     alternatives = {
         "rename the reference to an existing static symbol",
         "declare the missing symbol or concrete type"};
+  else if (code == "IMMUTABLE_LOCAL_MUTATION")
+    alternatives = {
+        "declare the local with `var` if mutation is intended",
+        "keep the `let` binding and use it only through READ access"};
   write_agent_string_array(out, alternatives);
   out << "}\n}\n";
 }
@@ -14155,7 +14314,7 @@ static void write_bootstrap_json(std::ostream& out,
             "impact_analysis", "incremental_verification",
             "modules", "qualified_imports", "module_interfaces",
             "generic_specialization_identity", "interpreted_domains",
-            "fast_debug",
+            "fast_debug", "language_surface",
             "affected_tests", "formatter", "canonical_formatter", "semantic_edits",
             "repair_actions", "static_cost_facts", "source_provenance",
             "first_order_effect_graph", "structured_execution_trace",
@@ -14172,9 +14331,16 @@ static void write_bootstrap_json(std::ostream& out,
          "\"semantic_edits\": true, "
          "\"repair_actions\": true, "
          "\"cost_facts\": true, "
+         "\"language_surface\": true, "
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
          "\"package_lockfile\": true}";
+  out << ",\n    \"source_surface\": {"
+         "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
+         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
+         "\"operators\":{\"boolean_negation\":\"not expression\"},"
+         "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\"},"
+         "\"collections\":[\"Vector\",\"Map\",\"Queue\"]}";
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",
@@ -14220,7 +14386,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
          "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"}]";
   out << ",\n    \"debugging_features\": ["
-         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\"]},"
+         "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\",\"container methods reached through object fields are not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"moss agent capabilities --json\", \"schema_command\": \"moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";
@@ -14244,6 +14410,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"What direct calls and callers are known?\",\"capability\":\"calls\",\"command\":\"moss calls <target> --source <source> --json\"},"
          "{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},"
+         "{\"question\":\"Does Moss support this source construct, and what is the canonical form?\",\"capability\":\"language_surface\",\"command\":\"moss agent bootstrap --json\"},"
+         "{\"question\":\"Is this a Moss semantic restriction, frontend bug, native lowering bug, or Fast Debug limitation?\",\"capability\":\"language_surface\",\"command\":\"source_surface, moss check --json, ownership/effects/why, a minimal probe, then native verification\"},"
          "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
          "{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
@@ -19240,6 +19408,9 @@ static string canonicalize_code_spacing(const string& input) {
         token.text == "," || token.text == ":" || token.text == "." ||
         token.text == "(")
       space_before = false;
+    // `not` is a word-form prefix operator, not a callable identifier. Keep
+    // its required separator before a grouped operand.
+    if (token.text == "(" && previous == "not") space_before = true;
     if (previous == "(" || previous == "[" || previous == "{" ||
         previous == "." || previous_unary_minus)
       space_before = false;

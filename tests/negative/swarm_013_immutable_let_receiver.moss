@@ -1,0 +1,3 @@
+fn main():
+  let queue = Queue()
+  queue.push(1)

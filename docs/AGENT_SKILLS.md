@@ -41,6 +41,13 @@ skills to avoid learning retired syntax or backend details by accident. The vali
 language-skill example is mirrored in a fixture and compiled with strict generated-Rust
 warnings by `tests/tooling/check_agent_skills.py`.
 
+Bootstrap also advertises a compact `source_surface`: high-frequency local,
+control-flow, range, `not`, collection, and domain-handler spellings. Before calling
+an unfamiliar construct a language gap, agents should use that surface, structured
+diagnostics, a minimal Moss reproducer, and native verification when lowering is
+involved. Generated Rust can reveal a backend defect; it is not language-design
+evidence by itself.
+
 This is a small dogfooding aid pulled forward from future Phase 22 work. It does not
 complete Phase 22: measured skill effectiveness, systematic rewrite-bearing
 diagnostics, richer trace slicing, and advanced agent repair workflows remain future

@@ -1,0 +1,362 @@
+# A pure Moss Int-to-Int HashMap implemented with Open Addressing and Linear Probing.
+# Uses Structure-of-Arrays (parallel primitive vectors) for cache-friendly,
+# flat storage without recursive types or dynamic dispatch.
+
+trait MapLike:
+  fn size() -> Int
+  fn is_empty() -> Bool
+  fn contains(key: Int) -> Bool
+  fn get(key: Int, default_val: Int) -> Int
+
+type HashMap:
+  cap: Int
+  count: Int
+  keys: Vector [Int]
+  values: Vector [Int]
+  states: Vector [Int]  # 0 = Empty, 1 = Occupied, 2 = Tombstone
+
+  fn size() -> Int:
+    return count
+
+  fn is_empty() -> Bool:
+    return count == 0
+
+  fn capacity() -> Int:
+    return cap
+
+  # Multiplicative integer hash mixing modulo capacity
+  fn hash_index(key: Int) -> Int:
+    var k = key
+    if k < 0:
+      k = 0 - k
+    mixed = k * 31 + 17
+    quotient = mixed / cap
+    var idx = mixed - quotient * cap
+    if idx < 0:
+      idx = idx + cap
+    return idx
+
+  fn contains(key: Int) -> Bool:
+    var idx = hash_index(key)
+    var steps = 0
+    var searching = true
+    while searching:
+      if steps >= cap:
+        return false
+      st = states [idx]
+      if st == 0:
+        return false
+      if st == 1:
+        if keys [idx] == key:
+          return true
+      idx = idx + 1
+      if idx == cap:
+        idx = 0
+      steps = steps + 1
+    return false
+
+  fn get(key: Int, default_val: Int) -> Int:
+    var idx = hash_index(key)
+    var steps = 0
+    var searching = true
+    while searching:
+      if steps >= cap:
+        return default_val
+      st = states [idx]
+      if st == 0:
+        return default_val
+      if st == 1:
+        if keys [idx] == key:
+          return values [idx]
+      idx = idx + 1
+      if idx == cap:
+        idx = 0
+      steps = steps + 1
+    return default_val
+
+  fn put_internal(key: Int, value: Int) -> Bool:
+    var idx = hash_index(key)
+    var steps = 0
+    var target_slot = -1
+    var searching = true
+    while searching:
+      if steps >= cap:
+        searching = false
+      else:
+        st = states [idx]
+        if st == 0:
+          if target_slot == -1:
+            target_slot = idx
+          searching = false
+        else:
+          if st == 1:
+            if keys [idx] == key:
+              values [idx] = value
+              return false
+          else:
+            if target_slot == -1:
+              target_slot = idx
+          idx = idx + 1
+          if idx == cap:
+            idx = 0
+          steps = steps + 1
+
+    if target_slot != -1:
+      keys [target_slot] = key
+      values [target_slot] = value
+      states [target_slot] = 1
+      count = count + 1
+      return true
+    return false
+
+  fn resize(new_cap: Int):
+    var saved_keys = [0]
+    saved_keys.pop()
+    var saved_values = [0]
+    saved_values.pop()
+    var saved_states = [0]
+    saved_states.pop()
+
+    var i = 0
+    while i < cap:
+      saved_keys.push(keys [i])
+      saved_values.push(values [i])
+      saved_states.push(states [i])
+      i = i + 1
+
+    old_cap = cap
+    cap = new_cap
+    var clear_idx = 0
+    while clear_idx < old_cap:
+      keys.pop()
+      values.pop()
+      states.pop()
+      clear_idx = clear_idx + 1
+
+    var j = 0
+    while j < new_cap:
+      keys.push(0)
+      values.push(0)
+      states.push(0)
+      j = j + 1
+
+    var k = 0
+    while k < old_cap:
+      if saved_states [k] == 1:
+        put_internal(saved_keys [k], saved_values [k])
+      k = k + 1
+
+  fn put(key: Int, value: Int) -> Bool:
+    if count * 10 >= cap * 7:
+      resize(cap * 2)
+    return put_internal(key, value)
+
+  fn remove(key: Int) -> Bool:
+    var idx = hash_index(key)
+    var steps = 0
+    var searching = true
+    while searching:
+      if steps >= cap:
+        return false
+      st = states [idx]
+      if st == 0:
+        return false
+      if st == 1:
+        if keys [idx] == key:
+          states [idx] = 2
+          count = count - 1
+          return true
+      idx = idx + 1
+      if idx == cap:
+        idx = 0
+      steps = steps + 1
+    return false
+
+  fn clear():
+    var i = 0
+    while i < cap:
+      states [i] = 0
+      keys [i] = 0
+      values [i] = 0
+      i = i + 1
+    count = 0
+
+  fn keys_vector() -> Vector [Int]:
+    var result = [0]
+    result.pop()
+    var i = 0
+    while i < cap:
+      if states [i] == 1:
+        result.push(keys [i])
+      i = i + 1
+    return result
+
+  fn values_vector() -> Vector [Int]:
+    var result = [0]
+    result.pop()
+    var i = 0
+    while i < cap:
+      if states [i] == 1:
+        result.push(values [i])
+      i = i + 1
+    return result
+
+fn hash_map(initial_capacity: Int) -> HashMap:
+  var capacity = initial_capacity
+  if capacity < 4:
+    capacity = 4
+  var k = [0]
+  k.pop()
+  var v = [0]
+  v.pop()
+  var s = [0]
+  s.pop()
+  var i = 0
+  while i < capacity:
+    k.push(0)
+    v.push(0)
+    s.push(0)
+    i = i + 1
+  return HashMap(cap: capacity, count: 0, keys: k, values: v, states: s)
+
+# Trait helper functions for structural specialization
+fn map_size(m: MapLike) -> Int:
+  return m.size()
+
+fn map_has(m: MapLike, key: Int) -> Bool:
+  return m.contains(key)
+
+test "empty hash map reports correct initial state":
+  hm = hash_map(8)
+  assertEqual(hm.size(), 0)
+  assertEqual(hm.capacity(), 8)
+  assert(hm.is_empty())
+  assertEqual(hm.contains(42), false)
+  assertEqual(hm.get(42, -1), -1)
+
+test "inserts and retrieves single and multiple key-value pairs":
+  hm = hash_map(8)
+  assert(hm.put(10, 100))
+  assert(hm.put(20, 200))
+  assert(hm.put(30, 300))
+
+  assertEqual(hm.size(), 3)
+  assert(not hm.is_empty())
+  assertEqual(hm.contains(10), true)
+  assertEqual(hm.contains(20), true)
+  assertEqual(hm.contains(30), true)
+  assertEqual(hm.contains(40), false)
+
+  assertEqual(hm.get(10, -1), 100)
+  assertEqual(hm.get(20, -1), 200)
+  assertEqual(hm.get(30, -1), 300)
+  assertEqual(hm.get(40, -1), -1)
+
+test "overwrites value for existing key without increasing size":
+  hm = hash_map(8)
+  assert(hm.put(5, 50))
+  assertEqual(hm.size(), 1)
+  assertEqual(hm.get(5, 0), 50)
+
+  # Overwrite existing key
+  assertEqual(hm.put(5, 500), false)
+  assertEqual(hm.size(), 1)
+  assertEqual(hm.get(5, 0), 500)
+
+test "removes keys and allows lookup past tombstones":
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(2, 20)
+  hm.put(3, 30)
+
+  assertEqual(hm.size(), 3)
+  assert(hm.remove(2))
+  assertEqual(hm.size(), 2)
+  assertEqual(hm.contains(2), false)
+  assertEqual(hm.get(2, -1), -1)
+
+  # Remaining keys still accessible
+  assertEqual(hm.get(1, -1), 10)
+  assertEqual(hm.get(3, -1), 30)
+
+  # Removing nonexistent key returns false
+  assertEqual(hm.remove(99), false)
+  assertEqual(hm.remove(2), false)
+
+test "reuses tombstone slots on subsequent insert":
+  hm = hash_map(8)
+  hm.put(10, 1)
+  hm.put(20, 2)
+  hm.remove(10)
+  assertEqual(hm.size(), 1)
+
+  # Re-insert key 10
+  hm.put(10, 100)
+  assertEqual(hm.size(), 2)
+  assertEqual(hm.get(10, -1), 100)
+
+test "dynamically resizes when exceeding load factor threshold":
+  hm = hash_map(4)
+  assertEqual(hm.capacity(), 4)
+
+  # Insert 5 elements into capacity 4 map (triggers resize)
+  hm.put(1, 10)
+  hm.put(2, 20)
+  hm.put(3, 30)
+  hm.put(4, 40)
+  hm.put(5, 50)
+
+  assert(hm.capacity() > 4)
+  assertEqual(hm.size(), 5)
+  assertEqual(hm.get(1, -1), 10)
+  assertEqual(hm.get(2, -1), 20)
+  assertEqual(hm.get(3, -1), 30)
+  assertEqual(hm.get(4, -1), 40)
+  assertEqual(hm.get(5, -1), 50)
+
+test "handles negative keys and zero":
+  hm = hash_map(8)
+  hm.put(0, 1000)
+  hm.put(-5, 555)
+  hm.put(-42, 4242)
+
+  assertEqual(hm.get(0, -1), 1000)
+  assertEqual(hm.get(-5, -1), 555)
+  assertEqual(hm.get(-42, -1), 4242)
+  assertEqual(hm.contains(-5), true)
+  assertEqual(hm.contains(-99), false)
+
+test "snapshot vectors for keys and values":
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(2, 20)
+
+  k_vec = hm.keys_vector()
+  v_vec = hm.values_vector()
+  assertEqual(k_vec |> count, 2)
+  assertEqual(v_vec |> count, 2)
+
+test "clears all entries":
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(2, 20)
+  assertEqual(hm.size(), 2)
+
+  hm.clear()
+  assertEqual(hm.size(), 0)
+  assert(hm.is_empty())
+  assertEqual(hm.contains(1), false)
+
+test "supports structural MapLike trait":
+  hm = hash_map(8)
+  hm.put(7, 77)
+  assertEqual(map_size(hm), 1)
+  assert(map_has(hm, 7))
+  assertEqual(map_has(hm, 8), false)
+
+fn main():
+  hm = hash_map(8)
+  hm.put(1, 10)
+  hm.put(2, 20)
+  hm.put(3, 30)
+  echo hm.get(1, -1), hm.get(2, -1), hm.get(3, -1), hm.size()

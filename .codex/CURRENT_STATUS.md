@@ -21,23 +21,30 @@ The canonical Phase 15 swarm findings ledger is
 `examples/swarm/FINDINGS.md`. Its BinaryHeap baseline recorded five findings,
 three independently reproduced across the Julia and Python ports.
 
-The isolated Agent A Python `Counter` Map experiment is a bounded failure under
-`examples/swarm/Python/Counter/`: Map-backed construction and mutation check/build,
-but missing-key-as-zero cannot be expressed with the supported Map surface.
-SWARM-006 and SWARM-007 are fixed, so direct `Map()` field construction and String
-key insertion no longer need experiment workarounds; SWARM-008 remains open and
-SWARM-009 remains an agent misunderstanding. The current ledger contains nine
-findings (one open, seven fixed, one agent misunderstanding). The Julia
-`Accumulator` experiment remains separate. Focused regressions, all three
-swarm project checks/builds, and `make examples` pass; the Counter's missing-key
-tests remain intentional bounded failures. `make check` reaches only the existing
-sandbox LLDB/DAP handshake failure after the compiler and tooling suites pass.
+The isolated Agent A Python `Counter` Map experiment now passes its core project
+tests after the checked-in `Map.get`, `Map.keys`, and `Map.values` work. The
+README and ledger preserve its original bounded-failure observations. SWARM-006 and
+SWARM-007 remain fixed; SWARM-009 remains an agent misunderstanding. The Julia
+`Accumulator` experiment remains separate.
 
 The Julia `Accumulator` experiment under `examples/swarm/Julia/Accumulator/`
-is a bounded failure: its existing-key control passes, while three missing-key
-tests and `main` fail at absent Map reads; check/build pass. It independently
-reproduces SWARM-008 and adds SWARM-010 for non-iterable Map values, bringing
-the ledger to ten findings (two open, seven fixed, one agent misunderstanding).
+historically reproduced missing-key/default lookup and Map-value traversal gaps.
+Focused current Map regressions verify those APIs and close SWARM-008/SWARM-010;
+the optional checked-in merge body still needs a separate source-level follow-up
+before that project is again treated as a complete project validation.
+
+Phase 15.4 follow-up repairs now verify the checked-in `Map.get`, `Map.keys`,
+and `Map.values` work and reconcile SWARM-008/SWARM-010 as fixed. Current local
+work also fixes sibling-field native E0502 lowering, `not` Bool inference, and
+frontend enforcement of explicit `let` immutability; SWARM-011 through
+SWARM-013 track those verified repairs pending the repository's next allowed
+commit. Agent discovery now advertises the compact source surface and verified
+Fast Debug limits. Strict C++17 `-Werror`, focused compiler/native Rust,
+agent API/skill, Map, and frozen BinaryHeap project validation, plus `make examples`,
+pass. `make check` reaches only the existing sandbox LLDB/DAP real-integration
+handshake failure after the compiler, tooling, and Emacs suites pass; it was not
+weakened. The optional Julia Accumulator merge source remains a separate
+source-level follow-up, while the direct Map API regressions pass.
 
 ## Phase 15.3 — Path-Sensitive Synchronization Placement
 

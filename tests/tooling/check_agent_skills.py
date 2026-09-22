@@ -17,6 +17,9 @@ SKILLS = ROOT / ".agents" / "skills"
 LANGUAGE = SKILLS / "moss-language" / "SKILL.md"
 WORKFLOW = SKILLS / "moss-agent-workflow" / "SKILL.md"
 EXAMPLE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_skill_example.moss"
+SOURCE_SURFACE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface.moss"
+IMMUTABLE_LET = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_surface_immutable_let.moss"
+FAST_DEBUG_CONTAINER_FIELD = ROOT / "tests" / "tooling" / "fixtures" / "moss_fast_debug_container_field_limit.moss"
 AGENTS = ROOT / "AGENTS.md"
 MARGO = ROOT / "margo"
 
@@ -110,6 +113,10 @@ def main() -> int:
             "project_lockfile": "Moss.lock",
             "package_resolution": "path-git",
             "module_resolution": "moss-compiler",
+            "source_surface": "bootstrap-discoverable",
+            "domain_fn": "handler",
+            "explicit_let": "immutable",
+            "explicit_var": "mutable",
         },
         "moss-language",
     )
@@ -130,6 +137,8 @@ def main() -> int:
             "package_resolution": "path-git",
             "module_resolution": "moss-compiler",
             "semantic_oracle": "moss-agent-1",
+            "source_surface": "bootstrap-discoverable",
+            "gap_classification": "minimal-reproducer-first",
         },
         "moss-agent-workflow",
     )
@@ -145,6 +154,8 @@ def main() -> int:
         "./margo test",
         "./margo bench",
         "./margo clean",
+        "Before declaring a Moss gap",
+        "backend compiler bug even when Moss source semantics are valid",
     ):
         if marker not in agents:
             fail(f"AGENTS.md no longer routes a fresh agent to: {marker}")
@@ -165,6 +176,7 @@ def main() -> int:
             "impact_analysis",
             "affected_tests",
             "fast_debug",
+            "language_surface",
             "structured_execution_trace",
         "synchronization_plan",
         "package_project_driver",
@@ -182,6 +194,7 @@ def main() -> int:
         "package_dependencies": "Moss.toml",
         "package_lockfile": "Moss.lock",
         "module_interfaces": "margo build --json",
+        "language_surface": "moss agent bootstrap --json",
     }.items():
         if capability not in catalog or marker not in catalog[capability].get("entrypoint", ""):
             fail(f"live {capability} discovery lacks current Margo/Moss routing")
@@ -189,6 +202,20 @@ def main() -> int:
     if not any(command in fast_debug.get("entrypoint", "")
                for command in ("moss run --interp", "moss debug")):
         fail("live fast_debug discovery lacks a current Fast Debug command")
+    surface = bootstrap.get("source_surface", {})
+    if surface.get("locals", {}).get("immutable") != "let x = expression":
+        fail("bootstrap source surface no longer exposes immutable let syntax")
+    if surface.get("locals", {}).get("mutable") != "var x = expression":
+        fail("bootstrap source surface no longer exposes mutable var syntax")
+    if surface.get("operators", {}).get("boolean_negation") != "not expression":
+        fail("bootstrap source surface no longer exposes not expression")
+    if surface.get("domains", {}).get("fn_inside_domain") != "handler":
+        fail("bootstrap source surface no longer distinguishes domain handlers")
+    debug_features = {item["name"]: item for item in bootstrap["debugging_features"]}
+    if "for traversal is not currently supported" not in debug_features.get("fast_debug", {}).get("limitations", []):
+        fail("Fast Debug discovery omitted its verified for-traversal limitation")
+    if "container methods reached through object fields are not currently supported" not in debug_features.get("fast_debug", {}).get("limitations", []):
+        fail("Fast Debug discovery omitted its verified container-field limitation")
     actions = {item["name"]: item for item in bootstrap["actions"]}
     for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
         if action not in actions or not actions[action]["command"].startswith("margo "):
@@ -207,6 +234,10 @@ def main() -> int:
     session = agent_document(compiler, "session-report-template")["result"]
     if not session.get("session_report_questions"):
         fail("live session-report-template omitted its structured questions")
+    if "Before declaring a language/compiler gap" not in workflow:
+        fail("moss-agent-workflow no longer requires gap classification")
+    if "Every `fn` declared directly inside a\n`domain` is a **handler**" not in language:
+        fail("moss-language no longer explains that domain fn is a handler")
 
     lower_language = language.lower()
     for obsolete in ("sender fifo", "total commit order", "worker queue", "mailbox"):
@@ -219,6 +250,15 @@ def main() -> int:
     check = run([str(compiler), "--check", str(EXAMPLE)], ROOT)
     if check.returncode != 0:
         fail(f"skill example failed Moss checking:\n{check.stdout}{check.stderr}")
+    source_surface = run([str(compiler), "check", str(SOURCE_SURFACE), "--json"], ROOT)
+    if source_surface.returncode != 0:
+        fail(f"advertised source surface failed Moss checking:\n{source_surface.stdout}{source_surface.stderr}")
+    immutable_let = run([str(compiler), "check", str(IMMUTABLE_LET), "--json"], ROOT)
+    if immutable_let.returncode == 0 or "IMMUTABLE_LOCAL_MUTATION" not in immutable_let.stdout:
+        fail("explicit let mutation was not rejected by the advertised source surface")
+    fast_debug_limit = run([str(compiler), "run", "--interp", str(FAST_DEBUG_CONTAINER_FIELD)], ROOT)
+    if fast_debug_limit.returncode == 0 or "method receiver is not a Moss object" not in fast_debug_limit.stderr:
+        fail("Fast Debug container-field limitation metadata no longer matches execution")
 
     tmp_root = ROOT / "tmp"
     tmp_root.mkdir(exist_ok=True)

@@ -1,0 +1,16 @@
+fn update_at(values: Vector [Int], position: Int) -> Int:
+  values [position] = 9
+  return position
+
+type Holder:
+  values: Vector [Int]
+  size: Int
+
+  fn update_last() -> Int:
+    return update_at(values, size - 1)
+
+fn main():
+  holder = Holder(values: [1, 2], size: 2)
+  other = [0, 0]
+  position = 1
+  echo holder.update_last(), update_at(other, position)
