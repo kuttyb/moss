@@ -1,0 +1,25 @@
+{
+  "autoExecutionPolicy": "always-proceed",
+  "toolPermission": "always-proceed",
+  "fileAccessPolicy": "deny",
+  "nonWorkspaceFileAccess": "deny",
+  "permissions": {
+    "allow": [
+      "./**",
+      "file(./**)",
+      "command(*)"
+    ],
+    "deny": [
+      "../**",
+      "/*",
+      "file(../**)",
+      "file(/*)",
+      "command(git commit*)",
+      "command(git push*)"
+    ]
+  },
+  "workspace": {
+    "root": ".",
+    "restrictOutsidePaths": true
+  }
+}

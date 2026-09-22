@@ -1,0 +1,6 @@
+[project]
+name = "julia-circular-buffer"
+version = "0.1.0"
+
+[build]
+source = "src"

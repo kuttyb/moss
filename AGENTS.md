@@ -52,3 +52,11 @@ When working with Moss:
   validation results there. Distinguish completed validation from results
   invalidated by subsequent edits.
 - Do not rely on disposable logs or conversation history for durable status.
+
+## Agent Operational Rules
+
+- **Full Autonomy**: Execute shell commands, file inspections, and edits without prompting for per-step confirmation.
+- **Sandboxing**: Stay strictly within the workspace root. Never access or modify paths outside this directory.
+- **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
+- **Git Boundary**: You may run git diff, status, and local staging. You must NEVER run `git commit` or `git push`.
+

@@ -1,0 +1,237 @@
+# A bounded Int CircularBuffer translated from DataStructures.jl.
+# Fixed capacity, overwriting oldest on full, with back (pop) and front (popfirst) removals.
+
+trait BoundedBuffer:
+  fn capacity() -> Int
+  fn length() -> Int
+  fn isempty() -> Bool
+  fn isfull() -> Bool
+
+type CircularBuffer:
+  cap: Int
+  start: Int
+  len: Int
+  allocated: Int
+  data: Vector [Int]
+
+  fn capacity() -> Int:
+    return cap
+
+  fn length() -> Int:
+    return len
+
+  fn isempty() -> Bool:
+    return len == 0
+
+  fn isfull() -> Bool:
+    return len == cap
+
+  fn push(value: Int) -> Int:
+    if len < cap:
+      if allocated < cap:
+        data.push(value)
+        allocated = allocated + 1
+      else:
+        idx = start + len
+        if idx >= cap:
+          idx = idx - cap
+        data [idx] = value
+      len = len + 1
+    else:
+      data [start] = value
+      start = start + 1
+      if start == cap:
+        start = 0
+    return len
+
+  fn pop() -> Int:
+    last_idx = start + len - 1
+    if last_idx >= cap:
+      last_idx = last_idx - cap
+    result = data [last_idx]
+    len = len - 1
+    return result
+
+  fn popfirst() -> Int:
+    result = data [start]
+    start = start + 1
+    if start == cap:
+      start = 0
+    len = len - 1
+    return result
+
+  fn first() -> Int:
+    return data [start]
+
+  fn last() -> Int:
+    last_idx = start + len - 1
+    if last_idx >= cap:
+      last_idx = last_idx - cap
+    return data [last_idx]
+
+  fn get(index: Int) -> Int:
+    idx = start + index
+    if idx >= cap:
+      idx = idx - cap
+    return data [idx]
+
+# Structural trait specialization
+fn buffer_capacity(buf: BoundedBuffer) -> Int:
+  return buf.capacity()
+
+fn buffer_length(buf: BoundedBuffer) -> Int:
+  return buf.length()
+
+fn buffer_is_full(buf: BoundedBuffer) -> Bool:
+  return buf.isfull()
+
+fn available_space(buf: BoundedBuffer) -> Int:
+  return buf.capacity() - buf.length()
+
+# Static duck-typed specialization
+fn inspect_capacity(target):
+  return target.capacity()
+
+fn circular_buffer(capacity: Int) -> CircularBuffer:
+  return CircularBuffer(cap: capacity, start: 0, len: 0, allocated: 0, data: [])
+
+test "empty buffer reports correct initial state":
+  cb = circular_buffer(4)
+  assertEqual(cb.capacity(), 4)
+  assertEqual(cb.length(), 0)
+  assertEqual(cb.isempty(), true)
+  assertEqual(cb.isfull(), false)
+  assertEqual(available_space(cb), 4)
+
+test "push appends items within capacity":
+  cb = circular_buffer(3)
+  cb.push(10)
+  cb.push(20)
+
+  assertEqual(cb.length(), 2)
+  assertEqual(cb.isempty(), false)
+  assertEqual(cb.isfull(), false)
+  assertEqual(cb.first(), 10)
+  assertEqual(cb.last(), 20)
+  assertEqual(cb.get(0), 10)
+  assertEqual(cb.get(1), 20)
+
+test "push reaches capacity and overwrites oldest on full":
+  cb = circular_buffer(3)
+  cb.push(1)
+  cb.push(2)
+  cb.push(3)
+
+  assertEqual(cb.length(), 3)
+  assert(cb.isfull())
+  assertEqual(cb.first(), 1)
+  assertEqual(cb.last(), 3)
+
+  # Overwrite oldest (1): buffer becomes [2, 3, 4]
+  cb.push(4)
+  assertEqual(cb.length(), 3)
+  assert(cb.isfull())
+  assertEqual(cb.first(), 2)
+  assertEqual(cb.last(), 4)
+  assertEqual(cb.get(0), 2)
+  assertEqual(cb.get(1), 3)
+  assertEqual(cb.get(2), 4)
+
+  # Overwrite oldest (2): buffer becomes [3, 4, 5]
+  cb.push(5)
+  assertEqual(cb.first(), 3)
+  assertEqual(cb.last(), 5)
+  assertEqual(cb.get(0), 3)
+  assertEqual(cb.get(1), 4)
+  assertEqual(cb.get(2), 5)
+
+test "pop removes elements from back":
+  cb = circular_buffer(3)
+  cb.push(10)
+  cb.push(20)
+  cb.push(30)
+  cb.push(40)  # overwrites 10 -> [20, 30, 40]
+
+  assertEqual(cb.pop(), 40)
+  assertEqual(cb.length(), 2)
+  assertEqual(cb.last(), 30)
+  assertEqual(cb.isfull(), false)
+
+  assertEqual(cb.pop(), 30)
+  assertEqual(cb.length(), 1)
+  assertEqual(cb.last(), 20)
+
+  assertEqual(cb.pop(), 20)
+  assertEqual(cb.length(), 0)
+  assert(cb.isempty())
+
+test "popfirst removes elements from front":
+  cb = circular_buffer(3)
+  cb.push(10)
+  cb.push(20)
+  cb.push(30)
+  cb.push(40)  # overwrites 10 -> [20, 30, 40]
+
+  assertEqual(cb.popfirst(), 20)
+  assertEqual(cb.length(), 2)
+  assertEqual(cb.first(), 30)
+
+  assertEqual(cb.popfirst(), 30)
+  assertEqual(cb.length(), 1)
+  assertEqual(cb.first(), 40)
+
+  assertEqual(cb.popfirst(), 40)
+  assertEqual(cb.length(), 0)
+  assert(cb.isempty())
+
+test "supports interleaved push and pop with wrap around":
+  cb = circular_buffer(2)
+  cb.push(1)
+  cb.push(2)
+  assertEqual(cb.popfirst(), 1)  # [2]
+  cb.push(3)  # [2, 3]
+  assert(cb.isfull())
+  assertEqual(cb.first(), 2)
+  assertEqual(cb.last(), 3)
+  cb.push(4)  # overwrites 2 -> [3, 4]
+  assertEqual(cb.first(), 3)
+  assertEqual(cb.last(), 4)
+  assertEqual(cb.pop(), 4)  # [3]
+  assertEqual(cb.pop(), 3)  # []
+  assert(cb.isempty())
+
+test "handles single-capacity buffer":
+  cb = circular_buffer(1)
+  assertEqual(cb.capacity(), 1)
+  cb.push(100)
+  assert(cb.isfull())
+  assertEqual(cb.first(), 100)
+  assertEqual(cb.last(), 100)
+
+  cb.push(200)
+  assert(cb.isfull())
+  assertEqual(cb.first(), 200)
+  assertEqual(cb.last(), 200)
+
+  assertEqual(cb.pop(), 200)
+  assert(cb.isempty())
+
+test "satisfies structural trait and static duck-typed callers":
+  cb = circular_buffer(5)
+  cb.push(7)
+  cb.push(8)
+  cb.push(9)
+
+  assertEqual(buffer_capacity(cb), 5)
+  assertEqual(buffer_length(cb), 3)
+  assertEqual(buffer_is_full(cb), false)
+  assertEqual(available_space(cb), 2)
+  assertEqual(inspect_capacity(cb), 5)
+
+fn main():
+  cb = circular_buffer(3)
+  cb.push(10)
+  cb.push(20)
+  cb.push(30)
+  cb.push(40)
+  echo cb.first(), cb.last(), cb.pop(), cb.pop()

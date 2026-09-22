@@ -1,0 +1,27 @@
+moss-native-cache-v2
+source-fingerprint
+0d4302d35c5f7ce3
+fingerprint
+a313e9625b510c30
+moss-codegen
+static-typed-domains-1
+resolved-rustc
+/usr/bin/rustc
+version-verbose-bytes
+195
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+profile
+debug
+compile-flags
+--edition=2021
+-D
+warnings
+-g
+-C
+opt-level=0
