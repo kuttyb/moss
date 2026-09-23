@@ -160,12 +160,7 @@ domain App:
     message logger.record(receipt)
 
 fn main(config):
-  account = Account(
-    balance = config.start_balance,
-    risk_limit = config.limit,
-    display_name = config.name,
-    stats = initial_stats(),
-    config_value = config.mode)
+  account = Account(balance = config.start_balance, risk_limit = config.limit, display_name = config.name, stats = initial_stats(), config_value = config.mode)
 
   logger = Logger(...)
   app = App(account = account, logger = logger)

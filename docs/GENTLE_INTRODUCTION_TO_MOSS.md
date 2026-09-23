@@ -244,10 +244,7 @@ Construct it by naming its fields:
 
 ```moss
 fn main():
-  counter = Counter(
-    name: "requests",
-    value: 0
-  )
+  counter = Counter(name: "requests", value: 0)
 
   counter.increment(5)
   echo counter.current()
@@ -292,11 +289,8 @@ counter = Counter(
 If construction needs logic, use an ordinary factory function:
 
 ```moss
-fn make_counter(name):
-  return Counter(
-    name: name,
-    value: 0
-  )
+fn make_counter(name: String):
+  return Counter(name: name, value: 0)
 ```
 
 Moss does not currently add a special constructor language on top of this.
@@ -341,10 +335,7 @@ type Job:
   effort: Int
 
 fn main():
-  jobs = [
-    Job(name: "compile", effort: 6),
-    Job(name: "test", effort: 4)
-  ]
+  jobs = [Job(name: "compile", effort: 6), Job(name: "test", effort: 4)]
 ```
 
 ### Map
@@ -388,7 +379,7 @@ Again, Moss infers the contained type.
 Moss supports collection processing directly:
 
 ```moss
-fn normalize(value):
+fn normalize(value: Int):
   return value * 2
 
 fn main():
@@ -737,11 +728,7 @@ fn main():
   ledger = Ledger(balance: 100)
   journal = Journal(count: 0)
 
-  checkout = Checkout(
-    name: "main",
-    ledger: ledger,
-    journal: journal
-  )
+  checkout = Checkout(name: "main", ledger: ledger, journal: journal)
 
   echo message checkout.Submit(25)
 ```
@@ -1034,11 +1021,7 @@ fn discount(item):
 
 
 fn main():
-  items = [
-    Item(name: "book", price: 15),
-    Item(name: "keyboard", price: 50),
-    Item(name: "cable", price: 10)
-  ]
+  items = [Item(name: "book", price: 15), Item(name: "keyboard", price: 50), Item(name: "cable", price: 10)]
 
   total = items
     |> map(discount)
