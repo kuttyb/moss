@@ -185,6 +185,20 @@ def main() -> int:
     )["result"]
     assert alternate_result["status"] == "pass"
 
+    pure_filter = SCRATCH / "alternate-pure-pipeline"
+    pure_filter.mkdir()
+    (pure_filter / "main.moss").write_text(
+        "fn main():\n"
+        "  values = [20, 22]\n"
+        "  result = values |> filter(_ > 0)\n"
+        "  echo result |> sum\n",
+        encoding="utf-8",
+    )
+    filter_result = invoke(
+        compiler, "run", "AB020", "--workdir", str(pure_filter), "--json",
+    )["result"]
+    assert filter_result["status"] == "pass"
+
     source_task = ROOT / "benchmarks" / "agent" / "tasks" / "AB001_simple_computation"
     duplicate = make_suite("duplicate")
     shutil.copytree(source_task, duplicate / "tasks" / "AB001_first")

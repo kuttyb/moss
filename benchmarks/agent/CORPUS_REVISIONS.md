@@ -27,3 +27,24 @@ regression proves the alternate filenames pass while the existing single-file
 shortcut still fails. The original provisional AB024 evidence is retained as
 non-canonical, and AB024 is rerun once in a new fresh context for the canonical
 baseline after this revision.
+
+## Revision 2 — AB020 pure-stage validation
+
+- Previous corpus commit: `faee3cd46d15d08d046c3b93b43585df4406beba`
+- Affected task: `AB020`
+- Prompt changed: no
+- Starter changed: no
+- Expected reference changed: no
+- Compiler changed: no
+
+The first canonical-series AB020 session correctly removed the effectful captured
+state and used the supported pure `filter(_ > 0)` stage followed by `sum`, which
+compiled and preserved output `42`. The task prompt asks for a pure supported
+stage and its success criteria do not require `map`, but the assertion accepted
+only the reference solution's `map(...)` spelling.
+
+The correction accepts either `map` or `filter` as the required pure functional
+stage while retaining compilation, exact output, and `sum` checks. A focused
+regression proves the alternate pure filter repair passes. The original AB020
+session is retained as non-canonical, and AB020 is rerun once in a new fresh
+context for the canonical baseline after this revision.

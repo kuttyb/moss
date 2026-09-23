@@ -46,7 +46,7 @@
   "assertions": [
     {
       "path": "main.moss",
-      "matches": "\\|>\\s*map\\s*\\("
+      "matches": "\\|>\\s*(?:map|filter)\\s*\\("
     },
     {
       "path": "main.moss",
