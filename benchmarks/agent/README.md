@@ -122,4 +122,4 @@ Benchmark tasks must not be changed merely because later compiler diagnostics im
 
 Tasks may be corrected when they are objectively invalid or rely on unsupported
 Moss behavior. Such corrections must preserve stable IDs and document the corpus
-revision so baseline comparisons can account for it.
+revision in `CORPUS_REVISIONS.md` so baseline comparisons can account for it.

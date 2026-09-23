@@ -168,6 +168,22 @@ def main() -> int:
             "src/main.moss": "fn main():\n  echo 42\n",
         },
     )
+    alternate_modules = SCRATCH / "alternate-module-files"
+    (alternate_modules / "src").mkdir(parents=True)
+    (alternate_modules / "Moss.toml").write_text(
+        '[project]\nname = "alternate"\nversion = "0.1.0"\n\n'
+        '[build]\nsource = "src"\n', encoding="utf-8",
+    )
+    (alternate_modules / "src" / "Math.moss").write_text(
+        "module Math\n\nexport fn answer() -> Int:\n  return 42\n", encoding="utf-8",
+    )
+    (alternate_modules / "src" / "App.moss").write_text(
+        "module App\nimport Math\n\nfn main():\n  echo Math.answer()\n", encoding="utf-8",
+    )
+    alternate_result = invoke(
+        compiler, "run", "AB024", "--workdir", str(alternate_modules), "--json",
+    )["result"]
+    assert alternate_result["status"] == "pass"
 
     source_task = ROOT / "benchmarks" / "agent" / "tasks" / "AB001_simple_computation"
     duplicate = make_suite("duplicate")

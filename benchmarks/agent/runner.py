@@ -189,11 +189,18 @@ def validate_task(task: Any, directory: Path) -> dict[str, Any]:
     if not isinstance(assertions, list):
         raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions must be an array")
     for index, assertion in enumerate(assertions):
-        if not isinstance(assertion, dict) or not isinstance(assertion.get("path"), str):
+        if not isinstance(assertion, dict):
             raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}] is invalid")
-        relative_path(assertion["path"], f"{task['id']}.assertions[{index}].path")
+        path_fields = set(assertion) & {"path", "path_glob"}
+        if len(path_fields) != 1:
+            raise BenchmarkError(
+                "BENCHMARK_METADATA_INVALID",
+                f"{task['id']}.assertions[{index}] must have exactly one of path or path_glob",
+            )
+        path_field = next(iter(path_fields))
+        relative_path(assertion[path_field], f"{task['id']}.assertions[{index}].{path_field}")
         if set(assertion) - {
-            "path", "equals", "contains", "not_contains", "matches",
+            "path", "path_glob", "equals", "contains", "not_contains", "matches",
             "not_matches",
         }:
             raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}] has unsupported fields")
@@ -372,25 +379,30 @@ def execute_validation(task: dict[str, Any], workspace: Path, compiler: Path,
             "failures": failures,
         })
     for index, assertion in enumerate(task.get("assertions", [])):
-        path = workspace / assertion["path"]
         failures: list[str] = []
-        try:
-            contents = path.read_text(encoding="utf-8")
-        except OSError as error:
-            contents = ""
-            failures.append(f"cannot read {assertion['path']}: {error}")
-        if "equals" in assertion and contents != assertion["equals"]:
-            failures.append("file contents did not match exactly")
-        if "contains" in assertion and assertion["contains"] not in contents:
-            failures.append(f"file omitted {assertion['contains']!r}")
-        if "not_contains" in assertion and assertion["not_contains"] in contents:
-            failures.append(f"file retained {assertion['not_contains']!r}")
-        if "matches" in assertion and not re.search(
-                assertion["matches"], contents, re.MULTILINE):
-            failures.append(f"file did not match /{assertion['matches']}/")
-        if "not_matches" in assertion and re.search(
-                assertion["not_matches"], contents, re.MULTILINE):
-            failures.append(f"file unexpectedly matched /{assertion['not_matches']}/")
+        label = assertion.get("path", assertion.get("path_glob"))
+        paths = ([workspace / assertion["path"]] if "path" in assertion else
+                 sorted(path for path in workspace.glob(assertion["path_glob"]) if path.is_file()))
+        contents: list[str] = []
+        if not paths:
+            failures.append(f"no files matched {label!r}")
+        for path in paths:
+            try:
+                contents.append(path.read_text(encoding="utf-8"))
+            except OSError as error:
+                failures.append(f"cannot read {path.relative_to(workspace)}: {error}")
+        if "equals" in assertion and not any(value == assertion["equals"] for value in contents):
+            failures.append("no file contents matched exactly")
+        if "contains" in assertion and not any(assertion["contains"] in value for value in contents):
+            failures.append(f"files omitted {assertion['contains']!r}")
+        if "not_contains" in assertion and any(assertion["not_contains"] in value for value in contents):
+            failures.append(f"a file retained {assertion['not_contains']!r}")
+        if "matches" in assertion and not any(
+                re.search(assertion["matches"], value, re.MULTILINE) for value in contents):
+            failures.append(f"no file matched /{assertion['matches']}/")
+        if "not_matches" in assertion and any(
+                re.search(assertion["not_matches"], value, re.MULTILINE) for value in contents):
+            failures.append(f"a file unexpectedly matched /{assertion['not_matches']}/")
         records.append({
             "index": len(task["validation"]) + index,
             "command": None,

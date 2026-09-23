@@ -87,9 +87,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path"],
+        "oneOf": [
+          {"required": ["path"]},
+          {"required": ["path_glob"]}
+        ],
         "properties": {
           "path": {"type": "string", "minLength": 1},
+          "path_glob": {"type": "string", "minLength": 1},
           "equals": {"type": "string"},
           "contains": {"type": "string"},
           "not_contains": {"type": "string"},
