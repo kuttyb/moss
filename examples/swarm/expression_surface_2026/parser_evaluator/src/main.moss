@@ -1,0 +1,84 @@
+# A small expression-plan evaluator.  Each Expression is the parsed form of a
+# binary calculation; opcode 0 is +, 1 is -, 2 is *, and 3 is /.
+type Expression:
+  name: String
+  left: Int
+  right: Int
+  opcode: Int
+  enabled: Bool
+  priority: Int
+
+  fn evaluate() -> Int:
+    if opcode == 0:
+      return left + right
+    else:
+      if opcode == 1:
+        return left - right
+      else:
+        if opcode == 2:
+          return left * right
+        else:
+          return left / right
+
+  fn accepted() -> Bool:
+    return enabled
+
+  fn adjusted() -> Int:
+    raw = evaluate()
+    if not enabled:
+      return 0
+    else:
+      if raw > 0:
+        return raw + priority
+      else:
+        return 0
+
+fn expression_values(expressions: Vector[Expression]) -> Vector[Int]:
+  return expressions
+    |> map(adjusted_expression)
+      |> filter(_ > 0)
+        |> map(_ * 2)
+
+fn evaluate_expression(expression: Expression) -> Int:
+  if expression.opcode == 0:
+    return expression.left + expression.right
+  else:
+    if expression.opcode == 1:
+      return expression.left - expression.right
+    else:
+      if expression.opcode == 2:
+        return expression.left * expression.right
+      else:
+        return expression.left / expression.right
+
+fn adjusted_expression(expression: Expression) -> Int:
+  raw = evaluate_expression(expression)
+  if not expression.enabled:
+    return 0
+  else:
+    if raw > 0:
+      return raw + expression.priority
+    else:
+      return 0
+
+fn expression_total(expressions) -> Int:
+  values = expression_values(expressions)
+  return values |> sum
+
+fn sample_expressions():
+  return [Expression(name: "add", left: 7, right: 5, opcode: 0, enabled: true, priority: 1), Expression(name: "multiply", left: 3, right: 4, opcode: 2, enabled: true, priority: 2), Expression(name: "skip", left: 9, right: 3, opcode: 1, enabled: false, priority: 5), Expression(name: "negative", left: 2, right: 8, opcode: 1, enabled: true, priority: 4)]
+
+fn evaluate_sample() -> Int:
+  expressions = sample_expressions()
+  values = expression_values(expressions)
+  bindings = Map()
+  bindings["first"] = values[0]
+  bindings["total"] = values |> sum
+  return bindings["first"] + bindings.get("total", 0)
+
+fn main():
+  expressions = sample_expressions()
+  values = expression_values(expressions)
+  echo "accepted expression values", values[0], values[1]
+  echo "expression total", expression_total(expressions)
+  echo "projection and map lookup", evaluate_sample()

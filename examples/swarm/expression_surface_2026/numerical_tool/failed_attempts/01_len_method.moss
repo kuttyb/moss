@@ -1,0 +1,23 @@
+# Natural first draft: compute a signal-window score and divide it by the
+# window length.  This uses the familiar collection `.len()` spelling.
+type Sample:
+  minute: Int
+  observed: Int
+  baseline: Int
+
+fn magnitude(value: Int):
+  if value < 0:
+    return 0 - value
+  return value
+
+fn score(sample):
+  deviation = sample.observed - sample.baseline
+  return magnitude(deviation) * magnitude(deviation)
+
+fn main():
+  samples = [
+    Sample(minute: 0, observed: 13, baseline: 10),
+    Sample(minute: 1, observed: 18, baseline: 10)
+  ]
+  energy = samples |> map(score) |> sum
+  echo energy / samples.len()

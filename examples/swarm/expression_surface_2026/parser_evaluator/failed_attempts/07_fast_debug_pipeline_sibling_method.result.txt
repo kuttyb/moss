@@ -1,0 +1,13 @@
+Commands (from failed_attempts/):
+  ../../../../../moss check 07_fast_debug_pipeline_sibling_method.moss --json
+  ../../../../../moss run --interp 07_fast_debug_pipeline_sibling_method.moss
+
+Check result: ok: true.
+
+Fast Debug result:
+
+  moss:9: interpreter error: unsupported or unresolved callable 'evaluate'
+
+This is the minimized post-application reproducer for the map-reached,
+unqualified sibling method call. The full application's corresponding source
+completed native build/run/test before the Fast Debug-oriented rewrite.

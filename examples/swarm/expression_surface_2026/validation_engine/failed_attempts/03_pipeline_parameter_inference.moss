@@ -1,0 +1,21 @@
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+  required: Bool
+
+fn violation_penalty(rule):
+  if rule.value < rule.minimum:
+    return (rule.minimum - rule.value) * 3
+  else:
+    if rule.value > rule.maximum:
+      return (rule.value - rule.maximum) * 2
+    else:
+      return 0
+
+fn health_score(rules):
+  penalty_total = rules
+    |> map(violation_penalty)
+    |> sum
+  return penalty_total

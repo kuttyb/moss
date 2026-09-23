@@ -1,0 +1,17 @@
+test "workflow completes a straight-through approval":
+  assertEqual(run_workflow([1, 2, 3, 4]), 53)
+
+test "workflow rewrites state after a retry":
+  assertEqual(run_workflow([1, 2, 8, 2, 3, 4]), 55)
+
+test "workflow stops immediately on rejection":
+  assertEqual(run_workflow([1, 9, 2, 3, 4]), rejection_score())
+
+test "workflow scores an incomplete trail from its history":
+  assertEqual(run_workflow([1, 2]), 10)
+
+test "unexpected intake event takes the fallback branch":
+  assertEqual(run_workflow([7, 1, 2, 3, 4]), 51)
+
+test "break stops the terminal-event counter":
+  assertEqual(completed_steps([1, 9, 2, 3]), 1)

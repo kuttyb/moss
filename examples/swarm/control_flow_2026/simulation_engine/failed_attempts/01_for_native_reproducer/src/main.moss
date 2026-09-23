@@ -1,0 +1,8 @@
+fn total(values: Vector[Int]) -> Int:
+  var result = 0
+  for index in range(0, values |> count):
+    result = result + values[index]
+  return result
+
+fn main():
+  echo total([3, 4])

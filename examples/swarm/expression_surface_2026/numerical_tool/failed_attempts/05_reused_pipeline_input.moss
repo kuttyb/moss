@@ -1,0 +1,7 @@
+# Natural expression-oriented aggregation. Both expressions consume `samples`.
+fn window_score(samples: Vector[Sample]):
+  alert_energy = samples |> map(squared_deviation) |> filter(_ >= 25) |> sum
+  alert_count = samples |> map(squared_deviation) |> filter(_ >= 25) |> count
+  if alert_count == 0:
+    return 0
+  return alert_energy * 100 / alert_count

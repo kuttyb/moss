@@ -1,0 +1,11 @@
+{
+  "command": "../../../../margo test --json",
+  "exit_code": 1,
+  "result": {
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "indentation jumps more than one block level",
+    "reported_source": "src/main.moss",
+    "reported_line": 26,
+    "classification": "test compilation surfaced the known multiline-vector parser limitation with misleading combined-unit source provenance"
+  }
+}

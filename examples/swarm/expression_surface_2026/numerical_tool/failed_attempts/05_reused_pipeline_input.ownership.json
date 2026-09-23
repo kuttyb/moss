@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "ownership",
+  "ok": false,
+  "error": {"code": "OWNERSHIP_USE_AFTER_CONSUME", "severity": "error", "message": "value 'samples' was transferred to 'an expression at line 56' at line 56 (the value was consumed). Create an explicit deep copy if both values must remain independently usable.", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "line": 57, "column": 1, "span": {"start_line": 57, "start_column": 1, "end_line": 57, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": "AVAILABLE", "ownership_actual": "CONSUMED", "consume_line": 56, "recursion_witness": null}, "fixes": [], "legal_alternatives": ["make the callee READ the value if that matches program intent", "keep the ownership transfer and stop using the old binding", "construct an explicit new owned value or explicit deep copy"]}
+}

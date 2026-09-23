@@ -1,0 +1,32 @@
+test "normalization clamps outside a configured range":
+  low = Rule(key: "low", value: 2, minimum: 10, maximum: 20, required: true)
+  middle = Rule(key: "middle", value: 15, minimum: 10, maximum: 20, required: true)
+  high = Rule(key: "high", value: 25, minimum: 10, maximum: 20, required: true)
+
+  assertEqual(low.normalized(), 0)
+  assertEqual(middle.normalized(), 50)
+  assertEqual(high.normalized(), 100)
+
+test "evaluation combines projection lookup and predicate":
+  limits = Map()
+  limits["latency"] = 80
+  limits["retries"] = 3
+  latency = Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true)
+  retries = Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true)
+
+  latency_result = evaluate(latency, limits.get("latency", 0))
+  retries_result = evaluate(retries, limits.get("retries", 0))
+
+  assert(latency_result.accepted)
+  assert(not retries_result.accepted)
+  assertEqual(retries_result.penalty, 4)
+
+test "rule collection produces a score and accepted count":
+  rules = [Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true), Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true), Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)]
+  limits = Map()
+  limits["latency"] = 80
+  limits["retries"] = 3
+  limits["workers"] = 6
+
+  assertEqual(health_score(rules), 192)
+  assertEqual(accepted_count(Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true), Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true), Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false), limits), 2)

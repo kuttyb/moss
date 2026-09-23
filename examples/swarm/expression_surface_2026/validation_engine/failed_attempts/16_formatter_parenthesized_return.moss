@@ -1,0 +1,8 @@
+type Rule:
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn normalized():
+    span = maximum - minimum
+    return (value - minimum) * 100 / span

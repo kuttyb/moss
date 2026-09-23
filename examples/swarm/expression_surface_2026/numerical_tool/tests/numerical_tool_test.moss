@@ -1,0 +1,27 @@
+test "window score combines arithmetic predicates and indexed inputs":
+  observed = demo_observed()
+  baseline = demo_baseline()
+  assertEqual(window_score(observed, baseline), 6800)
+
+test "peak minute compares nested energy calls":
+  observed = demo_observed()
+  baseline = demo_baseline()
+  assertEqual(peak_minute(observed, baseline), 3)
+
+test "summary helpers preserve numerical facts":
+  observed = demo_observed()
+  baseline = demo_baseline()
+  assertEqual(alert_baseline_total(observed, baseline), 20)
+  assertEqual(mean_observed(observed), 13)
+  energies = energy_series(observed, baseline)
+  assert(has_large_shift(energies))
+
+test "field projection calibrates a raw reading":
+  calibration = Calibration(observed_bias: 2, baseline_bias: 0)
+  assertEqual(calibrated_observed(11, calibration), 13)
+
+test "quiet window has zero alert score":
+  observed = [10, 12]
+  baseline = [10, 10]
+  assertEqual(window_score(observed, baseline), 0)
+  assertEqual(peak_minute(observed, baseline), 1)

@@ -1,0 +1,12 @@
+Commands (from package root):
+  ../../../../margo debug
+  ../../../../margo debug --trace
+
+Both commands exited 1. Their diagnostic was:
+
+  moss:27: interpreter error: unsupported or unresolved callable 'evaluate'
+
+The same checked source built, ran, and passed all tests natively. Classification:
+Fast Debug coverage/parity gap for this reachable type-method call, not a native
+lowering failure. The source above is the reduced representative of the failing
+method-through-pipeline path.

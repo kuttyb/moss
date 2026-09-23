@@ -1,0 +1,10 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME",
+    "message": "value 'rules' was transferred to 'an expression at line 62' at line 62 (the value was consumed). Create an explicit deep copy if both values must remain independently usable.",
+    "consume_line": 62,
+    "classification": "intended ownership: indexed Rule extraction moves from the vector, so later indexed uses cannot share the vector"
+  }
+}

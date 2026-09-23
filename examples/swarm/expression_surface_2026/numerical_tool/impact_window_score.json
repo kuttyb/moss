@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "impact",
+  "ok": true,
+  "result": {"source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "baseline_available": true, "change_kind": "unchanged", "changed_semantic_unit": {"durable_identity": "entity-v1:function:window_score", "semantic_identity": "fn:window_score@23", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "kind": "function", "name": "window_score", "implementation_hash": "01a0362571201215", "semantic_interface_hash": "9a36aa2c602f37e2"}, "previous_unit": {"durable_identity": "entity-v1:function:window_score", "semantic_identity": "fn:window_score@23", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "kind": "function", "name": "window_score", "implementation_hash": "01a0362571201215", "semantic_interface_hash": "9a36aa2c602f37e2"}, "direct_dependents": ["entity-v1:main"], "transitive_dependents": ["entity-v1:main"], "invalidated_dependents": [], "affected_specializations": [], "affected_domains": [], "affected_route_dependencies": [], "affected_tests": [], "affected_benchmarks": [], "incremental": {"units_analyzed": 14, "units_reused": 14, "generated_rust_units_rewritten": 0, "dependent_units_invalidated": 0}}
+}

@@ -1,0 +1,12 @@
+{
+  "command": "../../../../margo build --json",
+  "exit_code": 1,
+  "result": {
+    "code": "BUILD_BACKEND_ERROR",
+    "message": "native compilation failed for 'src/main.moss'",
+    "native_error": "error: unnecessary parentheses around method argument; -D unused-parens implied by -D warnings",
+    "generated_locations": ["validation_engine.rs:100", "validation_engine.rs:152", "validation_engine.rs:178", "validation_engine.rs:307", "validation_engine.rs:351"],
+    "suggested_rust_change": "remove parentheses around the lowered subtraction passed to wrapping_div",
+    "classification": "native-lowering bug: moss check accepted the documented parenthesized arithmetic expression, but generated Rust fails under warning-as-error"
+  }
+}

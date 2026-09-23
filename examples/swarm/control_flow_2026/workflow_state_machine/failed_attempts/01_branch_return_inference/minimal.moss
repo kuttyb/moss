@@ -1,0 +1,9 @@
+fn rejected_or_ready(value: Int) -> Int:
+  if value == 0:
+    return -100
+
+  return 1
+
+
+fn main():
+  echo rejected_or_ready(0)

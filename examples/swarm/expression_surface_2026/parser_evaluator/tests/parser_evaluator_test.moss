@@ -1,0 +1,22 @@
+test "binary expression methods calculate each opcode":
+  addition = Expression(name: "add", left: 8, right: 3, opcode: 0, enabled: true, priority: 0)
+  subtraction = Expression(name: "subtract", left: 8, right: 3, opcode: 1, enabled: true, priority: 0)
+  multiplication = Expression(name: "multiply", left: 8, right: 3, opcode: 2, enabled: true, priority: 0)
+  division = Expression(name: "divide", left: 8, right: 2, opcode: 3, enabled: true, priority: 0)
+  assertEqual(addition.evaluate(), 11)
+  assertEqual(subtraction.evaluate(), 5)
+  assertEqual(multiplication.evaluate(), 24)
+  assertEqual(division.evaluate(), 4)
+  assertEqual(evaluate_expression(multiplication), 24)
+  assert(addition.accepted())
+  assertEqual(addition.adjusted(), 11)
+
+test "expression pipeline filters disabled and negative results":
+  values = expression_values(sample_expressions())
+  assertEqual(values[0], 26)
+  assertEqual(values[1], 28)
+  assertEqual(values |> count, 2)
+
+test "nested calculation uses vector projection and defaulted map access":
+  assertEqual(expression_total(sample_expressions()), 54)
+  assertEqual(evaluate_sample(), 80)

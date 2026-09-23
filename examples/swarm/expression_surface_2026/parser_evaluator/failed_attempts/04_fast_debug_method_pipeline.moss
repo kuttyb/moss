@@ -1,0 +1,36 @@
+# The checked/native evaluator before the Fast Debug-specific rewrite.
+type Expression:
+  name: String
+  left: Int
+  right: Int
+  opcode: Int
+  enabled: Bool
+  priority: Int
+
+  fn evaluate() -> Int:
+    if opcode == 0:
+      return left + right
+    else:
+      if opcode == 1:
+        return left - right
+      else:
+        if opcode == 2:
+          return left * right
+        else:
+          return left / right
+
+  fn adjusted() -> Int:
+    raw = evaluate()
+    if not enabled:
+      return 0
+    else:
+      if raw > 0:
+        return raw + priority
+      else:
+        return 0
+
+fn expression_values(expressions: Vector[Expression]) -> Vector[Int]:
+  return expressions
+    |> map(_.adjusted())
+    |> filter(_ > 0)
+    |> map(_ * 2)

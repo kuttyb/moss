@@ -1,0 +1,13 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME",
+    "severity": "error",
+    "message": "indexing a nontrivial Sample transfers samples before its next index use",
+    "details": {"ownership_expected": "AVAILABLE", "ownership_actual": "CONSUMED"}
+  }
+}

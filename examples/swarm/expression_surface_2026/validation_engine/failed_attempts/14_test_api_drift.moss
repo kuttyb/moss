@@ -1,0 +1,6 @@
+test "evaluation combines projection lookup and predicate":
+  limits = Map()
+  limits["latency"] = 80
+  latency = Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true)
+  latency_result = evaluate(latency, limits)
+  assert(latency_result.accepted)

@@ -1,0 +1,13 @@
+type Rule:
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn penalty():
+    return value - maximum
+
+type Evaluation:
+  penalty: Int
+
+fn evaluate(rule):
+  return Evaluation(penalty: rule.penalty())

@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "fmt",
+  "ok": true,
+  "result": {"check": false, "files": [{"file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "changed": false}], "would_change": false, "diagnostic": null}
+}

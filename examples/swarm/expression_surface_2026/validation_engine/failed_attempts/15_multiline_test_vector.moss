@@ -1,0 +1,8 @@
+test "rule collection produces a score and accepted count":
+  rules = [
+    Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true),
+    Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true),
+    Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)
+  ]
+  limits = Map()
+  assertEqual(health_score(rules), 154)

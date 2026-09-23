@@ -1,0 +1,13 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "stderr_prefix": "Failed to connect to user scope bus via local transport: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)",
+  "result": {
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "indentation jumps more than one block level",
+    "source_file": "src/main.moss",
+    "line": 64,
+    "column": 1,
+    "semantic_followup": "inspect main returned the same parse error, so semantic analysis was unavailable"
+  }
+}

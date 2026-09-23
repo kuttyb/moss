@@ -1,0 +1,107 @@
+# Numerical Tool — deterministic integer analysis of parallel observed and
+# baseline sensor channels. Its score is a scaled mean alert energy.
+
+type Calibration:
+  observed_bias: Int
+  baseline_bias: Int
+
+fn magnitude(value: Int):
+  if value < 0:
+    return 0 - value
+  return value
+
+fn calibrated_observed(value: Int, calibration: Calibration):
+  return value + calibration.observed_bias
+
+fn deviation(observed: Int, baseline: Int):
+  return observed - baseline
+
+fn squared_energy(observed: Int, baseline: Int):
+  distance = magnitude(deviation(observed, baseline))
+  return distance * distance
+
+fn window_score(observed: Vector[Int], baseline: Vector[Int]):
+  length = observed |> count
+  var alert_energy = 0
+  var alert_count = 0
+  var index = 0
+  while index < length:
+    energy = squared_energy(observed[index], baseline[index])
+    if energy >= 25:
+      alert_energy = alert_energy + energy
+      alert_count = alert_count + 1
+    index = index + 1
+  if alert_count == 0:
+    return 0
+  return alert_energy * 100 / alert_count
+
+fn peak_minute(observed: Vector[Int], baseline: Vector[Int]):
+  length = observed |> count
+  var best_index = 0
+  var best_energy = squared_energy(observed[0], baseline[0])
+  var candidate_index = 1
+  while candidate_index < length:
+    energy = squared_energy(observed[candidate_index], baseline[candidate_index])
+    if energy > best_energy:
+      best_energy = energy
+      best_index = candidate_index
+    candidate_index = candidate_index + 1
+  return best_index
+
+fn alert_baseline_total(observed: Vector[Int], baseline: Vector[Int]):
+  length = observed |> count
+  var total = 0
+  var index = 0
+  while index < length:
+    if squared_energy(observed[index], baseline[index]) >= 25:
+      total = total + baseline[index]
+    index = index + 1
+  return total
+
+fn mean_observed(observed: Vector[Int]):
+  length = observed |> count
+  var total = 0
+  var index = 0
+  while index < length:
+    total = total + observed[index]
+    index = index + 1
+  if length == 0:
+    return 0
+  return total / length
+
+fn energy_series(observed: Vector[Int], baseline: Vector[Int]):
+  length = observed |> count
+  var energies = Vector[Int]()
+  var index = 0
+  while index < length:
+    energies.push(squared_energy(observed[index], baseline[index]))
+    index = index + 1
+  return energies
+
+fn has_large_shift(energies: Vector[Int]):
+  large_energy_total = energies |> filter(_ >= 100) |> sum
+  return large_energy_total >= 100
+
+fn demo_observed():
+  return [11, 16, 8, 20, 12]
+
+fn demo_baseline():
+  return [10, 10, 10, 10, 10]
+
+fn main():
+  observed = demo_observed()
+  baseline = demo_baseline()
+  score = window_score(observed, baseline)
+  peak = peak_minute(observed, baseline)
+  baseline_total = alert_baseline_total(observed, baseline)
+  average = mean_observed(observed)
+  energies = energy_series(observed, baseline)
+  calibration = Calibration(observed_bias: 0, baseline_bias: 0)
+  first_calibrated = calibrated_observed(observed[0], calibration)
+  large_shift = has_large_shift(energies)
+  echo score
+  echo peak
+  echo baseline_total
+  echo average
+  echo first_calibrated
+  echo large_shift

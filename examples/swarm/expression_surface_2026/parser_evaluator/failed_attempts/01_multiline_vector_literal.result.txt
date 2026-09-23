@@ -1,0 +1,13 @@
+Command (from package root): ../../../../moss check src/main.moss --json
+
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {"code": "MOSS_COMPILE_ERROR", "severity": "error", "message": "indentation jumps more than one block level", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/parser_evaluator/src/main.moss", "line": 46, "column": 1, "span": {"start_line": 46, "start_column": 1, "end_line": 46, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": []}
+}
+
+Classification: parser/frontend layout limitation observed after the complete natural
+application attempt. No semantic target exists for an ownership or call query.

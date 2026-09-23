@@ -1,0 +1,14 @@
+type Evaluation:
+  key: String
+  normalized: Int
+  penalty: Int
+  accepted: Bool
+
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn evaluate_at(configured_limit: Int) -> Evaluation:
+    return Evaluation(normalized: (value - minimum) * 100 / (maximum - minimum), penalty: 0, accepted: value <= configured_limit, key: key)

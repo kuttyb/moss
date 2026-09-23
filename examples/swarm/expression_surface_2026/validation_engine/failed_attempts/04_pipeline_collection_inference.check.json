@@ -1,0 +1,10 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "TYPE_INFERENCE_FAILED",
+    "message": "cannot infer return type for function 'health_score'",
+    "line": 45,
+    "legal_alternatives": ["add a concrete type annotation", "use the value in a context that determines one static type"]
+  }
+}

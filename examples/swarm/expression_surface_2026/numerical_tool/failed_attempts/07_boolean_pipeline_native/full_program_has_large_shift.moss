@@ -1,0 +1,4 @@
+# Original application helper accepted by the checker and Fast Debug, but not
+# by native lowering. The full application's native output is ../margo_build.json.
+fn has_large_shift(energies: Vector[Int]):
+  return energies |> filter(_ >= 100) |> any(_ > 0)

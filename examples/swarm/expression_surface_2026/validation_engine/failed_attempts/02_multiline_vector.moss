@@ -1,0 +1,8 @@
+# Extracted exactly from the first failing application body after the constructor rewrite.
+fn main():
+  rules = [
+    Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true),
+    Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true),
+    Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)
+  ]
+  echo rules[0].key

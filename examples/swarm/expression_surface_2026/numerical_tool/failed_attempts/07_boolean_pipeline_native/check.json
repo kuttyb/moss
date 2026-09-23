@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": true,
+  "result": {"source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native/src/main.moss", "diagnostics": []}
+}

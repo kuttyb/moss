@@ -1,0 +1,104 @@
+fn retry_penalty(retries: Int) -> Int:
+  var penalty = 0
+  var step = 0
+
+  while step < retries:
+    penalty = penalty + 2
+    step = step + 1
+
+  return penalty
+
+
+fn resolved_score(score: Int, retries: Int) -> Int:
+  return score - retry_penalty(retries)
+
+
+fn incomplete_score(score: Int, retries: Int, history: Vector[Int]) -> Int:
+  steps = history |> count
+  return resolved_score(score, retries) - steps
+
+
+fn completed_steps(events: Vector[Int]) -> Int:
+  var index = 0
+  total = events |> count
+
+  while index < total:
+    event = events[index]
+
+    if event == 9:
+      break
+
+    index = index + 1
+
+  return index
+
+
+fn run_workflow(events: Vector[Int]) -> Int:
+  var stage = 0
+  var retries = 0
+  var score = 0
+  var index = 0
+  var history = Vector[Int]()
+  total = events |> count
+
+  while index < total:
+    event = events[index]
+    history.push(stage * 10 + event)
+
+    if stage == 0:
+      if event == 1:
+        stage = 1
+        score = score + 5
+      else:
+        if event == 9:
+          return -100
+        else:
+          score = score - 2
+    else:
+      if stage == 1:
+        if event == 2:
+          stage = 2
+          score = score + 7
+        else:
+          if event == 8:
+            stage = 0
+            retries = retries + 1
+            score = score - 3
+          else:
+            if event == 9:
+              return -100
+            else:
+              score = score - 1
+      else:
+        if stage == 2:
+          if event == 3:
+            stage = 3
+            score = score + 11
+          else:
+            if event == 8:
+              stage = 1
+              retries = retries + 1
+              score = score - 3
+            else:
+              if event == 9:
+                return -100
+              else:
+                score = score - 1
+        else:
+          if event == 4:
+            return resolved_score(score + 30, retries)
+          else:
+            if event == 9:
+              return -100
+            else:
+              score = score - 1
+
+    index = index + 1
+
+  return incomplete_score(score, retries, history)
+
+
+fn main():
+  events = [1, 2, 8, 2, 3, 4]
+  echo run_workflow(events)
+  echo completed_steps(events)

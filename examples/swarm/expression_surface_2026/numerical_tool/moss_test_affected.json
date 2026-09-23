@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "test",
+  "ok": true,
+  "result": {"project": "numerical-tool", "filter": null, "affected_only": true, "tests": [], "selection": {"conservative_fallback": false, "selected": [], "skipped": [{"id": "test:tests/numerical_tool_test.moss:field projection calibrates a raw reading", "reasons": ["semantic dependency cone is unchanged"]}, {"id": "test:tests/numerical_tool_test.moss:peak minute compares nested energy calls", "reasons": ["semantic dependency cone is unchanged"]}, {"id": "test:tests/numerical_tool_test.moss:quiet window has zero alert score", "reasons": ["semantic dependency cone is unchanged"]}, {"id": "test:tests/numerical_tool_test.moss:summary helpers preserve numerical facts", "reasons": ["semantic dependency cone is unchanged"]}, {"id": "test:tests/numerical_tool_test.moss:window score combines arithmetic predicates and indexed inputs", "reasons": ["semantic dependency cone is unchanged"]}]}, "summary": {"passed": 0, "failed": 0, "total": 0}}
+}

@@ -15,6 +15,68 @@ Validation:
 - All 4 executables ran cleanly with 100% output correctness.
 - Fast Debug executed with 100% bit-for-bit parity across workloads without callable parameter locals.
 - 13 new findings (SWARM-043 through SWARM-055) were isolated, categorized, and recorded in `examples/swarm/FINDINGS.md` with minimal reproducers, with 5 findings independently reproduced by multiple subagents.
+## Control-Flow and Value-Flow Dogfood Swarm — COMPLETE (2026-09-23)
+
+Three independent fresh-agent projects now live at
+`examples/swarm/control_flow_2026/`: a workflow state machine (6 tests), an
+iterative dependency-aware planner (3), and a five-day supply simulation (4).
+All final programs pass canonical formatter check, Moss checking, native Margo
+build/run/test, Fast Debug, and traced Fast Debug; all 13 native tests pass and
+native/interpreter demo output agrees. Their application-first failures,
+semantic-query evidence, and final validation details are retained in local
+`REPORT.md` files and the coordinator synthesis
+`examples/swarm/control_flow_2026/COORDINATOR_REPORT.md`.
+
+Strong positive evidence: `while` loops with mutation, nested branches,
+accumulators, helper returns, ordinary early results, and `break` compose
+correctly in native and Fast Debug. Identified constraints include intended
+ownership consumption for indexed non-copy record vectors, concrete-type
+requirements for indexed helper inference, and an undocumented precedence
+requirement for a pipeline in a comparison condition (`x < (values |> count)`).
+The workflow's nested negative literal return is a formatter-only extension of
+existing SWARM-033.
+
+Unallocated control-flow finding: an indexed `for i in range(...)` loop is
+accepted unchanged by formatter and checker but native lowering loses the
+induction binding and emits a unit/result mismatch; Fast Debug separately
+reports its documented lack of `for` support. The full simulation and minimal
+reproducer are in
+`examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer/`.
+This is a native-lowering parity defect; no compiler source or global regression
+was changed during the swarm. The preceding expression-surface native pipeline
+finding is likewise unallocated here. This status text predates the rebased
+SWARM-043–055 ledger allocations and its two proposed IDs must be reconciled in
+a dedicated ledger follow-up rather than reused.
+
+## Expression-Surface Dogfood Swarm — COMPLETE (2026-09-23)
+
+Three independent fresh-agent Moss packages were completed under
+`examples/swarm/expression_surface_2026/`: a parser/evaluator (3 native tests),
+a numerical analysis tool (5), and a validation/normalization engine (3). Each
+agent performed the required skill/bootstrap workflow before source work, kept
+application-first failed attempts and minimized reproducers, and only compared
+against the ledger after independent completion. The final programs all pass
+formatter check, Moss check, native Margo build/run/test, Fast Debug, and traced
+Fast Debug; native and interpreter demo output agrees in every final program.
+
+The coordinator report is
+`examples/swarm/expression_surface_2026/COORDINATOR_REPORT.md`; individual
+reports contain detailed iterations, diagnostics, semantic-query results, and
+evidence. Independent overlap was confirmed for SWARM-031/032 (parenthesized
+expression native/formatter faults) and a Fast Debug regression/expanded
+reproducer for fixed SWARM-025 in a `map`-reached sibling method.
+
+A distinct confirmed parity defect remains unmodified: a checked and
+Fast-Debug-valid `Vector[Int] |> filter(_) |> any(_)` function fails native
+lowering with the invalid generated return type
+`_functional_result:has_large_shift`. The full application and smallest package
+reproducer live at
+`examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native/`.
+It remains an unallocated native-lowering finding; no compiler source or global
+test was changed in this swarm. All three agents also independently encountered rejected indented
+multiline literals/constructors; bootstrap only documents one-line literals, so
+this is retained as an ergonomic/diagnostic observation rather than a confirmed
+language defect.
 
 ## Phase 15.11 — Multi-Domain Swarm Torture-Testing — COMPLETE
 

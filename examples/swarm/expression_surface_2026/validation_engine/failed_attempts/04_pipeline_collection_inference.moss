@@ -1,0 +1,18 @@
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+  required: Bool
+
+fn violation_penalty(rule: Rule) -> Int:
+  return rule.value - rule.maximum
+
+fn health_score(rules):
+  normalized_total = rules
+    |> map(_.normalized())
+    |> sum
+  penalty_total = rules
+    |> map(violation_penalty)
+    |> sum
+  return normalized_total - penalty_total

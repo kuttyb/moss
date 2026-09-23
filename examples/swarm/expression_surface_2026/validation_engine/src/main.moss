@@ -1,0 +1,81 @@
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+  required: Bool
+
+  fn in_range():
+    return value >= minimum and value <= maximum
+
+  fn normalized():
+    if value < minimum:
+      return 0
+    else:
+      if value > maximum:
+        return 100
+      else:
+        span = maximum - minimum
+        delta = value - minimum
+        return delta * 100 / span
+
+  fn evaluate_at(configured_limit: Int) -> Evaluation:
+    if value < minimum:
+      return Evaluation(normalized: 0, penalty: (minimum - value) * 3, accepted: false, key: key)
+    else:
+      if value > maximum:
+        return Evaluation(normalized: 100, penalty: (value - maximum) * 2, accepted: false, key: key)
+      else:
+        span = maximum - minimum
+        delta = value - minimum
+        return Evaluation(normalized: delta * 100 / span, penalty: 0, accepted: value <= configured_limit, key: key)
+
+  fn contribution() -> Int:
+    if value < minimum:
+      return 0 - (minimum - value) * 3
+    else:
+      if value > maximum:
+        return 100 - (value - maximum) * 2
+      else:
+        span = maximum - minimum
+        delta = value - minimum
+        return delta * 100 / span
+
+type Evaluation:
+  normalized: Int
+  penalty: Int
+  accepted: Bool
+  key: String
+
+fn evaluate(rule: Rule, configured_limit: Int) -> Evaluation:
+  return rule.evaluate_at(configured_limit)
+
+fn health_score(rules: Vector[Rule]) -> Int:
+  return rules
+    |> map(_.contribution())
+      |> sum
+
+fn accepted_count(first_rule: Rule, second_rule: Rule, third_rule: Rule, limits: Map[String, Int]) -> Int:
+  first = evaluate(first_rule, limits.get("latency", 0))
+  second = evaluate(second_rule, limits.get("retries", 0))
+  third = evaluate(third_rule, limits.get("workers", 0))
+  return [first.accepted, second.accepted, third.accepted]
+    |> filter(_)
+      |> count
+
+fn main():
+  score_rules = [Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true), Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true), Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)]
+  latency_rule = Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true)
+  retries_rule = Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true)
+  workers_rule = Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)
+  limits = Map()
+  limits["latency"] = 80
+  limits["retries"] = 3
+  limits["workers"] = 6
+
+  first = evaluate(latency_rule, limits.get("latency", 0))
+  score = health_score(score_rules)
+  accepted = accepted_count(Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true), retries_rule, workers_rule, limits)
+
+  echo "rule", first.key, "normalized", first.normalized, "accepted", first.accepted
+  echo "health", score, "accepted", accepted

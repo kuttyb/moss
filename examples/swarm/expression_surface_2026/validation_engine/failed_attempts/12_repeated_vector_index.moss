@@ -1,0 +1,7 @@
+fn accepted_count(rules: Vector[Rule], limits: Map[String, Int]) -> Int:
+  first = evaluate(rules[0], limits.get("latency", 0))
+  second = evaluate(rules[1], limits.get("retries", 0))
+  third = evaluate(rules[2], limits.get("workers", 0))
+  return [first.accepted, second.accepted, third.accepted]
+    |> filter(_)
+    |> count

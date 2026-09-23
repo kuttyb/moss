@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {"code": "MOSS_COMPILE_ERROR", "severity": "error", "message": "indentation jumps more than one block level", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/01_len_method.moss", "line": 19, "column": 1, "span": {"start_line": 19, "start_column": 1, "end_line": 19, "end_column": 1}, "semantic_identity": "main@17", "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": []}
+}

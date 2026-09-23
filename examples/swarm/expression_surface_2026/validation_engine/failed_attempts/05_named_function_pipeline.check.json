@@ -1,0 +1,10 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "TYPE_MISMATCH",
+    "message": "argument 1 to function 'violation_penalty' has type '_generic:rule', expected 'Rule'",
+    "line": 43,
+    "semantic_followup": "type health_score could not resolve while the pipeline callable mismatch remained"
+  }
+}

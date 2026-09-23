@@ -1,0 +1,14 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "TYPE_INFERENCE_FAILED",
+    "message": "cannot infer type for parameter 'rule' in function 'violation_penalty'",
+    "line": 26,
+    "legal_alternatives": ["add a concrete type annotation", "use the value in a context that determines one static type"]
+  },
+  "semantic_followup": {
+    "command": "../../../../moss type violation_penalty --source src/main.moss --json",
+    "result": "same TYPE_INFERENCE_FAILED; no resolved specialization exists"
+  }
+}

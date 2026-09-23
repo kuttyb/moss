@@ -1,0 +1,11 @@
+{
+  "command": "../../../../margo test --json",
+  "exit_code": 1,
+  "result": {
+    "code": "BUILD_BACKEND_ERROR",
+    "message": "native compilation failed for src/main.moss",
+    "generated_error": "expected identifier, found keyword `return`; generated Rust emitted self.return(...) for formatter-produced return(...) arithmetic",
+    "generated_locations": ["validation_engine.rs:122", "validation_engine.rs:128", "validation_engine.rs:343", "validation_engine.rs:349"],
+    "classification": "formatter/native lowering disagreement: fmt --check accepted formatter-mutated code, check accepted it, native compilation rejected its lowering"
+  }
+}

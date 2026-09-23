@@ -1,0 +1,83 @@
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+  required: Bool
+
+  fn in_range():
+    return value >= minimum and value <= maximum
+
+  fn normalized():
+    if value < minimum:
+      return 0
+    else:
+      if value > maximum:
+        return 100
+      else:
+        return (value - minimum) * 100 / (maximum - minimum)
+
+type Evaluation:
+  key: String
+  normalized: Int
+  penalty: Int
+  accepted: Bool
+
+fn violation_penalty(rule):
+  if rule.value < rule.minimum:
+    return (rule.minimum - rule.value) * 3
+  else:
+    if rule.value > rule.maximum:
+      return (rule.value - rule.maximum) * 2
+    else:
+      return 0
+
+fn within_limit(rule, configured_limit):
+  if rule.in_range():
+    return rule.value <= configured_limit
+  else:
+    return false
+
+fn evaluate(rule, limits):
+  configured_limit = limits.get(rule.key, rule.maximum)
+  return Evaluation(
+    key: rule.key,
+    normalized: rule.normalized(),
+    penalty: violation_penalty(rule),
+    accepted: within_limit(rule, configured_limit)
+  )
+
+fn health_score(rules):
+  normalized_total = rules
+    |> map(_.normalized())
+    |> sum
+  penalty_total = rules
+    |> map(violation_penalty)
+    |> sum
+  return normalized_total - penalty_total
+
+fn accepted_count(rules, limits):
+  first = evaluate(rules[0], limits)
+  second = evaluate(rules[1], limits)
+  third = evaluate(rules[2], limits)
+  return [first.accepted, second.accepted, third.accepted]
+    |> filter(_)
+    |> count
+
+fn main():
+  rules = [
+    Rule(key: "latency", value: 72, minimum: 10, maximum: 100, required: true),
+    Rule(key: "retries", value: 6, minimum: 0, maximum: 4, required: true),
+    Rule(key: "workers", value: 3, minimum: 1, maximum: 8, required: false)
+  ]
+  limits = Map()
+  limits["latency"] = 80
+  limits["retries"] = 3
+  limits["workers"] = 6
+
+  first = evaluate(rules[0], limits)
+  score = health_score(rules)
+  accepted = accepted_count(rules, limits)
+
+  echo "rule", first.key, "normalized", first.normalized, "accepted", first.accepted
+  echo "health", score, "accepted", accepted

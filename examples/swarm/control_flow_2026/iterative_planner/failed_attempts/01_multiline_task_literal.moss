@@ -1,0 +1,67 @@
+type Task:
+  name: String
+  effort: Int
+  value: Int
+  dependency: Int
+  urgency: Int
+
+fn priority(task: Task) -> Int:
+  return task.value * 3 + task.urgency * 2 - task.effort
+
+fn dependency_done(task: Task, selected) -> Bool:
+  if task.dependency < 0:
+    return true
+  return selected[task.dependency] == 1
+
+fn choose_next(tasks, selected, remaining) -> Int:
+  var best_index = -1
+  var best_priority = -100000
+  var index = 0
+
+  while index < tasks |> count:
+    task = tasks[index]
+    if selected[index] == 0:
+      if task.effort <= remaining:
+        if dependency_done(task, selected):
+          score = priority(task)
+          if score > best_priority:
+            best_index = index
+            best_priority = score
+    index = index + 1
+
+  return best_index
+
+fn completed_count(selected) -> Int:
+  var total = 0
+  var index = 0
+  while index < selected |> count:
+    if selected[index] == 1:
+      total = total + 1
+    index = index + 1
+  return total
+
+fn main():
+  tasks = [
+    Task(name: "survey", effort: 2, value: 9, dependency: -1, urgency: 1),
+    Task(name: "foundation", effort: 4, value: 16, dependency: 0, urgency: 2),
+    Task(name: "analytics", effort: 3, value: 13, dependency: 0, urgency: 3),
+    Task(name: "launch", effort: 3, value: 20, dependency: 1, urgency: 4),
+    Task(name: "polish", effort: 2, value: 6, dependency: 3, urgency: 1)
+  ]
+  var selected = [0, 0, 0, 0, 0]
+  var remaining = 10
+  var delivered_value = 0
+  var rounds = 0
+
+  while rounds < tasks |> count:
+    next = choose_next(tasks, selected, remaining)
+    if next < 0:
+      rounds = tasks |> count
+    else:
+      task = tasks[next]
+      selected[next] = 1
+      remaining = remaining - task.effort
+      delivered_value = delivered_value + task.value
+      rounds = rounds + 1
+
+  echo completed_count(selected), delivered_value, remaining

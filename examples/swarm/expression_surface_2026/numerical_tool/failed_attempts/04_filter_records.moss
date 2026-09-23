@@ -1,0 +1,38 @@
+# Natural record-filtering formulation. The checker rejects filtering `Sample`
+# values because filter would have to materialize a new nontrivial collection.
+type Sample:
+  minute: Int
+  observed: Int
+  baseline: Int
+
+fn magnitude(value: Int):
+  if value < 0:
+    return 0 - value
+  return value
+
+fn deviation(sample: Sample):
+  return sample.observed - sample.baseline
+
+fn squared_deviation(sample: Sample):
+  distance = magnitude(deviation(sample))
+  return distance * distance
+
+fn is_alert(sample: Sample):
+  return magnitude(deviation(sample)) >= 5
+
+fn baseline_of(sample: Sample):
+  return sample.baseline
+
+fn window_score(samples: Vector[Sample]):
+  alert_energy = samples |> filter(is_alert) |> map(squared_deviation) |> sum
+  alert_count = samples |> filter(is_alert) |> count
+  if alert_count == 0:
+    return 0
+  return alert_energy * 100 / alert_count
+
+fn alert_baseline_total(samples: Vector[Sample]):
+  return samples |> filter(is_alert) |> map(baseline_of) |> sum
+
+fn main():
+  samples = [Sample(minute: 0, observed: 11, baseline: 10)]
+  echo window_score(samples)

@@ -1,0 +1,4 @@
+# The direct comparison was parsed as a pipeline stage rather than as a
+# comparison against its numeric terminal.
+fn has_large_shift(energies: Vector[Int]):
+  return energies |> filter(_ >= 100) |> sum >= 100

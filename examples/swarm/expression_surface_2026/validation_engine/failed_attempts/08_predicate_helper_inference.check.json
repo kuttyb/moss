@@ -1,0 +1,10 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "TYPE_MISMATCH",
+    "message": "argument 1 to function 'within_limit' has type 'Rule' missing required field 'value <= configured_limit'",
+    "line": 43,
+    "semantic_followup": "ownership evaluate was unavailable until the unresolved structural receiver constraint was repaired"
+  }
+}

@@ -1,0 +1,5 @@
+fn has_large_shift(energies: Vector[Int]):
+  return energies |> filter(_ >= 100) |> any(_ > 0)
+
+fn main():
+  echo has_large_shift([1, 100])

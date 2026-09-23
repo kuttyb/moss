@@ -1,0 +1,21 @@
+Command (from the package directory):
+  ../../../../moss check src/main.moss --json; ../../../../margo run
+
+Exact output:
+Failed to connect to user scope bus via local transport: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {"code": "MOSS_COMPILE_ERROR", "severity": "error", "message": "indentation jumps more than one block level", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/control_flow_2026/iterative_planner/src/main.moss", "line": 45, "column": 1, "span": {"start_line": 45, "start_column": 1, "end_line": 45, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": []}
+}
+margo: error: command failed (/home/kuttybanerjee/daji/moss/moss build --json): {
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "build",
+  "ok": false,
+  "error": {"code": "MOSS_COMPILE_ERROR", "severity": "error", "message": "indentation jumps more than one block level", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/control_flow_2026/iterative_planner/src/main.moss", "line": 45, "column": 1, "span": {"start_line": 45, "start_column": 1, "end_line": 45, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": []}
+}

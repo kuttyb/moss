@@ -1,0 +1,10 @@
+type Expression:
+  left: Int
+  right: Int
+  opcode: Int
+
+fn evaluate_expression(expression) -> Int:
+  if expression.opcode == 0:
+    return expression.left + expression.right
+  else:
+    return expression.left - expression.right

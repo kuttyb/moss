@@ -1,0 +1,15 @@
+type Rule:
+  key: String
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn normalized():
+    return (value - minimum) * 100 / (maximum - minimum)
+
+  fn penalty_points():
+    return (value - maximum) * 2
+
+fn evaluate(rule: Rule, limits: Map[String, Int]) -> Evaluation:
+  configured_limit = limits.get(rule.key, rule.maximum)
+  return Evaluation(key: rule.key, normalized: rule.normalized(), penalty: rule.penalty_points(), accepted: within_limit(rule, configured_limit))

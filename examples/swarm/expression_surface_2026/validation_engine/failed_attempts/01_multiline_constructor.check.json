@@ -1,0 +1,30 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "stderr_prefix": "Failed to connect to user scope bus via local transport: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)",
+  "result": {
+    "protocol_version": 1,
+    "schema_version": "moss-agent-1",
+    "compiler_version": "0.1.0",
+    "command": "check",
+    "ok": false,
+    "error": {
+      "code": "MOSS_COMPILE_ERROR",
+      "severity": "error",
+      "message": "indentation jumps more than one block level",
+      "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/validation_engine/src/main.moss",
+      "line": 44,
+      "column": 1,
+      "span": {"start_line": 44, "start_column": 1, "end_line": 44, "end_column": 1},
+      "semantic_identity": null,
+      "symbol": null,
+      "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null},
+      "fixes": [],
+      "legal_alternatives": []
+    }
+  },
+  "semantic_followup": {
+    "command": "../../../../moss inspect main --source src/main.moss --json",
+    "result": "same MOSS_COMPILE_ERROR at line 44; no semantic target can be formed before parsing"
+  }
+}

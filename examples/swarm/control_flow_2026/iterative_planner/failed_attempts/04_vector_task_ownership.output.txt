@@ -1,0 +1,12 @@
+Commands (from the package directory):
+  ../../../../moss fmt --json src/main.moss
+  ../../../../moss check src/main.moss --json
+  ../../../../margo run
+  ../../../../moss ownership choose_next --source src/main.moss --json
+  ../../../../moss effects choose_next --source src/main.moss --json
+  ../../../../moss calls choose_next --source src/main.moss --json
+
+Exact JSON diagnostic returned by each Moss semantic command (with its respective command name) and by Margo's nested build:
+{"protocol_version":1,"schema_version":"moss-agent-1","compiler_version":"0.1.0","command":"check","ok":false,"error":{"code":"OWNERSHIP_USE_AFTER_CONSUME","severity":"error","message":"value 'tasks' was transferred to 'an expression at line 54' at line 54 (the value was consumed). Create an explicit deep copy if both values must remain independently usable.","source_file":"/home/kuttybanerjee/daji/moss/examples/swarm/control_flow_2026/iterative_planner/src/main.moss","line":58,"column":1,"span":{"start_line":58,"start_column":1,"end_line":58,"end_column":1},"semantic_identity":null,"symbol":null,"details":{"ownership_expected":"AVAILABLE","ownership_actual":"CONSUMED","consume_line":54,"recursion_witness":null},"fixes":[],"legal_alternatives":["make the callee READ the value if that matches program intent","keep the ownership transfer and stop using the old binding","construct an explicit new owned value or explicit deep copy"]}}
+
+The formatter used command "fmt"; ownership/effects/calls used their corresponding command names; Margo nested the same payload under command "build". Every invocation also preceded its JSON with the environment line: Failed to connect to user scope bus via local transport: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)

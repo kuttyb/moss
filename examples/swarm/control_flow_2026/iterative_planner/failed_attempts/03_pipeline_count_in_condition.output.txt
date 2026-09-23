@@ -1,0 +1,7 @@
+Command (from the package directory):
+  ../../../../moss fmt --json src/main.moss; ../../../../moss check src/main.moss --json
+
+Exact compiler diagnostic (repeated unchanged by formatter and checker):
+{"protocol_version":1,"schema_version":"moss-agent-1","compiler_version":"0.1.0","command":"check","ok":false,"error":{"code":"UNKNOWN_SYMBOL_OR_TYPE","severity":"error","message":"unknown local function 'count'","source_file":"/home/kuttybanerjee/daji/moss/examples/swarm/control_flow_2026/iterative_planner/src/main.moss","line":21,"column":1,"span":{"start_line":21,"start_column":1,"end_line":21,"end_column":1},"semantic_identity":null,"symbol":null,"details":{"ownership_expected":null,"ownership_actual":null,"consume_line":null,"recursion_witness":null},"fixes":[],"legal_alternatives":["rename the reference to an existing static symbol","declare the missing symbol or concrete type"]}}
+
+Formatter diagnostic had command "fmt" instead of "check".

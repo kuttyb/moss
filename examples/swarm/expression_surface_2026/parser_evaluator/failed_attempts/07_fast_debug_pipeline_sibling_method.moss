@@ -1,0 +1,14 @@
+type Expression:
+  left: Int
+  right: Int
+
+  fn evaluate() -> Int:
+    return left + right
+
+  fn adjusted() -> Int:
+    return evaluate() + 1
+
+fn main():
+  expressions = [Expression(left: 3, right: 4)]
+  values = expressions |> map(_.adjusted())
+  echo values[0]

@@ -1,0 +1,9 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME",
+    "message": "value 'self' was transferred to 'an expression at line 36' at line 36 (the value was consumed). Create an explicit deep copy if both values must remain independently usable.",
+    "classification": "Named constructor argument order did not avoid the owned projection issue; this suggests field declaration/evaluation order matters."
+  }
+}

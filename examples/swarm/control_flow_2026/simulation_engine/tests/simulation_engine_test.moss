@@ -1,0 +1,21 @@
+test "urgency follows nested shortage and weather rules":
+  assertEqual(urgency(6, 7, 0), 2)
+  assertEqual(urgency(8, 4, 2), 3)
+  assertEqual(urgency(4, 9, 1), 1)
+
+test "delivery applies weather reduction and critical reserve":
+  assertEqual(deliverable_supply(7, 0, 2), 7)
+  assertEqual(deliverable_supply(4, 2, 3), 4)
+  assertEqual(deliverable_supply(0, 1, 1), 0)
+
+test "five day plan tracks backlog peak and recovery":
+  demands = [6, 8, 4, 10, 5]
+  supplies = [7, 4, 9, 7, 8]
+  weather = [0, 2, 1, 2, 0]
+  assertEqual(simulate(demands, supplies, weather), 28)
+
+test "unresolved backlog lowers the final resilience score":
+  demands = [10, 5]
+  supplies = [3, 8]
+  weather = [2, 0]
+  assertEqual(simulate(demands, supplies, weather), 4)

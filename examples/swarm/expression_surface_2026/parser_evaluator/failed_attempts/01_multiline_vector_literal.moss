@@ -1,0 +1,16 @@
+# Natural first attempt: group a readable fixed expression plan over lines.
+type Expression:
+  name: String
+  left: Int
+  right: Int
+  opcode: Int
+  enabled: Bool
+  priority: Int
+
+fn sample_expressions():
+  return [
+    Expression(name: "add", left: 7, right: 5, opcode: 0, enabled: true, priority: 1),
+    Expression(name: "multiply", left: 3, right: 4, opcode: 2, enabled: true, priority: 2),
+    Expression(name: "skip", left: 9, right: 3, opcode: 1, enabled: false, priority: 5),
+    Expression(name: "negative", left: 2, right: 8, opcode: 1, enabled: true, priority: 4)
+  ]

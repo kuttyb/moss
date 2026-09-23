@@ -1,0 +1,10 @@
+fn nested_rejection(value: Int) -> Int:
+  if value == 0:
+    if value == 0:
+      return -100
+
+  return 1
+
+
+fn main():
+  echo nested_rejection(0)

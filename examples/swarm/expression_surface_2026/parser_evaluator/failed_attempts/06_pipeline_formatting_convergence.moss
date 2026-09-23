@@ -1,0 +1,11 @@
+type Expression:
+  value: Int
+
+fn adjusted_expression(expression: Expression) -> Int:
+  return expression.value
+
+fn expression_values(expressions: Vector[Expression]) -> Vector[Int]:
+  return expressions
+    |> map(adjusted_expression)
+    |> filter(_ > 0)
+    |> map(_ * 2)

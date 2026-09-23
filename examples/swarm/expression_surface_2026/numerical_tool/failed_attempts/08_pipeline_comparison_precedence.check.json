@@ -1,0 +1,12 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {
+    "code": "UNKNOWN_SYMBOL_OR_TYPE",
+    "severity": "error",
+    "message": "unknown local function '100'"
+  }
+}

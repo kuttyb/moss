@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "ownership",
+  "ok": false,
+  "error": {"code": "MOSS_COMPILE_ERROR", "severity": "error", "message": "invalid collection operation 'len'", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/03_len_method_typed_mapper.moss", "line": 20, "column": 1, "span": {"start_line": 20, "start_column": 1, "end_line": 20, "end_column": 1}, "semantic_identity": "main@17", "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": []}
+}

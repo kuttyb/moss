@@ -1,0 +1,13 @@
+type Rule:
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn penalty_points():
+    if value < minimum:
+      return(minimum - value) * 3
+    else:
+      if value > maximum:
+        return(value - maximum) * 2
+      else:
+        return 0

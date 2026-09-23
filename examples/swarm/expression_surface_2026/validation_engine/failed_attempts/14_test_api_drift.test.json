@@ -1,0 +1,11 @@
+{
+  "command": "../../../../margo test --json",
+  "exit_code": 1,
+  "result": {
+    "code": "TYPE_MISMATCH",
+    "message": "argument 2 to function 'evaluate' has type 'map[string,int]', expected 'int'",
+    "source_file": "src/main.moss",
+    "line": 17,
+    "classification": "test fixture fell behind the deliberate evaluate API rewrite; not a compiler issue"
+  }
+}

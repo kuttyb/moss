@@ -1,0 +1,9 @@
+Observed in the complete application after its first `moss fmt --json` run:
+
+  `moss fmt --check --json` returned FORMAT_CHECK_FAILED and reported that
+  src/main.moss would change again. The first formatter pass changed the pipeline
+  from uniformly indented stages to a partially stair-stepped form. A later formatter
+  pass produced the fully stair-stepped form now accepted by `moss fmt --check`.
+
+This is a formatter convergence observation, not an application-source workaround.
+The representative source above has the natural uniformly indented pipeline layout.

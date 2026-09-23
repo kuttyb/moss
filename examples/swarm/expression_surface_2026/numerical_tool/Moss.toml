@@ -1,0 +1,6 @@
+[project]
+name = "numerical-tool"
+version = "0.1.0"
+
+[build]
+source = "src"

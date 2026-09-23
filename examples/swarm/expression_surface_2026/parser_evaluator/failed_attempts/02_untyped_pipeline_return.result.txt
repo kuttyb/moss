@@ -1,0 +1,14 @@
+Command (from package root): ../../../../moss check src/main.moss --json
+
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {"code": "TYPE_INFERENCE_FAILED", "severity": "error", "message": "cannot infer the type of this return expression in function 'expression_values'", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/parser_evaluator/src/main.moss", "line": 34, "column": 1, "span": {"start_line": 34, "start_column": 1, "end_line": 34, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": ["add a concrete type annotation", "use the value in a context that determines one static type"]}
+}
+
+Classification: expected inference boundary for an untyped collection-returning helper;
+the structured diagnostic requests a concrete type context. A semantic query cannot
+resolve an entity while checking fails.

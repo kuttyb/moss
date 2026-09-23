@@ -1,0 +1,16 @@
+type Rule:
+  value: Int
+  minimum: Int
+  maximum: Int
+
+fn violation_penalty(rule: Rule) -> Int:
+  if rule.value > rule.maximum:
+    return (rule.value - rule.maximum) * 2
+  else:
+    return 0
+
+fn health_score(rules: Vector[Rule]) -> Int:
+  penalty_total = rules
+    |> map(violation_penalty)
+    |> sum
+  return penalty_total

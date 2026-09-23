@@ -1,0 +1,11 @@
+{
+  "command": "../../../../moss fmt --json",
+  "exit_code": 1,
+  "result": {
+    "code": "UNKNOWN_SYMBOL_OR_TYPE",
+    "message": "unknown local function 'return'",
+    "source_file": "src/main.moss",
+    "line": 19,
+    "classification": "formatter/frontend inconsistency: moss check and native build accepted the source, but fmt rejected the return following local arithmetic"
+  }
+}

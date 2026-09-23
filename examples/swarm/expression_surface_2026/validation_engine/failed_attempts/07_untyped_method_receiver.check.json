@@ -1,0 +1,10 @@
+{
+  "command": "../../../../moss check src/main.moss --json",
+  "exit_code": 1,
+  "result": {
+    "code": "MOSS_COMPILE_ERROR",
+    "message": "field 'Evaluation.penalty' has conflicting inferred types 'int' and '_method_value'",
+    "line": 43,
+    "classification": "The renamed method did not change the diagnostic. The next minimal application-preserving rewrite is to establish the receiver type at evaluate's public boundary."
+  }
+}

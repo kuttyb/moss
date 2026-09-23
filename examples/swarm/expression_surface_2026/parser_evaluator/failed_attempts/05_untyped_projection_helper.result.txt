@@ -1,0 +1,14 @@
+Command (from package root): ../../../../moss check src/main.moss --json
+
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "check",
+  "ok": false,
+  "error": {"code": "TYPE_INFERENCE_FAILED", "severity": "error", "message": "cannot infer type for parameter 'expression' in function 'evaluate_expression'", "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/parser_evaluator/src/main.moss", "line": 42, "column": 1, "span": {"start_line": 42, "start_column": 1, "end_line": 42, "end_column": 1}, "semantic_identity": null, "symbol": null, "details": {"ownership_expected": null, "ownership_actual": null, "consume_line": null, "recursion_witness": null}, "fixes": [], "legal_alternatives": ["add a concrete type annotation", "use the value in a context that determines one static type"]}
+}
+
+Classification: the function body uses record projections before its type can be
+inferred from a concrete direct call. This is a supported annotation requirement,
+not evidence that projections are unavailable.

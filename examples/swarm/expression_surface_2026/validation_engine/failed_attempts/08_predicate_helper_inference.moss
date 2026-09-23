@@ -1,0 +1,16 @@
+type Rule:
+  value: Int
+  minimum: Int
+  maximum: Int
+
+  fn in_range():
+    return value >= minimum and value <= maximum
+
+fn within_limit(rule, configured_limit):
+  if rule.in_range():
+    return rule.value <= configured_limit
+  else:
+    return false
+
+fn evaluate(rule: Rule, limits: Map[String, Int]) -> Evaluation:
+  return Evaluation(accepted: within_limit(rule, limits.get("limit", 0)))

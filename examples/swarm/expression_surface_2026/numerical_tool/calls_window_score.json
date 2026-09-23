@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "schema_version": "moss-agent-1",
+  "compiler_version": "0.1.0",
+  "command": "calls",
+  "ok": true,
+  "result": {"target": {"semantic_identity": "fn:window_score@23", "durable_identity": "entity-v1:function:window_score", "identity_version": "entity-v1", "construct_kind": "function", "source_identity": "fn:window_score@23", "specialization_identity": null, "name": "window_score", "module_identity": null, "export_visibility": "private", "export_kind": "private", "source": {"file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "line": 23, "column": 1, "span": {"start_line": 23, "start_column": 1, "end_line": 23, "end_column": 1}}, "type": "int", "specialization_fields": [], "provenance": ["fn:window_score@23"], "implementation_hash": "01a0362571201215", "semantic_interface_hash": "9a36aa2c602f37e2"}, "direct_calls": [{"target": "fn:squared_energy", "resolved": true, "target_kind": "function", "line": 29, "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss", "argument_types": ["int", "int"], "specialization_identity": null}], "callers": [{"source": "main", "line": 93, "source_file": "/home/kuttybanerjee/daji/moss/examples/swarm/expression_surface_2026/numerical_tool/src/numerical_tool.moss"}]}
+}
