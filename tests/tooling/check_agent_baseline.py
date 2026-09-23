@@ -26,6 +26,15 @@ def load_baseline():
     return module
 
 
+def load_tool_logger():
+    path = ROOT / "benchmarks" / "agent" / "tool_logger.py"
+    spec = importlib.util.spec_from_file_location("moss_agent_tool_logger", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def run(arguments, *, cwd=ROOT, env=None, expected=0):
     process = subprocess.run(
         [str(value) for value in arguments], cwd=cwd, env=env,
@@ -38,6 +47,14 @@ def run(arguments, *, cwd=ROOT, env=None, expected=0):
 def main() -> int:
     compiler = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else ROOT / "moss"
     baseline = load_baseline()
+    logger = load_tool_logger()
+    assert logger.extract_codes(json.dumps({
+        "ok": True,
+        "result": {"status": "resolved", "reason": {"code": "CHECKED_SEMANTIC_FACT"}},
+    })) == []
+    assert logger.extract_codes(json.dumps({
+        "ok": False, "error": {"code": "QUERY_TARGET_NOT_FOUND"},
+    })) == ["QUERY_TARGET_NOT_FOUND"]
     rustc = baseline.resolved_rustc()
     assert rustc.is_file()
     shutil.rmtree(SCRATCH, ignore_errors=True)

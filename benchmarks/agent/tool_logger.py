@@ -14,16 +14,24 @@ from typing import Any
 
 
 def diagnostic_codes(value: Any) -> list[str]:
+    """Read protocol diagnostic slots, not unrelated semantic `code` fields."""
+    if not isinstance(value, dict):
+        return []
     codes: list[str] = []
-    if isinstance(value, dict):
-        code = value.get("code")
-        if isinstance(code, str) and code and code.upper() == code:
+    error = value.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        if isinstance(code, str) and code:
             codes.append(code)
-        for child in value.values():
-            codes.extend(diagnostic_codes(child))
-    elif isinstance(value, list):
-        for child in value:
-            codes.extend(diagnostic_codes(child))
+    result = value.get("result")
+    diagnostics = result.get("diagnostics") if isinstance(result, dict) else None
+    if isinstance(diagnostics, list):
+        for diagnostic in diagnostics:
+            if not isinstance(diagnostic, dict):
+                continue
+            code = diagnostic.get("code")
+            if isinstance(code, str) and code:
+                codes.append(code)
     return codes
 
 
