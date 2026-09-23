@@ -7906,6 +7906,7 @@ class FunctionalOptimizer {
   explicit FunctionalOptimizer(Program& program) : program_(program) {}
 
   void run(bool enabled) {
+    CompilerStageTimer timer("functional_optimizer");
     program_.functional_traversal_groups.clear();
     for (auto& pipeline : program_.functional_pipelines) {
       pipeline.count_uses_exact_length = false;
@@ -16070,6 +16071,13 @@ static std::optional<SemanticSnapshot> read_semantic_snapshot(
   return snapshot;
 }
 
+struct CheckedProjectUnit {
+  Program program;
+  vector<Warning> warnings;
+  // The source-free provider selected during semantic module resolution.
+  std::map<string,std::filesystem::path> external_module_interfaces;
+};
+
 struct CompiledProjectUnit {
   Program program;
   OptimizationPlan plan;
@@ -16965,10 +16973,10 @@ static const CompiledModuleProvider* unique_compiled_module_provider(
   throw error;
 }
 
-static CompiledProjectUnit analyze_project_sources(
+static CheckedProjectUnit check_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
-    bool optimized, bool debug_build, ProgramGenerationMode mode,
+    ProgramGenerationMode mode,
     const string& declaration_filter = {},
     const std::set<string>* declaration_ids = nullptr,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
@@ -17110,11 +17118,35 @@ static CompiledProjectUnit analyze_project_sources(
             program.benchmarks.end());
       }
     }
-    FunctionalOptimizer(program).run(optimized);
+    return {std::move(program), std::move(warnings),
+            std::move(external_module_interfaces)};
+  } catch (const CompileError& error) {
+    throw ProjectError(
+        error.code.empty() ? diagnostic_code_for_message(error.what())
+                           : error.code,
+        error.what(), error.source_file.empty()
+            ? (sources.empty() ? string() : sources.front().string())
+            : error.source_file,
+        error.line);
+  }
+}
+
+static CompiledProjectUnit analyze_project_sources(
+    const ProjectManifest& manifest,
+    const vector<std::filesystem::path>& sources,
+    bool optimized, bool debug_build, ProgramGenerationMode mode,
+    const string& declaration_filter = {},
+    const std::set<string>* declaration_ids = nullptr,
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
+  CheckedProjectUnit checked = check_project_sources(
+      manifest, sources, mode, declaration_filter, declaration_ids,
+      source_overrides);
+  try {
+    FunctionalOptimizer(checked.program).run(optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};
-    string rust = Generator(program, plan, debug_build, mode).generate();
-    return {std::move(program), std::move(plan), std::move(warnings),
-            std::move(rust), std::move(external_module_interfaces)};
+    string rust = Generator(checked.program, plan, debug_build, mode).generate();
+    return {std::move(checked.program), std::move(plan), std::move(checked.warnings),
+            std::move(rust), std::move(checked.external_module_interfaces)};
   } catch (const CompileError& error) {
     throw ProjectError(
         error.code.empty() ? diagnostic_code_for_message(error.what())
@@ -19704,21 +19736,21 @@ static int run_project_format(const ProjectManifest& manifest,
   if (project_scope) {
     auto app_sources = project_source_files(manifest);
     if (!app_sources.empty()) {
-      analyze_project_sources(manifest, app_sources, false, false,
-                              ProgramGenerationMode::Application, {}, nullptr,
-                              &source_overrides);
+      check_project_sources(manifest, app_sources,
+                            ProgramGenerationMode::Application, {}, nullptr,
+                            &source_overrides);
     }
     auto test_sources = project_declaration_sources(manifest, "tests");
     if (test_sources.size() > app_sources.size()) {
-      analyze_project_sources(manifest, test_sources, false, false,
-                              ProgramGenerationMode::Tests, {}, nullptr,
-                              &source_overrides);
+      check_project_sources(manifest, test_sources,
+                            ProgramGenerationMode::Tests, {}, nullptr,
+                            &source_overrides);
     }
     auto bench_sources = project_declaration_sources(manifest, "benches");
     if (bench_sources.size() > app_sources.size()) {
-      analyze_project_sources(manifest, bench_sources, false, false,
-                              ProgramGenerationMode::Benchmarks, {}, nullptr,
-                              &source_overrides);
+      check_project_sources(manifest, bench_sources,
+                            ProgramGenerationMode::Benchmarks, {}, nullptr,
+                            &source_overrides);
     }
   } else {
     struct ProjectValidationTask {
@@ -19744,8 +19776,8 @@ static int run_project_format(const ProjectManifest& manifest,
 
     for (const auto& entry : project_tasks) {
       const auto& task = entry.second;
-      analyze_project_sources(task.manifest, task.sources, false, false,
-                              task.mode, {}, nullptr, &source_overrides);
+      check_project_sources(task.manifest, task.sources,
+                            task.mode, {}, nullptr, &source_overrides);
     }
   }
 

@@ -6,25 +6,27 @@ Updated: 2026-09-22
 
 Completed Phase 15.7 multi-module formatter semantic convergence:
 - Authoritative Project/Module Semantic Convergence:
-  - Eliminated isolated-file checking (`validate_formatted_source`) and legacy merged-namespace approximations (`merge_project_program` in `run_project_format` and `analyze_project_texts`).
-  - Factored `analyze_project_sources` to accept optional in-memory `source_overrides` mapping file paths to formatted source strings. Formatted source validation now directly executes the compiler's authoritative multi-module resolver and type checker across `Application`, `Tests`, and `Benchmarks` target generation modes.
+  - Eliminated isolated semantic checking for files that belong to a Moss project; legacy merged-namespace approximations (`merge_project_program` in `run_project_format` and `analyze_project_texts`) are removed.
+  - Factored authoritative project analysis so semantic validation is cleanly separated from optimizer and backend code generation: `check_project_sources()` performs parsing (with in-memory `source_overrides`), module/package resolution, export validation, namespace rewriting, and `Checker` execution. Formatter validation stops cleanly after `Checker`, ensuring a valid Moss project never fails `moss fmt` due to an optimization or backend code-generation defect. Compilation flows continue through `FunctionalOptimizer` and `Generator` via `analyze_project_sources()`.
+  - Project files use authoritative project/module resolution across `Application`, `Tests`, and `Benchmarks` target generation modes.
   - Selected-file formatting (`moss fmt path/to/file.moss`) resolves the containing project context and manifest via `analyze_source_context(file)`, validating the file against its full module dependencies and qualified types (e.g. `model.Graph`), while scoping writes strictly to the selected file without mutating sibling files.
-  - Standalone files outside any project context continue to be validated cleanly with standalone checks.
-- Transactional Formatting:
-  - `moss fmt` computes all formatted buffers in memory and validates the entire proposed project state before writing any files.
-  - If validation fails (or under `--check`), no files are modified on disk, ensuring complete transactional safety.
+  - Genuine standalone files outside any project context continue to use standalone parse/check validation (`validate_formatted_source`).
+- Validation-Transactional Formatting:
+  - Formatting is validation-transactional: all proposed source is formatted in memory and validated before any writes occur; validation failures cause zero writes, leaving every target unchanged on disk.
+  - Sibling files in a selected-file formatting run remain byte-for-byte untouched when validation fails or succeeds.
 - Directory and CLI ergonomics:
   - Added support for passing project directories directly to `moss fmt <dir>` and `moss fmt <dir> --check`.
 - Regression Coverage:
-  - Added `tests/tooling/check_phase15_7_formatter_convergence.py` covering:
+  - Hardened `tests/tooling/check_phase15_7_formatter_convergence.py` covering:
     1. Selected-file formatting and check with imported qualified types (`model.Item`).
     2. Verification that sibling modules are not touched when formatting a selected file.
     3. Whole-project formatting, idempotency, and `--check`.
-    4. Transactional failure guarantees on semantically invalid projects and files (verifying byte-for-byte zero disk writes).
-    5. Clean resolution and compilation checks.
-  - Registered the new regression in `tests/run.sh`.
+    4. Whole-project and isolated selected-file transactional failure guarantees (verifying byte-for-byte zero disk writes and isolated sibling validity).
+    5. Proof that formatter semantic validation executes `Checker` stages (`effects`, `synchronization_plan`) while demonstrably bypassing `FunctionalOptimizer` and `Generator` (`rust_generation`).
+    6. Clean resolution and compilation checks.
+  - Registered the regression in `tests/run.sh`.
 - Completed Validation:
-  - `./moss fmt projects/build_planner/graphlib/src/graph.moss --check` (exits 0, previously failed with `unknown parameter type 'model.Graph'`).
+  - `./moss fmt projects/build_planner/graphlib/src/graph.moss --check` (exits 0).
   - `./moss fmt projects/build_planner/graphlib --check` (exits 0).
   - Regressions: `check_phase15_7_formatter_convergence.py`, `check_formatter_indexing.py`, `check_swarm_003_formatter.py`.
   - Margo build/test/run for `graphlib` (12 tests) and `planner` (7 tests).
