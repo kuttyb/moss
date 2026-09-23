@@ -18401,23 +18401,29 @@ static SourceCompilationContext analyze_source_context(
 // When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
 // root directories, populated only by 'margo debug'), dependency source files are
 // indexed alongside the root project's files so the transitive closure walk
-// can reach them.  Dependency modules that exist in the source index are
-// preferred over compiled .mossi providers by check_project_sources.
+// can reach them. Providers are only disambiguated when an import makes a
+// module reachable; root project source has precedence over external source
+// providers, matching ordinary native module-provider selection.
 static vector<std::filesystem::path> fast_debug_source_closure(
     const SourceCompilationContext& context) {
   if (!context.project || context.mode != ProgramGenerationMode::Application)
     return context.sources;
 
-  struct ModuleSources {
+  struct ModuleSourceProvider {
     vector<std::filesystem::path> files;
     vector<string> imports;
-    std::filesystem::path provider_root;
+    bool root_project = false;
   };
-  std::map<string, ModuleSources> modules;
+  // One module may have several package source providers. The nested map keeps
+  // provider identities canonical and deterministic without making unused
+  // duplicates an error.
+  std::map<string, std::map<std::filesystem::path, ModuleSourceProvider>>
+      modules;
   string entry_module;
   bool has_explicit_modules = false;
   auto add_source = [&](const std::filesystem::path& source,
-                        const std::filesystem::path& provider_root) {
+                        const std::filesystem::path& provider_root,
+                        bool root_project) {
     auto normalized = std::filesystem::absolute(source).lexically_normal();
     auto normalized_provider =
         std::filesystem::absolute(provider_root).lexically_normal();
@@ -18429,17 +18435,8 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     Program parsed = Parser(lex_lines(input, normalized.string())).parse();
     string module = parsed.explicit_module && !parsed.module_name.empty()
         ? parsed.module_name : context.manifest.name;
-    auto& record = modules[module];
-    if (record.provider_root.empty()) {
-      record.provider_root = normalized_provider;
-    } else if (record.provider_root != normalized_provider) {
-      throw ProjectError(
-          "MODULE_IMPORT_AMBIGUOUS",
-          "ambiguous source module '" + module + "'\nprovided by:\n  " +
-              record.provider_root.string() + "\n  " +
-              normalized_provider.string(),
-          normalized.string());
-    }
+    auto& record = modules[module][normalized_provider];
+    record.root_project = record.root_project || root_project;
     record.files.push_back(normalized);
     for (const auto& import : parsed.imports)
       record.imports.push_back(import.name);
@@ -18448,7 +18445,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     if (entry_module.empty() && parsed.main) entry_module = module;
   };
   for (const auto& source : context.sources)
-    add_source(source, context.manifest.root);
+    add_source(source, context.manifest.root, true);
 
   // Extend the module provider universe with explicitly supplied dependency
   // source roots (set by Margo's 'margo debug' command via its exact,
@@ -18490,27 +18487,38 @@ static vector<std::filesystem::path> fast_debug_source_closure(
             "Moss.toml: '" + dep_root.string() + "'", dep_root.string());
       vector<std::filesystem::path> dep_sources = project_source_files(dep_manifest);
       for (const auto& source : dep_sources)
-        add_source(source, dep_manifest.root);
+        add_source(source, dep_manifest.root, false);
     }
   }
 
   if (!has_explicit_modules || entry_module.empty()) return context.sources;
 
+  auto select_provider = [&](const string& module)
+      -> const ModuleSourceProvider* {
+    auto found = modules.find(module);
+    if (found == modules.end()) return nullptr;
+    for (const auto& candidate : found->second)
+      if (candidate.second.root_project) return &candidate.second;
+    if (found->second.size() == 1) return &found->second.begin()->second;
+    std::ostringstream message;
+    message << "ambiguous imported module '" << module << "'\nprovided by:";
+    for (const auto& candidate : found->second)
+      message << "\n  " << candidate.first.string();
+    throw ProjectError("MODULE_IMPORT_AMBIGUOUS", message.str(),
+                       context.requested_source.string());
+  };
+
   std::set<string> reachable;
+  vector<std::filesystem::path> result;
   std::function<void(const string&)> visit = [&](const string& module) {
     if (!reachable.insert(module).second) return;
-    auto found = modules.find(module);
-    if (found == modules.end()) return;  // analyze_project_sources will
-                                         // validate an external interface.
-    for (const auto& imported : found->second.imports) visit(imported);
+    const ModuleSourceProvider* provider = select_provider(module);
+    if (!provider) return;  // check_project_sources resolves .mossi/missing imports.
+    result.insert(result.end(), provider->files.begin(), provider->files.end());
+    for (const auto& imported : provider->imports) visit(imported);
   };
   visit(entry_module);
 
-  vector<std::filesystem::path> result;
-  for (const auto& entry : modules)
-    if (reachable.count(entry.first))
-      result.insert(result.end(), entry.second.files.begin(),
-                    entry.second.files.end());
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
   return result.empty() ? context.sources : result;

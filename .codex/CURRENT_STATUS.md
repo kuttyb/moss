@@ -30,6 +30,14 @@ the Phase 15.8 coverage, agent/project/tooling checks, 20/20 Emacs tests, and ex
 Fast Debug checks, then reached the known unrelated Phase 10.6F native Rust backend
 failure (`&String == String`). No Phase 15.8 test was weakened.
 
+Post-closeout hardening aligned Fast Debug source-provider selection with native
+module semantics: unused duplicate dependency modules are legal, root source retains
+precedence, and ambiguity is reported only when a reachable import requires multiple
+external source providers. The Git fixture explicitly initializes and selects `main`.
+Focused Phase 15.8, native provider-ambiguity, Margo, Fast Debug, Build Planner,
+agent, examples, shell, and whitespace validation passed. The full suite again reached
+only the unchanged Phase 10.6F `&String == String` backend failure.
+
 ## Phase 15.7 — Multi-Module Formatter Semantic Convergence — COMPLETE
 
 Closed Phase 15.7 multi-module formatter semantic convergence:

@@ -111,23 +111,52 @@ def test_trace_has_dependency_execution_event(compiler):
     print("  [PASS] structured trace includes semantic execution in dependency source")
 
 
-def test_invalid_root_and_ambiguous_provider_fail_closed(compiler):
+def test_invalid_root_fails_closed(compiler):
     missing = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
                   env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_MAIN / "absent")}))
     if missing.returncode == 0 or "PROJECT_SOURCE_NOT_FOUND" not in (missing.stdout + missing.stderr):
         raise AssertionError("missing supplied source root was silently ignored")
+    print("  [PASS] invalid Fast Debug source roots fail closed")
+
+
+def test_source_provider_selection_parity(compiler):
+    """Unused duplicates are legal; root source wins; reachable deps conflict."""
     with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
         root = Path(tmp)
-        write_package(root / "a", "a", "module shared\n\nexport fn value() -> Int:\n  return 1\n")
-        write_package(root / "b", "b", "module shared\n\nexport fn value() -> Int:\n  return 2\n")
-        write_package(root / "app", "app", "module app\nimport shared\n\nfn main():\n  echo shared.value()\n",
-                      "\n[dependencies]\na = { path = \"../a\" }\nb = { path = \"../b\" }\n")
+        write_package(root / "a", "a", "module Utils\n\nexport fn value() -> Int:\n  return 1\n")
+        write_package(root / "b", "b", "module Utils\n\nexport fn value() -> Int:\n  return 2\n")
+        dependencies = "\n[dependencies]\na = { path = \"../a\" }\nb = { path = \"../b\" }\n"
+        # Source candidates are not disambiguated until an import reaches one.
+        write_package(root / "unused", "unused", "module app\n\nfn main():\n  echo 7\n",
+                      dependencies)
+        unused = run([str(compiler.parent / "margo"), "debug"], cwd=root / "unused",
+                     env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        require_ok(unused, "unused duplicate source providers")
+        if unused.stdout.strip() != "7":
+            raise AssertionError(f"unused duplicate output was {unused.stdout!r}")
+
+        # Root/local source intentionally beats an external source provider.
+        write_package(root / "local", "local", "module app\nimport Utils\n\nfn main():\n  echo Utils.value()\n",
+                      "\n[dependencies]\na = { path = \"../a\" }\n")
+        (root / "local" / "src" / "utils.moss").write_text(
+            "module Utils\n\nexport fn value() -> Int:\n  return 42\n", encoding="utf-8")
+        local = run([str(compiler.parent / "margo"), "debug"], cwd=root / "local",
+                    env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        require_ok(local, "root source precedence")
+        if local.stdout.strip() != "42":
+            raise AssertionError(f"root source did not win: {local.stdout!r}")
+
+        write_package(root / "app", "app", "module app\nimport Utils\n\nfn main():\n  echo Utils.value()\n",
+                      dependencies)
         result = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app",
                      env=env_for(compiler, RUSTC="/definitely/not/rustc"))
         text = result.stdout + result.stderr
-        if result.returncode == 0 or "MODULE_IMPORT_AMBIGUOUS" not in text or "shared" not in text:
+        providers = sorted(str((root / package).resolve()) for package in ("a", "b"))
+        if (result.returncode == 0 or "MODULE_IMPORT_AMBIGUOUS" not in text or
+                "Utils" not in text or not all(provider in text for provider in providers) or
+                text.index(providers[0]) > text.index(providers[1])):
             raise AssertionError(f"duplicate source providers were not rejected:\n{text}")
-    print("  [PASS] invalid roots fail closed and cross-package providers are ambiguous")
+    print("  [PASS] lazy source-provider selection matches native precedence and ambiguity")
 
 
 def test_transitive_source_closure_and_identity(compiler):
@@ -160,12 +189,12 @@ def test_git_source_closure_and_cached_lock(compiler):
         root = Path(tmp)
         remote = root / "remote"
         write_package(remote, "gitleaf", "module gitleaf\n\nexport fn value() -> Int:\n  return 42\n")
-        require_ok(run(["git", "init", "--quiet"], cwd=remote), "initialize local Git dependency")
+        require_ok(run(["git", "init", "--quiet", "--initial-branch=main"], cwd=remote), "initialize local Git dependency")
         require_ok(run(["git", "add", "."], cwd=remote), "stage local Git dependency")
         require_ok(run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
                         "commit", "--quiet", "-m", "initial"], cwd=remote), "commit local Git dependency")
         write_package(root / "app", "app", "module app\nimport gitleaf\n\nfn main():\n  echo gitleaf.value()\n",
-                      f"\n[dependencies]\ngitleaf = {{ git = \"{remote}\", branch = \"master\" }}\n")
+                      f"\n[dependencies]\ngitleaf = {{ git = \"{remote}\", branch = \"main\" }}\n")
         environment = env_for(compiler, MARGO_HOME=str(root / "margo-cache"),
                               RUSTC="/definitely/not/rustc")
         first = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app", env=environment)
@@ -246,7 +275,8 @@ def main():
     (REPO / "tmp").mkdir(exist_ok=True)
     print("Phase 15.8 — Cross-Package Fast Debug Source Convergence")
     tests = [test_path_source_parity_and_no_rustc, test_real_source_free_provider_rejection,
-             test_trace_has_dependency_execution_event, test_invalid_root_and_ambiguous_provider_fail_closed,
+             test_trace_has_dependency_execution_event, test_invalid_root_fails_closed,
+             test_source_provider_selection_parity,
              test_transitive_source_closure_and_identity, test_git_source_closure_and_cached_lock,
              test_margo_cli_and_environment_are_exact, test_standalone_debug_unchanged,
              test_build_planner_dogfood]
