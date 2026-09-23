@@ -41,6 +41,47 @@
       "expect": {
         "stdout": "42\n"
       }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "calls",
+        "handler:Calculator.Run",
+        "--source",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true,
+          "result.target.construct_kind": "handler"
+        },
+        "json_matches": {
+          "result.direct_calls.0.target": "^fn:"
+        }
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Calculator\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "not_matches": "\\bmessage\\s+self\\."
     }
   ],
   "notes": "Covers the same-domain message restriction and local helper pattern."

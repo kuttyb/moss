@@ -46,5 +46,31 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "app/Moss.toml",
+      "matches": "(?m)^\\[dependencies\\]\\s*$"
+    },
+    {
+      "path": "app/Moss.toml",
+      "matches": "(?m)^Provider\\s*=\\s*\\{\\s*path\\s*=\\s*\"\\.\\./provider\"\\s*\\}\\s*$"
+    },
+    {
+      "path": "provider/src/math.moss",
+      "matches": "(?m)^module\\s+Math\\s*$"
+    },
+    {
+      "path": "provider/src/math.moss",
+      "matches": "(?m)^export\\s+fn\\s+answer\\s*\\("
+    },
+    {
+      "path": "app/src/main.moss",
+      "matches": "(?m)^import\\s+Math\\s*$"
+    },
+    {
+      "path": "app/src/main.moss",
+      "matches": "\\bMath\\.answer\\s*\\("
+    }
+  ],
   "notes": "Exercises current path dependency and module-provider behavior without Git or network access."
 }

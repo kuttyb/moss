@@ -43,5 +43,23 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^type\\s+Holder\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+replace\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+values\\s*=\\s*\\w+"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)\\b([A-Za-z_]\\w*)\\s*=\\s*Holder\\s*\\(.*?\\b\\1\\.replace\\s*\\(.*?\\becho\\s+\\1\\."
+    }
+  ],
   "notes": "Covers a non-Copy CONSUME boundary and invalid ownership use."
 }

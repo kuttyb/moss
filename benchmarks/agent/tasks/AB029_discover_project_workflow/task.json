@@ -62,5 +62,23 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "Moss.toml",
+      "matches": "(?m)^\\[project\\]\\s*$"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^fn\\s+add\\s*\\("
+    },
+    {
+      "path": "tests/arithmetic.moss",
+      "matches": "(?m)^test\\s+\"addition\"\\s*:"
+    },
+    {
+      "path": "tests/arithmetic.moss",
+      "matches": "\\bassertEqual\\s*\\(\\s*add\\s*\\("
+    }
+  ],
   "notes": "Navigation task separating package and project commands from Moss semantic commands."
 }

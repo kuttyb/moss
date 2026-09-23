@@ -40,5 +40,31 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "Moss.toml",
+      "matches": "(?m)^\\[project\\]\\s*$"
+    },
+    {
+      "path": "src/math.moss",
+      "matches": "(?m)^module\\s+Math\\s*$"
+    },
+    {
+      "path": "src/math.moss",
+      "matches": "(?m)^export\\s+fn\\s+answer\\s*\\("
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^module\\s+App\\s*$"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^import\\s+Math\\s*$"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "\\bMath\\.answer\\s*\\("
+    }
+  ],
   "notes": "Write-from-scratch multi-module project using the current Phase 15 and Margo boundary."
 }

@@ -45,5 +45,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "src/math.moss",
+      "matches": "(?m)^module\\s+Math\\s*$"
+    },
+    {
+      "path": "src/math.moss",
+      "matches": "(?m)^export\\s+fn\\s+answer\\s*\\("
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^module\\s+App\\s*$"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^import\\s+Math\\s*$"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "\\bMath\\.answer\\s*\\("
+    }
+  ],
   "notes": "Focused module visibility repair without redesigning module resolution."
 }

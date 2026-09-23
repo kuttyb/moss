@@ -41,5 +41,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*map\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*filter\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*sum\\b"
+    }
+  ],
   "notes": "Covers eager map/filter/sum dataflow."
 }

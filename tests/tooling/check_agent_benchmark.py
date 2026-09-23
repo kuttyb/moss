@@ -45,6 +45,24 @@ def make_suite(name: str) -> Path:
     return suite
 
 
+def reject_shortcut(compiler: Path, task_id: str, name: str,
+                    files: dict[str, str]) -> None:
+    workdir = SCRATCH / name
+    for relative, contents in files.items():
+        path = workdir / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents, encoding="utf-8")
+    result = invoke(
+        compiler, "run", task_id, "--workdir", str(workdir), "--json", expected=1,
+    )["result"]
+    assert result["status"] == "fail"
+    assert result["outside_allowed_paths"] == []
+    assert any(
+        record.get("assertion") is not None and record["status"] == "fail"
+        for record in result["validation"]
+    )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: check_agent_benchmark.py <moss>")
@@ -106,6 +124,33 @@ def main() -> int:
     assert disallowed["status"] == "fail"
     assert disallowed["outside_allowed_paths"] == ["rogue.txt"]
 
+    reject_shortcut(
+        compiler, "AB002", "shortcut-named-functions",
+        {"main.moss": "fn main():\n  echo 49\n"},
+    )
+    reject_shortcut(
+        compiler, "AB006", "shortcut-domain",
+        {"main.moss": "fn main():\n  echo 5\n"},
+    )
+    reject_shortcut(
+        compiler, "AB008", "shortcut-helper-repair",
+        {"main.moss": "fn main():\n  echo 42\n"},
+    )
+    reject_shortcut(
+        compiler, "AB016", "shortcut-pipeline",
+        {"main.moss": "fn main():\n  echo 14\n"},
+    )
+    reject_shortcut(
+        compiler, "AB024", "shortcut-modules",
+        {
+            "Moss.toml": (
+                "[project]\nname = \"shortcut\"\nversion = \"0.1.0\"\n\n"
+                "[build]\nsource = \"src\"\n"
+            ),
+            "src/main.moss": "fn main():\n  echo 42\n",
+        },
+    )
+
     source_task = ROOT / "benchmarks" / "agent" / "tasks" / "AB001_simple_computation"
     duplicate = make_suite("duplicate")
     shutil.copytree(source_task, duplicate / "tasks" / "AB001_first")
@@ -148,7 +193,19 @@ def main() -> int:
     )
     assert invalid_result["error"]["code"] == "BENCHMARK_VALIDATION_INVALID"
 
-    print("Agent benchmark metadata, CLI, execution, isolation, and path checks passed.")
+    invalid_regex = make_suite("invalid-regex")
+    shutil.copytree(source_task, invalid_regex / "tasks" / "AB001_invalid")
+    regex_task = invalid_regex / "tasks" / "AB001_invalid" / "task.json"
+    regex_document = json.loads(regex_task.read_text(encoding="utf-8"))
+    regex_document["assertions"] = [{"path": "main.moss", "matches": "("}]
+    regex_task.write_text(json.dumps(regex_document), encoding="utf-8")
+    invalid_regex_result = invoke(
+        compiler, "validate", "--metadata-only", "--suite-root", str(invalid_regex),
+        "--json", expected=2,
+    )
+    assert invalid_regex_result["error"]["code"] == "BENCHMARK_METADATA_INVALID"
+
+    print("Agent benchmark metadata, concept, execution, isolation, and path checks passed.")
     return 0
 
 

@@ -59,5 +59,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^type\\s+Payload\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Reader\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Store\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+reader\\.Accept\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+store\\.Read\\s*\\("
+    }
+  ],
   "notes": "Navigation task for semantic queries and borrowed domain-state payload reads."
 }

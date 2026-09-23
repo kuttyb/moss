@@ -49,8 +49,8 @@ diagnostics, a minimal Moss reproducer, and native verification when lowering is
 involved. Generated Rust can reveal a backend defect; it is not language-design
 evidence by itself.
 
-The fixed [agent benchmark](../benchmarks/agent/README.md) now supplies Phase 22.2A's
-30-task corpus and Phase 22.2B's isolated validation/result tooling. The actual
+The hardened, frozen [agent benchmark](../benchmarks/agent/README.md) now supplies
+Phase 22.2A's 30-task corpus and Phase 22.2B's isolated validation/result tooling. The actual
 fresh-agent baseline and aggregate report remain Phase 22.2C and 22.2D work;
 systematic rewrite-bearing diagnostics, richer trace slicing, and advanced repair
 workflows also remain future work. During a real agent session, use

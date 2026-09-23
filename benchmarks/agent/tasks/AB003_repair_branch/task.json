@@ -43,5 +43,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+classify\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+if\\s+"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\bclassify\\s*\\("
+    }
+  ],
   "notes": "A focused conditional logic repair."
 }

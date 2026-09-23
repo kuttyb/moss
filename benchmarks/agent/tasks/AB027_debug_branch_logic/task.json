@@ -42,5 +42,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+shipping_cost\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+if\\s+"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\bshipping_cost\\s*\\("
+    }
+  ],
   "notes": "A deterministic Fast Debug logic diagnosis."
 }

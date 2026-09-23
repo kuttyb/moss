@@ -42,5 +42,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+add\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*reduce\\s*\\(\\s*0\\s*,\\s*add\\s*\\)"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*count\\b"
+    }
+  ],
   "notes": "Exercises reduce, count, and named callable specialization."
 }

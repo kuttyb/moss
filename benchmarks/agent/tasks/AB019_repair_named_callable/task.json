@@ -43,5 +43,15 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+double\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*map\\s*\\(\\s*double\\s*\\)"
+    }
+  ],
   "notes": "Covers named callable use and static specialization."
 }

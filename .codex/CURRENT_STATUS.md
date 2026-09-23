@@ -4,12 +4,21 @@ Updated: 2026-09-22
 
 ## Phase 22.2 — Agent Benchmark Suite
 
-Phase 22.2A and 22.2B are complete in the current working tree. The fixed
+Phase 22.2A and 22.2B are complete in the current working tree. The hardened,
+frozen
 pre-Phase-22.1 corpus contains 30 independently runnable tasks under
 `benchmarks/agent/`: ten write tasks, ten repairs, and ten workflow/debug tasks
 across eight categories. Declarative task metadata records prompts, starter and
 reviewed expected trees, allowed paths, objective criteria, and argv-based Moss or
 Margo validation.
+
+Every task now checks both behavior and its defining Moss capability. Declarative
+regular-expression assertions cover required source/project structure, while
+existing semantic queries prove properties such as ordinary helper calls from
+repaired handlers. Focused regressions reject constant-output shortcuts for named
+functions, domains, same-domain/self-send repair, functional pipelines, and
+multi-module projects. Phase 22.2C must stage sanitized agent workspaces that do
+not expose any `expected/` reference tree.
 
 `moss agent benchmark list|show|validate|run` exposes the suite in text or stable
 `moss-agent-benchmark-1` JSON. The runner validates metadata and reference
@@ -17,17 +26,14 @@ solutions, executes in disposable repository-local copies, reports diagnostics a
 changed/out-of-scope paths, and reserves nullable result fields for later attempts,
 tool calls, agent identity, and timing. It never invokes an AI model.
 
-Phase 22.2C (fresh-agent baseline run) and Phase 22.2D (aggregate benchmark report)
-remain pending. The corpus is fixed for later comparison and must not be changed
-merely because diagnostics improve.
+Phase 22.2A's benchmark corpus is complete and hardened. Phase 22.2B's
+runner/result schema is complete. Phase 22.2C (fresh-agent baseline run) and Phase
+22.2D (aggregate benchmark report) remain pending. The corpus is frozen for later
+comparison and must not be changed merely because diagnostics improve. Any later
+correction for an objectively invalid task must be recorded as a corpus revision.
 
-Completed validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build;
-all 30 reviewed benchmark solutions; the focused benchmark regression; agent API
-and skill drift checks; Python and shell syntax checks; `make examples`; and Git
-whitespace checks. `make check` passed the new benchmark test and all subsequent
-compiler, Margo, module, Fast Debug, tooling, and editor checks until the existing
-Phase 10.6F native `&String == String` failure already recorded above; this phase
-does not change lowering or compiler semantics.
+Validation for this hardening pass is in progress and will be recorded before the
+phase closeout commit.
 
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 

@@ -92,7 +92,8 @@ def validate_command(task_id: str, item: Any, index: int) -> None:
         relative_path(item["cwd"], f"{prefix}.cwd")
     expect = item.get("expect", {})
     if not isinstance(expect, dict) or not set(expect) <= {
-        "exit_code", "stdout", "stdout_contains", "stderr_contains", "json_equals"
+        "exit_code", "stdout", "stdout_contains", "stderr_contains",
+        "json_equals", "json_matches",
     }:
         raise BenchmarkError("BENCHMARK_VALIDATION_INVALID", f"{prefix}.expect has unsupported fields")
     if not isinstance(expect.get("exit_code", 0), int):
@@ -100,6 +101,18 @@ def validate_command(task_id: str, item: Any, index: int) -> None:
     if "json_equals" in expect and (not isinstance(expect["json_equals"], dict) or
                                      not all(isinstance(key, str) for key in expect["json_equals"])):
         raise BenchmarkError("BENCHMARK_VALIDATION_INVALID", f"{prefix}.expect.json_equals must be an object")
+    if "json_matches" in expect and (not isinstance(expect["json_matches"], dict) or
+                                      not all(isinstance(key, str) and isinstance(value, str)
+                                              for key, value in expect["json_matches"].items())):
+        raise BenchmarkError("BENCHMARK_VALIDATION_INVALID", f"{prefix}.expect.json_matches must map fields to strings")
+    for dotted, pattern in expect.get("json_matches", {}).items():
+        try:
+            re.compile(pattern)
+        except re.error as error:
+            raise BenchmarkError(
+                "BENCHMARK_VALIDATION_INVALID",
+                f"{prefix}.expect.json_matches[{dotted!r}] is not a valid regular expression: {error}",
+            ) from error
 
 
 def validate_task(task: Any, directory: Path) -> dict[str, Any]:
@@ -179,13 +192,27 @@ def validate_task(task: Any, directory: Path) -> dict[str, Any]:
         if not isinstance(assertion, dict) or not isinstance(assertion.get("path"), str):
             raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}] is invalid")
         relative_path(assertion["path"], f"{task['id']}.assertions[{index}].path")
-        if set(assertion) - {"path", "equals", "contains", "not_contains"}:
+        if set(assertion) - {
+            "path", "equals", "contains", "not_contains", "matches",
+            "not_matches",
+        }:
             raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}] has unsupported fields")
-        if len(set(assertion) & {"equals", "contains", "not_contains"}) == 0:
+        assertion_fields = {
+            "equals", "contains", "not_contains", "matches", "not_matches",
+        }
+        if len(set(assertion) & assertion_fields) == 0:
             raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}] has no check")
-        for field in set(assertion) & {"equals", "contains", "not_contains"}:
+        for field in set(assertion) & assertion_fields:
             if not isinstance(assertion[field], str):
                 raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.assertions[{index}].{field} must be a string")
+        for field in set(assertion) & {"matches", "not_matches"}:
+            try:
+                re.compile(assertion[field])
+            except re.error as error:
+                raise BenchmarkError(
+                    "BENCHMARK_METADATA_INVALID",
+                    f"{task['id']}.assertions[{index}].{field} is not a valid regular expression: {error}",
+                ) from error
     if "notes" in task and not isinstance(task["notes"], str):
         raise BenchmarkError("BENCHMARK_METADATA_INVALID", f"{task['id']}.notes must be a string")
     task = dict(task)
@@ -311,10 +338,10 @@ def execute_validation(task: dict[str, Any], workspace: Path, compiler: Path,
             failures.append(f"stdout omitted {expect['stdout_contains']!r}")
         if "stderr_contains" in expect and expect["stderr_contains"] not in stderr:
             failures.append(f"stderr omitted {expect['stderr_contains']!r}")
-        if "json_equals" in expect:
+        if "json_equals" in expect or "json_matches" in expect:
             try:
                 document = json.loads(stdout)
-                for dotted, expected in expect["json_equals"].items():
+                for dotted, expected in expect.get("json_equals", {}).items():
                     try:
                         actual = nested_value(document, dotted)
                     except (KeyError, IndexError):
@@ -322,6 +349,14 @@ def execute_validation(task: dict[str, Any], workspace: Path, compiler: Path,
                     else:
                         if actual != expected:
                             failures.append(f"JSON field {dotted!r} was {actual!r}, expected {expected!r}")
+                for dotted, pattern in expect.get("json_matches", {}).items():
+                    try:
+                        actual = nested_value(document, dotted)
+                    except (KeyError, IndexError):
+                        failures.append(f"JSON field {dotted!r} was missing")
+                    else:
+                        if not isinstance(actual, str) or not re.search(pattern, actual):
+                            failures.append(f"JSON field {dotted!r} did not match /{pattern}/")
             except json.JSONDecodeError as error:
                 failures.append(f"stdout was not JSON: {error}")
         diagnostics.extend(collect_diagnostics(stdout))
@@ -350,6 +385,12 @@ def execute_validation(task: dict[str, Any], workspace: Path, compiler: Path,
             failures.append(f"file omitted {assertion['contains']!r}")
         if "not_contains" in assertion and assertion["not_contains"] in contents:
             failures.append(f"file retained {assertion['not_contains']!r}")
+        if "matches" in assertion and not re.search(
+                assertion["matches"], contents, re.MULTILINE):
+            failures.append(f"file did not match /{assertion['matches']}/")
+        if "not_matches" in assertion and re.search(
+                assertion["not_matches"], contents, re.MULTILINE):
+            failures.append(f"file unexpectedly matched /{assertion['not_matches']}/")
         records.append({
             "index": len(task["validation"]) + index,
             "command": None,

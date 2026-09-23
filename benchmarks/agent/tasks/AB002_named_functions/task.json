@@ -41,5 +41,23 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+add\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+square\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\badd\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\bsquare\\s*\\("
+    }
+  ],
   "notes": "Exercises ordinary functions, return values, and named helper composition."
 }

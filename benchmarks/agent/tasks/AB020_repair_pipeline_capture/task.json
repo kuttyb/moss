@@ -43,5 +43,15 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*map\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*sum\\b"
+    }
+  ],
   "notes": "Exercises pipeline capture/effect restrictions and a focused repair."
 }

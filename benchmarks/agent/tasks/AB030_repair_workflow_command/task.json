@@ -38,6 +38,18 @@
     {
       "path": "workflow.txt",
       "equals": "./margo test\n"
+    },
+    {
+      "path": "src/main.moss",
+      "matches": "(?m)^fn\\s+answer\\s*\\("
+    },
+    {
+      "path": "tests/answer.moss",
+      "matches": "(?m)^test\\s+\\\"answer\\\"\\s*:"
+    },
+    {
+      "path": "tests/answer.moss",
+      "matches": "\\bassertEqual\\s*\\(\\s*answer\\s*\\("
     }
   ],
   "notes": "Measures discovery of the Moss-versus-Margo tooling split with an objectively checked artifact."

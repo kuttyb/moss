@@ -41,5 +41,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^type\\s+Box\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\([^\\n]*:\\s*Box[^\\n]*,\\s*[^\\n]*:\\s*Box"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+(?:echo\\s+)?\\w+\\s*\\(\\s*(\\w+)\\s*,\\s*\\1\\s*\\)"
+    }
+  ],
   "notes": "A positive READ + READ aliasing boundary."
 }
