@@ -1,0 +1,5 @@
+module app
+import graphpkg
+
+fn main():
+  echo graphpkg.double(21)

@@ -18393,8 +18393,13 @@ static SourceCompilationContext analyze_source_context(
 // Fast Debug uses the same project source universe as the native compiler,
 // but explicit-module projects can narrow that universe to the transitive
 // source-module closure of the requested entry module.  This is a loading
-// decision only: the selected files still pass through analyze_project_sources
+// decision only: the selected files still pass through check_project_sources
 // and therefore the ordinary Moss parser/checker remains authoritative.
+// When MOSS_SOURCE_ROOTS is set (colon-separated list of package root
+// directories, populated by 'margo debug'), dependency source files are
+// indexed alongside the root project's files so the transitive closure walk
+// can reach them.  Dependency modules that exist in the source index are
+// preferred over compiled .mossi providers by check_project_sources.
 static vector<std::filesystem::path> fast_debug_source_closure(
     const SourceCompilationContext& context) {
   if (!context.project || context.mode != ProgramGenerationMode::Application)
@@ -18424,6 +18429,53 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     if (source == context.requested_source) entry_module = module;
     if (entry_module.empty() && parsed.main) entry_module = module;
   }
+
+  // Extend the module provider universe with explicitly supplied dependency
+  // source roots (set by Margo's 'margo debug' command via MOSS_SOURCE_ROOTS).
+  // Dependency source files are indexed here and merged into the same
+  // compilation unit; their module declarations make them self-identifying.
+  if (const char* source_roots_env = std::getenv("MOSS_SOURCE_ROOTS")) {
+    string roots_value = source_roots_env;
+    size_t begin = 0;
+    while (begin <= roots_value.size()) {
+      size_t end = roots_value.find(':', begin);
+      string root_str = roots_value.substr(
+          begin, end == string::npos ? string::npos : end - begin);
+      begin = (end == string::npos) ? roots_value.size() + 1 : end + 1;
+      if (root_str.empty()) continue;
+      std::filesystem::path dep_root =
+          std::filesystem::absolute(root_str).lexically_normal();
+      std::error_code ec;
+      if (!std::filesystem::is_directory(dep_root, ec)) continue;
+      try {
+        ProjectManifest dep_manifest = load_project_manifest(dep_root);
+        vector<std::filesystem::path> dep_sources =
+            project_source_files(dep_manifest);
+        for (const auto& source : dep_sources) {
+          auto normalized =
+              std::filesystem::absolute(source).lexically_normal();
+          std::ifstream input(normalized);
+          if (!input) continue;
+          Program parsed =
+              Parser(lex_lines(input, normalized.string())).parse();
+          string module_name =
+              (parsed.explicit_module && !parsed.module_name.empty())
+                  ? parsed.module_name
+                  : dep_manifest.name;
+          auto& record = modules[module_name];
+          record.files.push_back(normalized);
+          for (const auto& import : parsed.imports)
+            record.imports.push_back(import.name);
+          has_explicit_modules = has_explicit_modules || parsed.explicit_module;
+        }
+      } catch (const ProjectError&) {
+        // Non-Moss directories or manifests that fail to load are silently
+        // skipped; only explicitly valid package roots contribute.
+        continue;
+      }
+    }
+  }
+
   if (!has_explicit_modules || entry_module.empty()) return context.sources;
 
   std::set<string> reachable;
@@ -20469,7 +20521,8 @@ static std::filesystem::path resolve_fast_debug_entry(const string& target) {
   if (std::filesystem::is_regular_file(requested, error))
     return requested.lexically_normal();
   if (std::filesystem::is_directory(requested, error) &&
-      std::filesystem::is_regular_file(requested / "moss.toml", error)) {
+      (std::filesystem::is_regular_file(requested / "Moss.toml", error) ||
+       std::filesystem::is_regular_file(requested / "moss.toml", error))) {
     return moss::project_source_file(moss::load_project_manifest(requested));
   }
   if (requested.extension() != ".moss") {
@@ -20500,17 +20553,20 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
     auto context = moss::analyze_source_context(input);
     if (context.project) {
       auto sources = moss::fast_debug_source_closure(context);
-      auto unit = moss::analyze_project_sources(
-          context.manifest, sources, false, true, context.mode);
-      if (!unit.program.external_modules.empty()) {
+      auto checked = moss::check_project_sources(
+          context.manifest, sources, context.mode);
+      moss::FunctionalOptimizer(checked.program).run(false);
+      if (!checked.program.external_modules.empty()) {
+        string missing = *checked.program.external_modules.begin();
         throw moss::ProjectError(
             "FAST_DEBUG_NATIVE_DEPENDENCY",
-            "Fast Debug cannot mix interpreted Moss with compiled Moss module "
-            "dependencies; include every reachable Moss module in the source "
-            "project",
+            "Fast Debug requires source for all reachable Moss modules; "
+            "module '" + missing + "' is available only as a compiled .mossi "
+            "provider. Provide the dependency's Moss source via MOSS_SOURCE_ROOTS "
+            "(use 'margo debug') or use native execution.",
             context.requested_source.string());
       }
-      return std::move(unit.program);
+      return std::move(checked.program);
     }
     std::ifstream source(input);
     if (!source) {

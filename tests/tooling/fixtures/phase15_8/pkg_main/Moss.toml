@@ -1,0 +1,9 @@
+[package]
+name = "app"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+graphpkg = { path = "../pkg_graphpkg" }

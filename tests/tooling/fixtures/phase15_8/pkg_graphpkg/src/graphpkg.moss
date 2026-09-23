@@ -1,0 +1,4 @@
+module graphpkg
+
+export fn double(x: Int) -> Int:
+  return x * 2

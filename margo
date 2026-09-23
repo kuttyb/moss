@@ -245,16 +245,35 @@ def build_graph(root: Package, ordered: list[Package], release: bool, json_mode:
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="margo")
-    parser.add_argument("command", choices=("build", "run", "test", "bench", "clean"))
+    parser.add_argument("command", choices=("build", "run", "test", "bench", "clean", "debug"))
     parser.add_argument("filter", nargs="?")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--json", action="store_true")
     args, rest = parser.parse_known_args()
-    if rest:
-        raise SystemExit("margo: unsupported arguments: " + " ".join(rest))
     try:
         root_path = find_root(Path.cwd())
         root, ordered = resolve_graph(root_path)
+
+        if args.command == "debug":
+            # For debug, we do NOT build dependency packages (no rustc needed).
+            # We resolve the package graph to get source roots, then invoke
+            # moss debug with MOSS_SOURCE_ROOTS set to dependency package roots.
+            # The root package is NOT included in MOSS_SOURCE_ROOTS because
+            # moss debug already knows to use the root project's source.
+            dep_roots = [str(p.root) for p in ordered if p is not root]
+            env = dict(os.environ)
+            if dep_roots:
+                env["MOSS_SOURCE_ROOTS"] = os.pathsep.join(dep_roots)
+            # moss debug accepts the project root directory.
+            debug_cmd = [str(MOSS), "debug", str(root.root)]
+            if rest:  # forward remaining args (e.g. --trace) to moss debug
+                debug_cmd.extend(rest)
+            return subprocess.run(debug_cmd, cwd=root.root, env=env).returncode
+
+        # All commands other than 'debug' reject unknown arguments.
+        if rest:
+            raise SystemExit("margo: unsupported arguments: " + " ".join(rest))
+
         if args.command == "clean":
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)
             return 0
