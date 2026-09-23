@@ -19571,6 +19571,22 @@ static string canonicalize_code_spacing(const string& input) {
     // `not` is a word-form prefix operator, not a callable identifier. Keep
     // its required separator before a grouped operand.
     if (token.text == "(" && previous == "not") space_before = true;
+    auto is_space_keyword = [](const string& word) {
+      return word == "return" || word == "reply" || word == "echo" ||
+             word == "in" || word == "not" || word == "and" || word == "or" ||
+             word == "case" || word == "yield" || word == "assert" ||
+             word == "assertEqual" || word == "if" || word == "else" ||
+             word == "while" || word == "for" || word == "let" ||
+             word == "var" || word == "module" || word == "import" ||
+             word == "export" || word == "domain" || word == "domainroutes" ||
+             word == "trait" || word == "type" || word == "fn" ||
+             word == "test" || word == "bench";
+    };
+    if (token.text == "[") {
+      if (previous == "]" || previous == ")" ||
+          (index > 0 && tokens[index - 1].word && !is_space_keyword(previous)))
+        space_before = false;
+    }
     if (previous == "(" || previous == "[" || previous == "{" ||
         previous == "." || previous_unary_minus)
       space_before = false;

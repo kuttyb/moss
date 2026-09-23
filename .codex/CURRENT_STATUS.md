@@ -25,6 +25,7 @@ Completed Phase 15.6 multi-package dogfood experiment in `projects/build_planner
   2. `moss fmt` reports `FORMAT_PARSE_ERROR` on qualified parameter types in multi-module files because `validate_formatted_source` type-checks files in isolation.
   3. Fast Debug cannot mix interpreted Moss with compiled Moss module dependencies (`FAST_DEBUG_NATIVE_DEPENDENCY`), requiring reachable source.
 - Completed validation: `make`; `margo build`, `margo run`, and `margo test` in both `graphlib` and `planner`; `tests/tooling/check_agent_skills.py ./moss`; `tests/tooling/check_agent_api.py ./moss`; `make examples`; `sh -n tests/run.sh`; `git diff --check`. Full test suite passes to known sandbox LLDB/DAP handshake skip.
+- Post-closeout cleanup (Phase 15.6 remains COMPLETE): Normalized incidental spaced indexing syntax (`Vector [Int]` -> `Vector[Int]`, `vec [i]` -> `vec[i]`) across `graphlib` (`algorithms.moss`, `graph.moss`, `model.moss`, `test_graph.moss`). Fixed root cause in `moss fmt` (`canonicalize_code_spacing` in `src/moss.cpp`) which previously defaulted to injecting space before `[` after identifiers. Added regression `tests/tooling/check_formatter_indexing.py` locking down canonical `Vector[Int]()`, `xs[i]`, and `xs[i] = x`. Full re-validation passed.
 
 ## Dogfood compiler/interpreter repair batch
 

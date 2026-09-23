@@ -30,8 +30,8 @@ EXPECTED = """fn main():
   assert(not ready)
   assert(not (3 > 5))
   echo x
-  echo values [0]
-  echo values [1]
+  echo values[0]
+  echo values[1]
   echo y
 """
 

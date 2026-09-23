@@ -2,10 +2,10 @@ import model
 import graph
 import algorithms
 
-fn index_of(vec: Vector [Int], count: Int, target: Int) -> Int:
+fn index_of(vec: Vector[Int], count: Int, target: Int) -> Int:
   var i = 0
   while i < count:
-    if vec [i] == target:
+    if vec[i] == target:
       return i
     i = i + 1
   return 0 - 1
@@ -36,11 +36,11 @@ test "one task":
   assertEqual(graph.graph_category_cost(g, 2), 0)
   assertEqual(algorithms.ready_task_count(g), 1)
   ready = algorithms.ready_tasks(g)
-  assertEqual(ready [0], 101)
+  assertEqual(ready[0], 101)
   assert(not algorithms.has_cycle(g))
   assertEqual(algorithms.build_order_count(g), 1)
   order = algorithms.build_order(g)
-  assertEqual(order [0], 101)
+  assertEqual(order[0], 101)
 
 test "duplicate task":
   g0 = graph.make_graph()
@@ -74,7 +74,7 @@ test "linear dependency chain":
   assertEqual(graph.graph_dependency_count(g5), 2)
   assertEqual(algorithms.ready_task_count(g5), 1)
   ready = algorithms.ready_tasks(g5)
-  assertEqual(ready [0], 1)
+  assertEqual(ready[0], 1)
   assert(not algorithms.has_cycle(g5))
   cnt = algorithms.build_order_count(g5)
   assertEqual(cnt, 3)
@@ -99,7 +99,7 @@ test "diamond dependency graph":
   assertEqual(graph.graph_dependency_count(d4), 4)
   assertEqual(algorithms.ready_task_count(d4), 1)
   ready = algorithms.ready_tasks(d4)
-  assertEqual(ready [0], 1)
+  assertEqual(ready[0], 1)
   assert(not algorithms.has_cycle(d4))
   cnt = algorithms.build_order_count(d4)
   assertEqual(cnt, 4)
@@ -165,8 +165,8 @@ test "multiple ready tasks":
   d2 = graph.graph_add_dependency(d1, 2, 3)
   assertEqual(algorithms.ready_task_count(d2), 2)
   ready = algorithms.ready_tasks(d2)
-  r0 = ready [0]
-  r1 = ready [1]
+  r0 = ready[0]
+  r1 = ready[1]
   assert(r0 == 1 or r0 == 2)
   assert(r1 == 1 or r1 == 2)
   assert(r0 != r1)

@@ -1,51 +1,51 @@
 module graph
 import model
 
-export fn empty_slots() -> Vector [Int]:
+export fn empty_slots() -> Vector[Int]:
   return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-fn copy_task_ids(g: model.Graph) -> Vector [Int]:
+fn copy_task_ids(g: model.Graph) -> Vector[Int]:
   var out = empty_slots()
   var i = 0
   n = model.graph_task_count_val(g)
   while i < n:
-    out [i] = model.graph_task_id_val(g, i)
+    out[i] = model.graph_task_id_val(g, i)
     i = i + 1
   return out
 
-fn copy_task_categories(g: model.Graph) -> Vector [Int]:
+fn copy_task_categories(g: model.Graph) -> Vector[Int]:
   var out = empty_slots()
   var i = 0
   n = model.graph_task_count_val(g)
   while i < n:
-    out [i] = model.graph_task_category_val(g, i)
+    out[i] = model.graph_task_category_val(g, i)
     i = i + 1
   return out
 
-fn copy_task_costs(g: model.Graph) -> Vector [Int]:
+fn copy_task_costs(g: model.Graph) -> Vector[Int]:
   var out = empty_slots()
   var i = 0
   n = model.graph_task_count_val(g)
   while i < n:
-    out [i] = model.graph_task_cost_val(g, i)
+    out[i] = model.graph_task_cost_val(g, i)
     i = i + 1
   return out
 
-fn copy_dep_befores(g: model.Graph) -> Vector [Int]:
+fn copy_dep_befores(g: model.Graph) -> Vector[Int]:
   var out = empty_slots()
   var i = 0
   n = model.graph_dep_count_val(g)
   while i < n:
-    out [i] = model.graph_dep_before_val(g, i)
+    out[i] = model.graph_dep_before_val(g, i)
     i = i + 1
   return out
 
-fn copy_dep_afters(g: model.Graph) -> Vector [Int]:
+fn copy_dep_afters(g: model.Graph) -> Vector[Int]:
   var out = empty_slots()
   var i = 0
   n = model.graph_dep_count_val(g)
   while i < n:
-    out [i] = model.graph_dep_after_val(g, i)
+    out[i] = model.graph_dep_after_val(g, i)
     i = i + 1
   return out
 
@@ -83,13 +83,13 @@ export fn graph_add_task(g: model.Graph, t: model.Task) -> model.Graph:
   d_cnt = model.graph_dep_count_val(g)
 
   var new_ids = copy_task_ids(g)
-  new_ids [t_cnt] = t_id
+  new_ids[t_cnt] = t_id
 
   var new_cats = copy_task_categories(g)
-  new_cats [t_cnt] = model.task_category(t)
+  new_cats[t_cnt] = model.task_category(t)
 
   var new_costs = copy_task_costs(g)
-  new_costs [t_cnt] = model.task_cost(t)
+  new_costs[t_cnt] = model.task_cost(t)
 
   d_befores = copy_dep_befores(g)
   d_afters = copy_dep_afters(g)
@@ -101,10 +101,10 @@ export fn graph_add_dependency(g: model.Graph, before: Int, after: Int) -> model
   d_cnt = model.graph_dep_count_val(g)
 
   var new_befores = copy_dep_befores(g)
-  new_befores [d_cnt] = before
+  new_befores[d_cnt] = before
 
   var new_afters = copy_dep_afters(g)
-  new_afters [d_cnt] = after
+  new_afters[d_cnt] = after
 
   t_ids = copy_task_ids(g)
   t_cats = copy_task_categories(g)
