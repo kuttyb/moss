@@ -1,0 +1,10 @@
+type Scale:
+  factor: Int
+
+  fn apply(value: Int) -> Int:
+    return value * factor
+
+fn main():
+  scale = Scale(factor = 2)
+  values = [10, 11]
+  echo values |> map(scale.apply(_)) |> sum

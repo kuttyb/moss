@@ -13,6 +13,7 @@ python3 tests/tooling/check_agent_skills.py "$compiler"
 python3 tests/tooling/check_agent_benchmark.py "$compiler"
 python3 tests/tooling/check_agent_baseline.py "$compiler"
 python3 tests/tooling/check_agent_baseline_analysis.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
 
 fail() {
