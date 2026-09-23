@@ -187,7 +187,7 @@ message logger.record(stats)
 
 There is no domain-level `await` and no fire-and-forget send in v0.1. A `message` in statement position simply discards the result; it remains synchronous.
 
-`reply` is terminating. Its expression is evaluated before handler completion; an independent semantic result is established; the handler terminates; then the caller resumes. The implementation must retain any synchronization required to preserve the whole-execution serializability guarantee of Section 8, and any guard that physically backs a borrowed lowering, through reply materialization. In the v0.1 full-hold lowering, all guards acquired for the handler remain held until the independent reply result has been established and the handler completes. No statement after a taken reply executes.
+`reply` is terminating. Its expression is evaluated before handler completion; an independent semantic result is established; the handler terminates; then the caller resumes. The implementation must retain any synchronization required to preserve the whole-execution serializability guarantee of Section 8, and any guard that physically backs a borrowed lowering, through reply materialization. In the current lowering, every touched guard remains held until the independent reply result has been established and the handler completes. A guard backing a borrowed payload remains held for the complete dynamic extent of that nested message. Phase 15.3 may cancel a guard only when it is proven untouched on the realized path. No statement after a taken reply executes.
 
 Incoming message payloads are immutable snapshots. Handlers may read them, forward them through another message (creating a new value boundary), or reply with them (again creating a new value boundary), but may not mutate or consume the original incoming snapshot.
 
@@ -199,7 +199,7 @@ At the language level, an executed state access targets a **domain-owned semanti
 
 Failure-free completed handler executions on one domain admit a **single conflict-serialization order** for their domain-owned state: the observed protected-state behavior is equivalent to a serial execution in that order. For every pair that dynamically conflicts, the observed behavior of their **whole executions** is equivalent to one in which all actions of one precede all actions of the other, with that whole-execution order consistent with the same domain conflict-serialization order. This is an observational serializability guarantee, not a requirement that every internal state access of the two executions occur in literal wall-clock non-overlap. For this guarantee, a handler's whole execution includes its own state accesses, nested synchronous messages and their descendant executions, observable non-domain effects such as `echo`, and reply materialization before handler completion. Nonconflicting executions need not be ordered as wholes and may overlap or interleave.
 
-The v0.1 backend is deliberately more conservative than this semantic contract. It maps semantic locations to a finite set of static analysis leaves, derives a statically inferred `ClassSet`, acquires that complete set before the body, and holds those guards through completion. Two executions can therefore serialize even when their realized semantic accesses would not dynamically conflict. That extra serialization is an implementation consequence of conservative synchronization, not source-level Moss semantics.
+The v0.1 backend is deliberately more conservative than this semantic contract. It maps semantic locations to a finite set of static analysis leaves and derives a statically inferred `ClassSet` plus a compiler-owned acquisition plan. Conservative cases acquire the required classes at entry. Phase 15.3 may defer eligible branch-only classes and may cancel rank-forced guards proven untouched on the realized path. Every class that is actually touched remains held through completion. Two executions can therefore serialize even when their realized semantic accesses would not dynamically conflict. That extra serialization is an implementation consequence of conservative synchronization, not source-level Moss semantics.
 
 Synchronous calls also impose ordinary source order along a call chain: if handler A calls B and waits for its reply, B completes before A continues. Across independent domains, however, there is no single global order of all observable actions. Two independently executing handlers may produce effects that downstream observers see in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. Moss therefore does not promise graph-wide sequential consistency or a multi-domain transaction. Whole-execution serializability between conflicting same-domain executions does not prevent unrelated third-party handlers in descendant domains from running where their own synchronization permits.
 
@@ -238,7 +238,7 @@ Synchronization effects and all observable effects are not the same thing. Moss 
 
 The v0.1 lock planner does not partition on $O(h)$; observable effects are not themselves synchronization-footprint elements. They are nevertheless part of the **whole execution** defined in Section 8. Therefore, when two same-domain handler executions dynamically conflict on a domain-owned semantic location, the observed behavior of their $O(h)$ actions, nested messages, state accesses, and reply materialization must be equivalent to a whole-execution order consistent with the domain's single conflict-serialization order. Observable actions such as `echo` must therefore appear in an order compatible with that serialization position even though commuting internal state accesses may physically overlap.
 
-This does not create a global order on observable effects. Nonconflicting executions may overlap and their $O(h)$ actions may interleave; independently executing handlers in different domains may expose $O(h)$ effects in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. The v0.1 full-hold implementation realizes the stronger same-domain guarantee by keeping the handler's acquired guards across its complete body, including nested messages and `echo`.
+This does not create a global order on observable effects. Nonconflicting executions may overlap and their $O(h)$ actions may interleave; independently executing handlers in different domains may expose $O(h)$ effects in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. The current implementation preserves the stronger same-domain guarantee by preventing a potentially ordering-relevant deferred acquisition from crossing an earlier observable barrier. Once a guard is touched, it remains held through completion, including later nested messages and `echo`.
 ### 11 Safety by restriction: Rust strengths plus additional static concurrency constraints
 
 Moss compiles to safe Rust and relies on Rust's memory-safety and data-race guarantees in safe code. The contribution is not that Moss somehow makes Rust's existing guarantees conditional or stronger in every dimension. Rather, Moss removes additional concurrency choices from normal source code.
@@ -296,6 +296,8 @@ These are not merely nicer error messages. They are the mechanism by which a res
 Moss v0.1 supports explicit modules, project builds, typed exports, semantic interfaces, and source-free production providers. The module system is usable but intentionally not declared final; dogfooding is expected to reveal where import ergonomics, package discovery, and cross-module specialization need improvement.
 
 The key separation is semantic versus physical ABI. A provider can export checked type/effect information sufficient for downstream specialization. Physical synchronization classes, lock ranks, Rust lifetimes, and generated lock layout are not module ABI. The final application derives them from its concrete graph and emits physical synchronization itself.
+
+Phase 15.9 closes the native artifact-boundary gap for static specialization. `.mossi` preserves the semantic IR, structural requirements, trait contracts, and private dependency closure required for source-free specialization. A checked specialization is projected into the module artifact containing its concrete call: provider wrappers own the specializations they invoke, while consumer-originated uses of a source-free generic are emitted in the consumer artifact. Provider source is not folded into the consumer and there is no runtime or graph-wide specialization dispatch mechanism.
 
 ### 14 One frontend, two execution engines
 
@@ -614,7 +616,7 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - v0.1 does not define a source-level concurrent-ingress mechanism.
 - v0.1 does not yet define supervision, rollback, restart, or recovery after unexpected handler failure; already-completed nested messages or observable effects are not rolled back by fail-closed abort.
 - The deadlock proof covers Moss-managed locks, not arbitrary future foreign locks acquired invisibly by external code.
-- Static may-effect footprints, analysis-leaf boundaries, `ClassSet` overlap, synchronization-class boundaries, aggregate coarsening, and the current full-handler hold policy are not the source-level definition of handler conflict; they may conservatively serialize executions that do not dynamically conflict.
+- Static may-effect footprints, analysis-leaf boundaries, `ClassSet` overlap, synchronization-class boundaries, aggregate coarsening, and compiler-selected acquisition placement are not the source-level definition of handler conflict; they may conservatively serialize executions that do not dynamically conflict.
 - The synchronization partition is not guaranteed workload-optimal, path-minimal, or aggregate-element-minimal.
 ## Part III - Implementation Design, Corrections, and Measurements
 
@@ -733,6 +735,8 @@ This implementation correction was proof-relevant rather than cosmetic. Without 
 
 Fast Debug interprets the already-checked program. It constructs logical concrete domain instances, follows checked routes, executes messages as nested interpreter frames, mutates logical state, and terminates on reply. It intentionally does not simulate `RwLock`s, contention, or thread interleavings.
 
+For a package graph, Margo resolves path and Git dependencies and supplies the resolved dependency source roots to Moss. Moss then resolves the reachable module closure and performs the authoritative semantic check before Fast Debug executes it. Fast Debug remains source-only: a reachable compiled-only `.mossi`/rlib provider is rejected with `FAST_DEBUG_NATIVE_DEPENDENCY` rather than mixing interpreted and native Moss execution.
+
 This creates a useful separation:
 
 | | Production | Fast Debug |
@@ -772,18 +776,20 @@ More synchronization classes expose more potential parallelism but also mean mor
 
 Nested synchronous messages also lengthen ancestor critical sections because the v0.1 lowering keeps parent guards held while descendants run. Instrumented Phase 10 measurements found descendant time dominating ancestor hold time in a representative nested sample. That behavior is expected under the baseline proof and is documented rather than hidden.
 
-The full static footprint, aggregate coarsening, and full-handler hold are implementation/proof choices, not source-level conflict semantics. **Phase 15.3 adopts branch deferral and untouched cancellation:** a leading conditional may lower to typed continuation arms, branch-only classes acquire after the condition when rank permits, and rank-forced guards that the chosen arm proves untouched are cancelled. The compiler hoists potential loop acquisitions to the preheader and hoists unresolved classes above a prior observable action. Touched guards still remain through completion; aggregate refinement and early touched release remain future work.
+The full static footprint, aggregate coarsening, and conservative full-entry/full-handler-hold baseline are implementation/proof choices, not source-level conflict semantics. **Phase 15.3 adopts branch deferral and untouched cancellation:** a leading conditional may lower to typed continuation arms, branch-only classes acquire after the condition when rank permits, and rank-forced guards that the chosen arm proves untouched are cancelled. The compiler hoists potential loop acquisitions to the preheader and hoists unresolved classes above a prior observable action. Touched guards still remain through completion; aggregate refinement and early touched release remain future work.
 
 That imposes constraints on **both sides** of an observable effect. Deferred acquisition of a guard that may later establish a dynamic conflict cannot cross an earlier nested `message`, `echo`, or other irreversible observable action whose externally observed position would need to be consistent with that execution's serialization position; if the relevant path is still unresolved, the optimizer must conservatively establish the necessary ordering before the observable action. Symmetrically, releasing or downgrading a touched guard before a later nested message or observable effect can expose behavior that is not equivalent to any whole-execution order consistent with the domain's serialization order.
 
 The optimizer must also preserve the ordinary **two-phase rule** explicitly: once any touched guard is released or downgraded, that handler execution may perform no later Moss-managed guard acquisition or mode upgrade. Releasing or downgrading the first touched guard therefore begins the shrinking phase. By contrast, a guard known to be untouched on the realized execution may be **cancelled at any point**. Such cancellation does not begin the shrinking phase and does not itself forbid later acquisitions, provided the remaining rank-order and observable-effect constraints are still satisfied.
 
-Early release must also preserve Section 29's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the v0.1 full-hold lowering would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. None of these early-release, deferred-acquisition, aggregate-refinement, or path-precision optimizations are part of v0.1.
-### 40 Modules: semantic ABI, physical lowering at the consumer
+Early release must also preserve Section 29's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the conservative full-hold baseline would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. Early release of touched guards and aggregate refinement remain future work. The bounded branch-local deferred acquisition and proven-untouched cancellation described above are part of the current v0.1 implementation.
+### 40 Modules: semantic ABI, graph-relative synchronization, and artifact-local specialization
 
 Source-free providers export semantic information needed for downstream specialization and effect analysis. The final consumer builds the concrete graph, derives synchronization, and emits typed lock-owned state. Physical classes and Rust lifetimes are deliberately absent from the semantic module ABI.
 
-This architecture matters because it lets the final application specialize imported behavior without forcing a provider to predict the consumer's concrete domain instances or lock partition.
+Static callable specialization and graph-relative synchronization have different physical ownership. The final application still owns the concrete domain graph, domain ranks, synchronization partition, and typed lock-owned state. But Phase 15.9 projects each checked callable specialization into the module artifact containing the concrete call. A provider concrete wrapper therefore carries its own specialization; a source-free consumer can specialize exported generic IR from `.mossi` in its own artifact while linking the provider rlib.
+
+ABI version 6 preserves statically dispatched export IR and exported trait contracts required for that source-free specialization. Old provider interfaces must be rebuilt. There is no graph-wide specialization crate, no runtime dictionary or trait-object dispatch, and no provider-source folding.
 
 ### 41 Reachability and other conservative bounds
 
@@ -808,9 +814,9 @@ Other conservative bounds include path-insensitive may-effects and coarse treatm
 
 ### 43 Dogfooding before expansion
 
-Phase 10 defines the Moss v0.1 usable-language milestone. The next milestone is Phase 15: dogfooding. The goal is to write real programs and let concrete friction drive subsequent work.
+Phase 10 defines the Moss v0.1 usable-language milestone. The current post-v0.1 milestone is Phase 15: dogfooding. The goal is to write real programs and let concrete friction drive subsequent work.
 
-Already-known questions include ordinary recursion, module/package ergonomics, trace slicing, source-free generic ergonomics, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
+Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
 ## Part IV - Related Work and Positioning
 
@@ -877,7 +883,7 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Consistency | Failure-free completed executions on one domain admit one conflict-serialization order for domain-owned state; a dynamically conflicting pair (same actually accessed semantic location, at least one write/consume) is whole-execution serializable consistently with that order, meaning its observed behavior is equivalent to one whole execution preceding the other; nonconflicting executions may overlap; no global SC across independent domains |
 | External effects | Nested messages, reply materialization, and $O(h)$ participate in the observational whole-execution serializability of dynamically conflicting same-domain handlers according to the same domain conflict-serialization order; nonconflicting/independent executions have no global total order |
 | Synchronization | Compiler-derived finite analysis leaves, static may-footprints, and classes; semantic locations define conflict, while v0.1 may conservatively map many semantic locations (for example aggregate keys) to one analysis leaf |
-| Locking | v0.1 uses static-footprint strict 2PL, no upgrades, and full-handler hold as a conservative implementation/proof strategy |
+| Locking | v0.1 uses compiler-planned strict 2PL with no upgrades; touched guards remain held through completion, while Phase 15.3 may defer eligible branch-only acquisition and cancel guards proven untouched on the realized path |
 | Deadlock order | Lexicographic `(domain_rank, class_rank)` for currently held Moss locks |
 | Physical backend | Static typed safe Rust, `RwLock<ClassState>` per synchronization class, borrowed protected READs, and borrowed synchronous message payloads where safe |
 | Fast Debug | Deterministic semantic interpreter; no lock/thread simulation |
@@ -919,6 +925,11 @@ The formal claims rely on the following conditions:
 | 10.6F | Diagnostics, metrics, implementation validation |
 | 10.6F.1 | Static typed synchronization lowering; runtime plan interpretation removed |
 | Phase 15 | Dogfooding: write real Moss programs before speculative expansion |
+| 15.1 | Borrowed lowering for eligible synchronous message payloads |
+| 15.3 | Bounded path-sensitive synchronization placement: branch deferral and untouched cancellation |
+| 15.8 | Cross-package Fast Debug source convergence through Margo-resolved source roots |
+| 15.9 | Artifact-local cross-package static specialization; source-free `.mossi` generic specialization closed |
+| 15.10 | Fresh-agent collection dogfood; no language-surface expansion |
 | Phase 20 | Rust interoperability |
 | Phase 21 | Error propagation and supervision |
 | Phase 22 | Agent agency tooling |

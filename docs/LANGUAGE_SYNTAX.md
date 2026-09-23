@@ -56,16 +56,37 @@ The initial migration supports the existing primitive types and value-object typ
 Inference will grow incrementally; a construct is accepted only when the compiler can
 materialize a concrete type for the generated Rust representation.
 
+### Local bindings
+
+The usual binding form is inferred:
+
+```moss
+x = expression
+```
+
+Moss also has explicit local mutability forms:
+
+```moss
+let name = "moss"
+var count = 0
+count = count + 1
+```
+
+`let` is explicitly immutable and cannot be reassigned or used as the writable
+receiver of a mutating operation. `var` is explicitly mutable. Local type
+annotations such as `var values: Vector[Int] = []` are not part of v0.1;
+ordinary locals are inferred instead.
+
 ## Value types
 
 The preferred type declaration is an indented block:
 
 ```moss
 type Quote:
-    symbol: string
-    price: float
-    size: int
-    ts: int
+    symbol: String
+    price: Float
+    size: Int
+    ts: Int
 ```
 
 Field annotations may be omitted when constructor use and other constraints determine
@@ -130,11 +151,13 @@ for migration and early exits. A call such as `normalize(data)` is an ordinary l
 intra-domain call. It has no mailbox, request/reply, or domain scheduling meaning.
 
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
-a compatibility spelling while existing programs migrate. Domain message handlers keep
-their serialized handler semantics. Both `on Handler(...)` and `fn Handler(...)` inside a
-`domain` declarations contain message handlers; the `message` keyword at each call site
-still makes the domain boundary explicit. A top-level `fn` declares an ordinary local
-function. Domain and handler headers may carry a trailing `:` when using indentation
+a compatibility spelling while existing programs migrate. A `fn` declared directly
+inside a `domain` is a domain message handler; `fn Handler(...)` is the canonical
+spelling. Legacy `on Handler(...)` may remain accepted for migration compatibility.
+Handlers are entered only through synchronous `message`; the declaration does not imply
+that all handlers on one domain are globally serialized. The production compiler may
+allow compatible executions to overlap under compiler-derived synchronization.
+A top-level `fn` declares an ordinary local function. Domain and handler headers may carry a trailing `:` when using indentation
 oriented formatting. Handler parameter types, like local function parameters, may be
 inferred from whole-program message calls when one concrete message contract results;
 an unresolved handler parameter remains a compile-time error. A handler with no `-> Type`
@@ -156,6 +179,20 @@ They are project tooling declarations rather than runtime reflection or macros. 
 application generation omits both. `assert` requires a boolean; `assertEqual` requires
 compatible statically resolved values. See [unit testing](TESTING.md) and
 [benchmarking](BENCHMARKING.md).
+
+### Built-in collections
+
+The current built-in collection surface is intentionally small:
+
+```text
+Vector:  push(item), pop(), vec[i], vec[i] = item
+Map:     map[key], map[key] = value, get(key, default), keys(), values()
+Queue:   push(item), pop()
+```
+
+`Map.get(key, default)` is the safe/defaulted lookup; `map[key]` is strict.
+`keys()` and `values()` return eager owned `Vector` snapshots in unspecified
+order. Cardinality is available through the `count` pipeline terminal.
 
 ### Functional pipelines
 
@@ -239,6 +276,9 @@ Integer `+`, `-`, and `*` therefore wrap at the `i64` boundary. Integer `/`
 likewise wraps the `Int`-minimum divided by `-1` case; division by zero remains
 invalid.
 
+`%` is integer remainder using the same truncating signed-division model as
+`/`. Remainder by zero is invalid.
+
 This rule also applies to compiler-generated arithmetic representing the same
 source operation, including integer `sum`, domain-state updates, and the new
 value returned by an atomic add/sub handler. The Rust backend emits explicit
@@ -291,8 +331,8 @@ domain App:
 `spawn` is retired and reports a migration diagnostic. Construction is statically
 enumerable from `main`; route topology is a concrete whole-program DAG with deterministic
 unique `domain_rank` values. Runtime state initializer expressions may still use ordinary
-values. Fine-grained ranks/classes and synchronization planning are not part of this
-phase.
+values. Synchronization classes, ranks, and acquisition placement are compiler-owned
+facts rather than source syntax; Moss exposes no lock API.
 
 ### Closed routing capabilities (Phase 10.6B.1)
 
@@ -343,11 +383,14 @@ must preserve the source meanings above and must not make backend mechanisms obs
 in Moss.
 
 Every production optimization level uses compiler-derived handler-level 2PL.
-Handlers acquire exactly their shared/exclusive synchronization classes, retain
-them through nested messages, and release them at completion. Ordinary READs
-borrow protected stored values; message/reply remain independent value boundaries.
-Fast Debug directly interprets the same checked synchronous semantics without
-simulated locks or scheduling.
+The compiler determines each handler's shared/exclusive synchronization classes
+and their acquisition order. Eligible leading conditionals may defer branch-only
+acquisitions or cancel a rank-forced guard that is proven untouched on the
+realized path. Once touched, a guard remains held through completion; guards
+backing borrowed message views remain held for the complete nested call.
+Ordinary READs borrow protected stored values; message/reply remain independent
+semantic value boundaries. Fast Debug directly interprets the same checked
+synchronous semantics without simulated locks or scheduling.
 
 Self-send and same-domain handler chaining are rejected. Put shared handler
 logic in ordinary statically resolved helpers; earlier queued self-message designs
@@ -380,9 +423,11 @@ iterator may mutate its own concrete iterator state through its statically resol
 ## Migration status and compatibility
 
 Before the frontend migration, the compiler accepted `type Name = object`, `on` domain
-handlers, `proc main()`, `let`/`var` declarations, and dotted message calls. The
-migration adds the `fn`, `type Name:`, inferred state bindings, inferred handler replies,
-`message`, pipeline, and `=` constructor forms incrementally. Existing
+handlers, `proc main()`, and dotted message calls. The migration adds the canonical
+`fn`, `type Name:`, inferred state bindings, inferred handler replies, explicit
+`message`, pipeline, and `=` constructor forms incrementally. `let` and `var` are
+current supported local-binding forms: `let` is explicitly immutable and `var`
+explicitly mutable. Existing
 examples are written in the preferred syntax; compatibility tests retain older spellings
 where useful. The old naked dotted spelling is rejected when its receiver is a domain
 reference. Legacy declarations remain available where they do not make the communication
@@ -486,5 +531,10 @@ export fn notional(x: Int) -> Int:
 
 Use `pricing.notional(value)` from an importing module. Typed exports are
 materialized ABI. Untyped exported parameters are compile-time Moss generics,
-shipped as semantic IR and specialized by concrete use. Existing projects
-without explicit module declarations remain implicit single-module projects.
+shipped as semantic IR and specialized by concrete use. The checked
+specialization is projected into the module artifact containing that concrete
+call: a provider wrapper carries the specializations it invokes, while a
+source-free consumer may instantiate exported generic IR from `.mossi` in its
+own artifact and link the provider rlib. No runtime dispatch or graph-wide
+specialization crate is introduced. Existing projects without explicit module
+declarations remain implicit single-module projects.

@@ -368,9 +368,11 @@ fn main():
 
   pending.push("compile")
   pending.push("test")
+  first = pending.pop()
 ```
 
-Again, Moss infers the contained type.
+Again, Moss infers the contained type. Queues support `push(item)` and
+`pop()`.
 
 ---
 
@@ -824,7 +826,16 @@ libpricing.rlib
 
 `libpricing.rlib` contains the compiled native implementation used during final linking.
 
-Generic Moss code that still needs specialization carries its Moss semantic representation in the interface so a later consumer can produce the concrete version it needs.
+Generic exported Moss code that still needs specialization carries checked
+semantic IR and the static dependencies needed for specialization in the
+interface.
+
+The compiler projects each checked concrete specialization into the module
+artifact containing the concrete call. A provider wrapper therefore carries
+the specialization it executes in its own rlib, while a source-free consumer
+can specialize exported generic IR from `.mossi` in the consumer artifact and
+link the provider rlib. This remains entirely static: Moss introduces neither
+runtime generic dispatch nor a graph-wide specialization crate.
 
 You normally do not need to think about either file while writing application code.
 
@@ -875,12 +886,19 @@ margo run
 margo test
 margo bench
 margo clean
+margo debug
+margo debug --trace
 ```
 
 Margo resolves packages and dependencies; Moss remains the authority for source
 modules, imports, checking, interfaces, and semantic tooling. Legacy `moss build`
 and `moss test` compatibility paths may remain available, but are not the canonical
 project workflow.
+
+For package-aware Fast Debug, Margo resolves path and Git dependencies and
+supplies their source roots to Moss. Fast Debug requires reachable Moss source:
+a reachable dependency available only as `.mossi` plus native artifacts is
+rejected with `FAST_DEBUG_NATIVE_DEPENDENCY`.
 
 ---
 
@@ -896,11 +914,14 @@ test "addition":
   assertEqual(add(2, 3), 5)
 ```
 
-Run tests with:
+For a package or project, run tests with:
 
 ```sh
-moss test
+margo test
 ```
+
+`moss test` remains available as the direct compiler/project compatibility
+path.
 
 There are two simple assertion forms:
 
@@ -931,7 +952,17 @@ or:
 moss run --interp program.moss
 ```
 
-For a project with explicit modules, Fast Debug follows imports and loads the reachable source-module closure.
+For a standalone or same-project program, those commands follow imports and
+load the reachable source-module closure.
+
+For a package graph with path or Git dependencies, use:
+
+```sh
+margo debug
+```
+
+Margo resolves the package graph and supplies the dependency source roots;
+Moss still resolves modules and performs semantic checking.
 
 Conceptually:
 
@@ -962,6 +993,16 @@ moss debug . --trace
 ```
 
 to get a structured execution trace.
+
+For a package graph, use:
+
+```sh
+margo debug --trace
+```
+
+A reachable source-free `.mossi`/rlib provider cannot be mixed into Fast Debug.
+Use native execution or make that dependency's Moss source available through
+the resolved package graph.
 
 ### Current Fast Debug limits
 
@@ -1056,7 +1097,9 @@ If you already know Python, the shortest useful way to approach Moss is:
 6. Use domains when mutable state needs to be isolated and shared safely.
 7. Connect domains explicitly with `domainroutes`.
 8. Use modules as named namespaces and compilation units.
-9. Use `moss test` for tests and `moss debug` for fast interpreted execution.
+9. Use Margo for package/project testing and package-aware Fast Debug; use
+   `moss debug` or `moss run --interp` for direct same-project or standalone
+   interpreted execution.
 10. Let the compiler worry about native lowering, synchronization, and the Rust backend.
 
 Moss is meant to let a programmer begin near Python's level of ceremony while retaining a much more static, native, systems-oriented execution model underneath.
