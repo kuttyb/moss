@@ -18,9 +18,31 @@ repository feedback scan, Python compilation, and `git diff --check`. No Moss
 compiler source or semantics changed. This establishes the forward-looking
 contract only; historical swarm reports were deliberately not migrated.
 
-## Phase 15.12 — Static Polymorphism & Specialization Swarm — COMPLETE
+## Phase 15.12 — Deep Dogfooding & Torture-Testing Umbrella — COMPLETE (2026-09-23)
 
-Phase 15.12 executed a 4-subagent dogfood swarm evaluating Moss v0.1's static polymorphism model (untyped statically specialized functions, structural traits, reusable helpers, statically known callable parameters, pipelines, and reuse across modules and packages) across 4 substantive independent workloads under `examples/swarm/polymorphism/`:
+Phase 15.12 executed four comprehensive sub-swarms torture-testing Moss v0.1 core semantics, boundaries, lowering, and tooling prior to corrective compiler fixes. Corrective compiler implementation remains explicitly pending; Phase 15.12 is discovery and dogfooding.
+
+### Phase 15.12D — Module, Package, Visibility & Public-API Boundary Torture — COMPLETE (2026-09-23)
+
+Phase 15.12D evaluated module, package, visibility, and compilation-unit boundary semantics across 6 independent workloads under `examples/swarm/modules/`:
+1. `algo_chain`: Reusable algorithms (`heapkit` library: min-heap, DSU forest, order helpers) and routing application (`routekit`: Dijkstra, spanning forest, scheduler). `heapkit` passes 8/8 tests cleanly; `routekit` is blocked by SWARM-046.
+2. `calc_interpreter`: Multi-module calculator / AST interpreter across 11 internal modules (`ast`, `calc`, `env`, `errors`, `eval`, `lexer`, `parser`, `node`, `report`, `token`, `main`). 32 unit tests passing natively; executable runs cleanly; Fast Debug achieves 100% bit-for-bit parity; formatter checking blocked by SWARM-033/059 on `lexer.moss:46`.
+3. `data_pipeline`: Multi-package pipeline (`records` validation provider consumed by `analytics` downstream application via Margo path dependency). 16 unit tests passing natively (9 in provider, 7 downstream); executable runs cleanly; Fast Debug achieves 100% parity.
+4. `domain_services`: Three-package architecture (`svc-common` records, `svc-services` synchronous actors, `svc-app` coordinator). 15 unit tests passing natively (3 common, 2 services, 10 app); executable runs cleanly; Fast Debug achieves 100% bit-for-bit parity.
+5. `lib_and_app`: 2D geometry library (`geolib`) consumed by scene composition application (`sceneapp`). 14 unit tests passing natively (9 geolib, 5 sceneapp); executable runs cleanly; Fast Debug achieves 100% logical output parity.
+6. `text_toolkit`: Reusable text/stats library (`toolkit`) consumed by `app` shop and Fast Debug `probe_debug`. 24 unit tests passing natively (21 toolkit, 3 app); `app` and `probe_debug` run cleanly.
+
+Validation:
+- 109 unit tests passed natively across all workloads (8 + 32 + 16 + 15 + 14 + 24 = 109 green).
+- 5 project executables ran natively with 100% output correctness.
+- Fast Debug executed with bit-for-bit parity across supported subsets.
+- 9 new findings (SWARM-056 through SWARM-064) were isolated and recorded in `examples/swarm/FINDINGS.md` with paired single-vs-split reproducers.
+- 6 existing findings were independently reproduced and updated with new observations (SWARM-033, SWARM-034, SWARM-037, SWARM-045, SWARM-046, SWARM-053).
+- Synthesized coordinator report committed at `examples/swarm/modules/COORDINATOR_REPORT.md`.
+
+### Phase 15.12C — Static Polymorphism Torture — COMPLETE (2026-09-23)
+
+Phase 15.12C executed a 4-subagent dogfood swarm evaluating Moss v0.1's static polymorphism model (untyped statically specialized functions, structural traits, reusable helpers, statically known callable parameters, pipelines, and reuse across modules and packages) across 4 substantive independent workloads under `examples/swarm/polymorphism/`:
 1. `sort_search`: Reusable sorting (quicksort, selection sort, insertion sort), partitioning, and binary search over multiple concrete types (`Vector[Int]`, `Vector[String]`, `Player` records, `Item` records). 18 unit tests passing natively and in Fast Debug.
 2. `geometry_modules`: Multi-module geometry suite (`geo_types`, `transforms`, `pipeline_ops`, `main`) exercising structural traits (`Shape`, `Bounded`, `Measurable`, `Containment`), polymorphic transforms across `Circle`, `Rectangle`, `Square`, and collection pipelines. 10 unit tests passing natively and in Fast Debug.
 3. `collection_pipeline`: Multi-package architecture (`data_tools` library consumed by `log_analytics` application via Margo path dependency) exercising cross-package higher-order functions (`map_by`, `filter_by`, `fold_left`), windowing, batching, and polymorphic accumulation. 16 unit tests passing natively across packages (8 in library, 8 in consumer).
@@ -31,7 +53,8 @@ Validation:
 - All 4 executables ran cleanly with 100% output correctness.
 - Fast Debug executed with 100% bit-for-bit parity across workloads without callable parameter locals.
 - 13 new findings (SWARM-043 through SWARM-055) were isolated, categorized, and recorded in `examples/swarm/FINDINGS.md` with minimal reproducers, with 5 findings independently reproduced by multiple subagents.
-## Control-Flow and Value-Flow Dogfood Swarm — COMPLETE (2026-09-23)
+
+### Phase 15.12B — Control-Flow Torture — COMPLETE (2026-09-23)
 
 Three independent fresh-agent projects now live at
 `examples/swarm/control_flow_2026/`: a workflow state machine (6 tests), an
@@ -64,7 +87,7 @@ finding is likewise unallocated here. This status text predates the rebased
 SWARM-043–055 ledger allocations and its two proposed IDs must be reconciled in
 a dedicated ledger follow-up rather than reused.
 
-## Expression-Surface Dogfood Swarm — COMPLETE (2026-09-23)
+### Phase 15.12A — Expression Torture — COMPLETE (2026-09-23)
 
 Three independent fresh-agent Moss packages were completed under
 `examples/swarm/expression_surface_2026/`: a parser/evaluator (3 native tests),

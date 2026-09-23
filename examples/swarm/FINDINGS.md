@@ -6,14 +6,13 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 39
-- Open: 10
+- Distinct findings: 63
+- Open: 34
 - Fixed: 28
 - Not-a-bug / agent misunderstanding: 1
-- Independently reproduced by multiple experiments: 10
+- Independently reproduced by multiple experiments: 26
 
-(Counts recomputed on 2026-09-23 from the entries below; SWARM-016 was never
-allocated, and SWARM-026–030 had not yet been reflected in these totals.)
+(Counts updated on 2026-09-23 incorporating SWARM-043–055 from Static Polymorphism and SWARM-056–064 from Module & Package Boundary Torture; SWARM-016 was never allocated.)
 
 Completed swarm experiments:
 
@@ -31,6 +30,12 @@ Completed swarm experiments:
 - [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- [Modules / Algo Chain](modules/algo_chain/)
+- [Modules / Calc Interpreter](modules/calc_interpreter/)
+- [Modules / Data Pipeline](modules/data_pipeline/)
+- [Modules / Domain Services](modules/domain_services/)
+- [Modules / Lib and App](modules/lib_and_app/)
+- [Modules / Text Toolkit](modules/text_toolkit/)
 
 ## Updating this ledger
 
@@ -1099,8 +1104,11 @@ exactly what `moss check` accepts.
 - Status: Open
 - Category: Compiler / type inference
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
-- Also observed: [Multi-Domain Swarm / Linear Pipeline](domain_torture/linear_pipeline/)
-- Observation count: 2
+- Also observed: [Multi-Domain Swarm / Linear Pipeline](domain_torture/linear_pipeline/),
+  [Modules / Calc Interpreter](modules/calc_interpreter/),
+  [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 5
 
 ### Minimal reproducer
 
@@ -1159,8 +1167,10 @@ in `return` and `reply` positions triggers type inference failures during checki
 - Status: Open
 - Category: Compiler / type inference
 - First observed: [Python / deque](Python/deque/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Text Toolkit](modules/text_toolkit/),
+  [Modules / Algo Chain](modules/algo_chain/)
+- Observation count: 4
 
 ### Minimal reproducer
 
@@ -1307,8 +1317,9 @@ question and is not implied by this finding.
 - Status: Open (needs a language-surface decision)
 - Category: Language surface / Fast Debug parity
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Text Toolkit](modules/text_toolkit/)
+- Observation count: 3
 
 ### Minimal reproducer
 
@@ -1612,8 +1623,14 @@ Wrap container operations in structural traits with `fn get(i: Int)` / `fn set(i
 - Status: Open
 - Category: Compiler / module projection & native lowering
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
-- Also observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
-- Observation count: 2
+- Also observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/),
+  [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Algo Chain](modules/algo_chain/),
+  [Modules / Calc Interpreter](modules/calc_interpreter/),
+  [Modules / Domain Services](modules/domain_services/),
+  [Modules / Text Toolkit](modules/text_toolkit/)
+- Observation count: 8
 
 ### Minimal reproducer
 
@@ -1648,8 +1665,12 @@ Provide explicit exported getter methods (`fn get_val() -> Int: return val`) or 
 - Status: Open
 - Category: Compiler / module interface projection
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Algo Chain](modules/algo_chain/),
+  [Modules / Calc Interpreter](modules/calc_interpreter/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 6
 
 ### Minimal reproducer
 
@@ -1662,15 +1683,31 @@ export fn get_area(s: Shape) -> Int:
   return s.area()
 ```
 
+The same invariant crash is also triggered by non-primitive compound expressions in exported functions:
+
+```moss
+# Two method calls in binary op (Data Pipeline repro/two_method_calls):
+export fn f(p: a.P) -> Int:
+  return p.get_x() + p.get_y()
+
+# Float literal on LHS of multiplication (Lib and App repro/float_literal_left_export):
+export fn perimeter(w: Float, h: Float) -> Float:
+  return 2.0 * (w + h)
+
+# Binary op of helper calls (Algo Chain repro/export_two_calls):
+export fn sum_two(v: Vector[Int], a: Int, b: Int):
+  return first(v, a) + first(v, b)
+```
+
 ### Observed behavior
 
 Compiling the module triggers an internal compiler crash during `.mossi` interface generation:
-`error[MOSS_INTERNAL_OR_IO_ERROR]: internal synchronization invariant: unresolved concrete method effect target` at `src/moss.cpp:4658`.
-Because `s: Shape` is annotated, `function.generic` is false, and leaf effect analysis fails to resolve concrete method targets for non-object structural traits.
+`error[MOSS_INTERNAL_OR_IO_ERROR]: internal synchronization invariant: unresolved concrete method effect target` at `src/moss.cpp:4658` (or `unresolved callable argument`).
+During module export effect analysis, compound expressions in exported functions fail to resolve leaf effect targets when parameters are trait-constrained or when binary operations combine method calls or float literals.
 
 ### Workaround
 
-Leave the exported function parameter untyped (`export fn get_area(s) -> Int: return s.area()`), which correctly marks `function.generic = true` and exports polymorphic AST.
+Leave the exported function parameter untyped (`export fn get_area(s) -> Int: return s.area()`), sequence calls into local variables before binary operations (`x = p.get_x(); y = p.get_y(); return x + y`), or put arithmetic literals on the right (`(w + h) * 2.0`).
 
 ---
 
@@ -1895,8 +1932,10 @@ Store concrete types in separate typed collections (`Vector[Circle]()`, `Vector[
 - Status: Open
 - Category: Compiler / native lowering
 - First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 4
 
 ### Minimal reproducer
 
@@ -1969,3 +2008,462 @@ Native compilation of test binary fails in `rustc` because `{` in the literal ar
 ### Workaround
 
 Bind expected string to a local variable before asserting: `expected = "{hello}"; assertEqual(actual, expected)`.
+
+---
+
+## SWARM-056 — Methods of exported types are omitted from compiled `.mossi` interface metadata
+
+- Status: Open
+- Category: Compiler / module interface projection
+- First observed: [Modules / Data Pipeline](modules/data_pipeline/)
+- Also observed: [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Algo Chain](modules/algo_chain/),
+  [Modules / Text Toolkit](modules/text_toolkit/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 5
+
+### Minimal reproducer
+
+In provider package (`lib`):
+```moss
+module shapes
+
+export type Box:
+  w: Int
+  h: Int
+
+  fn area() -> Int:
+    return w * h
+
+export fn make_box(w: Int, h: Int) -> Box:
+  return Box(w: w, h: h)
+```
+
+In consumer package (`app`):
+```moss
+module app
+import shapes
+
+fn main():
+  b = shapes.make_box(2, 3)
+  echo b.area()
+```
+
+Committed paired reproducer: `examples/swarm/modules/data_pipeline/repro/dep_type_methods` (`one_package` vs `two_packages/app`), and `examples/swarm/modules/lib_and_app/repro/method_across_package`.
+
+### Observed behavior
+
+`margo debug` (Fast Debug) succeeds and prints `6` because it parses dependency source directly into AST.
+When compiled natively across package boundaries (`margo build` / `margo run`), `moss build` fails in the consumer with:
+`error[MOSS_COMPILE_ERROR]: no matching method 'shapes__Box.area' for supplied arguments`.
+Inspection of `build/debug/shapes.mossi` reveals that `export type Box nominal` emits only public field representations (`w`, `h`) and completely omits member method definitions (`fn area() -> Int`). Consequently, downstream packages importing `shapes` via `.mossi` perceive `Box` as having zero methods.
+Within the same package across module boundaries, the same code compiles and runs cleanly because all package sources share an in-memory compilation context.
+
+### Workaround
+
+Expose top-level exported free-function wrappers in the provider package (`export fn box_area(b: Box) -> Int: return b.area()`), and call `shapes.box_area(b)` downstream.
+
+### Notes
+
+Specifically module/package-boundary-dependent: strictly a cross-package compiled interface (`.mossi`) projection defect. Single-package multi-module code and Fast Debug AST execution succeed.
+
+---
+
+## SWARM-057 — `for i in range(...)` fails type inference when enclosed in an explicit module
+
+- Status: Open
+- Category: Compiler / module type inference
+- First observed: [Modules / Data Pipeline](modules/data_pipeline/)
+- Also observed: [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Text Toolkit](modules/text_toolkit/),
+  [Modules / Algo Chain](modules/algo_chain/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 5
+
+### Minimal reproducer
+
+Single file (passes):
+```moss
+fn tri() -> Int:
+  s = 0
+  for i in range(0, 3):
+    s = s + i
+  return s
+
+fn main():
+  echo tri()
+```
+
+Split into explicit module (fails):
+```moss
+module stats
+
+export fn tri() -> Int:
+  s = 0
+  for i in range(0, 3):
+    s = s + i
+  return s
+```
+
+Committed paired reproducer: `examples/swarm/modules/data_pipeline/repro/range_in_module` (`single` vs `split`).
+
+### Observed behavior
+
+In standalone or single-file non-module source, `for i in range(...)` passes `moss check` and native compilation.
+As soon as the containing source includes a `module <name>` header, `moss check` and `margo build` fail with:
+`error[TYPE_INFERENCE_FAILED]: cannot infer the static iterator source type`.
+Furthermore, in multi-file projects, the error is misattributed to line 5 of `main.moss` rather than the module file defining the loop (see SWARM-059).
+
+### Workaround
+
+Rewrite `for i in range(...)` loops iteratively using `while`:
+
+```moss
+i = 0
+while i < 3:
+  s = s + i
+  i = i + 1
+```
+
+### Notes
+
+Specifically module/package-boundary-dependent: introducing an explicit `module` boundary breaks otherwise valid `range` type inference.
+
+---
+
+## SWARM-058 — Sibling method call within exported module type mis-mangles as module function
+
+- Status: Open
+- Category: Compiler / module name resolution & lowering
+- First observed: [Modules / Data Pipeline](modules/data_pipeline/)
+- Also observed: [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Text Toolkit](modules/text_toolkit/),
+  [Modules / Calc Interpreter](modules/calc_interpreter/),
+  [Modules / Algo Chain](modules/algo_chain/)
+- Observation count: 5
+
+### Minimal reproducer
+
+```moss
+module p
+
+export type P:
+  x: Int
+
+  fn a() -> Int:
+    return x + 1
+
+  fn b() -> Int:
+    return a() + 1
+```
+
+Committed paired reproducer: `examples/swarm/modules/data_pipeline/repro/sibling_method` (`single` vs `split`).
+
+### Observed behavior
+
+In a single file without `module`, calling a sibling method unqualified (`return a() + 1`) resolves to `self.a()` (verified in SWARM-025 / SWARM-028).
+Inside an explicit `module p`, `rewrite_module_program` prefixes unqualified calls with the module name rather than resolving `self` methods, rewriting `a()` into `p__a()`.
+Because `a` is a member method and not a top-level function in module `p`, compilation fails with:
+`error[TYPE_INFERENCE_FAILED]: cannot infer the type of this return expression in function 'p__P.b'`
+or `error[UNKNOWN_SYMBOL_OR_TYPE]: unknown local function 'p__a'`.
+
+### Workaround
+
+Inline the sibling method logic or declare a private top-level helper function inside the module (`fn helper_a(p: P) -> Int: return p.x + 1`).
+
+### Notes
+
+Specifically module/package-boundary-dependent: identical method structure passes in single-file non-module source and fails when placed inside a `module`.
+
+---
+
+## SWARM-059 — Multi-file project diagnostics misattribute error source file to root or first module
+
+- Status: Open
+- Category: Tooling / diagnostic source attribution
+- First observed: [Modules / Domain Services](modules/domain_services/)
+- Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Lib and App](modules/lib_and_app/),
+  [Modules / Calc Interpreter](modules/calc_interpreter/)
+- Observation count: 4
+
+### Minimal reproducer
+
+File `src/alpha.moss` (4 lines):
+```moss
+module alpha
+export fn ok() -> Int:
+  return 1
+```
+
+File `src/beta.moss` (9 lines):
+```moss
+module beta
+import alpha
+
+export fn bad(x: Int) -> Int:
+  return x + "s"
+```
+
+Committed paired reproducer: `examples/swarm/modules/domain_services/repro/diag_file` (`split`).
+
+### Observed behavior
+
+`margo build` fails on the type mismatch in `beta.moss:6` (or `9`), but reports:
+`source_file: .../src/alpha.moss, line: 9`
+even though `alpha.moss` has only 4 lines.
+During whole-project merged analysis, diagnostics retain the line and column offset within the originating module file, but overwrite or default the `source_file` path to the project root (`main.moss`) or the first source file loaded in the project.
+
+### Workaround
+
+Inspect the reported line and column against secondary module files, or run isolated `moss check <source> --json` directly on the suspected module file.
+
+### Notes
+
+Specifically module/package-boundary-dependent: occurs only in multi-file projects where merged ASTs lose individual file provenance.
+
+---
+
+## SWARM-060 — `moss edit rename` fails on module-qualified entities with `EDIT_TARGET_AMBIGUOUS`
+
+- Status: Open
+- Category: Tooling / semantic edit
+- First observed: [Modules / Domain Services](modules/domain_services/)
+- Also observed: [Modules / Text Toolkit](modules/text_toolkit/),
+  [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Lib and App](modules/lib_and_app/)
+- Observation count: 4
+
+### Minimal reproducer
+
+```moss
+# src/util.moss:
+module util
+export fn double(x: Int) -> Int:
+  return x * 2
+
+# src/main.moss:
+module app
+import util
+fn main():
+  echo util.double(21)
+```
+
+Run:
+```sh
+moss edit rename entity-v1:function:util__double triple --json
+```
+
+Committed paired reproducer: `examples/swarm/modules/domain_services/repro/edit_rename` (`single` vs `split`).
+
+### Observed behavior
+
+In single-file code, `moss edit rename entity-v1:function:double triple --json` succeeds and updates declaration and callers.
+In multi-module code, `moss inspect util__double` succeeds and reports durable identity `entity-v1:function:util__double`. However, running `moss edit rename` fails with:
+`error[EDIT_TARGET_AMBIGUOUS]: rename could not map every semantic reference to one exact token`.
+The semantic edit engine fails to map the mangled identity (`util__double`) across module-qualified call sites (`util.double`) and unqualified export declarations (`export fn double`).
+
+### Workaround
+
+Perform textual find-and-replace across project source files and verify with `moss check` and `margo test`.
+
+### Notes
+
+Specifically module/package-boundary-dependent: semantic renaming works cleanly for project-local non-module functions.
+
+---
+
+## SWARM-061 — Test binary compilation fails when test modules import internal modules omitted from `main.moss`
+
+- Status: Open
+- Category: Compiler / test target lowering
+- First observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
+- Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
+  [Modules / Domain Services](modules/domain_services/)
+- Observation count: 3
+
+### Minimal reproducer
+
+In `src/main.moss`:
+```moss
+module app
+import util
+
+fn main():
+  echo util.double(21)
+```
+
+In `src/other.moss`:
+```moss
+module other
+export fn triple(x: Int) -> Int:
+  return x * 3
+```
+
+In `tests/other_test.moss`:
+```moss
+module other_test
+import other
+
+test "triple":
+  assertEqual(other.triple(4), 12)
+```
+
+Committed paired reproducer: `examples/swarm/modules/calc_interpreter/repro/test_imports_not_in_main` (`split`), and `data_pipeline/repro/test_module_mismatch`.
+
+### Observed behavior
+
+`margo test` fails during Rust backend compilation of the test binary (`app.rs`):
+`error[BUILD_BACKEND_ERROR]: module Rust crate compilation failed for 'app'`
+`error[E0425]: cannot find function other__triple in this scope`.
+Moss projects all project unit tests into the application's root crate (`app.rs`), but only emits Rust crate imports (`use moss_<mod>::*;`) for modules imported by `main.moss`. Any internal module imported only by a test file is not in scope in the test binary.
+
+### Workaround
+
+Add unused import declarations for all internal project modules to `src/main.moss` (e.g. `import other # needed for tests`).
+
+### Notes
+
+Specifically module/package-boundary-dependent: test projection assumes the root main module imports the union of all modules required by test files.
+
+---
+
+## SWARM-062 — Specialized imported generic function calling transitive module fails native lowering
+
+- Status: Open
+- Category: Compiler / module specialization & lowering
+- First observed: [Modules / Algo Chain](modules/algo_chain/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+# leaf.moss
+module leaf
+export fn bump(x: Int) -> Int:
+  return x + 1
+
+# mid.moss
+module mid
+import leaf
+export fn scaled_bump(x):
+  y = x + x
+  return leaf.bump(1)
+
+# main.moss
+module app
+import mid
+fn main():
+  echo mid.scaled_bump(10)
+```
+
+Committed paired reproducer: `examples/swarm/modules/algo_chain/repro/generic_transitive_import` (`single` vs `split`).
+
+### Observed behavior
+
+In a single compilation unit, `scaled_bump` monomorphizes and runs cleanly (`10`).
+When split across modules, `app` imports `mid`, and `mid` imports `leaf`. Monomorphization projects the concrete specialization of `scaled_bump` into `app.rs`.
+However, because `app.moss` does not import `leaf`, `app.rs` does not include `use moss_leaf::*;`, causing rustc to fail:
+`error[E0425]: cannot find function leaf__bump in this scope`.
+
+### Workaround
+
+Explicitly add a dummy import of the transitive module in the consumer module (`import leaf # generic body needs it linked`).
+
+### Notes
+
+Specifically module/package-boundary-dependent: monomorphization projects specialized generic function bodies into the caller's crate without pulling in the transitive module dependencies of the callee.
+
+---
+
+## SWARM-063 — Transitive struct field types leak unimported Rust trait requirements across modules
+
+- Status: Open
+- Category: Compiler / native lowering & type generation
+- First observed: [Modules / Lib and App](modules/lib_and_app/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+# inner.moss
+module inner
+export type In:
+  v: Int
+export fn mk(v: Int) -> In:
+  return In(v: v)
+
+# outer.moss
+module outer
+import inner
+export type Out:
+  i: inner.In
+export fn mk(v: Int) -> Out:
+  return Out(i: inner.mk(v))
+
+# main.moss
+module app
+import outer
+fn main():
+  o = outer.mk(4)
+```
+
+Committed paired reproducer: `examples/swarm/modules/lib_and_app/repro/transitive_import_closure` (`single` vs `split`).
+
+### Observed behavior
+
+In single-module code, this compiles and runs cleanly.
+When split across modules, `app` uses `outer.Out`, which internally has a field of type `inner.In`.
+The Rust lowering backend generates view trait implementations for `Out` inside `app.rs`:
+`impl<F0: MossAccess_inner__In> std::fmt::Debug for outer__OutView<F0>`
+Because `app.moss` only imported `outer` and did not import `inner`, `MossAccess_inner__In` is not in scope in `app.rs`.
+Native compilation fails in rustc with:
+`error[E0405]: cannot find trait MossAccess_inner__In in this scope`.
+
+### Workaround
+
+Module `app` must explicitly import `inner` (`import inner`), exposing private internal implementation types of `outer` to the consumer.
+
+### Notes
+
+Specifically module/package-boundary-dependent: generated Rust view traits for imported composite types leak transitive module trait requirements into consumer crates.
+
+---
+
+## SWARM-064 — Struct field named with a Rust reserved keyword fails native compilation
+
+- Status: Open
+- Category: Compiler / native lowering & symbol hygiene
+- First observed: [Modules / Lib and App](modules/lib_and_app/)
+- Also observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+type Holder:
+  box: Int
+
+fn main():
+  h = Holder(box: 3)
+  echo h.box
+```
+
+Committed reproducer: `examples/swarm/modules/lib_and_app/repro/rust_keyword_field`.
+
+### Observed behavior
+
+`moss check` succeeds and Fast Debug (`moss run --interp`) executes cleanly.
+Native compilation fails in `rustc` with 12 errors:
+`error: expected identifier, found reserved keyword box`.
+The backend lowers Moss struct fields directly without Rust raw identifier escaping (`r#box`).
+
+### Workaround
+
+Rename the field to avoid Rust reserved keywords (e.g. `bx: Int`).
+
+### Notes
+
+Non-boundary defect (occurs equally in single-file and multi-module programs). Related to SWARM-015 (type name collisions), but affects struct field names.
