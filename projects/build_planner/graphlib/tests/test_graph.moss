@@ -1,0 +1,9 @@
+import model
+import graph
+import algorithms
+
+test "empty graph":
+  g = graph.make_graph()
+  assertEqual(graph.graph_task_count(g), 0)
+  assertEqual(graph.graph_dependency_count(g), 0)
+  assert(not algorithms.has_cycle(g))

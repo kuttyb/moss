@@ -1,0 +1,174 @@
+module graph
+import model
+
+fn empty_slots() -> Vector[Int]:
+  return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+fn copy_task_ids(g: model.Graph) -> Vector[Int]:
+  var out = empty_slots()
+  var i = 0
+  n = model.graph_task_count_val(g)
+  while i < n:
+    out[i] = model.graph_task_id_val(g, i)
+    i = i + 1
+  return out
+
+fn copy_task_categories(g: model.Graph) -> Vector[Int]:
+  var out = empty_slots()
+  var i = 0
+  n = model.graph_task_count_val(g)
+  while i < n:
+    out[i] = model.graph_task_category_val(g, i)
+    i = i + 1
+  return out
+
+fn copy_task_costs(g: model.Graph) -> Vector[Int]:
+  var out = empty_slots()
+  var i = 0
+  n = model.graph_task_count_val(g)
+  while i < n:
+    out[i] = model.graph_task_cost_val(g, i)
+    i = i + 1
+  return out
+
+fn copy_dep_befores(g: model.Graph) -> Vector[Int]:
+  var out = empty_slots()
+  var i = 0
+  n = model.graph_dep_count_val(g)
+  while i < n:
+    out[i] = model.graph_dep_before_val(g, i)
+    i = i + 1
+  return out
+
+fn copy_dep_afters(g: model.Graph) -> Vector[Int]:
+  var out = empty_slots()
+  var i = 0
+  n = model.graph_dep_count_val(g)
+  while i < n:
+    out[i] = model.graph_dep_after_val(g, i)
+    i = i + 1
+  return out
+
+export fn make_graph() -> model.Graph:
+  return model.make_graph_model(empty_slots(), empty_slots(), empty_slots(), empty_slots(), empty_slots(), 0, 0)
+
+export fn copy_graph(g: model.Graph) -> model.Graph:
+  t_ids = copy_task_ids(g)
+  t_cats = copy_task_categories(g)
+  t_costs = copy_task_costs(g)
+  d_befores = copy_dep_befores(g)
+  d_afters = copy_dep_afters(g)
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+  return model.make_graph_model(t_ids, t_cats, t_costs, d_befores, d_afters, t_cnt, d_cnt)
+
+export fn graph_task_count(g: model.Graph) -> Int:
+  return model.graph_task_count_val(g)
+
+export fn graph_contains_task(g: model.Graph, target_id: Int) -> Bool:
+  var i = 0
+  n = model.graph_task_count_val(g)
+  while i < n:
+    if model.graph_task_id_val(g, i) == target_id:
+      return true
+    i = i + 1
+  return false
+
+export fn graph_add_task(g: model.Graph, t: model.Task) -> model.Graph:
+  t_id = model.task_id(t)
+  if graph_contains_task(g, t_id):
+    return copy_graph(g)
+
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  var new_ids = copy_task_ids(g)
+  new_ids[t_cnt] = t_id
+
+  var new_cats = copy_task_categories(g)
+  new_cats[t_cnt] = model.task_category(t)
+
+  var new_costs = copy_task_costs(g)
+  new_costs[t_cnt] = model.task_cost(t)
+
+  d_befores = copy_dep_befores(g)
+  d_afters = copy_dep_afters(g)
+
+  return model.make_graph_model(new_ids, new_cats, new_costs, d_befores, d_afters, t_cnt + 1, d_cnt)
+
+export fn graph_add_dependency(g: model.Graph, before: Int, after: Int) -> model.Graph:
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  var new_befores = copy_dep_befores(g)
+  new_befores[d_cnt] = before
+
+  var new_afters = copy_dep_afters(g)
+  new_afters[d_cnt] = after
+
+  t_ids = copy_task_ids(g)
+  t_cats = copy_task_categories(g)
+  t_costs = copy_task_costs(g)
+
+  return model.make_graph_model(t_ids, t_cats, t_costs, new_befores, new_afters, t_cnt, d_cnt + 1)
+
+export fn graph_dependency_count(g: model.Graph) -> Int:
+  var cnt = 0
+  var i = 0
+  d_cnt = model.graph_dep_count_val(g)
+  while i < d_cnt:
+    b = model.graph_dep_before_val(g, i)
+    a = model.graph_dep_after_val(g, i)
+    if graph_contains_task(g, b):
+      if graph_contains_task(g, a):
+        cnt = cnt + 1
+    i = i + 1
+  return cnt
+
+export fn graph_missing_dependency_count(g: model.Graph) -> Int:
+  var missing = 0
+  var i = 0
+  d_cnt = model.graph_dep_count_val(g)
+  while i < d_cnt:
+    b = model.graph_dep_before_val(g, i)
+    a = model.graph_dep_after_val(g, i)
+    var is_missing = false
+    if not graph_contains_task(g, b):
+      is_missing = true
+    if not graph_contains_task(g, a):
+      is_missing = true
+    if is_missing:
+      missing = missing + 1
+    i = i + 1
+  return missing
+
+export fn graph_total_cost(g: model.Graph) -> Int:
+  var total = 0
+  var i = 0
+  t_cnt = model.graph_task_count_val(g)
+  while i < t_cnt:
+    total = total + model.graph_task_cost_val(g, i)
+    i = i + 1
+  return total
+
+export fn graph_category_cost(g: model.Graph, target_cat: Int) -> Int:
+  var total = 0
+  var i = 0
+  t_cnt = model.graph_task_count_val(g)
+  while i < t_cnt:
+    if model.graph_task_category_val(g, i) == target_cat:
+      total = total + model.graph_task_cost_val(g, i)
+    i = i + 1
+  return total
+
+export fn graph_task_id_at(g: model.Graph, index: Int) -> Int:
+  return model.graph_task_id_val(g, index)
+
+export fn graph_dep_before_at(g: model.Graph, index: Int) -> Int:
+  return model.graph_dep_before_val(g, index)
+
+export fn graph_dep_after_at(g: model.Graph, index: Int) -> Int:
+  return model.graph_dep_after_val(g, index)
+
+export fn graph_dep_raw_count(g: model.Graph) -> Int:
+  return model.graph_dep_count_val(g)

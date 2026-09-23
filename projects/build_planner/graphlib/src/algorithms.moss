@@ -1,0 +1,179 @@
+module algorithms
+import model
+import graph
+
+fn empty_slots() -> Vector[Int]:
+  return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+fn find_task_index(g: model.Graph, target_id: Int) -> Int:
+  var i = 0
+  n = model.graph_task_count_val(g)
+  while i < n:
+    if model.graph_task_id_val(g, i) == target_id:
+      return i
+    i = i + 1
+  return 0 - 1
+
+export fn ready_tasks(g: model.Graph) -> Vector[Int]:
+  var ready = empty_slots()
+  var r_cnt = 0
+  var i = 0
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  while i < t_cnt:
+    t_id = model.graph_task_id_val(g, i)
+    var has_incoming = false
+    var j = 0
+    while j < d_cnt:
+      b = model.graph_dep_before_val(g, j)
+      a = model.graph_dep_after_val(g, j)
+      if a == t_id:
+        if graph.graph_contains_task(g, b):
+          has_incoming = true
+      j = j + 1
+
+    if not has_incoming:
+      ready[r_cnt] = t_id
+      r_cnt = r_cnt + 1
+    i = i + 1
+
+  return ready
+
+export fn ready_task_count(g: model.Graph) -> Int:
+  var r_cnt = 0
+  var i = 0
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  while i < t_cnt:
+    t_id = model.graph_task_id_val(g, i)
+    var has_incoming = false
+    var j = 0
+    while j < d_cnt:
+      b = model.graph_dep_before_val(g, j)
+      a = model.graph_dep_after_val(g, j)
+      if a == t_id:
+        if graph.graph_contains_task(g, b):
+          has_incoming = true
+      j = j + 1
+
+    if not has_incoming:
+      r_cnt = r_cnt + 1
+    i = i + 1
+
+  return r_cnt
+
+export fn build_order(g: model.Graph) -> Vector[Int]:
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  var in_degrees = empty_slots()
+  var j = 0
+  while j < d_cnt:
+    b = model.graph_dep_before_val(g, j)
+    a = model.graph_dep_after_val(g, j)
+    if graph.graph_contains_task(g, b):
+      idx_a = find_task_index(g, a)
+      if idx_a >= 0:
+        in_degrees[idx_a] = in_degrees[idx_a] + 1
+    j = j + 1
+
+  var queue = empty_slots()
+  var q_head = 0
+  var q_tail = 0
+
+  var i = 0
+  while i < t_cnt:
+    if in_degrees[i] == 0:
+      queue[q_tail] = i
+      q_tail = q_tail + 1
+    i = i + 1
+
+  var order = empty_slots()
+  var order_cnt = 0
+
+  while q_head < q_tail:
+    curr_idx = queue[q_head]
+    q_head = q_head + 1
+
+    curr_id = model.graph_task_id_val(g, curr_idx)
+    order[order_cnt] = curr_id
+    order_cnt = order_cnt + 1
+
+    var k = 0
+    while k < d_cnt:
+      if model.graph_dep_before_val(g, k) == curr_id:
+        after_id = model.graph_dep_after_val(g, k)
+        idx_after = find_task_index(g, after_id)
+        if idx_after >= 0:
+          in_degrees[idx_after] = in_degrees[idx_after] - 1
+          if in_degrees[idx_after] == 0:
+            queue[q_tail] = idx_after
+            q_tail = q_tail + 1
+      k = k + 1
+
+  return order
+
+export fn build_order_count(g: model.Graph) -> Int:
+  t_cnt = model.graph_task_count_val(g)
+  d_cnt = model.graph_dep_count_val(g)
+
+  var in_degrees = empty_slots()
+  var j = 0
+  while j < d_cnt:
+    b = model.graph_dep_before_val(g, j)
+    a = model.graph_dep_after_val(g, j)
+    if graph.graph_contains_task(g, b):
+      idx_a = find_task_index(g, a)
+      if idx_a >= 0:
+        in_degrees[idx_a] = in_degrees[idx_a] + 1
+    j = j + 1
+
+  var queue = empty_slots()
+  var q_head = 0
+  var q_tail = 0
+
+  var i = 0
+  while i < t_cnt:
+    if in_degrees[i] == 0:
+      queue[q_tail] = i
+      q_tail = q_tail + 1
+    i = i + 1
+
+  var order_cnt = 0
+
+  while q_head < q_tail:
+    curr_idx = queue[q_head]
+    q_head = q_head + 1
+    order_cnt = order_cnt + 1
+
+    curr_id = model.graph_task_id_val(g, curr_idx)
+    var k = 0
+    while k < d_cnt:
+      if model.graph_dep_before_val(g, k) == curr_id:
+        after_id = model.graph_dep_after_val(g, k)
+        idx_after = find_task_index(g, after_id)
+        if idx_after >= 0:
+          in_degrees[idx_after] = in_degrees[idx_after] - 1
+          if in_degrees[idx_after] == 0:
+            queue[q_tail] = idx_after
+            q_tail = q_tail + 1
+      k = k + 1
+
+  return order_cnt
+
+export fn has_cycle(g: model.Graph) -> Bool:
+  t_cnt = model.graph_task_count_val(g)
+  if t_cnt == 0:
+    return false
+  ordered = build_order_count(g)
+  return ordered < t_cnt
+
+export fn calculate_plan_summary(g: model.Graph) -> model.PlanSummary:
+  t_cnt = graph.graph_task_count(g)
+  d_cnt = graph.graph_dependency_count(g)
+  total_cost = graph.graph_total_cost(g)
+  ready_cnt = ready_task_count(g)
+  cycle = has_cycle(g)
+  return model.make_summary(t_cnt, d_cnt, total_cost, ready_cnt, cycle)
