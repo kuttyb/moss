@@ -1,0 +1,13 @@
+fn to_float(value: Int) -> Float:
+  return 1.0
+
+fn main():
+  ints = Vector[Int]()
+  floats = Vector[Float]()
+  mapped_float = ints |> map(to_float) |> sum
+  mapped_int = ints |> map(_ + 1) |> sum
+  filtered_float = floats |> filter(_ > 0.0) |> sum
+  assertEqual(mapped_float, 0.0)
+  assertEqual(mapped_int, 0)
+  assertEqual(filtered_float, 0.0)
+  echo mapped_float, mapped_int, filtered_float

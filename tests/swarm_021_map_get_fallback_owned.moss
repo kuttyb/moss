@@ -1,0 +1,12 @@
+type Holder:
+  values: Map[Int, Vector[Int]]
+
+  fn test() -> Int:
+    fallback = [1]
+    result = values.get(99, fallback)
+    result.push(2)
+    return fallback |> count
+
+fn main():
+  holder = Holder(values: Map())
+  echo holder.test()

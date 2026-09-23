@@ -420,6 +420,24 @@ class FastInterpreter {
     return eval(invocation + ")", callback, line, output);
   }
 
+  std::optional<std::string> checked_pipeline_stage_output_type(
+      size_t stage_index, const Frame& frame, int line) const {
+    for (const auto& pipeline : program_.functional_pipelines) {
+      if (pipeline.line != line || pipeline.context != frame.function ||
+          stage_index >= pipeline.nodes.size())
+        continue;
+      return pipeline.nodes[stage_index].output_type;
+    }
+    return std::nullopt;
+  }
+
+  static std::optional<std::string> checked_vector_element_type(
+      const std::string& type) {
+    if (type.rfind("vector[", 0) != 0 || type.size() <= 8 || type.back() != ']')
+      return std::nullopt;
+    return type.substr(7, type.size() - 8);
+  }
+
   Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
                       int line, std::ostream& output) {
     if (stages.size() < 2) return Value::unit();
@@ -450,8 +468,16 @@ class FastInterpreter {
           Value transformed = invoke_pipeline_callable(args.front(), {value}, frame, line, output);
           if (callee == "map" || transformed.truthy()) values.push_back(callee == "map" ? transformed : value);
         }
+        std::string element_type = current.element_type;
+        if (callee == "map") {
+          auto output_type = checked_pipeline_stage_output_type(stage_index, frame, line);
+          auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
+          if (!output_element)
+            throw RuntimeError(line, "internal error: missing checked map output type");
+          element_type = *output_element;
+        }
         current = Value::vector_value(std::move(values),
-                                      callee == "filter" ? current.element_type : std::string{});
+                                      std::move(element_type));
       } else if (callee == "reduce") {
         if (current.kind != Value::Kind::Vector || args.size() != 2)
           throw RuntimeError(line, "invalid checked pipeline stage 'reduce'");
@@ -597,7 +623,7 @@ class FastInterpreter {
               Value fallback = eval(method_args[1], frame, line, output);
               for (const auto& entry : *receiver.map)
                 if (equal(entry.first, key)) return independent(entry.second);
-              return fallback;
+              return independent(fallback);
             }
             if ((method_name == "keys" || method_name == "values") && method_args.empty()) {
               std::vector<Value> values;
