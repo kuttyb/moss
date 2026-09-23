@@ -1,0 +1,28 @@
+type MapHolder:
+  m: Map[String, Int]
+
+fn empty_map() -> Map[String, Int]:
+  var h = MapHolder(m: Map())
+  return h.m
+
+fn search_key(m: Map[String, Int], target: String) -> Bool:
+  var keys = m.keys()
+  var total = keys |> count
+  var i = 0
+  while i < total:
+    var k = keys[i]
+    if k == target:
+      return true
+    if target == k:
+      return true
+    i = i + 1
+  return false
+
+fn main():
+  var m = empty_map()
+  m["alpha"] = 1
+  m["beta"] = 2
+  assert(search_key(m, "alpha"))
+  assert(search_key(m, "beta"))
+  assert(not search_key(m, "gamma"))
+  echo 1

@@ -283,7 +283,7 @@ def main() -> int:
     resolver = map_module.MossDebugMap.load(str(map_file))
     # moss-debug sorts pending source overlays before constructing the same
     # preRunCommands vector.
-    breakpoint_lines = [5, 8, 21, 25, 38]
+    breakpoint_lines = [5, 8, 21, 25, 39]
     client = DapClient(adapter, repo)
     try:
         initialize = client.request(
@@ -343,7 +343,7 @@ def main() -> int:
         stopped = launch_event
 
         thread_id, main_frame, _ = validate_stop(
-            client, resolver, source, stopped, 38, "moss__main"
+            client, resolver, source, stopped, 39, "moss__main"
         )
         main_locals = frame_locals(client, main_frame)
         for name in ("meter", "enabled", "label", "values"):
@@ -398,7 +398,7 @@ def main() -> int:
                 break
             if candidate_name == "moss__main":
                 thread_id, _, _ = validate_stop(
-                    client, resolver, source, stopped, 38, "moss__main"
+                    client, resolver, source, stopped, 39, "moss__main"
                 )
                 continue
             fail(f"unexpected stop before step probe: {candidate_name!r}")

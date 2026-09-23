@@ -293,8 +293,17 @@
     for (const auto& r : d.routes) types[r.name] = r.type;
     for (const auto& p : h.params) { locals.insert(p.name); types[p.name] = p.type; }
     view_domain_ = true; view_domain_access_ = true;
+    write_through_parameters_.clear(); view_parameters_.clear();
+    borrowed_message_parameters_.clear();
+    for (const auto& p : h.params) {
+      if (!borrowed_message_type(p.type)) continue;
+      borrowed_message_parameters_.insert(p.name);
+      if (view_object_type(p.type)) view_parameters_.insert(p.name);
+    }
     o << "        " << expr(h.body.front().a, &d, locals, &types) << "\n        };\n";
     view_domain_ = false; view_domain_access_ = false;
+    borrowed_message_parameters_.clear(); view_parameters_.clear();
+    write_through_parameters_.clear();
     o << "        let result = if __moss_branch {\n";
     for (const auto rank : placement.cancel_then) {
       const string r = std::to_string(plan.classes.at(rank).class_rank);

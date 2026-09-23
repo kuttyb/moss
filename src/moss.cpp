@@ -1695,6 +1695,7 @@ class Checker {
       for (auto& method : const_cast<ObjectType&>(object).methods) {
         string signature = method.name + "/" + std::to_string(method.params.size());
         std::unordered_map<string,string> env;
+        env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
@@ -7474,6 +7475,11 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
+    if (auto binary = split_binary(value, {" in "})) {
+      err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "UNSUPPORTED_EXPRESSION_OPERATOR");
+      return;
+    }
     for (const auto& operators : vector<vector<string>>{{" and ", " or "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
@@ -7728,6 +7734,13 @@ class Checker {
         if (statement.kind == Stmt::Kind::Assign) {
           string base, index_expression;
           if (parse_index(statement.a, base, index_expression)) {
+            string inner_base, inner_index;
+            if (parse_index(base, inner_base, inner_index)) {
+              err(statement.line,
+                  "nested indexed mutation is not supported; extract the inner collection to a local variable, update it, and write it back",
+                  "UNSUPPORTED_NESTED_INDEX_ASSIGNMENT");
+              return;
+            }
             auto container = current_env.find(base);
             auto value_type = inferred_expr_type(statement.b, current_env);
             if (container != current_env.end() && value_type &&
@@ -10155,6 +10168,21 @@ class Generator {
               return canonical_type_name(field.type);
       }
     }
+    string index_base, index_expr;
+    if (parse_index(value, index_base, index_expr)) {
+      auto base_type = generated_expr_type(index_base, types);
+      if (base_type) {
+        string concrete = canonical_type_name(*base_type);
+        if (starts_with(concrete, "vector[") && ends_with(concrete, "]"))
+          return trim(concrete.substr(7, concrete.size() - 8));
+        if (starts_with(concrete, "queue[") && ends_with(concrete, "]"))
+          return trim(concrete.substr(6, concrete.size() - 7));
+        if (starts_with(concrete, "map[") && ends_with(concrete, "]")) {
+          auto ps = split_top_level(concrete.substr(4, concrete.size() - 5), ',');
+          if (ps.size() == 2) return trim(ps[1]);
+        }
+      }
+    }
     if (generated_split_binary(value, {" or "}) ||
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
@@ -11198,6 +11226,13 @@ class Generator {
       right = value_from_borrowed_message_parameter(comparison->right, right, types);
       auto left_type = generated_expr_type(comparison->left, types);
       auto right_type = generated_expr_type(comparison->right, types);
+      bool is_string_comparison =
+          (left_type && canonical_type_name(*left_type) == "string") ||
+          (right_type && canonical_type_name(*right_type) == "string");
+      if (is_string_comparison) {
+        left = "(" + left + ").as_str()";
+        right = "(" + right + ").as_str()";
+      }
       if (left_type && canonical_type_name(*left_type) == "float" &&
           right_type && canonical_type_name(*right_type) == "int" &&
           generated_integer_literal(comparison->right))
@@ -11399,6 +11434,14 @@ class Generator {
         if (known_function)
           return render_known_function_call(*functions_.at(head), head, call_args,
                                             d, locals, types);
+        const Method* sibling_method = nullptr;
+        if (d && objects_.count(d->name) && !known_function) {
+          vector<string> arg_types;
+          for (const auto& argument : call_args)
+            arg_types.push_back(nominalized_generated_argument_type(
+                argument, generated_expr_type(argument, types).value_or("")));
+          sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
+        }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << viewed_function_name(head, call_args, d, locals, types) << "(";
         size_t emitted_arguments = 0;
@@ -11408,7 +11451,10 @@ class Generator {
                   "callable:", 0) == 0;
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
-          r << expr(call_args[i], d, locals, types);
+          if (sibling_method)
+            r << method_call_argument(*sibling_method, i, call_args[i], d, locals, types);
+          else
+            r << expr(call_args[i], d, locals, types);
         }
         r << ")"; return r.str();
       }
@@ -11708,7 +11754,7 @@ class Generator {
       receiver.name = t.name;
       receiver.state = t.fields;
       std::set<string> locals;
-      std::unordered_map<string,string> types;
+      std::unordered_map<string,string> types{{"self", t.name}};
       for (const auto& field : t.fields) types[field.name] = field.type;
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
       gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));

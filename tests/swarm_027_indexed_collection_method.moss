@@ -1,0 +1,30 @@
+type MapHolder:
+  m: Map[String, Int]
+
+fn empty_map() -> Map[String, Int]:
+  var h = MapHolder(m: Map())
+  return h.m
+
+fn main():
+  var m1 = empty_map()
+  m1["a"] = 10
+  var m2 = empty_map()
+  m2["b"] = 20
+  var maps = [m1, m2]
+
+  var val_a = maps[0].get("a", 0)
+  assert(val_a == 10)
+  var val_c = maps[0].get("c", 99)
+  assert(val_c == 99)
+
+  var i = 1
+  var keys = maps[i].keys()
+  var k_count = keys |> count
+  assert(k_count == 1)
+  assert(keys[0] == "b")
+
+  var values = maps[i].values()
+  var v_count = values |> count
+  assert(v_count == 1)
+  assert(values[0] == 20)
+  echo val_a

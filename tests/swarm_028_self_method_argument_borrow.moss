@@ -1,0 +1,32 @@
+type MapHolder:
+  m: Map[String, Int]
+
+fn empty_map() -> Map[String, Int]:
+  var h = MapHolder(m: Map())
+  return h.m
+
+type ChainMap:
+  maps: Vector[Map[String, Int]]
+
+  fn helper(m: Map[String, Int]) -> Int:
+    return m.get("a", 0)
+
+  fn explicit_self_call(m: Map[String, Int]) -> Int:
+    return self.helper(m)
+
+  fn implicit_self_call(m: Map[String, Int]) -> Int:
+    return helper(m)
+
+  fn call_with_temporary() -> Int:
+    return helper(empty_map())
+
+fn main():
+  var m1 = empty_map()
+  m1["a"] = 42
+  var cm = ChainMap(maps: [m1])
+  var m2 = empty_map()
+  m2["a"] = 100
+  assert(cm.explicit_self_call(m2) == 100)
+  assert(cm.implicit_self_call(m2) == 100)
+  assert(cm.call_with_temporary() == 0)
+  echo cm.implicit_self_call(m2)

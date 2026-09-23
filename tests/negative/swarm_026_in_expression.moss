@@ -1,0 +1,4 @@
+fn main():
+  var m = Map()
+  if "a" in m:
+    print("present")
