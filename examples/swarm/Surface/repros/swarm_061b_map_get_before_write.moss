@@ -1,0 +1,6 @@
+fn main():
+  var seen = Map()
+  key = "a"
+  if seen.get(key, 0) == 0:
+    seen[key] = 1
+  echo seen.get("a", 0)

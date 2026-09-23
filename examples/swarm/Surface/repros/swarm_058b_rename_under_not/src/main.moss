@@ -1,0 +1,6 @@
+fn flag(a: Bool) -> Bool:
+  return a
+
+fn main():
+  if not flag(false):
+    echo "yes"

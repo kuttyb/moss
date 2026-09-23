@@ -1,0 +1,9 @@
+fn pick(flag: Bool) -> Vector[Int]:
+  items = Vector[Int]()
+  if flag:
+    return items
+  items.push(1)
+  return items
+
+fn main():
+  echo pick(false) |> count

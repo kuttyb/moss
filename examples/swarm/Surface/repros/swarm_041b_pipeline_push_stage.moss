@@ -1,0 +1,9 @@
+fn wrapped(v: Float) -> Vector[Float]:
+  var out = Vector[Float]()
+  out.push(v)
+  return out
+
+fn main():
+  xs = [1.0, 2.0]
+  ys = xs |> map(wrapped)
+  echo ys |> count

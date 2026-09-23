@@ -1,0 +1,11 @@
+type P:
+  x: Float
+
+  fn twice() -> Float:
+    return x * 2.0
+
+fn main():
+  echo P(x: 1.5).twice()
+
+test "constructor then method":
+  assertEqual(P(x: 1.5).twice(), 3.0)

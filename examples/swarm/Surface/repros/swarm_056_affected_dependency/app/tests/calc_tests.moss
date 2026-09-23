@@ -1,0 +1,5 @@
+module app_tests
+import calc
+
+test "double":
+  assertEqual(calc.double(4), 8)

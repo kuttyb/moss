@@ -1,0 +1,5 @@
+module app
+import m
+
+fn main():
+  echo m.api(1)

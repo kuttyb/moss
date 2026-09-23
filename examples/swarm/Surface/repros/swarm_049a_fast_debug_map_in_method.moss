@@ -1,0 +1,16 @@
+type P:
+  x: Float
+
+  fn moved(dx: Float) -> P:
+    return P(x: x + dx)
+
+type Poly:
+  pts: Vector[P]
+
+  fn shifted(dx: Float) -> Poly:
+    return Poly(pts: pts |> map(_.moved(dx)))
+
+fn main():
+  p = Poly(pts: [P(x: 1.0), P(x: 2.0)])
+  q = p.shifted(0.5)
+  echo q.pts |> count

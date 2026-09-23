@@ -1,0 +1,7 @@
+module m
+
+fn helper(v: Int) -> Int:
+  return v + 1
+
+export fn api(v: Int) -> Int:
+  return helper(v)

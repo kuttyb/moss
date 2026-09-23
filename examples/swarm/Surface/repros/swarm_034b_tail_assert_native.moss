@@ -1,0 +1,6 @@
+fn check(v: Int):
+  assert(v > 0)
+
+fn main():
+  check(3)
+  echo "done"

@@ -1,0 +1,9 @@
+fn twice(v: Float) -> Float:
+  return v * 2.0
+
+fn apply_all(xs, f):
+  return xs |> map(f)
+
+fn main():
+  ys = apply_all([1.0, 2.0], twice)
+  echo ys |> count

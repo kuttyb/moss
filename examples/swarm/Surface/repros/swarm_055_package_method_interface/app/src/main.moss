@@ -1,0 +1,6 @@
+module app
+import pt
+
+fn main():
+  p = pt.origin()
+  echo p.total()

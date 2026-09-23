@@ -1,0 +1,12 @@
+type P:
+  x: Int
+
+type Box:
+  items: Vector[P]
+
+fn pack(a: P, b: P) -> Box:
+  return Box(items: [a, b])
+
+fn main():
+  bx = pack(P(x: 1), P(x: 2))
+  echo bx.items |> count

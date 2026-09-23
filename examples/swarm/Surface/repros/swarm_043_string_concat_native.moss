@@ -1,0 +1,8 @@
+fn cat(a: String, b: String) -> String:
+  return a + b
+
+fn main():
+  a = "x"
+  b = "y"
+  echo a + b
+  echo cat(a, b)

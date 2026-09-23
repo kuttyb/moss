@@ -1,0 +1,13 @@
+type P:
+  x: Float
+
+type Poly:
+  pts: Vector[P]
+
+  fn first_x() -> Float:
+    v = pts[0].x
+    return v
+
+fn main():
+  p = Poly(pts: [P(x: 1.5)])
+  echo p.first_x()

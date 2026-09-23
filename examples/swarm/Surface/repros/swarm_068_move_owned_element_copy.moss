@@ -1,0 +1,7 @@
+fn main():
+  ints = [1, 2, 3]
+  i = ints[0]
+  echo i, ints |> count
+  names = ["a", "b"]
+  n = names[0]
+  echo n, names |> count

@@ -1,0 +1,4 @@
+fn main():
+  v = [1, 2]
+  if v |> count > 0:
+    echo "y"

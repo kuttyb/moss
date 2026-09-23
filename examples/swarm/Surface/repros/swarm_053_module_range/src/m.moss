@@ -1,0 +1,7 @@
+module m
+
+export fn count_to(n: Int) -> Int:
+  var t = 0
+  for i in range(0, n):
+    t = t + i
+  return t

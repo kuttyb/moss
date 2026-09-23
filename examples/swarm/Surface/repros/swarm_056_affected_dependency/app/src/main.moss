@@ -1,0 +1,5 @@
+module app
+import calc
+
+fn main():
+  echo calc.double(4)

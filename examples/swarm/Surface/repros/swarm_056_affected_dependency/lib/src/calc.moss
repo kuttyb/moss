@@ -1,0 +1,4 @@
+module calc
+
+export fn double(v: Int) -> Int:
+  return v + v

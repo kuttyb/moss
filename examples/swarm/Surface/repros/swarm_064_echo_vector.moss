@@ -1,0 +1,3 @@
+fn main():
+  names = ["p", "q"]
+  echo names

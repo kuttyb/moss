@@ -1,0 +1,9 @@
+type T:
+  n: Int
+
+fn wrap(n: Int) -> T:
+  return T(n: n)
+
+fn main():
+  xs = [1, 2, 3]
+  echo wrap(xs |> count).n

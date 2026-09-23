@@ -1,0 +1,4 @@
+fn main():
+  xs = ["a", "\n"]
+  y = xs[1]
+  echo y == "\n"

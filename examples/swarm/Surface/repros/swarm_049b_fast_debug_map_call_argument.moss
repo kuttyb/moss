@@ -1,0 +1,12 @@
+type G:
+  rev: Int
+
+fn rev_of(g: G) -> Int:
+  return g.rev
+
+fn first(xs: Vector[Int]) -> Int:
+  return xs[0]
+
+fn main():
+  gs = [G(rev: 4), G(rev: 7)]
+  echo first(gs |> map(rev_of))

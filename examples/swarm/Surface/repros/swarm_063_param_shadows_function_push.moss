@@ -1,0 +1,11 @@
+fn text(chars: Vector[String]) -> Int:
+  return chars |> count
+
+fn add_line(text: Vector[String]):
+  text.push("x")
+  return
+
+fn main():
+  var buf = Vector[String]()
+  add_line(buf)
+  echo buf |> count

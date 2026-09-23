@@ -1,0 +1,7 @@
+fn main():
+  var k = 0
+  while k < 10:
+    if k == 3:
+      break
+    k = k + 1
+  echo k

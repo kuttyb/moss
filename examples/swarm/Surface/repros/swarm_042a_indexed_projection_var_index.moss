@@ -1,0 +1,7 @@
+type Edge:
+  dst: Int
+
+fn main():
+  edges = [Edge(dst: 7)]
+  i = 0
+  echo edges[i].dst

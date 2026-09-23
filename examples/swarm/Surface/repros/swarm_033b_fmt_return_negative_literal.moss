@@ -1,0 +1,7 @@
+fn sign(v: Int) -> Int:
+  if v < 0:
+    return -1
+  return 1
+
+fn main():
+  echo sign(0 - 5)

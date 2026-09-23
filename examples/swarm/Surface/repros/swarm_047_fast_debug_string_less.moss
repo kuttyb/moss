@@ -1,0 +1,5 @@
+fn less(a: String, b: String) -> Bool:
+  return a < b
+
+fn main():
+  echo less("apple", "banana")

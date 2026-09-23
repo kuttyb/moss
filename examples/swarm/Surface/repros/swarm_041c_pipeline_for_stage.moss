@@ -1,0 +1,9 @@
+fn doubled(v: Float) -> Float:
+  var acc = 0.0
+  for k in range(0, 2):
+    acc = acc + v
+  return acc
+
+fn main():
+  xs = [1.0, 2.0]
+  echo xs |> map(doubled) |> count

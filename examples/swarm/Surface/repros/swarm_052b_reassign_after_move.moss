@@ -1,0 +1,9 @@
+fn main():
+  var parts = Vector[Vector[Int]]()
+  var cur = Vector[Int]()
+  cur.push(1)
+  parts.push(cur)
+  cur = Vector[Int]()
+  cur.push(2)
+  parts.push(cur)
+  echo parts |> count

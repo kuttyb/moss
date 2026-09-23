@@ -1,0 +1,8 @@
+type T:
+  s: String
+
+fn mk(s: String) -> T:
+  return T(s: s)
+
+fn main():
+  echo mk("y").s

@@ -1,0 +1,3 @@
+fn main():
+  s = "3 + 4"
+  echo s.frobnicate()
