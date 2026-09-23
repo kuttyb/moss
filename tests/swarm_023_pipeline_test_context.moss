@@ -1,0 +1,9 @@
+fn to_float(value: Int) -> Float:
+  return 1.0
+
+test "pipeline context":
+  values = Vector[Int]()
+  assertEqual(values |> map(to_float) |> sum, 0.0)
+
+fn main():
+  echo "test context"

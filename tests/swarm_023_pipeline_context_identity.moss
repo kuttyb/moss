@@ -1,0 +1,37 @@
+fn to_float(value: Int) -> Float:
+  return 1.0
+
+fn plus_one(value: Int) -> Int:
+  return value + 1
+
+fn function_total() -> Float:
+  values = Vector[Int]()
+  return values |> map(to_float) |> sum
+
+fn specialized_total(values):
+  return values |> map(to_float) |> sum
+
+type Box:
+  values: Vector[Int]
+
+  fn total() -> Float:
+    return values |> map(to_float) |> sum
+
+domain D:
+  values: Vector[Int]
+
+  fn Total() -> Float:
+    reply values |> map(to_float) |> sum
+
+fn main():
+  d = D(values: Vector[Int]())
+  values = Vector[Int]()
+  holder = Box(values: Vector[Int]())
+  left = Vector[Int]()
+  right = Vector[Int]()
+  echo values |> map(to_float) |> sum
+  echo function_total()
+  echo holder.total()
+  echo message d.Total()
+  echo specialized_total(Vector[Int]())
+  echo left |> map(to_float) |> sum, right |> map(plus_one) |> sum

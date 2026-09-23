@@ -84,6 +84,7 @@ class FastInterpreter {
     prepare_domains();
     Frame frame;
     frame.function = "main";
+    frame.functional_context = "main";
     frame.source_file = program_.main->source_file;
     frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
@@ -98,6 +99,7 @@ class FastInterpreter {
       ++discovered;
       Frame frame;
       frame.function = "test:" + test.name;
+      frame.functional_context = frame.function;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
       execute(test.body, frame, output);
@@ -154,6 +156,7 @@ class FastInterpreter {
   struct Place { Value* value = nullptr; DomainValue* domain = nullptr; std::string path; };
   struct Frame {
     std::string function;
+    std::string functional_context;
     std::string source_file;
     std::string semantic_identity;
     std::unordered_map<std::string, Value> locals;
@@ -353,6 +356,26 @@ class FastInterpreter {
     return nullptr;
   }
 
+  const FunctionSpecialization* specialization_for_call(
+      const Function& target, const Frame& caller, int line) const {
+    if (!target.static_dispatch) return nullptr;
+    const FunctionSpecialization* selected = nullptr;
+    for (const auto& edge : program_.semantic_call_edges) {
+      if (edge.source != caller.functional_context || edge.target != "fn:" + target.name ||
+          edge.line != line)
+        continue;
+      auto specialization = std::find_if(
+          target.specializations.begin(), target.specializations.end(),
+          [&](const FunctionSpecialization& candidate) {
+            return candidate.parameter_types == edge.argument_types;
+          });
+      if (specialization == target.specializations.end()) continue;
+      if (selected && selected != &*specialization) return nullptr;
+      selected = &*specialization;
+    }
+    return selected;
+  }
+
   const ObjectType* object_type(const std::string& name) const {
     for (const auto& candidate : program_.objects)
       if (candidate.name == name) return &candidate;
@@ -421,11 +444,20 @@ class FastInterpreter {
   }
 
   std::optional<std::string> checked_pipeline_stage_output_type(
-      size_t stage_index, const Frame& frame, int line) const {
+      const std::vector<std::string>& stages, size_t stage_index,
+      const Frame& frame, int line) const {
     for (const auto& pipeline : program_.functional_pipelines) {
-      if (pipeline.line != line || pipeline.context != frame.function ||
-          stage_index >= pipeline.nodes.size())
+      if (pipeline.line != line || pipeline.context != frame.functional_context ||
+          stage_index >= pipeline.nodes.size() || pipeline.nodes.size() != stages.size() ||
+          trim_copy(pipeline.source_expression) != trim_copy(stages.front()))
         continue;
+      bool matches = true;
+      for (size_t index = 1; index < stages.size(); ++index)
+        if (trim_copy(pipeline.nodes[index].source_text) != trim_copy(stages[index])) {
+          matches = false;
+          break;
+        }
+      if (!matches) continue;
       return pipeline.nodes[stage_index].output_type;
     }
     return std::nullopt;
@@ -470,7 +502,7 @@ class FastInterpreter {
         }
         std::string element_type = current.element_type;
         if (callee == "map") {
-          auto output_type = checked_pipeline_stage_output_type(stage_index, frame, line);
+          auto output_type = checked_pipeline_stage_output_type(stages, stage_index, frame, line);
           auto output_element = output_type ? checked_vector_element_type(*output_type) : std::nullopt;
           if (!output_element)
             throw RuntimeError(line, "internal error: missing checked map output type");
@@ -801,6 +833,8 @@ class FastInterpreter {
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
     Frame frame;
     frame.function = target.name;
+    frame.functional_context = functional_function_context(
+        target, specialization_for_call(target, caller, line));
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
@@ -822,6 +856,7 @@ class FastInterpreter {
     if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
     Frame frame;
     frame.function = target.owner + "." + target.name;
+    frame.functional_context = functional_method_context(target);
     frame.source_file = target.source_file;
     frame.semantic_identity = "method:" + target.owner + "." +
         target.name + "@" + std::to_string(target.line);

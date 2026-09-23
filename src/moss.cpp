@@ -1234,30 +1234,6 @@ static const Method* resolve_object_method(
   return found;
 }
 
-static string functional_function_context(
-    const Function& function,
-    const FunctionSpecialization* specialization = nullptr) {
-  if (!specialization) return "fn:" + function.name;
-  std::ostringstream context;
-  context << "fn:" << function.name << "<";
-  for (size_t index = 0; index < specialization->parameter_types.size(); ++index) {
-    if (index) context << ",";
-    context << specialization->parameter_types[index];
-  }
-  context << ">";
-  return context.str();
-}
-
-static string functional_method_context(const ObjectType& object,
-                                        const Method& method) {
-  return "method:" + object.name + "." + method.name;
-}
-
-static string functional_handler_context(const Domain& domain,
-                                         const Handler& handler) {
-  return "handler:" + domain.name + "." + handler.name;
-}
-
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {

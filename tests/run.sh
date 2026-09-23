@@ -228,6 +228,8 @@ run_case swarm_022_fast_debug_map_state tests/swarm_022_fast_debug_map_state.mos
 run_case swarm_023_fast_debug_pipelines tests/swarm_023_fast_debug_pipelines.moss "$(printf '12\n3\n6\ntrue\ntrue')"
 run_case swarm_023_eager_terminals tests/swarm_023_eager_terminals.moss "$(printf '1\n2\n3\ntrue\n1\n2\n3\nfalse')"
 run_case swarm_023_empty_map_types tests/swarm_023_empty_map_types.moss '0 0 0'
+run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_identity.moss "$(printf '0\n0\n0\n0\n0\n0 0')"
+run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss
@@ -1292,11 +1294,14 @@ interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
 interp_remainder_output=$($compiler run --interp tests/swarm_014_integer_remainder.moss)
 [ "$interp_remainder_output" = '1' ] || fail 'fast interpreter integer remainder execution differed'
-for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types; do
+for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types swarm_023_pipeline_context_identity swarm_023_pipeline_test_context; do
   native_output=$("$test_build/$interp_case")
   interp_output=$($compiler run --interp "tests/$interp_case.moss")
   [ "$interp_output" = "$native_output" ] || fail "fast interpreter $interp_case execution differed"
 done
+interp_pipeline_context_test=$($compiler test --interp tests/swarm_023_pipeline_test_context.moss)
+printf '%s\n' "$interp_pipeline_context_test" | grep -F 'PASS pipeline context' >/dev/null ||
+  fail 'fast interpreter test-context pipeline execution differed'
 interp_test_output=$($compiler test --interp tests/phase10_interpreter_tests.moss)
 printf '%s\n' "$interp_test_output" | grep -F '2 passed' >/dev/null ||
   fail 'fast interpreter test runner did not report passing tests'

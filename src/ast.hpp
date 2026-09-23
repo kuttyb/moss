@@ -236,4 +236,29 @@ struct Program {
   SynchronizationPlan synchronization_plan;
 };
 
+inline string functional_function_context(
+    const Function& function,
+    const FunctionSpecialization* specialization = nullptr) {
+  if (!specialization) return "fn:" + function.name;
+  string context = "fn:" + function.name + "<";
+  for (size_t index = 0; index < specialization->parameter_types.size(); ++index) {
+    if (index) context += ",";
+    context += specialization->parameter_types[index];
+  }
+  return context + ">";
+}
+
+inline string functional_method_context(const Method& method) {
+  return "method:" + method.owner + "." + method.name;
+}
+
+inline string functional_method_context(const ObjectType&, const Method& method) {
+  return functional_method_context(method);
+}
+
+inline string functional_handler_context(const Domain& domain,
+                                         const Handler& handler) {
+  return "handler:" + domain.name + "." + handler.name;
+}
+
 } // namespace moss

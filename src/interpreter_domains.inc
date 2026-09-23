@@ -199,6 +199,7 @@
     if (!target || target->params.size() != arguments.size()) throw RuntimeError(line, "internal error: unresolved checked handler");
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
+    frame.functional_context = functional_handler_context(*instance.definition, *target);
     frame.source_file = instance.definition->source_file;
     frame.semantic_identity = "handler:" + instance.definition->name + "." + target->name;
     std::string payload;
