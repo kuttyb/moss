@@ -2,6 +2,23 @@
 
 Updated: 2026-09-23
 
+## Repository-local Codex autonomy configuration — COMPLETE (2026-09-23)
+
+`.codex/config.toml` now selects a repository-scoped `moss-repository`
+permission profile with `approval_policy = "never"`. The profile grants recursive
+read/write access to the active workspace roots (including Git metadata and
+repository-local Codex files), retains only the minimal external read access
+needed by developer tools, denies `/tmp`/`$TMPDIR`, and disables command network
+access. `AGENTS.md` now explicitly authorizes unattended in-repository Git,
+Python, build, test, and file operations; requires all scratch work under
+`./tmp/`; and prohibits `sudo` and `git push`.
+
+Validation: Python `tomllib` parsed the config successfully; installed
+`codex-cli 0.156.0` supports permission profiles; the Moss startup bootstrap
+reported `moss-0.1`, matching both repository-local Moss skills. No Moss source
+or compiler semantics changed. Project-local Codex config applies to trusted
+repositories and is expected to take effect for new sessions.
+
 ## Canonical swarm operating contract — COMPLETE (2026-09-23)
 
 `examples/swarm/SWARM.md` is now the canonical operating contract for future
