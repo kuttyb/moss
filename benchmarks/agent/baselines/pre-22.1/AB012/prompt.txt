@@ -1,0 +1,13 @@
+You are working on one Moss benchmark task in a sanitized workspace.
+The starter project is in task/. Do all task work there.
+Use only the supplied task files and available local Moss documentation and tooling.
+Do not use network or web resources.
+Solve the task completely. You may compile, inspect, debug, and iterate.
+Do not ask for or search for a reference solution.
+Stop when you believe the task is complete.
+Do not modify unrelated files.
+
+Task ID: AB012
+
+Task prompt (verbatim):
+Repair the conflicting overlapping arguments. Preserve bump_and_read, but call it with distinct storage so one Box can be written while the other is read, producing 42.

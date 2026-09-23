@@ -1,0 +1,89 @@
+{
+  "agent": {
+    "configuration": "ephemeral, ignore user config/rules, no approvals, workspace-write",
+    "disabled_features": [
+      "apps",
+      "plugins",
+      "browser_use",
+      "browser_use_external",
+      "browser_use_full_cdp_access",
+      "in_app_browser",
+      "computer_use",
+      "image_generation",
+      "recommended_plugins",
+      "memories",
+      "multi_agent"
+    ],
+    "implementation": "OpenAI Codex CLI",
+    "model": "gpt-6-sol",
+    "reasoning_effort": "medium",
+    "runtime_version": "codex-cli 0.156.0"
+  },
+  "agent_exit_code": 0,
+  "agent_runtime": {
+    "completed_item_types": {
+      "agent_message": 4,
+      "command_execution": 10,
+      "file_change": 1
+    },
+    "thread_id": "01a0ccc7-6951-7ea1-a644-04d5242190d2",
+    "token_usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 180864,
+      "input_tokens": 195094,
+      "output_tokens": 1187,
+      "reasoning_output_tokens": 357
+    },
+    "tool_calls": 11
+  },
+  "agent_timed_out": false,
+  "changed_paths": [
+    "src/math.moss"
+  ],
+  "compiler_commit": "22fdb024e4f284d17fb9abfe887856e17127aae7",
+  "corpus_commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+  "diagnostic_codes": {
+    "UNKNOWN_SYMBOL_OR_TYPE": 1
+  },
+  "diagnostic_events": [
+    {
+      "argv": [
+        "check",
+        "task/src/main.moss",
+        "--json"
+      ],
+      "code": "UNKNOWN_SYMBOL_OR_TYPE",
+      "sequence": 2,
+      "tool": "moss"
+    }
+  ],
+  "environment_changed_paths": [],
+  "final_status": "pass",
+  "first_validation_success": false,
+  "infrastructure_error": null,
+  "moss_margo_invocations": 4,
+  "orchestration_commit": "532dc4610d156946df5014573e5d69947f4d3546",
+  "outside_allowed_paths": [],
+  "prompt_wrapper_sha256": "a3ddf0a048d7b36fa502718151f3639f0c2a522f2f318356c8f725547bdd03ea",
+  "pruned_generated_paths": [
+    ".moss/",
+    "build/"
+  ],
+  "schema_version": "moss-agent-baseline-1",
+  "session_corpus_commit": "faee3cd46d15d08d046c3b93b43585df4406beba",
+  "staged_tree_sha256": "1eb4871acb296e67713f22e82da5a6088ef878824f9a189a69a48cc766d12fb5",
+  "started_at_unix": 1790142014.99,
+  "starter_tree_sha256": "1eb4871acb296e67713f22e82da5a6088ef878824f9a189a69a48cc766d12fb5",
+  "state": "completed",
+  "task_id": "AB025",
+  "task_prompt_sha256": "ab0f580987b57b8a9d9c13426ffd2f9147088acfd157de8a28cd70054fb40946",
+  "tool_usage": {
+    "bootstrap": 1,
+    "check": 2,
+    "margo-run": 1
+  },
+  "trial": 1,
+  "validation_attempts_to_green": 2,
+  "validation_attempts_total": 3,
+  "wall_time_ms": 44075
+}

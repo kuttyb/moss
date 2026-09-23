@@ -569,5 +569,6 @@ restrictions and the future scoped-domain breadcrumb.
 
 Phase 22.2A and 22.2B provide a hardened, frozen 30-task
 [fresh-agent benchmark](benchmarks/agent/README.md) and the isolated
-`moss agent benchmark list|show|validate|run` interface. The external fresh-agent
-baseline run and aggregate report remain pending.
+`moss agent benchmark list|show|validate|run` interface. Phase 22.2C's canonical
+pre-22.1 fresh-agent baseline is recorded; the Phase 22.2D aggregate report
+remains pending.

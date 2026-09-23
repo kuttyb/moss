@@ -118,8 +118,9 @@ To add a task:
 5. Run `python3 tests/tooling/check_agent_benchmark.py ./moss`.
 
 Phase 22.2A's benchmark corpus is complete, hardened, and frozen for the baseline.
-Phase 22.2B's runner and result schema are complete. Phase 22.2C's fresh-agent
-baseline run and Phase 22.2D's aggregate report remain pending.
+Phase 22.2B's runner and result schema are complete. Phase 22.2C's canonical
+fresh-agent baseline is recorded under `baselines/pre-22.1/`; Phase 22.2D's
+aggregate analysis and report remain pending.
 
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 

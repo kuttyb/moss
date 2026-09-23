@@ -1,0 +1,3 @@
+Repaired [task/main.moss](/home/owner/daji/code/moss/task/main.moss:5) by declaring and binding Inventory’s route to Ledger. The program now has only the required acyclic routes: App → Inventory → Ledger.
+
+`moss check` passes, compiler inspection confirms those two routes, and interpreted execution prints `42`.

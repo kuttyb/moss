@@ -1,0 +1,3 @@
+Moved the arithmetic into an ordinary helper. `Run` calls it directly, and `main` still messages only `Run`.
+
+`task/main.moss` passes the Moss check and formatting check; interpreted execution prints `42`.

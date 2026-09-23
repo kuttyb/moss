@@ -1,0 +1,4 @@
+fn main():
+  values = [20, 22]
+  result = values |> filter(_ > 0)
+  echo result |> sum

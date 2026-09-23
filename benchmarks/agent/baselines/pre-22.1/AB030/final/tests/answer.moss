@@ -1,0 +1,2 @@
+test "answer":
+  assertEqual(answer(), 42)

@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). It passes the same `Box` to both parameters of a read-only helper and prints `42`. The compiler confirms both parameters have `READ` effects; the program checks and runs successfully.

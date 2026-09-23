@@ -1,0 +1,1 @@
+[task/main.moss](/home/owner/daji/code/moss/task/main.moss) is valid and unchanged. Structured check reported no diagnostics. The effects queries show `Store.Read` reads `payload.values` and sends a message; `Reader.Accept` and `total` read their payload without writing or consuming it. Running the program with the Moss interpreter printed `42`.

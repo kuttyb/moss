@@ -1,0 +1,1 @@
+Replaced the state-mutating callback in [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a pure map stage and removed the unused accumulator. Moss checking and formatting pass; the program prints `42`.

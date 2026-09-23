@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). It computes `6 * 7` and prints `42`. The Moss check passed, and running it produced `42`.

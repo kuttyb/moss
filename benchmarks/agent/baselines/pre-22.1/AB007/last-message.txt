@@ -1,0 +1,3 @@
+Added [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a `Source` domain that replies `21` and a `Doubler` domain that messages `Source` and replies with twice the result. `main` composes both and prints `42`.
+
+Moss check and format check pass; interpreted execution prints `42`.

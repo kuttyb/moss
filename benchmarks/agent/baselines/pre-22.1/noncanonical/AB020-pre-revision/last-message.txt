@@ -1,0 +1,1 @@
+Replaced the state-mutating callback in [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a pure `filter(_ > 0)` stage. The Moss check passes, and the program outputs `42`.

@@ -1,0 +1,11 @@
+type Box:
+  value: Int
+
+fn bump_and_read(changed: Box, observed: Box) -> Int:
+  changed.value = changed.value + 1
+  return changed.value + observed.value
+
+fn main():
+  item = Box(value = 20)
+  observed = Box(value = 21)
+  echo bump_and_read(item, observed)

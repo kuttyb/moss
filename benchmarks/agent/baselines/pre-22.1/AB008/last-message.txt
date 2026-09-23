@@ -1,0 +1,3 @@
+Repaired [task/main.moss](/home/owner/daji/code/moss/task/main.moss): Counter now has one handler, `Increment`, which calls an ordinary `advance` helper instead of messaging itself.
+
+The Moss check passes, and running the program prints `42`.

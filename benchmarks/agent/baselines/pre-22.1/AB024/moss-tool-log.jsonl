@@ -1,0 +1,8 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["check","task/src/math.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":2,"tool":"moss"}
+{"argv":["check","task/src/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":3,"tool":"moss"}
+{"argv":["fmt","--check","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":4,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":114,"exit_code":0,"origin":"margo-internal","sequence":6,"tool":"moss"}
+{"argv":["run"],"cwd":"task","diagnostic_codes":[],"duration_ms":173,"exit_code":0,"origin":"agent","sequence":5,"tool":"margo"}
+{"argv":["clean"],"cwd":"task","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"margo-internal","sequence":8,"tool":"moss"}
+{"argv":["clean"],"cwd":"task","diagnostic_codes":[],"duration_ms":51,"exit_code":0,"origin":"agent","sequence":7,"tool":"margo"}

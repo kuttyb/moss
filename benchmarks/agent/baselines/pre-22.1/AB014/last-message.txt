@@ -1,0 +1,3 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). `Worker.Read` replies with the payload’s value; the caller then changes its original payload to `42`. The program prints `41` and `42`.
+
+The Moss check and formatting check pass, and interpreted execution produces the expected output. The compiler confirms the handler’s payload access is read only.

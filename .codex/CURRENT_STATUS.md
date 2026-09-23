@@ -4,41 +4,59 @@ Updated: 2026-09-22
 
 ## Phase 22.2 — Agent Benchmark Suite
 
-Phase 22.2A and 22.2B are complete in the current working tree. The hardened,
-frozen pre-Phase-22.1 corpus contains 30 independently runnable tasks under
-`benchmarks/agent/`: ten write tasks, ten repairs, and ten workflow/debug tasks
-across eight categories. Declarative task metadata records prompts, starter and
-reviewed expected trees, allowed paths, objective criteria, and argv-based Moss or
-Margo validation.
+Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's
+runner and stable result schema are complete; and Phase 22.2C's canonical
+pre-Phase-22.1 fresh-agent baseline is complete. Phase 22.2D's aggregate analysis
+and report remain pending, so Phase 22.2 as a whole is not yet closed.
 
-Every task now checks both behavior and its defining Moss capability. Declarative
-regular-expression assertions cover required source/project structure, while
-existing semantic queries prove properties such as ordinary helper calls from
-repaired handlers. Focused regressions reject constant-output shortcuts for named
-functions, domains, same-domain/self-send repair, functional pipelines, and
-multi-module projects. Phase 22.2C must stage sanitized agent workspaces that do
-not expose any `expected/` reference tree.
+The canonical baseline is stored under `benchmarks/agent/baselines/pre-22.1/`.
+It uses protocol `phase-22.2c-v1`, corpus commit
+`b187009f6ef06738c52216d34490342d76d7ab4c`, compiler commit
+`22fdb024e4f284d17fb9abfe887856e17127aae7`, orchestration commit
+`532dc4610d156946df5014573e5d69947f4d3546`, Codex CLI 0.156.0,
+`gpt-6-sol`, medium reasoning, and a 900-second per-task limit. Each AB001–AB030
+result came from one independent ephemeral session with no resume or retry.
+Starter-only trees and normal Moss tools/docs/skills were mounted over the source
+repository; benchmark references and usable Git history were absent, external web
+and shell network access were disabled, and final validation ran outside the
+agent-visible namespace.
 
-`moss agent benchmark list|show|validate|run` exposes the suite in text or stable
-`moss-agent-benchmark-1` JSON. The runner validates metadata and reference
-solutions, executes in disposable repository-local copies, reports diagnostics and
-changed/out-of-scope paths, and reserves nullable result fields for later attempts,
-tool calls, agent identity, and timing. It never invokes an AI model.
+The raw execution result is 28 passes and 2 failures (`AB014`, `AB017`). Seventeen
+first meaningful validation commands passed. All 30 sessions eventually reached a
+successful Moss/Margo correctness command; attempts-to-green have mean 1.433 and
+median 1. The run recorded 407 agent tool calls and 157 Moss/Margo invocations,
+with no timeout, infrastructure failure, environment mutation, or outside-allowed-
+path change. Both final failures printed two requested values on separate lines
+where the frozen tasks require one space-separated line. Detailed ordered tool
+records, diagnostic codes, prompts, manifests, authoritative results, and final
+relevant files are retained per task.
 
-Phase 22.2A's benchmark corpus is complete and hardened. Phase 22.2B's
-runner/result schema is complete. Phase 22.2C (fresh-agent baseline run) and Phase
-22.2D (aggregate benchmark report) remain pending. The corpus is frozen for later
-comparison and must not be changed merely because diagnostics improve. Any later
-correction for an objectively invalid task must be recorded as a corpus revision.
+Two objective corpus corrections are documented in
+`benchmarks/agent/CORPUS_REVISIONS.md`; neither changed an agent-visible prompt,
+starter, expected reference, or compiler. Revision 1 made AB024 module assertions
+filename-independent. Revision 2 allowed AB020's explicitly requested pure stage
+to be either `map` or `filter`; its superseded session is retained under
+`pre-22.1/noncanonical/` and excluded from metrics. An earlier whole provisional
+series is also excluded because sanitized HOME hid rustup's compiler configuration;
+a compact invalidation record is retained under
+`benchmarks/agent/baselines/invalidated-pre-22.1-rustup/`. The corrected protocol
+pre-resolves native `rustc`, and its sanity check proves Margo build/test behavior
+inside the sanitized environment.
 
 Completed validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build;
-metadata validation and all 30 reference solutions; benchmark and anti-shortcut
-regressions; agent API and skill drift checks; Margo, module-provider,
-multi-module, separate-compilation, and Fast Debug checks; Python and shell syntax
-checks; `make examples`; and Git whitespace checks. `make check` passed the new
-benchmark test and all subsequent compiler, Margo, module, Fast Debug, tooling,
-and editor checks until the already documented Phase 10.6F native `&String ==
-String` failure. This phase does not change lowering or compiler semantics.
+metadata validation and all 30 reference solutions; all 30 retained canonical
+workspaces against the authoritative validator; benchmark, anti-shortcut, baseline
+isolation, agent API, and skill drift regressions; Margo path/Git DAG, module-
+provider, multi-file, separate-compilation, and Fast Debug project tests; Python
+and shell syntax checks; `make examples`; and Git whitespace checks. `make check`
+passed the benchmark and all subsequent compiler, Margo, module, Fast Debug,
+tooling, and editor checks until the already documented unrelated Phase 10.6F
+native `&String == String` failure. No compiler, language, lowering, interpreter,
+or diagnostic behavior changed.
+
+Benchmark tasks must not be changed merely because future diagnostics or agent
+tooling improve. Any objectively necessary corpus correction must retain stable
+IDs and be documented as a corpus revision before comparison.
 
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 
