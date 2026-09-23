@@ -748,7 +748,7 @@ Initial fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
 Parity closeout commits: `48db458` (`Fix Fast Debug collection parity`) for
 eager terminal traversal and typed empty Float sums; `cf3f8c6` (`Close Fast
 Debug Map and pipeline parity`) for checked map-output type propagation through
-empty pipelines; `06fe332` (`Use canonical Fast Debug pipeline contexts`) for
+empty pipelines; `49c3e9b9114721a672c0d2b3fef6f908a284a407` (`Use canonical Fast Debug pipeline contexts`) for
 canonical function, method, handler, test, and static-specialization lookup.
 
 Regression: `tests/swarm_023_fast_debug_pipelines.moss` and
