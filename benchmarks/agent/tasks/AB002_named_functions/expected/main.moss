@@ -1,0 +1,8 @@
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+fn square(value: Int) -> Int:
+  return value * value
+
+fn main():
+  echo square(add(3, 4))

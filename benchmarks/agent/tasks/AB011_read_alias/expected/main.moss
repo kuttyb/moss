@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn total(first: Box, second: Box) -> Int:
+  return first.value + second.value
+
+fn main():
+  item = Box(value = 21)
+  echo total(item, item)

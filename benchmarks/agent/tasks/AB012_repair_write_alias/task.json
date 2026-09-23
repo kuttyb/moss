@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB012",
+  "name": "repair-write-alias",
+  "category": "ownership-effects",
+  "task_type": "repair",
+  "prompt": "Repair the conflicting overlapping arguments. Preserve bump_and_read, but call it with distinct storage so one Box can be written while the other is read, producing 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The WRITE and READ arguments no longer alias.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Exercises inferred WRITE versus READ overlap diagnostics."
+}

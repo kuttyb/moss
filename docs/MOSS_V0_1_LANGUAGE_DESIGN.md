@@ -926,7 +926,7 @@ The formal claims rely on the following conditions:
 | Phase 15 | Dogfooding: write real Moss programs before speculative expansion |
 | Phase 20 | Rust interoperability |
 | Phase 21 | Error propagation and supervision |
-| Phase 22 | Agent agency tooling |
+| Phase 22 | Agent agency tooling; 22.2A benchmark specification and 22.2B runner/result schema complete, 22.2C baseline and 22.2D report pending |
 
 ## Appendix D - References
 

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB013",
+  "name": "repair-consume-use",
+  "category": "ownership-effects",
+  "task_type": "repair",
+  "prompt": "Repair the use-after-consume caused by replacing Holder.values. Keep replace and report the installed vector's count through Holder instead of reusing the transferred replacement.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The consumed replacement is not used afterward.",
+    "The program prints 3."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "3\n"
+      }
+    }
+  ],
+  "notes": "Covers a non-Copy CONSUME boundary and invalid ownership use."
+}

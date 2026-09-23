@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "id": "AB028",
+  "name": "trace-domain-logic",
+  "category": "fast-debug",
+  "task_type": "workflow",
+  "prompt": "Use Fast Debug with --trace to inspect the handler and state path, then repair Counter.Add so adding 2 to 40 replies 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The handler updates state with addition.",
+    "Fast Debug prints 42.",
+    "The program is traceable with the existing structured trace command."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "--trace",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n",
+        "stderr_contains": "\"event\""
+      }
+    }
+  ],
+  "notes": "Exercises checked interpreter execution and newline-delimited structured tracing."
+}

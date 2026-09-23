@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moss.invalid/schemas/agent-benchmark-task-1.json",
+  "title": "Moss agent benchmark task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "name",
+    "category",
+    "task_type",
+    "prompt",
+    "starter",
+    "expected",
+    "starter_files",
+    "allowed_paths",
+    "success_criteria",
+    "validation"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^AB[0-9]{3}$"},
+    "name": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+    "category": {
+      "enum": [
+        "basic-language",
+        "domains-messages",
+        "ownership-effects",
+        "functional-dataflow",
+        "synchronization",
+        "modules-margo",
+        "fast-debug",
+        "tooling-navigation"
+      ]
+    },
+    "task_type": {"enum": ["write", "repair", "workflow"]},
+    "prompt": {"type": "string", "minLength": 1},
+    "starter": {"type": "string", "minLength": 1},
+    "expected": {"type": "string", "minLength": 1},
+    "starter_files": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "allowed_paths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "success_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "validation": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command"],
+        "properties": {
+          "command": {"type": "array", "minItems": 2, "items": {"type": "string", "minLength": 1}},
+          "cwd": {"type": "string", "minLength": 1},
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "exit_code": {"type": "integer"},
+              "stdout": {"type": "string"},
+              "stdout_contains": {"type": "string"},
+              "stderr_contains": {"type": "string"},
+              "json_equals": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "equals": {"type": "string"},
+          "contains": {"type": "string"},
+          "not_contains": {"type": "string"}
+        }
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}

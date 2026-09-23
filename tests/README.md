@@ -27,6 +27,9 @@ Start with these groups:
   and the D.1/E/F/F.1 structure, module, and native execution checks in `run.sh`.
 - **Fast Debug and tooling:** interpreter/native differentials, module/project
   closure, structured traces, semantic queries, source maps, and Emacs tests.
+- **Agent benchmark:** `tooling/check_agent_benchmark.py` checks the fixed 30-task
+  corpus, metadata failures, public list/show JSON, reference solutions, isolated
+  execution, and allowed-path enforcement.
 
 Top-level `.moss` fixtures are normally executable positives; `negative/`
 contains diagnostic cases. Some specialized suites also keep an explicitly

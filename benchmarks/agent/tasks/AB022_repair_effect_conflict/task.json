@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB022",
+  "name": "repair-effect-conflict",
+  "category": "synchronization",
+  "task_type": "workflow",
+  "prompt": "Use ownership and effects feedback to repair the overlapping WRITE plus READ call. Preserve update_and_read and produce 42 using distinct boxes.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The conflicting arguments no longer overlap.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "A synchronization-relevant effect conflict already rejected by the compiler."
+}

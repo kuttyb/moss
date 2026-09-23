@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB004",
+  "name": "repair-iteration",
+  "category": "basic-language",
+  "task_type": "repair",
+  "prompt": "Repair sum_to so it iteratively sums the integers 1 through limit and prints 15 for limit 5.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The implementation uses supported iteration without recursion.",
+    "The program prints 15."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "15\n"
+      }
+    }
+  ],
+  "notes": "Exercises mutable locals and while iteration in Fast Debug."
+}

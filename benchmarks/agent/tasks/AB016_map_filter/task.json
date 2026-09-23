@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "AB016",
+  "name": "map-filter",
+  "category": "functional-dataflow",
+  "task_type": "write",
+  "prompt": "Create main.moss that maps [1, 2, 3, 4] by doubling each value, filters results greater than 4, sums them, and prints 14.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The solution uses the supported map and filter pipeline stages.",
+    "The terminal sum prints 14."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "14\n"
+      }
+    }
+  ],
+  "notes": "Covers eager map/filter/sum dataflow."
+}

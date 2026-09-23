@@ -566,3 +566,8 @@ and let actual usage determine the next refinements. Later milestones are
 Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision, and
 Phase 22 Agent Agency Tooling. The [v0.1 roadmap](docs/V0_1.md) preserves current
 restrictions and the future scoped-domain breadcrumb.
+
+Phase 22.2A and 22.2B provide a fixed 30-task
+[fresh-agent benchmark](benchmarks/agent/README.md) and the isolated
+`moss agent benchmark list|show|validate|run` interface. The external fresh-agent
+baseline run and aggregate report remain pending.

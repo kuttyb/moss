@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB010",
+  "name": "repair-domain-dag",
+  "category": "domains-messages",
+  "task_type": "repair",
+  "prompt": "Repair the three-domain program so App messages Inventory, Inventory messages Ledger, and the result is 42. Declare and bind only the required acyclic routes.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The concrete domain topology is acyclic and fully bound.",
+    "The nested synchronous interaction prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Exercises route declaration, construction binding, and simple acyclic multi-domain interaction."
+}

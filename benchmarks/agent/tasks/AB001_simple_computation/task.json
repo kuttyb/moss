@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB001",
+  "name": "simple-computation",
+  "category": "basic-language",
+  "task_type": "write",
+  "prompt": "Create main.moss with a main function that computes 6 * 7 and prints 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The program checks successfully.",
+    "Fast Debug prints exactly 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "exit_code": 0,
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "exit_code": 0,
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "A minimal write-from-scratch task covering bindings, arithmetic, main, and echo."
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "AB017",
+  "name": "reduce-terminals",
+  "category": "functional-dataflow",
+  "task_type": "write",
+  "prompt": "Create main.moss with a named add function. Reduce [10, 20, 12] from 0 and also count its elements, then print 42 and 3.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "reduce uses a named callable.",
+    "count uses the supported terminal.",
+    "The program prints 42 3."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42 3\n"
+      }
+    }
+  ],
+  "notes": "Exercises reduce, count, and named callable specialization."
+}

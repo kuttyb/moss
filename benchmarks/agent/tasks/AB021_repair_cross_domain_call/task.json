@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB021",
+  "name": "repair-cross-domain-call",
+  "category": "synchronization",
+  "task_type": "workflow",
+  "prompt": "Use the structured compiler diagnostic to repair the naked cross-domain handler call. Keep the topology static and print 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The domain operation uses synchronous message syntax.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "A diagnostic-driven repair of an already enforced domain interaction restriction."
+}

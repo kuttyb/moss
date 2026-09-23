@@ -2,6 +2,33 @@
 
 Updated: 2026-09-22
 
+## Phase 22.2 — Agent Benchmark Suite
+
+Phase 22.2A and 22.2B are complete in the current working tree. The fixed
+pre-Phase-22.1 corpus contains 30 independently runnable tasks under
+`benchmarks/agent/`: ten write tasks, ten repairs, and ten workflow/debug tasks
+across eight categories. Declarative task metadata records prompts, starter and
+reviewed expected trees, allowed paths, objective criteria, and argv-based Moss or
+Margo validation.
+
+`moss agent benchmark list|show|validate|run` exposes the suite in text or stable
+`moss-agent-benchmark-1` JSON. The runner validates metadata and reference
+solutions, executes in disposable repository-local copies, reports diagnostics and
+changed/out-of-scope paths, and reserves nullable result fields for later attempts,
+tool calls, agent identity, and timing. It never invokes an AI model.
+
+Phase 22.2C (fresh-agent baseline run) and Phase 22.2D (aggregate benchmark report)
+remain pending. The corpus is fixed for later comparison and must not be changed
+merely because diagnostics improve.
+
+Completed validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build;
+all 30 reviewed benchmark solutions; the focused benchmark regression; agent API
+and skill drift checks; Python and shell syntax checks; `make examples`; and Git
+whitespace checks. `make check` passed the new benchmark test and all subsequent
+compiler, Margo, module, Fast Debug, tooling, and editor checks until the existing
+Phase 10.6F native `&String == String` failure already recorded above; this phase
+does not change lowering or compiler semantics.
+
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 
 Completed Phase 15.6 multi-package dogfood experiment in `projects/build_planner/`:

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB020",
+  "name": "repair-pipeline-capture",
+  "category": "functional-dataflow",
+  "task_type": "repair",
+  "prompt": "Repair the pipeline whose callback mutates captured state. Replace the effectful capture with a pure supported stage while preserving output 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The pipeline callback has no mutable captured state.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Exercises pipeline capture/effect restrictions and a focused repair."
+}

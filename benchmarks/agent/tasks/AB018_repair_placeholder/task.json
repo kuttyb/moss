@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB018",
+  "name": "repair-placeholder",
+  "category": "functional-dataflow",
+  "task_type": "repair",
+  "prompt": "Repair the broken placeholder pipeline using current Moss placeholder syntax so the program prints 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The map stage uses a supported placeholder expression.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "A small syntax repair for placeholder expressions."
+}

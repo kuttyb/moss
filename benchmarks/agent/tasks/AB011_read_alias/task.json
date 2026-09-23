@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "AB011",
+  "name": "read-alias",
+  "category": "ownership-effects",
+  "task_type": "write",
+  "prompt": "Create main.moss with a Box type and a read-only helper that accepts two Box parameters. Pass the same Box to both parameters and print 42 without mutating or consuming it.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "Both overlapping arguments require only READ.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "A positive READ + READ aliasing boundary."
+}

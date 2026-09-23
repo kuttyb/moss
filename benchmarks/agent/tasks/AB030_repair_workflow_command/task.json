@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "AB030",
+  "name": "repair-workflow-command",
+  "category": "tooling-navigation",
+  "task_type": "workflow",
+  "prompt": "workflow.txt contains the wrong project test command. Replace it with exactly ./margo test followed by a newline. Confirm the included project tests pass through Margo.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "Moss.toml",
+    "src/main.moss",
+    "tests/answer.moss",
+    "workflow.txt"
+  ],
+  "allowed_paths": [
+    "workflow.txt"
+  ],
+  "success_criteria": [
+    "workflow.txt names the repository-local Margo test command.",
+    "The project test passes."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MARGO",
+        "test",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "workflow.txt",
+      "equals": "./margo test\n"
+    }
+  ],
+  "notes": "Measures discovery of the Moss-versus-Margo tooling split with an objectively checked artifact."
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "AB002",
+  "name": "named-functions",
+  "category": "basic-language",
+  "task_type": "write",
+  "prompt": "Create main.moss with named helper functions add and square. Use them to print the square of 3 + 4.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The helpers are ordinary named functions.",
+    "The program prints 49."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "49\n"
+      }
+    }
+  ],
+  "notes": "Exercises ordinary functions, return values, and named helper composition."
+}

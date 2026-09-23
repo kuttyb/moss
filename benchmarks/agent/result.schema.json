@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moss.invalid/schemas/agent-benchmark-result-1.json",
+  "title": "Moss agent benchmark run result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "status",
+    "validation",
+    "attempts",
+    "tool_calls",
+    "diagnostics",
+    "changed_paths",
+    "outside_allowed_paths",
+    "agent",
+    "wall_time_ms"
+  ],
+  "properties": {
+    "task_id": {"type": "string", "pattern": "^AB[0-9]{3}$"},
+    "status": {"enum": ["pass", "fail"]},
+    "validation": {"type": "array", "items": {"type": "object"}},
+    "attempts": {"type": ["integer", "null"], "minimum": 0},
+    "tool_calls": {"type": ["integer", "null"], "minimum": 0},
+    "diagnostics": {"type": "array", "items": {"type": "object"}},
+    "changed_paths": {"type": "array", "items": {"type": "string"}},
+    "outside_allowed_paths": {"type": "array", "items": {"type": "string"}},
+    "agent": {"type": ["object", "null"]},
+    "wall_time_ms": {"type": ["integer", "null"], "minimum": 0}
+  }
+}

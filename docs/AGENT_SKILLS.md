@@ -49,8 +49,10 @@ diagnostics, a minimal Moss reproducer, and native verification when lowering is
 involved. Generated Rust can reveal a backend defect; it is not language-design
 evidence by itself.
 
-This is a small dogfooding aid pulled forward from future Phase 22 work. It does not
-complete Phase 22: measured skill effectiveness, systematic rewrite-bearing
-diagnostics, richer trace slicing, and advanced agent repair workflows remain future
-work. During a real agent session, use `moss agent session-report-template --json` to
-record whether the skills reduced ambiguity; no telemetry is collected.
+The fixed [agent benchmark](../benchmarks/agent/README.md) now supplies Phase 22.2A's
+30-task corpus and Phase 22.2B's isolated validation/result tooling. The actual
+fresh-agent baseline and aggregate report remain Phase 22.2C and 22.2D work;
+systematic rewrite-bearing diagnostics, richer trace slicing, and advanced repair
+workflows also remain future work. During a real agent session, use
+`moss agent session-report-template --json` to record whether the skills reduced
+ambiguity; no telemetry is collected.

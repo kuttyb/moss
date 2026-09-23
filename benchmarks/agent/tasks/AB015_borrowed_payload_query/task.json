@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "AB015",
+  "name": "borrowed-payload-query",
+  "category": "ownership-effects",
+  "task_type": "workflow",
+  "prompt": "Use Moss structured check and effects tools to inspect the existing nested payload program. Leave it valid and confirm its behavior by running it; do not infer semantics from generated Rust.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The program remains compiler-valid.",
+    "The effects query succeeds.",
+    "Fast Debug prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "effects",
+        "handler:Store.Read",
+        "--source",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Navigation task for semantic queries and borrowed domain-state payload reads."
+}

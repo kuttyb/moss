@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "AB006",
+  "name": "construct-domain",
+  "category": "domains-messages",
+  "task_type": "write",
+  "prompt": "Create a Counter domain with value state initialized to 0 and an Increment handler that adds an amount and replies with the new value. Construct it statically in main and print the result of adding 5.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The domain instance is constructed in main's composition prefix.",
+    "A synchronous message returns 5."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "5\n"
+      }
+    }
+  ],
+  "notes": "Covers static domain construction, state mutation, message, and reply."
+}

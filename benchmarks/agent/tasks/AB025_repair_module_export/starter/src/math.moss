@@ -1,0 +1,4 @@
+module Math
+
+fn answer() -> Int:
+  42

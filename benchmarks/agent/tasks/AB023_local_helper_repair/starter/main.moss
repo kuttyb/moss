@@ -1,0 +1,10 @@
+domain Service:
+  fn Run() -> Int:
+    reply message self.Compute(21)
+
+  fn Compute(value: Int) -> Int:
+    reply value * 2
+
+fn main():
+  service = Service()
+  echo message service.Run()

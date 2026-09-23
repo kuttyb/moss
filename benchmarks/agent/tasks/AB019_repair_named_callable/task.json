@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB019",
+  "name": "repair-named-callable",
+  "category": "functional-dataflow",
+  "task_type": "repair",
+  "prompt": "Repair the map stage so it passes the statically known named callable double rather than calling double without an argument. Print 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "map receives the named callable.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Covers named callable use and static specialization."
+}

@@ -14046,6 +14046,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"fast_debug", "Direct execution of checked reachable Moss source when behavior is wrong.", "moss run --interp <source> | moss debug <project-or-source>"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
       {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean"},
+      {"agent_benchmark_suite", "List, inspect, validate, and execute isolated validation for the fixed fresh-agent task corpus.", "moss agent benchmark list|show|validate|run"},
   };
   return catalog;
 }
@@ -14444,7 +14445,7 @@ static void write_bootstrap_json(std::ostream& out,
             "first_order_effect_graph", "structured_execution_trace",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
             "domain_ranks", "package_project_driver", "package_dependencies",
-            "package_lockfile", "tool_invocation"});
+            "package_lockfile", "tool_invocation", "agent_benchmark_suite"});
   out << ",\n    \"capability_catalog\": ";
   write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
   out << ",\n    \"capability_flags\": {"
@@ -14459,7 +14460,8 @@ static void write_bootstrap_json(std::ostream& out,
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
          "\"package_lockfile\": true, "
-         "\"tool_invocation\": true}";
+         "\"tool_invocation\": true, "
+         "\"agent_benchmark_suite\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
@@ -14496,7 +14498,8 @@ static void write_bootstrap_json(std::ostream& out,
             "Moss.toml package manifest; Moss.lock resolved Git dependency lock",
             "module-qualified imports and versioned .mossi interfaces",
             "moss test --affected [--json] (semantic reduced verification)",
-            "moss build|test|bench|clean (project-command compatibility paths)"});
+            "moss build|test|bench|clean (project-command compatibility paths)",
+            "moss agent benchmark list|show|validate|run [--json]"});
   out << ",\n    \"semantic_queries\": ["
          "{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},"
@@ -14515,7 +14518,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_run\",\"command\":\"margo run [--release]\",\"purpose\":\"canonical package build and execution\"},"
          "{\"name\":\"package_test\",\"command\":\"margo test [filter] [--release] [--json]\",\"purpose\":\"canonical root-package test execution\"},"
          "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
-         "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"}]";
+         "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"},"
+         "{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}]";
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
@@ -14534,6 +14538,7 @@ static void write_bootstrap_json(std::ostream& out,
             "Run moss impact <target> --json.",
             "Run moss test --affected during iteration.",
             "Run the full root-package tests with margo test when appropriate.",
+            "Use moss agent benchmark list|show|validate|run for the fixed fresh-agent corpus.",
             "Prefer structured --json output for automation.",
             "Moss owns module/.mossi/semantic truth; Margo supplies package artifacts."});
   out << ",\n    \"workflow_hints\": ["
@@ -14553,6 +14558,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"How do I invoke Moss tools in this repository checkout?\",\"capability\":\"tool_invocation\",\"command\":\"./moss agent bootstrap --json\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
          "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
+  // The benchmark corpus is repository tooling rather than a language semantic
+  // query, so it is exposed through the capability catalog and command schema.
   out << ",\n    \"safety_rules\": ";
   write_agent_string_array(
       out, {"Do not edit generated Rust.",
@@ -14624,6 +14631,13 @@ static void write_bootstrap_json(std::ostream& out,
         out, "agent_schema", "Discover machine contracts for public agent-facing command groups.",
         {"--json"}, {}, "moss-agent-1 envelope with schema.command_schemas",
         {"identity contracts"}, {"AGENT_COMMAND_INVALID", "AGENT_ARGUMENT_INVALID"});
+    out << ',';
+    write_agent_command_schema(
+        out, "agent_benchmark", "List, show, validate, or run validation for a fixed fresh-agent benchmark task.",
+        {"list|show|validate|run"}, {"task id", "--workdir", "--json"},
+        "moss-agent-benchmark-1 envelope; run results contain task_id, status, validation, attempts, tool_calls, diagnostics, changed_paths, and outside_allowed_paths",
+        {"AB task id", "benchmark task name"},
+        {"BENCHMARK_METADATA_INVALID", "BENCHMARK_DUPLICATE_TASK", "BENCHMARK_TASK_NOT_FOUND", "BENCHMARK_VALIDATION_INVALID"});
     out << ',';
     write_agent_command_schema(
         out, "check", "Check Moss and return stable structured diagnostics.",
@@ -20347,6 +20361,79 @@ static std::optional<string> nearest_moss_project_root(
   return std::nullopt;
 }
 
+static std::optional<std::filesystem::path> agent_benchmark_repository(
+    const char* executable_name) {
+  vector<std::filesystem::path> starts = {std::filesystem::current_path()};
+  std::error_code error;
+  auto executable = moss::resolve_executable(executable_name);
+  if (executable) starts.push_back(executable->parent_path());
+#if defined(__linux__)
+  error.clear();
+  auto proc_executable = std::filesystem::read_symlink("/proc/self/exe", error);
+  if (!error) starts.push_back(proc_executable.parent_path());
+#endif
+  for (auto start : starts) {
+    start = std::filesystem::absolute(start, error).lexically_normal();
+    if (error) continue;
+    while (!start.empty()) {
+      if (std::filesystem::is_regular_file(
+              start / "benchmarks/agent/runner.py", error) &&
+          std::filesystem::is_regular_file(start / "margo", error))
+        return start;
+      auto parent = start.parent_path();
+      if (parent == start) break;
+      start = std::move(parent);
+    }
+  }
+  return std::nullopt;
+}
+
+static int run_agent_benchmark(int argc, char** argv) {
+  auto repository = agent_benchmark_repository(argv[0]);
+  if (!repository) {
+    std::cerr << "moss: error[BENCHMARK_SUITE_MISSING]: cannot locate "
+                 "benchmarks/agent from the Moss executable or current directory\n";
+    return 2;
+  }
+  auto resolved_compiler = moss::resolve_executable(argv[0]);
+  auto compiler = resolved_compiler.value_or(
+      std::filesystem::absolute(argv[0]).lexically_normal());
+  vector<string> arguments = {
+      "python3", ((*repository) / "benchmarks/agent/runner.py").string()};
+  for (int index = 3; index < argc; ++index) arguments.push_back(argv[index]);
+  arguments.push_back("--compiler");
+  arguments.push_back(compiler.string());
+  arguments.push_back("--repo-root");
+  arguments.push_back(repository->string());
+
+  pid_t child = ::fork();
+  if (child < 0) {
+    std::cerr << "moss: error[BENCHMARK_RUNNER_FAILED]: cannot launch "
+              << "benchmark runner: " << std::strerror(errno) << "\n";
+    return 2;
+  }
+  if (child == 0) {
+    vector<char*> command;
+    command.reserve(arguments.size() + 1);
+    for (auto& argument : arguments) command.push_back(argument.data());
+    command.push_back(nullptr);
+    ::execvp(command.front(), command.data());
+    _exit(127);
+  }
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0) {
+    if (errno != EINTR) {
+      std::cerr << "moss: error[BENCHMARK_RUNNER_FAILED]: cannot wait for "
+                   "benchmark runner: "
+                << std::strerror(errno) << "\n";
+      return 2;
+    }
+  }
+  if (WIFEXITED(status)) return WEXITSTATUS(status);
+  if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+  return 2;
+}
+
 static void usage() {
   std::cerr << "Moss v0.1 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
@@ -20355,6 +20442,7 @@ static void usage() {
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
             << "  moss agent session-report-template --json\n"
+            << "  moss agent benchmark list|show|validate|run [--json]\n"
             << "  moss inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> --json\n"
             << "  moss impact <target> [--source <input.moss>] --json\n"
             << "  moss fmt [--check] [--json]\n"
@@ -20611,6 +20699,8 @@ int main(int argc, char** argv) {
         return 2;
       }
       string agent_command = argv[2];
+      if (agent_command == "benchmark")
+        return run_agent_benchmark(argc, argv);
       bool requested_json = false;
       for (int index = 3; index < argc; ++index) {
         if (string(argv[index]) == "--json") requested_json = true;

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB003",
+  "name": "repair-branch",
+  "category": "basic-language",
+  "task_type": "repair",
+  "prompt": "Repair main.moss so classify prints positive for values greater than zero and non-positive otherwise. Keep the existing function and call.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The branch implements the stated classification.",
+    "The supplied call prints positive."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "positive\n"
+      }
+    }
+  ],
+  "notes": "A focused conditional logic repair."
+}

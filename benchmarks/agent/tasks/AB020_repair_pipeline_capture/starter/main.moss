@@ -1,0 +1,12 @@
+type Accumulator:
+  total: Int
+
+  fn add(value: Int) -> Int:
+    total = total + value
+    return total
+
+fn main():
+  accumulator = Accumulator(total = 0)
+  values = [20, 22]
+  result = values |> map(accumulator.add(_))
+  echo result |> sum

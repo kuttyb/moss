@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "AB024",
+  "name": "write-modules",
+  "category": "modules-margo",
+  "task_type": "write",
+  "prompt": "Create a Moss project with modules Math and App. Export Math.answer returning 42, import it from App, and print it from main. Add the minimal Moss.toml and use Margo.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "Moss.toml",
+    "src/**"
+  ],
+  "success_criteria": [
+    "The project resolves two explicit modules.",
+    "Margo builds and runs it.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MARGO",
+        "build",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MARGO",
+        "run"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Write-from-scratch multi-module project using the current Phase 15 and Margo boundary."
+}

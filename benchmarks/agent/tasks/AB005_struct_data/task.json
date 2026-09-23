@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "AB005",
+  "name": "struct-data",
+  "category": "basic-language",
+  "task_type": "write",
+  "prompt": "Create main.moss defining a Point type with Int x and y fields and a score method that returns x + y. Construct Point(20, 22) and print its score.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "A concrete Moss data type is used.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Covers records, construction, fields, and a named method."
+}

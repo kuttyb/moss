@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "AB027",
+  "name": "debug-branch-logic",
+  "category": "fast-debug",
+  "task_type": "workflow",
+  "prompt": "Use moss debug or the interpreter workflow to diagnose the logical error in shipping_cost. Repair it so an order total of 60 receives free shipping and the program prints 0.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The branch implements free shipping for totals at least 50.",
+    "Fast Debug prints 0."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "debug",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "0\n"
+      }
+    }
+  ],
+  "notes": "A deterministic Fast Debug logic diagnosis."
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "AB014",
+  "name": "message-payload",
+  "category": "ownership-effects",
+  "task_type": "write",
+  "prompt": "Create a Payload record and Worker domain. Send a Payload with value 41 to a read-only handler that replies with its value, then mutate the caller's original payload to 42 and print both values.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The message payload is read-only in the handler.",
+    "The original remains available after the synchronous value boundary.",
+    "The program prints 41 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "41 42\n"
+      }
+    }
+  ],
+  "notes": "Exercises message payload snapshot/value semantics and post-message caller use."
+}

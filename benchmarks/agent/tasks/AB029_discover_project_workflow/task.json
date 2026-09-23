@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "id": "AB029",
+  "name": "discover-project-workflow",
+  "category": "tooling-navigation",
+  "task_type": "workflow",
+  "prompt": "Run the documented moss agent bootstrap command, discover the project layout, and use Margo to build and test this project. The source is already correct; avoid unnecessary edits.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "Moss.toml",
+    "src/main.moss",
+    "tests/arithmetic.moss"
+  ],
+  "allowed_paths": [
+    "src/main.moss",
+    "tests/arithmetic.moss",
+    "Moss.toml"
+  ],
+  "success_criteria": [
+    "Margo builds the project.",
+    "The discovered test passes.",
+    "No source edit is required."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "agent",
+        "bootstrap",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true,
+          "result.language_version": "moss-0.1"
+        }
+      }
+    },
+    {
+      "command": [
+        "$MARGO",
+        "build",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MARGO",
+        "test",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    }
+  ],
+  "notes": "Navigation task separating package and project commands from Moss semantic commands."
+}

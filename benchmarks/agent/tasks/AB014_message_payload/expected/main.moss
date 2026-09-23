@@ -1,0 +1,13 @@
+type Payload:
+  value: Int
+
+domain Worker:
+  fn Read(payload: Payload) -> Int:
+    reply payload.value
+
+fn main():
+  worker = Worker()
+  payload = Payload(value = 41)
+  observed = message worker.Read(payload)
+  payload.value = 42
+  echo observed, payload.value

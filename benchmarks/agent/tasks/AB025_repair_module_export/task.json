@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "AB025",
+  "name": "repair-module-export",
+  "category": "modules-margo",
+  "task_type": "workflow",
+  "prompt": "Diagnose and repair this multi-module project so App can use Math.answer. Preserve qualified import and use, and make Margo run print 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "Moss.toml",
+    "src/main.moss",
+    "src/math.moss"
+  ],
+  "allowed_paths": [
+    "src/math.moss",
+    "src/main.moss",
+    "Moss.toml"
+  ],
+  "success_criteria": [
+    "The provider exports the imported symbol.",
+    "Margo resolves and runs the project.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MARGO",
+        "build",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MARGO",
+        "run"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Focused module visibility repair without redesigning module resolution."
+}

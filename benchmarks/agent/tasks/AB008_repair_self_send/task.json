@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "AB008",
+  "name": "repair-self-send",
+  "category": "domains-messages",
+  "task_type": "repair",
+  "prompt": "Repair the illegal self-send in Counter. Preserve one public Increment handler and produce 42 by extracting ordinary helper logic instead of messaging self.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "No self-send remains.",
+    "The handler replies 42 through ordinary helper reuse."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "notes": "Measures whether compiler feedback leads the agent from self-send to an ordinary helper."
+}
