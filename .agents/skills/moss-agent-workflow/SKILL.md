@@ -35,6 +35,23 @@ The language skill declares `moss-0.1`. Compare it with bootstrap's
 `result.language_version`; a mismatch means the skill may be stale. Refresh live
 discovery and report the mismatch rather than trusting historical guidance.
 
+## Experimental feedback inventory
+
+If this task is a dogfood, swarm, fresh-agent, or language-surface experiment,
+create and maintain `FEEDBACK.jsonl` using
+`examples/swarm/feedback/OBSERVATION_TEMPLATE.json`. Place it at
+`examples/swarm/<experiment>/FEEDBACK.jsonl`; one nonblank line is one complete
+JSON observation object.
+
+Update feedback during the experiment. Preserve first-attempt natural failures
+before applying workarounds, then attach minimization and execution-matrix
+evidence to that observation. Do not wait until closeout to reconstruct findings
+from memory, reports, or commit messages, and do not put a unique finding only in
+a commit message. Follow `examples/swarm/feedback/README.md` for the controlled
+vocabulary, observation identity, execution modes, and coordinator SWARM-linking
+rules. This requirement applies to experiments only, not ordinary Moss
+application development.
+
 Use the compiler as the authority on Moss semantics. This skill is a compact operating
 procedure for an agent working on `.moss` source; it complements `moss-language`,
 which explains the current language surface. Do not infer Moss behavior from generated

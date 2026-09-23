@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Moss swarm feedback observation",
+  "description": "One complete line in an experiment FEEDBACK.jsonl inventory.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observation_id", "phase", "agent", "workload", "summary", "classification",
+    "severity", "confidence", "discovered_naturally", "natural_source", "reproducer",
+    "expected", "actual", "matrix", "diagnostic", "workaround", "existing_swarm", "notes"
+  ],
+  "properties": {
+    "observation_id": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "phase": { "type": "string", "minLength": 1 },
+    "agent": { "type": "string", "minLength": 1 },
+    "workload": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "classification": {
+      "type": "string",
+      "enum": ["language_rule", "agent_misunderstanding", "ergonomics", "documentation", "diagnostic", "frontend", "formatter", "ownership_effect", "specialization", "native_lowering", "fast_debug", "module_interface", "package_tooling", "semantic_tooling", "compiler_crash"]
+    },
+    "severity": { "type": "string", "enum": ["crash", "wrong_result", "correctness", "parity", "usability", "documentation"] },
+    "confidence": { "type": "string", "enum": ["candidate", "reproduced", "confirmed", "rejected"] },
+    "discovered_naturally": { "type": "boolean" },
+    "natural_source": { "type": ["string", "null"], "description": "Repository-relative path, or null when no application source is applicable." },
+    "reproducer": { "type": ["string", "null"], "description": "Repository-relative durable reproducer path, or null when inapplicable." },
+    "expected": { "type": "string", "minLength": 1 },
+    "actual": { "type": "string", "minLength": 1 },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fmt", "check", "native_build", "native_run", "native_test", "fast_debug", "fast_debug_test"],
+      "properties": {
+        "fmt": { "$ref": "#/$defs/matrix_value" },
+        "check": { "$ref": "#/$defs/matrix_value" },
+        "native_build": { "$ref": "#/$defs/matrix_value" },
+        "native_run": { "$ref": "#/$defs/matrix_value" },
+        "native_test": { "$ref": "#/$defs/matrix_value" },
+        "fast_debug": { "$ref": "#/$defs/matrix_value" },
+        "fast_debug_test": { "$ref": "#/$defs/matrix_value" }
+      }
+    },
+    "diagnostic": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "source_location_correct"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 },
+            "source_location_correct": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "workaround": { "type": ["string", "null"] },
+    "existing_swarm": { "type": ["string", "null"], "pattern": "^SWARM-[0-9]+$" },
+    "notes": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "matrix_value": { "type": "string", "enum": ["pass", "fail", "unsupported", "not_tested", "not_applicable"] }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "observation_id": "15.12A-example-001",
+  "phase": "15.12A",
+  "agent": "example-agent",
+  "workload": "fictional short workload used only to demonstrate the record shape",
+  "summary": "Fictional template observation; this is not a real Moss finding.",
+  "classification": "native_lowering",
+  "severity": "correctness",
+  "confidence": "confirmed",
+  "discovered_naturally": true,
+  "natural_source": "examples/swarm/example_experiment/src/main.moss",
+  "reproducer": "examples/swarm/example_experiment/repros/fictional_case.moss",
+  "expected": "The fictional application would compile and run natively.",
+  "actual": "This fictional template describes a native build failure.",
+  "matrix": {
+    "fmt": "pass",
+    "check": "pass",
+    "native_build": "fail",
+    "native_run": "not_applicable",
+    "native_test": "not_tested",
+    "fast_debug": "pass",
+    "fast_debug_test": "not_tested"
+  },
+  "diagnostic": {
+    "code": "BUILD_BACKEND_ERROR",
+    "message": "Fictional summarized backend diagnostic for template use only.",
+    "source_location_correct": true
+  },
+  "workaround": "Fictional bounded workaround for template use only.",
+  "existing_swarm": null,
+  "notes": "Replace every fictional value when copying this template."
+}

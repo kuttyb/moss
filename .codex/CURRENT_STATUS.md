@@ -2,6 +2,22 @@
 
 Updated: 2026-09-23
 
+## Canonical swarm feedback observation contract — COMPLETE
+
+Future dogfood, swarm, fresh-agent, and language-surface experiments use
+`examples/swarm/<experiment>/FEEDBACK.jsonl` as their authoritative structured
+observation inventory. The canonical template, schema, practical workflow, and
+dependency-free validator are in `examples/swarm/feedback/` and
+`tools/check_swarm_feedback.py`. The validator rejects malformed JSONL,
+duplicate observation IDs, noncanonical vocabularies/matrix values, invalid
+SWARM links, and missing supplied repository evidence paths; its focused
+self-test is now part of `tests/run.sh`.
+
+Validated before commit: JSON parsing for schema/template, validator self-test,
+repository feedback scan, Python compilation, and `git diff --check`. No Moss
+compiler source or semantics changed. This establishes the forward-looking
+contract only; historical swarm reports were deliberately not migrated.
+
 ## Phase 15.12 — Static Polymorphism & Specialization Swarm — COMPLETE
 
 Phase 15.12 executed a 4-subagent dogfood swarm evaluating Moss v0.1's static polymorphism model (untyped statically specialized functions, structural traits, reusable helpers, statically known callable parameters, pipelines, and reuse across modules and packages) across 4 substantive independent workloads under `examples/swarm/polymorphism/`:
