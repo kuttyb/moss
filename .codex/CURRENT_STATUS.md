@@ -16,6 +16,20 @@ distinguish placeholder, callable-invocation, and captured-mutation rules.
 `TYPE_INFERENCE_FAILED` remain stable where they are the correct semantic classes,
 with richer compiler facts and sound guidance.
 
+Corrective diagnostic-contract hardening is complete in compiler commit
+`c3af21057884a385efd5492accc7256c20bdec4b` on the dedicated `phase-22.1`
+branch. Handler-specific teaching now
+follows successful handler/arity/type resolution, while target-existence
+diagnostics remain independently available. Named-pipeline-callable guidance is
+emitted only when the named function's required arity and statically known input
+types match the stage. `cause.entities[].semantic_identity` now contains the
+compiler's actual resolved identity (including source identity) or `null`;
+canonical selectors remain in `name` and durable `entity-v1` values are not
+overloaded into this field. Focused regressions cover nonexistent handlers,
+same-instance messages, ordinary object methods, callable arity/type negatives,
+all promised inference-teaching paths, unsupported-operator negative guidance,
+identity representation, and discovery drift.
+
 The additive `moss-agent-1` teaching fields are `source`, `rule`,
 `cause.entities`, `related`, and `guidance`; concise human output is rendered from
 the same facts. Focused tests cover diagnostic codes, rule/cause/entity identities,
@@ -28,8 +42,24 @@ The fixed-protocol post run is retained under
 machine-readable comparison, and report. It used the same AB001-AB030 corpus,
 prompt wrapper, Codex CLI 0.156.0, `gpt-6-sol`, medium reasoning, isolation,
 network restrictions, 900-second budget, and validators; there are no known
-model/runtime/protocol confounders. Compiler/orchestration commit `bb388d4` is the
-intended treatment.
+model/runtime/protocol confounders. Compiler/orchestration commit
+`bb388d4aeb1df7f6dac682b427d666a44a748bf4` is the intended treatment.
+
+The post-22.1 benchmark was not rerun. Its measured treatment remains
+`bb388d4aeb1df7f6dac682b427d666a44a748bf4`;
+the final Phase 22.1 compiler is `c3af21057884a385efd5492accc7256c20bdec4b`.
+A direct deterministic audit of the
+AB008/AB009/AB010/AB012/AB017-AB023 starters against a compiler built from
+`bb388d4aeb1df7f6dac682b427d666a44a748bf4` found unchanged diagnostic code,
+rule, cause kind/entity roles and
+names, and guidance; AB015's starter remains accepted. Resolved
+`semantic_identity` values intentionally differ because of the corrected contract.
+The unobserved AB015 bare-query failure now carries `handler:Store.Read@15`
+instead of an incorrectly overloaded durable ID; the canonical post run had zero
+`QUERY_TARGET_NOT_FOUND` occurrences. These changes alter identity representation,
+not the recovery path, so the frozen stochastic run remains the canonical evidence
+for treatment `bb388d4aeb1df7f6dac682b427d666a44a748bf4` rather than being
+overwritten.
 
 Pre/post outcomes were 28→28 final passes, 17→16 first-validation successes,
 30→30 eventually green, 1.433→1.467 mean attempts to green, 407→422 agent tool
@@ -42,13 +72,20 @@ or tool-efficiency gain. AB014 and AB017 again failed only exact output formatti
 after successful compilation; all repair tasks passed and all 30 sessions reached
 green.
 
-Closeout validation passes strict C++17 `-Werror`, Phase 22.1 teaching and negative
-regressions, agent API and skill drift, all 30 benchmark references/metadata,
-deterministic pre aggregate and post comparison checks, ownership/domain/functional,
-Margo/module, Fast Debug, `make examples`, Python/shell syntax, and whitespace.
-The full `make check` run passed every reached suite and stopped at the already
-documented unrelated Phase 10.6F native Rust error comparing `&String == String`
-in generated `phase106f/workload.rs`; it was neither repaired nor weakened.
+Final hardening validation passes strict C++17 `-Werror`, Phase 22.1 teaching and
+negative regressions, agent API and skill drift, all 30 benchmark
+references/metadata, deterministic pre aggregate and post comparison checks,
+ownership/domain/functional, Margo/module, Fast Debug, `make examples`,
+Python/shell syntax, and whitespace. The final `make check` run passed every
+reached suite through Phase 10.6E and stopped at the already documented unrelated
+Phase 10.6F native Rust error comparing `&String == String` in generated
+`phase106f/workload.rs`; it was neither repaired nor weakened. No Moss syntax,
+accepted/rejected program set, ownership, domain, functional, synchronization,
+module, lowering, or Fast Debug semantics changed.
+
+The immutable Phase 22.2 base for parallel Phase 22.3/22.4 work is
+`3668ce450ff3c5aedee3cb32d34cafe72b6d4b46`; the moving `phase-22.2` branch pointer
+must not be used as that base.
 
 ## Phase 22.2 — Agent Benchmark Suite
 
@@ -56,8 +93,8 @@ Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's
 runner and stable result schema are complete; Phase 22.2C's canonical
 pre-Phase-22.1 fresh-agent baseline is complete; and Phase 22.2D's deterministic
 aggregate analysis and evidence report are complete. Phase 22.2 as a whole is
-complete. The next phase is Phase 22.1 — Agent-Teaching Diagnostics, driven by
-the diagnostic and workflow evidence in the Phase 22.2D report.
+complete. Its diagnostic and workflow evidence drove Phase 22.1, which is now
+closed as recorded above.
 
 The canonical baseline is stored under `benchmarks/agent/baselines/pre-22.1/`.
 It uses protocol `phase-22.2c-v1`, corpus commit
