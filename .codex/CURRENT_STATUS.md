@@ -1572,3 +1572,8 @@ fail-closed parity.
 `tests/run.sh ./moss` reaches the known unrelated Phase 10.6F `&String == String`
 native lowering failure after all focused additions pass. `make check` reaches the
 known environment-specific LLDB/DAP real-integration handshake failure first.
+
+The remaining Fast Debug closeout repairs detach a selected non-Copy `Map.get`
+fallback and retain the checked map-output element type through empty pipelines.
+Focused native/Fast Debug parity regressions cover missing-key fallback ownership,
+empty `Int -> Float` and `Int -> Int` maps, and an empty Float filter before `sum`.

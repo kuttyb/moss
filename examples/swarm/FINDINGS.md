@@ -10,7 +10,7 @@ experiment READMEs retain their detailed local observations.
 - Open: 0
 - Fixed: 22
 - Not-a-bug / agent misunderstanding: 1
-- Independently reproduced by multiple experiments: 5
+- Independently reproduced by multiple experiments: 6
 
 Completed swarm experiments:
 
@@ -706,10 +706,15 @@ local bindings and multiple statements when their observable effects are known.
 - Also observed: —
 - Observation count: 1
 
-Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+Initial fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Parity closeout commits: `48db458` (`Fix Fast Debug collection parity`) for
+eager defaults and existing Map value/snapshot ownership; `cf3f8c6` (`Close
+Fast Debug Map and pipeline parity`) for missing-key non-Copy fallback ownership.
 
 Regression: `tests/swarm_021_field_collections.moss` and
-`tests/swarm_021_map_value_semantics.moss`.
+`tests/swarm_021_map_value_semantics.moss` and
+`tests/swarm_021_map_get_fallback_owned.moss`.
 
 Fast Debug now executes supported Vector, Queue, and Map operations reached through
 checked object fields, including collection indexing and Map `get`, `keys`, and
@@ -738,10 +743,16 @@ inside an ordinary state object, now receive logical empty Map values in Fast De
 - Also observed: —
 - Observation count: 1
 
-Fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+Initial fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
+
+Parity closeout commits: `48db458` (`Fix Fast Debug collection parity`) for
+eager terminal traversal and typed empty Float sums; `cf3f8c6` (`Close Fast
+Debug Map and pipeline parity`) for checked map-output type propagation through
+empty pipelines.
 
 Regression: `tests/swarm_023_fast_debug_pipelines.moss` and
-`tests/swarm_023_eager_terminals.moss`.
+`tests/swarm_023_eager_terminals.moss` and
+`tests/swarm_023_empty_map_types.moss`.
 
 Fast Debug now executes the current eager `map`, `filter`, `reduce`, `sum`, `count`,
 `any`, and `all` pipeline family. Terminal predicates execute in source order even
