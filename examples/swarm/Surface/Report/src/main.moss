@@ -1,0 +1,410 @@
+# Report: parse inline CSV-like sales lines "region,product,units,price",
+# drop malformed / zero-unit rows, group by region, and print the top 3
+# regions by revenue as an aligned text table.
+#
+# Moss v0.1 Strings are opaque (only `+` and `==` are checked operations), so
+# text is carried as Vector[String] of single-character strings and every
+# string utility (split, join, parse, width, padding) is implemented here.
+# Money is fixed-point Int cents.
+
+# ---------------------------------------------------------------- text utils
+
+# a + b with both inputs READ (see TENSION: `return a + b` fails natively,
+# `var out = a` would CONSUME a).
+fn concat(a: String, b: String) -> String:
+  var out = ""
+  out = out + a
+  out = out + b
+  return out
+
+fn join(chars: Vector[String]) -> String:
+  return chars |> reduce("", concat)
+
+fn digit_value(ch: String) -> Int:
+  digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+  i = 0
+  while i < 10:
+    if digits[i] == ch:
+      return i
+    i = i + 1
+  # `return -1` is rejected by moss fmt / moss edit (see README).
+  return 0 - 1
+
+fn is_digit(ch: String) -> Bool:
+  return digit_value(ch) >= 0
+
+fn digit_char(d: Int) -> String:
+  digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+  return concat("", digits[d])
+
+# Copy chars[start:end] into a fresh vector.
+fn slice(chars: Vector[String], start: Int, end: Int) -> Vector[String]:
+  var out = Vector[String]()
+  i = start
+  while i < end:
+    out.push(concat("", chars[i]))
+    i = i + 1
+  return out
+
+# Positions of every `sep` in chars.
+fn find_all(chars: Vector[String], sep: String) -> Vector[Int]:
+  var hits = Vector[Int]()
+  n = chars |> count
+  i = 0
+  while i < n:
+    if chars[i] == sep:
+      hits.push(i)
+    i = i + 1
+  return hits
+
+# chars.split(sep): builds each part fresh from separator positions.
+fn split(chars: Vector[String], sep: String) -> Vector[Vector[String]]:
+  var parts = Vector[Vector[String]]()
+  hits = find_all(chars, sep)
+  nhits = hits |> count
+  start = 0
+  k = 0
+  while k < nhits:
+    parts.push(slice(chars, start, hits[k]))
+    start = hits[k] + 1
+    k = k + 1
+  parts.push(slice(chars, start, chars |> count))
+  return parts
+
+fn parse_int(chars: Vector[String]) -> Int:
+  value = 0
+  n = chars |> count
+  i = 0
+  while i < n:
+    value = value * 10 + digit_value(chars[i])
+    i = i + 1
+  return value
+
+fn is_int(chars: Vector[String]) -> Bool:
+  n = chars |> count
+  if n == 0:
+    return false
+  return chars |> all(is_digit)
+
+# "2.5" -> 250, "10.00" -> 1000, "7" -> 700
+fn parse_cents(chars: Vector[String]) -> Int:
+  pieces = split(chars, ".")
+  whole = parse_int(pieces[0]) * 100
+  np = pieces |> count
+  if np < 2:
+    return whole
+  frac = pieces[1]
+  nfrac = frac |> count
+  if nfrac == 0:
+    return whole
+  if nfrac == 1:
+    return whole + digit_value(frac[0]) * 10
+  return whole + digit_value(frac[0]) * 10 + digit_value(frac[1])
+
+fn is_price(chars: Vector[String]) -> Bool:
+  pieces = split(chars, ".")
+  np = pieces |> count
+  if np == 1:
+    return is_int(pieces[0])
+  if np == 2:
+    if not is_int(pieces[0]):
+      return false
+    if not is_int(pieces[1]):
+      return false
+    nfrac = pieces[1] |> count
+    return nfrac <= 2
+  return false
+
+# ---------------------------------------------------------------- Text cells
+
+# A String together with its display width (Moss cannot measure a String).
+type Text:
+  s: String
+  width: Int
+
+fn lit(s: String, width: Int) -> Text:
+  return Text(s: s, width: width)
+
+fn spaces(n: Int) -> String:
+  var out = ""
+  i = 0
+  while i < n:
+    out = concat(out, " ")
+    i = i + 1
+  return out
+
+fn int_text(value: Int) -> Text:
+  if value == 0:
+    return Text(s: "0", width: 1)
+  var out = ""
+  width = 0
+  v = value
+  negative = v < 0
+  if negative:
+    v = 0 - v
+  while v > 0:
+    out = concat(digit_char(v % 10), out)
+    v = v / 10
+    width = width + 1
+  if negative:
+    return Text(s: concat("-", out), width: width + 1)
+  return Text(s: out, width: width)
+
+# 15875 -> "158.75"
+fn money_text(cents: Int) -> Text:
+  whole = int_text(cents / 100)
+  frac = cents % 100
+  tail = concat(digit_char(frac / 10), digit_char(frac % 10))
+  return Text(s: concat(concat(whole.s, "."), tail), width: whole.width + 3)
+
+fn pad_right(t: Text, width: Int) -> String:
+  return concat(t.s, spaces(width - t.width))
+
+fn pad_left(t: Text, width: Int) -> String:
+  return concat(spaces(width - t.width), t.s)
+
+# ---------------------------------------------------------------- records
+
+type Record:
+  region: String
+  region_width: Int
+  product: String
+  units: Int
+  price_cents: Int
+  valid: Bool
+
+  fn revenue() -> Int:
+    return units * price_cents
+
+  fn units_in(name: String) -> Int:
+    if region == name:
+      return units
+    return 0
+
+  fn revenue_in(name: String) -> Int:
+    if region == name:
+      return units * price_cents
+    return 0
+
+  fn rows_in(name: String) -> Int:
+    if region == name:
+      return 1
+    return 0
+
+fn invalid_record() -> Record:
+  return Record(region: "", region_width: 0, product: "", units: 0, price_cents: 0, valid: false)
+
+fn parse_record(line: Vector[String]) -> Record:
+  fields = split(line, ",")
+  nfields = fields |> count
+  if nfields != 4:
+    return invalid_record()
+  if not is_int(fields[2]):
+    return invalid_record()
+  if not is_price(fields[3]):
+    return invalid_record()
+  return Record(region: join(fields[0]), region_width: fields[0] |> count, product: join(fields[1]), units: parse_int(fields[2]), price_cents: parse_cents(fields[3]), valid: true)
+
+# Fresh owned copy (moving out of records[i] would consume the whole vector).
+fn copy_record(r: Record) -> Record:
+  return Record(region: concat("", r.region), region_width: r.region_width, product: concat("", r.product), units: r.units, price_cents: r.price_cents, valid: r.valid)
+
+fn region_of(r: Record) -> String:
+  return concat("", r.region)
+
+fn width_of(r: Record) -> Int:
+  return r.region_width
+
+fn keep(r: Record) -> Bool:
+  if not r.valid:
+    return false
+  return r.units > 0
+
+# ---------------------------------------------------------------- grouping
+
+type GroupStat:
+  region: String
+  region_width: Int
+  rows: Int
+  units: Int
+  revenue: Int
+  max_units: Int
+
+  fn avg_price_cents() -> Int:
+    return revenue / units
+
+fn bigger(a: Int, b: Int) -> Int:
+  if a > b:
+    return a
+  return b
+
+fn group_stat(records: Vector[Record], name: String, width: Int) -> GroupStat:
+  rows = records |> map(_.rows_in(name)) |> sum
+  units = records |> map(_.units_in(name)) |> sum
+  revenue = records |> map(_.revenue_in(name)) |> sum
+  max_units = records |> map(_.units_in(name)) |> reduce(0, bigger)
+  return GroupStat(region: name, region_width: width, rows: rows, units: units, revenue: revenue, max_units: max_units)
+
+# Indices that order `keys` descending (stable insertion sort; Julia sortperm(rev=true)).
+fn sortperm_desc(keys: Vector[Int]) -> Vector[Int]:
+  var order = Vector[Int]()
+  n = keys |> count
+  i = 0
+  while i < n:
+    order.push(i)
+    j = i
+    while j > 0:
+      if keys[order[j - 1]] < keys[order[j]]:
+        tmp = order[j]
+        order[j] = order[j - 1]
+        order[j - 1] = tmp
+        j = j - 1
+      else:
+        j = 0
+    i = i + 1
+  return order
+
+# ---------------------------------------------------------------- data
+
+# Parameter is `buf`, not `text`: a parameter named like a top-level function
+# made native `push` lower with a stray borrow (see README).
+fn add_line(buf: Vector[String], chars: Vector[String]):
+  n = chars |> count
+  i = 0
+  while i < n:
+    buf.push(concat("", chars[i]))
+    i = i + 1
+  buf.push("\n")
+  return
+
+fn raw_csv() -> Vector[String]:
+  var buf = Vector[String]()
+  # north,widget,12,2.50
+  add_line(buf, ["n", "o", "r", "t", "h", ",", "w", "i", "d", "g", "e", "t", ",", "1", "2", ",", "2", ".", "5", "0"])
+  # south,gadget,5,10.00
+  add_line(buf, ["s", "o", "u", "t", "h", ",", "g", "a", "d", "g", "e", "t", ",", "5", ",", "1", "0", ".", "0", "0"])
+  # east,widget,20,2.50
+  add_line(buf, ["e", "a", "s", "t", ",", "w", "i", "d", "g", "e", "t", ",", "2", "0", ",", "2", ".", "5", "0"])
+  # west,gizmo,7,4.75
+  add_line(buf, ["w", "e", "s", "t", ",", "g", "i", "z", "m", "o", ",", "7", ",", "4", ".", "7", "5"])
+  # north,gadget,3,10.00
+  add_line(buf, ["n", "o", "r", "t", "h", ",", "g", "a", "d", "g", "e", "t", ",", "3", ",", "1", "0", ".", "0", "0"])
+  # central,widget,15,2.40
+  add_line(buf, ["c", "e", "n", "t", "r", "a", "l", ",", "w", "i", "d", "g", "e", "t", ",", "1", "5", ",", "2", ".", "4", "0"])
+  # south,widget,8,2.50
+  add_line(buf, ["s", "o", "u", "t", "h", ",", "w", "i", "d", "g", "e", "t", ",", "8", ",", "2", ".", "5", "0"])
+  # east,gizmo,0,4.75
+  add_line(buf, ["e", "a", "s", "t", ",", "g", "i", "z", "m", "o", ",", "0", ",", "4", ".", "7", "5"])
+  # west,widget,11,2.60
+  add_line(buf, ["w", "e", "s", "t", ",", "w", "i", "d", "g", "e", "t", ",", "1", "1", ",", "2", ".", "6", "0"])
+  # north,gizmo,9,4.50
+  add_line(buf, ["n", "o", "r", "t", "h", ",", "g", "i", "z", "m", "o", ",", "9", ",", "4", ".", "5", "0"])
+  # central,gadget,6,9.50
+  add_line(buf, ["c", "e", "n", "t", "r", "a", "l", ",", "g", "a", "d", "g", "e", "t", ",", "6", ",", "9", ".", "5", "0"])
+  # south,gizmo,14,4.25
+  add_line(buf, ["s", "o", "u", "t", "h", ",", "g", "i", "z", "m", "o", ",", "1", "4", ",", "4", ".", "2", "5"])
+  # east,gadget,4,11.00
+  add_line(buf, ["e", "a", "s", "t", ",", "g", "a", "d", "g", "e", "t", ",", "4", ",", "1", "1", ".", "0", "0"])
+  # west,gadget,2,12.00
+  add_line(buf, ["w", "e", "s", "t", ",", "g", "a", "d", "g", "e", "t", ",", "2", ",", "1", "2", ".", "0", "0"])
+  # north,widget,6,2.55
+  add_line(buf, ["n", "o", "r", "t", "h", ",", "w", "i", "d", "g", "e", "t", ",", "6", ",", "2", ".", "5", "5"])
+  # central,gizmo,10,4.80
+  add_line(buf, ["c", "e", "n", "t", "r", "a", "l", ",", "g", "i", "z", "m", "o", ",", "1", "0", ",", "4", ".", "8", "0"])
+  # south,gadget,3,9.75
+  add_line(buf, ["s", "o", "u", "t", "h", ",", "g", "a", "d", "g", "e", "t", ",", "3", ",", "9", ".", "7", "5"])
+  # east,widget,9,2.45
+  add_line(buf, ["e", "a", "s", "t", ",", "w", "i", "d", "g", "e", "t", ",", "9", ",", "2", ".", "4", "5"])
+  # bogus,row
+  add_line(buf, ["b", "o", "g", "u", "s", ",", "r", "o", "w"])
+  # west,gizmo,5,5.00
+  add_line(buf, ["w", "e", "s", "t", ",", "g", "i", "z", "m", "o", ",", "5", ",", "5", ".", "0", "0"])
+  return buf
+
+# ---------------------------------------------------------------- pipeline
+
+fn parse_all(text: Vector[String]) -> Vector[Record]:
+  var records = Vector[Record]()
+  lines = split(text, "\n")
+  n = lines |> count
+  i = 0
+  while i < n:
+    width = lines[i] |> count
+    if width > 0:
+      records.push(parse_record(lines[i]))
+    i = i + 1
+  return records
+
+fn clean(records: Vector[Record]) -> Vector[Record]:
+  var kept = Vector[Record]()
+  n = records |> count
+  i = 0
+  while i < n:
+    if keep(records[i]):
+      kept.push(copy_record(records[i]))
+    i = i + 1
+  return kept
+
+fn group_all(records: Vector[Record]) -> Vector[GroupStat]:
+  var seen = Vector[String]()
+  var stats = Vector[GroupStat]()
+  n = records |> count
+  i = 0
+  while i < n:
+    name = region_of(records[i])
+    if not (seen |> any(_ == name)):
+      seen.push(concat("", name))
+      stats.push(group_stat(records, name, width_of(records[i])))
+    i = i + 1
+  return stats
+
+fn revenue_of(g: GroupStat) -> Int:
+  return g.revenue
+
+fn table_row(rank: Int, g: GroupStat) -> String:
+  var line = pad_right(int_text(rank), 6)
+  line = concat(line, pad_right(lit(concat("", g.region), g.region_width), 10))
+  line = concat(line, pad_left(int_text(g.rows), 5))
+  line = concat(line, pad_left(int_text(g.units), 7))
+  line = concat(line, pad_left(money_text(g.revenue), 10))
+  line = concat(line, pad_left(money_text(g.avg_price_cents()), 10))
+  line = concat(line, pad_left(int_text(g.max_units), 10))
+  return line
+
+fn table_header() -> String:
+  var line = pad_right(lit("Rank", 4), 6)
+  line = concat(line, pad_right(lit("Region", 6), 10))
+  line = concat(line, pad_left(lit("Rows", 4), 5))
+  line = concat(line, pad_left(lit("Units", 5), 7))
+  line = concat(line, pad_left(lit("Revenue", 7), 10))
+  line = concat(line, pad_left(lit("AvgPrice", 8), 10))
+  line = concat(line, pad_left(lit("MaxUnits", 8), 10))
+  return line
+
+fn main():
+  text = raw_csv()
+  records = parse_all(text)
+  kept = clean(records)
+  stats = group_all(kept)
+  revenues = stats |> map(revenue_of)
+  order = sortperm_desc(revenues)
+  nlines = records |> count
+  nkept = kept |> count
+  ngroups = stats |> count
+  total = kept |> map(_.revenue()) |> sum
+  echo concat("lines=", int_text(nlines).s)
+  echo concat("valid=", int_text(nkept).s)
+  echo concat("regions=", int_text(ngroups).s)
+  echo concat("total revenue=", money_text(total).s)
+  if kept |> any(_.units > 15):
+    echo "some row sold more than 15 units"
+  if kept |> all(_.price_cents > 0):
+    echo "all kept prices are positive"
+  echo table_header()
+  top = 3
+  if ngroups < top:
+    top = ngroups
+  rank = 0
+  while rank < top:
+    echo table_row(rank + 1, stats[order[rank]])
+    rank = rank + 1

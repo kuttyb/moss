@@ -1,0 +1,463 @@
+# Shapes: 2-D geometry over Float with a structural Shape trait.
+#
+# Point, Circle, Rect and Polygon each provide area, perimeter, bbox,
+# centroid and translate. Generic helpers (total_area, largest_index,
+# apply_all) are written once against the structural `Shape` trait and
+# specialized statically per concrete collection type. Moss has no runtime
+# trait objects, so a mixed collection is modelled by `Scene`, which keeps
+# one typed Vector per shape kind.
+
+# ---------------------------------------------------------------- Float math
+
+fn pi() -> Float:
+  return 3.141592653589793
+
+fn fabs(v: Float) -> Float:
+  if v < 0.0:
+    return 0.0 - v
+  return v
+
+fn fmin(a: Float, b: Float) -> Float:
+  if a < b:
+    return a
+  return b
+
+fn fmax(a: Float, b: Float) -> Float:
+  if a > b:
+    return a
+  return b
+
+# floor for v >= 0 without any Float -> Int conversion: greedily add
+# descending powers of two (exact for |v| < 2^52).
+fn floor_nonneg(v: Float) -> Float:
+  var p = 1.0
+  while p * 2.0 <= v:
+    p = p * 2.0
+  var q = 0.0
+  while p >= 1.0:
+    if q + p <= v:
+      q = q + p
+    p = p / 2.0
+  return q
+
+# Round half away from zero to `places` decimal digits.
+fn round_to(v: Float, places: Int) -> Float:
+  var scale = 1.0
+  var k = 0
+  while k < places:
+    scale = scale * 10.0
+    k = k + 1
+  r = floor_nonneg(fabs(v) * scale + 0.5) / scale
+  if v < 0.0:
+    return 0.0 - r
+  return r
+
+fn approx_eq(a: Float, b: Float) -> Bool:
+  return fabs(a - b) < 0.000000001
+
+# ---------------------------------------------------------------- Point / BBox
+
+type Point:
+  x: Float
+  y: Float
+
+  # Accessors: `pts[i].x` with a variable index does not lower natively
+  # (see README tension T3); `pts[i].get_x()` does.
+  fn get_x() -> Float:
+    return x
+
+  fn get_y() -> Float:
+    return y
+
+  fn translate(dx: Float, dy: Float) -> Point:
+    return Point(x: x + dx, y: y + dy)
+
+  fn dist(other: Point) -> Float:
+    ddx = x - other.x
+    ddy = y - other.y
+    return sqrt(ddx * ddx + ddy * ddy)
+
+type BBox:
+  min_x: Float
+  min_y: Float
+  max_x: Float
+  max_y: Float
+
+  fn width() -> Float:
+    return max_x - min_x
+
+  fn height() -> Float:
+    return max_y - min_y
+
+# ---------------------------------------------------------------- Circle
+
+type Circle:
+  center: Point
+  radius: Float
+
+  fn area() -> Float:
+    return pi() * radius * radius
+
+  fn perimeter() -> Float:
+    return 2.0 * pi() * radius
+
+  fn bbox() -> BBox:
+    return BBox(min_x: center.x - radius, min_y: center.y - radius, max_x: center.x + radius, max_y: center.y + radius)
+
+  fn centroid() -> Point:
+    return Point(x: center.x, y: center.y)
+
+  fn translate(dx: Float, dy: Float) -> Circle:
+    return Circle(center: center.translate(dx, dy), radius: radius)
+
+# ---------------------------------------------------------------- Rect
+
+type Rect:
+  origin: Point
+  w: Float
+  h: Float
+
+  fn area() -> Float:
+    return w * h
+
+  fn perimeter() -> Float:
+    return 2.0 * (w + h)
+
+  fn bbox() -> BBox:
+    return BBox(min_x: origin.x, min_y: origin.y, max_x: origin.x + w, max_y: origin.y + h)
+
+  fn centroid() -> Point:
+    return Point(x: origin.x + w / 2.0, y: origin.y + h / 2.0)
+
+  fn translate(dx: Float, dy: Float) -> Rect:
+    return Rect(origin: origin.translate(dx, dy), w: w, h: h)
+
+# ---------------------------------------------------------------- Polygon
+
+type Polygon:
+  points: Vector[Point]
+
+  # Shoelace sum; positive for counter-clockwise vertex order.
+  fn signed_area() -> Float:
+    n = points |> count
+    var acc = 0.0
+    var i = 0
+    while i < n:
+      j = (i + 1) % n
+      acc = acc + points[i].get_x() * points[j].get_y() - points[j].get_x() * points[i].get_y()
+      i = i + 1
+    return acc / 2.0
+
+  fn area() -> Float:
+    return fabs(signed_area())
+
+  fn perimeter() -> Float:
+    n = points |> count
+    var acc = 0.0
+    var i = 0
+    while i < n:
+      acc = acc + points[i].dist(points[(i + 1) % n])
+      i = i + 1
+    return acc
+
+  fn bbox() -> BBox:
+    n = points |> count
+    var lo_x = points[0].get_x()
+    var lo_y = points[0].get_y()
+    var hi_x = points[0].get_x()
+    var hi_y = points[0].get_y()
+    var i = 1
+    while i < n:
+      lo_x = fmin(lo_x, points[i].get_x())
+      lo_y = fmin(lo_y, points[i].get_y())
+      hi_x = fmax(hi_x, points[i].get_x())
+      hi_y = fmax(hi_y, points[i].get_y())
+      i = i + 1
+    return BBox(min_x: lo_x, min_y: lo_y, max_x: hi_x, max_y: hi_y)
+
+  fn centroid() -> Point:
+    a = signed_area()
+    n = points |> count
+    var cx = 0.0
+    var cy = 0.0
+    var i = 0
+    while i < n:
+      j = (i + 1) % n
+      xi = points[i].get_x()
+      yi = points[i].get_y()
+      xj = points[j].get_x()
+      yj = points[j].get_y()
+      cr = xi * yj - xj * yi
+      cx = cx + (xi + xj) * cr
+      cy = cy + (yi + yj) * cr
+      i = i + 1
+    return Point(x: cx / (6.0 * a), y: cy / (6.0 * a))
+
+  # while + push rather than `points |> map(_.translate(dx, dy))`: the
+  # placeholder map inside a method is a Fast Debug gap (tension T9).
+  fn translate(dx: Float, dy: Float) -> Polygon:
+    var moved = Vector[Point]()
+    n = points |> count
+    var i = 0
+    while i < n:
+      moved.push(points[i].translate(dx, dy))
+      i = i + 1
+    return Polygon(points: moved)
+
+# ---------------------------------------------------------------- Trait + generic helpers
+
+trait Shape:
+  fn area() -> Float
+  fn perimeter() -> Float
+
+# Trait-typed single-value helper: accepts any concrete shape.
+fn compactness(s: Shape) -> Float:
+  p = s.perimeter()
+  return 4.0 * pi() * s.area() / (p * p)
+
+# Generic collection helpers. `shapes` is untyped; each call site specializes
+# it to one concrete Vector type. `for` is used because an untyped Vector
+# parameter cannot be indexed (tension T5); Fast Debug does not run `for`.
+fn total_area(shapes) -> Float:
+  var acc = 0.0
+  for s in shapes:
+    acc = acc + s.area()
+  return acc
+
+fn total_perimeter(shapes) -> Float:
+  var acc = 0.0
+  for s in shapes:
+    acc = acc + s.perimeter()
+  return acc
+
+fn largest_index(shapes) -> Int:
+  var best = -1
+  var best_area = -1.0
+  var i = 0
+  for s in shapes:
+    if s.area() > best_area:
+      best = i
+      best_area = s.area()
+    i = i + 1
+  return best
+
+# Higher-order helper: `f` closes to one statically known function per call site.
+fn apply_all(shapes, f):
+  return shapes |> map(f)
+
+fn shift_circle(c: Circle) -> Circle:
+  return c.translate(1.0, 0.0)
+
+fn shift_rect(r: Rect) -> Rect:
+  return r.translate(1.0, 0.0)
+
+fn grow_circle(c: Circle) -> Circle:
+  return Circle(center: c.center.translate(0.0, 0.0), radius: c.radius * 2.0)
+
+# ---------------------------------------------------------------- Scene: the "mixed collection"
+
+type Pick:
+  kind: String
+  index: Int
+  area: Float
+
+# Index of the largest value; -1 for an empty vector.
+fn argmax(values: Vector[Float]) -> Int:
+  n = values |> count
+  var best = -1
+  var i = 0
+  while i < n:
+    if best < 0:
+      best = i
+    else:
+      if values[i] > values[best]:
+        best = i
+    i = i + 1
+  return best
+
+# Scene methods use typed pipelines over their own fields rather than the
+# untyped generic helpers above: passing a field of `self` to a
+# multiply-specialized untyped `for` helper fails native lowering (tension T6).
+type Scene:
+  circles: Vector[Circle]
+  rects: Vector[Rect]
+  polygons: Vector[Polygon]
+
+  fn total_area() -> Float:
+    ca = circles |> map(_.area()) |> sum
+    ra = rects |> map(_.area()) |> sum
+    pa = polygons |> map(_.area()) |> sum
+    return ca + ra + pa
+
+  fn shape_count() -> Int:
+    nc = circles |> count
+    nr = rects |> count
+    np = polygons |> count
+    return nc + nr + np
+
+  # Kind holding the largest shape, plus its index within that kind.
+  fn largest() -> Pick:
+    var pick = Pick(kind: "none", index: -1, area: -1.0)
+    ca = circles |> map(_.area())
+    ci = argmax(ca)
+    if ci >= 0:
+      if ca[ci] > pick.area:
+        pick = Pick(kind: "circle", index: ci, area: ca[ci])
+    ra = rects |> map(_.area())
+    ri = argmax(ra)
+    if ri >= 0:
+      if ra[ri] > pick.area:
+        pick = Pick(kind: "rect", index: ri, area: ra[ri])
+    pa = polygons |> map(_.area())
+    pj = argmax(pa)
+    if pj >= 0:
+      if pa[pj] > pick.area:
+        pick = Pick(kind: "polygon", index: pj, area: pa[pj])
+    return pick
+
+  # Polygons are shifted with an explicit loop: a map stage whose callee
+  # pushes into a Vector crashes the checker (tension T4).
+  fn shifted(dx: Float, dy: Float) -> Scene:
+    var polys = Vector[Polygon]()
+    n = polygons |> count
+    var i = 0
+    while i < n:
+      polys.push(polygons[i].translate(dx, dy))
+      i = i + 1
+    return Scene(circles: circles |> map(_.translate(dx, dy)), rects: rects |> map(_.translate(dx, dy)), polygons: polys)
+
+fn origin() -> Point:
+  return Point(x: 0.0, y: 0.0)
+
+fn triangle() -> Polygon:
+  return Polygon(points: [Point(x: 0.0, y: 0.0), Point(x: 4.0, y: 0.0), Point(x: 0.0, y: 3.0)])
+
+fn unit_square_poly() -> Polygon:
+  return Polygon(points: [Point(x: 0.0, y: 0.0), Point(x: 1.0, y: 0.0), Point(x: 1.0, y: 1.0), Point(x: 0.0, y: 1.0)])
+
+fn demo_scene() -> Scene:
+  return Scene(circles: [Circle(center: origin(), radius: 1.0), Circle(center: Point(x: 5.0, y: 5.0), radius: 0.5)], rects: [Rect(origin: origin(), w: 3.0, h: 2.0)], polygons: [triangle(), unit_square_poly()])
+
+# ---------------------------------------------------------------- main
+
+fn show_circle(label: String, c: Circle):
+  b = c.bbox()
+  echo label, "area", round_to(c.area(), 3), "perimeter", round_to(c.perimeter(), 3), "bbox", b.min_x, b.min_y, b.max_x, b.max_y
+
+fn show_rect(label: String, r: Rect):
+  m = r.centroid()
+  echo label, "area", round_to(r.area(), 3), "perimeter", round_to(r.perimeter(), 3), "centroid", m.x, m.y
+
+fn show_polygon(label: String, p: Polygon):
+  m = p.centroid()
+  b = p.bbox()
+  echo label, "area", round_to(p.area(), 3), "perimeter", round_to(p.perimeter(), 3), "centroid", round_to(m.x, 3), round_to(m.y, 3), "bbox", b.min_x, b.min_y, b.max_x, b.max_y
+
+fn main():
+  show_circle("circle", Circle(center: origin(), radius: 1.0))
+  show_rect("rect", Rect(origin: origin(), w: 3.0, h: 2.0))
+  show_polygon("triangle", triangle())
+  show_polygon("triangle+(1,0)", triangle().translate(1.0, 0.0))
+  echo "compactness circle", round_to(compactness(Circle(center: origin(), radius: 1.0)), 3), "square", round_to(compactness(Rect(origin: origin(), w: 1.0, h: 1.0)), 3)
+
+  scene = demo_scene()
+  echo "scene shapes", scene.shape_count()
+  echo "scene total area", round_to(scene.total_area(), 2)
+  big = scene.largest()
+  echo "largest", big.kind, big.index, round_to(big.area, 2)
+  moved = scene.shifted(1.0, 0.0)
+  echo "shifted total area", round_to(moved.total_area(), 2)
+  echo "shifted first polygon centroid x", round_to(moved.polygons[0].centroid().x, 3)
+
+  # Trait-generic helpers over homogeneous local collections (native only:
+  # Fast Debug runs neither `for` nor function-valued arguments).
+  rects = [Rect(origin: origin(), w: 1.0, h: 1.0), Rect(origin: origin(), w: 3.0, h: 2.0)]
+  polys = [triangle(), unit_square_poly()]
+  circles = [Circle(center: origin(), radius: 1.0), Circle(center: Point(x: 5.0, y: 5.0), radius: 0.5)]
+  echo "generic totals", round_to(total_area(rects), 2), round_to(total_area(polys), 2), round_to(total_area(circles), 2)
+  echo "generic perimeters", round_to(total_perimeter(rects), 2), round_to(total_perimeter(polys), 2)
+  echo "largest index", largest_index(rects), largest_index(polys), largest_index(circles)
+  shifted = apply_all(circles, shift_circle)
+  echo "apply_all shift x", shifted[0].center.x, shifted[1].center.x
+  grown = apply_all(circles, grow_circle)
+  echo "apply_all grow area", round_to(total_area(grown), 3)
+
+# ---------------------------------------------------------------- tests
+
+test "circle area perimeter bbox":
+  c = Circle(center: Point(x: 1.0, y: 2.0), radius: 2.0)
+  assert(approx_eq(c.area(), 4.0 * pi()))
+  assert(approx_eq(c.perimeter(), 4.0 * pi()))
+  b = c.bbox()
+  assertEqual(b.min_x, -1.0)
+  assertEqual(b.max_y, 4.0)
+  assertEqual(b.width(), 4.0)
+
+test "rect centroid and translate":
+  r = Rect(origin: Point(x: 1.0, y: 1.0), w: 4.0, h: 2.0)
+  m = r.centroid()
+  assertEqual(m.x, 3.0)
+  assertEqual(m.y, 2.0)
+  t = r.translate(-1.0, 0.5)
+  assertEqual(t.origin.x, 0.0)
+  assertEqual(t.origin.y, 1.5)
+  assertEqual(t.area(), 8.0)
+
+test "polygon shoelace area perimeter":
+  p = triangle()
+  assertEqual(p.area(), 6.0)
+  assertEqual(p.perimeter(), 12.0)
+  cw = Polygon(points: [Point(x: 0.0, y: 0.0), Point(x: 0.0, y: 3.0), Point(x: 4.0, y: 0.0)])
+  assertEqual(cw.signed_area(), -6.0)
+  assertEqual(cw.area(), 6.0)
+
+test "polygon centroid and bbox":
+  p = triangle()
+  m = p.centroid()
+  assert(approx_eq(m.x, 4.0 / 3.0))
+  assert(approx_eq(m.y, 1.0))
+  b = p.bbox()
+  assertEqual(b.max_x, 4.0)
+  assertEqual(b.max_y, 3.0)
+  s = unit_square_poly().translate(2.0, 3.0)
+  sm = s.centroid()
+  assertEqual(sm.x, 2.5)
+  assertEqual(sm.y, 3.5)
+
+test "rounding and abs helpers":
+  assertEqual(round_to(3.14159, 2), 3.14)
+  assertEqual(round_to(2.5, 0), 3.0)
+  assertEqual(round_to(-2.345, 1), -2.3)
+  assertEqual(fabs(-7.25), 7.25)
+  assertEqual(floor_nonneg(9.99), 9.0)
+  a = Point(x: 0.0, y: 0.0)
+  d = a.dist(Point(x: 3.0, y: 4.0))
+  assertEqual(d, 5.0)
+
+test "generic total area and largest over trait":
+  rects = [Rect(origin: origin(), w: 1.0, h: 1.0), Rect(origin: origin(), w: 3.0, h: 2.0), Rect(origin: origin(), w: 2.0, h: 2.0)]
+  assertEqual(total_area(rects), 11.0)
+  assertEqual(largest_index(rects), 1)
+  assertEqual(total_perimeter(rects), 22.0)
+  polys = [unit_square_poly(), triangle()]
+  assertEqual(total_area(polys), 7.0)
+  assertEqual(largest_index(polys), 1)
+
+test "apply_all with function argument":
+  circles = [Circle(center: origin(), radius: 1.0), Circle(center: Point(x: 2.0, y: 2.0), radius: 3.0)]
+  moved = apply_all(circles, shift_circle)
+  assertEqual(moved[1].center.x, 3.0)
+  assertEqual(moved[1].center.y, 2.0)
+  grown = apply_all(circles, grow_circle)
+  assert(approx_eq(total_area(grown), 4.0 * total_area(circles)))
+
+test "scene mixed collection":
+  scene = demo_scene()
+  assertEqual(scene.shape_count(), 5)
+  big = scene.largest()
+  assertEqual(big.kind, "rect")
+  assertEqual(big.index, 0)
+  assertEqual(big.area, 6.0)
+  assertEqual(round_to(scene.total_area(), 4), round_to(1.25 * pi() + 6.0 + 7.0, 4))
+  moved = scene.shifted(1.0, 0.0)
+  assertEqual(moved.rects[0].origin.x, 1.0)

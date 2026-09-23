@@ -1,0 +1,78 @@
+module rational
+
+export type Rational:
+  num: Int
+  den: Int
+
+  fn is_zero() -> Bool:
+    return num == 0
+
+fn abs_int(value: Int) -> Int:
+  if value < 0:
+    return 0 - value
+  return value
+
+export fn gcd(a: Int, b: Int) -> Int:
+  var x = abs_int(a)
+  var y = abs_int(b)
+  while y != 0:
+    t = x % y
+    x = y
+    y = t
+  return x
+
+export fn make(num: Int, den: Int) -> Rational:
+  assert(den != 0)
+  var n = num
+  var d = den
+  if d < 0:
+    n = 0 - n
+    d = 0 - d
+  g = gcd(n, d)
+  if g > 1:
+    n = n / g
+    d = d / g
+  if n == 0:
+    d = 1
+  return Rational(num: n, den: d)
+
+export fn copy(r: Rational) -> Rational:
+  return Rational(num: r.num, den: r.den)
+
+export fn numer(r: Rational) -> Int:
+  return r.num
+
+export fn denom(r: Rational) -> Int:
+  return r.den
+
+export fn from_int(value: Int) -> Rational:
+  return Rational(num: value, den: 1)
+
+export fn add(a: Rational, b: Rational) -> Rational:
+  return make(a.num * b.den + b.num * a.den, a.den * b.den)
+
+export fn sub(a: Rational, b: Rational) -> Rational:
+  return make(a.num * b.den - b.num * a.den, a.den * b.den)
+
+export fn mul(a: Rational, b: Rational) -> Rational:
+  return make(a.num * b.num, a.den * b.den)
+
+export fn div(a: Rational, b: Rational) -> Rational:
+  return make(a.num * b.den, a.den * b.num)
+
+export fn neg(a: Rational) -> Rational:
+  return Rational(num: 0 - a.num, den: a.den)
+
+export fn eq(a: Rational, b: Rational) -> Bool:
+  if a.num != b.num:
+    return false
+  return a.den == b.den
+
+# Printing lives in an exported function, not a method: methods of exported
+# types are not carried in the .mossi interface, so a consumer package cannot
+# call them natively.
+export fn show(r: Rational):
+  if r.den == 1:
+    echo r.num
+  else:
+    echo r.num, "/", r.den

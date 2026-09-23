@@ -1,0 +1,138 @@
+module matrix
+import rational
+
+# Square matrix of rationals, stored row-major.
+export type Matrix:
+  n: Int
+  cells: Vector[rational.Rational]
+
+  fn at(i: Int, j: Int) -> rational.Rational:
+    return rational.copy(cells[i * n + j])
+
+  fn size() -> Int:
+    return n
+
+# Exported accessors: methods on exported types are invisible to consumer
+# packages (not in .mossi), so the public API is functions.
+export fn get(m: Matrix, i: Int, j: Int) -> rational.Rational:
+  return m.at(i, j)
+
+export fn size(m: Matrix) -> Int:
+  return m.n
+
+export fn identity(n: Int) -> Matrix:
+  var cells = Vector[rational.Rational]()
+  var i = 0
+  while i < n:
+    var j = 0
+    while j < n:
+      if i == j:
+        cells.push(rational.from_int(1))
+      else:
+        cells.push(rational.from_int(0))
+      j = j + 1
+    i = i + 1
+  return Matrix(n: n, cells: cells)
+
+export fn from_ints(n: Int, values: Vector[Int]) -> Matrix:
+  var cells = Vector[rational.Rational]()
+  var idx = 0
+  while idx < n * n:
+    cells.push(rational.from_int(values[idx]))
+    idx = idx + 1
+  return Matrix(n: n, cells: cells)
+
+export fn mat2(a: rational.Rational, b: rational.Rational, c: rational.Rational, d: rational.Rational) -> Matrix:
+  return Matrix(n: 2, cells: [rational.copy(a), rational.copy(b), rational.copy(c), rational.copy(d)])
+
+export fn transpose(m: Matrix) -> Matrix:
+  var cells = Vector[rational.Rational]()
+  var i = 0
+  while i < m.n:
+    var j = 0
+    while j < m.n:
+      cells.push(m.at(j, i))
+      j = j + 1
+    i = i + 1
+  return Matrix(n: m.n, cells: cells)
+
+export fn mul(a: Matrix, b: Matrix) -> Matrix:
+  n = a.n
+  var cells = Vector[rational.Rational]()
+  var i = 0
+  while i < n:
+    var j = 0
+    while j < n:
+      var acc = rational.from_int(0)
+      var k = 0
+      while k < n:
+        acc = rational.add(acc, rational.mul(a.at(i, k), b.at(k, j)))
+        k = k + 1
+      cells.push(acc)
+      j = j + 1
+    i = i + 1
+  return Matrix(n: n, cells: cells)
+
+export fn det2(m: Matrix) -> rational.Rational:
+  return rational.sub(rational.mul(m.at(0, 0), m.at(1, 1)), rational.mul(m.at(0, 1), m.at(1, 0)))
+
+# Gaussian elimination over the rationals (exact, iterative).
+export fn determinant(m: Matrix) -> rational.Rational:
+  n = m.n
+  var work = Vector[rational.Rational]()
+  var idx = 0
+  while idx < n * n:
+    work.push(rational.copy(m.cells[idx]))
+    idx = idx + 1
+  var det = rational.from_int(1)
+  var c = 0
+  while c < n:
+    var pivot = 0 - 1
+    var r = c
+    while r < n:
+      if pivot < 0:
+        if not work[r * n + c].is_zero():
+          pivot = r
+      r = r + 1
+    if pivot < 0:
+      return rational.from_int(0)
+    if pivot != c:
+      var k = 0
+      while k < n:
+        tmp = rational.copy(work[c * n + k])
+        work[c * n + k] = rational.copy(work[pivot * n + k])
+        work[pivot * n + k] = tmp
+        k = k + 1
+      det = rational.neg(det)
+    det = rational.mul(det, work[c * n + c])
+    var r2 = c + 1
+    while r2 < n:
+      f = rational.div(work[r2 * n + c], work[c * n + c])
+      var k2 = c
+      while k2 < n:
+        work[r2 * n + k2] = rational.sub(work[r2 * n + k2], rational.mul(f, work[c * n + k2]))
+        k2 = k2 + 1
+      r2 = r2 + 1
+    c = c + 1
+  return det
+
+export fn equal(a: Matrix, b: Matrix) -> Bool:
+  if a.n != b.n:
+    return false
+  var same = true
+  var idx = 0
+  while idx < a.n * a.n:
+    if not rational.eq(a.cells[idx], b.cells[idx]):
+      same = false
+    idx = idx + 1
+  return same
+
+export fn show(m: Matrix):
+  var i = 0
+  while i < m.n:
+    var j = 0
+    while j < m.n:
+      cell = m.at(i, j)
+      echo "  [", i, j, "] =", rational.numer(cell), "/", rational.denom(cell)
+      j = j + 1
+    i = i + 1

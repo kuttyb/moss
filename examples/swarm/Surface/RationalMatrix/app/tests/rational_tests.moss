@@ -1,0 +1,29 @@
+module app_rational_tests
+import rational
+
+test "make normalizes sign and gcd":
+  x = rational.make(6, 0 - 8)
+  assertEqual(rational.numer(x), 0 - 3)
+  assertEqual(rational.denom(x), 4)
+
+test "zero normalizes denominator":
+  z = rational.make(0, 0 - 7)
+  assertEqual(rational.numer(z), 0)
+  assertEqual(rational.denom(z), 1)
+
+test "gcd handles negatives and zero":
+  assertEqual(rational.gcd(84, 0 - 36), 12)
+  assertEqual(rational.gcd(0, 5), 5)
+  assertEqual(rational.gcd(7, 0), 7)
+
+test "add sub mul div":
+  half = rational.make(1, 2)
+  third = rational.make(1, 3)
+  assert(rational.eq(rational.add(half, third), rational.make(5, 6)))
+  assert(rational.eq(rational.sub(half, third), rational.make(1, 6)))
+  assert(rational.eq(rational.mul(half, third), rational.make(1, 6)))
+  assert(rational.eq(rational.div(half, third), rational.make(3, 2)))
+
+test "eq compares normalized values":
+  assert(rational.eq(rational.make(2, 4), rational.make(1, 2)))
+  assert(not rational.eq(rational.make(1, 2), rational.make(1, 3)))

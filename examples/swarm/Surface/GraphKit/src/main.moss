@@ -1,0 +1,331 @@
+# GraphKit: a directed graph with String node labels built from an edge list.
+# Operations: BFS order, Kahn topological sort with cycle detection, Dijkstra
+# shortest paths with Int weights, and edge removal.
+#
+# Determinism: every node gets an Int id in order of first appearance in the
+# edge list, and every traversal breaks ties by id / edge insertion order.
+# Map is used only for keyed lookup, never iterated, so its unspecified order
+# cannot leak into results.
+#
+# Shape notes (see README tension log):
+# - edges are stored as parallel vectors (edge_src/edge_dst/...), because
+#   indexing a Vector of a user type and reading a field (edges[i].dst)
+#   does not compile natively.
+# - labels live in Map[Int, String]; labels.get(id, "") yields an owned copy,
+#   whereas pushing names[id] out of a Vector[String] field consumes self.
+# - loops are while loops and boolean logic uses nested ifs, so that the
+#   same program runs under Fast Debug (no for, no and/or there).
+
+type TopoResult:
+  order: Vector[String]
+  has_cycle: Bool
+
+type Graph:
+  ids: Map[String, Int]
+  labels: Map[Int, String]
+  node_total: Int
+  edge_src: Vector[Int]
+  edge_dst: Vector[Int]
+  edge_weight: Vector[Int]
+  edge_alive: Vector[Bool]
+  out: Vector[Vector[Int]]
+
+  fn node_count() -> Int:
+    return node_total
+
+  fn label(id: Int) -> String:
+    return labels.get(id, "")
+
+  fn id_of(label: String) -> Int:
+    return ids.get(label, -1)
+
+  fn intern(label: String) -> Int:
+    existing = ids.get(label, -1)
+    if existing >= 0:
+      return existing
+    id = node_total
+    ids[label] = id
+    labels[id] = label
+    node_total = node_total + 1
+    out.push(Vector[Int]())
+    return id
+
+  fn add_edge(src: String, dst: String, weight: Int):
+    s = intern(src)
+    d = intern(dst)
+    edge_index = edge_src |> count
+    edge_src.push(s)
+    edge_dst.push(d)
+    edge_weight.push(weight)
+    edge_alive.push(true)
+    push_into(out[s], edge_index)
+    return
+
+  # Removes one live edge src->dst (the earliest added). Returns whether an
+  # edge was removed.
+  fn remove_edge(src: String, dst: String) -> Bool:
+    s = ids.get(src, -1)
+    d = ids.get(dst, -1)
+    if s < 0:
+      return false
+    if d < 0:
+      return false
+    k = 0
+    degree = out[s] |> count
+    while k < degree:
+      e = out[s][k]
+      if edge_alive[e]:
+        if edge_dst[e] == d:
+          edge_alive[e] = false
+          return true
+      k = k + 1
+    return false
+
+  fn bfs(start: String) -> Vector[String]:
+    order = Vector[String]()
+    s = ids.get(start, -1)
+    if s >= 0:
+      visited = filled_bools(node_total, false)
+      pending = Vector[Int]()
+      head = 0
+      pending.push(s)
+      visited[s] = true
+      while head < (pending |> count):
+        u = pending[head]
+        head = head + 1
+        order.push(labels.get(u, ""))
+        k = 0
+        degree = out[u] |> count
+        while k < degree:
+          e = out[u][k]
+          k = k + 1
+          if edge_alive[e]:
+            v = edge_dst[e]
+            if not visited[v]:
+              visited[v] = true
+              pending.push(v)
+    return order
+
+  fn topo_sort() -> TopoResult:
+    n = node_total
+    indegree = filled_ints(n, 0)
+    e = 0
+    m = edge_src |> count
+    while e < m:
+      if edge_alive[e]:
+        indegree[edge_dst[e]] = indegree[edge_dst[e]] + 1
+      e = e + 1
+    ready = Vector[Int]()
+    i = 0
+    while i < n:
+      if indegree[i] == 0:
+        ready.push(i)
+      i = i + 1
+    order = Vector[String]()
+    head = 0
+    while head < (ready |> count):
+      u = ready[head]
+      head = head + 1
+      order.push(labels.get(u, ""))
+      k = 0
+      degree = out[u] |> count
+      while k < degree:
+        edge = out[u][k]
+        k = k + 1
+        if edge_alive[edge]:
+          v = edge_dst[edge]
+          indegree[v] = indegree[v] - 1
+          if indegree[v] == 0:
+            ready.push(v)
+    sorted_count = order |> count
+    return TopoResult(order: order, has_cycle: sorted_count < n)
+
+  # Distances from start, indexed by node id; -1 means unreachable.
+  # O(V^2 + E) selection; ties go to the smallest node id.
+  fn dijkstra(start: String) -> Vector[Int]:
+    n = node_total
+    dist = filled_ints(n, -1)
+    done = filled_bools(n, false)
+    s = ids.get(start, -1)
+    if s >= 0:
+      dist[s] = 0
+    settling = s >= 0
+    while settling:
+      u = -1
+      i = 0
+      while i < n:
+        if not done[i]:
+          if dist[i] >= 0:
+            if u < 0:
+              u = i
+            else:
+              if dist[i] < dist[u]:
+                u = i
+        i = i + 1
+      if u < 0:
+        settling = false
+      else:
+        done[u] = true
+        k = 0
+        degree = out[u] |> count
+        while k < degree:
+          e = out[u][k]
+          k = k + 1
+          if edge_alive[e]:
+            v = edge_dst[e]
+            candidate = dist[u] + edge_weight[e]
+            if dist[v] < 0:
+              dist[v] = candidate
+            else:
+              if candidate < dist[v]:
+                dist[v] = candidate
+    return dist
+
+  fn distance(start: String, target: String) -> Int:
+    # `return -1` is rejected by moss fmt (see README), so use the sentinel
+    # through a local.
+    unreachable = -1
+    t = ids.get(target, -1)
+    if t < 0:
+      return unreachable
+    dist = dijkstra(start)
+    return dist[t]
+
+# A Vector element cannot be the receiver of a member call (out[s].push(...)),
+# but it can be passed as a WRITE argument to an ordinary function.
+fn push_into(row: Vector[Int], item: Int):
+  row.push(item)
+  return
+
+fn filled_ints(n: Int, value: Int) -> Vector[Int]:
+  items = Vector[Int]()
+  i = 0
+  while i < n:
+    items.push(value)
+    i = i + 1
+  return items
+
+fn filled_bools(n: Int, value: Bool) -> Vector[Bool]:
+  items = Vector[Bool]()
+  i = 0
+  while i < n:
+    items.push(value)
+    i = i + 1
+  return items
+
+fn new_graph() -> Graph:
+  return Graph(ids: Map(), labels: Map(), node_total: 0, edge_src: Vector[Int](), edge_dst: Vector[Int](), edge_weight: Vector[Int](), edge_alive: Vector[Bool](), out: Vector[Vector[Int]]())
+
+# The classic "getting dressed" DAG, with weights.
+fn sample_graph() -> Graph:
+  g = new_graph()
+  g.add_edge("shirt", "tie", 1)
+  g.add_edge("tie", "jacket", 2)
+  g.add_edge("pants", "shoes", 4)
+  g.add_edge("pants", "belt", 1)
+  g.add_edge("belt", "jacket", 3)
+  g.add_edge("shirt", "belt", 5)
+  g.add_edge("socks", "shoes", 1)
+  return g
+
+fn print_order(title: String, order: Vector[String]):
+  echo title, "(", order |> count, "nodes )"
+  i = 0
+  n = order |> count
+  while i < n:
+    echo "  ", i + 1, order[i]
+    i = i + 1
+
+fn print_distances(g: Graph, start: String):
+  echo "dijkstra from", start
+  dist = g.dijkstra(start)
+  n = g.node_count()
+  i = 0
+  while i < n:
+    if dist[i] >= 0:
+      echo "  ", g.label(i), dist[i]
+    else:
+      echo "  ", g.label(i), "unreachable"
+    i = i + 1
+
+fn main():
+  g = sample_graph()
+  print_order("bfs from shirt", g.bfs("shirt"))
+  topo = g.topo_sort()
+  echo "has cycle:", topo.has_cycle
+  print_order("topological order", topo.order)
+  print_distances(g, "shirt")
+  removed = g.remove_edge("shirt", "belt")
+  echo "removed shirt->belt:", removed
+  print_order("bfs from shirt", g.bfs("shirt"))
+  print_distances(g, "shirt")
+  g.add_edge("jacket", "shirt", 1)
+  cyclic = g.topo_sort()
+  echo "after adding jacket->shirt, has cycle:", cyclic.has_cycle
+  print_order("partial topological order", cyclic.order)
+
+test "bfs visits in edge insertion order":
+  g = sample_graph()
+  assertEqual(g.bfs("shirt"), ["shirt", "tie", "belt", "jacket"])
+  assertEqual(g.bfs("pants"), ["pants", "shoes", "belt", "jacket"])
+
+test "bfs from unknown node is empty":
+  g = sample_graph()
+  assertEqual(g.bfs("hat") |> count, 0)
+
+test "topological sort of a dag":
+  g = sample_graph()
+  topo = g.topo_sort()
+  assert(not topo.has_cycle)
+  assertEqual(topo.order, ["shirt", "pants", "socks", "tie", "belt", "shoes", "jacket"])
+
+test "topological sort detects a cycle":
+  g = sample_graph()
+  g.add_edge("jacket", "shirt", 1)
+  topo = g.topo_sort()
+  assert(topo.has_cycle)
+  assertEqual(topo.order, ["pants", "socks", "shoes"])
+
+test "dijkstra picks the cheaper route":
+  g = sample_graph()
+  assertEqual(g.distance("shirt", "jacket"), 3)
+  assertEqual(g.distance("shirt", "belt"), 5)
+  assertEqual(g.distance("shirt", "shoes"), -1)
+  assertEqual(g.distance("pants", "jacket"), 4)
+  assertEqual(g.distance("nobody", "jacket"), -1)
+
+test "removing an edge changes reachability and distances":
+  g = sample_graph()
+  assert(g.remove_edge("shirt", "belt"))
+  assert(not g.remove_edge("shirt", "belt"))
+  assert(not g.remove_edge("nobody", "belt"))
+  assertEqual(g.bfs("shirt"), ["shirt", "tie", "jacket"])
+  assertEqual(g.distance("shirt", "belt"), -1)
+  assertEqual(g.distance("shirt", "jacket"), 3)
+
+test "removing a cycle edge restores the dag":
+  g = sample_graph()
+  g.add_edge("jacket", "shirt", 1)
+  assert(g.topo_sort().has_cycle)
+  assert(g.remove_edge("jacket", "shirt"))
+  assert(not g.topo_sort().has_cycle)
+
+test "parallel edges are removed one at a time":
+  g = new_graph()
+  g.add_edge("a", "b", 7)
+  g.add_edge("a", "b", 2)
+  assertEqual(g.distance("a", "b"), 2)
+  assert(g.remove_edge("a", "b"))
+  assertEqual(g.distance("a", "b"), 2)
+  assert(g.remove_edge("a", "b"))
+  assertEqual(g.distance("a", "b"), -1)
+
+test "dijkstra relaxes a longer but cheaper path":
+  g = new_graph()
+  g.add_edge("s", "t", 10)
+  g.add_edge("s", "a", 1)
+  g.add_edge("a", "b", 1)
+  g.add_edge("b", "t", 1)
+  dist = g.dijkstra("s")
+  assertEqual(dist, [0, 3, 1, 2])
+  assertEqual(g.distance("s", "t"), 3)

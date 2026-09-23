@@ -1,0 +1,34 @@
+module app
+import rational
+import matrix
+
+fn r(num: Int, den: Int) -> rational.Rational:
+  return rational.make(num, den)
+
+fn report(label: String, value: rational.Rational):
+  echo label
+  rational.show(value)
+
+fn main():
+  half = r(1, 2)
+  third = r(1, 3)
+  report("1/2 + 1/3 =", rational.add(half, third))
+  report("1/2 - 1/3 =", rational.sub(half, third))
+  report("1/2 * 1/3 =", rational.mul(half, third))
+  report("1/2 / 1/3 =", rational.div(half, third))
+  echo "gcd(84, -36) =", rational.gcd(84, 0 - 36)
+
+  a = matrix.mat2(r(1, 2), r(2, 3), r(3, 4), r(4, 5))
+  echo "A ="
+  matrix.show(a)
+  report("det2(A) =", matrix.det2(a))
+  report("determinant(A) =", matrix.determinant(a))
+  echo "A^T ="
+  matrix.show(matrix.transpose(a))
+
+  b = matrix.from_ints(3, [2, 0, 1, 1, 3, 2, 1, 1, 2])
+  i3 = matrix.identity(3)
+  echo "B * I == B:", matrix.equal(matrix.mul(b, i3), b)
+  report("det(B) =", matrix.determinant(b))
+  bb = matrix.mul(b, b)
+  report("det(B*B) =", matrix.determinant(bb))

@@ -1,0 +1,83 @@
+# Tests for the Report program. src/ + tests/ form one logical compilation unit.
+
+# Accessors: `stats[order[k]].field` inside an assertion lowers to Rust
+# without a usize index cast (see README tension log), so read through helpers.
+fn group_region(g: GroupStat) -> String:
+  return concat("", g.region)
+
+fn group_max(g: GroupStat) -> Int:
+  return g.max_units
+
+test "digit classification":
+  assertEqual(digit_value("7"), 7)
+  assertEqual(digit_value("x"), -1)
+  assert(is_digit("0"))
+  assert(not is_digit(","))
+
+test "split and join characters":
+  line = ["a", "b", ",", "c", ",", ",", "d"]
+  parts = split(line, ",")
+  assertEqual(parts |> count, 4)
+  assertEqual(parts[2] |> count, 0)
+  assertEqual(join(parts[0]), "ab")
+  assertEqual(join(parts[3]), "d")
+
+test "parse integers and prices":
+  assertEqual(parse_int(["1", "2", "0"]), 120)
+  assertEqual(parse_cents(["2", ".", "5", "0"]), 250)
+  assertEqual(parse_cents(["1", "0", ".", "5"]), 1050)
+  assertEqual(parse_cents(["7"]), 700)
+  assert(is_price(["4", ".", "7", "5"]))
+  assert(not is_price(["4", ".", "7", "5", "1"]))
+  assert(not is_price(["x"]))
+  assert(not is_int(Vector[String]()))
+
+test "number formatting and padding":
+  t = int_text(15875)
+  assertEqual(t.s, "15875")
+  assertEqual(t.width, 5)
+  assertEqual(int_text(0).width, 1)
+  m = money_text(15875)
+  assertEqual(m.s, "158.75")
+  assertEqual(m.width, 6)
+  assertEqual(money_text(705).s, "7.05")
+  assertEqual(pad_left(int_text(42), 5), "   42")
+  assertEqual(pad_right(int_text(42), 4), "42  ")
+
+test "sortperm descending is stable":
+  order = sortperm_desc([5, 9, 1, 9, 3])
+  assertEqual(order[0], 1)
+  assertEqual(order[1], 3)
+  assertEqual(order[2], 0)
+  assertEqual(order[3], 4)
+  assertEqual(order[4], 2)
+
+test "record parsing rejects malformed lines":
+  good = parse_record(["n", ",", "w", ",", "3", ",", "2", ".", "5"])
+  assert(good.valid)
+  assertEqual(good.units, 3)
+  assertEqual(good.revenue(), 750)
+  assertEqual(good.region, "n")
+  bad = parse_record(["b", "o", "g", "u", "s", ",", "r", "o", "w"])
+  assert(not bad.valid)
+  bad_units = parse_record(["n", ",", "w", ",", "x", ",", "2"])
+  assert(not bad_units.valid)
+
+test "end to end grouping and ranking":
+  records = parse_all(raw_csv())
+  assertEqual(records |> count, 20)
+  kept = clean(records)
+  assertEqual(kept |> count, 18)
+  assert(kept |> all(_.units > 0))
+  assert(not (kept |> any(_.price_cents == 0)))
+  stats = group_all(kept)
+  assertEqual(stats |> count, 5)
+  revenues = stats |> map(revenue_of)
+  order = sortperm_desc(revenues)
+  assertEqual(group_region(stats[order[0]]), "south")
+  assertEqual(revenue_of(stats[order[0]]), 15875)
+  assertEqual(group_max(stats[order[0]]), 14)
+  assertEqual(group_region(stats[order[1]]), "central")
+  assertEqual(group_region(stats[order[2]]), "east")
+  assertEqual(stats[order[2]].avg_price_cents(), 351)
+  assertEqual(revenues |> sum, 64245)
