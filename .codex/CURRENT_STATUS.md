@@ -19,6 +19,16 @@ ownership, domain, pipeline, lowering, or Fast Debug semantics changed.
 active and must not close until a separate `post-22.1` benchmark and honest
 pre/post report are recorded.
 
+22.1E convergence is now complete through the Phase 22.1 teaching checks, strict
+C++17 `-Werror`, all 30 benchmark reference solutions and metadata, agent API and
+skill drift, ownership/domain/functional regressions, Margo dependency and module
+provider checks, Fast Debug project closure, Phase 15.1 borrowed payload checks,
+`make examples`, Python/shell syntax, and whitespace checks. The full `make check`
+run passed every reached suite and stopped at the already documented unrelated
+Phase 10.6F native Rust error comparing `&String == String` in generated
+`phase106f/workload.rs`. The failure is unchanged and was not repaired or weakened.
+The post-22.1 fresh-agent run and comparison remain the only closeout blocker.
+
 ## Phase 22.2 — Agent Benchmark Suite
 
 Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's
