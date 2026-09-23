@@ -9,12 +9,16 @@ architectures, synchronous messaging, 2PL synchronization derivation, ownership
 semantics, and compiler boundaries across 5 specialized projects under
 `examples/swarm/domain_torture/`:
 1. `linear_pipeline`: 4-hop cascading synchronous `message` pipeline (`Ingest -> Validate -> Transform -> Aggregate`), early-reply filtering, payload transformations, and 1,138 JSON execution trace events.
-2. `diamond_sync`: Diamond DAG routing (`Coordinator -> [WorkerAlpha, WorkerBeta] -> SharedStore`) with 4 fine-grained synchronization classes, 10 non-conflicting handler pairs executing concurrently, and in-flight shared store state observation.
-3. `rich_payloads`: Custom structs and collections (`Vector`, `Map`, `Queue`) across domain boundaries (`Producer -> Registry -> Consumer`), verifying snapshot isolation and zero-copy borrowed lowering under Phase 15.1.
-4. `dispatcher_fanout`: Star topology hub routing to 4 satellite domains with dynamic priority bypass, adaptive load shedding, interleaved state updates, and mixed value/fire-and-forget message styles.
-5. `domain_boundaries`: 28 negative boundary probes verifying zero-leak frontend enforcement on route cycles, illegal self-sends, same-domain chaining, domain handle escaping, dynamic construction, and impure initializers, plus an idiomatic positive control.
+2. `diamond_sync`: Diamond DAG routing (`Coordinator -> [WorkerAlpha, WorkerBeta] -> SharedStore`) with 4 fine-grained synchronization classes, where 10 handler pairs were classified as non-conflicting and therefore need not mutually exclude under concurrent invocation (sequential/interleaved calls tested without claiming runtime thread concurrency).
+3. `rich_payloads`: Custom structs and collections (`Vector`, `Map`, `Queue`) across domain boundaries (`Producer -> Registry -> Consumer`), verifying that borrowed synchronous lowering preserves observable by-value message semantics (sender mutation after the call cannot retroactively change the completed receiver computation; `moss cost` confirmed zero materialized bytes for internal synchronous payloads).
+4. `dispatcher_fanout`: Star topology hub routing to 4 satellite domains with dynamic priority bypass, adaptive load shedding, interleaved state updates, and mixed value-returning and no-value synchronous message styles (where caller waits for target completion without capturing a value).
+5. `domain_boundaries`: 27 negative boundary probes verifying zero-leak frontend enforcement on route cycles, illegal self-sends, same-domain chaining, domain handle escaping, dynamic construction, and impure initializers, plus 2 positive cases (pure-helper initialization and an idiomatic positive control).
 
-All 21 package unit tests, 29 boundary probes, and end-to-end integration workflows passed natively (`margo test`, `margo run`) and in Fast Debug (`moss run --interp`, `margo debug [--trace]`) with 100% output parity.
+Validation:
+- All 21 package unit tests passed natively (`margo test`) and in Fast Debug (`moss test --interp`).
+- All 4 project `main` programs and the positive control passed natively (`margo run`) and in Fast Debug (`moss run --interp` and `margo debug [--trace]`).
+- All 29 boundary probes passed cleanly under the location-independent `run_suite.py` runner with zero compiler crashes and zero leaks to rustc.
+- Genuinely new compiler defects were minimized and recorded in `examples/swarm/FINDINGS.md`: SWARM-041 (collection method on struct field during handler effect analysis triggers internal synchronization invariant), SWARM-042 (reassigning initialized mutable local across all branches triggers rustc `-D unused-assignments`), and amended SWARM-033 (`reply -literal` in formatter).
 
 ## Phase 15.10 — Fresh-Agent Collection Dogfood II — COMPLETE
 

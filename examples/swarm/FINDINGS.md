@@ -1094,8 +1094,8 @@ exactly what `moss check` accepts.
 - Status: Open
 - Category: Compiler / type inference
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
-- Also observed: —
-- Observation count: 1
+- Also observed: [Multi-Domain Swarm / Linear Pipeline](domain_torture/linear_pipeline/)
+- Observation count: 2
 
 ### Minimal reproducer
 
@@ -1105,6 +1105,14 @@ fn negate(v: Int) -> Int:
 
 fn main():
   echo negate(5)
+```
+
+And in domain handler reply position:
+
+```moss
+domain Counter:
+  fn Get() -> Int:
+    reply -1
 ```
 
 ### Observed behavior
@@ -1125,16 +1133,21 @@ r = -v
 return r               # fails: r's type flows from -v
 ```
 
+In domain handlers, `reply -1` is accepted by `moss check`, but rejected by `moss fmt`:
+`FORMAT_PARSE_ERROR: cannot infer the type of this reply expression; add an annotation or use a statically typed value`.
+
 ### Workaround
 
 ```moss
 return 0 - v
+reply 0 - 1
 ```
 
 ### Notes
 
 Same family as SWARM-005 (return-expression inference), but a distinct
-construct. Negative literals (`-4`) are fine.
+construct. Negative literals (`-4`) in expressions are fine, but unary negation
+in `return` and `reply` positions triggers type inference failures during checking or formatting.
 
 ## SWARM-034 — No-value function ending in a collection `push` fails result inference
 
@@ -1409,3 +1422,113 @@ test that expects a failure.
 If `assert` in ordinary code is the intended v0.1 failure primitive, say so in
 `source_surface`, `moss-language`, and the Gentle Introduction. An
 expected-failure test form is a separate, optional surface question.
+
+## SWARM-041 — Collection method on struct field during handler effect analysis triggers internal invariant error
+
+- Status: Open
+- Category: Compiler / effect and synchronization analysis
+- First observed: [Multi-Domain Swarm / Rich Payloads](domain_torture/rich_payloads/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Packet:
+  scores: Vector[Int]
+  attributes: Map[String, Int]
+
+  fn total() -> Int:
+    x = scores |> sum
+    return x + attributes.get("alpha", 0)
+
+domain Consumer:
+  fn Process(p: Packet) -> Int:
+    reply p.total()
+
+fn main():
+  consumer = Consumer()
+  m = Map()
+  m["alpha"] = 10
+  p = Packet(scores: [1, 2, 3], attributes: m)
+  echo message consumer.Process(p)
+```
+
+### Observed behavior
+
+`moss check` fails with:
+`error[MOSS_INTERNAL_OR_IO_ERROR]: internal synchronization invariant: unresolved concrete method effect target` (at `src/moss.cpp:4658`).
+
+When a functional pipeline (e.g. `scores |> sum`) appears in a method called from a domain handler, `leaf_effect_capture_` is set during effect analysis. A subsequent collection method call such as `attributes.get("alpha", 0)` on a struct field triggers line 4658's assertion:
+`synchronization_require(!leaf_effect_capture_, "unresolved concrete method effect target")`
+because built-in collection methods on fields are not in `object_method`.
+
+### Workaround
+
+Use strict indexing `attributes[key]` instead of `.get(key, default)`, or compute the collection access before the pipeline:
+
+```moss
+val = attributes.get("alpha", 0)
+return (scores |> sum) + val
+```
+
+### Notes
+
+The effect analyzer should reset `leaf_effect_capture_` after the pipeline stage finishes or treat built-in collection query methods on fields as pure/read effects during capture.
+
+## SWARM-042 — Reassigning an initialized mutable local across all conditional branches triggers rustc `-D unused-assignments`
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Multi-Domain Swarm / Dispatcher Fan-out](domain_torture/dispatcher_fanout/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn choose(flag: Bool) -> Int:
+  var res = 0
+  if flag:
+    res = 10
+  else:
+    res = 20
+  return res
+
+fn main():
+  echo choose(true)
+```
+
+### Observed behavior
+
+`moss check` accepts it and `moss run --interp` (Fast Debug) executes cleanly (`10`).
+Native compilation (`moss ... -o ...` and `rustc -D warnings` or `margo build`) fails with `BUILD_BACKEND_ERROR` because rustc rejects the lowered Rust under `-D unused-assignments`:
+
+```text
+error: value assigned to `res` is never read
+  --> test.rs:54:19
+   |
+54 |     let mut res = 0_i64;
+   |                   ^^^^^ this value is reassigned later and never used
+...
+62 |         res = 20_i64;
+   |         ------------ `res` is overwritten here before the previous value is read
+   |
+   = note: `-D unused-assignments` implied by `-D warnings`
+```
+
+### Workaround
+
+Avoid pre-initializing a mutable local if it is unconditionally overwritten across all branches of a conditional. Assign directly to an immutable binding or return directly from each branch:
+
+```moss
+fn choose(flag: Bool) -> Int:
+  if flag:
+    return 10
+  else:
+    return 20
+```
+
+### Notes
+
+Similar class of backend warning leakage as SWARM-031 (`-D unused-parens`). Native lowering emits `let mut res = initial_expr;` even when every control-flow path reassigns `res` before any read, triggering Rust's `-D unused-assignments`. Lowering could emit uninitialized bindings where valid, avoid emitting mut when unneeded, or handle branch convergence.

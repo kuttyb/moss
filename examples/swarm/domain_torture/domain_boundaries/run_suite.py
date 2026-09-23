@@ -4,8 +4,12 @@ import subprocess
 import os
 import sys
 
-MOSS_BIN = "/home/kuttybanerjee/daji/moss/moss"
-SUITE_DIR = "/home/kuttybanerjee/daji/moss/tmp/swarm/domain_boundaries"
+SUITE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(SUITE_DIR, "../../../.."))
+MOSS_BIN = os.path.join(REPO_ROOT, "moss")
+if not os.path.exists(MOSS_BIN):
+    MOSS_BIN = "moss"
+
 
 PROBES = [
     # Probe 1: Route Cycles
@@ -303,8 +307,11 @@ def run_suite():
             print(f"       REASONS: {reasons}")
         print()
 
+    neg_count = sum(1 for p in PROBES if not p["expected_ok"])
+    pos_count = sum(1 for p in PROBES if p["expected_ok"])
+
     print("=" * 80)
-    print(f"PROBE SUMMARY: {passed} passed, {failed} failed out of {len(PROBES)} tests.")
+    print(f"PROBE SUMMARY: {passed} passed, {failed} failed out of {len(PROBES)} tests ({neg_count} negative probes + {pos_count} positive cases).")
     print("=" * 80)
 
     # Now verify Positive Control Fast Debug and Native
@@ -319,19 +326,21 @@ def run_suite():
     assert res_interp.returncode == 0, "Fast Debug failed!"
     assert res_interp.stdout.strip() == "1\n2\n770\n4", "Fast Debug output mismatch!"
 
-    # 2. Native Compilation
+    # 2. Native Compilation in Temporary Directory
     print("\n2. Compiling and running natively...")
-    rs_file = os.path.join(SUITE_DIR, "positive_control.rs")
-    bin_file = os.path.join(SUITE_DIR, "positive_control")
-    res_gen = subprocess.run([MOSS_BIN, pos_file, "-o", rs_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert res_gen.returncode == 0, f"Native codegen failed: {res_gen.stderr}"
-    res_rustc = subprocess.run(["rustc", "-D", "warnings", rs_file, "-o", bin_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    assert res_rustc.returncode == 0, f"rustc compilation failed: {res_rustc.stderr}"
-    res_native = subprocess.run([bin_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    print(f"   Exit code: {res_native.returncode}")
-    print(f"   Output:\n{res_native.stdout.strip()}")
-    assert res_native.returncode == 0, "Native run failed!"
-    assert res_native.stdout.strip() == "1\n2\n770\n4", "Native run output mismatch!"
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        rs_file = os.path.join(tmpdir, "positive_control.rs")
+        bin_file = os.path.join(tmpdir, "positive_control")
+        res_gen = subprocess.run([MOSS_BIN, pos_file, "-o", rs_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert res_gen.returncode == 0, f"Native codegen failed: {res_gen.stderr}"
+        res_rustc = subprocess.run(["rustc", "-D", "warnings", rs_file, "-o", bin_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert res_rustc.returncode == 0, f"rustc compilation failed: {res_rustc.stderr}"
+        res_native = subprocess.run([bin_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print(f"   Exit code: {res_native.returncode}")
+        print(f"   Output:\n{res_native.stdout.strip()}")
+        assert res_native.returncode == 0, "Native run failed!"
+        assert res_native.stdout.strip() == "1\n2\n770\n4", "Native run output mismatch!"
 
     print("\nALL VERIFICATIONS PASSED: 100% PARITY BETWEEN FAST DEBUG AND NATIVE EXECUTION!")
 
