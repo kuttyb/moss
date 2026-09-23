@@ -6,7 +6,7 @@ does not change the language, compiler acceptance, lowering, synchronization, or
 interpreter behavior. This corpus intentionally measures the pre-Phase-22.1 agent
 experience.
 
-The fixed initial corpus contains 30 small tasks under `tasks/`. It has ten
+The complete, hardened corpus contains 30 small tasks under `tasks/`. It has ten
 write-from-scratch tasks, ten focused repairs, and ten workflow/debug tasks across
 basic language, domains/messages, ownership/effects, functional dataflow,
 synchronization, modules/Margo, Fast Debug, and tooling/navigation. Every task is
@@ -23,7 +23,9 @@ tasks/AB001_simple_computation/
 not shell snippets. The runner accepts only the declared Moss and Margo command
 families, checks metadata before execution, and reports duplicate IDs, absent
 starter/reference directories, unsafe relative paths, and invalid commands with
-stable error codes.
+stable error codes. Narrow declarative file assertions and existing Moss semantic
+queries verify each task's defining capability in addition to its output. They do
+not require equality with the reference solution.
 
 From the repository root:
 
@@ -41,6 +43,14 @@ From the repository root:
 directory supplied with `--workdir`. External Phase 22.2C orchestration can copy a
 task's starter directory, give the task prompt to a fresh agent, and then pass that
 copy back to `run`. The core runner never invokes an AI model.
+
+Fresh agents used for Phase 22.2C must never have access to any benchmark
+`expected/` reference tree. Baseline orchestration must stage a sanitized agent
+workspace containing only the selected task's starter files and prompt, plus the
+normal Moss repository tooling and documentation intentionally made available to
+the agent. The repository's adjacent `expected/` directories are for corpus
+maintenance and validator self-checks; they must remain outside the agent-visible
+workspace.
 
 Each execution occurs in a fresh copy below `tmp/agent-benchmark/`; compiler or
 Margo build output cannot modify the task corpus or the supplied work directory.
@@ -68,8 +78,12 @@ To add a task:
    `./moss agent benchmark validate --json`.
 5. Run `python3 tests/tooling/check_agent_benchmark.py ./moss`.
 
+Phase 22.2A's benchmark corpus is complete, hardened, and frozen for the baseline.
+Phase 22.2B's runner and result schema are complete. Phase 22.2C's fresh-agent
+baseline run and Phase 22.2D's aggregate report remain pending.
+
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 
 Tasks may be corrected when they are objectively invalid or rely on unsupported
-Moss behavior. Such corrections should preserve stable IDs and be documented so
-baseline comparisons can account for the corpus revision.
+Moss behavior. Such corrections must preserve stable IDs and document the corpus
+revision so baseline comparisons can account for it.

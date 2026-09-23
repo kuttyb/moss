@@ -41,5 +41,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Counter\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+value\\s*=\\s*0\\s*$"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Increment\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+\\w+\\s*=\\s*Counter\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Increment\\s*\\("
+    }
+  ],
   "notes": "Covers static domain construction, state mutation, message, and reply."
 }

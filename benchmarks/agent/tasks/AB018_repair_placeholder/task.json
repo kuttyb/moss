@@ -43,5 +43,15 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*map\\s*\\([^\\n)]*_"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\|>\\s*sum\\b"
+    }
+  ],
   "notes": "A small syntax repair for placeholder expressions."
 }

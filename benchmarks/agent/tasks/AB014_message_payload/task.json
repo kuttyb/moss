@@ -42,5 +42,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^type\\s+Payload\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Worker\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+\\w+\\s*\\([^\\n]*:\\s*Payload"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.\\w+\\s*\\([^)]*\\)"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+\\w+\\.value\\s*=\\s*42\\s*$"
+    }
+  ],
   "notes": "Exercises message payload snapshot/value semantics and post-message caller use."
 }

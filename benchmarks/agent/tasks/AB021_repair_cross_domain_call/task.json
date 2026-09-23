@@ -43,5 +43,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Worker\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Read\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Read\\s*\\("
+    }
+  ],
   "notes": "A diagnostic-driven repair of an already enforced domain interaction restriction."
 }

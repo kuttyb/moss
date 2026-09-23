@@ -41,5 +41,31 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^type\\s+Point\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+x\\s*:\\s*Int\\s*$"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+y\\s*:\\s*Int\\s*$"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+score\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\bPoint\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\.score\\s*\\("
+    }
+  ],
   "notes": "Covers records, construction, fields, and a named method."
 }

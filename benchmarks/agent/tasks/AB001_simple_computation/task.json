@@ -43,5 +43,11 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?:6\\s*\\*\\s*7|7\\s*\\*\\s*6)"
+    }
+  ],
   "notes": "A minimal write-from-scratch task covering bindings, arithmetic, main, and echo."
 }

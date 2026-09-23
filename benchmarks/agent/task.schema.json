@@ -72,7 +72,11 @@
               "stdout": {"type": "string"},
               "stdout_contains": {"type": "string"},
               "stderr_contains": {"type": "string"},
-              "json_equals": {"type": "object"}
+              "json_equals": {"type": "object"},
+              "json_matches": {
+                "type": "object",
+                "additionalProperties": {"type": "string"}
+              }
             }
           }
         }
@@ -82,12 +86,15 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["path"],
         "properties": {
           "path": {"type": "string", "minLength": 1},
           "equals": {"type": "string"},
           "contains": {"type": "string"},
-          "not_contains": {"type": "string"}
+          "not_contains": {"type": "string"},
+          "matches": {"type": "string"},
+          "not_matches": {"type": "string"}
         }
       }
     },

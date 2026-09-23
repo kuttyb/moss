@@ -41,6 +41,47 @@
       "expect": {
         "stdout": "42\n"
       }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "calls",
+        "handler:Counter.Increment",
+        "--source",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true,
+          "result.target.construct_kind": "handler"
+        },
+        "json_matches": {
+          "result.direct_calls.0.target": "^fn:"
+        }
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Counter\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Increment\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Increment\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "not_matches": "\\bmessage\\s+self\\."
     }
   ],
   "notes": "Measures whether compiler feedback leads the agent from self-send to an ordinary helper."

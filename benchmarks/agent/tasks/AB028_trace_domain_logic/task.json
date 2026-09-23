@@ -46,5 +46,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Counter\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+value\\s*=\\s*40\\s*$"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Add\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+value\\s*=\\s*value\\s*\\+\\s*amount\\s*$"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Add\\s*\\("
+    }
+  ],
   "notes": "Exercises checked interpreter execution and newline-delimited structured tracing."
 }

@@ -41,5 +41,27 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Source\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Doubler\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)domainroutes\\s*\\([^)]*\\bsource\\s*:\\s*Source"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Read\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\("
+    }
+  ],
   "notes": "Exercises a value-returning cross-domain message through domainroutes."
 }

@@ -43,5 +43,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+bump_and_read\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+\\w+\\.value\\s*=\\s*"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+echo\\s+bump_and_read\\s*\\("
+    }
+  ],
   "notes": "Exercises inferred WRITE versus READ overlap diagnostics."
 }

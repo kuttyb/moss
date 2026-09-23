@@ -43,5 +43,19 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+sum_to\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+(?:while|for)\\s+"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)^fn\\s+main\\s*\\([^)]*\\)\\s*:.*\\bsum_to\\s*\\("
+    }
+  ],
   "notes": "Exercises mutable locals and while iteration in Fast Debug."
 }

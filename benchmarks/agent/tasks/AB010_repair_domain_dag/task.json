@@ -43,5 +43,39 @@
       }
     }
   ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Ledger\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Inventory\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+App\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)domainroutes\\s*\\([^)]*\\bledger\\s*:\\s*Ledger"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?s)domainroutes\\s*\\([^)]*\\binventory\\s*:\\s*Inventory"
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Read\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Lookup\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\("
+    }
+  ],
   "notes": "Exercises route declaration, construction binding, and simple acyclic multi-domain interaction."
 }
