@@ -80,6 +80,16 @@ teaching_fields = bootstrap["result"].get("diagnostic_contract", {}).get(
 )
 if teaching_fields != ["source", "rule", "cause", "related", "guidance"]:
     fail("bootstrap omitted the additive teaching-diagnostic contract")
+guidance_kinds = bootstrap["result"]["diagnostic_contract"].get("guidance_kinds", [])
+for guidance_kind in (
+    "local-helper", "use-message", "declare-domain-route", "bind-domain-route",
+    "use-static-domain-route", "separate-conflicting-access",
+    "supported-pipeline-placeholder", "named-pipeline-callable",
+    "pure-pipeline-callback", "qualify-query-target",
+    "use-statically-typed-expression", "use-statically-typed-callable",
+):
+    if guidance_kind not in guidance_kinds:
+        fail(f"bootstrap omitted teaching guidance kind {guidance_kind}")
 repair_fields = schema["result"]["schema"].get("diagnostic_repair_fields", [])
 for field in ("source", "rule", "cause", "related", "guidance"):
     if field not in repair_fields:

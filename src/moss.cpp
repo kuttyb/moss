@@ -14814,7 +14814,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"diagnostic_contract\": {"
          "\"additive_teaching_fields\": [\"source\", \"rule\", \"cause\", \"related\", \"guidance\"],"
          "\"cause_entity_fields\": [\"kind\", \"name\", \"semantic_identity\", \"expression\", \"access\", \"argument_index\"],"
-         "\"guidance_kinds\": [\"local-helper\", \"use-message\", \"declare-domain-route\", \"bind-domain-route\", \"separate-conflicting-access\", \"supported-pipeline-placeholder\", \"named-pipeline-callable\", \"pure-pipeline-callback\", \"qualify-query-target\", \"use-statically-typed-expression\", \"use-statically-typed-callable\"],"
+         "\"guidance_kinds\": [\"local-helper\", \"use-message\", \"declare-domain-route\", \"bind-domain-route\", \"use-static-domain-route\", \"separate-conflicting-access\", \"supported-pipeline-placeholder\", \"named-pipeline-callable\", \"pure-pipeline-callback\", \"qualify-query-target\", \"use-statically-typed-expression\", \"use-statically-typed-callable\"],"
          "\"human_and_json_share_facts\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"

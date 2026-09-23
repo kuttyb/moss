@@ -88,6 +88,11 @@ rules specific IDs such as `DOMAIN_SELF_MESSAGE`,
 causes and guidance. Human diagnostics use the same facts and remain the default for
 `moss --check source.moss` and `moss check source.moss`.
 
+`moss agent bootstrap --json` advertises the compiler-owned vocabulary in
+`diagnostic_contract.guidance_kinds`. Clients should treat these values as stable
+repair categories and use the accompanying summary for the concrete legal action;
+they must not infer unadvertised repairs from message text.
+
 For example, an overlapping call exposes both actual argument roles:
 
 ```json
