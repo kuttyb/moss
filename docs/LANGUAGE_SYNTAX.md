@@ -15,9 +15,12 @@ values, runtime dispatch, or an implicit `Any` type.
 
 ## Lexical and indentation rules
 
-Moss uses significant indentation with two spaces per block level. Tabs are rejected.
-Comments begin with `#` outside a string. A trailing colon is accepted on block headers;
-it does not change the block's meaning. The frontend may retain compatibility spellings
+Moss uses significant indentation. A file uses one indentation width throughout,
+set by its first indented line; `moss fmt` canonicalizes source to two spaces per
+block level, and the examples here use that form. Tabs are rejected. Comments begin
+with `#` outside a string. A trailing colon on a block header is optional and does
+not change the block's meaning, except that the `type Name:` declaration requires
+it; examples always write the colon. The frontend may retain compatibility spellings
 while the syntax migration proceeds, but new examples should use the forms documented
 here.
 
@@ -32,18 +35,18 @@ An annotation constrains and documents an inferred type:
 
 ```moss
 fn distance(a: Point, b: Point) -> Float:
-    dx = a.x - b.x
-    dy = a.y - b.y
-    sqrt(dx*dx + dy*dy)
+  dx = a.x - b.x
+  dy = a.y - b.y
+  sqrt(dx * dx + dy * dy)
 ```
 
 The same function may omit annotations when its complete meaning is inferable:
 
 ```moss
 fn distance(a, b):
-    dx = a.x - b.x
-    dy = a.y - b.y
-    sqrt(dx*dx + dy*dy)
+  dx = a.x - b.x
+  dy = a.y - b.y
+  sqrt(dx * dx + dy * dy)
 ```
 
 Inference is static and whole-program where necessary. Literal types, operators,
@@ -54,7 +57,9 @@ fallback.
 
 The initial migration supports the existing primitive types and value-object types.
 Inference will grow incrementally; a construct is accepted only when the compiler can
-materialize a concrete type for the generated Rust representation.
+materialize a concrete type for the generated Rust representation. In particular,
+parameters of methods declared inside a `type` must currently be annotated; the checker
+does not yet infer them from call sites.
 
 ### Local bindings
 
@@ -83,10 +88,10 @@ The preferred type declaration is an indented block:
 
 ```moss
 type Quote:
-    symbol: String
-    price: Float
-    size: Int
-    ts: Int
+  symbol: String
+  price: Float
+  size: Int
+  ts: Int
 ```
 
 Field annotations may be omitted when constructor use and other constraints determine
@@ -94,10 +99,10 @@ them:
 
 ```moss
 type Quote:
-    symbol
-    price
-    size
-    ts
+  symbol
+  price
+  size
+  ts
 ```
 
 An omitted field type is an inference request, not a dynamic field. Ambiguous or unused
@@ -110,27 +115,30 @@ the type:
 
 ```moss
 domain Counter:
-    value = 0
+  value = 0
 ```
 
 An annotation remains an optional constraint:
 
 ```moss
 domain Counter:
-    value: Int = 0
+  value: Int = 0
 ```
 
-An uninitialized or otherwise unconstrained state field is a compile-time error. The
-compatibility spelling `var value: int = 0` remains accepted, but new source should use
-the binding form above.
+A state field whose type is not determined by an annotation, an initializer, or other
+static constraints is a compile-time error. An annotated field may omit its initializer
+and be bound by name at construction, as in `Counter(value = 0)`. The compatibility
+spelling `var value: int = 0` remains accepted, but new source should use the binding
+form above.
 
 Named object construction uses `=` for value bindings:
 
 ```moss
-Quote(symbol = "MOSS", price = 12.5)
+Quote(symbol = "MOSS", price = 12.5, size = 100, ts = 1)
 ```
 
-The older `Quote(symbol: "MOSS", price: 12.5)` form remains accepted during migration.
+The older `Quote(symbol: "MOSS", price: 12.5, size: 100, ts: 1)` form remains accepted
+during migration.
 The colon continues to mark type constraints in declarations and parameters.
 
 ## Functions and expressions
@@ -141,14 +149,14 @@ block:
 ```moss
 fn square(x) = x * x
 
-fn normalize(x):
-    total = sum(x)
-    x / total
+fn normalize(value, total):
+  scaled = value * 100
+  scaled / total
 ```
 
 The final expression of a block is its result. Explicit `return value` may be retained
-for migration and early exits. A call such as `normalize(data)` is an ordinary local,
-intra-domain call. It has no mailbox, request/reply, or domain scheduling meaning.
+for migration and early exits. A call such as `normalize(value, total)` is an ordinary
+local, intra-domain call. It has no mailbox, request/reply, or domain scheduling meaning.
 
 `fn main()` is the preferred spelling for the program entry point; `proc main()` remains
 a compatibility spelling while existing programs migrate. A `fn` declared directly
@@ -201,10 +209,10 @@ Pipelines are typed expressions. The Phase 4 functional operations are `map`, `f
 
 ```moss
 result = values
-    |> map(normalize)
-    |> filter(_ > 0)
-    |> map(_.score())
-    |> sum
+  |> map(normalize)
+  |> filter(_ > 0)
+  |> map(_ * scale)
+  |> sum
 
 total = values |> reduce(0, add)
 ```
@@ -251,11 +259,12 @@ A stage callable may be a named function, a statically bound instance method suc
 `scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
 `_.score()`. A bound method captures one concrete receiver and must only READ it;
 placeholder expressions may likewise read immutable surrounding locals. A higher-order
-helper can accept an untyped callable parameter, but every call site must close that
-parameter to one statically known function identity. Moss emits a
-concrete specialization rather than a function object, function pointer, vtable, or
-runtime lookup. General lambdas and dynamically escaping callable values are not part of
-this source surface.
+helper can accept an untyped callable parameter and use it as a pipeline stage, but
+every call site must close that parameter to one statically known function identity.
+Invoking a callable parameter directly, as in `operation(value)`, is not part of v0.1.
+Moss emits a concrete specialization rather than a function object, function pointer,
+vtable, or runtime lookup. General lambdas and dynamically escaping callable values are
+not part of this source surface.
 
 Pipeline values are compiler structure, not lazy runtime iterators. A transformation
 pipeline whose result is still a collection cannot cross `message` or `reply`
@@ -280,21 +289,22 @@ invalid.
 `/`. Remainder by zero is invalid.
 
 This rule also applies to compiler-generated arithmetic representing the same
-source operation, including integer `sum`, domain-state updates, and the new
-value returned by an atomic add/sub handler. The Rust backend emits explicit
-`i64` literals and wrapping operations; Rust debug overflow checks must not
-change observable Moss behavior. Comparisons and boolean operations are not
-changed by this rule.
+source operation, including integer `sum` and domain-state updates. The Rust
+backend emits explicit `i64` literals and wrapping operations; Rust debug overflow
+checks must not change observable Moss behavior. Comparisons and boolean operations
+are not changed by this rule.
 
 ## Domain communication
 
 Cross-domain communication is always visible in source. Ordinary calls remain local;
-`message` is a synchronous, blocking domain-handler invocation:
+`message` is a synchronous, blocking domain-handler invocation. Its receiver is a
+concrete composition binding in `main` or a declared `domainroutes` slot, never a
+domain type name:
 
 ```moss
-foo()                                  # ordinary local/intra-domain call
-position = message Portfolio.position(symbol)
-message Portfolio.record(position)     # statement result is discarded
+foo()  # ordinary local/intra-domain call
+position = message portfolio.position(symbol)
+message portfolio.record(position)  # statement result is discarded
 ```
 
 The caller resumes only after the handler terminates. `reply expr` establishes the
@@ -411,9 +421,11 @@ for index in range(0, 10):
 ```
 
 `range(start, end)` is half-open (`start` is included and `end` is excluded) and
-uses `Int`. A three-argument form with a statically known positive non-zero step is
+uses `Int`. A three-argument form whose step is a positive non-zero `Int` literal is
 also accepted. `while` remains the general arbitrary imperative loop. Moss does not
 create runtime iterator objects, vtables, boxing, or dynamic iterator dispatch.
+`Map` and `Queue` are not `for` sources; traverse a map through its `keys()` or
+`values()` snapshot.
 
 Ordinary collection traversal is READ traversal. Structural collection mutation,
 such as `values.push(x)`, is rejected while that traversal is active. A user-defined
@@ -427,19 +439,20 @@ handlers, `proc main()`, and dotted message calls. The migration adds the canoni
 `fn`, `type Name:`, inferred state bindings, inferred handler replies, explicit
 `message`, pipeline, and `=` constructor forms incrementally. `let` and `var` are
 current supported local-binding forms: `let` is explicitly immutable and `var`
-explicitly mutable. Existing
-examples are written in the preferred syntax; compatibility tests retain older spellings
-where useful. The old naked dotted spelling is rejected when its receiver is a domain
-reference. Legacy declarations remain available where they do not make the communication
-boundary ambiguous. The current parser accepts top-level functions and function-like
-domain handlers, but does not yet support nested function declarations or general method
-values.
+explicitly mutable. Most examples use the preferred syntax, but several older
+functional examples still use the `proc main()` compatibility spelling, and
+compatibility tests retain older spellings where useful. The old naked dotted spelling
+is rejected when its receiver is a domain reference. Legacy declarations remain
+available where they do not make the communication boundary ambiguous. The current
+parser accepts top-level functions and function-like domain handlers, but does not yet
+support nested function declarations or general method values.
 
 The implementation must record any deviation from this document in the project
 checkpoint and design records. Parser limitations are not new Moss semantics.
-# Typing and compiler architecture
 
-## Message payloads
+## Typing and compiler architecture
+
+### Message payloads
 
 Every incoming handler argument is an immutable value-copy snapshot. A handler
 may read fields, call READ-only helpers, and forward the value through another
@@ -447,7 +460,10 @@ explicit `message` boundary. It may not mutate or consume the incoming value,
 move it into domain state, or reassign the incoming binding. A reply is a new
 semantic value boundary, so replying with the incoming value by value is legal.
 This restriction applies to every ordinary payload type, including primitive
-`Copy` values. Domain handles are not payload values and cannot cross either
+`Copy` values. Assigning a primitive payload such as an `Int` into state copies it
+and is only a READ of the payload. A nontrivial payload, such as a `String`, a record,
+or a collection, cannot be stored directly; store a new value built from it, for example
+one returned by a helper. Domain handles are not payload values and cannot cross either
 boundary. Derived replies remain ordinary newly computed data:
 
 ```moss
@@ -470,6 +486,8 @@ complete nested call. That temporary borrow is observationally equivalent to the
 snapshot: the receiver is READ-only, it cannot escape, and retained class guards keep
 all reachable state leaves stable until the call returns. Ordinary protected READs use
 the same view machinery; no Rust reference can escape through a `message` or `reply`.
+
+### Typing
 
 Moss variables and parameters are either untyped or typed. Untyped means
 statically duck typed. Typed means annotated with either a concrete type or a
@@ -517,6 +535,7 @@ materialization. The larger
 [`mini_application.moss`](../examples/mini_application.moss) combines those static
 features with domains and synchronous `message`. These are ordinary source programs:
 Moss resolves calls before Rust generation and does not create runtime trait objects.
+
 ## Modules
 
 `module name` declares a logical module; multiple physical files may declare

@@ -128,7 +128,7 @@ domain Account:
   config_value: Int
 
   fn rename(name):
-    display_name = name
+    display_name = display_label(name)
 
   fn set_risk_limit(limit):
     risk_limit = limit
@@ -145,7 +145,7 @@ domain Account:
     reply config_value
 ```
 
-The programmer did not write a lock. The compiler will eventually discover that `config_value` is immutable after publication, while the other fields participate in different synchronization classes.
+The programmer did not write a lock. The compiler will eventually discover that `config_value` is immutable after publication, while the other fields participate in different synchronization classes. (`rename` stores a value built by the helper `display_label` because an incoming `String` payload is an immutable snapshot that cannot itself be moved into state; see Section 9.)
 
 ### 6 Static composition and immutable routing
 
@@ -159,16 +159,16 @@ domain App:
     receipt = message account.read_stats()
     message logger.record(receipt)
 
-fn main(config):
-  account = Account(balance = config.start_balance, risk_limit = config.limit, display_name = config.name, stats = initial_stats(), config_value = config.mode)
+fn main():
+  account = Account(balance = opening_balance(), risk_limit = default_limit(), display_name = "desk-1", stats = initial_stats(), config_value = default_mode())
 
-  logger = Logger(...)
+  logger = Logger()
   app = App(account = account, logger = logger)
 
   message app.run()
 ```
 
-The number of concrete domain instances, their identities, and every route binding are statically enumerable. Initialization values may depend on runtime configuration through pure expressions; topology may not depend on runtime control flow.
+The number of concrete domain instances, their identities, and every route binding are statically enumerable. Initialization values may be computed at run time by side-effect-free expressions, including pure helper calls; topology may not depend on runtime control flow.
 
 Domain handles cannot be passed as ordinary function parameters, handler payloads, reply values, collection elements, mutable state, or aliases. Every legal cross-domain message target is therefore attributable to the closed concrete domain graph.
 
@@ -527,7 +527,7 @@ Suppose a cache handler is conceptually:
 
 ```moss
 fn get(key):
-  if !entries.contains(key):
+  if entries.get(key, 0) == 0:  # 0 marks a missing entry in this sketch
     entries[key] = compute(key)
   reply entries[key]
 ```
@@ -818,6 +818,8 @@ Phase 10 defines the Moss v0.1 usable-language milestone. The current post-v0.1 
 
 Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
+Outstanding Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. The expressiveness candidates recorded so far are statically known callable parameters for ordinary functions, an explicit copy of nontrivial values, core `String` operations, map deletion, enums or tagged unions, and a static `Self`-returning trait method; recoverable error propagation is deferred to Phase 21. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
+
 ## Part IV - Related Work and Positioning
 
 ### 44 Synchronization inference and lock allocation
@@ -930,6 +932,8 @@ The formal claims rely on the following conditions:
 | 15.8 | Cross-package Fast Debug source convergence through Margo-resolved source roots |
 | 15.9 | Artifact-local cross-package static specialization; source-free `.mossi` generic specialization closed |
 | 15.10 | Fresh-agent collection dogfood; no language-surface expansion |
+| 15.11 | Multi-domain swarm torture testing; no language-surface expansion |
+| 15.12 | Expression, control-flow, static-polymorphism, and module/package torture swarms; discovery only, corrective fixes pending |
 | Phase 20 | Rust interoperability |
 | Phase 21 | Error propagation and supervision |
 | Phase 22 | Agent agency tooling |

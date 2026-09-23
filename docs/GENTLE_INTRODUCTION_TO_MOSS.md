@@ -116,6 +116,7 @@ fn main():
   let name = "Moss"
   var count = 0
   count = count + 1
+  echo name, count
 ```
 
 `let` is an explicitly immutable local; `var` is an explicitly mutable local.
@@ -145,7 +146,7 @@ fn main():
 
 The colon says that an indented block follows.
 
-A normal collection can also be traversed with `for`:
+A vector can also be traversed with `for`:
 
 ```moss
 fn main():
@@ -233,12 +234,16 @@ type Counter:
   name: String
   value: Int
 
-  fn increment(amount):
+  fn increment(amount: Int):
     value = value + amount
 
   fn current():
     return value
 ```
+
+Method parameters currently need a type annotation, like `amount: Int` here.
+Field types, locals, and method results are still inferred, and ordinary
+top-level functions can leave their parameters untyped (Section 3).
 
 Construct it by naming its fields:
 
@@ -255,7 +260,7 @@ fn main():
 Inside a method:
 
 ```moss
-fn increment(amount):
+fn increment(amount: Int):
   value = value + amount
 ```
 
@@ -280,11 +285,12 @@ Moss keeps the receiver explicit at the call site and implicit inside the method
 A type declaration gives you field construction directly:
 
 ```moss
-counter = Counter(
-  name: "requests",
-  value: 0
-)
+counter = Counter(name: "requests", value: 0)
 ```
+
+Keep a constructor call on one line. v0.1 does not accept argument lists or
+list literals that continue onto indented lines; `domainroutes(...)`
+declarations and `|>` pipelines may continue across lines.
 
 If construction needs logic, use an ordinary factory function:
 
@@ -415,7 +421,10 @@ values
   |> filter(_ > 10)
 ```
 
-For larger logic, use a named function.
+For larger logic, use a named function. A named function that is used only as
+a pipeline stage currently needs its parameter annotated, like
+`normalize(value: Int)` above; the stage does not yet supply the element type
+to an untyped function.
 
 ### Pipelines are eager in the language
 
@@ -527,7 +536,6 @@ type Circle:
   fn area():
     return radius * radius
 
-
 type Rectangle:
   width: Int
   height: Int
@@ -589,9 +597,11 @@ fn main():
     echo value
 ```
 
-Built-in collections support ordinary iteration.
+Built-in iteration covers `Vector` and `range(...)`. A `Map` is traversed
+through its `keys()` or `values()` snapshot, as in `for key in scores.keys():`;
+`Map` and `Queue` are not themselves `for` sources.
 
-User-defined iteration is also possible through Moss's static iteration contract. You do not need to understand that machinery to use `for` over normal collections, so it is best treated as a later feature when defining your own collection-like types.
+User-defined iteration is also possible through Moss's static iteration contract. You do not need to understand that machinery to use `for` over vectors and ranges, so it is best treated as a later feature when defining your own collection-like types.
 
 ---
 
@@ -732,7 +742,8 @@ fn main():
 
   checkout = Checkout(name: "main", ledger: ledger, journal: journal)
 
-  echo message checkout.Submit(25)
+  result = message checkout.Submit(25)
+  echo result
 ```
 
 Constructor argument order does not matter because fields and routes are named.
@@ -754,6 +765,8 @@ project's composed program.
 At the language level, a payload sent to another domain is an immutable value snapshot.
 
 The receiving handler may read it or forward it, but it may not mutate or consume an incoming message payload.
+
+A received `Int`, `Float`, or `Bool` can be assigned into domain state directly. To keep a received `String`, record, or collection, store a new value built from it, for example one returned by an ordinary helper.
 
 The production compiler may implement safe synchronous messages more efficiently under the hood, including shared memory and borrowed reads, without changing the source-level value model.
 
@@ -782,7 +795,7 @@ and together contribute to the same logical `pricing` module.
 ```moss
 module pricing
 
-export fn double(x):
+export fn double(x: Int):
   return x * 2
 ```
 
@@ -1053,13 +1066,11 @@ type Item:
   fn expensive():
     return price > 20
 
-
-fn discount(item):
+fn discount(item: Item):
   if item.expensive():
     return item.price - 5
   else:
     return item.price
-
 
 fn main():
   items = [Item(name: "book", price: 15), Item(name: "keyboard", price: 50), Item(name: "cable", price: 10)]
