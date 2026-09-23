@@ -1,0 +1,68 @@
+
+type StringIndexSortable:
+  data: Vector[String]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] == data[indices[j]]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+trait Sortable:
+  fn len() -> Int
+  fn less(i: Int, j: Int) -> Bool
+  fn swap(i: Int, j: Int) -> Int
+
+type IntIndexSortable:
+  data: Vector[Int]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] < data[indices[j]]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+fn partition(s: Sortable, low: Int, high: Int) -> Int:
+  var pivot_idx = high
+  var i = low - 1
+  var j = low
+  while j < high:
+    if s.less(j, pivot_idx):
+      i = i + 1
+      dummy1 = s.swap(i, j)
+    j = j + 1
+  dummy2 = s.swap(i + 1, high)
+  return i + 1
+
+fn quicksort(s: Sortable):
+  n = s.len()
+  if n <= 1:
+    return
+  var stack_low = Vector[Int]()
+  var stack_high = Vector[Int]()
+  stack_low.push(0)
+  stack_high.push(n - 1)
+  while (stack_low |> count) > 0:
+    low = stack_low.pop()
+    high = stack_high.pop()
+    if low < high:
+      p = partition(s, low, high)
+      if p - 1 > low:
+        stack_low.push(low)
+        stack_high.push(p - 1)
+      if p + 1 < high:
+        stack_low.push(p + 1)
+        stack_high.push(high)
+
+fn main():
+  var int_sort = IntIndexSortable(data: [100, 20], indices: [0, 1])
+  quicksort(int_sort)
+  var str_sort = StringIndexSortable(data: ["b", "a"], indices: [0, 1])
+  quicksort(str_sort)

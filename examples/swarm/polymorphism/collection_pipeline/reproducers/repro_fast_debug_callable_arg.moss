@@ -1,0 +1,23 @@
+# Reproducer 3: Fast Debug Interpreter Rejects Callable Arguments
+# Category: Native/Fast-Debug inconsistency
+# Command: moss run --interp repro_fast_debug_callable_arg.moss
+#
+# Observed behavior:
+# Native compilation specializes and runs cleanly: output 6.
+# Fast Debug (moss run --interp) fails with:
+# "moss:10: interpreter error: unknown local 'double'"
+#
+# Root Cause:
+# Fast Debug does not support passing bare function identifiers as arguments;
+# it attempts to look up 'double' in the local variable environment of the caller.
+
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn apply_transform(items, op):
+  return items |> map(op)
+
+fn main():
+  values = [1, 2, 3]
+  res = apply_transform(values, double)
+  echo res[2]

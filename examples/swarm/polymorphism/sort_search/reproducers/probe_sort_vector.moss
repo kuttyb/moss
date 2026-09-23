@@ -1,0 +1,16 @@
+fn insertion_sort(items: Vector):
+  n = items |> count
+  var i = 1
+  while i < n:
+    key = items[i]
+    var j = i - 1
+    while j >= 0 and items[j] > key:
+      items[j + 1] = items[j]
+      j = j - 1
+    items[j + 1] = key
+    i = i + 1
+
+fn main():
+  var nums = [5, 2, 4, 1, 3]
+  insertion_sort(nums)
+  echo nums[0], nums[1], nums[2], nums[3], nums[4]

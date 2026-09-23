@@ -1,0 +1,6 @@
+fn read_elements(items: Vector, i: Int):
+  return items[i]
+
+fn main():
+  var int_list = [10, 20]
+  echo read_elements(int_list, 0)

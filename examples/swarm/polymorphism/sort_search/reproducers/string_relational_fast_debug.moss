@@ -1,0 +1,59 @@
+# Reproducer: Native vs Fast-Debug Inconsistency in String Relational Comparison
+# Classification: native/Fast-Debug inconsistency
+#
+# Description:
+# In Fast Debug (moss run --interp / interpreter.hpp), relational operators
+# (<, >, <=, >=) only support integer/floating arithmetic comparisons.
+# For strings, as_float() defaults to 0.0, making "apple" < "banana" evaluate
+# to 0.0 < 0.0 == false.
+#
+# In native lowering (to Rust), string relational operators lower to Rust's
+# lexicographical string comparison, where "apple" < "banana" is true.
+#
+# Consequently, any generic algorithm relying on string comparison (such as
+# binary search) diverges: it succeeds natively but fails in Fast Debug.
+#
+# Command to reproduce:
+#   ../../../../moss run --interp reproducers/string_relational_fast_debug.moss
+#   # Outputs: -1 (target "apple" not found!)
+#
+#   ../../../../moss reproducers/string_relational_fast_debug.moss -o tmp.rs && rustc tmp.rs && ./tmp
+#   # Outputs: 0  (target "apple" found at index 0)
+
+trait Searchable:
+  fn len() -> Int
+  fn compare_at(i: Int) -> Int
+
+type StringSearcher:
+  data: Vector[String]
+  target: String
+  fn len() -> Int:
+    return data |> count
+  fn compare_at(i: Int) -> Int:
+    if target == data[i]:
+      return 0
+    else:
+      if target < data[i]:
+        return 0 - 1
+      else:
+        return 1
+
+fn binary_search(s: Searchable) -> Int:
+  var low = 0
+  var high = s.len() - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    c = s.compare_at(mid)
+    if c == 0:
+      return mid
+    else:
+      if c < 0:
+        high = mid - 1
+      else:
+        low = mid + 1
+  return 0 - 1
+
+fn main():
+  strs = ["apple", "banana", "cherry", "date"]
+  ssearch = StringSearcher(data: strs, target: "apple")
+  echo binary_search(ssearch)

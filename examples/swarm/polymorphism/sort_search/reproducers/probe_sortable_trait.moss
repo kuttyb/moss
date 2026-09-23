@@ -1,0 +1,74 @@
+trait Sortable:
+  fn len() -> Int
+  fn less(i: Int, j: Int) -> Bool
+  fn swap(i: Int, j: Int) -> Int
+
+type IntList:
+  data: Vector[Int]
+  fn len() -> Int:
+    return data |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[i] < data[j]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = data[i]
+    data[i] = data[j]
+    data[j] = tmp
+    return 0
+
+type StringList:
+  data: Vector[String]
+  fn len() -> Int:
+    return data |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[i] < data[j]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = "" + data[i]
+    data[i] = "" + data[j]
+    data[j] = tmp
+    return 0
+
+type Player:
+  name: String
+  score: Int
+
+type PlayerList:
+  data: Vector[Player]
+  fn len() -> Int:
+    return data |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[i].score < data[j].score
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = Player(name: "" + data[i].name, score: data[i].score)
+    data[i] = Player(name: "" + data[j].name, score: data[j].score)
+    data[j] = tmp
+    return 0
+
+fn selection_sort(s: Sortable):
+  n = s.len()
+  var i = 0
+  while i < n:
+    var min_idx = i
+    var j = i + 1
+    while j < n:
+      if s.less(j, min_idx):
+        min_idx = j
+      j = j + 1
+    if min_idx != i:
+      dummy = s.swap(i, min_idx)
+    i = i + 1
+
+fn main():
+  var ints = IntList(data: [50, 10, 40, 20, 30])
+  selection_sort(ints)
+  echo ints.data[0], ints.data[1], ints.data[2], ints.data[3], ints.data[4]
+
+  var strs = StringList(data: ["pear", "apple", "orange", "banana"])
+  selection_sort(strs)
+  echo strs.data[0], strs.data[1], strs.data[2], strs.data[3]
+
+  var p1 = Player(name: "Charlie", score: 85)
+  var p2 = Player(name: "Alice", score: 95)
+  var p3 = Player(name: "Bob", score: 70)
+  var players = PlayerList(data: [p1, p2, p3])
+  selection_sort(players)
+  echo players.data[0].name, players.data[1].name, players.data[2].name

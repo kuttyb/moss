@@ -1,0 +1,8 @@
+fn get_first(items: Vector):
+  return items[0]
+
+fn main():
+  int_list = [10, 20]
+  str_list = ["hello", "world"]
+  echo get_first(int_list)
+  echo get_first(str_list)

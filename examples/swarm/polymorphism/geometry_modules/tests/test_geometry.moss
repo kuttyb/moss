@@ -1,0 +1,158 @@
+import geo_types
+import transforms
+import pipeline_ops
+
+test "point creation and distance":
+  p1 = geo_types.make_point(3, 4)
+  p2 = geo_types.make_point(0, 0)
+  assertEqual(p1.get_x(), 3)
+  assertEqual(p1.get_y(), 4)
+  assertEqual(p1.distance_squared(p2), 25)
+
+test "bounding box calculations":
+  b1 = geo_types.make_bbox(2, 3, 7, 9)
+  assertEqual(transforms.bbox_width(b1), 5)
+  assertEqual(transforms.bbox_height(b1), 6)
+  assertEqual(transforms.bbox_area(b1), 30)
+
+  p_in = geo_types.make_point(4, 5)
+  p_out = geo_types.make_point(1, 1)
+  assert(transforms.bbox_contains_point(b1, p_in))
+  assert(not transforms.bbox_contains_point(b1, p_out))
+
+test "bounding box intersection":
+  b1 = geo_types.make_bbox(0, 0, 10, 10)
+  b2 = geo_types.make_bbox(5, 5, 15, 15)
+  b3 = geo_types.make_bbox(20, 20, 30, 30)
+  assert(transforms.bboxes_intersect(b1, b2))
+  assert(transforms.bboxes_intersect(b2, b1))
+  assert(not transforms.bboxes_intersect(b1, b3))
+  assert(not transforms.bboxes_intersect(b3, b1))
+
+test "circle polymorphic transforms":
+  c = geo_types.make_circle(5, 5, 3)
+  assertEqual(transforms.get_area(c), 27)
+  assertEqual(transforms.get_perimeter(c), 18)
+
+  c_trans = transforms.translate(c, 10, -5)
+  assertEqual(c_trans.get_x(), 15)
+  assertEqual(c_trans.get_y(), 0)
+  assertEqual(c_trans.get_radius(), 3)
+
+  c_scaled = transforms.scale(c, 2)
+  assertEqual(c_scaled.get_radius(), 6)
+  assertEqual(transforms.get_area(c_scaled), 108)
+
+  b = transforms.get_bbox(c)
+  assertEqual(b.get_min_x(), 2)
+  assertEqual(b.get_min_y(), 2)
+  assertEqual(b.get_max_x(), 8)
+  assertEqual(b.get_max_y(), 8)
+
+  p_inside = geo_types.make_point(6, 6)
+  p_outside = geo_types.make_point(9, 9)
+  assert(transforms.shape_contains_point(c, p_inside))
+  assert(not transforms.shape_contains_point(c, p_outside))
+
+test "rectangle polymorphic transforms":
+  r = geo_types.make_rectangle(1, 2, 8, 4)
+  assertEqual(transforms.get_area(r), 32)
+  assertEqual(transforms.get_perimeter(r), 24)
+
+  r_trans = transforms.translate(r, -1, 3)
+  assertEqual(r_trans.get_x(), 0)
+  assertEqual(r_trans.get_y(), 5)
+  assertEqual(r_trans.get_width(), 8)
+  assertEqual(r_trans.get_height(), 4)
+
+  r_scaled = transforms.scale(r, 3)
+  assertEqual(r_scaled.get_width(), 24)
+  assertEqual(r_scaled.get_height(), 12)
+  assertEqual(transforms.get_area(r_scaled), 288)
+
+  b = transforms.get_bbox(r)
+  assertEqual(b.get_min_x(), 1)
+  assertEqual(b.get_min_y(), 2)
+  assertEqual(b.get_max_x(), 9)
+  assertEqual(b.get_max_y(), 6)
+
+  p_inside = geo_types.make_point(5, 4)
+  p_outside = geo_types.make_point(10, 4)
+  assert(transforms.shape_contains_point(r, p_inside))
+  assert(not transforms.shape_contains_point(r, p_outside))
+
+test "square polymorphic transforms":
+  s = geo_types.make_square(2, 3, 5)
+  assertEqual(transforms.get_area(s), 25)
+  assertEqual(transforms.get_perimeter(s), 20)
+
+  s_trans = transforms.translate(s, 3, 4)
+  assertEqual(s_trans.get_x(), 5)
+  assertEqual(s_trans.get_y(), 7)
+  assertEqual(s_trans.get_side(), 5)
+
+  s_scaled = transforms.scale(s, 2)
+  assertEqual(s_scaled.get_side(), 10)
+  assertEqual(transforms.get_area(s_scaled), 100)
+
+  b = transforms.get_bbox(s)
+  assertEqual(b.get_min_x(), 2)
+  assertEqual(b.get_min_y(), 3)
+  assertEqual(b.get_max_x(), 7)
+  assertEqual(b.get_max_y(), 8)
+
+  p_inside = geo_types.make_point(4, 5)
+  p_outside = geo_types.make_point(1, 1)
+  assert(transforms.shape_contains_point(s, p_inside))
+  assert(not transforms.shape_contains_point(s, p_outside))
+
+test "cross-shape collision via bounding box":
+  c = geo_types.make_circle(0, 0, 5)
+  r_overlapping = geo_types.make_rectangle(3, 3, 4, 4)
+  r_disjoint = geo_types.make_rectangle(20, 20, 2, 2)
+  s_overlapping = geo_types.make_square(-3, -3, 2)
+  s_disjoint = geo_types.make_square(-20, -20, 2)
+
+  b_c = transforms.get_bbox(c)
+  b_r_over = transforms.get_bbox(r_overlapping)
+  b_r_disj = transforms.get_bbox(r_disjoint)
+  b_s_over = transforms.get_bbox(s_overlapping)
+  b_s_disj = transforms.get_bbox(s_disjoint)
+
+  assert(transforms.bboxes_intersect(b_c, b_r_over))
+  assert(not transforms.bboxes_intersect(b_c, b_r_disj))
+  assert(transforms.bboxes_intersect(b_c, b_s_over))
+  assert(not transforms.bboxes_intersect(b_c, b_s_disj))
+
+test "circle collection pipelines":
+  var circles = Vector[geo_types.Circle]()
+  circles.push(geo_types.make_circle(0, 0, 2))
+  circles.push(geo_types.make_circle(0, 0, 3))
+  circles.push(geo_types.make_circle(0, 0, 4))
+
+  assertEqual(pipeline_ops.total_circle_area(circles), 87)
+  assertEqual(pipeline_ops.count_circles_larger_than(circles, 25), 2)
+  assert(pipeline_ops.all_circles_positive(circles))
+  assert(pipeline_ops.any_circle_exceeds(circles, 40))
+  assert(not pipeline_ops.any_circle_exceeds(circles, 100))
+
+test "rectangle collection pipelines":
+  var rects = Vector[geo_types.Rectangle]()
+  rects.push(geo_types.make_rectangle(0, 0, 2, 3))
+  rects.push(geo_types.make_rectangle(0, 0, 4, 5))
+  rects.push(geo_types.make_rectangle(0, 0, 10, 10))
+
+  assertEqual(pipeline_ops.total_rect_area(rects), 126)
+  assertEqual(pipeline_ops.count_rects_larger_than(rects, 20), 2)
+  assert(pipeline_ops.all_rects_positive(rects))
+  assert(pipeline_ops.any_rect_exceeds(rects, 100))
+  assert(not pipeline_ops.any_rect_exceeds(rects, 200))
+
+test "square collection pipelines":
+  var squares = Vector[geo_types.Square]()
+  squares.push(geo_types.make_square(0, 0, 2))
+  squares.push(geo_types.make_square(0, 0, 4))
+  squares.push(geo_types.make_square(0, 0, 6))
+
+  assertEqual(pipeline_ops.total_square_area(squares), 56)
+  assertEqual(pipeline_ops.count_squares_larger_than(squares, 16), 2)

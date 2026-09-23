@@ -1,0 +1,9 @@
+fn swap_elements(items: Vector[Int], i: Int, j: Int):
+  tmp = items[i]
+  items[i] = items[j]
+  items[j] = tmp
+
+fn main():
+  var int_list = [10, 20]
+  swap_elements(int_list, 0, 1)
+  echo int_list[0], int_list[1]

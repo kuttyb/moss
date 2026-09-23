@@ -1,0 +1,21 @@
+# Reproducer 3: Vector[Trait]() accepted by moss check and Fast Debug, but leaks rustc E0425
+# Category: frontend validation gap & native/Fast-Debug inconsistency
+# Expected: moss check should reject Vector[Trait]() with a clear diagnostic like
+#   TRAIT_COLLECTION_ELEMENT_UNSUPPORTED since Moss v0.1 has no runtime trait objects.
+# Actual: moss check passes; Fast Debug (moss run --interp) runs cleanly;
+#   native compilation fails with rustc error[E0425]: cannot find type `Shape` in this scope
+#   lowered to: `let mut shapes = std::vec::Vec::<Shape>::new();`
+
+trait Shape:
+  fn area() -> Int
+
+type Circle:
+  radius: Int
+  fn area() -> Int:
+    return radius * radius * 3
+
+fn main():
+  var shapes = Vector[Shape]()
+  c = Circle(radius: 5)
+  shapes.push(c)
+  echo shapes |> count

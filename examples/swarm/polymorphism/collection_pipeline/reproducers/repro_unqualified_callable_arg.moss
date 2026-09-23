@@ -1,0 +1,29 @@
+# Reproducer 2: Unqualified Callable Argument in Module Scope
+# Category: Specialization/inference defect
+# Command: moss build --json (within a project with modules)
+#
+# Observed behavior:
+# When passing a sibling function as a callable argument across modules (e.g. Tools.filter_by(nums, is_positive)),
+# the compiler fails during native lowering with:
+# "missing static specialization for function 'Tools__filter_by' with argument types (vector[int], unresolved)".
+#
+# Root Cause:
+# Inside `module App`, functions are named `App__is_positive` in `functions_`.
+# Lowering's `generated_expr_type` searches for `"is_positive"` (unmangled) and fails,
+# treating the argument as unresolved. Qualifying it as `App.is_positive` works around the bug.
+
+module Tools
+
+export fn filter_by(items, predicate):
+  return items |> filter(predicate)
+
+module App
+import Tools
+
+fn is_positive(x: Int) -> Bool:
+  return x > 0
+
+fn main():
+  nums = [-1, 2, 3]
+  pos = Tools.filter_by(nums, is_positive)
+  echo pos |> count

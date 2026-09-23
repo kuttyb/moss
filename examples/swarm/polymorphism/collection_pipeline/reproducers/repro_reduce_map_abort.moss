@@ -1,0 +1,24 @@
+# Reproducer 5: Pipeline Reduce With Mutating Map Accumulator Triggers SIGABRT
+# Category: Pipeline/callable-resolution defect (Compiler Crash)
+# Command: moss check repro_reduce_map_abort.moss --json
+#
+# Observed behavior:
+# The compiler crashes with SIGABRT (exit code 134 / -6):
+# "moss: src/moss.cpp:6054: Assertion `!node.effects.unresolved && !node.callable_identity.empty()` failed."
+#
+# Root Cause:
+# When `items |> reduce(m, record_freq)` accumulates into a Map, the mutating effect
+# of updating the Map inside `record_freq` sets `node.effects.unresolved`, violating
+# the internal checker invariant.
+
+export fn record_freq(counts: Map[Int, Int], item: Int) -> Map[Int, Int]:
+  c = counts.get(item, 0)
+  counts[item] = c + 1
+  return counts
+
+fn main():
+  var m = Map()
+  m[0] = 0
+  items = [200, 404, 200]
+  res = items |> reduce(m, record_freq)
+  echo res.get(200, 0)

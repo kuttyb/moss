@@ -1,0 +1,19 @@
+type Canvas:
+  scale: Int
+
+type Circle:
+  radius: Int
+  fn draw(canvas: Canvas) -> Int:
+    return radius * canvas.scale
+
+type Rectangle:
+  width: Int
+  fn draw(canvas: Canvas) -> Int:
+    return width * canvas.scale
+
+fn render(value, canvas):
+  return value.draw(canvas)
+
+fn main():
+  echo render(Circle(radius = 3), Canvas(scale = 2))
+  echo render(Rectangle(width = 4), Canvas(scale = 3))

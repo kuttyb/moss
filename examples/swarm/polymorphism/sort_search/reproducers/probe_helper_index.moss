@@ -1,0 +1,11 @@
+type Player:
+  name: String
+  score: Int
+
+fn get_name(p: Player) -> String:
+  return p.name
+
+fn main():
+  p = Player(name: "Alice", score: 100)
+  players = [p]
+  echo get_name(players[0])

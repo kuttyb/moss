@@ -1,0 +1,46 @@
+# Integration tests for sort and search library
+
+test "integration quicksort on integers":
+  var vals = [45, 12, 89, 34, 23, 7]
+  var s = IntIndexSortable(data: vals, indices: [0, 1, 2, 3, 4, 5])
+  quicksort(s)
+  assert(s.data[s.indices[0]] == 7)
+  assert(s.data[s.indices[1]] == 12)
+  assert(s.data[s.indices[2]] == 23)
+  assert(s.data[s.indices[3]] == 34)
+  assert(s.data[s.indices[4]] == 45)
+  assert(s.data[s.indices[5]] == 89)
+
+test "integration selection sort on strings":
+  var names = ["zebra", "apple", "mango", "banana"]
+  var s = StringIndexSortable(data: names, indices: [0, 1, 2, 3])
+  selection_sort(s)
+  assert(s.data[s.indices[0]] == "apple")
+  assert(s.data[s.indices[1]] == "banana")
+  assert(s.data[s.indices[2]] == "mango")
+  assert(s.data[s.indices[3]] == "zebra")
+
+test "integration insertion sort on players":
+  p1 = Player(name: "Charlie", score: 50)
+  p2 = Player(name: "Alice", score: 90)
+  p3 = Player(name: "Bob", score: 75)
+  var players = [p1, p2, p3]
+  var s = PlayerScoreSortable(data: players, indices: [0, 1, 2])
+  insertion_sort(s)
+  assert(player_score(s.data[s.indices[0]]) == 50)
+  assert(player_score(s.data[s.indices[1]]) == 75)
+  assert(player_score(s.data[s.indices[2]]) == 90)
+
+test "integration binary search on items":
+  it1 = Item(id: 1, weight: 10)
+  it2 = Item(id: 2, weight: 20)
+  it3 = Item(id: 3, weight: 30)
+  items = [it1, it2, it3]
+  searcher = ItemWeightSearcher(data: items, target_weight: 20)
+  idx = binary_search(searcher)
+  assert(idx == 1)
+
+  items2 = [Item(id: 1, weight: 10), Item(id: 2, weight: 20), Item(id: 3, weight: 30)]
+  searcher_missing = ItemWeightSearcher(data: items2, target_weight: 99)
+  idx_missing = binary_search(searcher_missing)
+  assert(idx_missing == 0 - 1)

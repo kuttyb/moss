@@ -1,0 +1,30 @@
+trait IndexedSequence:
+  fn get(i: Int) -> Int
+  fn set(i: Int, val: Int)
+  fn len() -> Int
+
+type IntArray:
+  data: Vector[Int]
+  fn get(i: Int) -> Int:
+    return data[i]
+  fn set(i: Int, val: Int):
+    data[i] = val
+  fn len() -> Int:
+    return data |> count
+
+fn sort_indexed(seq: IndexedSequence):
+  n = seq.len()
+  var i = 1
+  while i < n:
+    key = seq.get(i)
+    var j = i - 1
+    while j >= 0 and seq.get(j) > key:
+      seq.set(j + 1, seq.get(j))
+      j = j - 1
+    seq.set(j + 1, key)
+    i = i + 1
+
+fn main():
+  var arr = IntArray(data: [5, 2, 4, 1, 3])
+  sort_indexed(arr)
+  echo arr.get(0), arr.get(1), arr.get(2), arr.get(3), arr.get(4)

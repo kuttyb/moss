@@ -1,0 +1,33 @@
+module pipeline_ops
+import geo_types
+import transforms
+
+export fn total_circle_area(circles: Vector[geo_types.Circle]) -> Int:
+  return circles |> map(_.area()) |> sum
+
+export fn total_rect_area(rects: Vector[geo_types.Rectangle]) -> Int:
+  return rects |> map(_.area()) |> sum
+
+export fn total_square_area(squares: Vector[geo_types.Square]) -> Int:
+  return squares |> map(_.area()) |> sum
+
+export fn count_circles_larger_than(circles: Vector[geo_types.Circle], min_area: Int) -> Int:
+  return circles |> map(_.area()) |> filter(_ >= min_area) |> count
+
+export fn count_rects_larger_than(rects: Vector[geo_types.Rectangle], min_area: Int) -> Int:
+  return rects |> map(_.area()) |> filter(_ >= min_area) |> count
+
+export fn count_squares_larger_than(squares: Vector[geo_types.Square], min_area: Int) -> Int:
+  return squares |> map(_.area()) |> filter(_ >= min_area) |> count
+
+export fn all_circles_positive(circles: Vector[geo_types.Circle]) -> Bool:
+  return circles |> map(_.area()) |> all(_ > 0)
+
+export fn any_circle_exceeds(circles: Vector[geo_types.Circle], threshold: Int) -> Bool:
+  return circles |> map(_.area()) |> any(_ >= threshold)
+
+export fn all_rects_positive(rects: Vector[geo_types.Rectangle]) -> Bool:
+  return rects |> map(_.area()) |> all(_ > 0)
+
+export fn any_rect_exceeds(rects: Vector[geo_types.Rectangle], threshold: Int) -> Bool:
+  return rects |> map(_.area()) |> any(_ >= threshold)

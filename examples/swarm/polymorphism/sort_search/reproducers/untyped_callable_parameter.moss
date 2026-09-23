@@ -1,0 +1,23 @@
+# Reproducer: Callable Parameter Limitation Outside Pipelines
+# Classification: pipeline/callable-resolution defect / intentionally unsupported dynamic abstraction
+#
+# Description:
+# In classic generic sorting, one often writes `sort(collection, comparator)` or
+# `sort_by(collection, key_func)` where comparator / key_func is a function.
+# In Moss v0.1, passing a function as a parameter to another ordinary function
+# fails type resolution with:
+#   UNKNOWN_SYMBOL_OR_TYPE: unknown parameter type 'callable:<name>'
+# Callable parameters only resolve when passed directly as pipeline operators
+# (|>, map, filter, reduce), not as arguments to arbitrary user-defined functions.
+#
+# Command to reproduce:
+#   ../../../../moss check --json reproducers/untyped_callable_parameter.moss
+
+fn call_fn(f, x, y) -> Bool:
+  return f(x, y)
+
+fn less(a: Int, b: Int) -> Bool:
+  return a < b
+
+fn main():
+  echo call_fn(less, 3, 5)

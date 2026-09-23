@@ -1,0 +1,11 @@
+# REPRO-06: Binary + on strings lowers to (String) + (String) which fails
+# native compilation under rustc E0308 (expected &str, found String).
+# Fast Debug executes this cleanly.
+fn cat(a: String, b: String) -> String:
+  return a + b
+
+fn main():
+  var s = "hello"
+  s = s + " world"
+  echo s
+  echo cat("a", "b")

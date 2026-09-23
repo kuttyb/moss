@@ -1,0 +1,26 @@
+# Reproducer 4: Untyped generic container parameters cannot be indexed
+# Category: specialization/inference defect
+# Expected: Function specializes when passed a concrete indexable container (e.g. Vector[Int])
+# Actual: moss check fails with:
+#   error[MOSS_COMPILE_ERROR]: value is not an indexable container (line 12)
+# Cause: Container indexing check requires static container type ('vector[', 'map['),
+#   which is unresolved for open generic parameters before specialization.
+
+type Circle:
+  radius: Int
+
+fn sum_radii(shapes) -> Int:
+  var total = 0
+  var i = 0
+  n = shapes |> count
+  while i < n:
+    # Fails here: value is not an indexable container
+    s = shapes[i]
+    total = total + s.radius
+    i = i + 1
+  return total
+
+fn main():
+  var circles = Vector[Circle]()
+  circles.push(Circle(radius: 5))
+  echo sum_radii(circles)

@@ -1,0 +1,18 @@
+# REPRO-03: Trait method returning the trait name itself fails structural
+# conformance check when concrete types return their concrete type.
+trait TreeNode:
+  fn get_child(i: Int) -> TreeNode
+
+type OrgNode:
+  id: Int
+  children: Vector[OrgNode]
+
+  fn get_child(i: Int) -> OrgNode:
+    return children[i]
+
+fn count_tree(node: TreeNode) -> Int:
+  return 1
+
+fn main():
+  org = OrgNode(id: 1, children: Vector[OrgNode]())
+  echo count_tree(org)

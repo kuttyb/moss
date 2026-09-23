@@ -1,0 +1,14 @@
+# REPRO-01: Untyped parameter field access monomorphizes the function
+# instead of duck-typing fields. Moss static duck typing is strictly method-based.
+type A:
+  name: String
+
+type B:
+  name: String
+
+fn get_name(node):
+  return node.name
+
+fn main():
+  echo get_name(A(name: "alpha"))
+  echo get_name(B(name: "beta"))

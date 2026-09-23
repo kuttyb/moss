@@ -1,0 +1,38 @@
+
+trait Searchable:
+  fn len() -> Int
+  fn compare_at(i: Int) -> Int
+
+type StringSearcher:
+  data: Vector[String]
+  target: String
+  fn len() -> Int:
+    return data |> count
+  fn compare_at(i: Int) -> Int:
+    if target == data[i]:
+      return 0
+    else:
+      if target < data[i]:
+        return -1
+      else:
+        return 1
+
+fn binary_search(s: Searchable) -> Int:
+  var low = 0
+  var high = s.len() - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    c = s.compare_at(mid)
+    if c == 0:
+      return mid
+    else:
+      if c < 0:
+        high = mid - 1
+      else:
+        low = mid + 1
+  return -1
+
+fn main():
+  strs = ["apple", "banana", "cherry", "date"]
+  ssearch = StringSearcher(data: strs, target: "apple")
+  echo binary_search(ssearch)

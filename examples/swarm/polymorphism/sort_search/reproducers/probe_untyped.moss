@@ -1,0 +1,6 @@
+fn compare_items(a, b) -> Bool:
+  return a < b
+
+fn main():
+  echo compare_items(3, 5)
+  echo compare_items("apple", "banana")

@@ -1,0 +1,20 @@
+type Player:
+  name: String
+  score: Int
+  fn sort_key() -> Int:
+    return score
+
+type Item:
+  id: Int
+  weight: Int
+  fn sort_key() -> Int:
+    return weight
+
+fn extract_key(x) -> Int:
+  return x.sort_key()
+
+fn main():
+  p = Player(name: "Alice", score: 100)
+  it = Item(id: 1, weight: 50)
+  echo extract_key(p)
+  echo extract_key(it)

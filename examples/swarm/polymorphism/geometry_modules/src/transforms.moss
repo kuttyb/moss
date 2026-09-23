@@ -1,0 +1,43 @@
+module transforms
+import geo_types
+
+export fn bbox_width(b: geo_types.BoundingBox) -> Int:
+  return b.width()
+
+export fn bbox_height(b: geo_types.BoundingBox) -> Int:
+  return b.height()
+
+export fn bbox_area(b: geo_types.BoundingBox) -> Int:
+  return b.area()
+
+export fn bbox_intersects(a: geo_types.BoundingBox, b: geo_types.BoundingBox) -> Bool:
+  return a.intersects(b)
+
+export fn bbox_contains_point(b: geo_types.BoundingBox, p: geo_types.Point) -> Bool:
+  return b.contains_point(p)
+
+export fn point_distance_squared(x1: Int, y1: Int, x2: Int, y2: Int) -> Int:
+  dx = x1 - x2
+  dy = y1 - y2
+  return dx * dx + dy * dy
+
+export fn shape_contains_point(s, p: geo_types.Point) -> Bool:
+  return s.contains_point(p)
+
+export fn get_area(s) -> Int:
+  return s.area()
+
+export fn get_perimeter(s) -> Int:
+  return s.perimeter()
+
+export fn get_bbox(s) -> geo_types.BoundingBox:
+  return s.bbox()
+
+export fn translate(s, dx: Int, dy: Int):
+  return s.translated(dx, dy)
+
+export fn scale(s, factor: Int):
+  return s.scaled(factor)
+
+export fn bboxes_intersect(b1: geo_types.BoundingBox, b2: geo_types.BoundingBox) -> Bool:
+  return b1.intersects(b2)

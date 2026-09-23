@@ -1,0 +1,11 @@
+fn test_index_sort():
+  strs = ["pear", "apple", "orange", "banana"]
+  var indices = [0, 1, 2, 3]
+  # swap 0 and 1
+  tmp = indices[0]
+  indices[0] = indices[1]
+  indices[1] = tmp
+  echo strs[indices[0]], strs[indices[1]]
+
+fn main():
+  test_index_sort()

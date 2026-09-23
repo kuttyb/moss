@@ -1,0 +1,125 @@
+trait Sortable:
+  fn len() -> Int
+  fn less(i: Int, j: Int) -> Bool
+  fn swap(i: Int, j: Int) -> Int
+
+type IntIndexSortable:
+  data: Vector[Int]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] < data[indices[j]]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type StringIndexSortable:
+  data: Vector[String]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] < data[indices[j]]
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type Player:
+  name: String
+  score: Int
+
+fn player_less(p1: Player, p2: Player) -> Bool:
+  return p1.score < p2.score
+
+type PlayerIndexSortable:
+  data: Vector[Player]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return player_less(data[indices[i]], data[indices[j]])
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type Item:
+  id: Int
+  weight: Int
+
+fn item_less(it1: Item, it2: Item) -> Bool:
+  return it1.weight < it2.weight
+
+type ItemIndexSortable:
+  data: Vector[Item]
+  indices: Vector[Int]
+  fn len() -> Int:
+    return indices |> count
+  fn less(i: Int, j: Int) -> Bool:
+    return item_less(data[indices[i]], data[indices[j]])
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+# Generic Insertion Sort on any Sortable
+fn insertion_sort(s: Sortable):
+  n = s.len()
+  var i = 1
+  while i < n:
+    var j = i
+    var moving = true
+    while moving:
+      if j <= 0:
+        moving = false
+      else:
+        if s.less(j, j - 1):
+          dummy = s.swap(j, j - 1)
+          j = j - 1
+        else:
+          moving = false
+    i = i + 1
+
+fn print_player(p: Player):
+  echo p.name, p.score
+
+fn item_id(it: Item) -> Int:
+  return it.id
+
+fn main():
+  var int_sort = IntIndexSortable(data: [50, 20, 40, 10, 30], indices: [0, 1, 2, 3, 4])
+  insertion_sort(int_sort)
+  echo int_sort.data[int_sort.indices[0]], int_sort.data[int_sort.indices[1]], int_sort.data[int_sort.indices[2]], int_sort.data[int_sort.indices[3]], int_sort.data[int_sort.indices[4]]
+
+  var str_sort = StringIndexSortable(data: ["cherry", "apple", "date", "banana"], indices: [0, 1, 2, 3])
+  insertion_sort(str_sort)
+  echo str_sort.data[str_sort.indices[0]], str_sort.data[str_sort.indices[1]], str_sort.data[str_sort.indices[2]], str_sort.data[str_sort.indices[3]]
+
+  p1 = Player(name: "Charlie", score: 85)
+  p2 = Player(name: "Alice", score: 95)
+  p3 = Player(name: "Bob", score: 70)
+  var player_sort = PlayerIndexSortable(data: [p1, p2, p3], indices: [0, 1, 2])
+  insertion_sort(player_sort)
+  idx0 = player_sort.indices[0]
+  idx1 = player_sort.indices[1]
+  idx2 = player_sort.indices[2]
+  print_player(player_sort.data[idx0])
+  print_player(player_sort.data[idx1])
+  print_player(player_sort.data[idx2])
+
+  it1 = Item(id: 101, weight: 500)
+  it2 = Item(id: 102, weight: 150)
+  it3 = Item(id: 103, weight: 300)
+  var item_sort = ItemIndexSortable(data: [it1, it2, it3], indices: [0, 1, 2])
+  insertion_sort(item_sort)
+  i0 = item_sort.indices[0]
+  i1 = item_sort.indices[1]
+  i2 = item_sort.indices[2]
+  echo item_id(item_sort.data[i0]), item_id(item_sort.data[i1]), item_id(item_sort.data[i2])

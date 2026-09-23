@@ -1,0 +1,227 @@
+module geo_types
+
+export type Point:
+  x: Int
+  y: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y
+
+  fn distance_squared(other: Point) -> Int:
+    dx = x - other.x
+    dy = y - other.y
+    return dx * dx + dy * dy
+
+export type BoundingBox:
+  min_x: Int
+  min_y: Int
+  max_x: Int
+  max_y: Int
+
+  fn get_min_x() -> Int:
+    return min_x
+
+  fn get_min_y() -> Int:
+    return min_y
+
+  fn get_max_x() -> Int:
+    return max_x
+
+  fn get_max_y() -> Int:
+    return max_y
+
+  fn width() -> Int:
+    return max_x - min_x
+
+  fn height() -> Int:
+    return max_y - min_y
+
+  fn area() -> Int:
+    w = max_x - min_x
+    h = max_y - min_y
+    return w * h
+
+  fn contains_point(p: Point) -> Bool:
+    if p.x < min_x:
+      return false
+    if p.x > max_x:
+      return false
+    if p.y < min_y:
+      return false
+    if p.y > max_y:
+      return false
+    return true
+
+  fn intersects(other: BoundingBox) -> Bool:
+    if max_x < other.min_x:
+      return false
+    if min_x > other.max_x:
+      return false
+    if max_y < other.min_y:
+      return false
+    if min_y > other.max_y:
+      return false
+    return true
+
+export trait Bounded:
+  fn bbox() -> BoundingBox
+
+export trait Measurable:
+  fn area() -> Int
+  fn perimeter() -> Int
+
+export trait Containment:
+  fn contains_point(p: Point) -> Bool
+
+export trait Shape:
+  fn area() -> Int
+  fn perimeter() -> Int
+  fn bbox() -> BoundingBox
+  fn contains_point(p: Point) -> Bool
+
+export type Circle:
+  x: Int
+  y: Int
+  radius: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y
+
+  fn get_radius() -> Int:
+    return radius
+
+  fn area() -> Int:
+    return radius * radius * 3
+
+  fn perimeter() -> Int:
+    return 6 * radius
+
+  fn bbox() -> BoundingBox:
+    return BoundingBox(min_x: x - radius, min_y: y - radius, max_x: x + radius, max_y: y + radius)
+
+  fn contains_point(p: Point) -> Bool:
+    dx = x - p.x
+    dy = y - p.y
+    d2 = dx * dx + dy * dy
+    return d2 <= radius * radius
+
+  fn translated(dx: Int, dy: Int) -> Circle:
+    return Circle(x: x + dx, y: y + dy, radius: radius)
+
+  fn scaled(factor: Int) -> Circle:
+    return Circle(x: x, y: y, radius: radius * factor)
+
+  fn clone_shape() -> Circle:
+    return Circle(x: x, y: y, radius: radius)
+
+export type Rectangle:
+  x: Int
+  y: Int
+  width: Int
+  height: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y
+
+  fn get_width() -> Int:
+    return width
+
+  fn get_height() -> Int:
+    return height
+
+  fn area() -> Int:
+    return width * height
+
+  fn perimeter() -> Int:
+    sum = width + height
+    return 2 * sum
+
+  fn bbox() -> BoundingBox:
+    return BoundingBox(min_x: x, min_y: y, max_x: x + width, max_y: y + height)
+
+  fn contains_point(p: Point) -> Bool:
+    if p.x < x:
+      return false
+    if p.x > x + width:
+      return false
+    if p.y < y:
+      return false
+    if p.y > y + height:
+      return false
+    return true
+
+  fn translated(dx: Int, dy: Int) -> Rectangle:
+    return Rectangle(x: x + dx, y: y + dy, width: width, height: height)
+
+  fn scaled(factor: Int) -> Rectangle:
+    return Rectangle(x: x, y: y, width: width * factor, height: height * factor)
+
+  fn clone_shape() -> Rectangle:
+    return Rectangle(x: x, y: y, width: width, height: height)
+
+export type Square:
+  x: Int
+  y: Int
+  side: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y
+
+  fn get_side() -> Int:
+    return side
+
+  fn area() -> Int:
+    return side * side
+
+  fn perimeter() -> Int:
+    return 4 * side
+
+  fn bbox() -> BoundingBox:
+    return BoundingBox(min_x: x, min_y: y, max_x: x + side, max_y: y + side)
+
+  fn contains_point(p: Point) -> Bool:
+    if p.x < x:
+      return false
+    if p.x > x + side:
+      return false
+    if p.y < y:
+      return false
+    if p.y > y + side:
+      return false
+    return true
+
+  fn translated(dx: Int, dy: Int) -> Square:
+    return Square(x: x + dx, y: y + dy, side: side)
+
+  fn scaled(factor: Int) -> Square:
+    return Square(x: x, y: y, side: side * factor)
+
+  fn clone_shape() -> Square:
+    return Square(x: x, y: y, side: side)
+
+export fn make_point(x: Int, y: Int) -> Point:
+  return Point(x: x, y: y)
+
+export fn make_bbox(min_x: Int, min_y: Int, max_x: Int, max_y: Int) -> BoundingBox:
+  return BoundingBox(min_x: min_x, min_y: min_y, max_x: max_x, max_y: max_y)
+
+export fn make_circle(x: Int, y: Int, radius: Int) -> Circle:
+  return Circle(x: x, y: y, radius: radius)
+
+export fn make_rectangle(x: Int, y: Int, width: Int, height: Int) -> Rectangle:
+  return Rectangle(x: x, y: y, width: width, height: height)
+
+export fn make_square(x: Int, y: Int, side: Int) -> Square:
+  return Square(x: x, y: y, side: side)

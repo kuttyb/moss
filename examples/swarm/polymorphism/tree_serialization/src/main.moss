@@ -1,0 +1,484 @@
+# Generic Tree / Hierarchical Data Algorithms & Serialization
+#
+# Demonstrates generic tree algorithms in Moss v0.1 using:
+# 1. Structural trait `TreeNode` (compile-time duck typing across unrelated types).
+# 2. Iterative BFS traversal using Queue() with explicit length tracking.
+# 3. Iterative DFS traversal using explicit Vector stack with make_owned().
+# 4. Tree aggregations (sum, filtered sum, max depth, leaf count, value collection).
+# 5. Structural serialization into Vector[TreeEntry], indented lines, and JSON lines.
+
+# ---------------------------------------------------------------- Text Utilities
+
+# Safe string concatenation (READs both arguments, avoiding native E0308 and ownership consume)
+fn concat(a: String, b: String) -> String:
+  var out = ""
+  out = out + a
+  out = out + b
+  return out
+
+# Indentation prefix for formatted tree rendering
+fn get_indent(depth: Int) -> String:
+  if depth == 0:
+    return ""
+  if depth == 1:
+    return "  "
+  if depth == 2:
+    return "    "
+  if depth == 3:
+    return "      "
+  if depth == 4:
+    return "        "
+  return "          "
+
+# ---------------------------------------------------------------- Structural Trait
+
+trait TreeNode:
+  fn child_count() -> Int
+  fn child_at(i: Int)
+  fn label() -> String
+  fn value() -> Int
+
+# Universal owned-value helper: takes a reference and returns an owned clone.
+# Essential for avoiding use-after-consume when pushing into stacks or queues.
+fn make_owned(node):
+  return node
+
+# ---------------------------------------------------------------- Node Type A: OrgNode
+
+type OrgNode:
+  id: Int
+  name: String
+  budget: Int
+  children: Vector[OrgNode]
+
+  fn child_count() -> Int:
+    return children |> count
+
+  fn child_at(i: Int) -> OrgNode:
+    return make_owned(children[i])
+
+  fn label() -> String:
+    return concat("", name)
+
+  fn value() -> Int:
+    return budget
+
+  fn get_id() -> Int:
+    return id
+
+# ---------------------------------------------------------------- Node Type B: DocNode
+
+type DocNode:
+  tag: String
+  text: String
+  children: Vector[DocNode]
+
+  fn child_count() -> Int:
+    return children |> count
+
+  fn child_at(i: Int) -> DocNode:
+    return make_owned(children[i])
+
+  fn label() -> String:
+    return concat("", tag)
+
+  fn value() -> Int:
+    return children |> count
+
+  fn get_text() -> String:
+    return concat("", text)
+
+# ---------------------------------------------------------------- Node Type C: CategoryNode
+
+type CategoryNode:
+  code: String
+  item_count: Int
+  children: Vector[CategoryNode]
+
+  fn child_count() -> Int:
+    return children |> count
+
+  fn child_at(i: Int) -> CategoryNode:
+    return make_owned(children[i])
+
+  fn label() -> String:
+    return concat("", code)
+
+  fn value() -> Int:
+    return item_count
+
+# ---------------------------------------------------------------- Serialization Record
+
+type TreeEntry:
+  depth: Int
+  label: String
+  value: Int
+  child_count: Int
+
+# ---------------------------------------------------------------- Generic Tree Algorithms
+
+# Breadth-first search / level-order traversal
+fn tree_bfs_labels(root: TreeNode) -> Vector[String]:
+  var q = Queue()
+  var q_len = 0
+  q.push(make_owned(root))
+  q_len = q_len + 1
+  var labels = Vector[String]()
+  while q_len > 0:
+    curr = q.pop()
+    q_len = q_len - 1
+    labels.push(curr.label())
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      q.push(curr.child_at(i))
+      q_len = q_len + 1
+      i = i + 1
+  return labels
+
+# Depth-first search / stack traversal (pre-order)
+fn tree_dfs_labels(root: TreeNode) -> Vector[String]:
+  first = make_owned(root)
+  var stack = [first]
+  var labels = Vector[String]()
+  while (stack |> count) > 0:
+    curr = stack.pop()
+    labels.push(curr.label())
+    k = curr.child_count()
+    # Push children in reverse order so first child is popped first
+    var i = k - 1
+    while i >= 0:
+      stack.push(curr.child_at(i))
+      i = i - 1
+  return labels
+
+# Total number of nodes in tree
+fn tree_size(root: TreeNode) -> Int:
+  var q = Queue()
+  var q_len = 0
+  q.push(make_owned(root))
+  q_len = q_len + 1
+  var total = 0
+  while q_len > 0:
+    curr = q.pop()
+    q_len = q_len - 1
+    total = total + 1
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      q.push(curr.child_at(i))
+      q_len = q_len + 1
+      i = i + 1
+  return total
+
+# Maximum depth of tree (root at depth 1)
+fn tree_max_depth(root: TreeNode) -> Int:
+  first = make_owned(root)
+  var node_stack = [first]
+  var depth_stack = [1]
+  var max_d = 0
+  while (node_stack |> count) > 0:
+    curr = node_stack.pop()
+    d = depth_stack.pop()
+    if d > max_d:
+      max_d = d
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      node_stack.push(curr.child_at(i))
+      depth_stack.push(d + 1)
+      i = i + 1
+  return max_d
+
+# Count leaf nodes (nodes with 0 children)
+fn tree_leaf_count(root: TreeNode) -> Int:
+  first = make_owned(root)
+  var stack = [first]
+  var leaves = 0
+  while (stack |> count) > 0:
+    curr = stack.pop()
+    k = curr.child_count()
+    if k == 0:
+      leaves = leaves + 1
+    else:
+      var i = 0
+      while i < k:
+        stack.push(curr.child_at(i))
+        i = i + 1
+  return leaves
+
+# Abstract tree fold: sum values across all nodes
+fn tree_sum_values(root: TreeNode) -> Int:
+  first = make_owned(root)
+  var stack = [first]
+  var total = 0
+  while (stack |> count) > 0:
+    curr = stack.pop()
+    total = total + curr.value()
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      stack.push(curr.child_at(i))
+      i = i + 1
+  return total
+
+# Abstract tree fold: sum values matching a threshold predicate
+fn tree_sum_filtered(root: TreeNode, min_value: Int) -> Int:
+  first = make_owned(root)
+  var stack = [first]
+  var total = 0
+  while (stack |> count) > 0:
+    curr = stack.pop()
+    v = curr.value()
+    if v >= min_value:
+      total = total + v
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      stack.push(curr.child_at(i))
+      i = i + 1
+  return total
+
+# Collect all node values into a Vector for functional pipeline operations
+fn tree_collect_values(root: TreeNode) -> Vector[Int]:
+  first = make_owned(root)
+  var stack = [first]
+  var values = Vector[Int]()
+  while (stack |> count) > 0:
+    curr = stack.pop()
+    values.push(curr.value())
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      stack.push(curr.child_at(i))
+      i = i + 1
+  return values
+
+# Structural serializer: produces a sequence of TreeEntry records
+fn tree_serialize(root: TreeNode) -> Vector[TreeEntry]:
+  first = make_owned(root)
+  var node_stack = [first]
+  var depth_stack = [0]
+  var entries = Vector[TreeEntry]()
+  while (node_stack |> count) > 0:
+    curr = node_stack.pop()
+    depth = depth_stack.pop()
+    k = curr.child_count()
+    entry = TreeEntry(depth: depth, label: curr.label(), value: curr.value(), child_count: k)
+    entries.push(entry)
+    var i = k - 1
+    while i >= 0:
+      node_stack.push(curr.child_at(i))
+      depth_stack.push(depth + 1)
+      i = i - 1
+  return entries
+
+# Serialize tree into indented lines: "- <label>" with 2 spaces per depth level
+fn tree_serialize_indented(root: TreeNode) -> Vector[String]:
+  entries = tree_serialize(root)
+  var lines = Vector[String]()
+  n = entries |> count
+  var i = 0
+  while i < n:
+    e = entries[i]
+    ind = get_indent(e.depth)
+    prefix = concat(ind, "- ")
+    line = concat(prefix, e.label)
+    lines.push(line)
+    i = i + 1
+  return lines
+
+# Serialize tree into JSON lines: '{"label": "...", "depth": ..., "value": ...}'
+fn tree_serialize_json(root: TreeNode) -> Vector[String]:
+  entries = tree_serialize(root)
+  var lines = Vector[String]()
+  lines.push("[")
+  n = entries |> count
+  var i = 0
+  while i < n:
+    e = entries[i]
+    ind = get_indent(e.depth + 1)
+    p1 = concat(ind, "{\"label\": \"")
+    p2 = concat(p1, e.label)
+    p3 = concat(p2, "\"}")
+    lines.push(p3)
+    i = i + 1
+  lines.push("]")
+  return lines
+
+# ---------------------------------------------------------------- Display Helpers
+
+fn print_indented_tree(root: TreeNode):
+  lines = tree_serialize_indented(root)
+  n = lines |> count
+  var i = 0
+  while i < n:
+    echo lines[i]
+    i = i + 1
+  return
+
+fn print_json_tree(root: TreeNode):
+  lines = tree_serialize_json(root)
+  n = lines |> count
+  var i = 0
+  while i < n:
+    echo lines[i]
+    i = i + 1
+  return
+
+# ---------------------------------------------------------------- Sample Tree Builders
+
+fn build_sample_org_tree() -> OrgNode:
+  var infra_ch = Vector[OrgNode]()
+  infra = OrgNode(id: 4, name: "Infrastructure", budget: 3000, children: infra_ch)
+
+  var app_ch = Vector[OrgNode]()
+  apps = OrgNode(id: 5, name: "Applications", budget: 2000, children: app_ch)
+
+  var eng_ch = Vector[OrgNode]()
+  eng_ch.push(infra)
+  eng_ch.push(apps)
+  eng = OrgNode(id: 2, name: "Engineering", budget: 5000, children: eng_ch)
+
+  var growth_ch = Vector[OrgNode]()
+  growth = OrgNode(id: 6, name: "Growth", budget: 1500, children: growth_ch)
+
+  var brand_ch = Vector[OrgNode]()
+  brand = OrgNode(id: 7, name: "Branding", budget: 1500, children: brand_ch)
+
+  var mkt_ch = Vector[OrgNode]()
+  mkt_ch.push(growth)
+  mkt_ch.push(brand)
+  mkt = OrgNode(id: 3, name: "Marketing", budget: 3000, children: mkt_ch)
+
+  var ops_ch = Vector[OrgNode]()
+  ops = OrgNode(id: 8, name: "Operations", budget: 2000, children: ops_ch)
+
+  var ceo_ch = Vector[OrgNode]()
+  ceo_ch.push(eng)
+  ceo_ch.push(mkt)
+  ceo_ch.push(ops)
+  return OrgNode(id: 1, name: "CEO", budget: 10000, children: ceo_ch)
+
+fn build_sample_doc_tree() -> DocNode:
+  var title_ch = Vector[DocNode]()
+  title = DocNode(tag: "title", text: "Moss Tree Demo", children: title_ch)
+
+  var head_ch = Vector[DocNode]()
+  head_ch.push(title)
+  head = DocNode(tag: "head", text: "", children: head_ch)
+
+  var nav_ch = Vector[DocNode]()
+  nav = DocNode(tag: "nav", text: "Home", children: nav_ch)
+
+  var h1_ch = Vector[DocNode]()
+  h1 = DocNode(tag: "h1", text: "Hierarchies", children: h1_ch)
+
+  var p_ch = Vector[DocNode]()
+  p = DocNode(tag: "p", text: "Generic trees in Moss", children: p_ch)
+
+  var sec_ch = Vector[DocNode]()
+  sec_ch.push(h1)
+  sec_ch.push(p)
+  section = DocNode(tag: "section", text: "", children: sec_ch)
+
+  var main_ch = Vector[DocNode]()
+  main_ch.push(nav)
+  main_ch.push(section)
+  main_elem = DocNode(tag: "main", text: "", children: main_ch)
+
+  var foot_ch = Vector[DocNode]()
+  footer = DocNode(tag: "footer", text: "2026", children: foot_ch)
+
+  var body_ch = Vector[DocNode]()
+  body_ch.push(main_elem)
+  body_ch.push(footer)
+  body = DocNode(tag: "body", text: "", children: body_ch)
+
+  var html_ch = Vector[DocNode]()
+  html_ch.push(head)
+  html_ch.push(body)
+  return DocNode(tag: "html", text: "", children: html_ch)
+
+fn build_sample_category_tree() -> CategoryNode:
+  var comp_ch = Vector[CategoryNode]()
+  comp = CategoryNode(code: "COMPUTERS", item_count: 50, children: comp_ch)
+
+  var phone_ch = Vector[CategoryNode]()
+  phone = CategoryNode(code: "PHONES", item_count: 70, children: phone_ch)
+
+  var elec_ch = Vector[CategoryNode]()
+  elec_ch.push(comp)
+  elec_ch.push(phone)
+  elec = CategoryNode(code: "ELECTRONICS", item_count: 120, children: elec_ch)
+
+  var fic_ch = Vector[CategoryNode]()
+  fic = CategoryNode(code: "FICTION", item_count: 45, children: fic_ch)
+
+  var nonfic_ch = Vector[CategoryNode]()
+  nonfic = CategoryNode(code: "NONFICTION", item_count: 40, children: nonfic_ch)
+
+  var books_ch = Vector[CategoryNode]()
+  books_ch.push(fic)
+  books_ch.push(nonfic)
+  books = CategoryNode(code: "BOOKS", item_count: 85, children: books_ch)
+
+  var root_ch = Vector[CategoryNode]()
+  root_ch.push(elec)
+  root_ch.push(books)
+  return CategoryNode(code: "CATALOG", item_count: 205, children: root_ch)
+
+# ---------------------------------------------------------------- Application Main
+
+fn main():
+  org = build_sample_org_tree()
+  doc = build_sample_doc_tree()
+  cat = build_sample_category_tree()
+
+  echo "=== Org Tree Traversal & Metrics ==="
+  echo "Node count:", tree_size(org)
+  echo "Max depth:", tree_max_depth(org)
+  echo "Leaf count:", tree_leaf_count(org)
+  echo "Total budget:", tree_sum_values(org)
+  echo "Budget >= 3000:", tree_sum_filtered(org, 3000)
+
+  org_bfs = tree_bfs_labels(org)
+  echo "BFS Order (count=", org_bfs |> count, "):"
+  echo " ", org_bfs[0], org_bfs[1], org_bfs[2], org_bfs[3]
+
+  org_dfs = tree_dfs_labels(org)
+  echo "DFS Order (count=", org_dfs |> count, "):"
+  echo " ", org_dfs[0], org_dfs[1], org_dfs[2], org_dfs[3]
+
+  echo ""
+  echo "=== Doc Tree Traversal & Metrics ==="
+  echo "Node count:", tree_size(doc)
+  echo "Max depth:", tree_max_depth(doc)
+  echo "Leaf count:", tree_leaf_count(doc)
+  echo "Total child links:", tree_sum_values(doc)
+
+  doc_bfs = tree_bfs_labels(doc)
+  echo "Doc BFS Order (count=", doc_bfs |> count, "):"
+  echo " ", doc_bfs[0], doc_bfs[1], doc_bfs[2]
+
+  echo ""
+  echo "=== Category Tree Traversal & Metrics ==="
+  echo "Node count:", tree_size(cat)
+  echo "Max depth:", tree_max_depth(cat)
+  echo "Leaf count:", tree_leaf_count(cat)
+  echo "Total items:", tree_sum_values(cat)
+
+  echo ""
+  echo "=== Functional Pipelines on Tree Values ==="
+  cat_values = tree_collect_values(cat)
+  echo "Values count:", cat_values |> count
+  echo "Values sum:", cat_values |> sum
+  echo "Values > 50 sum:", cat_values |> filter(_ > 50) |> sum
+
+  echo ""
+  echo "=== Indented Serializer Demo ==="
+  print_indented_tree(org)
+
+  echo ""
+  echo "=== JSON Serializer Demo ==="
+  print_json_tree(cat)

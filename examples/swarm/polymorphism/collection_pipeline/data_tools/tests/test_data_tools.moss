@@ -1,0 +1,93 @@
+module TestDataTools
+import DataTools
+
+export fn is_positive(x: Int) -> Bool:
+  return x > 0
+
+export fn is_gt_10(x: Int) -> Bool:
+  return x > 10
+
+export fn add_int(acc: Int, x: Int) -> Int:
+  return acc + x
+
+export fn mul_int(acc: Int, x: Int) -> Int:
+  return acc * x
+
+export fn triple_int(x: Int) -> Int:
+  return x * 3
+
+test "filter_by and count_matching":
+  values = [-5, 12, 0, 15, -3, 20]
+  pos = DataTools.filter_by(values, TestDataTools.is_positive)
+  assertEqual(pos |> count, 3)
+  assert(pos[0] == 12)
+  assert(pos[1] == 15)
+  assert(pos[2] == 20)
+  c = DataTools.count_matching(values, TestDataTools.is_gt_10)
+  assertEqual(c, 3)
+
+test "map_by":
+  values = [1, 2, 3, 4]
+  tripled = DataTools.map_by(values, TestDataTools.triple_int)
+  assertEqual(tripled |> count, 4)
+  assert(tripled[0] == 3)
+  assert(tripled[1] == 6)
+  assert(tripled[2] == 9)
+  assert(tripled[3] == 12)
+
+test "fold_left":
+  values = [1, 2, 3, 4, 5]
+  sum = DataTools.fold_left(values, 0, TestDataTools.add_int)
+  assertEqual(sum, 15)
+  prod = DataTools.fold_left(values, 1, TestDataTools.mul_int)
+  assertEqual(prod, 120)
+
+test "window_ints and window_averages":
+  values = [10, 20, 30, 40, 50]
+  w = DataTools.window_ints(values, 3)
+  assertEqual(w |> count, 3)
+  avgs = DataTools.window_averages(values, 3)
+  assertEqual(avgs |> count, 3)
+  assertEqual(avgs[0], 20)
+  assertEqual(avgs[1], 30)
+  assertEqual(avgs[2], 40)
+
+test "window boundary conditions":
+  values = [1, 2]
+  empty_w = DataTools.window_ints(values, 5)
+  assertEqual(empty_w |> count, 0)
+  empty_avg = DataTools.window_averages(values, 0)
+  assertEqual(empty_avg |> count, 0)
+
+test "chunk_ints, batch_sums, and batch_averages":
+  values = [10, 20, 30, 40, 50, 60, 70]
+  chunks = DataTools.chunk_ints(values, 3)
+  assertEqual(chunks |> count, 3)
+  sums = DataTools.batch_sums(values, 3)
+  assertEqual(sums |> count, 3)
+  assertEqual(sums[0], 60)
+  assertEqual(sums[1], 150)
+  assertEqual(sums[2], 70)
+  avgs = DataTools.batch_averages(values, 3)
+  assertEqual(avgs |> count, 3)
+  assertEqual(avgs[0], 20)
+  assertEqual(avgs[1], 50)
+  assertEqual(avgs[2], 70)
+
+test "frequency_map_ints":
+  values = [200, 404, 200, 500, 200, 404]
+  freqs = DataTools.frequency_map_ints(values)
+  assertEqual(freqs.get(200, 0), 3)
+  assertEqual(freqs.get(404, 0), 2)
+  assertEqual(freqs.get(500, 0), 1)
+  assertEqual(freqs.get(301, 0), 0)
+
+test "distinct_ints":
+  values = [5, 1, 5, 2, 1, 3, 2, 4]
+  uniq = DataTools.distinct_ints(values)
+  assertEqual(uniq |> count, 5)
+  assertEqual(uniq[0], 5)
+  assertEqual(uniq[1], 1)
+  assertEqual(uniq[2], 2)
+  assertEqual(uniq[3], 3)
+  assertEqual(uniq[4], 4)

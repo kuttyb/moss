@@ -1,0 +1,90 @@
+module LogAnalytics
+
+test "windowed latency averages":
+  l1 = RequestLog(path: "/a", status: 200, response_time: 100)
+  l2 = RequestLog(path: "/b", status: 200, response_time: 200)
+  l3 = RequestLog(path: "/c", status: 200, response_time: 300)
+  l4 = RequestLog(path: "/d", status: 200, response_time: 400)
+  logs = [l1, l2, l3, l4]
+  avgs = compute_windowed_latency_averages(logs, 2)
+  assertEqual(avgs |> count, 3)
+  assertEqual(avgs[0], 150)
+  assertEqual(avgs[1], 250)
+  assertEqual(avgs[2], 350)
+
+test "windowed metric averages":
+  m1 = MetricPoint(timestamp: 1, value: 10)
+  m2 = MetricPoint(timestamp: 2, value: 20)
+  m3 = MetricPoint(timestamp: 3, value: 30)
+  metrics = [m1, m2, m3]
+  avgs = compute_windowed_metric_averages(metrics, 3)
+  assertEqual(avgs |> count, 1)
+  assertEqual(avgs[0], 20)
+
+test "slow request filtering":
+  l1 = RequestLog(path: "/fast", status: 200, response_time: 50)
+  l2 = RequestLog(path: "/slow1", status: 200, response_time: 150)
+  l3 = RequestLog(path: "/slow2", status: 500, response_time: 300)
+  logs = [l1, l2, l3]
+  slow = filter_slow_latencies(logs)
+  assertEqual(slow |> count, 2)
+  assertEqual(slow[0], 150)
+  assertEqual(slow[1], 300)
+
+test "count slow requests":
+  l1 = RequestLog(path: "/fast", status: 200, response_time: 50)
+  l2 = RequestLog(path: "/slow", status: 200, response_time: 200)
+  logs = [l1, l2]
+  cnt = count_slow_requests(logs)
+  assertEqual(cnt, 1)
+
+test "status code frequencies":
+  l1 = RequestLog(path: "/a", status: 200, response_time: 10)
+  l2 = RequestLog(path: "/b", status: 404, response_time: 10)
+  l3 = RequestLog(path: "/c", status: 200, response_time: 10)
+  l4 = RequestLog(path: "/d", status: 500, response_time: 10)
+  l5 = RequestLog(path: "/e", status: 200, response_time: 10)
+  logs = [l1, l2, l3, l4, l5]
+  freqs = compute_status_frequencies(logs)
+  assertEqual(freqs.get(200, 0), 3)
+  assertEqual(freqs.get(404, 0), 1)
+  assertEqual(freqs.get(500, 0), 1)
+  assertEqual(freqs.get(301, 0), 0)
+
+test "distinct status codes":
+  l1 = RequestLog(path: "/a", status: 200, response_time: 10)
+  l2 = RequestLog(path: "/b", status: 404, response_time: 10)
+  l3 = RequestLog(path: "/c", status: 200, response_time: 10)
+  logs = [l1, l2, l3]
+  uniq = distinct_status_codes(logs)
+  assertEqual(uniq |> count, 2)
+  assertEqual(uniq[0], 200)
+  assertEqual(uniq[1], 404)
+
+test "batch metric sums and averages":
+  m1 = MetricPoint(timestamp: 1, value: 10)
+  m2 = MetricPoint(timestamp: 2, value: 20)
+  m3 = MetricPoint(timestamp: 3, value: 30)
+  m4 = MetricPoint(timestamp: 4, value: 40)
+  m5 = MetricPoint(timestamp: 5, value: 50)
+  metrics = [m1, m2, m3, m4, m5]
+  sums = compute_batch_metric_sums(metrics, 2)
+  assertEqual(sums |> count, 3)
+  assertEqual(sums[0], 30)
+  assertEqual(sums[1], 70)
+  assertEqual(sums[2], 50)
+  avgs = compute_batch_metric_averages(metrics, 2)
+  assertEqual(avgs |> count, 3)
+  assertEqual(avgs[0], 15)
+  assertEqual(avgs[1], 35)
+  assertEqual(avgs[2], 50)
+
+test "total measurements":
+  l1 = RequestLog(path: "/a", status: 200, response_time: 40)
+  l2 = RequestLog(path: "/b", status: 404, response_time: 60)
+  logs = [l1, l2]
+  assertEqual(total_log_latency(logs), 100)
+  m1 = MetricPoint(timestamp: 1, value: 150)
+  m2 = MetricPoint(timestamp: 2, value: 250)
+  metrics = [m1, m2]
+  assertEqual(total_metric_value(metrics), 400)

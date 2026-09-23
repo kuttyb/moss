@@ -1,0 +1,18 @@
+# REPRO-05: Constructing Vector[TraitName]() passes moss check but fails
+# native compilation with rustc E0425 (cannot find type in this scope),
+# because traits are purely static compile-time structural predicates.
+trait TreeNode:
+  fn child_count() -> Int
+
+type Node:
+  id: Int
+  fn child_count() -> Int:
+    return 0
+
+fn test(node: TreeNode):
+  var v = Vector[TreeNode]()
+  v.push(node)
+  echo v |> count
+
+fn main():
+  test(Node(id: 1))

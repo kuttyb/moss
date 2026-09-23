@@ -1,0 +1,23 @@
+# Reproducer: moss fmt Type Inference Failure on Return Negative Literal
+# Classification: specialization/inference defect (formatter/frontend parser)
+#
+# Description:
+# Inside type methods, returning a negative literal such as `return -1` passes
+# `moss check` and compiles natively with Rust, but fails `moss fmt` with:
+#   error[FORMAT_PARSE_ERROR]: cannot infer the type of this return expression in function 'Foo.bar'
+#
+# The formatter frontend fails to deduce the type of unary negation on integer
+# literals in return statements, whereas `return 0 - 1` formats cleanly.
+#
+# Command to reproduce:
+#   ../../../../moss fmt reproducers/moss_fmt_return_negative.moss (FAILS with FORMAT_PARSE_ERROR)
+#   ../../../../moss check reproducers/moss_fmt_return_negative.moss (PASSES)
+
+type Foo:
+  x: Int
+  fn bar() -> Int:
+    return -1
+
+fn main():
+  f = Foo(x: 10)
+  echo f.bar()

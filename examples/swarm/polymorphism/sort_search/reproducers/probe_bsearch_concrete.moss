@@ -1,0 +1,36 @@
+fn binary_search_int(items: Vector[Int], target: Int) -> Int:
+  var low = 0
+  var high = (items |> count) - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    val = items[mid]
+    if val == target:
+      return mid
+    else:
+      if val < target:
+        low = mid + 1
+      else:
+        high = mid - 1
+  return -1
+
+fn binary_search_str(items: Vector[String], target: String) -> Int:
+  var low = 0
+  var high = (items |> count) - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    val = items[mid]
+    if val == target:
+      return mid
+    else:
+      if val < target:
+        low = mid + 1
+      else:
+        high = mid - 1
+  return -1
+
+fn main():
+  nums = [10, 20, 30, 40, 50]
+  echo binary_search_int(nums, 30)
+
+  words = ["apple", "banana", "cherry"]
+  echo binary_search_str(words, "banana")

@@ -1,0 +1,572 @@
+# ==============================================================================
+# Reusable Sorting, Partitioning, and Binary Search Library for Moss v0.1
+# ==============================================================================
+
+# --- Core Structural Traits ---
+
+trait Sortable:
+  fn len() -> Int
+  fn less(i: Int, j: Int) -> Bool
+  fn swap(i: Int, j: Int) -> Int
+
+trait Searchable:
+  fn len() -> Int
+  fn compare_at(i: Int) -> Int
+
+# --- Custom Record Types ---
+
+type Player:
+  name: String
+  score: Int
+
+type Item:
+  id: Int
+  weight: Int
+
+# --- Borrow-Safe Field Helper Functions ---
+
+fn player_less(p1: Player, p2: Player) -> Bool:
+  return p1.score < p2.score
+
+fn player_score(p: Player) -> Int:
+  return p.score
+
+fn print_player(p: Player):
+  echo p.name, p.score
+
+fn item_less(it1: Item, it2: Item) -> Bool:
+  return it1.weight < it2.weight
+
+fn item_id(it: Item) -> Int:
+  return it.id
+
+fn item_weight(it: Item) -> Int:
+  return it.weight
+
+# --- Helper: Index Vector Generator ---
+
+fn make_indices(n: Int) -> Vector[Int]:
+  var result = Vector[Int]()
+  var i = 0
+  while i < n:
+    result.push(i)
+    i = i + 1
+  return result
+
+# --- Sortable Implementations over Concrete Types ---
+
+type IntIndexSortable:
+  data: Vector[Int]
+  indices: Vector[Int]
+
+  fn len() -> Int:
+    return indices |> count
+
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] < data[indices[j]]
+
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type StringIndexSortable:
+  data: Vector[String]
+  indices: Vector[Int]
+
+  fn len() -> Int:
+    return indices |> count
+
+  fn less(i: Int, j: Int) -> Bool:
+    return data[indices[i]] < data[indices[j]]
+
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type PlayerScoreSortable:
+  data: Vector[Player]
+  indices: Vector[Int]
+
+  fn len() -> Int:
+    return indices |> count
+
+  fn less(i: Int, j: Int) -> Bool:
+    return player_less(data[indices[i]], data[indices[j]])
+
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+type ItemWeightSortable:
+  data: Vector[Item]
+  indices: Vector[Int]
+
+  fn len() -> Int:
+    return indices |> count
+
+  fn less(i: Int, j: Int) -> Bool:
+    return item_less(data[indices[i]], data[indices[j]])
+
+  fn swap(i: Int, j: Int) -> Int:
+    tmp = indices[i]
+    indices[i] = indices[j]
+    indices[j] = tmp
+    return 0
+
+# --- Searchable Implementations over Concrete Types ---
+
+type IntSearcher:
+  data: Vector[Int]
+  target: Int
+
+  fn len() -> Int:
+    return data |> count
+
+  fn compare_at(i: Int) -> Int:
+    val = data[i]
+    if target == val:
+      return 0
+    else:
+      if target < val:
+        return 0 - 1
+      else:
+        return 1
+
+type StringSearcher:
+  data: Vector[String]
+  target: String
+
+  fn len() -> Int:
+    return data |> count
+
+  fn compare_at(i: Int) -> Int:
+    val = data[i]
+    if target == val:
+      return 0
+    else:
+      if target < val:
+        return 0 - 1
+      else:
+        return 1
+
+type PlayerScoreSearcher:
+  data: Vector[Player]
+  target_score: Int
+
+  fn len() -> Int:
+    return data |> count
+
+  fn compare_at(i: Int) -> Int:
+    val = player_score(data[i])
+    if target_score == val:
+      return 0
+    else:
+      if target_score < val:
+        return 0 - 1
+      else:
+        return 1
+
+type ItemWeightSearcher:
+  data: Vector[Item]
+  target_weight: Int
+
+  fn len() -> Int:
+    return data |> count
+
+  fn compare_at(i: Int) -> Int:
+    val = item_weight(data[i])
+    if target_weight == val:
+      return 0
+    else:
+      if target_weight < val:
+        return 0 - 1
+      else:
+        return 1
+
+# --- Adapter Construction Factories ---
+
+fn make_int_sortable(data: Vector[Int]) -> IntIndexSortable:
+  n = data |> count
+  return IntIndexSortable(data: data, indices: make_indices(n))
+
+fn make_string_sortable(data: Vector[String]) -> StringIndexSortable:
+  n = data |> count
+  return StringIndexSortable(data: data, indices: make_indices(n))
+
+fn make_player_sortable(data: Vector[Player]) -> PlayerScoreSortable:
+  n = data |> count
+  return PlayerScoreSortable(data: data, indices: make_indices(n))
+
+fn make_item_sortable(data: Vector[Item]) -> ItemWeightSortable:
+  n = data |> count
+  return ItemWeightSortable(data: data, indices: make_indices(n))
+
+# --- Generic Reusable Sorting and Partitioning Algorithms ---
+
+fn is_sorted(s: Sortable) -> Bool:
+  n = s.len()
+  if n <= 1:
+    return true
+  var i = 1
+  while i < n:
+    if s.less(i, i - 1):
+      return false
+    i = i + 1
+  return true
+
+fn selection_sort(s: Sortable):
+  n = s.len()
+  var i = 0
+  while i < n:
+    var min_idx = i
+    var j = i + 1
+    while j < n:
+      if s.less(j, min_idx):
+        min_idx = j
+      j = j + 1
+    if min_idx != i:
+      dummy = s.swap(i, min_idx)
+    i = i + 1
+
+fn insertion_sort(s: Sortable):
+  n = s.len()
+  var i = 1
+  while i < n:
+    var j = i
+    var moving = true
+    while moving:
+      if j <= 0:
+        moving = false
+      else:
+        if s.less(j, j - 1):
+          dummy = s.swap(j, j - 1)
+          j = j - 1
+        else:
+          moving = false
+    i = i + 1
+
+fn partition(s: Sortable, low: Int, high: Int) -> Int:
+  var pivot_idx = high
+  var i = low - 1
+  var j = low
+  while j < high:
+    if s.less(j, pivot_idx):
+      i = i + 1
+      dummy1 = s.swap(i, j)
+    j = j + 1
+  dummy2 = s.swap(i + 1, high)
+  return i + 1
+
+fn quicksort(s: Sortable):
+  n = s.len()
+  if n <= 1:
+    return
+  var stack_low = Vector[Int]()
+  var stack_high = Vector[Int]()
+  stack_low.push(0)
+  stack_high.push(n - 1)
+  var has_work = (stack_low |> count) > 0
+  while has_work:
+    low = stack_low.pop()
+    high = stack_high.pop()
+    if low < high:
+      var pivot_idx = high
+      var i = low - 1
+      var j = low
+      while j < high:
+        if s.less(j, pivot_idx):
+          i = i + 1
+          dummy1 = s.swap(i, j)
+        j = j + 1
+      dummy2 = s.swap(i + 1, high)
+      p = i + 1
+      if p - 1 > low:
+        stack_low.push(low)
+        stack_high.push(p - 1)
+      if p + 1 < high:
+        stack_low.push(p + 1)
+        stack_high.push(high)
+    has_work = (stack_low |> count) > 0
+
+# --- Generic Reusable Binary Search Algorithm ---
+
+fn binary_search(s: Searchable) -> Int:
+  var low = 0
+  var high = s.len() - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    c = s.compare_at(mid)
+    if c == 0:
+      return mid
+    else:
+      if c < 0:
+        high = mid - 1
+      else:
+        low = mid + 1
+  return 0 - 1
+
+# --- Direct Vector[Int] Algorithms ---
+
+fn direct_insertion_sort_int(items: Vector[Int]):
+  n = items |> count
+  var i = 1
+  while i < n:
+    var j = i
+    var moving = true
+    while moving:
+      if j <= 0:
+        moving = false
+      else:
+        if items[j] < items[j - 1]:
+          tmp = items[j]
+          items[j] = items[j - 1]
+          items[j - 1] = tmp
+          j = j - 1
+        else:
+          moving = false
+    i = i + 1
+
+fn direct_binary_search_int(items: Vector[Int], target: Int) -> Int:
+  var low = 0
+  var high = (items |> count) - 1
+  while low <= high:
+    mid = low + (high - low) / 2
+    val = items[mid]
+    if val == target:
+      return mid
+    else:
+      if target < val:
+        high = mid - 1
+      else:
+        low = mid + 1
+  return 0 - 1
+
+# ==============================================================================
+# Unit Tests
+# ==============================================================================
+
+test "sorting empty and single element collections":
+  var empty_sort = make_int_sortable(Vector[Int]())
+  quicksort(empty_sort)
+  assertEqual(empty_sort.len(), 0)
+  assert(is_sorted(empty_sort))
+
+  var single_sort = make_int_sortable([42])
+  quicksort(single_sort)
+  assertEqual(single_sort.len(), 1)
+  assert(is_sorted(single_sort))
+  assertEqual(single_sort.data[single_sort.indices[0]], 42)
+
+test "insertion sort on integers":
+  var s = make_int_sortable([50, 20, 40, 10, 30])
+  assert(not is_sorted(s))
+  insertion_sort(s)
+  assert(is_sorted(s))
+  assertEqual(s.data[s.indices[0]], 10)
+  assertEqual(s.data[s.indices[1]], 20)
+  assertEqual(s.data[s.indices[2]], 30)
+  assertEqual(s.data[s.indices[3]], 40)
+  assertEqual(s.data[s.indices[4]], 50)
+
+test "selection sort on integers":
+  var s = make_int_sortable([64, 25, 12, 22, 11])
+  assert(not is_sorted(s))
+  selection_sort(s)
+  assert(is_sorted(s))
+  assertEqual(s.data[s.indices[0]], 11)
+  assertEqual(s.data[s.indices[1]], 12)
+  assertEqual(s.data[s.indices[2]], 22)
+  assertEqual(s.data[s.indices[3]], 25)
+  assertEqual(s.data[s.indices[4]], 64)
+
+test "quicksort on integers":
+  var s = make_int_sortable([38, 27, 43, 3, 9, 82, 10])
+  assert(not is_sorted(s))
+  quicksort(s)
+  assert(is_sorted(s))
+  assertEqual(s.data[s.indices[0]], 3)
+  assertEqual(s.data[s.indices[1]], 9)
+  assertEqual(s.data[s.indices[2]], 10)
+  assertEqual(s.data[s.indices[3]], 27)
+  assertEqual(s.data[s.indices[4]], 38)
+  assertEqual(s.data[s.indices[5]], 43)
+  assertEqual(s.data[s.indices[6]], 82)
+
+test "quicksort on already sorted and reverse sorted integers":
+  var sorted_s = make_int_sortable([1, 2, 3, 4, 5])
+  quicksort(sorted_s)
+  assert(is_sorted(sorted_s))
+  assertEqual(sorted_s.data[sorted_s.indices[0]], 1)
+  assertEqual(sorted_s.data[sorted_s.indices[4]], 5)
+
+  var reverse_s = make_int_sortable([5, 4, 3, 2, 1])
+  quicksort(reverse_s)
+  assert(is_sorted(reverse_s))
+  assertEqual(reverse_s.data[reverse_s.indices[0]], 1)
+  assertEqual(reverse_s.data[reverse_s.indices[4]], 5)
+
+test "quicksort on duplicate integers":
+  var s = make_int_sortable([3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5])
+  quicksort(s)
+  assert(is_sorted(s))
+  assertEqual(s.data[s.indices[0]], 1)
+  assertEqual(s.data[s.indices[1]], 1)
+  assertEqual(s.data[s.indices[2]], 2)
+  assertEqual(s.data[s.indices[10]], 9)
+
+test "partitioning algorithm properties":
+  var s = make_int_sortable([10, 80, 30, 90, 40, 50, 70])
+  pivot = partition(s, 0, 6)
+  assertEqual(s.data[s.indices[pivot]], 70)
+  var k = 0
+  while k < pivot:
+    assert(s.data[s.indices[k]] <= 70)
+    k = k + 1
+  var m = pivot + 1
+  while m <= 6:
+    assert(s.data[s.indices[m]] >= 70)
+    m = m + 1
+
+test "quicksort on strings":
+  var s = make_string_sortable(["cherry", "apple", "elderberry", "banana", "date"])
+  quicksort(s)
+  assertEqual(s.len(), 5)
+
+test "sorting Player records by score with insertion sort":
+  p1 = Player(name: "Charlie", score: 85)
+  p2 = Player(name: "Alice", score: 95)
+  p3 = Player(name: "Bob", score: 70)
+  p4 = Player(name: "Diana", score: 80)
+  var s = make_player_sortable([p1, p2, p3, p4])
+  assert(not is_sorted(s))
+  insertion_sort(s)
+  assert(is_sorted(s))
+  assertEqual(player_score(s.data[s.indices[0]]), 70)
+  assertEqual(player_score(s.data[s.indices[1]]), 80)
+  assertEqual(player_score(s.data[s.indices[2]]), 85)
+  assertEqual(player_score(s.data[s.indices[3]]), 95)
+
+test "sorting Item records by weight with quicksort":
+  it1 = Item(id: 101, weight: 500)
+  it2 = Item(id: 102, weight: 150)
+  it3 = Item(id: 103, weight: 300)
+  it4 = Item(id: 104, weight: 50)
+  var s = make_item_sortable([it1, it2, it3, it4])
+  assert(not is_sorted(s))
+  quicksort(s)
+  assert(is_sorted(s))
+  assertEqual(item_weight(s.data[s.indices[0]]), 50)
+  assertEqual(item_id(s.data[s.indices[0]]), 104)
+  assertEqual(item_weight(s.data[s.indices[1]]), 150)
+  assertEqual(item_id(s.data[s.indices[1]]), 102)
+  assertEqual(item_weight(s.data[s.indices[2]]), 300)
+  assertEqual(item_id(s.data[s.indices[2]]), 103)
+  assertEqual(item_weight(s.data[s.indices[3]]), 500)
+  assertEqual(item_id(s.data[s.indices[3]]), 101)
+
+fn make_sample_players() -> Vector[Player]:
+  p1 = Player(name: "Bob", score: 70)
+  p2 = Player(name: "Diana", score: 80)
+  p3 = Player(name: "Charlie", score: 85)
+  p4 = Player(name: "Alice", score: 95)
+  return [p1, p2, p3, p4]
+
+fn make_sample_items() -> Vector[Item]:
+  it1 = Item(id: 104, weight: 50)
+  it2 = Item(id: 102, weight: 150)
+  it3 = Item(id: 103, weight: 300)
+  it4 = Item(id: 101, weight: 500)
+  return [it1, it2, it3, it4]
+
+test "binary search on integers":
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 10)), 0)
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 40)), 3)
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 70)), 6)
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 25)), -1)
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 5)), -1)
+  assertEqual(binary_search(IntSearcher(data: [10, 20, 30, 40, 50, 60, 70], target: 100)), -1)
+
+test "binary search on Player records by score":
+  assertEqual(binary_search(PlayerScoreSearcher(data: make_sample_players(), target_score: 70)), 0)
+  assertEqual(binary_search(PlayerScoreSearcher(data: make_sample_players(), target_score: 85)), 2)
+  assertEqual(binary_search(PlayerScoreSearcher(data: make_sample_players(), target_score: 95)), 3)
+  assertEqual(binary_search(PlayerScoreSearcher(data: make_sample_players(), target_score: 75)), -1)
+
+test "binary search on Item records by weight":
+  assertEqual(binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 50)), 0)
+  assertEqual(binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 300)), 2)
+  assertEqual(binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 500)), 3)
+  assertEqual(binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 999)), -1)
+
+test "direct in-place insertion sort and binary search on Vector[Int]":
+  var nums = [9, 3, 7, 1, 5, 8, 2]
+  direct_insertion_sort_int(nums)
+  assertEqual(nums[0], 1)
+  assertEqual(nums[1], 2)
+  assertEqual(nums[2], 3)
+  assertEqual(nums[3], 5)
+  assertEqual(nums[4], 7)
+  assertEqual(nums[5], 8)
+  assertEqual(nums[6], 9)
+  assertEqual(direct_binary_search_int(nums, 5), 3)
+  assertEqual(direct_binary_search_int(nums, 1), 0)
+  assertEqual(direct_binary_search_int(nums, 9), 6)
+  assertEqual(direct_binary_search_int(nums, 4), -1)
+
+# ==============================================================================
+# Runnable Application Entry Point
+# ==============================================================================
+
+fn main():
+  echo "--- 1. Quicksort on Integers (Vector[Int]) ---"
+  var int_sort = make_int_sortable([64, 34, 25, 12, 22, 11, 90])
+  quicksort(int_sort)
+  echo "Sorted ints:", int_sort.data[int_sort.indices[0]], int_sort.data[int_sort.indices[1]], int_sort.data[int_sort.indices[2]], int_sort.data[int_sort.indices[3]], int_sort.data[int_sort.indices[4]], int_sort.data[int_sort.indices[5]], int_sort.data[int_sort.indices[6]]
+  echo "Is sorted:", is_sorted(int_sort)
+
+  echo "--- 2. Selection Sort on Strings (Vector[String]) ---"
+  var str_sort = make_string_sortable(["cherry", "apple", "date", "banana"])
+  selection_sort(str_sort)
+  echo "Sorted strings count:", str_sort.len()
+
+  echo "--- 3. Insertion Sort on Players (Vector[Player]) by score ---"
+  p1 = Player(name: "Charlie", score: 85)
+  p2 = Player(name: "Alice", score: 95)
+  p3 = Player(name: "Bob", score: 70)
+  var player_sort = make_player_sortable([p1, p2, p3])
+  insertion_sort(player_sort)
+  idx0 = player_sort.indices[0]
+  idx1 = player_sort.indices[1]
+  idx2 = player_sort.indices[2]
+  print_player(player_sort.data[idx0])
+  print_player(player_sort.data[idx1])
+  print_player(player_sort.data[idx2])
+
+  echo "--- 4. Quicksort on Items (Vector[Item]) by weight ---"
+  it1 = Item(id: 101, weight: 500)
+  it2 = Item(id: 102, weight: 150)
+  it3 = Item(id: 103, weight: 300)
+  var item_sort = make_item_sortable([it1, it2, it3])
+  quicksort(item_sort)
+  i0 = item_sort.indices[0]
+  i1 = item_sort.indices[1]
+  i2 = item_sort.indices[2]
+  echo "Item by weight:", item_weight(item_sort.data[i0]), item_weight(item_sort.data[i1]), item_weight(item_sort.data[i2])
+
+  echo "--- 5. Binary Search over Multiple Types ---"
+  sorted_ints = [10, 20, 30, 40, 50]
+  echo "Binary search int 30:", binary_search(IntSearcher(data: sorted_ints, target: 30))
+
+  p_a = Player(name: "Bob", score: 70)
+  p_b = Player(name: "Charlie", score: 85)
+  p_c = Player(name: "Alice", score: 95)
+  echo "Binary search player score 85:", binary_search(PlayerScoreSearcher(data: [p_a, p_b, p_c], target_score: 85))
+
+  echo "Binary search item weight 300:", binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 300))
+  echo "Binary search item weight 999:", binary_search(ItemWeightSearcher(data: make_sample_items(), target_weight: 999))

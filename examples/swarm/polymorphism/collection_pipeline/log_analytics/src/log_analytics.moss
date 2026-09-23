@@ -1,0 +1,88 @@
+module LogAnalytics
+import DataTools
+
+export type RequestLog:
+  path: String
+  status: Int
+  response_time: Int
+
+export type MetricPoint:
+  timestamp: Int
+  value: Int
+
+export fn get_response_time(r: RequestLog) -> Int:
+  return r.response_time
+
+export fn get_status(r: RequestLog) -> Int:
+  return r.status
+
+export fn get_metric_value(m: MetricPoint) -> Int:
+  return m.value
+
+export fn is_slow_request(latency: Int) -> Bool:
+  return latency > 100
+
+export fn is_error_status(status: Int) -> Bool:
+  return status >= 400
+
+export fn add_latency(acc: Int, r: RequestLog) -> Int:
+  return acc + r.response_time
+
+export fn add_metric(acc: Int, m: MetricPoint) -> Int:
+  return acc + m.value
+
+export fn extract_latencies(logs: Vector[RequestLog]) -> Vector[Int]:
+  var result = Vector[Int]()
+  for r in logs:
+    result.push(r.response_time)
+  return result
+
+export fn extract_statuses(logs: Vector[RequestLog]) -> Vector[Int]:
+  var result = Vector[Int]()
+  for r in logs:
+    result.push(r.status)
+  return result
+
+export fn extract_metric_values(metrics: Vector[MetricPoint]) -> Vector[Int]:
+  var result = Vector[Int]()
+  for m in metrics:
+    result.push(m.value)
+  return result
+
+export fn compute_windowed_latency_averages(logs: Vector[RequestLog], window_size: Int) -> Vector[Int]:
+  latencies = extract_latencies(logs)
+  return DataTools.window_averages(latencies, window_size)
+
+export fn compute_windowed_metric_averages(metrics: Vector[MetricPoint], window_size: Int) -> Vector[Int]:
+  values = extract_metric_values(metrics)
+  return DataTools.window_averages(values, window_size)
+
+export fn compute_status_frequencies(logs: Vector[RequestLog]) -> Map[Int, Int]:
+  statuses = extract_statuses(logs)
+  return DataTools.frequency_map_ints(statuses)
+
+export fn filter_slow_latencies(logs: Vector[RequestLog]) -> Vector[Int]:
+  latencies = extract_latencies(logs)
+  return DataTools.filter_by(latencies, LogAnalytics.is_slow_request)
+
+export fn compute_batch_metric_sums(metrics: Vector[MetricPoint], batch_size: Int) -> Vector[Int]:
+  values = extract_metric_values(metrics)
+  return DataTools.batch_sums(values, batch_size)
+
+export fn compute_batch_metric_averages(metrics: Vector[MetricPoint], batch_size: Int) -> Vector[Int]:
+  values = extract_metric_values(metrics)
+  return DataTools.batch_averages(values, batch_size)
+
+export fn total_log_latency(logs: Vector[RequestLog]) -> Int:
+  return DataTools.fold_left(logs, 0, LogAnalytics.add_latency)
+
+export fn total_metric_value(metrics: Vector[MetricPoint]) -> Int:
+  return DataTools.fold_left(metrics, 0, LogAnalytics.add_metric)
+
+export fn distinct_status_codes(logs: Vector[RequestLog]) -> Vector[Int]:
+  statuses = extract_statuses(logs)
+  return DataTools.distinct_ints(statuses)
+
+export fn count_slow_requests(logs: Vector[RequestLog]) -> Int:
+  latencies = extract_latencies(logs)
+  return DataTools.count_matching(latencies, LogAnalytics.is_slow_request)

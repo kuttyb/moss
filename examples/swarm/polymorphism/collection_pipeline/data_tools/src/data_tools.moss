@@ -1,0 +1,143 @@
+module DataTools
+
+export fn filter_by(items, predicate):
+  return items |> filter(predicate)
+
+export fn map_by(items, transform_fn):
+  return items |> map(transform_fn)
+
+export fn fold_left(items, initial, step):
+  return items |> reduce(initial, step)
+
+export fn count_matching(items, predicate):
+  return items |> filter(predicate) |> count
+
+export fn total_measure(items, initial: Int) -> Int:
+  var total = initial
+  for item in items:
+    total = total + item.measure()
+  return total
+
+export fn get_measurement(item, unused: Int) -> Int:
+  return item.measure()
+
+export fn window_ints(items: Vector[Int], size: Int) -> Vector[Vector[Int]]:
+  n = items |> count
+  if size > n:
+    return Vector[Vector[Int]]()
+  if size <= 0:
+    return Vector[Vector[Int]]()
+  var windows = Vector[Vector[Int]]()
+  limit = n - size + 1
+  var i = 0
+  while i < limit:
+    var w = Vector[Int]()
+    var j = 0
+    while j < size:
+      w.push(items[i + j])
+      j = j + 1
+    windows.push(w)
+    i = i + 1
+  return windows
+
+export fn window_averages(items: Vector[Int], size: Int) -> Vector[Int]:
+  n = items |> count
+  if size > n:
+    return Vector[Int]()
+  if size <= 0:
+    return Vector[Int]()
+  var avgs = Vector[Int]()
+  limit = n - size + 1
+  var i = 0
+  while i < limit:
+    var sum = 0
+    var j = 0
+    while j < size:
+      sum = sum + items[i + j]
+      j = j + 1
+    avg = sum / size
+    avgs.push(avg)
+    i = i + 1
+  return avgs
+
+export fn chunk_ints(items: Vector[Int], size: Int) -> Vector[Vector[Int]]:
+  n = items |> count
+  if size <= 0:
+    return Vector[Vector[Int]]()
+  if n == 0:
+    return Vector[Vector[Int]]()
+  var chunks = Vector[Vector[Int]]()
+  var i = 0
+  while i < n:
+    var c = Vector[Int]()
+    var j = 0
+    while j < size:
+      idx = i + j
+      if idx < n:
+        c.push(items[idx])
+      j = j + 1
+    chunks.push(c)
+    i = i + size
+  return chunks
+
+export fn batch_sums(items: Vector[Int], size: Int) -> Vector[Int]:
+  n = items |> count
+  if size <= 0:
+    return Vector[Int]()
+  if n == 0:
+    return Vector[Int]()
+  var sums = Vector[Int]()
+  var i = 0
+  while i < n:
+    var sum = 0
+    var j = 0
+    while j < size:
+      idx = i + j
+      if idx < n:
+        sum = sum + items[idx]
+      j = j + 1
+    sums.push(sum)
+    i = i + size
+  return sums
+
+export fn batch_averages(items: Vector[Int], size: Int) -> Vector[Int]:
+  n = items |> count
+  if size <= 0:
+    return Vector[Int]()
+  if n == 0:
+    return Vector[Int]()
+  var avgs = Vector[Int]()
+  var i = 0
+  while i < n:
+    var sum = 0
+    var count = 0
+    var j = 0
+    while j < size:
+      idx = i + j
+      if idx < n:
+        sum = sum + items[idx]
+        count = count + 1
+      j = j + 1
+    avg = sum / count
+    avgs.push(avg)
+    i = i + size
+  return avgs
+
+export fn frequency_map_ints(items: Vector[Int]) -> Map[Int, Int]:
+  var counts = Map()
+  counts[0] = 0
+  for x in items:
+    c = counts.get(x, 0)
+    counts[x] = c + 1
+  return counts
+
+export fn distinct_ints(items: Vector[Int]) -> Vector[Int]:
+  var seen = Map()
+  seen[0] = false
+  var result = Vector[Int]()
+  for x in items:
+    already = seen.get(x, false)
+    if not already:
+      seen[x] = true
+      result.push(x)
+  return result

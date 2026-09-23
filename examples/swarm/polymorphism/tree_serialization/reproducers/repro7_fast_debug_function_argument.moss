@@ -1,0 +1,12 @@
+# REPRO-07: Passing a function name as a callable argument works in native
+# compilation via static specialization, but fails in Fast Debug interpreter
+# with "unknown local '<func_name>'".
+fn is_even(x: Int) -> Bool:
+  return x % 2 == 0
+
+fn count_matching(items: Vector[Int], pred) -> Int:
+  return items |> filter(pred) |> count
+
+fn main():
+  v = [1, 2, 3, 4, 5, 6]
+  echo count_matching(v, is_even)

@@ -1,0 +1,24 @@
+# Reproducer 6: Pushing Loop Variable of Non-Copy Type Emits Borrowed Reference
+# Category: Native lowering defect / ownership interaction
+# Command: moss repro_push_loop_reference.moss -o repro.rs && rustc repro.rs
+#
+# Observed behavior:
+# `moss check` passes without warnings or errors.
+# Native compilation fails during rustc execution with error[E0308]:
+# "mismatched types: result.push(x) expected `String`, found `&String`"
+#
+# Root Cause:
+# In `for x in items:` where items is `Vector[String]`, the loop variable `x` is
+# lowered in Rust as `&String`. `result.push(x)` emits the reference directly
+# rather than `.clone()` or moving, which rustc rejects.
+
+export fn copy_strings(items: Vector[String]) -> Vector[String]:
+  var result = Vector[String]()
+  for x in items:
+    result.push(x)
+  return result
+
+fn main():
+  values = ["hello", "world"]
+  c = copy_strings(values)
+  echo c |> count

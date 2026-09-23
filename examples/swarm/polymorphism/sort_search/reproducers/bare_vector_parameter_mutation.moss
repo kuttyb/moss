@@ -1,0 +1,25 @@
+# Reproducer: Bare Vector Parameter Mutation Fails Type Specialization
+# Classification: insufficiently documented static-polymorphism rules & specialization/inference defect
+#
+# Description:
+# Attempting to write a generic vector mutating function (like swap or in-place sort)
+# using `items: Vector` fails:
+#   TYPE_MISMATCH: argument 1 to function 'swap_elements' has type 'vector[int]', expected 'vector'
+#
+# In Moss v0.1, a parameter typed as `items: Vector` is only marked as generic
+# (specializable) if an element expression `items[...]` occurs in the function's
+# return or result expression. If the vector is only mutated and read inside statements,
+# the compiler treats `items: Vector` as a non-generic raw vector type, refusing
+# concrete `Vector[Int]` or `Vector[String]` arguments.
+#
+# Command to reproduce:
+#   ../../../../moss check --json reproducers/bare_vector_parameter_mutation.moss
+
+fn swap_elements(items: Vector, i: Int, j: Int):
+  tmp = items[i]
+  items[i] = items[j]
+  items[j] = tmp
+
+fn main():
+  var int_list = [10, 20]
+  swap_elements(int_list, 0, 1)

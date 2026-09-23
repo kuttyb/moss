@@ -1,0 +1,71 @@
+module main
+import geo_types
+import transforms
+import pipeline_ops
+
+fn main():
+  c1 = geo_types.make_circle(0, 0, 5)
+  c2 = geo_types.make_circle(10, 10, 2)
+  r1 = geo_types.make_rectangle(0, 0, 4, 6)
+  r2 = geo_types.make_rectangle(5, 5, 3, 3)
+  s1 = geo_types.make_square(0, 0, 4)
+
+  # Polymorphic area and perimeter (untyped generic transforms across Circle, Rectangle, Square)
+  echo transforms.get_area(c1)
+  echo transforms.get_area(r1)
+  echo transforms.get_area(s1)
+
+  echo transforms.get_perimeter(c1)
+  echo transforms.get_perimeter(r1)
+  echo transforms.get_perimeter(s1)
+
+  # Polymorphic translation returning specialized shape type
+  c1_moved = transforms.translate(c1, 10, 20)
+  r1_moved = transforms.translate(r1, 10, 20)
+  s1_moved = transforms.translate(s1, 10, 20)
+  echo c1_moved.get_x()
+  echo r1_moved.get_x()
+  echo s1_moved.get_x()
+
+  # Polymorphic scaling returning specialized shape type
+  c1_scaled = transforms.scale(c1, 2)
+  r1_scaled = transforms.scale(r1, 2)
+  s1_scaled = transforms.scale(s1, 2)
+  echo transforms.get_area(c1_scaled)
+  echo transforms.get_area(r1_scaled)
+  echo transforms.get_area(s1_scaled)
+
+  # Polymorphic bounding box computation
+  b_c1 = transforms.get_bbox(c1)
+  b_r1 = transforms.get_bbox(r1)
+  b_s1 = transforms.get_bbox(s1)
+  echo transforms.bbox_width(b_c1)
+  echo transforms.bbox_height(b_r1)
+  echo transforms.bbox_area(b_s1)
+  echo transforms.bboxes_intersect(b_c1, b_r1)
+
+  # Polymorphic point containment check
+  p_inside = geo_types.make_point(1, 1)
+  p_outside = geo_types.make_point(50, 50)
+  echo transforms.shape_contains_point(c1, p_inside)
+  echo transforms.shape_contains_point(c1, p_outside)
+  echo transforms.shape_contains_point(r1, p_inside)
+  echo transforms.shape_contains_point(r1, p_outside)
+  echo transforms.shape_contains_point(s1, p_inside)
+  echo transforms.shape_contains_point(s1, p_outside)
+
+  # Pipeline operations over shape vectors
+  var circles = Vector[geo_types.Circle]()
+  circles.push(c1)
+  circles.push(c2)
+
+  var rects = Vector[geo_types.Rectangle]()
+  rects.push(r1)
+  rects.push(r2)
+
+  var squares = Vector[geo_types.Square]()
+  squares.push(s1)
+
+  echo pipeline_ops.total_circle_area(circles)
+  echo pipeline_ops.total_rect_area(rects)
+  echo pipeline_ops.total_square_area(squares)

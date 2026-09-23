@@ -1,0 +1,6 @@
+fn set_first(items: Vector[Int], val: Int):
+  items[0] = val
+
+fn main():
+  var int_list = [10, 20]
+  set_first(int_list, 99)

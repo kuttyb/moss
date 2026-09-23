@@ -1,0 +1,24 @@
+# Reproducer 4: Pipeline Filter Rejects Struct Types Without Deep Copy
+# Category: Ownership/effect interaction
+# Command: moss check repro_filter_nontrivial_type.moss --json
+#
+# Observed behavior:
+# Fails at line 14 with MOSS_COMPILE_ERROR:
+# "filter over nontrivial element type 'MetricPoint' cannot produce a new collection without an explicit deep copy"
+#
+# Root Cause:
+# In Moss v0.1 (src/moss.cpp:2560 copy_type), only primitive scalars (Int, Float, Bool)
+# are Copy. All structs are classified as non-copy, so filtering a Vector of structs
+# into a new Vector is rejected by the compiler's ownership checker.
+
+type MetricPoint:
+  timestamp: Int
+  value: Int
+
+fn is_positive_metric(m: MetricPoint) -> Bool:
+  return m.value > 0
+
+fn main():
+  pts = [MetricPoint(timestamp: 1, value: 10), MetricPoint(timestamp: 2, value: -5)]
+  filtered = pts |> filter(is_positive_metric)
+  echo filtered |> count

@@ -1,0 +1,15 @@
+# Reproducer 1: Untyped Container Indexing
+# Category: Insufficiently documented static-polymorphism rules / specialization defect
+# Command: moss check repro_untyped_index.moss --json
+#
+# Observed behavior:
+# Fails with MOSS_COMPILE_ERROR: "value is not an indexable container" at line 3.
+# Even though Moss supports duck typing for method calls on untyped parameters,
+# container indexing (items[i]) is rejected before specialization if the parameter
+# is untyped.
+
+fn get_first(items):
+  return items[0]
+
+fn main():
+  echo get_first([10, 20])

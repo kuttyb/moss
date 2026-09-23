@@ -1,0 +1,6 @@
+[package]
+name = "data_tools"
+version = "0.1.0"
+
+[build]
+source = "src"

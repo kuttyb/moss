@@ -1,0 +1,16 @@
+# Reproducer 2: Exported function with trait parameter triggers internal synchronization invariant
+# Category: specialization/inference defect & module/interface projection defect
+# Expected: Function is exported as statically dispatched / generic for types satisfying the trait
+# Actual: moss check fails with:
+#   error[MOSS_INTERNAL_OR_IO_ERROR]: internal synchronization invariant: unresolved concrete method effect target (at src/moss.cpp:4658)
+# Cause: Because parameter has explicit type annotation (Shape), function.generic is false.
+#   Leaf effect analysis for .mossi export treats Shape as a concrete object type, fails to resolve
+#   method on a non-object trait, and triggers synchronization_require(!leaf_effect_capture_).
+
+module repro2
+
+export trait Shape:
+  fn area() -> Int
+
+export fn get_area(s: Shape) -> Int:
+  return s.area()

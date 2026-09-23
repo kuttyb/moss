@@ -1,0 +1,27 @@
+# Reproducer 7: Exported Struct Fields Lower as Private Across Modules
+# Category: Module/interface projection problem
+# Command: margo build (with two modules in separate files)
+#
+# Observed behavior:
+# When `module A` defines `export type Data: x: Int`, and `module B` creates an
+# instance `A.Data(x: 10)`, native compilation fails with rustc error[E0451]:
+# "field `x` of struct `moss_A::A__Data` is private"
+#
+# Root Cause:
+# Lowering emits `pub struct A__Data { x: i64 }` where the struct is `pub` but its
+# fields omit `pub`. Across Rust crate boundaries, Rust forbids struct literal
+# construction when fields are private.
+
+# In module Provider:
+module Provider
+
+export type Data:
+  value: Int
+
+# In module Consumer:
+module Consumer
+import Provider
+
+fn main():
+  d = Provider.Data(value: 42)
+  echo d.value

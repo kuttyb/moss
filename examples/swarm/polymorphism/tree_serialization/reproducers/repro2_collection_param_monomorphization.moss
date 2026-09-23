@@ -1,0 +1,22 @@
+# REPRO-02: Pushing an untyped parameter into a collection (Queue or Vector)
+# unifies the function parameter with the first call-site type, causing
+# TYPE_MISMATCH on the second call-site with an unrelated type.
+type NodeA:
+  id: Int
+  fn count() -> Int:
+    return 0
+
+type NodeB:
+  tag: String
+  fn count() -> Int:
+    return 0
+
+fn test_queue(root):
+  var q = Queue()
+  q.push(root)
+  curr = q.pop()
+  return curr.count()
+
+fn main():
+  echo test_queue(NodeA(id: 1))
+  echo test_queue(NodeB(tag: "x"))

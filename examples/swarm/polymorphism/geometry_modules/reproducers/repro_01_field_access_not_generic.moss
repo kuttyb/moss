@@ -1,0 +1,22 @@
+# Reproducer 1: Untyped parameter duck typing does not mark function generic for field access
+# Category: specialization/inference defect
+# Expected: Function specializes for each concrete type that has field 'x'
+# Actual: Binds to first concrete type; subsequent call with another type fails with TYPE_MISMATCH
+
+type Circle:
+  x: Int
+  radius: Int
+
+type Rectangle:
+  x: Int
+  width: Int
+
+fn get_x(s) -> Int:
+  return s.x
+
+fn main():
+  c = Circle(x: 10, radius: 5)
+  r = Rectangle(x: 20, width: 4)
+  echo get_x(c)
+  # Fails here: argument 1 to function 'get_x' has type 'Rectangle', expected 'Circle'
+  echo get_x(r)

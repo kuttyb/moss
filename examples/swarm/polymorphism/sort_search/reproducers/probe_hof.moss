@@ -1,0 +1,8 @@
+fn call_fn(f, x, y) -> Bool:
+  return f(x, y)
+
+fn less(a: Int, b: Int) -> Bool:
+  return a < b
+
+fn main():
+  echo call_fn(less, 3, 5)

@@ -1,0 +1,39 @@
+# REPRO-04: Directly indexing and returning an element from a Vector field
+# in a method infers CONSUME on self. Calling this method in a loop causes
+# a use-after-consume error in native lowering (rustc E0382) and Fast Debug
+# ("method receiver is not a Moss object").
+type Node:
+  id: Int
+  children: Vector[Node]
+
+  fn child_count() -> Int:
+    return children |> count
+
+  fn child_at(i: Int) -> Node:
+    return children[i]
+
+fn traverse(root: Node) -> Int:
+  var q = Queue()
+  var q_len = 0
+  q.push(root)
+  q_len = q_len + 1
+  var total = 0
+  while q_len > 0:
+    curr = q.pop()
+    q_len = q_len - 1
+    total = total + 1
+    k = curr.child_count()
+    var i = 0
+    while i < k:
+      ch = curr.child_at(i)
+      q.push(ch)
+      q_len = q_len + 1
+      i = i + 1
+  return total
+
+fn main():
+  var ch = Vector[Node]()
+  ch.push(Node(id: 2, children: Vector[Node]()))
+  ch.push(Node(id: 3, children: Vector[Node]()))
+  root = Node(id: 1, children: ch)
+  echo traverse(root)

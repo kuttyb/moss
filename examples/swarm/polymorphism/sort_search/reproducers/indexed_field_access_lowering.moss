@@ -1,0 +1,36 @@
+# Reproducer: Chained Field Access on Indexed Vector Missing usize Cast in Rust Lowering
+# Classification: specialization/inference defect
+#
+# Description:
+# Accessing a struct field through an indexed vector in a type method:
+#   players[i].score
+# compiles cleanly through `moss check`, but fails during native Rust compilation:
+#   error[E0277]: the type `[Player]` cannot be indexed by `i64`
+#       return self.players[i].score;
+#                           ^ slice indices are of type `usize`
+#
+# While simple indexing `players[i]` correctly emits `players[(i) as usize]`,
+# chained field access `players[i].field` emits `players[i].field` in Rust,
+# omitting the `as usize` cast and failing native compilation.
+#
+# Workaround:
+# Pass the indexed element to a helper function `player_score(players[i])`, which
+# infers a READ borrow and correctly casts the index to `usize`.
+#
+# Command to reproduce:
+#   ../../../../moss check reproducers/indexed_field_access_lowering.moss (Passes)
+#   ../../../../moss reproducers/indexed_field_access_lowering.moss -o tmp.rs && rustc tmp.rs (FAILS E0277)
+
+type Player:
+  name: String
+  score: Int
+
+type PlayerHolder:
+  players: Vector[Player]
+  fn get_score(i: Int) -> Int:
+    return players[i].score
+
+fn main():
+  p = Player(name: "Alice", score: 100)
+  ph = PlayerHolder(players: [p])
+  echo ph.get_score(0)
