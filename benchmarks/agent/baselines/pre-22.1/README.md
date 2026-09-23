@@ -45,6 +45,7 @@ must not be treated as retries of an agent failure.
 Each canonical task directory contains the exact prompt, compact manifest,
 objective Moss/Margo log, authoritative validator result, final relevant files,
 and final agent message. Generated native artifacts, caches, reference solutions,
-and large conversation transcripts are intentionally absent. Phase 22.2D will
-perform the category-level aggregate analysis; this directory preserves the raw
-evidence and only the execution summary needed to close Phase 22.2C.
+and large conversation transcripts are intentionally absent. Phase 22.2D's
+machine-readable `aggregate.json` and human-readable `REPORT.md` are generated
+from these raw artifacts by `../../analyze_baseline.py`; the raw inputs remain
+unchanged.

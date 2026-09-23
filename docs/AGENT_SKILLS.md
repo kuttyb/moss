@@ -51,8 +51,9 @@ evidence by itself.
 
 The hardened, frozen [agent benchmark](../benchmarks/agent/README.md) now supplies
 Phase 22.2A's 30-task corpus, Phase 22.2B's isolated validation/result tooling, and
-Phase 22.2C's canonical pre-22.1 fresh-agent baseline. The aggregate report remains
-Phase 22.2D work;
+Phase 22.2C's canonical pre-22.1 fresh-agent baseline. Phase 22.2D's checked-in
+aggregate and report complete Phase 22.2 and drive the next Phase 22.1 diagnostic
+work;
 systematic rewrite-bearing diagnostics, richer trace slicing, and advanced repair
 workflows also remain future work. During a real agent session, use
 `moss agent session-report-template --json` to record whether the skills reduced

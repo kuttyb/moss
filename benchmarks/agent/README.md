@@ -102,9 +102,26 @@ Run results follow `result.schema.json` and use schema version
 compiler diagnostics, changed paths, and path violations. It reserves nullable
 fields for agent identity, attempts, tool-call count, and wall-clock time so the
 22.2C orchestrator can record those values without changing the result shape. The
-future baseline will aggregate first-attempt success, iterations to green,
+checked-in baseline aggregates first-attempt success, iterations to green,
 diagnostics encountered, tool-call count, final pass/fail, and changes outside the
 allowed paths.
+
+Phase 22.2D analysis is generated deterministically from the checked-in manifests,
+authoritative results, tool logs, and task metadata:
+
+```sh
+python3 benchmarks/agent/analyze_baseline.py
+python3 benchmarks/agent/analyze_baseline.py --check
+python3 tests/tooling/check_agent_baseline_analysis.py
+```
+
+The generator writes `baselines/pre-22.1/aggregate.json` and `REPORT.md` using
+schema version `moss-agent-baseline-aggregate-1`. The aggregate separates valid
+agent outcomes from infrastructure failures and records overall, category, task-
+type, diagnostic, tool-use, workflow-compliance, recovery, loop, failure-class,
+and per-task views. `--check` fails when either generated file is stale. Raw
+Phase 22.2C artifacts are digested before and after analysis and treated as
+read-only.
 
 To add a task:
 
@@ -119,8 +136,9 @@ To add a task:
 
 Phase 22.2A's benchmark corpus is complete, hardened, and frozen for the baseline.
 Phase 22.2B's runner and result schema are complete. Phase 22.2C's canonical
-fresh-agent baseline is recorded under `baselines/pre-22.1/`; Phase 22.2D's
-aggregate analysis and report remain pending.
+fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded under
+`baselines/pre-22.1/`. Phase 22.2 is complete; Phase 22.1 agent-teaching
+diagnostics is the next implementation phase.
 
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 
