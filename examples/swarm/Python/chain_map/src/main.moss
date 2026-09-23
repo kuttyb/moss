@@ -1,0 +1,343 @@
+# A bounded String-to-Int ChainMap translated from Python's collections.ChainMap.
+# Groups multiple mappings into a single updateable view, with front-to-back lookup order
+# and mutations targeted exclusively to the front (first) mapping.
+
+type MapHolder:
+  m: Map[String, Int]
+
+fn empty_map() -> Map[String, Int]:
+  var holder = MapHolder(m: Map())
+  return holder.m
+
+fn map_item(m: Map[String, Int], key: String) -> Int:
+  return m[key]
+
+fn map_get(m: Map[String, Int], key: String, default_val: Int) -> Int:
+  return m.get(key, default_val)
+
+fn map_keys(m: Map[String, Int]) -> Vector[String]:
+  return m.keys()
+
+fn map_contains(m: Map[String, Int], key: String) -> Bool:
+  target = "" + key
+  keys = map_keys(m)
+  total = keys |> count
+  var i = 0
+  while i < total:
+    k = keys[i]
+    if k == target:
+      return true
+    i = i + 1
+  return false
+
+fn clone_map(m: Map[String, Int]) -> Map[String, Int]:
+  var holder = MapHolder(m: Map())
+  keys = map_keys(m)
+  total = keys |> count
+  var i = 0
+  while i < total:
+    k = keys[i]
+    val = map_item(m, k)
+    holder.m[k] = val
+    i = i + 1
+  return holder.m
+
+type ChainMap:
+  maps: Vector[Map[String, Int]]
+
+  fn maps_count() -> Int:
+    return maps |> count
+
+  # Searches mappings in order from front to back.
+  # Returns the value from the first map containing the key, or default_val if absent.
+  fn get(key: String, default_val: Int) -> Int:
+    total = maps |> count
+    var i = 0
+    while i < total:
+      if map_contains(maps[i], key):
+        return map_item(maps[i], key)
+      i = i + 1
+    return default_val
+
+  # Checks whether any mapping contains the key.
+  fn contains(key: String) -> Bool:
+    total = maps |> count
+    var i = 0
+    while i < total:
+      if map_contains(maps[i], key):
+        return true
+      i = i + 1
+    return false
+
+  # All mutations modify only the first/front mapping.
+  fn set(key: String, val: Int):
+    var m0 = clone_map(maps[0])
+    m0[key] = val
+    maps[0] = m0
+
+  # Creates a new ChainMap with child_map at the front followed by all current mappings.
+  fn new_child(child_map: Map[String, Int]) -> ChainMap:
+    var new_maps = Vector[Map[String, Int]]()
+    new_maps.push(clone_map(child_map))
+    total = maps |> count
+    var i = 0
+    while i < total:
+      new_maps.push(clone_map(maps[i]))
+      i = i + 1
+    return ChainMap(maps: new_maps)
+
+  # Creates a new ChainMap representing all mappings except the front one.
+  fn parents() -> ChainMap:
+    var parent_maps = Vector[Map[String, Int]]()
+    total = maps |> count
+    if total > 1:
+      var i = 1
+      while i < total:
+        parent_maps.push(clone_map(maps[i]))
+        i = i + 1
+    else:
+      parent_maps.push(empty_map())
+    return ChainMap(maps: parent_maps)
+
+  # Flattens all chained mappings into a single Map.
+  # Later mappings are set first, and front mappings overwrite them.
+  fn flatten() -> Map[String, Int]:
+    var res = empty_map()
+    total = maps |> count
+    var i = total - 1
+    while i >= 0:
+      keys = map_keys(maps[i])
+      k_count = keys |> count
+      var j = 0
+      while j < k_count:
+        k = keys[j]
+        res[k] = map_item(maps[i], k)
+        j = j + 1
+      i = i - 1
+    return res
+
+  # Returns all unique keys across all mappings in lookup order.
+  fn keys() -> Vector[String]:
+    var out = Vector[String]()
+    var seen = empty_map()
+    total = maps |> count
+    var i = 0
+    while i < total:
+      k_vec = map_keys(maps[i])
+      k_total = k_vec |> count
+      var j = 0
+      while j < k_total:
+        k = k_vec[j]
+        if not map_contains(seen, k):
+          seen[k] = 1
+          out.push(k)
+        j = j + 1
+      i = i + 1
+    return out
+
+fn chain_map_empty() -> ChainMap:
+  var v = Vector[Map[String, Int]]()
+  v.push(empty_map())
+  return ChainMap(maps: v)
+
+fn chain_map_single(m: Map[String, Int]) -> ChainMap:
+  var v = Vector[Map[String, Int]]()
+  v.push(clone_map(m))
+  return ChainMap(maps: v)
+
+fn chain_map_two(m1: Map[String, Int], m2: Map[String, Int]) -> ChainMap:
+  var v = Vector[Map[String, Int]]()
+  v.push(clone_map(m1))
+  v.push(clone_map(m2))
+  return ChainMap(maps: v)
+
+fn chain_map_new_child_empty(cm: ChainMap) -> ChainMap:
+  em = empty_map()
+  return cm.new_child(em)
+
+fn chain_map_values(cm: ChainMap) -> Vector[Int]:
+  var out = Vector[Int]()
+  k_vec = cm.keys()
+  total = k_vec |> count
+  var i = 0
+  while i < total:
+    k = k_vec[i]
+    out.push(cm.get(k, 0))
+    i = i + 1
+  return out
+
+test "front map wins lookup":
+  var m1 = empty_map()
+  m1["a"] = 1
+  var m2 = empty_map()
+  m2["a"] = 2
+  cm = chain_map_two(m1, m2)
+  assertEqual(cm.get("a", 0), 1)
+
+test "fallback finds a key in a later map":
+  var m1 = empty_map()
+  m1["a"] = 1
+  var m2 = empty_map()
+  m2["b"] = 2
+  cm = chain_map_two(m1, m2)
+  assertEqual(cm.get("b", 0), 2)
+
+test "missing lookup follows selected representation":
+  var m1 = empty_map()
+  m1["a"] = 1
+  cm = chain_map_single(m1)
+  assertEqual(cm.get("missing", -1), -1)
+  assertEqual(cm.get("missing", 999), 999)
+  assert(not cm.contains("missing"))
+
+test "assignment modifies only the front map":
+  var m1 = empty_map()
+  m1["a"] = 1
+  var m2 = empty_map()
+  m2["b"] = 2
+  var cm = chain_map_two(m1, m2)
+  cm.set("b", 20)
+  assertEqual(cm.get("b", 0), 20)
+  assertEqual(map_get(cm.maps[0], "b", 0), 20)
+  assertEqual(map_get(cm.maps[1], "b", 0), 2)
+
+test "shadowing works":
+  var m1 = empty_map()
+  m1["x"] = 10
+  var m2 = empty_map()
+  m2["x"] = 20
+  m2["y"] = 30
+  var cm = chain_map_two(m1, m2)
+  assertEqual(cm.get("x", 0), 10)
+  cm.set("y", 99)
+  assertEqual(cm.get("y", 0), 99)
+  assertEqual(map_get(cm.maps[1], "y", 0), 30)
+
+test "child front scope sees parent mappings":
+  var m1 = empty_map()
+  m1["a"] = 1
+  cm = chain_map_single(m1)
+  var child_map = empty_map()
+  child_map["b"] = 2
+  var child = cm.new_child(child_map)
+  assertEqual(child.get("a", 0), 1)
+  assertEqual(child.get("b", 0), 2)
+  child.set("a", 100)
+  assertEqual(child.get("a", 0), 100)
+  assertEqual(cm.get("a", 0), 1)
+
+test "parent rest operation works":
+  var m1 = empty_map()
+  m1["a"] = 1
+  var m2 = empty_map()
+  m2["b"] = 2
+  var m3 = empty_map()
+  m3["c"] = 3
+  var v = Vector[Map[String, Int]]()
+  v.push(m1)
+  v.push(m2)
+  v.push(m3)
+  cm = ChainMap(maps: v)
+  p = cm.parents()
+  assertEqual(p.maps_count(), 2)
+  assert(not p.contains("a"))
+  assertEqual(p.get("b", 0), 2)
+  assertEqual(p.get("c", 0), 3)
+
+test "multiple maps preserve lookup order":
+  var m1 = empty_map()
+  m1["k"] = 1
+  var m2 = empty_map()
+  m2["k"] = 2
+  var m3 = empty_map()
+  m3["k"] = 3
+  var v = Vector[Map[String, Int]]()
+  v.push(m1)
+  v.push(m2)
+  v.push(m3)
+  cm = ChainMap(maps: v)
+  assertEqual(cm.get("k", 0), 1)
+  p1 = cm.parents()
+  assertEqual(p1.get("k", 0), 2)
+  p2 = p1.parents()
+  assertEqual(p2.get("k", 0), 3)
+
+test "empty chain map defaults":
+  cm = chain_map_empty()
+  assertEqual(cm.maps_count(), 1)
+  assertEqual(cm.get("anything", -1), -1)
+  assert(not cm.contains("anything"))
+
+test "flatten produces single combined map with front priority":
+  var m1 = empty_map()
+  m1["a"] = 1
+  m1["b"] = 2
+  var m2 = empty_map()
+  m2["b"] = 20
+  m2["c"] = 30
+  cm = chain_map_two(m1, m2)
+  flat = cm.flatten()
+  assertEqual(flat.get("a", 0), 1)
+  assertEqual(flat.get("b", 0), 2)
+  assertEqual(flat.get("c", 0), 30)
+
+test "keys and values extraction":
+  var m1 = empty_map()
+  m1["a"] = 1
+  m1["b"] = 2
+  var m2 = empty_map()
+  m2["b"] = 20
+  m2["c"] = 30
+  cm = chain_map_two(m1, m2)
+  ks = cm.keys()
+  vs = chain_map_values(cm)
+  assertEqual(ks |> count, 3)
+  assertEqual(vs |> count, 3)
+  assert(cm.contains("a"))
+  assert(cm.contains("b"))
+  assert(cm.contains("c"))
+  assert(not cm.contains("d"))
+
+test "new child empty":
+  var m1 = empty_map()
+  m1["x"] = 42
+  cm = chain_map_single(m1)
+  var child = chain_map_new_child_empty(cm)
+  assertEqual(child.maps_count(), 2)
+  assertEqual(child.get("x", 0), 42)
+  child.set("x", 99)
+  assertEqual(child.get("x", 0), 99)
+  assertEqual(cm.get("x", 0), 42)
+
+test "multi level child scope hierarchy":
+  var base = empty_map()
+  base["env"] = 1
+  base["retries"] = 3
+  cm0 = chain_map_single(base)
+
+  var env_override = empty_map()
+  env_override["retries"] = 5
+  cm1 = cm0.new_child(env_override)
+
+  var local_override = empty_map()
+  local_override["debug"] = 1
+  cm2 = cm1.new_child(local_override)
+
+  assertEqual(cm2.get("env", 0), 1)
+  assertEqual(cm2.get("retries", 0), 5)
+  assertEqual(cm2.get("debug", 0), 1)
+  assertEqual(cm1.get("retries", 0), 5)
+  assert(not cm1.contains("debug"))
+  assertEqual(cm0.get("retries", 0), 3)
+
+fn main():
+  var defaults = empty_map()
+  defaults["theme"] = 1
+  defaults["show_line_numbers"] = 1
+
+  var user_pref = empty_map()
+  user_pref["theme"] = 2
+
+  var cm = chain_map_two(user_pref, defaults)
+  echo "theme:", cm.get("theme", 0)
+  echo "show_line_numbers:", cm.get("show_line_numbers", 0)

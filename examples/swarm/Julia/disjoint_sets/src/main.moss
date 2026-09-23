@@ -1,0 +1,181 @@
+# IntDisjointSets (Union-Find) translated from Julia DataStructures.jl.
+type IntDisjointSets:
+  parents: Vector[Int]
+  ranks: Vector[Int]
+  ngroups: Int
+
+  fn num_groups() -> Int:
+    return ngroups
+
+  fn num_elements() -> Int:
+    return parents |> count
+
+  fn find_root(x: Int) -> Int:
+    var root = x
+    while root != parents[root]:
+      root = parents[root]
+
+    var curr = x
+    while curr != root:
+      nxt = parents[curr]
+      parents[curr] = root
+      curr = nxt
+
+    return root
+
+  fn in_same_set(x: Int, y: Int) -> Bool:
+    rx = find_root(x)
+    ry = find_root(y)
+    return rx == ry
+
+  fn union(x: Int, y: Int) -> Int:
+    rx = find_root(x)
+    ry = find_root(y)
+    if rx != ry:
+      rx_rank = ranks[rx]
+      ry_rank = ranks[ry]
+      if rx_rank < ry_rank:
+        parents[rx] = ry
+        ngroups = ngroups - 1
+        return ry
+      else:
+        if rx_rank > ry_rank:
+          parents[ry] = rx
+          ngroups = ngroups - 1
+          return rx
+        else:
+          parents[ry] = rx
+          ranks[rx] = rx_rank + 1
+          ngroups = ngroups - 1
+          return rx
+    return rx
+
+fn make_disjoint_sets(n: Int) -> IntDisjointSets:
+  var parents = Vector[Int]()
+  var ranks = Vector[Int]()
+  var i = 0
+  while i < n:
+    parents.push(i)
+    ranks.push(0)
+    i = i + 1
+  return IntDisjointSets(parents: parents, ranks: ranks, ngroups: n)
+
+test "handles single element disjoint set":
+  s = make_disjoint_sets(1)
+  assertEqual(s.num_elements(), 1)
+  assertEqual(s.num_groups(), 1)
+  assertEqual(s.find_root(0), 0)
+  assert(s.in_same_set(0, 0))
+  assertEqual(s.union(0, 0), 0)
+  assertEqual(s.num_groups(), 1)
+
+test "initializes disjoint sets of n elements":
+  s = make_disjoint_sets(5)
+  assertEqual(s.num_elements(), 5)
+  assertEqual(s.num_groups(), 5)
+  var i = 0
+  while i < 5:
+    assertEqual(s.find_root(i), i)
+    i = i + 1
+
+test "in_same_set identifies separate and connected components":
+  s = make_disjoint_sets(6)
+  assert(not s.in_same_set(0, 1))
+  assert(not s.in_same_set(2, 3))
+
+  s.union(0, 1)
+  assert(s.in_same_set(0, 1))
+  assert(not s.in_same_set(0, 2))
+
+  s.union(2, 3)
+  assert(s.in_same_set(2, 3))
+  assert(not s.in_same_set(1, 2))
+
+  s.union(1, 2)
+  assert(s.in_same_set(0, 3))
+  assert(s.in_same_set(1, 3))
+  assertEqual(s.num_groups(), 3)
+
+test "union by rank maintains balanced trees and rank increments":
+  s = make_disjoint_sets(4)
+  # Merge 0 and 1: equal rank 0, so one becomes root and its rank becomes 1
+  r01 = s.union(0, 1)
+  assertEqual(s.ranks[r01], 1)
+  assertEqual(s.num_groups(), 3)
+
+  # Merge 2 and 3: equal rank 0, root rank becomes 1
+  r23 = s.union(2, 3)
+  assertEqual(s.ranks[r23], 1)
+  assertEqual(s.num_groups(), 2)
+
+  # Merge the two components: ranks are equal (1), so root rank becomes 2
+  r_all = s.union(0, 2)
+  assertEqual(s.ranks[r_all], 2)
+  assertEqual(s.num_groups(), 1)
+  assert(s.in_same_set(1, 3))
+
+test "path compression flattens tree on find_root":
+  s = make_disjoint_sets(5)
+  s.union(0, 1)
+  s.union(1, 2)
+  s.union(2, 3)
+  s.union(3, 4)
+  assertEqual(s.num_groups(), 1)
+
+  # Query element 4, triggering path compression
+  root = s.find_root(4)
+  # After path compression, parents[4] should point directly to root
+  assertEqual(s.parents[4], root)
+  assertEqual(s.parents[3], root)
+  assertEqual(s.parents[2], root)
+  assertEqual(s.parents[1], root)
+  assertEqual(s.parents[0], root)
+
+test "deep tree path compression directly points leaf to root":
+  s = make_disjoint_sets(8)
+  # Build height 1 trees
+  r0 = s.union(0, 1)
+  r1 = s.union(2, 3)
+  r2 = s.union(4, 5)
+  r3 = s.union(6, 7)
+
+  # Build height 2 trees
+  r01 = s.union(r0, r1)
+  r23 = s.union(r2, r3)
+
+  # Build height 3 tree
+  r_all = s.union(r01, r23)
+  assertEqual(s.ranks[r_all], 3)
+  assertEqual(s.num_groups(), 1)
+
+  # Find an element that does not yet point directly to root
+  var leaf = 0
+  var found = false
+  var i = 0
+  while i < 8:
+    if s.parents[i] != r_all:
+      leaf = i
+      found = true
+    i = i + 1
+  assert(found)
+
+  # Query leaf to trigger path compression
+  root = s.find_root(leaf)
+  assertEqual(root, r_all)
+  assertEqual(s.parents[leaf], r_all)
+
+test "repeated union on same elements is idempotent":
+  s = make_disjoint_sets(4)
+  s.union(0, 1)
+  assertEqual(s.num_groups(), 3)
+  s.union(0, 1)
+  assertEqual(s.num_groups(), 3)
+  s.union(1, 0)
+  assertEqual(s.num_groups(), 3)
+
+fn main():
+  s = make_disjoint_sets(5)
+  s.union(0, 1)
+  s.union(1, 2)
+  s.union(3, 4)
+  echo s.in_same_set(0, 2), s.in_same_set(0, 3), s.num_groups()

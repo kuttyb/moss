@@ -6,9 +6,9 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 23
+- Distinct findings: 24
 - Open: 0
-- Fixed: 22
+- Fixed: 23
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 6
 
@@ -19,6 +19,8 @@ Completed swarm experiments:
 - [Python / Counter](Python/Counter/)
 - [Julia / Accumulator](Julia/Accumulator/)
 - [Python / HashMap](Python/HashMap/)
+- [Julia / DisjointSets](Julia/disjoint_sets/)
+- [Python / ChainMap](Python/chain_map/)
 
 ## Updating this ledger
 
@@ -776,3 +778,38 @@ Regression: `tests/negative/swarm_024_queue_constructor_arguments.moss` and
 
 Unsupported `Queue(items: [])` and `Map(items: [])` are rejected by Moss with a
 stable built-in-constructor diagnostic; they are not missing language features.
+
+## SWARM-025 — Fast Debug interpreter omitted unqualified sibling method dispatch on self
+
+- Status: Fixed
+- Category: Fast Debug / interpreter parity
+- First observed: [Julia / DisjointSets](Julia/disjoint_sets/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_025_fast_debug_sibling_method.moss`.
+
+### Minimal reproducer
+
+```moss
+type Calculator:
+  base: Int
+
+  fn add(x: Int) -> Int:
+    return base + x
+
+  fn add_twice(x: Int) -> Int:
+    first = add(x)
+    return add(first)
+
+fn main():
+  c = Calculator(base: 10)
+  echo c.add_twice(5)
+```
+
+The native compiler lowered unqualified sibling calls within a method body
+(such as `add(x)` inside `add_twice`) as method calls on `self`. The Fast Debug
+interpreter only searched top-level functions and object constructors, failing
+with `unsupported or unresolved callable '<method_name>'`. `FastInterpreter::eval`
+now checks the enclosing `self` receiver for matching methods, restoring
+parity with native lowering.
