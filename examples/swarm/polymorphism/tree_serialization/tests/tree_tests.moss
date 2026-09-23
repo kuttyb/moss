@@ -1,0 +1,186 @@
+# Unit tests for generic tree processing and serialization library.
+# Participates in the test compilation unit alongside src/main.moss.
+
+# ---------------------------------------------------------------- Single Node Tests
+
+test "single node leaf tree":
+  leaf = OrgNode(id: 42, name: "Solo", budget: 100, children: Vector[OrgNode]())
+  assertEqual(tree_size(leaf), 1)
+  assertEqual(tree_max_depth(leaf), 1)
+  assertEqual(tree_leaf_count(leaf), 1)
+  assertEqual(tree_sum_values(leaf), 100)
+  assertEqual(tree_sum_filtered(leaf, 50), 100)
+  assertEqual(tree_sum_filtered(leaf, 150), 0)
+
+  bfs = tree_bfs_labels(leaf)
+  assertEqual(bfs |> count, 1)
+  assertEqual(bfs[0], "Solo")
+
+  dfs = tree_dfs_labels(leaf)
+  assertEqual(dfs |> count, 1)
+  assertEqual(dfs[0], "Solo")
+
+  entries = tree_serialize(leaf)
+  assertEqual(entries |> count, 1)
+  assertEqual(entries[0].depth, 0)
+  assertEqual(entries[0].label, "Solo")
+  assertEqual(entries[0].value, 100)
+  assertEqual(entries[0].child_count, 0)
+
+# ---------------------------------------------------------------- Linear Chain Tests
+
+test "linear tree traversal":
+  var n3_ch = Vector[DocNode]()
+  n3 = DocNode(tag: "span", text: "leaf", children: n3_ch)
+
+  var n2_ch = Vector[DocNode]()
+  n2_ch.push(n3)
+  n2 = DocNode(tag: "p", text: "", children: n2_ch)
+
+  var n1_ch = Vector[DocNode]()
+  n1_ch.push(n2)
+  chain_root = DocNode(tag: "div", text: "", children: n1_ch)
+
+  assertEqual(tree_size(chain_root), 3)
+  assertEqual(tree_max_depth(chain_root), 3)
+  assertEqual(tree_leaf_count(chain_root), 1)
+
+  bfs = tree_bfs_labels(chain_root)
+  assertEqual(bfs |> count, 3)
+  assertEqual(bfs[0], "div")
+  assertEqual(bfs[1], "p")
+  assertEqual(bfs[2], "span")
+
+  dfs = tree_dfs_labels(chain_root)
+  assertEqual(dfs |> count, 3)
+  assertEqual(dfs[0], "div")
+  assertEqual(dfs[1], "p")
+  assertEqual(dfs[2], "span")
+
+# ---------------------------------------------------------------- OrgNode Tests
+
+test "org tree metrics and traversals":
+  org = build_sample_org_tree()
+  assertEqual(tree_size(org), 8)
+  assertEqual(tree_max_depth(org), 3)
+  assertEqual(tree_leaf_count(org), 5)
+  assertEqual(tree_sum_values(org), 28000)
+  assertEqual(tree_sum_filtered(org, 5000), 15000)
+  assertEqual(tree_sum_filtered(org, 3000), 21000)
+
+  bfs = tree_bfs_labels(org)
+  assertEqual(bfs |> count, 8)
+  assertEqual(bfs[0], "CEO")
+  assertEqual(bfs[1], "Engineering")
+  assertEqual(bfs[2], "Marketing")
+  assertEqual(bfs[3], "Operations")
+  assertEqual(bfs[4], "Infrastructure")
+  assertEqual(bfs[5], "Applications")
+  assertEqual(bfs[6], "Growth")
+  assertEqual(bfs[7], "Branding")
+
+  dfs = tree_dfs_labels(org)
+  assertEqual(dfs |> count, 8)
+  assertEqual(dfs[0], "CEO")
+  assertEqual(dfs[1], "Engineering")
+  assertEqual(dfs[2], "Infrastructure")
+  assertEqual(dfs[3], "Applications")
+  assertEqual(dfs[4], "Marketing")
+  assertEqual(dfs[5], "Growth")
+  assertEqual(dfs[6], "Branding")
+  assertEqual(dfs[7], "Operations")
+
+# ---------------------------------------------------------------- DocNode Tests
+
+test "doc tree metrics and traversals":
+  doc = build_sample_doc_tree()
+  assertEqual(tree_size(doc), 10)
+  assertEqual(tree_max_depth(doc), 5)
+  assertEqual(tree_leaf_count(doc), 5)
+
+  bfs = tree_bfs_labels(doc)
+  assertEqual(bfs |> count, 10)
+  assertEqual(bfs[0], "html")
+  assertEqual(bfs[1], "head")
+  assertEqual(bfs[2], "body")
+  assertEqual(bfs[3], "title")
+  assertEqual(bfs[4], "main")
+  assertEqual(bfs[5], "footer")
+
+  dfs = tree_dfs_labels(doc)
+  assertEqual(dfs |> count, 10)
+  assertEqual(dfs[0], "html")
+  assertEqual(dfs[1], "head")
+  assertEqual(dfs[2], "title")
+  assertEqual(dfs[3], "body")
+  assertEqual(dfs[4], "main")
+  assertEqual(dfs[5], "nav")
+  assertEqual(dfs[6], "section")
+  assertEqual(dfs[7], "h1")
+  assertEqual(dfs[8], "p")
+  assertEqual(dfs[9], "footer")
+
+# ---------------------------------------------------------------- CategoryNode & Pipeline Tests
+
+test "category tree metrics and functional pipelines":
+  cat = build_sample_category_tree()
+  assertEqual(tree_size(cat), 7)
+  assertEqual(tree_max_depth(cat), 3)
+  assertEqual(tree_leaf_count(cat), 4)
+  assertEqual(tree_sum_values(cat), 615)
+
+  values = tree_collect_values(cat)
+  assertEqual(values |> count, 7)
+  assertEqual(values |> sum, 615)
+
+  high_count = values |> filter(_ >= 70) |> count
+  assertEqual(high_count, 4)
+
+  high_sum = values |> filter(_ >= 70) |> sum
+  assertEqual(high_sum, 480)
+
+# ---------------------------------------------------------------- Serialization Tests
+
+test "tree structural serialization entries":
+  org = build_sample_org_tree()
+  entries = tree_serialize(org)
+  assertEqual(entries |> count, 8)
+
+  # Root entry
+  assertEqual(entries[0].depth, 0)
+  assertEqual(entries[0].label, "CEO")
+  assertEqual(entries[0].value, 10000)
+  assertEqual(entries[0].child_count, 3)
+
+  # First child: Engineering
+  assertEqual(entries[1].depth, 1)
+  assertEqual(entries[1].label, "Engineering")
+  assertEqual(entries[1].value, 5000)
+  assertEqual(entries[1].child_count, 2)
+
+  # Grandchild: Infrastructure
+  assertEqual(entries[2].depth, 2)
+  assertEqual(entries[2].label, "Infrastructure")
+  assertEqual(entries[2].value, 3000)
+  assertEqual(entries[2].child_count, 0)
+
+test "indented and json lines serialization":
+  cat = build_sample_category_tree()
+  lines = tree_serialize_indented(cat)
+  assertEqual(lines |> count, 7)
+  assertEqual(lines[0], "- CATALOG")
+  assertEqual(lines[1], "  - ELECTRONICS")
+  assertEqual(lines[2], "    - COMPUTERS")
+  assertEqual(lines[3], "    - PHONES")
+  assertEqual(lines[4], "  - BOOKS")
+  assertEqual(lines[5], "    - FICTION")
+  assertEqual(lines[6], "    - NONFICTION")
+
+  json_lines = tree_serialize_json(cat)
+  assertEqual(json_lines |> count, 9)
+  assertEqual(json_lines[0], "[")
+  expected_cat = "  {label: CATALOG}"
+  assertEqual(json_lines[1], expected_cat)
+  expected_elec = "    {label: ELECTRONICS}"
+  assertEqual(json_lines[2], expected_elec)
+  assertEqual(json_lines[8], "]")

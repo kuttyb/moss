@@ -140,15 +140,18 @@ fn tree_bfs_labels(root: TreeNode) -> Vector[String]:
 fn tree_dfs_labels(root: TreeNode) -> Vector[String]:
   first = make_owned(root)
   var stack = [first]
+  var stack_len = 1
   var labels = Vector[String]()
-  while (stack |> count) > 0:
+  while stack_len > 0:
     curr = stack.pop()
+    stack_len = stack_len - 1
     labels.push(curr.label())
     k = curr.child_count()
     # Push children in reverse order so first child is popped first
     var i = k - 1
     while i >= 0:
       stack.push(curr.child_at(i))
+      stack_len = stack_len + 1
       i = i - 1
   return labels
 
@@ -176,10 +179,12 @@ fn tree_max_depth(root: TreeNode) -> Int:
   first = make_owned(root)
   var node_stack = [first]
   var depth_stack = [1]
+  var stack_len = 1
   var max_d = 0
-  while (node_stack |> count) > 0:
+  while stack_len > 0:
     curr = node_stack.pop()
     d = depth_stack.pop()
+    stack_len = stack_len - 1
     if d > max_d:
       max_d = d
     k = curr.child_count()
@@ -187,6 +192,7 @@ fn tree_max_depth(root: TreeNode) -> Int:
     while i < k:
       node_stack.push(curr.child_at(i))
       depth_stack.push(d + 1)
+      stack_len = stack_len + 1
       i = i + 1
   return max_d
 
@@ -194,9 +200,11 @@ fn tree_max_depth(root: TreeNode) -> Int:
 fn tree_leaf_count(root: TreeNode) -> Int:
   first = make_owned(root)
   var stack = [first]
+  var stack_len = 1
   var leaves = 0
-  while (stack |> count) > 0:
+  while stack_len > 0:
     curr = stack.pop()
+    stack_len = stack_len - 1
     k = curr.child_count()
     if k == 0:
       leaves = leaves + 1
@@ -204,6 +212,7 @@ fn tree_leaf_count(root: TreeNode) -> Int:
       var i = 0
       while i < k:
         stack.push(curr.child_at(i))
+        stack_len = stack_len + 1
         i = i + 1
   return leaves
 
@@ -211,14 +220,17 @@ fn tree_leaf_count(root: TreeNode) -> Int:
 fn tree_sum_values(root: TreeNode) -> Int:
   first = make_owned(root)
   var stack = [first]
+  var stack_len = 1
   var total = 0
-  while (stack |> count) > 0:
+  while stack_len > 0:
     curr = stack.pop()
+    stack_len = stack_len - 1
     total = total + curr.value()
     k = curr.child_count()
     var i = 0
     while i < k:
       stack.push(curr.child_at(i))
+      stack_len = stack_len + 1
       i = i + 1
   return total
 
@@ -226,9 +238,11 @@ fn tree_sum_values(root: TreeNode) -> Int:
 fn tree_sum_filtered(root: TreeNode, min_value: Int) -> Int:
   first = make_owned(root)
   var stack = [first]
+  var stack_len = 1
   var total = 0
-  while (stack |> count) > 0:
+  while stack_len > 0:
     curr = stack.pop()
+    stack_len = stack_len - 1
     v = curr.value()
     if v >= min_value:
       total = total + v
@@ -236,6 +250,7 @@ fn tree_sum_filtered(root: TreeNode, min_value: Int) -> Int:
     var i = 0
     while i < k:
       stack.push(curr.child_at(i))
+      stack_len = stack_len + 1
       i = i + 1
   return total
 
@@ -243,14 +258,17 @@ fn tree_sum_filtered(root: TreeNode, min_value: Int) -> Int:
 fn tree_collect_values(root: TreeNode) -> Vector[Int]:
   first = make_owned(root)
   var stack = [first]
+  var stack_len = 1
   var values = Vector[Int]()
-  while (stack |> count) > 0:
+  while stack_len > 0:
     curr = stack.pop()
+    stack_len = stack_len - 1
     values.push(curr.value())
     k = curr.child_count()
     var i = 0
     while i < k:
       stack.push(curr.child_at(i))
+      stack_len = stack_len + 1
       i = i + 1
   return values
 
@@ -259,10 +277,12 @@ fn tree_serialize(root: TreeNode) -> Vector[TreeEntry]:
   first = make_owned(root)
   var node_stack = [first]
   var depth_stack = [0]
+  var stack_len = 1
   var entries = Vector[TreeEntry]()
-  while (node_stack |> count) > 0:
+  while stack_len > 0:
     curr = node_stack.pop()
     depth = depth_stack.pop()
+    stack_len = stack_len - 1
     k = curr.child_count()
     entry = TreeEntry(depth: depth, label: curr.label(), value: curr.value(), child_count: k)
     entries.push(entry)
@@ -270,6 +290,7 @@ fn tree_serialize(root: TreeNode) -> Vector[TreeEntry]:
     while i >= 0:
       node_stack.push(curr.child_at(i))
       depth_stack.push(depth + 1)
+      stack_len = stack_len + 1
       i = i - 1
   return entries
 
@@ -288,7 +309,7 @@ fn tree_serialize_indented(root: TreeNode) -> Vector[String]:
     i = i + 1
   return lines
 
-# Serialize tree into JSON lines: '{"label": "...", "depth": ..., "value": ...}'
+# Serialize tree into JSON-like lines: '{label: ...}'
 fn tree_serialize_json(root: TreeNode) -> Vector[String]:
   entries = tree_serialize(root)
   var lines = Vector[String]()
@@ -298,9 +319,9 @@ fn tree_serialize_json(root: TreeNode) -> Vector[String]:
   while i < n:
     e = entries[i]
     ind = get_indent(e.depth + 1)
-    p1 = concat(ind, "{\"label\": \"")
+    p1 = concat(ind, "{label: ")
     p2 = concat(p1, e.label)
-    p3 = concat(p2, "\"}")
+    p3 = concat(p2, "}")
     lines.push(p3)
     i = i + 1
   lines.push("]")

@@ -1,0 +1,7 @@
+# REPRO-09: assertEqual(actual, "{literal}") embeds the expected string literal
+# directly into Rust's format! string without escaping braces '{' -> '{{',
+# triggering rustc error: "invalid format string: expected '}'".
+# Binding the expected string to a local variable first works around the issue.
+test "assert_equal_brace":
+  actual = "{key: val}"
+  assertEqual(actual, "{key: val}")

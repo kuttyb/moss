@@ -26,6 +26,11 @@ Completed swarm experiments:
 - [Python / ChainMap](Python/chain_map/)
 - [Julia / FenwickTree](Julia/FenwickTree/)
 - [Python / deque](Python/deque/)
+- [Multi-Domain Swarm / Domain Torture](domain_torture/)
+- [Polymorphism / Sort & Search](polymorphism/sort_search/)
+- [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
+- [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
 
 ## Updating this ledger
 
@@ -1532,3 +1537,435 @@ fn choose(flag: Bool) -> Int:
 ### Notes
 
 Similar class of backend warning leakage as SWARM-031 (`-D unused-parens`). Native lowering emits `let mut res = initial_expr;` even when every control-flow path reassigns `res` before any read, triggering Rust's `-D unused-assignments`. Lowering could emit uninitialized bindings where valid, avoid emitting mut when unneeded, or handle branch convergence.
+
+## SWARM-043 — Untyped parameter field access monomorphizes function to first caller type
+
+- Status: Open
+- Category: Compiler / type inference & specialization
+- First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
+- Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+type Alpha:
+  name: String
+
+type Beta:
+  name: String
+
+fn get_name(item):
+  return item.name
+
+fn main():
+  a = Alpha(name: "A")
+  b = Beta(name: "B")
+  echo get_name(a)
+  echo get_name(b)
+```
+
+### Observed behavior
+
+`moss check` fails on `get_name(b)` with `TYPE_MISMATCH: expected Alpha, found Beta`.
+In `src/moss.cpp:1561-1565`, untyped parameter field access (`item.name`) records a `ConstraintKind::Field` constraint but fails to mark `function.generic = true`. Consequently, the function monomorphizes on its first concrete call (`Alpha`) and permanently freezes its signature as `fn get_name(item: Alpha) -> String`. Calling it with another type having the identical field causes a compile error.
+
+### Workaround
+
+Encapsulate the field behind a method (`item.get_name()`). Method calls on untyped parameters correctly trigger structural trait / generic specialization.
+
+---
+
+## SWARM-044 — Untyped collection indexing fails checking with container error
+
+- Status: Open
+- Category: Compiler / type inference & specialization
+- First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
+- Also observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/), [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- Observation count: 3
+
+### Minimal reproducer
+
+```moss
+fn get_first(items):
+  return items[0]
+
+fn main():
+  v = [10, 20, 30]
+  echo get_first(v)
+```
+
+### Observed behavior
+
+`moss check` fails with:
+`TYPE_ERROR: value is not an indexable container` at `src/moss.cpp:7591`.
+Untyped function parameters (`items`) are not inferred as generic container types when indexed in the function body unless annotated or promoted via structural methods.
+
+### Workaround
+
+Wrap container operations in structural traits with `fn get(i: Int)` / `fn set(i: Int, v)`, or pass concrete collections directly.
+
+---
+
+## SWARM-045 — Exported struct fields lower without pub modifier across modules
+
+- Status: Open
+- Category: Compiler / module projection & native lowering
+- First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
+- Also observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+# Module A:
+module DataMod
+export type Record:
+  val: Int
+
+# Module B:
+module AppMod
+import DataMod
+fn inspect(r: DataMod.Record) -> Int:
+  return r.val
+```
+
+### Observed behavior
+
+`moss check` and Fast Debug accept cross-module field read `r.val` and constructor instantiation `DataMod.Record(val: 10)`.
+However, native compilation fails in `rustc` with:
+`error[E0616]: field 'val' of struct 'Record' is private` or `error[E0451]: field 'val' of struct 'Record' is private`.
+Lowering emits `pub struct Record { val: i64 }` where individual fields lack the Rust `pub` visibility modifier.
+
+### Workaround
+
+Provide explicit exported getter methods (`fn get_val() -> Int: return val`) or constructors within the defining module.
+
+---
+
+## SWARM-046 — Exported trait-annotated function crashes with internal synchronization invariant
+
+- Status: Open
+- Category: Compiler / module interface projection
+- First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+module Geom
+export trait Shape:
+  fn area() -> Int
+
+export fn get_area(s: Shape) -> Int:
+  return s.area()
+```
+
+### Observed behavior
+
+Compiling the module triggers an internal compiler crash during `.mossi` interface generation:
+`error[MOSS_INTERNAL_OR_IO_ERROR]: internal synchronization invariant: unresolved concrete method effect target` at `src/moss.cpp:4658`.
+Because `s: Shape` is annotated, `function.generic` is false, and leaf effect analysis fails to resolve concrete method targets for non-object structural traits.
+
+### Workaround
+
+Leave the exported function parameter untyped (`export fn get_area(s) -> Int: return s.area()`), which correctly marks `function.generic = true` and exports polymorphic AST.
+
+---
+
+## SWARM-047 — Compiler assertion abort on pipeline reduce with Map accumulator
+
+- Status: Open
+- Category: Compiler / functional pipeline lowering
+- First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn record_freq(var counts: Map[Int, Int], item: Int):
+  counts[item] = counts.get(item, 0) + 1
+
+fn main():
+  items = [1, 2, 2, 3]
+  var counts = Map[Int, Int]()
+  items |> reduce(counts, record_freq)
+```
+
+### Observed behavior
+
+Compiler terminates with SIGABRT:
+`Assertion '!node.effects.unresolved && !node.callable_identity.empty()' failed` at `src/moss.cpp:6054`.
+
+### Workaround
+
+Use an explicit `while` loop to accumulate into the Map instead of `|> reduce`.
+
+---
+
+## SWARM-048 — Fast Debug interpreter fails to resolve function identifier passed as callable argument
+
+- Status: Open
+- Category: Fast Debug interpreter / name resolution
+- First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+fn is_positive(x: Int) -> Bool:
+  return x > 0
+
+fn filter_ints(items: Vector[Int], pred) -> Vector[Int]:
+  var out = Vector[Int]()
+  for x in items:
+    if pred(x):
+      out.push(x)
+  return out
+
+fn main():
+  nums = [1, -2, 3]
+  echo filter_ints(nums, is_positive)
+```
+
+### Observed behavior
+
+Compiles and executes natively with zero errors via static monomorphization.
+In Fast Debug (`moss run --interp` or `margo debug`), aborts with:
+`interpreter error: unknown local 'is_positive'`.
+The interpreter evaluates call argument expressions in the local variable environment where function names do not exist.
+
+### Workaround
+
+Use direct inline logic, static pipeline lambdas (`_ > 0`), or execute natively with `margo run`.
+
+---
+
+## SWARM-049 — Fast Debug string relational comparison evaluates to false
+
+- Status: Open
+- Category: Fast Debug interpreter / operator evaluation
+- First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn main():
+  echo "apple" < "banana"
+```
+
+### Observed behavior
+
+Native execution correctly prints `true`.
+Fast Debug (`moss run --interp`) prints `false`.
+In `src/interpreter.hpp:739`, relational operators (`<`, `>`, `<=`, `>=`) only branch for integer types; for other types, they call `.as_float()`, which converts strings to `0.0`. Thus `"apple" < "banana"` computes `0.0 < 0.0 == false`.
+
+### Workaround
+
+Test string comparison using native execution (`margo test`, `margo run`).
+
+---
+
+## SWARM-050 — Nested generic specialization fails in Rust lowering backend
+
+- Status: Open
+- Category: Compiler / native lowering & specialization
+- First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+trait Sortable:
+  fn len() -> Int
+  fn less(i: Int, j: Int) -> Bool
+  fn swap(i: Int, j: Int)
+
+fn partition(s: Sortable, low: Int, high: Int) -> Int:
+  return low
+
+fn quicksort(s: Sortable):
+  p = partition(s, 0, 1)
+
+type TypeA:
+  fn len() -> Int: return 2
+  fn less(i: Int, j: Int) -> Bool: return true
+  fn swap(i: Int, j: Int): pass
+
+type TypeB:
+  fn len() -> Int: return 2
+  fn less(i: Int, j: Int) -> Bool: return true
+  fn swap(i: Int, j: Int): pass
+
+fn main():
+  var a = TypeA()
+  var b = TypeB()
+  quicksort(a)
+  quicksort(b)
+```
+
+### Observed behavior
+
+`moss check` succeeds.
+Native compilation fails in `rustc` with `E0308: mismatched types`: the compiler monomorphizes `quicksort` for both `TypeA` and `TypeB`, but only emits a single specialization of `partition` for `TypeA`, calling `partition_TypeA` inside `quicksort_TypeB`.
+
+### Workaround
+
+Inline helper logic into the outer generic function, or specialize the helper function explicitly per concrete type.
+
+---
+
+## SWARM-051 — Unqualified sibling callable argument across modules fails native lowering
+
+- Status: Open
+- Category: Compiler / module name resolution & lowering
+- First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+module Tools
+export fn map_by(items: Vector[Int], transform) -> Vector[Int]:
+  var out = Vector[Int]()
+  for x in items:
+    out.push(transform(x))
+  return out
+
+module App
+import Tools
+fn double_val(x: Int) -> Int:
+  return x * 2
+
+fn main():
+  nums = [1, 2, 3]
+  echo Tools.map_by(nums, double_val)
+```
+
+### Observed behavior
+
+Fails in native lowering with `missing static specialization with argument types (vector[int], unresolved)`.
+Module function name mangling renames `double_val` to `App__double_val`, but lowering looks up `"double_val"`.
+
+### Workaround
+
+Explicitly qualify the sibling callable argument with the module name: `Tools.map_by(nums, App.double_val)`.
+
+---
+
+## SWARM-052 — Vector[Trait]() passes frontend check but fails native compilation
+
+- Status: Open
+- Category: Compiler / frontend validation
+- First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
+- Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+trait Shape:
+  fn area() -> Int
+
+fn main():
+  var shapes = Vector[Shape]()
+```
+
+### Observed behavior
+
+`moss check` accepts `Vector[Shape]()`.
+Native lowering emits `std::vec::Vec::<Shape>::new()`, which fails in `rustc` with `error[E0425]: cannot find type 'Shape' in this scope`.
+Moss v0.1 does not support runtime trait objects; collections cannot hold abstract trait types.
+
+### Workaround
+
+Store concrete types in separate typed collections (`Vector[Circle]()`, `Vector[Rectangle]()`) or use dynamic dispatch wrappers. The checker should reject `Vector[<Trait>]` at compile time.
+
+---
+
+## SWARM-053 — Binary string concatenation between owned String and literal fails rustc
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn main():
+  var s = "hello"
+  s = s + " world"
+```
+
+### Observed behavior
+
+Native compilation fails with rustc `error[E0308]: mismatched types: expected &str, found String` because `(s) + (" world")` lowers to `(String) + (String)`.
+
+### Workaround
+
+Use a multi-statement accumulator helper (`var out = ""; out = out + s; out = out + " world"; return out`) or formatted string interpolation where supported.
+
+---
+
+## SWARM-054 — Chained field access on indexed vector in method omits usize cast in backend
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Item:
+  score: Int
+
+type Container:
+  items: Vector[Item]
+
+  fn get_score(i: Int) -> Int:
+    return items[i].score
+```
+
+### Observed behavior
+
+Native compilation fails in `rustc` with `error[E0277]: the type [Item] cannot be indexed by i64` because the backend emits `items[i].score` without `(i as usize)`.
+
+### Workaround
+
+Pass `items[i]` to a helper projection function (`fn item_score(it: Item) -> Int: return it.score`), which infers `READ` borrow and correctly casts the index.
+
+---
+
+## SWARM-055 — assertEqual with brace in string literal argument leaks unescaped brace into Rust format string
+
+- Status: Open
+- Category: Compiler / test lowering
+- First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+test "brace test":
+  assertEqual("{hello}", "{hello}")
+```
+
+### Observed behavior
+
+Native compilation of test binary fails in `rustc` because `{` in the literal argument is interpolated directly into `format!("{hello}")` without escaping to `{{hello}}`.
+
+### Workaround
+
+Bind expected string to a local variable before asserting: `expected = "{hello}"; assertEqual(actual, expected)`.

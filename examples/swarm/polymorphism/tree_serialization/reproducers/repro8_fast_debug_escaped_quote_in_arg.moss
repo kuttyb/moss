@@ -1,0 +1,13 @@
+# REPRO-08: Fast Debug interpreter fails when a function argument expression
+# contains an escaped quote '\"'. The interpreter's naive argument lexer does not
+# recognize '\"' as escaped, flipping its in-string state and misparsing the call.
+# Native compilation accepts and executes this cleanly.
+fn cat(a: String, b: String) -> String:
+  var out = ""
+  out = out + a
+  out = out + b
+  return out
+
+fn main():
+  s = cat("prefix: ", "{\"key\": \"val\"}")
+  echo s

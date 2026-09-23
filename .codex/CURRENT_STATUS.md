@@ -2,6 +2,20 @@
 
 Updated: 2026-09-23
 
+## Phase 15.12 — Static Polymorphism & Specialization Swarm — COMPLETE
+
+Phase 15.12 executed a 4-subagent dogfood swarm evaluating Moss v0.1's static polymorphism model (untyped statically specialized functions, structural traits, reusable helpers, statically known callable parameters, pipelines, and reuse across modules and packages) across 4 substantive independent workloads under `examples/swarm/polymorphism/`:
+1. `sort_search`: Reusable sorting (quicksort, selection sort, insertion sort), partitioning, and binary search over multiple concrete types (`Vector[Int]`, `Vector[String]`, `Player` records, `Item` records). 18 unit tests passing natively and in Fast Debug.
+2. `geometry_modules`: Multi-module geometry suite (`geo_types`, `transforms`, `pipeline_ops`, `main`) exercising structural traits (`Shape`, `Bounded`, `Measurable`, `Containment`), polymorphic transforms across `Circle`, `Rectangle`, `Square`, and collection pipelines. 10 unit tests passing natively and in Fast Debug.
+3. `collection_pipeline`: Multi-package architecture (`data_tools` library consumed by `log_analytics` application via Margo path dependency) exercising cross-package higher-order functions (`map_by`, `filter_by`, `fold_left`), windowing, batching, and polymorphic accumulation. 16 unit tests passing natively across packages (8 in library, 8 in consumer).
+4. `tree_serialization`: Iterative tree traversal (BFS queue, DFS stack), metrics, and structural serializers (indented text, JSON lines) over 3 concrete tree types (`OrgNode`, `DocNode`, `CategoryNode`) via structural `TreeNode` trait without recursion. 7 unit tests passing natively and in Fast Debug; 6,976 execution trace events emitted.
+
+Validation:
+- All 51 unit tests passed natively across all workloads (18 + 10 + 8 + 8 + 7 = 51 green).
+- All 4 executables ran cleanly with 100% output correctness.
+- Fast Debug executed with 100% bit-for-bit parity across workloads without callable parameter locals.
+- 13 new findings (SWARM-043 through SWARM-055) were isolated, categorized, and recorded in `examples/swarm/FINDINGS.md` with minimal reproducers, with 5 findings independently reproduced by multiple subagents.
+
 ## Phase 15.11 — Multi-Domain Swarm Torture-Testing — COMPLETE
 
 Phase 15.11 executed a 5-subagent swarm torture-testing Moss v0.1 multi-domain
