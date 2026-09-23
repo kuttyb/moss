@@ -2,6 +2,30 @@
 
 Updated: 2026-09-22
 
+## Phase 15.6 — Multi-Package Build Planner Dogfood
+
+Completed Phase 15.6 multi-package dogfood experiment in `projects/build_planner/`:
+- `graphlib`: Validated and strengthened with 12 unit tests covering empty graph, single/duplicate/independent tasks, linear/diamond dependency chains, disconnected components, missing dependency endpoints, total/category costs, multiple ready tasks, topological constraints, and cycle detection. Documented `empty_slots() = 32` representation. All 12 tests pass under Margo.
+- `planner`: Implemented multi-module source architecture across `policy.moss`, `service.moss`, and `main.moss`, consuming `graphlib` through Margo path dependency:
+  - Consumes exported concrete types (`model.Task`, `model.Graph`, `model.PlanSummary`) and typed functions.
+  - Implements two synchronous domains (`PlannerDomain` -> `ReporterDomain`) with static routing in `main` composition prefix, nested messaging, and imported `model.PlanSummary` payload.
+  - Implements eager functional pipelines in `service.compute_cost_metrics` utilizing `filter`, `sum`, `count`, `map`, `all`, and `any`.
+  - Exercises structural traits via compile-time duck typing (`policy.Scorable` satisfied by both `service.TaskItem` and `policy.Milestone`).
+  - Added 7 comprehensive planner tests in `tests/test_planner.moss`. All 7 pass under Margo.
+- Compiler & backend defect repairs in `src/moss.cpp`:
+  1. Multi-module test projection: `module_program()` projected tests into library rlibs when `main_module.empty()`. Fixed by accepting `root_module`.
+  2. Member call rewriting: In `rewrite_module_program`, calls with `!statement.b.empty()` (e.g. `costs.push(c)`) improperly prefixed receiver variable names (`service__costs`). Fixed by checking `statement.b.empty()` and correctly rewriting imported module calls.
+  3. Builtin and pipeline preservation: Prevented qualification of functional stages (`filter`, `map`, `sum`, etc.) and builtins (`Vector`, `Queue`, `Map`, `Some`, `sqrt`) with module names.
+  4. Double module prefix guard: Guarded token rewriting with `token.find("__") == string::npos`.
+  5. Return statement type check: Added `check_expression` to `Stmt::Kind::Return` in `walk_type_environment`.
+  6. Borrowed parameter return value: Emitted `.clone()` / `.__moss_value()` for borrowed object parameters in return expressions.
+  7. Foreign object view access: Guarded `gen_object_access` in `Generator::generate` to skip foreign objects whose defining module is not in `rust_dependencies_`.
+- Defect classifications and limitations:
+  1. Cross-package / cross-module generic structural dispatch into `moss-specializations.rs` is limited (tracked as known Phase 10.6F finding in `examples/projects/ledger/README.md`); concrete typed helpers used across packages.
+  2. `moss fmt` reports `FORMAT_PARSE_ERROR` on qualified parameter types in multi-module files because `validate_formatted_source` type-checks files in isolation.
+  3. Fast Debug cannot mix interpreted Moss with compiled Moss module dependencies (`FAST_DEBUG_NATIVE_DEPENDENCY`), requiring reachable source.
+- Completed validation: `make`; `margo build`, `margo run`, and `margo test` in both `graphlib` and `planner`; `tests/tooling/check_agent_skills.py ./moss`; `tests/tooling/check_agent_api.py ./moss`; `make examples`; `sh -n tests/run.sh`; `git diff --check`. Full test suite passes to known sandbox LLDB/DAP handshake skip.
+
 ## Dogfood compiler/interpreter repair batch
 
 Completed in the current working tree: SWARM-011 now also hoists proven-safe

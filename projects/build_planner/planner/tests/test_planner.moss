@@ -1,0 +1,57 @@
+import model
+import graph
+import algorithms
+import policy
+import service
+
+test "imported task construction":
+  t = model.make_task(42, 1, 100)
+  assertEqual(model.task_id(t), 42)
+  assertEqual(model.task_category(t), 1)
+  assertEqual(model.task_cost(t), 100)
+
+test "cross-package graph use":
+  g = service.build_sample_graph()
+  assertEqual(graph.graph_task_count(g), 4)
+  assertEqual(graph.graph_dependency_count(g), 4)
+  assertEqual(graph.graph_total_cost(g), 100)
+
+test "plan summary values":
+  g = service.build_sample_graph()
+  summary = service.calculate_plan(g)
+  assertEqual(model.summary_task_count(summary), 4)
+  assertEqual(model.summary_dependency_count(summary), 4)
+  assertEqual(model.summary_total_cost(summary), 100)
+  assertEqual(model.summary_ready_count(summary), 1)
+  assert(not model.summary_has_cycle(summary))
+
+test "structural trait conformance":
+  item = service.make_task_item(15)
+  milestone = policy.make_milestone(1, 5)
+  assertEqual(item.score(), 150)
+  assertEqual(milestone.score(), 100)
+
+test "pipeline metrics":
+  g = service.build_sample_graph()
+  metrics = service.compute_cost_metrics(g, 25)
+  assertEqual(metrics[0], 70)
+  assertEqual(metrics[1], 2)
+  assertEqual(metrics[2], 200)
+  assertEqual(metrics[3], 1)
+  assertEqual(metrics[4], 1)
+
+test "planner policy":
+  m = policy.make_milestone(10, 3)
+  assertEqual(policy.milestone_id(m), 10)
+  assertEqual(policy.milestone_bonus(m), 3)
+  assertEqual(m.score(), 60)
+
+test "imported return value ownership":
+  t0 = model.make_task(99, 1, 25)
+  t_returned = service.inspect_task_specialization(t0)
+  assertEqual(model.task_id(t_returned), 99)
+  assertEqual(model.task_cost(t_returned), 25)
+  g0 = graph.make_graph()
+  g1 = service.transfer_and_add(g0, t_returned)
+  assertEqual(graph.graph_task_count(g1), 1)
+  assert(graph.graph_contains_task(g1, 99))

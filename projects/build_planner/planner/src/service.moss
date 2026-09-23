@@ -1,0 +1,70 @@
+module service
+import model
+import graph
+import algorithms
+import policy
+
+export type TaskItem:
+  cost: Int
+
+  fn score() -> Int:
+    return cost * 10
+
+export fn make_task_item(cost: Int) -> TaskItem:
+  return TaskItem(cost: cost)
+
+export fn build_sample_graph() -> model.Graph:
+  g0 = graph.make_graph()
+  t1 = model.make_task(1, 1, 10)
+  t2 = model.make_task(2, 1, 20)
+  t3 = model.make_task(3, 2, 30)
+  t4 = model.make_task(4, 2, 40)
+  g1 = graph.graph_add_task(g0, t1)
+  g2 = graph.graph_add_task(g1, t2)
+  g3 = graph.graph_add_task(g2, t3)
+  g4 = graph.graph_add_task(g3, t4)
+  d1 = graph.graph_add_dependency(g4, 1, 2)
+  d2 = graph.graph_add_dependency(d1, 1, 3)
+  d3 = graph.graph_add_dependency(d2, 2, 4)
+  d4 = graph.graph_add_dependency(d3, 3, 4)
+  return d4
+
+export fn inspect_task_specialization(t: model.Task) -> model.Task:
+  return model.identity_task_typed(t)
+
+export fn transfer_and_add(g: model.Graph, t: model.Task) -> model.Graph:
+  return graph.graph_add_task(g, t)
+
+export fn compute_cost_metrics(g: model.Graph, threshold: Int) -> Vector[Int]:
+  var costs = Vector[Int]()
+  var i = 0
+  n = graph.graph_task_count(g)
+  while i < n:
+    c = model.graph_task_cost_val(g, i)
+    costs.push(c)
+    i = i + 1
+
+  high_cost_sum = costs |> filter(_ >= threshold) |> sum
+  high_cost_count = costs |> filter(_ >= threshold) |> count
+  doubled_sum = costs |> map(_ * 2) |> sum
+  all_positive = costs |> all(_ > 0)
+  has_large = costs |> any(_ >= 40)
+
+  var pos_flag = 0
+  if all_positive:
+    pos_flag = 1
+
+  var large_flag = 0
+  if has_large:
+    large_flag = 1
+
+  var results = Vector[Int]()
+  results.push(high_cost_sum)
+  results.push(high_cost_count)
+  results.push(doubled_sum)
+  results.push(pos_flag)
+  results.push(large_flag)
+  return results
+
+export fn calculate_plan(g: model.Graph) -> model.PlanSummary:
+  return algorithms.calculate_plan_summary(g)

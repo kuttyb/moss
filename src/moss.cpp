@@ -7885,6 +7885,7 @@ class Checker {
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
+        check_expression(statement.line, statement.a, current_env);
       }
     };
 
@@ -9366,6 +9367,17 @@ class Generator {
     for (const auto& entry : view_objects) {
       if (entry.second->fields.empty()) continue;
       bool owns = std::any_of(p_.objects.begin(), p_.objects.end(), [&](const auto& object) { return object.name == entry.first; });
+      if (!owns && p_.explicit_module) {
+        auto sep = entry.first.find("__");
+        if (sep != string::npos) {
+          string mod_name = entry.first.substr(0, sep);
+          if (std::find(rust_dependencies_.begin(), rust_dependencies_.end(), mod_name) == rust_dependencies_.end()) {
+            continue;
+          }
+        } else {
+          continue;
+        }
+      }
       gen_object_access(o, *entry.second, owns);
     }
     for (const auto& f : p_.functions) gen_function(o, f);
@@ -11799,10 +11811,22 @@ class Generator {
     if (f.result_expression) {
       source_comment(o, 4, f.result_line, *f.result_expression);
       auto plan = f.result_functional_pipeline_ids.find(functional_context);
-      o << "    " << expr(*f.result_expression, nullptr, locals, &types,
+      string rendered = expr(*f.result_expression, nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
-                                ? 0 : plan->second)
-        << "\n";
+                                ? 0 : plan->second);
+      if (view_object_type(return_type)) {
+        string expr_trimmed = trim(*f.result_expression);
+        auto param_it = std::find_if(f.params.begin(), f.params.end(),
+                                     [&](const Param& p) { return p.name == expr_trimmed; });
+        if (param_it != f.params.end()) {
+          size_t p_idx = std::distance(f.params.begin(), param_it);
+          if (function_effect(f, p_idx) != Effect::Consume) {
+            if (view) rendered = expr_trimmed + ".__moss_value()";
+            else rendered = "(" + rendered + ").clone()";
+          }
+        }
+      }
+      o << "    " << rendered << "\n";
     }
     o << "}\n\n";
     tooling_end(o, 0, semantic_identity);
@@ -12719,12 +12743,18 @@ class Generator {
           while (i < ss.size() && ss[i].indent >= level) ++i;
           break;
         case Stmt::Kind::Return:
-          if (in_function && !s.a.empty())
-            o << indent(level) << "return "
-              << expr(s.a, d, locals, &types,
+          if (in_function && !s.a.empty()) {
+            string rendered = expr(s.a, d, locals, &types,
                       statement_functional_pipeline_id(
-                          s, functional_context, 0))
-              << ";\n";
+                          s, functional_context, 0));
+            string expr_trimmed = trim(s.a);
+            if (view_parameters_.count(expr_trimmed)) {
+              rendered = expr_trimmed + ".__moss_value()";
+            } else if (types.count(expr_trimmed) && view_object_type(types.at(expr_trimmed))) {
+              rendered = "(" + rendered + ").clone()";
+            }
+            o << indent(level) << "return " << rendered << ";\n";
+          }
           else
             o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
           ++i;
@@ -16183,10 +16213,13 @@ static string rewrite_module_expression(
       i = end;
       continue;
     }
-    // Test assertions are compiler-recognized builtins, never module-local
-    // functions. Keeping their source spelling also lets explicit-module test
-    // targets share the normal assertion checker and Rust lowering.
-    if (token == "assert" || token == "assertEqual") {
+    // Test assertions and functional pipeline stages are compiler-recognized builtins,
+    // never module-local functions. Keeping their source spelling also lets explicit-module
+    // test targets and functional pipelines share the normal checker and Rust lowering.
+    if (token == "assert" || token == "assertEqual" ||
+        functional_stage_kind(token).has_value() ||
+        token == "Map" || token == "Queue" || token == "Vector" ||
+        token == "Some" || token == "sqrt") {
       result += token;
       i = end;
       continue;
@@ -16217,7 +16250,8 @@ static string rewrite_module_expression(
     size_t before = i;
     while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
     bool member = before > 0 && expression[before - 1] == '.';
-    if (!member && (functions.count(token) || types.count(token) ||
+    if (!member && token.find("__") == string::npos &&
+        (functions.count(token) || types.count(token) ||
          (after < expression.size() && expression[after] == '(' &&
           plain_identifier(token))) &&
         after < expression.size() && expression[after] == '(')
@@ -16244,11 +16278,21 @@ static void rewrite_module_program(
   };
   auto body = [&](vector<Stmt>& statements) {
     for (auto& statement : statements) {
-      if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
+      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+        auto imported = public_exports.find(statement.a);
+        if (imported != public_exports.end() && imported->second.count(statement.b)) {
+          statement.a = module_symbol(statement.a, statement.b);
+          statement.b.clear();
+        }
+      } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
         string callee = trim(statement.a);
         if (callee.find('.') == string::npos && plain_identifier(callee) &&
             callee != "assert" && callee != "assertEqual" &&
-            !starts_with(callee, module + "__"))
+            !functional_stage_kind(callee).has_value() &&
+            callee != "Map" && callee != "Queue" && callee != "Vector" &&
+            callee != "Some" && callee != "sqrt" &&
+            !starts_with(callee, module + "__") &&
+            callee.find("__") == string::npos)
           statement.a = module_symbol(module, callee);
         else {
           string rewritten = expression(callee + "()");
@@ -17439,7 +17483,8 @@ static bool belongs_to_module(const string& qualified, const string& module) {
 // crate per Moss module.  It intentionally copies no declarations from an
 // imported module; imported names remain Rust crate references emitted by the
 // module generator.
-static Program module_program(const Program& whole, const string& module) {
+static Program module_program(const Program& whole, const string& module,
+                              const string& root_module = "") {
   Program result;
   result.module_name = module;
   result.explicit_module = true;
@@ -17471,11 +17516,12 @@ static Program module_program(const Program& whole, const string& module) {
   for (const auto& domain : whole.domains)
     if (whole.main_module == module || belongs_to_module(domain.name, module)) result.domains.push_back(domain);
   if (whole.main && whole.main_module == module) result.main = whole.main;
+  string target_module = !root_module.empty() ? root_module : whole.main_module;
   for (const auto& test : whole.tests)
-    if (whole.main_module.empty() || whole.main_module == module)
+    if (!target_module.empty() && target_module == module)
       result.tests.push_back(test);
   for (const auto& benchmark : whole.benchmarks)
-    if (whole.main_module.empty() || whole.main_module == module)
+    if (!target_module.empty() && target_module == module)
       result.benchmarks.push_back(benchmark);
   // Functional plans are compiler-owned IR referenced by statements.  They
   // are cheap metadata and retaining the complete plan avoids re-analysis or
@@ -18072,7 +18118,7 @@ static NativeArtifact compile_native_artifact(
       // module-named contract; this is ordinary Rust crate layout.
       module_rlib[module] = directory /
           ("lib" + tooling_name(module) + ".rlib");
-      Program projected = module_program(unit.program, module);
+      Program projected = module_program(unit.program, module, root_module);
       OptimizationPlan projected_plan = module_plan(unit.plan, projected);
       vector<string> dependencies = module_dependencies(unit.program, module);
       // The final/root crate owns the graph-wide specialization crate.  A

@@ -1,0 +1,22 @@
+module policy
+import model
+
+export trait Scorable:
+  fn score() -> Int
+
+export type Milestone:
+  id: Int
+  bonus: Int
+
+  fn score() -> Int:
+    return bonus * 20
+
+export fn make_milestone(id: Int, bonus: Int) -> Milestone:
+  return Milestone(id: id, bonus: bonus)
+
+
+export fn milestone_id(m: Milestone) -> Int:
+  return m.id
+
+export fn milestone_bonus(m: Milestone) -> Int:
+  return m.bonus

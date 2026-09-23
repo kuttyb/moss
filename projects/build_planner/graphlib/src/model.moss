@@ -5,6 +5,9 @@ export type Task:
   category: Int
   cost: Int
 
+  fn score() -> Int:
+    return cost * 10
+
 export type Dependency:
   before: Int
   after: Int
@@ -17,11 +20,11 @@ export type PlanSummary:
   has_cycle: Bool
 
 export type Graph:
-  task_ids: Vector[Int]
-  task_categories: Vector[Int]
-  task_costs: Vector[Int]
-  dep_befores: Vector[Int]
-  dep_afters: Vector[Int]
+  task_ids: Vector [Int]
+  task_categories: Vector [Int]
+  task_costs: Vector [Int]
+  dep_befores: Vector [Int]
+  dep_afters: Vector [Int]
   task_count: Int
   dep_count: Int
 
@@ -34,7 +37,7 @@ export fn make_dependency(before: Int, after: Int) -> Dependency:
 export fn make_summary(task_count: Int, dependency_count: Int, total_cost: Int, ready_count: Int, has_cycle: Bool) -> PlanSummary:
   return PlanSummary(task_count: task_count, dependency_count: dependency_count, total_cost: total_cost, ready_count: ready_count, has_cycle: has_cycle)
 
-export fn make_graph_model(task_ids: Vector[Int], task_categories: Vector[Int], task_costs: Vector[Int], dep_befores: Vector[Int], dep_afters: Vector[Int], task_count: Int, dep_count: Int) -> Graph:
+export fn make_graph_model(task_ids: Vector [Int], task_categories: Vector [Int], task_costs: Vector [Int], dep_befores: Vector [Int], dep_afters: Vector [Int], task_count: Int, dep_count: Int) -> Graph:
   return Graph(task_ids: task_ids, task_categories: task_categories, task_costs: task_costs, dep_befores: dep_befores, dep_afters: dep_afters, task_count: task_count, dep_count: dep_count)
 
 export fn task_id(t: Task) -> Int:
@@ -70,6 +73,12 @@ export fn summary_has_cycle(s: PlanSummary) -> Bool:
 export fn score_entity(item: Task) -> Int:
   return item.cost * 10
 
+export fn identity_task(item):
+  return item
+
+export fn identity_task_typed(item: Task) -> Task:
+  return item
+
 export fn graph_task_count_val(g: Graph) -> Int:
   return g.task_count
 
@@ -77,16 +86,16 @@ export fn graph_dep_count_val(g: Graph) -> Int:
   return g.dep_count
 
 export fn graph_task_id_val(g: Graph, index: Int) -> Int:
-  return g.task_ids[index]
+  return g.task_ids [index]
 
 export fn graph_task_category_val(g: Graph, index: Int) -> Int:
-  return g.task_categories[index]
+  return g.task_categories [index]
 
 export fn graph_task_cost_val(g: Graph, index: Int) -> Int:
-  return g.task_costs[index]
+  return g.task_costs [index]
 
 export fn graph_dep_before_val(g: Graph, index: Int) -> Int:
-  return g.dep_befores[index]
+  return g.dep_befores [index]
 
 export fn graph_dep_after_val(g: Graph, index: Int) -> Int:
-  return g.dep_afters[index]
+  return g.dep_afters [index]

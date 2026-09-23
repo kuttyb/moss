@@ -1,0 +1,85 @@
+module app
+import model
+import graph
+import algorithms
+import policy
+import service
+
+domain ReporterDomain:
+  recorded_count = 0
+  last_total_cost = 0
+  last_task_count = 0
+  last_has_cycle = false
+
+  fn Record(summary: model.PlanSummary) -> Int:
+    recorded_count = recorded_count + 1
+    last_total_cost = model.summary_total_cost(summary)
+    last_task_count = model.summary_task_count(summary)
+    last_has_cycle = model.summary_has_cycle(summary)
+    reply recorded_count
+
+  fn GetRecordedCount() -> Int:
+    reply recorded_count
+
+  fn GetLastTotalCost() -> Int:
+    reply last_total_cost
+
+domain PlannerDomain:
+  planned_count = 0
+  domainroutes(reporter: ReporterDomain)
+
+  fn Plan(g: model.Graph) -> Int:
+    summary = service.calculate_plan(g)
+    planned_count = planned_count + 1
+    ack = message reporter.Record(summary)
+    reply ack
+
+  fn GetPlannedCount() -> Int:
+    reply planned_count
+
+fn main():
+  reporter = ReporterDomain()
+  planner = PlannerDomain(reporter: reporter)
+
+  g = service.build_sample_graph()
+  summary = service.calculate_plan(g)
+
+  ack = message planner.Plan(g)
+  reporter_count = message reporter.GetRecordedCount()
+  reporter_cost = message reporter.GetLastTotalCost()
+
+  # Structural trait verification: TaskItem and Milestone both satisfy policy.Scorable
+  sample_item = service.make_task_item(15)
+  sample_milestone = policy.make_milestone(1, 5)
+  item_score = sample_item.score()
+  milestone_score = sample_milestone.score()
+
+  # Pipeline metrics: threshold = 25
+  metrics = service.compute_cost_metrics(g, 25)
+  high_cost_sum = metrics[0]
+  high_cost_count = metrics[1]
+  doubled_sum = metrics[2]
+  pos_flag = metrics[3]
+  large_flag = metrics[4]
+
+  # Untyped cross-package function verification
+  sample_task = model.make_task(5, 1, 15)
+  id_task = service.inspect_task_specialization(sample_task)
+  id_cost = model.task_cost(id_task)
+
+  echo "Build Planner Status:"
+  echo "Task count:", model.summary_task_count(summary)
+  echo "Dependency count:", model.summary_dependency_count(summary)
+  echo "Total cost:", model.summary_total_cost(summary)
+  echo "Ready count:", model.summary_ready_count(summary)
+  echo "Has cycle:", model.summary_has_cycle(summary)
+  echo "Reporter received summary count:", reporter_count
+  echo "Reporter last cost:", reporter_cost
+  echo "Item score:", item_score
+  echo "Milestone score:", milestone_score
+  echo "High cost sum (>=25):", high_cost_sum
+  echo "High cost count (>=25):", high_cost_count
+  echo "Doubled cost sum:", doubled_sum
+  echo "All positive:", pos_flag
+  echo "Has large (>=40):", large_flag
+  echo "Specialized task cost:", id_cost
