@@ -52,6 +52,42 @@ the agent. The repository's adjacent `expected/` directories are for corpus
 maintenance and validator self-checks; they must remain outside the agent-visible
 workspace.
 
+Phase 22.2C uses `baseline.py` to stage and run the canonical baseline. Its fixed
+generic prompt is `prompt-wrapper.txt`; the task-specific paragraph is copied
+verbatim from `task.json`. Each task runs through a new ephemeral Codex process in
+its own mount namespace. The namespace replaces the repository path with a
+Git-free sanitized tree containing the starter under `task/`, the checked Moss and
+Margo tools, repository agent skills, and normal documentation. An explicitly
+empty `.git` mount prevents recovery through Git. Browser, plugin, memory, and
+multi-agent features are disabled, and generated shell commands use the
+network-disabled workspace sandbox.
+
+Before a canonical run, verify staging and namespace behavior:
+
+```sh
+python3 benchmarks/agent/baseline.py sanity
+python3 tests/tooling/check_agent_baseline.py ./moss
+```
+
+The canonical command records the frozen corpus/compiler commits and refuses to
+overwrite existing artifacts:
+
+```sh
+python3 benchmarks/agent/baseline.py run-all \
+  --corpus-commit <frozen-corpus-commit> \
+  --compiler-commit <compiler-commit>
+```
+
+The protocol defines a meaningful validation attempt as a direct `moss
+check|build|test|debug`, `moss run --interp`, or `margo build|test|run`
+invocation. Bootstrap and semantic queries are informational and do not increment
+attempts-to-green. The wrapper logs direct Moss/Margo commands, exit status,
+duration, and structured diagnostic codes without changing their output. Final
+pass/fail always comes from the benchmark validator outside the agent namespace.
+Canonical artifacts retain each prompt, final task tree, tool log, validator
+result, and compact manifest; agent event transcripts and generated build products
+remain disposable runtime data.
+
 Each execution occurs in a fresh copy below `tmp/agent-benchmark/`; compiler or
 Margo build output cannot modify the task corpus or the supplied work directory.
 Before validation, the runner compares the prepared tree to `starter/`. It reports
