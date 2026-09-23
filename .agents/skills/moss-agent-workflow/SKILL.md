@@ -43,6 +43,17 @@ create and maintain `FEEDBACK.jsonl` using
 `examples/swarm/<experiment>/FEEDBACK.jsonl`; one nonblank line is one complete
 JSON observation object.
 
+At experiment start, capture the repository baseline for provenance:
+
+```sh
+git rev-parse HEAD
+```
+
+Set `baseline_commit` in every observation to that 40-hex SHA. Reuse it for the
+whole experiment. Do not update it merely because a coordinator later links an
+observation to a SWARM finding; it records the compiler revision under which the
+observation was first established.
+
 Update feedback during the experiment. Preserve first-attempt natural failures
 before applying workarounds, then attach minimization and execution-matrix
 evidence to that observation. Do not wait until closeout to reconstruct findings

@@ -87,7 +87,7 @@ Because `a` and `b` are parameters, they lower to `&String` in Rust, which deref
 | **T3** | Trait method returning child node: `fn get_child(i: Int) -> TreeNode` | Omit return type annotation: `fn child_at(i: Int)` | Trait return types are checked nominally; Moss lacks `Self` or covariant trait returns | Missing language feature / intended rule | 3 |
 | **T4** | Direct indexed read from struct vector field: `return children[i]` | Indirection via `return make_owned(children[i])` | Direct extraction of struct field in method infers `CONSUME self`, causing use-after-consume in loops | Ownership / effect interaction | 4 |
 | **T5** | Generic vector of trait instances: `Vector[TreeNode]()` | Inferred collections (`Queue()`) or single-element seed (`[make_owned(root)]`) | Traits have no runtime representation or nominal backend type in Rust | Intentionally unsupported dynamic abstraction | 3 |
-| **T6** | Binary String concatenation: `line = indent + "- " + label` | `concat(a, b)` multi-statement helper | Moss lowers `+` to `(String) + (String)`, rejected by rustc | Native-lowering defect (SWARM-043) | 3 |
+| **T6** | Binary String concatenation: `line = indent + "- " + label` | `concat(a, b)` multi-statement helper | Moss lowers `+` to `(String) + (String)`, rejected by rustc | Native-lowering defect (SWARM-053) | 3 |
 | **T7** | Pipeline with callable parameter in Fast Debug: `items \|> filter(pred)` | Inlined loop logic in Fast Debug, or static lambda placeholder `_ >= 70` | Fast Debug fails to resolve function symbols passed as arguments | Fast Debug interpreter limitation (SWARM-048) | 2 |
 | **T8** | Loop condition with pipeline: `while (stack \|> count) > 0:` | Explicit length counter `stack_len` | Formatter rejects expressions beginning with `(`; pipeline inference in arithmetic | Formatter / syntax defect (SWARM-031, SWARM-032) | 2 |
 | **T9** | Escaped quotes in function argument: `concat(ind, "{\"label\": \"")` | Format strings without escaped quotes: `concat(ind, "{label: ")` | Fast Debug interpreter argument splitter misparses `\"` | Fast Debug interpreter parser defect | 2 |
@@ -128,7 +128,7 @@ All minimal reproducers are archived in `reproducers/`:
 
 ### REPRO-06: Binary String Concatenation Failure (`repro6_string_concat_native.moss`)
 - **Observed**: `s = s + " world"` passes `moss check` and runs in Fast Debug, but fails native compilation under rustc E0308 (`expected &str, found String`).
-- **Classification**: Native-lowering defect (SWARM-043). Moss lowers binary `+` to `(left) + (right)`, but Rust requires `String + &str`.
+- **Classification**: Native-lowering defect (SWARM-053). Moss lowers binary `+` to `(left) + (right)`, but Rust requires `String + &str`.
 - **Resolution**: Use `concat(a, b)` helper where arguments are parameters lowering to `&String`.
 
 ### REPRO-07: Fast Debug Function Argument Resolution (`repro7_fast_debug_function_argument.moss`)

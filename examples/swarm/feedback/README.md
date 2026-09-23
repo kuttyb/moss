@@ -56,10 +56,23 @@ validated defects may receive an ID, and rejected observations use
 `"confidence": "rejected"` with an explanatory note. Do not place several
 SWARM IDs in one observation unless there is no cleaner decomposition.
 
-All record keys are required so inventories have a predictable shape. Evidence,
-diagnostic, workaround, and notes fields may use `null` when inapplicable. The
-matrix is mandatory even for documentation/ergonomics observations; such records
-will usually contain mostly `not_applicable` values.
+All record keys are required so inventories have a predictable shape. The
+`natural_source`, `reproducer`, `diagnostic`, `workaround`, and `notes` fields
+may use `null` when inapplicable. The matrix is mandatory even for
+documentation/ergonomics observations; such records will usually contain mostly
+`not_applicable` values.
+
+The `baseline_commit` field is also required. Set it to the full 40-hex Git
+commit SHA of the repository revision against which the observations were first
+established. Obtain it at experiment start:
+
+```sh
+git rev-parse HEAD
+```
+
+Reuse that baseline for all observations produced in one experiment run. Do not
+change `baseline_commit` merely because a coordinator later links the observation
+to a SWARM finding; it records when, not how the observation was categorised.
 
 ```text
 Experiment begins

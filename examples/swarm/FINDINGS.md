@@ -6,13 +6,13 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 63
-- Open: 34
+- Distinct findings: 65
+- Open: 36
 - Fixed: 28
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
-(Counts updated on 2026-09-23 incorporating SWARM-043–055 from Static Polymorphism and SWARM-056–064 from Module & Package Boundary Torture; SWARM-016 was never allocated.)
+(Counts updated on 2026-09-23 incorporating SWARM-043–055 from Static Polymorphism, SWARM-056–064 from Module & Package Boundary Torture, and SWARM-065–066 from Expression/Control-Flow closeout cleanup; SWARM-016 was never allocated.)
 
 Completed swarm experiments:
 
@@ -1391,27 +1391,35 @@ initializer check does not consult the same facts. Agents cannot tell which
 answer to trust. The accepted program matches the documented intent ("pure
 helper calls are accepted"), so the `effects` output is the likelier defect.
 
-## SWARM-039 — Fast Debug cannot execute `test` blocks
+## SWARM-039 — No dedicated interpreted-only test runner mode
 
-- Status: Open
+- Status: Open (narrowed 2026-09-23; original "cannot execute test blocks" claim superseded)
 - Category: Tooling / Fast Debug coverage
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
 
-### Observed behavior
+### Original claim (superseded)
 
-`moss run --interp`, `moss debug`, and `margo debug` run only `main`.
-Bootstrap lists no interpreted test command, and `margo test` always builds
-natively. To check test parity in Fast Debug, both agents independently
-generated a scratch copy that rewrote each `test "name":` block as a plain
-function called from `main`.
+The original finding stated "Fast Debug cannot execute `test` blocks". That claim
+is no longer accurate: `margo debug` is a supported interpreted execution path listed
+in `moss agent bootstrap`. Test-bearing projects run cleanly under `margo test`
+(native) and their application logic executes under `margo debug` (interpreted). The
+Phase 15.12 swarms used `margo debug` and `margo debug --trace` for Fast Debug parity
+checks across all green workloads.
+
+### Remaining narrower gap
+
+There is no `margo test --interp` or `margo debug --tests` mode that interprets
+test blocks without invoking `rustc`. When a native lowering defect blocks `margo
+test`, there is no interpreted-only path to run those specific test blocks.
 
 ### Notes
 
-A `margo test --interp` (or `margo debug --tests`) mode would give test-level
-native/Fast Debug parity checks and a faster edit-test loop, especially while
-a native lowering defect (SWARM-031, SWARM-035) blocks `margo test`.
+A `margo test --interp` mode would give test-level native/Fast Debug parity checks
+and a faster edit-test loop when native lowering defects (e.g. SWARM-031, SWARM-035)
+block `margo test`. The original workaround — rewriting test blocks as plain functions
+called from `main` — remains functional but is not ergonomic.
 
 ## SWARM-040 — Failure/precondition mechanism for user code is undocumented
 
@@ -2467,3 +2475,120 @@ Rename the field to avoid Rust reserved keywords (e.g. `bx: Int`).
 ### Notes
 
 Non-boundary defect (occurs equally in single-file and multi-module programs). Related to SWARM-015 (type name collisions), but affects struct field names.
+
+---
+
+## SWARM-065 — Boolean pipeline (`filter |> any`) fails native lowering with invalid return type
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Expression Surface / Numerical Tool](expression_surface_2026/numerical_tool/)
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn has_large_shift(energies: Vector[Int]):
+  return energies |> filter(_ >= 100) |> any(_ > 0)
+
+fn main():
+  echo has_large_shift([1, 100])
+```
+
+Committed reproducer: `examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native/`.
+
+### Observed behavior
+
+`moss check` passes. Fast Debug (`moss run --interp`) executes correctly (outputs `true`).
+Native compilation fails with:
+
+```
+error: expected one of `!`, `(`, `+`, `::`, `<`, `where`, or `{`, found `:`
+  --> build/debug/boolean_pipeline_native_repro.rs:53:72
+   |
+53 | ...functional_result:has_large_shift {
+   |                     ^ expected one of 7 possible tokens
+```
+
+The generated Rust contains the invalid identifier `_functional_result:has_large_shift` as a
+return type annotation. The colon is not valid Rust in that position. This is a native lowering
+codegen defect: the pipeline stage name leaks into the generated Rust return type using an
+invalid name mangling scheme.
+
+### Workaround
+
+Assign the pipeline result to a local variable before returning, or restructure with a
+`while` loop. A multi-stage pipeline in a direct `return` statement triggers the defect;
+staging through a local is safe.
+
+### Notes
+
+Non-boundary defect: fails equally in single-file programs. Distinct from SWARM-046 (which is
+a synchronization invariant crash). The invalid `:` in `_functional_result:has_large_shift`
+suggests the stage/function name is being spliced into a Rust type position without proper
+hygiene. Confirmed by expression-surface swarm (Phase 15.12A) with minimal reproducer.
+
+---
+
+## SWARM-066 — `for i in range(...)` accepted by checker but native lowering loses induction binding
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Control Flow / Simulation Engine](control_flow_2026/simulation_engine/)
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn total(values: Vector[Int]) -> Int:
+  var result = 0
+  for index in range(0, values |> count):
+    result = result + values[index]
+  return result
+
+fn main():
+  echo total([3, 4])
+```
+
+Committed reproducer: `examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer/`.
+
+### Observed behavior
+
+`moss fmt` accepts the source. `moss check` passes. Fast Debug reports its documented
+limitation (`interpreter error: Fast Debug does not support for iteration yet`).
+
+Native compilation fails with:
+
+```
+error[E0425]: cannot find value `index` in this scope
+error[E0308]: mismatched types — expected `()`, found `i64`
+```
+
+The induction variable `index` is referenced in the generated Rust loop body but was never
+declared in the loop scope, and the loop result type is mismatched. The lowering of `for/range`
+induction binding and result accumulation is incorrect.
+
+### Classification distinction from SWARM-057
+
+SWARM-057 describes `for i in range(...)` causing `TYPE_INFERENCE_FAILED` specifically inside an
+explicit module scope (a module/package-boundary defect). SWARM-066 is a different failure:
+the same construct is accepted by the checker in a plain single-file program but the native
+lowering backend emits invalid Rust. Distinct compiler phases, distinct failure signatures.
+
+### Workaround
+
+Replace `for index in range(start, end):` with an explicit `while` loop:
+
+```moss
+var index = 0
+while index < (values |> count):
+  result = result + values[index]
+  index = index + 1
+```
+
+### Notes
+
+Non-boundary defect: fails in a single-file program without any module structure. Formatter and
+checker fully accept the source, making this a native-lowering-only parity gap. The control-flow
+swarm (Phase 15.12B) used `while` loops as the bounded workaround; `for`/`range` in any
+non-trivial function body is currently unreliable for native compilation.

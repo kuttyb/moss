@@ -75,17 +75,12 @@ requirement for a pipeline in a comparison condition (`x < (values |> count)`).
 The workflow's nested negative literal return is a formatter-only extension of
 existing SWARM-033.
 
-Unallocated control-flow finding: an indexed `for i in range(...)` loop is
-accepted unchanged by formatter and checker but native lowering loses the
-induction binding and emits a unit/result mismatch; Fast Debug separately
-reports its documented lack of `for` support. The full simulation and minimal
-reproducer are in
+Control-flow finding: an indexed `for i in range(...)` loop is accepted unchanged
+by formatter and checker but native lowering loses the induction binding and emits
+a unit/result mismatch; Fast Debug separately reports its documented lack of `for`
+support. Allocated as **SWARM-066** (see `examples/swarm/FINDINGS.md`). The full
+simulation and minimal reproducer are in
 `examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer/`.
-This is a native-lowering parity defect; no compiler source or global regression
-was changed during the swarm. The preceding expression-surface native pipeline
-finding is likewise unallocated here. This status text predates the rebased
-SWARM-043–055 ledger allocations and its two proposed IDs must be reconciled in
-a dedicated ledger follow-up rather than reused.
 
 ### Phase 15.12A — Expression Torture — COMPLETE (2026-09-23)
 
@@ -105,14 +100,13 @@ evidence. Independent overlap was confirmed for SWARM-031/032 (parenthesized
 expression native/formatter faults) and a Fast Debug regression/expanded
 reproducer for fixed SWARM-025 in a `map`-reached sibling method.
 
-A distinct confirmed parity defect remains unmodified: a checked and
-Fast-Debug-valid `Vector[Int] |> filter(_) |> any(_)` function fails native
-lowering with the invalid generated return type
-`_functional_result:has_large_shift`. The full application and smallest package
-reproducer live at
+A distinct confirmed parity defect: a checked and Fast-Debug-valid
+`Vector[Int] |> filter(_) |> any(_)` function fails native lowering with the
+invalid generated return type `_functional_result:has_large_shift`. Allocated as
+**SWARM-065** (see `examples/swarm/FINDINGS.md`). The full application and smallest
+package reproducer live at
 `examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native/`.
-It remains an unallocated native-lowering finding; no compiler source or global
-test was changed in this swarm. All three agents also independently encountered rejected indented
+All three agents also independently encountered rejected indented
 multiline literals/constructors; bootstrap only documents one-line literals, so
 this is retained as an ergonomic/diagnostic observation rather than a confirmed
 language defect.

@@ -57,9 +57,9 @@ Coordinator revalidation confirmed all three facts:
    invalid return type `_functional_result:has_large_shift`.
 
 This is a distinct, confirmed native-lowering parity defect, not unsupported
-Moss syntax. The final numerical
-program uses `filter |> sum` followed by an ordinary comparison as a bounded
-workaround. No existing SWARM entry matched this failure signature.
+Moss syntax. Allocated as **SWARM-065** in the canonical ledger
+(`examples/swarm/FINDINGS.md`). The final numerical program uses
+`filter |> sum` followed by an ordinary comparison as a bounded workaround.
 
 ## Answer to the swarm question
 

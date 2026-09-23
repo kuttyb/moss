@@ -28,5 +28,6 @@
   },
   "workaround": "Fictional bounded workaround for template use only.",
   "existing_swarm": null,
-  "notes": "Replace every fictional value when copying this template."
+  "notes": "Replace every fictional value when copying this template.",
+  "baseline_commit": "0123456789abcdef0123456789abcdef01234567"
 }

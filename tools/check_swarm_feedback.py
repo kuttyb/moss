@@ -35,6 +35,7 @@ REQUIRED_FIELDS = (
     "observation_id", "phase", "agent", "workload", "summary", "classification",
     "severity", "confidence", "discovered_naturally", "natural_source", "reproducer",
     "expected", "actual", "matrix", "diagnostic", "workaround", "existing_swarm", "notes",
+    "baseline_commit",
 )
 
 
@@ -62,9 +63,9 @@ def validate_path(value: Any, field: str, path: Path, line: int,
         return [report(path, line, observation_id,
                        f"{field} must be a nonempty repository-relative path or null", root)]
     candidate = Path(value)
-    if candidate.is_absolute() or ".." in candidate.parts or candidate.parts[:1] == ("tmp",):
+    if candidate.is_absolute() or ".." in candidate.parts or "tmp" in candidate.parts:
         return [report(path, line, observation_id,
-                       f"{field} must be a repository-relative path outside tmp/", root)]
+                       f"{field} must be a repository-relative path with no tmp/ component: {value}", root)]
     if not (root / candidate).exists():
         return [report(path, line, observation_id,
                        f"{field} path does not exist: {value}", root)]
@@ -110,6 +111,10 @@ def validate_observation(observation: Any, path: Path, line: int, root: Path,
         if observation.get(field) is not None and not isinstance(observation.get(field), str):
             errors.append(report(path, line, observation_id,
                                  f"{field} must be a string or null", root))
+    baseline = observation.get("baseline_commit")
+    if not isinstance(baseline, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", baseline):
+        errors.append(report(path, line, observation_id,
+                             "baseline_commit must be a 40-hex Git commit SHA", root))
     diagnostic = observation.get("diagnostic")
     if diagnostic is not None:
         if not isinstance(diagnostic, dict):
@@ -229,6 +234,7 @@ def self_test() -> None:
             "expected": "accepted", "actual": "accepted",
             "matrix": {field: "not_tested" for field in MATRIX_FIELDS}, "diagnostic": None,
             "workaround": None, "existing_swarm": None, "notes": None,
+            "baseline_commit": "abcdef1234567890abcdef1234567890abcdef12",
         }
         feedback = experiment / "FEEDBACK.jsonl"
 
@@ -251,6 +257,20 @@ def self_test() -> None:
         missing_file = copy.deepcopy(record)
         missing_file["reproducer"] = "examples/swarm/example/repros/missing.moss"
         check([missing_file], "reproducer path does not exist")
+        invalid_sha_short = copy.deepcopy(record)
+        invalid_sha_short["baseline_commit"] = "abc123"
+        check([invalid_sha_short], "baseline_commit must be a 40-hex Git commit SHA")
+        invalid_sha_chars = copy.deepcopy(record)
+        invalid_sha_chars["baseline_commit"] = "g" * 40
+        check([invalid_sha_chars], "baseline_commit must be a 40-hex Git commit SHA")
+        # Reproducer pointing into a nested tmp/ directory must be rejected.
+        nested_tmp = experiment / "data" / "tmp"
+        nested_tmp.mkdir(parents=True, exist_ok=True)
+        nested_tmp_file = nested_tmp / "repro.moss"
+        nested_tmp_file.write_text("# evidence\n", encoding="utf-8")
+        tmp_path_record = copy.deepcopy(record)
+        tmp_path_record["reproducer"] = "examples/swarm/example/data/tmp/repro.moss"
+        check([tmp_path_record], "tmp/ component")
 
 
 def main() -> int:

@@ -57,11 +57,10 @@ Coordinator revalidation found:
    iteration support.
 
 The Fast Debug limitation is an existing coverage boundary, but the
-checker-accepted native failure is a distinct native-lowering defect. Its
-identifier must be allocated after the rebased ledger's current SWARM-055
-entry; the preceding expression-surface swarm also has an unallocated native
-pipeline finding. The
-application's `while` rewrite is a bounded workaround, not a claim that `for`
+checker-accepted native failure is a distinct native-lowering defect. Allocated
+as **SWARM-066** in the ledger (`examples/swarm/FINDINGS.md`). The
+expression-surface swarm's boolean pipeline failure is allocated as **SWARM-065**.
+The application's `while` rewrite is a bounded workaround, not a claim that `for`
 is unsupported Moss source.
 
 ## Answer to the swarm question
