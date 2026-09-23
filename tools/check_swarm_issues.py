@@ -150,9 +150,11 @@ def validate_record(record: Any, path: Path, line: int, root: Path) -> list[str]
                                  f"invalid related issue reference {related_id!r}", root))
 
     if isinstance(raw_issue_id, str) and raw_issue_id.startswith("SWARM-"):
-        if raw_issue_id not in swarm_ids:
-            errors.append(report(path, line, issue_id,
-                                 "SWARM issue_id must appear in swarm_ids", root))
+        if swarm_ids != [raw_issue_id]:
+            errors.append(report(
+                path, line, issue_id,
+                "SWARM issue record must use swarm_ids containing exactly its own issue_id",
+                root))
         if record.get("source_kind") != "swarm":
             errors.append(report(path, line, issue_id,
                                  "SWARM issue_id must use source_kind swarm", root))
@@ -231,8 +233,8 @@ def validate_repository(root: Path) -> list[str]:
 
     finding_ids, open_finding_ids = finding_ids_and_open_ids(findings)
     records: list[dict[str, Any]] = []
-    records_by_swarm_id: dict[str, list[str]] = {}
     seen: dict[str, tuple[Path, int]] = {}
+    issue_id_counts: dict[str, int] = {}
     for line_number, raw in enumerate(raw_lines, 1):
         if not raw.strip():
             continue
@@ -247,6 +249,7 @@ def validate_repository(root: Path) -> list[str]:
             continue
         issue_id = record.get("issue_id")
         if isinstance(issue_id, str):
+            issue_id_counts[issue_id] = issue_id_counts.get(issue_id, 0) + 1
             if issue_id in seen:
                 first_path, first_line = seen[issue_id]
                 errors.append(report(
@@ -255,11 +258,6 @@ def validate_repository(root: Path) -> list[str]:
             else:
                 seen[issue_id] = (issues_path, line_number)
             records.append(record)
-            swarm_ids = record.get("swarm_ids")
-            if isinstance(swarm_ids, list):
-                for swarm_id in swarm_ids:
-                    if isinstance(swarm_id, str) and SWARM_ID_RE.fullmatch(swarm_id):
-                        records_by_swarm_id.setdefault(swarm_id, []).append(issue_id)
 
     express_numbers: list[int] = []
     for record in records:
@@ -292,14 +290,14 @@ def validate_repository(root: Path) -> list[str]:
         errors.append(f"{ISSUES_PATH}: EXPRESS IDs must be unique and monotonic")
 
     for swarm_id in sorted(open_finding_ids):
-        issue_ids = records_by_swarm_id.get(swarm_id, [])
-        if not issue_ids:
+        count = issue_id_counts.get(swarm_id, 0)
+        if count == 0:
             errors.append(
-                f"{FINDINGS_PATH}: {swarm_id} is Open but has no issue record in {ISSUES_PATH}")
-        elif len(issue_ids) > 1:
+                f"{FINDINGS_PATH}: {swarm_id} is Open but has no issue_id record in {ISSUES_PATH}")
+        elif count > 1:
             errors.append(
-                f"{FINDINGS_PATH}: {swarm_id} is Open but has multiple issue records "
-                f"in {ISSUES_PATH}: {', '.join(issue_ids)}")
+                f"{FINDINGS_PATH}: {swarm_id} is Open but has multiple issue_id records "
+                f"in {ISSUES_PATH}")
     return errors
 
 
@@ -349,14 +347,18 @@ def self_test() -> None:
         bad_reference = copy.deepcopy(valid)
         bad_reference["swarm_ids"] = ["SWARM-999"]
         check([bad_reference], "SWARM-999 does not exist")
-        missing_open = copy.deepcopy(valid)
+
+        # An open SWARM must have its own canonical issue_id record. Merely naming
+        # that SWARM in another record's swarm_ids must not satisfy completeness.
         (root / FINDINGS_PATH).write_text(
             "## SWARM-001 — test finding\n\n"
             "- Status: Open\n\n"
             "## SWARM-002 — missing classification\n\n"
             "- Status: Open\n",
             encoding="utf-8")
-        check([missing_open], "SWARM-002 is Open but has no issue record")
+        wrong_cover = copy.deepcopy(valid)
+        wrong_cover["swarm_ids"] = ["SWARM-001", "SWARM-002"]
+        check([wrong_cover], "SWARM-002 is Open but has no issue_id record")
 
 
 def main() -> int:
