@@ -18,6 +18,17 @@ repository feedback scan, Python compilation, and `git diff --check`. No Moss
 compiler source or semantics changed. This establishes the forward-looking
 contract only; historical swarm reports were deliberately not migrated.
 
+## Canonical corrective issue classification database — COMPLETE (2026-09-23)
+
+`examples/swarm/ISSUES.jsonl` now classifies outstanding discoveries above the
+raw feedback and detailed SWARM findings layers into False Acceptance,
+Ambiguous Spec, Lost Semantics, and Missing Expressiveness. Deliberate v0.1
+non-goals—dynamic dispatch/runtime trait objects, escaping closures or general
+runtime function values, and recursion—are documented as intentional language
+differences, not expressiveness requests. Recoverable error handling is tracked
+as deferred to **Phase 21 — Error Propagation & Supervision**. No compiler issue
+is marked fixed and no Moss behavior was changed.
+
 ## Phase 15.12 — Deep Dogfooding & Torture-Testing Umbrella — COMPLETE (2026-09-23)
 
 Phase 15.12 executed four comprehensive sub-swarms torture-testing Moss v0.1 core semantics, boundaries, lowering, and tooling prior to corrective compiler fixes. Corrective compiler implementation remains explicitly pending; Phase 15.12 is discovery and dogfooding.

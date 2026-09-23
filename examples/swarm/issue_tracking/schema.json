@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Moss canonical dogfood issue",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_id",
+    "tracking_scope",
+    "category",
+    "title",
+    "status",
+    "area",
+    "swarm_ids",
+    "source_kind",
+    "disposition",
+    "target_phase",
+    "related_issue_ids",
+    "notes"
+  ],
+  "properties": {
+    "issue_id": {"type": "string", "pattern": "^(SWARM|EXPRESS)-[0-9]+$"},
+    "tracking_scope": {"type": "string", "enum": ["semantic", "tooling"]},
+    "category": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "false_acceptance",
+            "ambiguous_spec",
+            "lost_semantics",
+            "missing_expressiveness"
+          ]
+        },
+        {"type": "null"}
+      ]
+    },
+    "title": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["open", "decision_needed", "deferred", "fixed", "rejected"]
+    },
+    "area": {"type": "string", "minLength": 1},
+    "swarm_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^SWARM-[0-9]+$"},
+      "uniqueItems": true
+    },
+    "source_kind": {"type": "string", "enum": ["swarm", "cross_swarm"]},
+    "disposition": {
+      "type": "string",
+      "enum": [
+        "reject_earlier",
+        "specify_then_fix",
+        "preserve_semantics",
+        "design_needed",
+        "defer",
+        "tooling_only"
+      ]
+    },
+    "target_phase": {"type": ["string", "null"]},
+    "related_issue_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^(SWARM|EXPRESS)-[0-9]+$"},
+      "uniqueItems": true
+    },
+    "notes": {"type": "string", "minLength": 1}
+  }
+}
