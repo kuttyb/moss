@@ -1,13 +1,15 @@
 # Moss current status
 
-Updated: 2026-09-22
+Updated: 2026-09-23
 
 ## Phase 22.2 — Agent Benchmark Suite
 
 Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's
-runner and stable result schema are complete; and Phase 22.2C's canonical
-pre-Phase-22.1 fresh-agent baseline is complete. Phase 22.2D's aggregate analysis
-and report remain pending, so Phase 22.2 as a whole is not yet closed.
+runner and stable result schema are complete; Phase 22.2C's canonical
+pre-Phase-22.1 fresh-agent baseline is complete; and Phase 22.2D's deterministic
+aggregate analysis and evidence report are complete. Phase 22.2 as a whole is
+complete. The next phase is Phase 22.1 — Agent-Teaching Diagnostics, driven by
+the diagnostic and workflow evidence in the Phase 22.2D report.
 
 The canonical baseline is stored under `benchmarks/agent/baselines/pre-22.1/`.
 It uses protocol `phase-22.2c-v1`, corpus commit
@@ -53,6 +55,13 @@ passed the benchmark and all subsequent compiler, Margo, module, Fast Debug,
 tooling, and editor checks until the already documented unrelated Phase 10.6F
 native `&String == String` failure. No compiler, language, lowering, interpreter,
 or diagnostic behavior changed.
+
+Phase 22.2D closeout additionally passed deterministic aggregate/report checking,
+the focused reconciliation and failure-separation regression (including prompt-hash
+drift, missing/duplicate runs, infrastructure failures, and no-green statistics),
+the agent benchmark/baseline/API/skill checks, Python and shell syntax checks,
+`make examples`, and Git whitespace checks. The canonical AB001–AB030 raw artifacts
+remain unchanged from the Phase 22.2C commit; no baseline task was rerun.
 
 Benchmark tasks must not be changed merely because future diagnostics or agent
 tooling improve. Any objectively necessary corpus correction must retain stable

@@ -100,6 +100,12 @@ def main() -> int:
     shutil.copytree(duplicate / "AB030", duplicate / "AB999_duplicate")
     expect_error(analysis, duplicate, "duplicate canonical task ID AB030")
 
+    prompt_drift = fixture("prompt-drift")
+    rewrite(prompt_drift / "AB030" / "manifest.json", lambda value: value.update({
+        "task_prompt_sha256": "0" * 64,
+    }))
+    expect_error(analysis, prompt_drift, "task prompt hash mismatch for AB030")
+
     infrastructure = fixture("infrastructure")
     rewrite(infrastructure / "AB030" / "manifest.json", lambda value: value.update({
         "state": "infrastructure_failure",

@@ -258,6 +258,12 @@ def load_runs(baseline_root: Path, tasks: dict[str, dict[str, Any]]) -> tuple[di
             raise AnalysisError(f"corpus commit mismatch for {task_id}")
         if manifest.get("compiler_commit") != protocol.get("compiler_commit"):
             raise AnalysisError(f"compiler commit mismatch for {task_id}")
+        prompt = tasks[task_id].get("prompt")
+        if not isinstance(prompt, str):
+            raise AnalysisError(f"task metadata has no prompt: {task_id}")
+        prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        if manifest.get("task_prompt_sha256") != prompt_sha256:
+            raise AnalysisError(f"task prompt hash mismatch for {task_id}")
         if state != "infrastructure_failure" and result is None:
             raise AnalysisError(f"completed task has no authoritative result: {task_id}")
         if state != "infrastructure_failure":
