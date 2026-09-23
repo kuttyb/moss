@@ -2,18 +2,19 @@
 
 Updated: 2026-09-22
 
-## Phase 15.7 — Multi-Module Formatter Semantic Convergence
+## Phase 15.7 — Multi-Module Formatter Semantic Convergence — COMPLETE
 
-Completed Phase 15.7 multi-module formatter semantic convergence:
+Closed Phase 15.7 multi-module formatter semantic convergence:
 - Authoritative Project/Module Semantic Convergence:
-  - Eliminated isolated semantic checking for files that belong to a Moss project; legacy merged-namespace approximations (`merge_project_program` in `run_project_format` and `analyze_project_texts`) are removed.
-  - Factored authoritative project analysis so semantic validation is cleanly separated from optimizer and backend code generation: `check_project_sources()` performs parsing (with in-memory `source_overrides`), module/package resolution, export validation, namespace rewriting, and `Checker` execution. Formatter validation stops cleanly after `Checker`, ensuring a valid Moss project never fails `moss fmt` due to an optimization or backend code-generation defect. Compilation flows continue through `FunctionalOptimizer` and `Generator` via `analyze_project_sources()`.
+  - Eliminated isolated semantic checking for project files in the formatter (`run_project_format`): the formatter no longer uses a standalone merged-namespace approximation. `merge_project_program` is retained inside `check_project_sources()` where it belongs for all consumers. `analyze_project_texts()` is retained for `moss edit`, which requires full codegen.
+  - Factored authoritative project analysis so semantic validation is cleanly separated from optimizer and backend code generation: `check_project_sources()` performs parsing (with in-memory `source_overrides`), module/package resolution, compiled provider (`.mossi`) loading, export validation, namespace rewriting, declaration filtering, and `Checker` execution. Formatter validation stops cleanly after `Checker`, ensuring a valid Moss project never fails `moss fmt` due to an optimization or backend code-generation defect. Normal compilation flows continue through `FunctionalOptimizer` and `Generator` via `analyze_project_sources()`.
   - Project files use authoritative project/module resolution across `Application`, `Tests`, and `Benchmarks` target generation modes.
   - Selected-file formatting (`moss fmt path/to/file.moss`) resolves the containing project context and manifest via `analyze_source_context(file)`, validating the file against its full module dependencies and qualified types (e.g. `model.Graph`), while scoping writes strictly to the selected file without mutating sibling files.
-  - Genuine standalone files outside any project context continue to use standalone parse/check validation (`validate_formatted_source`).
+  - Genuine standalone files outside any project context continue to use standalone parse/check validation (`validate_formatted_source`); isolated checking is preserved for truly standalone files.
 - Validation-Transactional Formatting:
   - Formatting is validation-transactional: all proposed source is formatted in memory and validated before any writes occur; validation failures cause zero writes, leaving every target unchanged on disk.
   - Sibling files in a selected-file formatting run remain byte-for-byte untouched when validation fails or succeeds.
+  - Multi-file filesystem writes in a whole-project format are not claimed to be filesystem-rollback-atomic (the OS does not guarantee atomic multi-file commit); the transactional invariant is that no write occurs if validation fails.
 - Directory and CLI ergonomics:
   - Added support for passing project directories directly to `moss fmt <dir>` and `moss fmt <dir> --check`.
 - Regression Coverage:
@@ -21,16 +22,17 @@ Completed Phase 15.7 multi-module formatter semantic convergence:
     1. Selected-file formatting and check with imported qualified types (`model.Item`).
     2. Verification that sibling modules are not touched when formatting a selected file.
     3. Whole-project formatting, idempotency, and `--check`.
-    4. Whole-project and isolated selected-file transactional failure guarantees (verifying byte-for-byte zero disk writes and isolated sibling validity).
-    5. Proof that formatter semantic validation executes `Checker` stages (`effects`, `synchronization_plan`) while demonstrably bypassing `FunctionalOptimizer` and `Generator` (`rust_generation`).
+    4. Whole-project and isolated selected-file transactional failure guarantees (verifying byte-for-byte zero disk writes and isolated sibling validity). The `pkg_selected_transactional` fixture is fully isolated: the sibling file is semantically valid on its own; only the selected file contains the type error, so failure cannot be attributed to the sibling.
+    5. Proof that formatter semantic validation executes `Checker` stages (`effects`, `synchronization_plan`) while demonstrably bypassing `FunctionalOptimizer` and `Generator` (`rust_generation`), via `MOSS_PROFILE_COMPILER=1` opt-in developer stage timing (emits to stderr only when the env var is set; no JSON or semantic change).
     6. Clean resolution and compilation checks.
   - Registered the regression in `tests/run.sh`.
 - Completed Validation:
   - `./moss fmt projects/build_planner/graphlib/src/graph.moss --check` (exits 0).
   - `./moss fmt projects/build_planner/graphlib --check` (exits 0).
   - Regressions: `check_phase15_7_formatter_convergence.py`, `check_formatter_indexing.py`, `check_swarm_003_formatter.py`.
-  - Margo build/test/run for `graphlib` (12 tests) and `planner` (7 tests).
+  - Margo build/test/run for `graphlib` (12/12 tests) and `planner` (7/7 tests, deterministic run output).
   - `check_agent_skills.py`, `check_agent_api.py`, `make examples`, `sh -n tests/run.sh`, and `git diff --check`.
+  - Full `tests/run.sh` suite: all compiler, formatter, agent, synchronization, Fast Debug, module/project, and 20/20 Emacs ERT checks passed. Reached only the known environment-specific LLDB/DAP real-integration handshake failure; it was not changed.
 
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 
