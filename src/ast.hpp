@@ -95,10 +95,20 @@ struct DomainRoute {
 struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
+struct StaticSpecializationDependency {
+  // Canonical Moss callable identity and concrete parameter types.  This is
+  // checked specialization metadata, not a backend symbol reference.
+  string function_name;
+  vector<string> parameter_types;
+};
 struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // Static calls observed while checking this concrete body.  Artifact
+  // projection closes this graph so an owned specialization never references
+  // a specialization that exists only in some other artifact.
+  vector<StaticSpecializationDependency> dependencies;
 };
 
 struct DomainSpecialization {

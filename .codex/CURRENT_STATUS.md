@@ -46,6 +46,16 @@ compiler/tooling/Emacs suites; after the repair it again reaches only the known
 unrelated Phase 10.6F `&String == String` native Rust backend failure. Phase
 15.9 intentionally does not add language syntax or runtime generic dispatch.
 
+Post-closeout corrective hardening records concrete static-call dependencies
+while checking each specialization and closes those dependencies recursively
+during artifact projection. Thus `outer<Int> -> inner<Int>` is emitted in the
+same provider or consumer artifact for both source-backed and source-free
+`.mossi` + `.rlib` use. Private helper IR is now limited to the actual
+module-local transitive closure from exported static functions; unrelated
+private helpers stay out of `.mossi`. The focused regression verifies all of
+these facts with a source-free fixture containing only `Provider.mossi` and
+`libProvider.rlib`.
+
 ## Phase 15.8 — Cross-Package Fast Debug Source Convergence — COMPLETE
 
 Margo now resolves the package graph and supplies the exact transitive dependency

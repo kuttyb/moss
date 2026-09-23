@@ -57,36 +57,51 @@ def test_same_and_cross_module(root):
     package(same, "same", {
         "main.moss": """module Same
 
-fn bump(value):
+fn inner(value):
+  return value
+
+fn outer(value):
+  inner(value)
   return value
 
 fn wrapper() -> Int:
-  return bump(5)
+  return outer(5)
 
 fn main():
   echo wrapper()
 """})
     build_json(same)
     require_output([MARGO, "run"], same, "5\n")
+    same_rust = (same / "build" / "debug" / "Same.rs").read_text(encoding="utf-8")
+    if "fn __moss_specialize_Same__outer_0" not in same_rust:
+        raise AssertionError("same-module artifact did not emit outer<Int>")
+    if "fn __moss_specialize_Same__inner_0" not in same_rust:
+        raise AssertionError("same-module artifact did not emit transitively required inner<Int>")
 
     cross = root / "cross"
     package(cross, "cross", {
         "lib.moss": """module Lib
 
-export fn bump(value):
+export fn inner(value):
+  return value
+
+export fn outer(value):
+  inner(value)
   return value
 """,
         "main.moss": """module App
 import Lib
 
 fn main():
-  echo Lib.bump(9)
+  echo Lib.outer(9)
 """})
     build_json(cross)
     require_output([MARGO, "run"], cross, "9\n")
     app_rust = (cross / "build" / "debug" / "App.rs").read_text(encoding="utf-8")
-    if app_rust.count("fn __moss_specialize_Lib__bump_0") != 1:
-        raise AssertionError("cross-module caller did not emit exactly one local specialization")
+    if app_rust.count("fn __moss_specialize_Lib__outer_0") != 1:
+        raise AssertionError("cross-module caller did not emit exactly one local outer specialization")
+    if app_rust.count("fn __moss_specialize_Lib__inner_0") != 1:
+        raise AssertionError("cross-module caller did not emit exactly one transitive inner specialization")
     print("  [PASS] same-module and source-backed cross-module specializations")
 
 
@@ -95,6 +110,26 @@ def provider_sources():
 
 export fn bump(value):
   return value
+
+export fn inner(value):
+  return value
+
+export fn outer(value):
+  inner(value)
+  return value
+
+export fn outer_seed() -> Int:
+  return outer(5)
+
+fn private_inner(value):
+  return value
+
+export fn private_outer(value):
+  private_inner(value)
+  return value
+
+fn unrelated_helper() -> Int:
+  return 99
 
 export fn append(values: Vector[Int]) -> Int:
   return bump(42)
@@ -110,11 +145,14 @@ export trait Scorable:
 
 # The untyped slot is existing Moss generic syntax; the trait call remains
 # statically resolved for each checked concrete item type.
-export fn score_item(item: Scorable, unused):
+export fn score_inner(item: Scorable, unused):
   return item.score()
 
+export fn score_outer(item: Scorable, unused):
+  return score_inner(item, unused)
+
 export fn score_seed() -> Int:
-  return score_item(Task(cost: 21), 0)
+  return score_outer(Task(cost: 21), 0)
 """}
 
 
@@ -136,7 +174,9 @@ fn repeated() -> Int:
 fn main():
   echo Provider.append([1])
   echo repeated()
-  echo Provider.score_item(Task(cost: 21), 0)
+  echo Provider.outer(5)
+  echo Provider.private_outer(11)
+  echo Provider.score_outer(Task(cost: 21), 0)
 """}
 
 
@@ -151,8 +191,17 @@ def test_provider_and_source_free(root):
     required = "fn __moss_specialize_Provider__bump_0"
     if required not in provider_rust or "return __moss_specialize_Provider__bump_0(42_i64);" not in provider_rust:
         raise AssertionError("provider concrete wrapper did not retain its required specialization")
+    for specialization in ("outer", "inner", "score_outer", "score_inner"):
+        if f"fn __moss_specialize_Provider__{specialization}_0" not in provider_rust:
+            raise AssertionError(
+                f"provider artifact did not emit {specialization}'s required specialization")
     if "moss_specializations" in provider_rust:
         raise AssertionError("provider still depends on a final-application specialization crate")
+    provider_iface = (provider / "build" / "debug" / "Provider.mossi").read_text(encoding="utf-8")
+    if 'generic_dependency_begin "private_inner"' not in provider_iface:
+        raise AssertionError("provider interface omitted private helper required by a static export")
+    if "unrelated_helper" in provider_iface:
+        raise AssertionError("provider interface serialized unrelated private helper")
 
     app = root / "app"
     package(app, "app", app_sources(),
@@ -162,7 +211,7 @@ def test_provider_and_source_free(root):
         "import Provider\n\ntest \"provider wrapper\":\n  assertEqual(Provider.append([1]), 42)\n",
         encoding="utf-8")
     build_json(app)
-    require_output([MARGO, "run"], app, "42\n14\n42\n")
+    require_output([MARGO, "run"], app, "42\n14\n5\n11\n42\n")
     run([MARGO, "test"], app)
     app_rust = (app / "build" / "debug" / "App.rs").read_text(encoding="utf-8")
     if app_rust.count("fn __moss_specialize_Provider__bump_0") != 1:
@@ -175,22 +224,31 @@ def test_provider_and_source_free(root):
     # concrete provider implementation from .rlib; no provider source is
     # folded into this compilation.
     artifact_root = root / "provider-artifacts"
-    shutil.copytree(provider / "build" / "debug", artifact_root)
+    artifact_root.mkdir()
+    for artifact_name in ("Provider.mossi", "libProvider.rlib"):
+        shutil.copy2(provider / "build" / "debug" / artifact_name,
+                     artifact_root / artifact_name)
+    artifact_names = {path.name for path in artifact_root.iterdir()}
+    if artifact_names != {"Provider.mossi", "libProvider.rlib"}:
+        raise AssertionError(f"source-free fixture exposed unexpected provider files: {artifact_names}")
     (provider / "src").rename(provider / "src.hidden")
     source_free = root / "source-free"
     package(source_free, "sourcefree", app_sources("Consumer"))
     source_free_env = env_for(MOSS_MODULE_PATH=str(artifact_root))
     build = run([COMPILER, "build", "--json"], source_free, env=source_free_env)
     artifact = json.loads(build.stdout)["result"]["artifacts"]
-    require_output([artifact["executable"]], source_free, "42\n14\n42\n",
+    require_output([artifact["executable"]], source_free, "42\n14\n5\n11\n42\n",
                    env=source_free_env)
     consumer_rust = Path(artifact["generated_rust"]).read_text(encoding="utf-8")
     if str(provider / "src") in consumer_rust or "fn Provider__append" in consumer_rust:
         raise AssertionError("source-free consumer folded provider Moss implementation")
     if "extern crate moss_Provider;" not in consumer_rust:
         raise AssertionError("source-free consumer did not retain provider rlib linkage")
-    if "fn __moss_specialize_Provider__score_item_0" not in consumer_rust:
-        raise AssertionError("source-free structural specialization was not projected from .mossi")
+    for specialization in ("outer", "inner", "private_outer", "private_inner",
+                           "score_outer", "score_inner"):
+        if f"fn __moss_specialize_Provider__{specialization}_0" not in consumer_rust:
+            raise AssertionError(
+                f"source-free consumer did not project {specialization} from .mossi")
     print("  [PASS] provider-owned wrapper, static trait, repeated use, and source-free .mossi + .rlib")
 
 

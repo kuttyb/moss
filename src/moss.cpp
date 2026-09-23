@@ -1320,6 +1320,10 @@ class Checker {
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
+  // Set only while the checker validates one concrete static body.  Calls
+  // encountered through this path have concrete types, unlike the generic
+  // call edges retained for recursion/effect analysis.
+  FunctionSpecialization* checking_specialization_ = nullptr;
   vector<Warning> warnings_;
 
   using TypeEnv = std::unordered_map<string,string>;
@@ -7006,12 +7010,28 @@ class Checker {
     vector<string> canonical_types;
     for (const auto& type : parameter_types)
       canonical_types.push_back(canonical_type_name(type));
+    auto record_dependency = [&] {
+      if (!checking_specialization_) return;
+      StaticSpecializationDependency dependency{function.name, canonical_types};
+      auto existing_dependency = std::find_if(
+          checking_specialization_->dependencies.begin(),
+          checking_specialization_->dependencies.end(),
+          [&](const StaticSpecializationDependency& existing) {
+            return existing.function_name == dependency.function_name &&
+                existing.parameter_types == dependency.parameter_types;
+          });
+      if (existing_dependency == checking_specialization_->dependencies.end())
+        checking_specialization_->dependencies.push_back(std::move(dependency));
+    };
     auto existing = std::find_if(function.specializations.begin(),
                                  function.specializations.end(),
                                  [&](const FunctionSpecialization& specialization) {
                                    return specialization.parameter_types == canonical_types;
                                  });
-    if (existing != function.specializations.end()) return;
+    if (existing != function.specializations.end()) {
+      record_dependency();
+      return;
+    }
     auto result = specialized_function_return_type(function, canonical_types);
     if (!result)
       err(line, "cannot determine the concrete result type for static specialization of function '" +
@@ -7022,15 +7042,19 @@ class Checker {
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
     function.specializations.push_back(specialization);
+    record_dependency();
 
     std::unordered_map<string,string> specialized_env;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
+    FunctionSpecialization* previous = checking_specialization_;
+    checking_specialization_ = &function.specializations.back();
     infer_statement_expressions(function.body, specialized_env);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
     if (function.result_expression)
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
+    checking_specialization_ = previous;
   }
 
   void check_function_call(int line, const string& name, const vector<string>& args,
@@ -17598,6 +17622,22 @@ static bool module_requires_specialization(const Program& program,
                      });
 }
 
+static string specialization_projection_key(const string& function_name,
+                                            const vector<string>& parameter_types) {
+  std::ostringstream key;
+  key << function_name;
+  for (const auto& type : parameter_types)
+    key << "\n" << canonical_type_name(type);
+  return key.str();
+}
+
+static bool specialization_is_projected(
+    const std::set<string>& required, const Function& function,
+    const FunctionSpecialization& specialization) {
+  return required.count(specialization_projection_key(
+      function.name, specialization.parameter_types));
+}
+
 // The semantic checker still sees the composed project.  Once that single
 // authority has produced its facts, this projection is what gives rustc one
 // crate per Moss module.  It intentionally copies no declarations from an
@@ -17611,6 +17651,35 @@ static Program module_program(const Program& whole, const string& module,
   result.imports = whole.imports;
   string target_module = !root_module.empty() ? root_module : whole.main_module;
   std::set<string> projected_static_functions;
+  // The project-level call graph intentionally preserves generic parameter
+  // types for recursion and effect analysis.  A checked specialization has a
+  // second, concrete dependency graph: close it here so an artifact that owns
+  // outer<Int> also owns every static call required by outer<Int>, recursively.
+  std::set<string> required_specializations;
+  for (const auto& function : whole.functions)
+    if (function.static_dispatch)
+      for (const auto& specialization : function.specializations)
+        if (module_requires_specialization(whole, module, target_module,
+                                           function, specialization))
+          required_specializations.insert(specialization_projection_key(
+              function.name, specialization.parameter_types));
+  bool specialization_changed = true;
+  while (specialization_changed) {
+    specialization_changed = false;
+    for (const auto& function : whole.functions) {
+      for (const auto& specialization : function.specializations) {
+        if (!specialization_is_projected(required_specializations, function,
+                                         specialization))
+          continue;
+        for (const auto& dependency : specialization.dependencies) {
+          string key = specialization_projection_key(
+              dependency.function_name, dependency.parameter_types);
+          if (required_specializations.insert(std::move(key)).second)
+            specialization_changed = true;
+        }
+      }
+    }
+  }
   for (const auto& function : whole.functions) {
     bool local = belongs_to_module(function.name, module);
     Function projected = function;
@@ -17619,8 +17688,8 @@ static Program module_program(const Program& whole, const string& module,
           std::remove_if(projected.specializations.begin(),
                          projected.specializations.end(),
                          [&](const FunctionSpecialization& specialization) {
-                           return !module_requires_specialization(
-                               whole, module, target_module, function,
+                           return !specialization_is_projected(
+                               required_specializations, function,
                                specialization);
                          }),
           projected.specializations.end());
@@ -17773,6 +17842,36 @@ static vector<std::filesystem::path> write_module_interfaces(
     (void)contents[module];
     (void)interface_contents[module];
   }
+  // A source-free importer needs checked IR for private helpers only when an
+  // exported static body can reach them.  Keep this module-local and
+  // transitive: the presence of an unrelated static export must not widen a
+  // provider's semantic interface.
+  std::map<string,std::set<string>> static_export_private_helpers;
+  for (const auto& module : module_names) {
+    std::set<string> pending;
+    for (const auto& function : program.functions)
+      if (function.exported && function.static_dispatch &&
+          belongs_to_module(function.name, module))
+        pending.insert(function.name);
+    while (!pending.empty()) {
+      string source = *pending.begin();
+      pending.erase(pending.begin());
+      for (const auto& edge : program.semantic_call_edges) {
+        if (edge.source != "fn:" + source) continue;
+        auto target = std::find_if(program.functions.begin(),
+                                   program.functions.end(),
+            [&](const Function& function) {
+              return edge.target == function.name ||
+                  edge.target == "fn:" + function.name;
+            });
+        if (target == program.functions.end() || target->exported ||
+            !belongs_to_module(target->name, module))
+          continue;
+        if (static_export_private_helpers[module].insert(target->name).second)
+          pending.insert(target->name);
+      }
+    }
+  }
   for (const auto& function : program.functions) {
     if (!function.exported) continue;
     string module = module_name_from_symbol(function.name);
@@ -17880,12 +17979,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     if (function.exported || function.name.empty()) continue;
     string module = module_name_from_symbol(function.name);
     if (module.empty() || program.external_modules.count(module)) continue;
-    bool reachable = std::any_of(
-        program.functions.begin(), program.functions.end(),
-        [](const Function& exported) {
-          return exported.exported && exported.static_dispatch;
-        });
-    if (!reachable) continue;
+    if (!static_export_private_helpers[module].count(function.name)) continue;
     auto& out = contents[module];
     out << "  generic_dependency_begin "
         << std::quoted(function.name.substr(module.size() + 2))
