@@ -38,6 +38,8 @@ def run(arguments, *, cwd=ROOT, env=None, expected=0):
 def main() -> int:
     compiler = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else ROOT / "moss"
     baseline = load_baseline()
+    rustc = baseline.resolved_rustc()
+    assert rustc.is_file()
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir(parents=True)
     tasks = baseline.load_suite(baseline.SUITE)
@@ -64,6 +66,7 @@ def main() -> int:
         "MOSS_BASELINE_TOOL_LOG": str(stage / "logs" / "moss-tool-log.jsonl"),
         "MOSS_BASELINE_REAL_MOSS": str(compiler),
         "MOSS_BASELINE_REAL_MARGO": str(ROOT / "margo"),
+        "RUSTC": str(rustc),
     })
     wrapped = run([stage / "moss", "check", "missing.moss", "--json"],
                   cwd=stage / "task", env=environment, expected=1)

@@ -70,6 +70,18 @@ def git_output(*arguments: str) -> str:
     return process.stdout.strip()
 
 
+def resolved_rustc() -> Path:
+    process = subprocess.run(
+        ["rustup", "which", "rustc"], text=True, capture_output=True, check=False,
+    )
+    if process.returncode != 0:
+        raise BaselineError(process.stderr.strip() or "rustup could not resolve rustc")
+    path = Path(process.stdout.strip()).resolve()
+    if not path.is_file():
+        raise BaselineError(f"resolved Rust compiler is unavailable: {path}")
+    return path
+
+
 def task_prompt(task: dict[str, Any]) -> str:
     wrapper = WRAPPER.read_text(encoding="utf-8").rstrip("\n")
     return f"{wrapper}\n\nTask ID: {task['id']}\n\nTask prompt (verbatim):\n{task['prompt']}\n"
@@ -259,6 +271,7 @@ export CODEX_HOME="$auth"
 export PATH="$repo:$PATH"
 export MOSS="$repo/moss"
 export MARGO_HOME="$repo/.home/.margo"
+export RUSTC="$6"
 export MOSS_BASELINE_WORKSPACE="$repo"
 export MOSS_BASELINE_TOOL_LOG="$repo/logs/moss-tool-log.jsonl"
 export MOSS_BASELINE_REAL_MOSS="$repo/.baseline-tools/moss-real"
@@ -278,6 +291,7 @@ exec codex exec --ephemeral --json --skip-git-repo-check --ignore-user-config --
         "unshare", "--user", "--map-root-user", "--mount",
         "--propagation", "private", "--fork", "/bin/bash", "-c", shell,
         "baseline", str(stage.resolve()), str(ROOT), str(auth), model, reasoning,
+        str(resolved_rustc()),
     ]
 
 
@@ -428,6 +442,8 @@ def run_one(task: dict[str, Any], runtime_root: Path, output_root: Path,
     last_message = stage / "logs" / "last-message.txt"
     if last_message.is_file():
         shutil.copy2(last_message, artifact / "last-message.txt")
+    if stderr_path.is_file() and stderr_path.stat().st_size:
+        shutil.copy2(stderr_path, artifact / "agent-stderr.txt")
     if result_document is not None:
         write_json(artifact / "result.json", result_document)
 
@@ -508,6 +524,7 @@ def protocol_document(args: argparse.Namespace, codex_version: str) -> dict[str,
             "jobs": args.jobs,
             "host": platform.platform(),
             "python": platform.python_version(),
+            "resolved_rustc": str(resolved_rustc()),
         },
     }
 
@@ -524,6 +541,7 @@ def summarize(output_root: Path) -> dict[str, Any]:
     for item in manifests:
         diagnostics.update(item["diagnostic_codes"])
         tools.update(item["tool_usage"])
+    agent_tool_calls = [item["agent_runtime"].get("tool_calls") for item in manifests]
     return {
         "schema_version": BASELINE_SCHEMA,
         "baseline_id": BASELINE_ID,
@@ -535,6 +553,9 @@ def summarize(output_root: Path) -> dict[str, Any]:
         "attempts_to_green_mean": round(statistics.mean(green), 3) if green else None,
         "attempts_to_green_median": statistics.median(green) if green else None,
         "tasks_with_outside_allowed_paths": sum(bool(item["outside_allowed_paths"]) for item in manifests),
+        "agent_tool_calls": (sum(agent_tool_calls)
+                             if all(value is not None for value in agent_tool_calls) else None),
+        "moss_margo_invocations": sum(item["moss_margo_invocations"] for item in manifests),
         "infrastructure_failures": [item["task_id"] for item in manifests if item["state"] == "infrastructure_failure"],
         "timed_out_tasks": [item["task_id"] for item in manifests if item["state"] == "agent_timeout"],
         "tool_usage": dict(sorted(tools.items())),
@@ -559,12 +580,15 @@ test ! -e benchmarks/agent/tasks
 ./moss agent bootstrap --json >/dev/null
 cd task
 margo build --json >/dev/null
+margo test --json >/dev/null
 '''
     environment = dict(os.environ)
     environment.update({
         "PATH": f"{ROOT}:{environment['PATH']}",
+        "HOME": str(ROOT / ".home"),
         "MOSS": str(ROOT / "moss"),
         "MARGO_HOME": str(ROOT / ".home" / ".margo"),
+        "RUSTC": str(resolved_rustc()),
         "MOSS_BASELINE_WORKSPACE": str(ROOT),
         "MOSS_BASELINE_TOOL_LOG": str(ROOT / "logs" / "moss-tool-log.jsonl"),
         "MOSS_BASELINE_REAL_MOSS": str(ROOT / ".baseline-tools" / "moss-real"),

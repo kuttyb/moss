@@ -60,7 +60,10 @@ Git-free sanitized tree containing the starter under `task/`, the checked Moss a
 Margo tools, repository agent skills, and normal documentation. An explicitly
 empty `.git` mount prevents recovery through Git. Browser, plugin, memory, and
 multi-agent features are disabled, and generated shell commands use the
-network-disabled workspace sandbox.
+network-disabled workspace sandbox. The orchestrator supplies the host's resolved
+`rustc` path explicitly because the sanitized home intentionally contains no
+`rustup` configuration; this keeps Margo's native workflow available without
+exposing user state.
 
 Before a canonical run, verify staging and namespace behavior:
 
