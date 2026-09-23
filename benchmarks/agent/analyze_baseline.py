@@ -114,9 +114,9 @@ def numeric_stats(values: list[int]) -> dict[str, Any]:
 
 
 def raw_tree_digest(root: Path) -> str:
-    """Digest raw inputs while excluding the two generated analysis products."""
+    """Digest raw inputs while excluding generated analysis products."""
     digest = hashlib.sha256()
-    excluded = {"aggregate.json", "REPORT.md"}
+    excluded = {"aggregate.json", "comparison.json", "REPORT.md"}
     for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
         if path.parent == root and path.name in excluded:
             continue

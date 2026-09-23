@@ -1,0 +1,1 @@
+Ran `./moss agent bootstrap --json` and confirmed the `moss-0.1` language version. The `task/` project contains a manifest, one source file, and one test file. `../margo build --json` succeeded, and `../margo test --json` passed its one test. No source edits were needed.

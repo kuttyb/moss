@@ -1,0 +1,145 @@
+{
+  "command": "agent benchmark run",
+  "ok": true,
+  "result": {
+    "agent": null,
+    "attempts": null,
+    "changed_paths": [
+      "main.moss"
+    ],
+    "diagnostics": [],
+    "outside_allowed_paths": [],
+    "status": "pass",
+    "task_id": "AB023",
+    "tool_calls": null,
+    "validation": [
+      {
+        "command": [
+          "$MOSS",
+          "check",
+          "main.moss",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 0,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB023-7nmckcpl/work/main.moss\", \"diagnostics\": []}\n}\n"
+      },
+      {
+        "command": [
+          "$MOSS",
+          "run",
+          "--interp",
+          "main.moss"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 1,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "42\n"
+      },
+      {
+        "command": [
+          "$MOSS",
+          "calls",
+          "handler:Service.Run",
+          "--source",
+          "main.moss",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 2,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"calls\",\n  \"ok\": true,\n  \"result\": {\"target\": {\"semantic_identity\": \"handler:Service.Run@5\", \"durable_identity\": \"entity-v1:handler:Service.Run\", \"identity_version\": \"entity-v1\", \"construct_kind\": \"handler\", \"source_identity\": \"handler:Service.Run@5\", \"specialization_identity\": null, \"name\": \"Service.Run\", \"module_identity\": null, \"export_visibility\": null, \"export_kind\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB023-7nmckcpl/work/main.moss\", \"line\": 5, \"column\": 1, \"span\": {\"start_line\": 5, \"start_column\": 1, \"end_line\": 5, \"end_column\": 1}}, \"type\": \"int\", \"specialization_fields\": [], \"provenance\": [\"handler:Service.Run@5\"], \"implementation_hash\": \"5cf83163698cc9c8\", \"semantic_interface_hash\": \"61d596ae02ecdb90\"}, \"direct_calls\": [{\"target\": \"fn:compute\", \"resolved\": true, \"target_kind\": \"function\", \"line\": 6, \"source_file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB023-7nmckcpl/work/main.moss\", \"argument_types\": [\"int\"], \"specialization_identity\": null}], \"callers\": []}\n}\n"
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^domain\\s+Service\\s*:",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 3,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^\\s+fn\\s+Run\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 4,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 5,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 6,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "not_matches": "\\bmessage\\s+self\\.",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 7,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "wall_time_ms": null
+  },
+  "schema_version": "moss-agent-benchmark-1"
+}

@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a `Point` type, a `score` method that adds `x` and `y`, and a `main` that prints the score for `(20, 22)`. The compiler check passed, and the program printed `42`.

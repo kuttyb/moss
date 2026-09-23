@@ -1,0 +1,3 @@
+fn main():
+  result = 6 * 7
+  echo result

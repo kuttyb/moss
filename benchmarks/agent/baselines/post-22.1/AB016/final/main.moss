@@ -1,0 +1,7 @@
+fn main():
+  values = [1, 2, 3, 4]
+  total = values
+    |> map(_ * 2)
+      |> filter(_ > 4)
+      |> sum
+  echo total

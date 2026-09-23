@@ -1,0 +1,3 @@
+Created the Moss project in `task/` with a minimal `Moss.toml`. `Math.answer()` is exported, and `App.main()` imports it and prints the result.
+
+`moss check` passed, and `margo run` printed `42`.

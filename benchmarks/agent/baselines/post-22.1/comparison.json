@@ -1,0 +1,317 @@
+{
+  "comparison_confounders": [],
+  "delta": {
+    "agent_tool_calls": 15,
+    "attempts_to_green_max": 0,
+    "attempts_to_green_mean": 0.034,
+    "attempts_to_green_median": 0.0,
+    "diagnostic_occurrences": 2,
+    "eventually_green": 0,
+    "failed_correctness_attempts_before_green": 1,
+    "failed_semantic_query_calls": -2,
+    "final_failures": 0,
+    "final_passes": 0,
+    "first_validation_successes": -1,
+    "infrastructure_failures": 0,
+    "moss_margo_invocations": -1,
+    "out_of_scope_modification_tasks": 0,
+    "query_target_not_found_calls": -2,
+    "repeated_diagnostic_loop_tasks": -1,
+    "timeouts": 0
+  },
+  "post": {
+    "agent_tool_calls": 422,
+    "attempts_to_green_max": 2,
+    "attempts_to_green_mean": 1.467,
+    "attempts_to_green_median": 1.0,
+    "diagnostic_occurrences": 20,
+    "eventually_green": 30,
+    "failed_correctness_attempts_before_green": 14,
+    "failed_semantic_query_calls": 2,
+    "final_failures": 2,
+    "final_passes": 28,
+    "first_validation_successes": 16,
+    "infrastructure_failures": 0,
+    "moss_margo_invocations": 156,
+    "out_of_scope_modification_tasks": 0,
+    "query_target_not_found_calls": 0,
+    "repeated_diagnostic_loop_tasks": 1,
+    "timeouts": 0
+  },
+  "post_baseline": "post-22.1",
+  "post_compiler_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "post_orchestration_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "pre": {
+    "agent_tool_calls": 407,
+    "attempts_to_green_max": 2,
+    "attempts_to_green_mean": 1.433,
+    "attempts_to_green_median": 1.0,
+    "diagnostic_occurrences": 18,
+    "eventually_green": 30,
+    "failed_correctness_attempts_before_green": 13,
+    "failed_semantic_query_calls": 4,
+    "final_failures": 2,
+    "final_passes": 28,
+    "first_validation_successes": 17,
+    "infrastructure_failures": 0,
+    "moss_margo_invocations": 157,
+    "out_of_scope_modification_tasks": 0,
+    "query_target_not_found_calls": 2,
+    "repeated_diagnostic_loop_tasks": 2,
+    "timeouts": 0
+  },
+  "pre_baseline": "pre-22.1",
+  "pre_compiler_commit": "22fdb024e4f284d17fb9abfe887856e17127aae7",
+  "pre_orchestration_commit": "532dc4610d156946df5014573e5d69947f4d3546",
+  "protocol_matches": {
+    "agent.configuration": true,
+    "agent.implementation": true,
+    "agent.model": true,
+    "agent.reasoning_effort": true,
+    "agent.runtime_version": true,
+    "corpus_commit": true,
+    "isolation": true,
+    "limits": true,
+    "metrics": true,
+    "prompt_wrapper_sha256": true,
+    "protocol_version": true
+  },
+  "schema_version": "moss-agent-baseline-comparison-1",
+  "target_tasks": [
+    {
+      "post_agent_tool_calls": 15,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "DOMAIN_SELF_MESSAGE": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 6,
+      "pre_agent_tool_calls": 15,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 6,
+      "task_id": "AB008"
+    },
+    {
+      "post_agent_tool_calls": 16,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "DOMAIN_SELF_MESSAGE": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 6,
+      "pre_agent_tool_calls": 14,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 6,
+      "task_id": "AB009"
+    },
+    {
+      "post_agent_tool_calls": 15,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "DOMAIN_ROUTE_NOT_DECLARED": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 6,
+      "pre_agent_tool_calls": 14,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 6,
+      "task_id": "AB010"
+    },
+    {
+      "post_agent_tool_calls": 12,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 12,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 5,
+      "task_id": "AB012"
+    },
+    {
+      "post_agent_tool_calls": 14,
+      "post_attempts_to_green": 1,
+      "post_diagnostics": {},
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 6,
+      "pre_agent_tool_calls": 12,
+      "pre_attempts_to_green": 1,
+      "pre_diagnostics": {
+        "QUERY_TARGET_NOT_FOUND": 2
+      },
+      "pre_failed_query_calls": 2,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 8,
+      "task_id": "AB015"
+    },
+    {
+      "post_agent_tool_calls": 17,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "fail",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 19,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "fail",
+      "pre_moss_margo_invocations": 7,
+      "task_id": "AB017"
+    },
+    {
+      "post_agent_tool_calls": 13,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "FUNCTIONAL_PLACEHOLDER_REQUIRED": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 14,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 5,
+      "task_id": "AB018"
+    },
+    {
+      "post_agent_tool_calls": 17,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "FORMAT_CHECK_FAILED": 1,
+        "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 8,
+      "pre_agent_tool_calls": 11,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 4,
+      "task_id": "AB019"
+    },
+    {
+      "post_agent_tool_calls": 14,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "FUNCTIONAL_CAPTURE_MUTATION": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 13,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 5,
+      "task_id": "AB020"
+    },
+    {
+      "post_agent_tool_calls": 12,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "DOMAIN_HANDLER_REQUIRES_MESSAGE": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 12,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 4,
+      "task_id": "AB021"
+    },
+    {
+      "post_agent_tool_calls": 16,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 3
+      },
+      "post_failed_query_calls": 2,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 8,
+      "pre_agent_tool_calls": 17,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 3
+      },
+      "pre_failed_query_calls": 2,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 9,
+      "task_id": "AB022"
+    },
+    {
+      "post_agent_tool_calls": 12,
+      "post_attempts_to_green": 2,
+      "post_diagnostics": {
+        "DOMAIN_SELF_MESSAGE": 1
+      },
+      "post_failed_query_calls": 0,
+      "post_final_status": "pass",
+      "post_moss_margo_invocations": 5,
+      "pre_agent_tool_calls": 13,
+      "pre_attempts_to_green": 2,
+      "pre_diagnostics": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "pre_failed_query_calls": 0,
+      "pre_final_status": "pass",
+      "pre_moss_margo_invocations": 5,
+      "task_id": "AB023"
+    }
+  ],
+  "target_totals": {
+    "post_agent_tool_calls": 173,
+    "post_failed_query_calls": 2,
+    "post_moss_margo_invocations": 70,
+    "pre_agent_tool_calls": 166,
+    "pre_failed_query_calls": 4,
+    "pre_moss_margo_invocations": 70
+  }
+}

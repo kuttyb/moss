@@ -1,0 +1,3 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a statically constructed `Counter` domain. Its `Increment` handler adds 5 to the initial value of 0 and replies with the new value.
+
+The Moss check passed, and running the program printed `5`.

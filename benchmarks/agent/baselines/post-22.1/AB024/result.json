@@ -1,0 +1,96 @@
+{
+  "command": "agent benchmark run",
+  "ok": true,
+  "result": {
+    "agent": null,
+    "attempts": null,
+    "changed_paths": [
+      "Moss.toml",
+      "src/main.moss",
+      "src/math.moss"
+    ],
+    "diagnostics": [],
+    "outside_allowed_paths": [],
+    "status": "pass",
+    "task_id": "AB024",
+    "tool_calls": null,
+    "validation": [
+      {
+        "command": [
+          "$MARGO",
+          "build",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 0,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\"artifacts\": {\"artifacts\": {\"cache_metadata\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/ab024.mossbuild\", \"debug_map\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/ab024.mossmap\", \"executable\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/ab024\", \"generated_rust\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/App.rs\", \"module_interfaces\": [\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/App.mossi\", \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/Math.mossi\"], \"module_rlibs\": [\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/libMath.rlib\", \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/libApp.rlib\"], \"specialization_rlib\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/build/debug/libmoss_specializations.rlib\"}, \"backend_toolchain\": {\"compile_flags\": [\"--edition=2021\", \"-D\", \"warnings\", \"-g\", \"-C\", \"opt-level=0\"], \"fingerprint\": \"2f48c0ef4ea1736c\", \"profile\": \"debug\", \"resolved_rustc\": \"/home/owner/.cargo/bin/rustc\", \"version_verbose\": \"rustc 1.98.1 (48a229cea 2026-09-01)\\nbinary: rustc\\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\\ncommit-date: 2026-09-01\\nhost: x86_64-unknown-linux-gnu\\nrelease: 1.98.1\\nLLVM version: 22.1.8\"}, \"incremental\": {\"generated_rust_units_rewritten\": 1, \"native_artifact_reused\": false, \"units_analyzed\": 2, \"units_reused\": 0}, \"profile\": \"debug\", \"project\": \"ab024\", \"reused\": false, \"source\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/src/main.moss\", \"sources\": [\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/src/main.moss\", \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB024-1mc2wnm6/work/src/math.moss\"]}, \"build_order\": [\"ab024\"], \"ok\": true, \"packages\": [{\"name\": \"ab024\", \"source\": {\"kind\": \"root\"}}], \"root_package\": \"ab024\", \"schema_version\": \"margo-1\"}\n"
+      },
+      {
+        "command": [
+          "$MARGO",
+          "run"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 1,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "42\n"
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^\\[project\\]\\s*$",
+          "path": "Moss.toml"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 2,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?ms)^module\\s+Math\\s*$.*^export\\s+fn\\s+answer\\s*\\(",
+          "path_glob": "src/*.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 3,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?ms)^module\\s+App\\s*$.*^import\\s+Math\\s*$.*\\bMath\\.answer\\s*\\(",
+          "path_glob": "src/*.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 4,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "wall_time_ms": null
+  },
+  "schema_version": "moss-agent-benchmark-1"
+}

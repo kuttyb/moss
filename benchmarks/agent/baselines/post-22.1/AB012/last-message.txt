@@ -1,0 +1,1 @@
+Updated [task/main.moss](/home/owner/daji/code/moss/task/main.moss) so `bump_and_read` receives two distinct Box values. The Moss check passes, and interpreted execution prints `42`.

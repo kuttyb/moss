@@ -1,0 +1,3 @@
+Repaired [task/main.moss](/home/owner/daji/code/moss/task/main.moss): `replace` still installs the vector, and `main` now reports its count through `Holder` instead of reading the consumed `replacement`.
+
+Moss check and formatting pass; interpreted execution prints `3`.

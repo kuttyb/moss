@@ -13,6 +13,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "benchmarks" / "agent" / "baselines" / "pre-22.1"
+POST_BASELINE = ROOT / "benchmarks" / "agent" / "baselines" / "post-22.1"
 TASKS = ROOT / "benchmarks" / "agent" / "tasks"
 SCRATCH = ROOT / "tmp" / "agent-baseline-analysis-test"
 
@@ -91,6 +92,21 @@ def main() -> int:
         cwd=ROOT, text=True, capture_output=True, check=False, timeout=60,
     )
     assert check.returncode == 0, (check.stdout, check.stderr)
+
+    comparison_check = subprocess.run(
+        [sys.executable, str(ROOT / "benchmarks" / "agent" / "compare_baselines.py"), "--check"],
+        cwd=ROOT, text=True, capture_output=True, check=False, timeout=60,
+    )
+    assert comparison_check.returncode == 0, (comparison_check.stdout, comparison_check.stderr)
+    comparison = json.loads((POST_BASELINE / "comparison.json").read_text(encoding="utf-8"))
+    assert all(comparison["protocol_matches"].values())
+    assert comparison["comparison_confounders"] == []
+    assert comparison["pre"]["query_target_not_found_calls"] == 2
+    assert comparison["post"]["query_target_not_found_calls"] == 0
+    assert comparison["pre"]["repeated_diagnostic_loop_tasks"] == 2
+    assert comparison["post"]["repeated_diagnostic_loop_tasks"] == 1
+    assert comparison["pre"]["agent_tool_calls"] == 407
+    assert comparison["post"]["agent_tool_calls"] == 422
 
     missing = fixture("missing")
     shutil.rmtree(missing / "AB030")

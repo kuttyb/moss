@@ -1,0 +1,1 @@
+Updated [task/main.moss](/home/owner/daji/code/moss/task/main.moss:8) to pass distinct boxes to `update_and_read`, preserving the function. Ownership and effects queries confirm its `WRITE` and `READ` parameters; the Moss check passes, and execution prints `42`.

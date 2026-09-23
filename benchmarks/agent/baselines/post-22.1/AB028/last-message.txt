@@ -1,0 +1,1 @@
+Changed [Counter.Add](/home/owner/daji/code/moss/task/main.moss:4) to add `amount` to the stored value. Fast Debug with `--trace` now shows the state changing from `40` to `42` and the handler replying `42`. Moss check and format check pass.

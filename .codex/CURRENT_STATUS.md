@@ -2,32 +2,53 @@
 
 Updated: 2026-09-23
 
-## Phase 22.1 — Agent-Teaching Diagnostics (active)
+## Phase 22.1 — Agent-Teaching Diagnostics (complete)
 
 Phase 22.1 started from the completed Phase 22.2 closeout commit
 `3668ce450ff3c5aedee3cb32d34cafe72b6d4b46`. The frozen pre-22.1 baseline under
-`benchmarks/agent/baselines/pre-22.1/` remains unchanged. Commit `9caaee6` completes
-the evidence mapping and compiler implementation for the targeted domain/message,
-ownership-conflict, functional-callable/capture, query-target, and concrete
-inference-context families. The additive `moss-agent-1` teaching fields are
-`source`, `rule`, `cause.entities`, `related`, and `guidance`; human output consumes
-the same facts. Focused legal-rewrite and misleading-guidance regressions pass,
-as do strict C++17 `-Werror`, agent API, and skill drift checks. No Moss acceptance,
-ownership, domain, pipeline, lowering, or Fast Debug semantics changed.
+`benchmarks/agent/baselines/pre-22.1/` remains unchanged. Commits `9caaee6`,
+`75690b8`, and `bb388d4` implement and converge the evidence-backed diagnostics,
+documentation, and regressions. Domain/message rejection sites now distinguish
+self-message, same-instance handler chaining, direct cross-domain handler entry,
+missing/broken routes, and invalid message targets. Functional diagnostics
+distinguish placeholder, callable-invocation, and captured-mutation rules.
+`OWNERSHIP_CONFLICTING_ACCESS`, `QUERY_TARGET_NOT_FOUND`, and
+`TYPE_INFERENCE_FAILED` remain stable where they are the correct semantic classes,
+with richer compiler facts and sound guidance.
 
-22.1E convergence and the full validation matrix are next. Phase 22.1 remains
-active and must not close until a separate `post-22.1` benchmark and honest
-pre/post report are recorded.
+The additive `moss-agent-1` teaching fields are `source`, `rule`,
+`cause.entities`, `related`, and `guidance`; concise human output is rendered from
+the same facts. Focused tests cover diagnostic codes, rule/cause/entity identities,
+access modes, related locations, legal rewrites, and negative misleading-guidance
+cases. No Moss syntax, accepted/rejected program set, ownership, domain, pipeline,
+lowering, synchronization, module, or Fast Debug semantics changed.
 
-22.1E convergence is now complete through the Phase 22.1 teaching checks, strict
-C++17 `-Werror`, all 30 benchmark reference solutions and metadata, agent API and
-skill drift, ownership/domain/functional regressions, Margo dependency and module
-provider checks, Fast Debug project closure, Phase 15.1 borrowed payload checks,
-`make examples`, Python/shell syntax, and whitespace checks. The full `make check`
-run passed every reached suite and stopped at the already documented unrelated
-Phase 10.6F native Rust error comparing `&String == String` in generated
-`phase106f/workload.rs`. The failure is unchanged and was not repaired or weakened.
-The post-22.1 fresh-agent run and comparison remain the only closeout blocker.
+The fixed-protocol post run is retained under
+`benchmarks/agent/baselines/post-22.1/` with raw artifacts, deterministic aggregate,
+machine-readable comparison, and report. It used the same AB001-AB030 corpus,
+prompt wrapper, Codex CLI 0.156.0, `gpt-6-sol`, medium reasoning, isolation,
+network restrictions, 900-second budget, and validators; there are no known
+model/runtime/protocol confounders. Compiler/orchestration commit `bb388d4` is the
+intended treatment.
+
+Pre/post outcomes were 28→28 final passes, 17→16 first-validation successes,
+30→30 eventually green, 1.433→1.467 mean attempts to green, 407→422 agent tool
+calls, and 157→156 Moss/Margo invocations. Failed semantic-query calls fell 4→2,
+`QUERY_TARGET_NOT_FOUND` fell 2→0, and repeated-diagnostic-loop tasks fell 2→1
+because AB015 used qualified targets immediately. AB022's intentional cross-command
+ownership exploration remained. The single stochastic trial therefore establishes
+diagnostic specificity and one narrower recovery improvement, not a broad headline
+or tool-efficiency gain. AB014 and AB017 again failed only exact output formatting
+after successful compilation; all repair tasks passed and all 30 sessions reached
+green.
+
+Closeout validation passes strict C++17 `-Werror`, Phase 22.1 teaching and negative
+regressions, agent API and skill drift, all 30 benchmark references/metadata,
+deterministic pre aggregate and post comparison checks, ownership/domain/functional,
+Margo/module, Fast Debug, `make examples`, Python/shell syntax, and whitespace.
+The full `make check` run passed every reached suite and stopped at the already
+documented unrelated Phase 10.6F native Rust error comparing `&String == String`
+in generated `phase106f/workload.rs`; it was neither repaired nor weakened.
 
 ## Phase 22.2 — Agent Benchmark Suite
 

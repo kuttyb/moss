@@ -1,0 +1,13 @@
+fn advance(value: Int) -> Int:
+  return value + 1
+
+domain Counter:
+  value = 41
+
+  fn Increment() -> Int:
+    value = advance(value)
+    reply value
+
+fn main():
+  counter = Counter()
+  echo message counter.Increment()

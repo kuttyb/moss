@@ -476,7 +476,7 @@ def protocol_document(args: argparse.Namespace, codex_version: str) -> dict[str,
     return {
         "schema_version": BASELINE_SCHEMA,
         "protocol_version": PROTOCOL_VERSION,
-        "baseline_id": BASELINE_ID,
+        "baseline_id": args.output_root.name,
         "corpus_commit": args.corpus_commit,
         "compiler_commit": args.compiler_commit,
         "orchestration_commit": git_output("rev-parse", "HEAD"),
@@ -544,7 +544,7 @@ def summarize(output_root: Path) -> dict[str, Any]:
     agent_tool_calls = [item["agent_runtime"].get("tool_calls") for item in manifests]
     return {
         "schema_version": BASELINE_SCHEMA,
-        "baseline_id": BASELINE_ID,
+        "baseline_id": output_root.name,
         "tasks_attempted": len(manifests),
         "final_passes": sum(item["final_status"] == "pass" for item in manifests),
         "final_failures": sum(item["final_status"] == "fail" for item in manifests),

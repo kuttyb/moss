@@ -1,0 +1,1 @@
+Changed the condition in [task/main.moss](/home/owner/daji/code/moss/task/main.moss:2) to `value > 0`, keeping the function and call. The existing `else` returns `"non-positive"` for zero and negative values. Moss check passes, and the call with `3` prints `positive`.

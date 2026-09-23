@@ -1,0 +1,7 @@
+fn shipping_cost(total: Int) -> Int:
+  if total >= 50:
+    return 0
+  return 5
+
+fn main():
+  echo shipping_cost(60)

@@ -123,6 +123,20 @@ and per-task views. `--check` fails when either generated file is stale. Raw
 Phase 22.2C artifacts are digested before and after analysis and treated as
 read-only.
 
+Phase 22.1's post-change aggregate and comparison are generated and checked with:
+
+```sh
+python3 benchmarks/agent/analyze_baseline.py \
+  --baseline-root benchmarks/agent/baselines/post-22.1
+python3 benchmarks/agent/compare_baselines.py
+python3 benchmarks/agent/compare_baselines.py --check
+```
+
+The post-run directory retains the same raw evidence and adds `aggregate.json`,
+machine-readable `comparison.json`, and `REPORT.md`. The comparison reports
+headline outcomes, failed correctness and semantic-query calls, diagnostic loops,
+tool use, and task-level recovery for the evidence-backed Phase 22.1 targets.
+
 To add a task:
 
 1. Allocate the next stable `ABNNN` ID and a descriptive directory/name.
@@ -137,8 +151,9 @@ To add a task:
 Phase 22.2A's benchmark corpus is complete, hardened, and frozen for the baseline.
 Phase 22.2B's runner and result schema are complete. Phase 22.2C's canonical
 fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded under
-`baselines/pre-22.1/`. Phase 22.2 is complete; Phase 22.1 agent-teaching
-diagnostics is the next implementation phase.
+`baselines/pre-22.1/`. Phase 22.2 is complete. Phase 22.1's agent-teaching
+diagnostics and honest post-run comparison are recorded under
+`baselines/post-22.1/`.
 
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 
