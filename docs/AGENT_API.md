@@ -68,6 +68,13 @@ expression, argument index, and inferred `READ`/`WRITE`/`CONSUME` access. Fields
 repair from missing data. The existing flat source fields and `details`, `fixes`, and
 `legal_alternatives` remain compatible.
 
+Within `cause.entities`, `semantic_identity` has one meaning: the compiler's actual
+semantic identity for a resolved entity, or `null`. Canonical query selectors such as
+`handler:Store.Read` remain in `name`; shortened selectors and durable `entity-v1`
+identifiers are never placed in `semantic_identity`. The bootstrap
+`diagnostic_contract.cause_entity_semantic_identity` and schema
+`identity_contracts.diagnostic_cause_entity` fields expose this contract directly.
+
 ## Structured diagnostics
 
 ```sh
@@ -92,6 +99,11 @@ causes and guidance. Human diagnostics use the same facts and remain the default
 `diagnostic_contract.guidance_kinds`. Clients should treat these values as stable
 repair categories and use the accompanying summary for the concrete legal action;
 they must not infer unadvertised repairs from message text.
+
+Each command schema labels `common_failure_modes` as `representative, not exhaustive`.
+The `check` schema includes every stable Phase 22.1 diagnostic family, but clients
+must continue to handle other stable compiler errors rather than treating that list
+as a closed enum.
 
 For example, an overlapping call exposes both actual argument roles:
 

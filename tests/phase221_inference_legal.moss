@@ -1,0 +1,23 @@
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+fn resolved(value: Int) -> Int:
+  return value
+
+fn fixed_return(value: Int) -> Int:
+  return value + 1
+
+domain Worker:
+  fn Read() -> Int:
+    reply 42
+
+fn main():
+  worker = Worker()
+  values = [1, 2]
+  total = values |> reduce(0, add)
+  mapped = values |> map(resolved)
+  echoed = fixed_return(mapped[0])
+  answer = message worker.Read()
+  echo total
+  echo echoed
+  echo answer

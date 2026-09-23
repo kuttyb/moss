@@ -80,6 +80,12 @@ teaching_fields = bootstrap["result"].get("diagnostic_contract", {}).get(
 )
 if teaching_fields != ["source", "rule", "cause", "related", "guidance"]:
     fail("bootstrap omitted the additive teaching-diagnostic contract")
+semantic_identity_contract = bootstrap["result"]["diagnostic_contract"].get(
+    "cause_entity_semantic_identity", ""
+)
+if ("actual compiler semantic identity" not in semantic_identity_contract
+        or "otherwise null" not in semantic_identity_contract):
+    fail("bootstrap omitted the diagnostic entity identity contract")
 guidance_kinds = bootstrap["result"]["diagnostic_contract"].get("guidance_kinds", [])
 for guidance_kind in (
     "local-helper", "use-message", "declare-domain-route", "bind-domain-route",
@@ -94,6 +100,38 @@ repair_fields = schema["result"]["schema"].get("diagnostic_repair_fields", [])
 for field in ("source", "rule", "cause", "related", "guidance"):
     if field not in repair_fields:
         fail(f"agent schema omitted teaching diagnostic field {field}")
+identity_contract = schema["result"]["schema"].get("identity_contracts", {}).get(
+    "diagnostic_cause_entity", ""
+)
+if ("actual compiler identity" not in identity_contract
+        or "or null" not in identity_contract
+        or "entity-v1" not in identity_contract):
+    fail("agent schema omitted the diagnostic entity identity contract")
+command_schemas = {
+    item["name"]: item
+    for item in schema["result"]["schema"].get("command_schemas", [])
+}
+check_schema = command_schemas.get("check")
+if check_schema is None:
+    fail("agent schema omitted the check command")
+if check_schema.get("failure_modes_scope") != "representative, not exhaustive":
+    fail("check failure-mode discovery did not define its scope")
+phase221_failures = {
+    "DOMAIN_SELF_MESSAGE",
+    "DOMAIN_SAME_INSTANCE_MESSAGE",
+    "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+    "DOMAIN_ROUTE_NOT_DECLARED",
+    "DOMAIN_ROUTE_NOT_BOUND",
+    "DOMAIN_MESSAGE_TARGET_INVALID",
+    "OWNERSHIP_CONFLICTING_ACCESS",
+    "FUNCTIONAL_PLACEHOLDER_REQUIRED",
+    "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
+    "FUNCTIONAL_CAPTURE_MUTATION",
+    "TYPE_INFERENCE_FAILED",
+}
+missing_failures = phase221_failures - set(check_schema.get("common_failure_modes", []))
+if missing_failures:
+    fail(f"check failure-mode discovery omitted {sorted(missing_failures)}")
 if "impact" not in schema["result"]["schema"]["project_result_kinds"]:
     fail("schema discovery omitted impact result kind")
 if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:

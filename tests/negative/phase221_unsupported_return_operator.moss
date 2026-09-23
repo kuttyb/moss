@@ -1,0 +1,5 @@
+fn broken(value: Int) -> Int:
+  return value ** 2
+
+fn main():
+  echo broken(1)

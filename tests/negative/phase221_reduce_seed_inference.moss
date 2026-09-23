@@ -1,0 +1,7 @@
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+fn main():
+  values = [1, 2]
+  result = values |> reduce(seed, add)
+  echo result
