@@ -748,11 +748,14 @@ Initial fix commit: `7bc1a06` (`Fix dogfood collection parity defects`)
 Parity closeout commits: `48db458` (`Fix Fast Debug collection parity`) for
 eager terminal traversal and typed empty Float sums; `cf3f8c6` (`Close Fast
 Debug Map and pipeline parity`) for checked map-output type propagation through
-empty pipelines.
+empty pipelines; `06fe332` (`Use canonical Fast Debug pipeline contexts`) for
+canonical function, method, handler, test, and static-specialization lookup.
 
 Regression: `tests/swarm_023_fast_debug_pipelines.moss` and
 `tests/swarm_023_eager_terminals.moss` and
-`tests/swarm_023_empty_map_types.moss`.
+`tests/swarm_023_empty_map_types.moss` and
+`tests/swarm_023_pipeline_context_identity.moss` and
+`tests/swarm_023_pipeline_test_context.moss`.
 
 Fast Debug now executes the current eager `map`, `filter`, `reduce`, `sum`, `count`,
 `any`, and `all` pipeline family. Terminal predicates execute in source order even

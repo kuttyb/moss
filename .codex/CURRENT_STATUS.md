@@ -1577,3 +1577,8 @@ The remaining Fast Debug closeout repairs detach a selected non-Copy `Map.get`
 fallback and retain the checked map-output element type through empty pipelines.
 Focused native/Fast Debug parity regressions cover missing-key fallback ownership,
 empty `Int -> Float` and `Int -> Int` maps, and an empty Float filter before `sum`.
+
+Fast Debug frames now carry the checker-compatible functional context separately from
+their human-readable trace name. Pipeline metadata lookup matches canonical context,
+line, and checked stage source, including static function specializations and multiple
+pipeline expressions on one line.
