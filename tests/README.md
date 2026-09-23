@@ -30,6 +30,9 @@ Start with these groups:
 - **Agent benchmark:** `tooling/check_agent_benchmark.py` checks the fixed 30-task
   corpus, metadata failures, public list/show JSON, reference solutions, isolated
   execution, and allowed-path enforcement.
+- **Semantic queries:** `tooling/check_semantic_queries.py` covers robust target
+  resolution, stable IDs, types, ownership, effects, calls/messages, domain facts,
+  synchronization footprints, and structured why evidence.
 
 Top-level `.moss` fixtures are normally executable positives; `negative/`
 contains diagnostic cases. Some specialized suites also keep an explicitly

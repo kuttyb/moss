@@ -200,6 +200,7 @@ type, call target, ownership mode, optimization barrier, route, or synchronizati
 fact:
 
 ```sh
+moss resolve <target> --source <source> [--kind <kind>] [--enclosing <target>] --json
 moss inspect <target> --source <source> --json
 moss type <target> --source <source> --json
 moss effects <target> --source <source> --json
@@ -213,7 +214,10 @@ moss impact <target> --source <source> --json
 `inspect main --source <source> --json` includes the checked concrete-domain graph.
 Query output is the common `moss-agent-1` envelope, including protocol/schema/compiler
 versions, `ok`, and either `result` or structured `error`. Target selectors must resolve
-exactly; Moss does not guess a nearby source entity.
+exactly; Moss does not guess a nearby source entity. Use `resolve` for a name, stable
+ID, `line:N`, or `at:N:C` location. Ambiguity returns deterministic candidates in
+`error.details.resolution`; select a candidate ID or narrow it with `--kind` and
+`--enclosing`.
 
 `entity-v1` IDs are durable semantic identities for exact edits and incremental work.
 They are distinct from build/source-layout provenance in `.mossmap`; do not use a debug
@@ -230,11 +234,12 @@ The requested physical path still disambiguates a result.
 
 | Question | Use |
 | --- | --- |
+| Which exact compiler entity is at this name or location? | `resolve` |
 | What is this symbol, construct, route, or concrete instance? | `inspect` |
 | What type or specialization did it resolve to? | `type` |
 | What does it READ / WRITE / CONSUME, and what observable effects occur? | `effects` |
 | What capability does this parameter or call require? | `ownership` |
-| What direct callers/callees are statically known? | `calls` |
+| What direct/transitive callers, callees, specializations, or messages are known? | `calls` |
 | Why did a semantic, fusion, backend, or synchronization choice occur? | `why` |
 | What static work/copy/materialization/backend facts are known? | `cost` |
 | What could this edit invalidate or which tests could it affect? | `impact` then `test --affected` |
@@ -247,7 +252,8 @@ Use `moss agent schema --json` when a route's inputs or result shape are unclear
 
 Never reconstruct Moss synchronization by reading generated Rust if the compiler can
 expose the synchronization plan directly. `inspect`, `effects`, and `why` include
-`synchronization_plan` and `synchronization_dump`. The structured plan contains the
+target-specific `synchronization`, plus the compatible complete
+`synchronization_plan` and `synchronization_dump`. The structured facts contain the
 concrete domain instance and specialization identity, `domain_rank`, handler R/W/C,
 X*, `ProtectedRead`, `LockSet`, class membership/`ClassSet`, SHARED/EXCLUSIVE mode,
 `class_rank`, and conflict matrix/witness facts. These are compiler-owned plan facts;
@@ -351,7 +357,7 @@ Use **Moss** directly for semantic/compiler work:
 
 ```sh
 moss check path/to/file.moss --json
-moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json
+moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json
 moss impact <target> --source <source> --json
 moss edit rename|replace-expression|change-argument ... --json
 moss fmt
@@ -385,8 +391,9 @@ performance verdict.
 - Functional callable-form/capture diagnostics distinguish supported `_` placeholders,
   named callable identities, and effectful captured state; follow the reported rule
   rather than generically rewriting the whole pipeline.
-- `QUERY_TARGET_NOT_FOUND` may report deterministic canonical candidates such as
-  `handler:Store.Read`; these come from checked symbols, not fuzzy matching.
+- `QUERY_TARGET_NOT_FOUND` may carry `details.resolution.status = ambiguous` and
+  deterministic candidate IDs such as `entity-v1:handler:Store.Read`; these come
+  from checked symbols, not fuzzy matching.
 - Pipeline/fusion surprise → use `why` and `effects`; an observable message or a
   callback that may fail/diverge is a real semantic boundary.
 

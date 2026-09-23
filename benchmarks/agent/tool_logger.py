@@ -41,6 +41,25 @@ def extract_codes(stdout: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
+def semantic_query_status(stdout: str) -> str | None:
+    try:
+        value = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    result = value.get("result")
+    if isinstance(result, dict) and result.get("status") == "resolved":
+        return "resolved"
+    error = value.get("error")
+    if not isinstance(error, dict):
+        return None
+    details = error.get("details")
+    resolution = details.get("resolution") if isinstance(details, dict) else None
+    status = resolution.get("status") if isinstance(resolution, dict) else None
+    return status if status in {"ambiguous", "missing"} else None
+
+
 def next_sequence(path: Path) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     counter_path = path.with_suffix(path.suffix + ".sequence")
@@ -103,6 +122,10 @@ def main() -> int:
         relative_cwd = cwd.relative_to(workspace).as_posix() or "."
     except ValueError:
         relative_cwd = str(cwd)
+    query_operations = {
+        "resolve", "inspect", "type", "effects", "ownership", "calls",
+        "why", "cost",
+    }
     append_record(Path(log_name), {
         "sequence": sequence,
         "tool": tool,
@@ -112,6 +135,11 @@ def main() -> int:
         "exit_code": exit_code,
         "duration_ms": duration_ms,
         "diagnostic_codes": extract_codes(stdout),
+        "semantic_query_status": (
+            semantic_query_status(stdout)
+            if tool == "moss" and sys.argv[1:] and sys.argv[1] in query_operations
+            else None
+        ),
     })
     return exit_code
 

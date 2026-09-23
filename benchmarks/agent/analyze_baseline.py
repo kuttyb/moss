@@ -159,7 +159,7 @@ def tool_key(record: dict[str, Any]) -> str | None:
         return None
     if operation == "agent" and len(argv) > 1 and argv[1] == "bootstrap":
         return "moss agent bootstrap"
-    if operation in {"inspect", "type", "effects", "ownership", "calls", "why"}:
+    if operation in {"resolve", "inspect", "type", "effects", "ownership", "calls", "why", "cost"}:
         return f"moss {operation}"
     if operation == "run" and "--interp" in argv:
         return "trace" if "--trace" in argv else "moss run --interp"
@@ -500,7 +500,7 @@ def recovery_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         if record.get("sequence", 0) < green_sequence]
         query_tools = sorted({tool_key(record) for record in before_green
                               if tool_key(record) in {
-                                  "moss inspect", "moss type", "moss effects",
+                                  "moss resolve", "moss inspect", "moss type", "moss effects",
                                   "moss ownership", "moss calls", "moss why",
                               }})
         trace_tools = sorted({tool_key(record) for record in before_green
@@ -582,6 +582,24 @@ def build_aggregate(baseline_root: Path, tasks_root: Path) -> dict[str, Any]:
     failures: Counter[str] = Counter()
     for record in records:
         failures.update(record["failure_classes"])
+    query_keys = {
+        "moss resolve", "moss inspect", "moss type", "moss effects",
+        "moss ownership", "moss calls", "moss why", "moss cost",
+    }
+    query_records = [
+        item for record in records for item in record["raw_log"]
+        if tool_key(item) in query_keys
+    ]
+    query_statuses = Counter(
+        item.get("semantic_query_status") for item in query_records
+        if item.get("semantic_query_status") in {"resolved", "ambiguous", "missing"}
+    )
+    successful_query_tasks = {
+        record["task_id"] for record in records
+        if any(tool_key(item) in query_keys and item.get("exit_code") == 0
+               for item in record["raw_log"])
+    }
+    query_failures = sum(item.get("exit_code") != 0 for item in query_records)
     aggregate = {
         "schema_version": SCHEMA_VERSION,
         "baseline": protocol.get("baseline_id"),
@@ -632,6 +650,24 @@ def build_aggregate(baseline_root: Path, tasks_root: Path) -> dict[str, Any]:
         "task_results": [{key: value for key, value in record.items() if key != "raw_log"}
                          for record in records],
     }
+    if any("semantic_query_status" in item
+           for record in records for item in record["raw_log"]):
+        aggregate["semantic_queries"] = {
+            "invocation_count": len(query_records),
+            "successful_invocation_count": len(query_records) - query_failures,
+            "failed_invocation_count": query_failures,
+            "successful_task_ids": sorted(successful_query_tasks),
+            "successful_task_count": len(successful_query_tasks),
+            "successful_queries_per_completed_task": round(
+                (len(query_records) - query_failures) / len(valid), 3
+            ) if valid else None,
+            "resolution_statuses": dict(sorted(query_statuses.items())),
+            "unresolved_or_ambiguous_rate": round(
+                (query_statuses["missing"] + query_statuses["ambiguous"])
+                / len(query_records), 3
+            ) if query_records and sum(query_statuses.values()) == len(query_records)
+            else None,
+        }
     if aggregate["task_count"] != 30:
         raise AnalysisError(f"expected 30 canonical tasks, found {aggregate['task_count']}")
     if aggregate["pass_count"] + aggregate["fail_count"] != aggregate["valid_task_count"]:

@@ -85,7 +85,8 @@ The protocol defines a meaningful validation attempt as a direct `moss
 check|build|test|debug`, `moss run --interp`, or `margo build|test|run`
 invocation. Bootstrap and semantic queries are informational and do not increment
 attempts-to-green. The wrapper logs direct Moss/Margo commands, exit status,
-duration, and structured diagnostic codes without changing their output. Final
+duration, structured diagnostic codes, and (for Phase 22.3-era runs) semantic-query
+resolution status without changing their output. Final
 pass/fail always comes from the benchmark validator outside the agent namespace.
 Canonical artifacts retain each prompt, final task tree, tool log, validator
 result, and compact manifest; agent event transcripts and generated build products
@@ -136,6 +137,11 @@ The post-run directory retains the same raw evidence and adds `aggregate.json`,
 machine-readable `comparison.json`, and `REPORT.md`. The comparison reports
 headline outcomes, failed correctness and semantic-query calls, diagnostic loops,
 tool use, and task-level recovery for the evidence-backed Phase 22.1 targets.
+
+Phase 22.3 comparisons additionally derive successful semantic-query calls,
+successful queries per completed task, and resolved/ambiguous/missing rates when the
+run's logger contains the resolution-status contract. Historical raw artifacts remain
+unchanged, and their aggregates stay byte-for-byte compatible.
 
 To add a task:
 

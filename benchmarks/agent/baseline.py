@@ -209,7 +209,7 @@ def tool_capability(record: dict[str, Any]) -> str | None:
         return f"margo-{operation}"
     if operation == "agent" and len(argv) > 1 and argv[1] == "bootstrap":
         return "bootstrap"
-    if operation in {"inspect", "type", "effects", "ownership", "calls", "why", "cost"}:
+    if operation in {"resolve", "inspect", "type", "effects", "ownership", "calls", "why", "cost"}:
         return operation
     if operation == "run" and "--interp" in argv:
         return "trace" if "--trace" in argv else "interpreter"
@@ -514,7 +514,7 @@ def protocol_document(args: argparse.Namespace, codex_version: str) -> dict[str,
             "meaningful_validation": {
                 "moss": ["check", "--check", "build", "test", "debug", "run --interp"],
                 "margo": ["build", "test", "run"],
-                "excluded": ["bootstrap", "inspect", "type", "effects", "ownership", "calls", "why", "cost"],
+                "excluded": ["bootstrap", "resolve", "inspect", "type", "effects", "ownership", "calls", "why", "cost"],
             },
             "first_validation_success": "exit status of the first direct meaningful validation command",
             "validation_attempts_to_green": "1-based direct meaningful validation attempt ending at first exit 0; null if none",

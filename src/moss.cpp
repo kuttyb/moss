@@ -5377,7 +5377,8 @@ class Checker {
                                 call.argument_types,
                                 statement.source_file.empty()
                                     ? physical_source
-                                    : statement.source_file};
+                                    : statement.source_file,
+                                "ordinary_call", {}};
           if (std::find_if(
                   p_.semantic_call_edges.begin(),
                   p_.semantic_call_edges.end(),
@@ -5389,6 +5390,38 @@ class Checker {
                         existing.source_file == edge.source_file;
                   }) == p_.semantic_call_edges.end())
             p_.semantic_call_edges.push_back(std::move(edge));
+        }
+      }
+      if (statement.kind == Stmt::Kind::Message) {
+        auto receiver = current_env.find(statement.a);
+        if (receiver != current_env.end()) {
+          const string domain = canonical_type_name(receiver->second);
+          auto declared = domains_.find(domain);
+          const Handler* handler = declared == domains_.end()
+              ? nullptr : find_handler(*declared->second, statement.b);
+          if (handler) {
+            vector<string> argument_types;
+            for (const auto& argument : statement.args)
+              argument_types.push_back(
+                  inferred_expr_type(argument, current_env).value_or(""));
+            SemanticCallEdge edge{
+                source, "handler:" + domain + "." + statement.b,
+                statement.line, argument_types,
+                statement.source_file.empty() ? physical_source
+                                              : statement.source_file,
+                "synchronous_message", statement.a};
+            if (std::find_if(
+                    p_.semantic_call_edges.begin(),
+                    p_.semantic_call_edges.end(),
+                    [&](const SemanticCallEdge& existing) {
+                      return existing.source == edge.source &&
+                          existing.target == edge.target &&
+                          existing.line == edge.line &&
+                          existing.invocation_kind == edge.invocation_kind &&
+                          existing.receiver == edge.receiver;
+                    }) == p_.semantic_call_edges.end())
+              p_.semantic_call_edges.push_back(std::move(edge));
+          }
         }
       }
     };
@@ -5404,7 +5437,8 @@ class Checker {
         graph[source].insert(call.target);
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
-                              call.argument_types, physical_source};
+                              call.argument_types, physical_source,
+                              "ordinary_call", {}};
         if (std::find_if(
                 p_.semantic_call_edges.begin(),
                 p_.semantic_call_edges.end(),
@@ -13602,6 +13636,8 @@ struct SemanticTargetFact {
   string module_identity;
   string export_visibility;
   string export_kind;
+  string enclosing_semantic_identity;
+  string enclosing_durable_identity;
 };
 
 static string semantic_module_name(const string& name) {
@@ -14260,6 +14296,30 @@ static vector<SemanticTargetFact> semantic_target_facts(
 
   finalize_semantic_target_facts(program, plan, targets);
 
+  // Attach stable enclosing identities after durable identities exist.  This
+  // is a relationship projection over compiler-owned entities, not a second
+  // name-resolution pass.
+  for (auto& target : targets) {
+    if (target.context.empty() || target.context == target.semantic_identity)
+      continue;
+    const SemanticTargetFact* enclosing = nullptr;
+    for (const auto& candidate : targets) {
+      if (candidate.semantic_identity == target.semantic_identity) continue;
+      const bool callable = candidate.kind == "function" ||
+          candidate.kind == "specialization" || candidate.kind == "method" ||
+          candidate.kind == "handler" || candidate.kind == "domain" ||
+          candidate.kind == "type" || candidate.kind == "test" ||
+          candidate.kind == "benchmark" || candidate.kind == "main";
+      if (callable && candidate.context == target.context) {
+        enclosing = &candidate;
+        break;
+      }
+    }
+    if (!enclosing) continue;
+    target.enclosing_semantic_identity = enclosing->semantic_identity;
+    target.enclosing_durable_identity = enclosing->durable_identity;
+  }
+
   std::sort(targets.begin(), targets.end(),
             [](const SemanticTargetFact& left,
                const SemanticTargetFact& right) {
@@ -14270,60 +14330,115 @@ static vector<SemanticTargetFact> semantic_target_facts(
   return targets;
 }
 
-static int semantic_target_rank(const SemanticTargetFact& fact) {
-  if (fact.kind == "functional_pipeline") return 0;
-  if (fact.kind == "functional_node") return 1;
-  if (fact.kind == "binding") return 2;
-  if (fact.kind == "statement") return 3;
-  return 4;
+struct SemanticQueryResolution {
+  enum class Status { Resolved, Ambiguous, Missing } status = Status::Missing;
+  vector<const SemanticTargetFact*> candidates;
+  const SemanticTargetFact* target() const {
+    return status == Status::Resolved && candidates.size() == 1
+        ? candidates.front() : nullptr;
+  }
+};
+
+static bool semantic_target_is_root(const SemanticTargetFact& target) {
+  return target.kind == "function" || target.kind == "specialization" ||
+      target.kind == "method" || target.kind == "handler" ||
+      target.kind == "domain" || target.kind == "type" ||
+      target.kind == "trait" || target.kind == "test" ||
+      target.kind == "benchmark" || target.kind == "main";
 }
 
-static const SemanticTargetFact* resolve_semantic_target(
+static SemanticQueryResolution resolve_semantic_target(
     const vector<SemanticTargetFact>& targets, string selector,
-    const string& source_file = {}) {
+    const string& source_file = {}, const string& kind_filter = {},
+    const string& enclosing_filter = {}) {
   selector = trim(std::move(selector));
-  if (starts_with(selector, "line:")) selector = selector.substr(5);
-  bool numeric = !selector.empty() &&
-      std::all_of(selector.begin(), selector.end(), [](unsigned char ch) {
+  int requested_line = 0;
+  int requested_column = 0;
+  string location = selector;
+  if (starts_with(location, "line:")) location = location.substr(5);
+  else if (starts_with(location, "at:")) location = location.substr(3);
+  size_t location_separator = location.find(':');
+  string line_text = location_separator == string::npos
+      ? location : location.substr(0, location_separator);
+  string column_text = location_separator == string::npos
+      ? string() : location.substr(location_separator + 1);
+  const bool numeric_line = !line_text.empty() &&
+      std::all_of(line_text.begin(), line_text.end(), [](unsigned char ch) {
         return std::isdigit(ch);
       });
-  if (numeric) {
-    int line = std::stoi(selector);
-    const SemanticTargetFact* best = nullptr;
-    for (const auto& target : targets) {
-      if (target.line != line) continue;
-      if (!source_file.empty() && !target.source_file.empty() &&
-          target.source_file != source_file) continue;
-      if (!best || semantic_target_rank(target) < semantic_target_rank(*best) ||
-          (semantic_target_rank(target) == semantic_target_rank(*best) &&
-           target.semantic_identity < best->semantic_identity))
-        best = &target;
+  const bool numeric_column = column_text.empty() ||
+      std::all_of(column_text.begin(), column_text.end(),
+                  [](unsigned char ch) { return std::isdigit(ch); });
+  const bool by_location = numeric_line && numeric_column &&
+      (location == selector || starts_with(selector, "line:") ||
+       starts_with(selector, "at:"));
+  if (by_location) {
+    requested_line = std::stoi(line_text);
+    if (!column_text.empty()) requested_column = std::stoi(column_text);
+  }
+
+  auto source_matches = [&](const SemanticTargetFact& target) {
+    return source_file.empty() || target.source_file.empty() ||
+        target.source_file == source_file;
+  };
+  auto filters_match = [&](const SemanticTargetFact& target) {
+    if (!source_matches(target)) return false;
+    if (!kind_filter.empty() && target.kind != kind_filter) return false;
+    if (!enclosing_filter.empty() && target.context != enclosing_filter &&
+        target.enclosing_semantic_identity != enclosing_filter &&
+        target.enclosing_durable_identity != enclosing_filter)
+      return false;
+    return true;
+  };
+
+  SemanticQueryResolution result;
+  int best_match_rank = 100;
+  for (const auto& target : targets) {
+    if (!filters_match(target)) continue;
+    int match_rank = 100;
+    if (by_location) {
+      // Current compiler provenance is line-oriented.  Column 1 is exact;
+      // any other column selects all entities retained for the source line
+      // and reports that precision in the candidate record.
+      (void)requested_column;
+      if (target.line == requested_line) match_rank = 0;
+    } else if (target.semantic_identity == selector ||
+               target.durable_identity == selector) {
+      match_rank = 0;
+    } else {
+      const string canonical = target.kind + ":" + target.name;
+      if (canonical == selector ||
+          (semantic_target_is_root(target) && target.context == selector))
+        match_rank = 1;
+      else if (target.name == selector)
+        match_rank = 2;
+      else {
+        size_t separator = target.name.rfind('.');
+        if (separator != string::npos)
+          if (target.name.substr(separator + 1) == selector) match_rank = 3;
+      }
     }
-    return best;
+    if (match_rank < best_match_rank) {
+      best_match_rank = match_rank;
+      result.candidates.clear();
+    }
+    if (match_rank == best_match_rank && match_rank < 100)
+      result.candidates.push_back(&target);
   }
-  auto exact = std::find_if(targets.begin(), targets.end(),
-                            [&](const SemanticTargetFact& target) {
-                              return target.semantic_identity == selector ||
-                                  target.durable_identity == selector;
-                            });
-  if (exact != targets.end()) return &*exact;
-  if (!source_file.empty()) {
-    auto scoped = std::find_if(
-        targets.begin(), targets.end(), [&](const SemanticTargetFact& target) {
-          return (target.source_file.empty() ||
-                  target.source_file == source_file) &&
-              (target.context == selector || target.name == selector ||
-               target.kind + ":" + target.name == selector);
-        });
-    if (scoped != targets.end()) return &*scoped;
-  }
-  auto named = std::find_if(targets.begin(), targets.end(),
-                            [&](const SemanticTargetFact& target) {
-                              return target.context == selector ||
-                                  target.name == selector ||
-                                  target.kind + ":" + target.name == selector;
-                            });
-  return named == targets.end() ? nullptr : &*named;
+  std::sort(result.candidates.begin(), result.candidates.end(),
+            [](const auto* left, const auto* right) {
+              if (left->source_file != right->source_file)
+                return left->source_file < right->source_file;
+              if (left->line != right->line) return left->line < right->line;
+              if (left->kind != right->kind) return left->kind < right->kind;
+              return left->durable_identity < right->durable_identity;
+            });
+  result.status = result.candidates.empty()
+      ? SemanticQueryResolution::Status::Missing
+      : result.candidates.size() == 1
+          ? SemanticQueryResolution::Status::Resolved
+          : SemanticQueryResolution::Status::Ambiguous;
+  return result;
 }
 
 static void write_agent_envelope_begin(std::ostream& out,
@@ -14358,7 +14473,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
   static const vector<AgentCapabilityDescriptor> catalog = {
       {"structured_diagnostics", "Stable machine-readable Moss diagnostics with compiler-owned source, rule, cause, entity, related-location, and guidance facts.", "moss check <source> --json"},
       {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
-      {"semantic_queries", "Checked-program type, ownership, effect, call, explanation, and cost facts.", "moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
+      {"semantic_queries", "Resolve entities without guessing, then read checked type, ownership, effect, call, domain, synchronization, explanation, and cost facts.", "moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
       {"impact_analysis", "Changed semantic facts, dependents, affected tests, and reuse facts.", "moss impact <target> --source <source> --json"},
       {"formatter", "Canonical Moss formatting or formatting drift detection.", "moss fmt [--check] [--json]"},
@@ -14442,7 +14557,11 @@ static void write_observable_effects_json(
 static void write_semantic_target_json(std::ostream& out,
                                        const SemanticTargetFact& target,
                                        const string& source_file) {
-  out << "{\"semantic_identity\": ";
+  out << "{\"id\": ";
+  write_debug_json_string(out, target.durable_identity);
+  out << ", \"kind\": ";
+  write_debug_json_string(out, target.kind);
+  out << ", \"semantic_identity\": ";
   write_debug_json_string(out, target.semantic_identity);
   out << ", \"durable_identity\": ";
   write_debug_json_string(out, target.durable_identity);
@@ -14459,7 +14578,19 @@ static void write_semantic_target_json(std::ostream& out,
     out << "null";
   out << ", \"name\": ";
   write_debug_json_string(out, target.name);
+  out << ", \"enclosing_entity\": ";
+  if (target.enclosing_durable_identity.empty()) out << "null";
+  else {
+    out << "{\"id\": ";
+    write_debug_json_string(out, target.enclosing_durable_identity);
+    out << ", \"semantic_identity\": ";
+    write_debug_json_string(out, target.enclosing_semantic_identity);
+    out << "}";
+  }
   out << ", \"module_identity\": ";
+  if (target.module_identity.empty()) out << "null";
+  else write_debug_json_string(out, target.module_identity);
+  out << ", \"module\": ";
   if (target.module_identity.empty()) out << "null";
   else write_debug_json_string(out, target.module_identity);
   out << ", \"export_visibility\": ";
@@ -14474,7 +14605,7 @@ static void write_semantic_target_json(std::ostream& out,
   out << ", \"line\": " << target.line
       << ", \"column\": 1, \"span\": {\"start_line\": "
       << target.line << ", \"start_column\": 1, \"end_line\": "
-      << target.line << ", \"end_column\": 1}}, \"type\": ";
+      << target.line << ", \"end_column\": 1}, \"range_precision\": \"line\"}, \"type\": ";
   if (target.type.empty()) out << "null";
   else write_debug_json_string(out, target.type);
   out << ", \"specialization_fields\": [";
@@ -14493,6 +14624,70 @@ static void write_semantic_target_json(std::ostream& out,
   write_debug_json_string(out, target.implementation_hash);
   out << ", \"semantic_interface_hash\": ";
   write_debug_json_string(out, target.semantic_interface_hash);
+  out << ", \"aliases\": [";
+  vector<string> aliases;
+  aliases.push_back(target.kind + ":" + target.name);
+  if (semantic_target_is_root(target) && !target.context.empty())
+    aliases.push_back(target.context);
+  std::sort(aliases.begin(), aliases.end());
+  aliases.erase(std::unique(aliases.begin(), aliases.end()), aliases.end());
+  for (size_t index = 0; index < aliases.size(); ++index) {
+    if (index) out << ", ";
+    write_debug_json_string(out, aliases[index]);
+  }
+  out << "]";
+  out << "}";
+}
+
+static void write_semantic_candidate_json(std::ostream& out,
+                                          const SemanticTargetFact& target,
+                                          const string& source_file) {
+  out << "{\"id\": ";
+  write_debug_json_string(out, target.durable_identity);
+  out << ", \"semantic_identity\": ";
+  write_debug_json_string(out, target.semantic_identity);
+  out << ", \"kind\": ";
+  write_debug_json_string(out, target.kind);
+  out << ", \"name\": ";
+  write_debug_json_string(out, target.name);
+  out << ", \"source\": {\"file\": ";
+  write_debug_json_string(out, target.source_file.empty()
+      ? source_file : target.source_file);
+  out << ", \"line\": " << target.line
+      << ", \"column\": 1, \"precision\": \"line\"}";
+  out << ", \"enclosing_entity\": ";
+  if (target.enclosing_durable_identity.empty()) out << "null";
+  else write_debug_json_string(out, target.enclosing_durable_identity);
+  out << "}";
+}
+
+static void write_type_facts_json(std::ostream& out,
+                                  const SemanticTargetFact& target) {
+  out << "{\"status\": ";
+  if (target.type.empty()) {
+    out << "\"not_available\", \"reason\": "
+           "\"the checked entity has no retained value type\"}";
+    return;
+  }
+  out << "\"resolved\", \"resolved\": ";
+  write_debug_json_string(out, target.type);
+  out << ", \"category\": ";
+  string category = "concrete";
+  if (target.kind == "specialization" || target.kind == "domain_specialization")
+    category = "specialized";
+  else if (target.kind == "domain")
+    category = "domain";
+  else if (starts_with(target.type, "vector[") ||
+           starts_with(target.type, "map[") ||
+           starts_with(target.type, "queue[") ||
+           target.type == "vector" || target.type == "map" ||
+           target.type == "queue")
+    category = "collection";
+  write_debug_json_string(out, category);
+  out << ", \"origin\": ";
+  const bool inferred = target.kind == "binding" ||
+      target.kind == "functional_node" || target.kind == "functional_pipeline";
+  write_debug_json_string(out, inferred ? "inferred" : "checked_declaration");
   out << "}";
 }
 
@@ -14518,7 +14713,10 @@ static vector<const SemanticCallEdge*> calls_for_target(
     const Program& program, const SemanticTargetFact& target) {
   vector<const SemanticCallEdge*> result;
   for (const auto& edge : program.semantic_call_edges)
-    if (edge.source == target.context) result.push_back(&edge);
+    if ((target.kind == "call" && edge.source == target.context &&
+         edge.target == target.name && edge.line == target.line) ||
+        (target.kind != "call" && edge.source == target.context))
+      result.push_back(&edge);
   return result;
 }
 
@@ -14643,7 +14841,9 @@ static void write_structured_error(
     std::ostream& out, const string& command, const string& code,
     const string& message, const string& source_file = {}, int line = 0,
     const string& semantic_identity = {}, const string& symbol = {},
-    const TeachingDiagnostic* teaching = nullptr) {
+    const TeachingDiagnostic* teaching = nullptr,
+    const vector<const SemanticTargetFact*>* query_candidates = nullptr,
+    const string& query_status = {}) {
   write_agent_envelope_begin(out, command, false);
   out << "  \"error\": {\"code\": ";
   write_debug_json_string(out, code);
@@ -14770,6 +14970,20 @@ static void write_structured_error(
   out << ", \"recursion_witness\": ";
   if (code == "RECURSION_CYCLE") write_debug_json_string(out, message);
   else out << "null";
+  out << ", \"resolution\": ";
+  if (query_status.empty()) out << "null";
+  else {
+    out << "{\"status\": ";
+    write_debug_json_string(out, query_status);
+    out << ", \"candidates\": [";
+    if (query_candidates)
+      for (size_t index = 0; index < query_candidates->size(); ++index) {
+        if (index) out << ", ";
+        write_semantic_candidate_json(
+            out, *query_candidates->at(index), source_file);
+      }
+    out << "]}";
+  }
   out << "}, \"fixes\": [";
   bool has_fix = false;
   if (message.find("tabs are not allowed") != string::npos) {
@@ -14863,7 +15077,8 @@ static void write_bootstrap_json(std::ostream& out,
             "functional_optimization_explanations",
             "backend_lowering_explanations", "project_builds",
             "native_tests", "native_benchmarks", "benchmark_baselines",
-            "durable_semantic_identities", "semantic_hashing",
+            "durable_semantic_identities", "robust_query_targeting",
+            "semantic_query_expansion", "semantic_hashing",
             "impact_analysis", "incremental_verification",
             "modules", "qualified_imports", "module_interfaces",
             "generic_specialization_identity", "interpreted_domains",
@@ -14884,6 +15099,8 @@ static void write_bootstrap_json(std::ostream& out,
          "\"semantic_edits\": true, "
          "\"repair_actions\": true, "
          "\"cost_facts\": true, "
+         "\"robust_query_targeting\": true, "
+         "\"semantic_query_expansion\": true, "
          "\"language_surface\": true, "
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
@@ -14910,6 +15127,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"commands\": ";
   write_agent_string_array(
       out, {"moss check <source> --json",
+            "moss resolve <target> --source <source> [--kind KIND] [--enclosing TARGET] --json",
             "moss inspect <target> --source <source> --json",
             "moss type <target> --source <source> --json",
             "moss effects <target> --source <source> --json",
@@ -14935,12 +15153,13 @@ static void write_bootstrap_json(std::ostream& out,
             "moss build|test|bench|clean (project-command compatibility paths)",
             "moss agent benchmark list|show|validate|run [--json]"});
   out << ",\n    \"semantic_queries\": ["
+         "{\"name\":\"resolve\",\"purpose\":\"resolve names, stable IDs, or source locations without silently guessing; ambiguity returns candidates\",\"command\":\"moss resolve <target> --source <source> [--kind KIND] [--enclosing TARGET] --json\"},"
          "{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},"
          "{\"name\":\"effects\",\"purpose\":\"READ/WRITE/CONSUME and separate observable effects; includes synchronization plan\",\"command\":\"moss effects <target> --source <source> --json\"},"
          "{\"name\":\"ownership\",\"purpose\":\"inferred access capability and its checked reason\",\"command\":\"moss ownership <target> --source <source> --json\"},"
-         "{\"name\":\"calls\",\"purpose\":\"direct statically resolved callers and callees\",\"command\":\"moss calls <target> --source <source> --json\"},"
-         "{\"name\":\"why\",\"purpose\":\"stored functional, backend, and synchronization decision explanations\",\"command\":\"moss why <target> --source <source> --json\"},"
+         "{\"name\":\"calls\",\"purpose\":\"direct and transitive statically resolved callers, callees, specializations, and message edges\",\"command\":\"moss calls <target> --source <source> --json\"},"
+         "{\"name\":\"why\",\"purpose\":\"structured compiler evidence for type, ownership, effects, calls, functional plans, and synchronization decisions\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"name\":\"cost\",\"purpose\":\"known static cost facts, not runtime predictions\",\"command\":\"moss cost <target> --source <source> --json\"},"
          "{\"name\":\"impact\",\"purpose\":\"changed semantic unit, dependents, affected tests, and reuse facts\",\"command\":\"moss impact <target> --source <source> --json\"}]";
   out << ",\n    \"actions\": ["
@@ -14967,7 +15186,8 @@ static void write_bootstrap_json(std::ostream& out,
             "For project-layout questions, inspect project_surface; read canonical_docs.project_workflow when more detail is needed.",
             "Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean|debug; use margo debug [--trace] for package-aware source Fast Debug.",
             "Run moss check --json before guessing at a Moss error.",
-            "Use inspect, why, effects, ownership, and cost as needed.",
+            "Ask the compiler for semantic facts before reconstructing them from source.",
+            "Use resolve when a target is unknown or ambiguous, then inspect, type, why, effects, ownership, calls, and cost as needed.",
             "Edit Moss source, never generated Rust.",
             "Run moss fmt.",
             "Run moss impact <target> --json.",
@@ -14977,11 +15197,12 @@ static void write_bootstrap_json(std::ostream& out,
             "Prefer structured --json output for automation.",
             "Moss owns module/.mossi/semantic truth; Margo supplies package artifacts."});
   out << ",\n    \"workflow_hints\": ["
+         "{\"question\":\"Which compiler entity is at this name or source location?\",\"capability\":\"resolve\",\"command\":\"moss resolve <target> --source <source> [--kind KIND] [--enclosing TARGET] --json\"},"
          "{\"question\":\"What is this symbol or concrete domain instance?\",\"capability\":\"inspect\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"question\":\"What type or specialization did this resolve to?\",\"capability\":\"type\",\"command\":\"moss type <target> --source <source> --json\"},"
          "{\"question\":\"What does this READ, WRITE, or CONSUME?\",\"capability\":\"effects\",\"command\":\"moss effects <target> --source <source> --json\"},"
          "{\"question\":\"What access capability does this call require?\",\"capability\":\"ownership\",\"command\":\"moss ownership <target> --source <source> --json\"},"
-         "{\"question\":\"What direct calls and callers are known?\",\"capability\":\"calls\",\"command\":\"moss calls <target> --source <source> --json\"},"
+         "{\"question\":\"What direct/transitive calls, callers, specializations, or messages are known?\",\"capability\":\"calls\",\"command\":\"moss calls <target> --source <source> --json\"},"
          "{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},"
          "{\"question\":\"Does Moss support this source construct, and what is the canonical form?\",\"capability\":\"language_surface\",\"command\":\"moss agent bootstrap --json\"},"
@@ -15030,7 +15251,9 @@ static void write_bootstrap_json(std::ostream& out,
     out << ", \"target_selectors\": ";
     write_agent_string_array(
         out, {"durable entity-v1 identity", "debug/source provenance identity",
-              "construct name", "line:<number>"});
+              "unambiguous construct name", "line:<number>",
+              "at:<line>:<column>", "<source.moss>:<line>[:<column>]",
+              "--kind and --enclosing filters"});
     out << ", \"project_result_kinds\": ";
     write_agent_string_array(out, {"build", "test", "bench", "impact",
                                    "fmt", "edit", "cost"});
@@ -15045,6 +15268,15 @@ static void write_bootstrap_json(std::ostream& out,
            "\"fields\": [\"graph_identity\", \"domains\", \"sync_classes\", "
            "\"handlers\", \"leaf_to_class\", \"conflicts\", \"metrics\", \"handler_order\", \"conflict_matrix\", \"class_opportunities\", \"class_splits\"], "
            "\"semantics\": \"compiler-owned graph-relative SynchronizationPlan; production handler-level 2PL\"}";
+    out << ", \"semantic_entity_fields\": [\"id\", \"kind\", \"name\", "
+           "\"module_identity\", \"source\", \"enclosing_entity\", \"type\", "
+           "\"aliases\", \"provenance\", \"implementation_hash\", "
+           "\"semantic_interface_hash\"]";
+    out << ", \"query_resolution\": {\"statuses\": "
+           "[\"resolved\", \"ambiguous\", \"missing\"], "
+           "\"ambiguity_path\": \"error.details.resolution.candidates\", "
+           "\"source_precision\": \"line\", "
+           "\"column_behavior\": \"accepted as a location hint; candidates retain line precision\"}";
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
            "\"legal_alternatives\", \"source\", \"rule\", \"cause\", "
@@ -15085,11 +15317,11 @@ static void write_bootstrap_json(std::ostream& out,
          "FUNCTIONAL_CAPTURE_MUTATION", "TYPE_INFERENCE_FAILED"});
     out << ',';
     write_agent_command_schema(
-        out, "semantic_query", "Inspect existing checked facts; operations are inspect, type, effects, ownership, calls, why, and cost.",
+        out, "semantic_query", "Resolve entities and inspect existing checked facts; operations are resolve, inspect, type, effects, ownership, calls, why, and cost.",
         {"operation", "target", "--source", "--json"}, {"-O"},
-        "moss-agent-1 envelope with target plus operation-specific facts",
+        "moss-agent-1 envelope with resolved target plus operation-specific facts; ambiguity returns details.resolution.candidates",
         {"entity-v1", "source_identity", "specialization_identity"},
-        {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND"});
+        {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND", "ambiguous resolution status"});
     out << ',';
     write_agent_command_schema(
         out, "impact", "Report changed semantic facts, dependents, affected tests, and incremental reuse.",
@@ -15194,14 +15426,45 @@ static void write_check_json(std::ostream& out, const string& source_file,
   out << "]}\n}\n";
 }
 
+static const SemanticTargetFact* semantic_target_for_context(
+    const vector<SemanticTargetFact>& targets, const string& context) {
+  for (const auto& target : targets)
+    if (semantic_target_is_root(target) && target.context == context)
+      return &target;
+  return nullptr;
+}
+
+static string semantic_call_site_identity(const SemanticCallEdge& edge) {
+  return edge.source + "@" + std::to_string(edge.line) +
+      ":call:" + edge.target;
+}
+
 static void write_calls_result(std::ostream& out, const Program& program,
+                               const vector<SemanticTargetFact>& targets,
                                const SemanticTargetFact& target) {
   auto calls = calls_for_target(program, target);
   out << "[";
   for (size_t index = 0; index < calls.size(); ++index) {
     if (index) out << ", ";
-    out << "{\"target\": ";
+    const string call_identity = semantic_call_site_identity(*calls[index]);
+    const SemanticTargetFact* call_target = nullptr;
+    const SemanticTargetFact* callee = semantic_target_for_context(
+        targets, calls[index]->target);
+    for (const auto& candidate : targets)
+      if (candidate.semantic_identity == call_identity) {
+        call_target = &candidate;
+        break;
+      }
+    out << "{\"call_site_id\": ";
+    if (call_target) write_debug_json_string(out, call_target->durable_identity);
+    else write_debug_json_string(out, call_identity);
+    out << ", \"call_site_semantic_identity\": ";
+    write_debug_json_string(out, call_identity);
+    out << ", \"target\": ";
     write_debug_json_string(out, calls[index]->target);
+    out << ", \"target_id\": ";
+    if (callee) write_debug_json_string(out, callee->durable_identity);
+    else out << "null";
     out << ", \"resolved\": true, \"target_kind\": ";
     write_debug_json_string(out,
                             semantic_call_target_kind(calls[index]->target));
@@ -15214,12 +15477,20 @@ static void write_calls_result(std::ostream& out, const Program& program,
     auto specialization = specialization_identity_for_call(program, *calls[index]);
     if (specialization) write_debug_json_string(out, *specialization);
     else out << "null";
+    out << ", \"boundary\": ";
+    write_debug_json_string(out,
+        calls[index]->invocation_kind == "synchronous_message"
+            ? "synchronous_message_by_value" : "ordinary_call");
+    out << ", \"receiver\": ";
+    if (calls[index]->receiver.empty()) out << "null";
+    else write_debug_json_string(out, calls[index]->receiver);
     out << "}";
   }
   out << "]";
 }
 
 static void write_callers_result(std::ostream& out, const Program& program,
+                                 const vector<SemanticTargetFact>& targets,
                                  const SemanticTargetFact& target) {
   auto callers = callers_for_target(program, target);
   out << "[";
@@ -15227,9 +15498,51 @@ static void write_callers_result(std::ostream& out, const Program& program,
     if (index) out << ", ";
     out << "{\"source\": ";
     write_debug_json_string(out, callers[index]->source);
+    out << ", \"source_id\": ";
+    const SemanticTargetFact* caller = semantic_target_for_context(
+        targets, callers[index]->source);
+    if (caller) write_debug_json_string(out, caller->durable_identity);
+    else out << "null";
+    out << ", \"call_site_semantic_identity\": ";
+    write_debug_json_string(out, semantic_call_site_identity(*callers[index]));
     out << ", \"line\": " << callers[index]->line
         << ", \"source_file\": ";
     write_debug_json_string(out, callers[index]->source_file);
+    out << "}";
+  }
+  out << "]";
+}
+
+static void write_transitive_calls_result(
+    std::ostream& out, const Program& program,
+    const vector<SemanticTargetFact>& targets,
+    const SemanticTargetFact& target) {
+  std::set<string> visited;
+  vector<string> frontier = {target.context};
+  vector<string> result;
+  while (!frontier.empty()) {
+    string source = frontier.back();
+    frontier.pop_back();
+    for (const auto& edge : program.semantic_call_edges) {
+      if (edge.source != source || edge.target == target.context ||
+          visited.count(edge.target))
+        continue;
+      visited.insert(edge.target);
+      result.push_back(edge.target);
+      frontier.push_back(edge.target);
+    }
+  }
+  std::sort(result.begin(), result.end());
+  out << "[";
+  for (size_t index = 0; index < result.size(); ++index) {
+    if (index) out << ", ";
+    out << "{\"target\": ";
+    write_debug_json_string(out, result[index]);
+    out << ", \"target_id\": ";
+    const SemanticTargetFact* callee = semantic_target_for_context(
+        targets, result[index]);
+    if (callee) write_debug_json_string(out, callee->durable_identity);
+    else out << "null";
     out << "}";
   }
   out << "]";
@@ -15593,52 +15906,277 @@ static string synchronization_plan_dump(const SynchronizationPlan& plan) {
   return out.str();
 }
 
+static void write_effect_summary_json(std::ostream& out,
+                                      const SemanticTargetFact& target) {
+  out << "{\"status\": ";
+  if (!target.has_observable_effects &&
+      !target.has_enclosing_callable_effects) {
+    out << "\"not_available\", \"direct\": null, \"transitive\": null, "
+           "\"reason\": \"no target-local effect summary is retained\"}";
+    return;
+  }
+  out << "\"available\", \"direct\": ";
+  const bool exact_local = target.kind == "functional_node" ||
+      target.kind == "functional_pipeline";
+  if (exact_local && target.has_observable_effects)
+    write_observable_effects_json(out, target.observable_effects);
+  else out << "null";
+  out << ", \"direct_status\": ";
+  write_debug_json_string(out, exact_local ? "exact" : "not_retained");
+  out << ", \"transitive\": ";
+  if (target.has_observable_effects)
+    write_observable_effects_json(out, target.observable_effects);
+  else if (target.has_enclosing_callable_effects)
+    write_observable_effects_json(out, target.enclosing_callable_effects);
+  else out << "null";
+  out << ", \"transitive_scope\": ";
+  write_debug_json_string(out, target.has_observable_effects
+      ? "target" : "enclosing_callable");
+  const ObservableEffects* effects = target.has_observable_effects
+      ? &target.observable_effects
+      : target.has_enclosing_callable_effects
+          ? &target.enclosing_callable_effects : nullptr;
+  out << ", \"certainty\": ";
+  write_debug_json_string(out, effects && effects->unresolved
+      ? "conservative_unresolved" : "resolved");
+  out << "}";
+}
+
+static void write_ownership_facts_json(std::ostream& out,
+                                       const SemanticTargetFact& target) {
+  out << "{\"status\": ";
+  if (target.parameters.empty() && target.kind != "handler" &&
+      !(target.kind == "call" && starts_with(target.name, "handler:")))
+    out << "\"not_available\"";
+  else out << "\"available\"";
+  out << ", \"parameters\": ";
+  write_parameters_json(out, target);
+  out << ", \"value_boundary\": ";
+  if (target.kind == "handler" ||
+      (target.kind == "call" && starts_with(target.name, "handler:")))
+    out << "{\"kind\": \"synchronous_message\", "
+           "\"payload\": \"by_value_immutable_snapshot\", "
+           "\"reply\": \"by_value\", "
+           "\"domain_handles_allowed\": false}";
+  else out << "null";
+  out << ", \"move_provenance\": {\"status\": \"not_available\", "
+         "\"reason\": \"the checker does not retain per-use move provenance after validation\"}";
+  out << "}";
+}
+
+static string target_domain_name(const SemanticTargetFact& target) {
+  string identity;
+  if (target.kind == "domain") return target.name;
+  if (target.kind == "handler") identity = target.name;
+  else if (target.kind == "call" && starts_with(target.name, "handler:"))
+    identity = target.name.substr(8);
+  else if (starts_with(target.context, "handler:"))
+    identity = target.context.substr(8);
+  if (identity.empty()) return {};
+  size_t separator = identity.rfind('.');
+  return separator == string::npos ? identity : identity.substr(0, separator);
+}
+
+static string target_handler_identity(const SemanticTargetFact& target) {
+  if (target.kind == "handler") return target.context;
+  if (target.kind == "call" && starts_with(target.name, "handler:"))
+    return target.name;
+  if (starts_with(target.context, "handler:")) return target.context;
+  return {};
+}
+
+static void write_target_synchronization_json(
+    std::ostream& out, const SynchronizationPlan& plan,
+    const SemanticTargetFact& target) {
+  const string domain_name = target_domain_name(target);
+  const string handler_identity = target_handler_identity(target);
+  string handler_name;
+  if (!handler_identity.empty()) {
+    size_t separator = handler_identity.rfind('.');
+    handler_name = separator == string::npos
+        ? handler_identity : handler_identity.substr(separator + 1);
+  }
+  out << "{\"status\": ";
+  if (domain_name.empty()) {
+    out << "\"not_applicable\", \"reason\": "
+           "\"target is not a domain operation\"}";
+    return;
+  }
+  vector<const DomainSynchronizationPlan*> domains;
+  for (const auto& domain : plan.domains)
+    if (domain.domain == domain_name) domains.push_back(&domain);
+  if (domains.empty()) {
+    out << "\"not_available\", \"reason\": "
+           "\"no concrete synchronization instance is retained for this domain\"}";
+    return;
+  }
+  bool conservative_fallback = false;
+  for (const auto* domain : domains)
+    for (const auto& handler : domain->handlers) {
+      if (!handler_identity.empty() && handler.name != handler_name &&
+          handler.handler_identity != handler_identity) continue;
+      conservative_fallback |= !handler.path_placement.enabled;
+    }
+  out << "\"available\", \"analysis\": \"compiler_synchronization_plan\", "
+         "\"precision\": ";
+  write_debug_json_string(out, conservative_fallback
+      ? "exact_footprint_conservative_placement" : "exact");
+  out << ", \"conservative_fallback\": "
+      << (conservative_fallback ? "true" : "false")
+      << ", \"instances\": [";
+  for (size_t d = 0; d < domains.size(); ++d) {
+    if (d) out << ", ";
+    const auto& domain = *domains[d];
+    out << "{\"concrete_instance_id\": ";
+    write_debug_json_string(out, domain.concrete_instance_id);
+    out << ", \"domain_rank\": " << domain.domain_rank
+        << ", \"handlers\": [";
+    bool first_handler = true;
+    for (const auto& handler : domain.handlers) {
+      if (!handler_identity.empty() && handler.name != handler_name &&
+          handler.handler_identity != handler_identity) continue;
+      if (!first_handler) out << ", ";
+      first_handler = false;
+      auto leaves = [&](const StateLeafSet& values) {
+        write_agent_string_array(out, vector<string>(values.begin(), values.end()));
+      };
+      out << "{\"handler_identity\": ";
+      write_debug_json_string(out, handler.handler_identity);
+      out << ", \"read_set\": "; leaves(handler.effects.reads);
+      out << ", \"write_set\": "; leaves(handler.effects.writes);
+      out << ", \"consume_set\": "; leaves(handler.effects.consumes);
+      out << ", \"protected_read_set\": "; leaves(handler.protected_read_set);
+      out << ", \"lock_set\": "; leaves(handler.lock_set);
+      out << ", \"acquisitions\": [";
+      bool first_mode = true;
+      for (const auto& mode : handler.class_modes) {
+        if (!first_mode) out << ", ";
+        first_mode = false;
+        out << "{\"class_id\": ";
+        write_debug_json_string(out, domain.classes.at(mode.first).class_id);
+        out << ", \"domain_rank\": " << domain.domain_rank
+            << ", \"class_rank\": " << mode.first << ", \"mode\": ";
+        write_debug_json_string(out, synchronization_mode_name(mode.second));
+        out << "}";
+      }
+      out << "], \"path_placement\": {\"kind\": ";
+      write_debug_json_string(out, handler.path_placement.enabled
+          ? "leading_conditional_continuation_split" : "entry");
+      out << ", \"reason\": ";
+      write_debug_json_string(out, handler.path_placement.reason);
+      out << "}}";
+    }
+    out << "]}";
+  }
+  out << "]}";
+}
+
+static void write_domain_semantics_json(
+    std::ostream& out, const Program& program,
+    const SemanticTargetFact& target) {
+  const string domain_name = target_domain_name(target);
+  const string handler_identity = target_handler_identity(target);
+  if (domain_name.empty()) {
+    out << "{\"status\": \"not_applicable\"}";
+    return;
+  }
+  out << "{\"status\": \"available\", \"domain\": ";
+  write_debug_json_string(out, domain_name);
+  out << ", \"handler\": ";
+  if (handler_identity.empty()) out << "null";
+  else write_debug_json_string(out, handler_identity);
+  out << ", \"sender\": ";
+  if (target.kind == "call") write_debug_json_string(out, target.context);
+  else out << "null";
+  out << ", \"receiver_instances\": [";
+  bool first = true;
+  for (const auto& instance : program.concrete_domain_graph.instances) {
+    if (instance.domain != domain_name) continue;
+    if (!first) out << ", ";
+    first = false;
+    write_debug_json_string(out, instance.identity);
+  }
+  out << "], \"receiver_instance_precision\": ";
+  size_t count = 0;
+  for (const auto& instance : program.concrete_domain_graph.instances)
+    if (instance.domain == domain_name) ++count;
+  write_debug_json_string(out, count == 1 ? "exact_domain_instance" :
+      count == 0 ? "not_available" : "ambiguous_domain_instances");
+  out << ", \"payload\": {\"boundary\": \"by_value_immutable_snapshot\", "
+         "\"domain_handles_allowed\": false}, \"reply\": {\"boundary\": "
+         "\"by_value\"}, \"legal\": true}";
+}
+
+static void write_reason_evidence_json(std::ostream& out,
+                                       const SemanticTargetFact& target) {
+  out << "{\"code\": ";
+  string code = "CHECKED_SEMANTIC_FACT";
+  if (target.kind == "call") code = "STATIC_CALL_RESOLUTION";
+  else if (target.kind == "handler") code = "HANDLER_SEMANTICS";
+  else if (target.kind == "functional_pipeline" ||
+           target.kind == "functional_node")
+    code = "FUNCTIONAL_PLAN_DECISION";
+  else if (!target.parameters.empty()) code = "INFERRED_VALUE_EFFECTS";
+  write_debug_json_string(out, code);
+  out << ", \"evidence\": [";
+  bool first = true;
+  if (!target.type.empty()) {
+    out << "{\"kind\": \"resolved_type\", \"value\": ";
+    write_debug_json_string(out, target.type);
+    out << "}";
+    first = false;
+  }
+  for (const auto& parameter : target.parameters) {
+    if (!first) out << ", ";
+    first = false;
+    out << "{\"kind\": \"ownership\", \"subject\": ";
+    write_debug_json_string(out, parameter.name);
+    out << ", \"value\": ";
+    write_debug_json_string(out, ownership_effect_name(parameter.ownership));
+    out << "}";
+  }
+  if (target.has_observable_effects) {
+    if (!first) out << ", ";
+    out << "{\"kind\": \"transitive_effects\", \"value\": ";
+    write_observable_effects_json(out, target.observable_effects);
+    out << "}";
+    first = false;
+  }
+  for (const auto& explanation : target.explanations) {
+    if (!first) out << ", ";
+    first = false;
+    out << "{\"kind\": \"compiler_decision\", \"detail\": ";
+    write_debug_json_string(out, explanation);
+    out << "}";
+  }
+  out << "]}";
+}
+
 static bool write_semantic_query_json(
     std::ostream& out, const string& command, const string& selector,
     const string& source_file, const Program& program,
-    const OptimizationPlan& plan, const vector<Warning>& warnings) {
+    const OptimizationPlan& plan, const vector<Warning>& warnings,
+    const string& kind_filter = {}, const string& enclosing_filter = {}) {
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
-  const SemanticTargetFact* target = resolve_semantic_target(
-      targets, selector, source_file);
+  SemanticQueryResolution resolution = resolve_semantic_target(
+      targets, selector, source_file, kind_filter, enclosing_filter);
+  const SemanticTargetFact* target = resolution.target();
   if (!target) {
-    vector<const SemanticTargetFact*> candidates;
-    if (selector.find(':') == string::npos &&
-        selector.find('.') == string::npos) {
-      for (const auto& candidate : targets) {
-        if (candidate.kind != "function" && candidate.kind != "method" &&
-            candidate.kind != "handler" && candidate.kind != "domain")
-          continue;
-        size_t separator = candidate.name.rfind('.');
-        string short_name = separator == string::npos
-            ? candidate.name : candidate.name.substr(separator + 1);
-        if (short_name == selector) candidates.push_back(&candidate);
-      }
-      std::sort(candidates.begin(), candidates.end(),
-                [](const auto* left, const auto* right) {
-                  const string left_name = left->kind + ":" + left->name;
-                  const string right_name = right->kind + ":" + right->name;
-                  if (left_name != right_name) return left_name < right_name;
-                  return left->semantic_identity < right->semantic_identity;
-                });
-      candidates.erase(
-          std::unique(candidates.begin(), candidates.end(),
-                      [](const auto* left, const auto* right) {
-                        return left->kind == right->kind &&
-                            left->name == right->name;
-                      }),
-          candidates.end());
-    }
     TeachingDiagnostic teaching;
-    string message = "no exact Moss semantic target matches '" + selector + "'";
-    if (!candidates.empty()) {
+    const bool ambiguous = resolution.status ==
+        SemanticQueryResolution::Status::Ambiguous;
+    string message = ambiguous
+        ? "Moss semantic target is ambiguous: '" + selector + "'"
+        : "no exact Moss semantic target matches '" + selector + "'";
+    if (ambiguous) {
       teaching.rule_id = "queries.exact-target";
       teaching.rule_summary =
-          "semantic queries use exact canonical target identities";
-      teaching.cause_kind = "unqualified-query-target";
+          "semantic queries never guess among compiler entities";
+      teaching.cause_kind = "ambiguous-query-target";
       teaching.guidance_kind = "qualify-query-target";
       std::ostringstream choices;
-      for (size_t index = 0; index < candidates.size(); ++index) {
-        const auto& candidate = *candidates[index];
+      for (size_t index = 0; index < resolution.candidates.size(); ++index) {
+        const auto& candidate = *resolution.candidates[index];
         const string canonical = candidate.kind + ":" + candidate.name;
         if (index) choices << ", ";
         choices << canonical;
@@ -15649,27 +16187,30 @@ static bool write_semantic_query_json(
             {candidate.source_file, candidate.line, 1,
              "candidate " + canonical});
       }
-      message += candidates.size() == 1 ? "; possible target: " :
-                                          "; possible targets: ";
+      message += "; candidates: ";
       message += choices.str();
-      teaching.guidance_summary = candidates.size() == 1
-          ? "use the canonical target '" +
-                candidates.front()->kind + ":" + candidates.front()->name + "'"
-          : "choose one of the reported canonical qualified targets";
+      teaching.guidance_summary =
+          "choose a candidate id or narrow with --kind/--enclosing";
     }
     write_structured_error(
         out, command, "QUERY_TARGET_NOT_FOUND",
         message, source_file, 0, {}, {},
-        teaching.empty() ? nullptr : &teaching);
+        teaching.empty() ? nullptr : &teaching,
+        &resolution.candidates, ambiguous ? "ambiguous" : "missing");
     return false;
   }
   write_agent_envelope_begin(out, command, true);
-  out << "  \"result\": {\"target\": ";
+  out << "  \"result\": {\"status\": \"resolved\", \"target\": ";
   write_semantic_target_json(out, *target, source_file);
+  if (command == "resolve") {
+    out << ", \"resolution\": {\"status\": \"resolved\", \"candidate_count\": 1}";
+  }
   if (command == "inspect" || command == "type") {
     out << ", \"resolved_type\": ";
     if (target->type.empty()) out << "null";
     else write_debug_json_string(out, target->type);
+    out << ", \"type_facts\": ";
+    write_type_facts_json(out, *target);
   }
   if (command == "inspect" || command == "effects") {
     out << ", \"ownership\": ";
@@ -15683,6 +16224,8 @@ static bool write_semantic_query_json(
       write_observable_effects_json(
           out, target->enclosing_callable_effects);
     else out << "null";
+    out << ", \"effect_summary\": ";
+    write_effect_summary_json(out, *target);
   }
   if (command == "ownership") {
     out << ", \"parameters_and_values\": ";
@@ -15691,26 +16234,42 @@ static bool write_semantic_query_json(
     write_debug_json_string(
         out, "effects are inferred from the checked body and its statically resolved callees");
   }
+  if (command == "inspect" || command == "ownership" || command == "effects") {
+    out << ", \"ownership_facts\": ";
+    write_ownership_facts_json(out, *target);
+  }
   if (command == "inspect" || command == "calls") {
     out << ", \"direct_calls\": ";
-    write_calls_result(out, program, *target);
+    write_calls_result(out, program, targets, *target);
     out << ", \"callers\": ";
-    write_callers_result(out, program, *target);
+    write_callers_result(out, program, targets, *target);
+    out << ", \"transitive_calls\": ";
+    write_transitive_calls_result(out, program, targets, *target);
   }
 
   if (command == "inspect" || command == "why") {
     out << ", \"explanations\": ";
     write_agent_string_array(out, target->explanations);
+    out << ", \"reason\": ";
+    write_reason_evidence_json(out, *target);
   }
   if (command == "inspect" || command == "cost") {
     out << ", \"cost_facts\": ";
     write_cost_result(out, program, plan, warnings, *target);
   }
   if (command == "inspect" || command == "effects" || command == "why") {
+    out << ", \"synchronization\": ";
+    write_target_synchronization_json(
+        out, program.synchronization_plan, *target);
     out << ", \"synchronization_plan\":";
     write_synchronization_plan_json(out, program.synchronization_plan);
     out << ", \"synchronization_dump\":";
     write_debug_json_string(out, synchronization_plan_dump(program.synchronization_plan));
+  }
+  if (command == "inspect" || command == "calls" ||
+      command == "ownership" || command == "why") {
+    out << ", \"domain\": ";
+    write_domain_semantics_json(out, program, *target);
   }
   if (command == "inspect") {
     out << ", \"concrete_domain_graph\": {\"graph_identity\":";
@@ -21207,7 +21766,7 @@ static void usage() {
             << "  moss agent bootstrap|capabilities|schema --json\n"
             << "  moss agent session-report-template --json\n"
             << "  moss agent benchmark list|show|validate|run [--json]\n"
-            << "  moss inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> --json\n"
+            << "  moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> [--kind KIND] [--enclosing TARGET] --json\n"
             << "  moss impact <target> [--source <input.moss>] --json\n"
             << "  moss fmt [--check] [--json]\n"
             << "  moss edit rename|replace-expression|change-argument ... --json\n"
@@ -21523,10 +22082,11 @@ int main(int argc, char** argv) {
     bool debug_build = false;
     bool diagnostic_paths = false;
     string input, output, debug_map_output, native_output;
-    string query_command, query_target, query_source;
+    string query_command, query_target, query_source, query_kind,
+        query_enclosing;
     int first_argument = 1;
     static const std::set<string> semantic_commands = {
-        "inspect", "type", "effects", "ownership", "calls",
+        "resolve", "inspect", "type", "effects", "ownership", "calls",
         "why", "cost"};
     if (string(argv[1]) == "check") {
       check_only = true;
@@ -21545,6 +22105,14 @@ int main(int argc, char** argv) {
       else if (a == "--source") {
         if (++i >= argc) { usage(); return 2; }
         query_source = argv[i];
+      }
+      else if (a == "--kind") {
+        if (++i >= argc) { usage(); return 2; }
+        query_kind = argv[i];
+      }
+      else if (a == "--enclosing") {
+        if (++i >= argc) { usage(); return 2; }
+        query_enclosing = argv[i];
       }
       else if (a == "--dump-functional-ir") dump_functional = true;
       else if (a == "--explain-fusion") explain_fusion = true;
@@ -21589,12 +22157,15 @@ int main(int argc, char** argv) {
         size_t marker = query_target.rfind(".moss:");
         if (marker != string::npos) {
           size_t separator = marker + string(".moss").size();
-          string possible_line = query_target.substr(separator + 1);
-          if (!possible_line.empty() &&
-              std::all_of(possible_line.begin(), possible_line.end(),
-                          [](unsigned char ch) { return std::isdigit(ch); })) {
+          string possible_location = query_target.substr(separator + 1);
+          bool valid_location = !possible_location.empty() &&
+              std::all_of(possible_location.begin(), possible_location.end(),
+                          [](unsigned char ch) {
+                            return std::isdigit(ch) || ch == ':';
+                          });
+          if (valid_location) {
             input = query_target.substr(0, separator);
-            query_target = "line:" + possible_line;
+            query_target = "at:" + possible_location;
           }
         }
       }
@@ -21715,7 +22286,7 @@ int main(int argc, char** argv) {
       return moss::write_semantic_query_json(
                  std::cout, query_command, query_target,
                  std::filesystem::absolute(input).lexically_normal().string(),
-                 program, plan, warnings)
+                 program, plan, warnings, query_kind, query_enclosing)
           ? 0 : 1;
 
     if (check_only) {

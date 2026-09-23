@@ -17,7 +17,7 @@ SUITE = ROOT / "benchmarks" / "agent"
 DEFAULT_PRE = SUITE / "baselines" / "pre-22.1"
 DEFAULT_POST = SUITE / "baselines" / "post-22.1"
 SCHEMA_VERSION = "moss-agent-baseline-comparison-1"
-QUERY_OPERATIONS = {"inspect", "type", "effects", "ownership", "calls", "why"}
+QUERY_OPERATIONS = {"resolve", "inspect", "type", "effects", "ownership", "calls", "why", "cost"}
 TARGET_TASKS = (
     "AB008", "AB009", "AB010", "AB012", "AB015", "AB017",
     "AB018", "AB019", "AB020", "AB021", "AB022", "AB023",
@@ -70,8 +70,9 @@ def diagnostics_text(task: dict[str, Any]) -> str:
     ) or "none"
 
 
-def selected_metrics(aggregate: dict[str, Any], root: Path) -> dict[str, Any]:
-    return {
+def selected_metrics(aggregate: dict[str, Any], root: Path,
+                     include_query_expansion: bool = False) -> dict[str, Any]:
+    result = {
         "final_passes": aggregate["pass_count"],
         "final_failures": aggregate["fail_count"],
         "first_validation_successes": aggregate["first_validation_success_count"],
@@ -90,6 +91,17 @@ def selected_metrics(aggregate: dict[str, Any], root: Path) -> dict[str, Any]:
         "timeouts": sum(item["state"] == "agent_timeout" for item in aggregate["task_results"]),
         "out_of_scope_modification_tasks": aggregate["out_of_scope_modification_task_count"],
     }
+    if include_query_expansion:
+        query_count = sum(
+            item["invocation_count"] for key, item in aggregate["tool_usage"].items()
+            if key in {f"moss {operation}" for operation in QUERY_OPERATIONS}
+        )
+        failed = query_failures(root)["failed_calls"]
+        result["successful_semantic_query_calls"] = query_count - failed
+        result["semantic_queries_per_completed_task"] = round(
+            (query_count - failed) / aggregate["valid_task_count"], 3
+        ) if aggregate["valid_task_count"] else None
+    return result
 
 
 def build_comparison(pre_root: Path, post_root: Path) -> dict[str, Any]:
@@ -99,8 +111,9 @@ def build_comparison(pre_root: Path, post_root: Path) -> dict[str, Any]:
     post_protocol = analysis.read_json(post_root / "protocol.json")
     pre_tasks = {item["task_id"]: item for item in pre["task_results"]}
     post_tasks = {item["task_id"]: item for item in post["task_results"]}
-    before = selected_metrics(pre, pre_root)
-    after = selected_metrics(post, post_root)
+    include_query_expansion = "semantic_queries" in post
+    before = selected_metrics(pre, pre_root, include_query_expansion)
+    after = selected_metrics(post, post_root, include_query_expansion)
     task_comparison = []
     for task_id in TARGET_TASKS:
         left = pre_tasks[task_id]
@@ -176,7 +189,7 @@ def render_report(comparison: dict[str, Any]) -> str:
         "| Metric | Pre | Post | Delta |",
         "|---|---:|---:|---:|",
     ]
-    labels = (
+    labels = [
         ("Final passes", "final_passes"),
         ("Final failures", "final_failures"),
         ("First-validation successes", "first_validation_successes"),
@@ -194,7 +207,13 @@ def render_report(comparison: dict[str, Any]) -> str:
         ("Infrastructure failures", "infrastructure_failures"),
         ("Timeouts", "timeouts"),
         ("Out-of-scope modification tasks", "out_of_scope_modification_tasks"),
-    )
+    ]
+    if "successful_semantic_query_calls" in before:
+        insertion = labels.index(("QUERY_TARGET_NOT_FOUND calls", "query_target_not_found_calls"))
+        labels[insertion:insertion] = [
+            ("Successful semantic-query calls", "successful_semantic_query_calls"),
+            ("Successful semantic queries per completed task", "semantic_queries_per_completed_task"),
+        ]
     for label, key in labels:
         lines.append(f"| {label} | {before[key]} | {after[key]} | {comparison['delta'][key]:+g} |")
     lines += [

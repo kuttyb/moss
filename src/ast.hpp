@@ -177,6 +177,11 @@ struct SemanticCallEdge {
   // Physical source provenance for cross-file project tooling.  The callable
   // context above remains the semantic identity used by the checker.
   string source_file;
+  // Checked invocation classification.  Message edges are recorded from the
+  // validated Stmt::Message receiver/type pair, never reconstructed from
+  // generated code.
+  string invocation_kind = "ordinary_call";
+  string receiver;
 };
 
 
