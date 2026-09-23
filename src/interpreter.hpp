@@ -626,6 +626,13 @@ class FastInterpreter {
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
+        auto self_it = frame.locals.find("self");
+        if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
+          if (auto target = method(self_it->second.object->type, callee)) {
+            return call_method(*target, self_it->second, args, frame, line, output,
+                               locate("self", frame, line, output));
+          }
+        }
         throw RuntimeError(line, "unsupported or unresolved callable '" + callee + "'");
       }
     }

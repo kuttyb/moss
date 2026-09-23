@@ -1,0 +1,14 @@
+# SWARM-025: Fast Debug unqualified sibling method dispatch on self
+type Calculator:
+  base: Int
+
+  fn add(x: Int) -> Int:
+    return base + x
+
+  fn add_twice(x: Int) -> Int:
+    first = add(x)
+    return add(first)
+
+fn main():
+  c = Calculator(base: 10)
+  echo c.add_twice(5)
