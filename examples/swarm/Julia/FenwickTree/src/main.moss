@@ -1,0 +1,185 @@
+# FenwickTree{Int} (binary indexed tree) translated from Julia DataStructures.jl
+# (src/fenwick.jl). The public API keeps Julia's 1-based indices; storage is a
+# 0-based Moss Vector, so logical index i lives in bi_tree[i - 1].
+
+# Lowest set bit of i (Julia: i & (-i)), for i > 0.
+# Moss v0.1 has no bitwise operators, so the search starts at a known power of
+# two `start` that already divides i. Fenwick traversals only ever move to an
+# index whose lowest bit is strictly larger, so callers carry the previous
+# answer forward and the total search stays O(log n) per operation.
+fn lowbit_from(i: Int, start: Int) -> Int:
+  var p = start
+  var next = start * 2
+  while i % next == 0:
+    p = next
+    next = next * 2
+  return p
+
+type FenwickTree:
+  bi_tree: Vector[Int]
+  n: Int
+
+  fn length() -> Int:
+    return n
+
+  # Julia inc!(ft, ind, val): add val at logical index ind (1 <= ind <= n).
+  fn inc(ind: Int, val: Int):
+    var i = ind
+    var p = 1
+    while i <= n:
+      bi_tree[i - 1] = bi_tree[i - 1] + val
+      p = lowbit_from(i, p)
+      i = i + p
+
+  # Julia dec!(ft, ind, val) = inc!(ft, ind, -val).
+  fn dec(ind: Int, val: Int):
+    inc(ind, 0 - val)
+
+  # Julia incdec!(ft, left, right, val): inc! at left, dec! at right.
+  fn incdec(left: Int, right: Int, val: Int):
+    inc(left, val)
+    dec(right, val)
+
+  # Julia prefixsum(ft, ind): sum of logical indices 1..ind; 0 when ind < 1.
+  fn prefixsum(ind: Int) -> Int:
+    var total = 0
+    var i = ind
+    var p = 1
+    while i > 0:
+      total = total + bi_tree[i - 1]
+      p = lowbit_from(i, p)
+      i = i - p
+    return total
+
+  # Helper (not in fenwick.jl): sum of logical indices left..right inclusive.
+  fn rangesum(left: Int, right: Int) -> Int:
+    return prefixsum(right) - prefixsum(left - 1)
+
+# Julia FenwickTree{T}(n): all zeros.
+fn fenwick_zeros(n: Int) -> FenwickTree:
+  var tree = Vector[Int]()
+  var i = 0
+  while i < n:
+    tree.push(0)
+    i = i + 1
+  return FenwickTree(bi_tree: tree, n: n)
+
+# Julia FenwickTree(a): inc!(tree, i, a[i]) for i in 1:n.
+fn fenwick_from(values: Vector[Int]) -> FenwickTree:
+  n = values |> count
+  var ft = fenwick_zeros(n)
+  var i = 1
+  while i <= n:
+    ft.inc(i, values[i - 1])
+    i = i + 1
+  return ft
+
+# Brute-force oracle over a 0-based vector: sum of logical indices 1..ind.
+fn brute_prefix(values: Vector[Int], ind: Int) -> Int:
+  var total = 0
+  var i = 0
+  while i < ind:
+    total = total + values[i]
+    i = i + 1
+  return total
+
+test "lowbit matches i & -i":
+  assertEqual(lowbit_from(1, 1), 1)
+  assertEqual(lowbit_from(6, 1), 2)
+  assertEqual(lowbit_from(8, 1), 8)
+  assertEqual(lowbit_from(12, 4), 4)
+  assertEqual(lowbit_from(40, 2), 8)
+
+test "zero tree has zero prefix sums and length n":
+  ft = fenwick_zeros(6)
+  assertEqual(ft.length(), 6)
+  assertEqual(ft.prefixsum(0), 0)
+  assertEqual(ft.prefixsum(1), 0)
+  assertEqual(ft.prefixsum(6), 0)
+
+test "julia docstring example":
+  ft = fenwick_zeros(6)
+  ft.inc(2, 5)
+  assertEqual(ft.prefixsum(1), 0)
+  assertEqual(ft.prefixsum(3), 5)
+  assertEqual(ft.prefixsum(6), 5)
+
+test "point inc and dec":
+  ft = fenwick_zeros(8)
+  ft.inc(3, 10)
+  ft.inc(5, 7)
+  ft.dec(3, 4)
+  assertEqual(ft.prefixsum(2), 0)
+  assertEqual(ft.prefixsum(3), 6)
+  assertEqual(ft.prefixsum(4), 6)
+  assertEqual(ft.prefixsum(5), 13)
+  assertEqual(ft.prefixsum(8), 13)
+  assertEqual(ft.rangesum(4, 5), 7)
+  ft.dec(5, 9)
+  assertEqual(ft.prefixsum(8), 4)
+  ft.dec(1, 10)
+  assertEqual(ft.prefixsum(8), 0 - 6)
+
+test "incdec is a range update read back through prefixsum":
+  # Julia's incdec! treats the tree as a difference array: prefixsum(ft, k)
+  # becomes the point value, raised by val for left <= k < right.
+  ft = fenwick_zeros(10)
+  ft.incdec(3, 7, 5)
+  assertEqual(ft.prefixsum(2), 0)
+  assertEqual(ft.prefixsum(3), 5)
+  assertEqual(ft.prefixsum(6), 5)
+  assertEqual(ft.prefixsum(7), 0)
+  assertEqual(ft.prefixsum(10), 0)
+  ft.incdec(1, 4, 2)
+  assertEqual(ft.prefixsum(1), 2)
+  assertEqual(ft.prefixsum(3), 7)
+  assertEqual(ft.prefixsum(4), 5)
+
+test "construction from vector matches brute-force prefix sums":
+  values = [3, 0 - 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]
+  ft = fenwick_from(values)
+  n = values |> count
+  assertEqual(ft.length(), n)
+  var k = 0
+  while k <= n:
+    assertEqual(ft.prefixsum(k), brute_prefix(values, k))
+    k = k + 1
+
+test "construction from vector then updates matches brute force":
+  var values = [2, 7, 1, 8, 2, 8, 1, 8, 2, 8, 4, 5, 9]
+  var ft = fenwick_from(values)
+  ft.inc(4, 3)
+  values[3] = values[3] + 3
+  ft.dec(11, 6)
+  values[10] = values[10] - 6
+  n = values |> count
+  var k = 0
+  while k <= n:
+    assertEqual(ft.prefixsum(k), brute_prefix(values, k))
+    k = k + 1
+
+test "edge indices first and last":
+  ft = fenwick_zeros(16)
+  ft.inc(1, 100)
+  ft.inc(16, 1)
+  assertEqual(ft.prefixsum(1), 100)
+  assertEqual(ft.prefixsum(15), 100)
+  assertEqual(ft.prefixsum(16), 101)
+  assertEqual(ft.rangesum(1, 1), 100)
+  assertEqual(ft.rangesum(16, 16), 1)
+  assertEqual(ft.rangesum(2, 15), 0)
+  single = fenwick_zeros(1)
+  single.inc(1, 42)
+  assertEqual(single.prefixsum(1), 42)
+  assertEqual(single.length(), 1)
+
+fn main():
+  ft = fenwick_from([5, 2, 9, 0 - 3, 7, 4])
+  echo "length", ft.length()
+  echo "prefixsum(3)", ft.prefixsum(3)
+  echo "prefixsum(6)", ft.prefixsum(6)
+  ft.inc(2, 10)
+  echo "after inc!(2, 10): prefixsum(3)", ft.prefixsum(3)
+  echo "rangesum(2, 5)", ft.rangesum(2, 5)
+  ft.incdec(1, 4, 1)
+  echo "after incdec!(1, 4, 1): prefixsum(3)", ft.prefixsum(3)

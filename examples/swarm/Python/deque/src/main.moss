@@ -1,0 +1,369 @@
+# Python collections.deque -> Moss (Int elements, ring buffer over Vector)
+#
+# Failure: Python raises IndexError for pop/popleft on an empty deque and for an
+# out-of-range index. Moss v0.1 has no exceptions and no source-level fail/panic;
+# these operations use assert(...) preconditions, which fail closed (process
+# abort natively, interpreter error in Fast Debug), matching built-in
+# Vector.pop() on an empty vector. maxlen == -1 encodes Python's maxlen=None.
+
+type Deque:
+  buf: Vector[Int]
+  head: Int
+  size: Int
+  cap: Int
+  maxlen: Int
+
+  fn len() -> Int:
+    return size
+
+  fn grow():
+    new_cap = cap * 2
+    var fresh = zeros(new_cap)
+    i = 0
+    while i < size:
+      fresh[i] = buf[(head + i) % cap]
+      i = i + 1
+    buf = fresh
+    head = 0
+    cap = new_cap
+
+  fn append(x: Int):
+    if maxlen == 0:
+      return
+    if size == cap:
+      if maxlen > 0:
+        buf[head] = x
+        head = (head + 1) % cap
+        return
+      grow()
+    buf[(head + size) % cap] = x
+    size = size + 1
+
+  fn appendleft(x: Int):
+    if maxlen == 0:
+      return
+    if size == cap:
+      if maxlen > 0:
+        head = (head - 1 + cap) % cap
+        buf[head] = x
+        return
+      grow()
+    head = (head - 1 + cap) % cap
+    buf[head] = x
+    size = size + 1
+
+  fn pop() -> Int:
+    assert(size > 0)
+    size = size - 1
+    return buf[(head + size) % cap]
+
+  fn popleft() -> Int:
+    assert(size > 0)
+    x = buf[head]
+    head = (head + 1) % cap
+    size = size - 1
+    return x
+
+  fn extend(values: Vector[Int]):
+    n = values |> count
+    i = 0
+    while i < n:
+      append(values[i])
+      i = i + 1
+
+  fn extendleft(values: Vector[Int]):
+    n = values |> count
+    i = 0
+    while i < n:
+      appendleft(values[i])
+      i = i + 1
+
+  fn rotate(n: Int):
+    if size <= 1:
+      return
+    k = floor_mod(n, size)
+    if k == 0:
+      return
+    if k <= size / 2:
+      j = 0
+      while j < k:
+        moved = pop()
+        appendleft(moved)
+        j = j + 1
+    else:
+      j = 0
+      while j < size - k:
+        moved = popleft()
+        append(moved)
+        j = j + 1
+
+  fn at(index: Int) -> Int:
+    i = index
+    if i < 0:
+      i = i + size
+    assert(i >= 0)
+    assert(i < size)
+    return buf[(head + i) % cap]
+
+  fn clear():
+    head = 0
+    size = 0
+
+  fn count_of(x: Int) -> Int:
+    total = 0
+    i = 0
+    while i < size:
+      if buf[(head + i) % cap] == x:
+        total = total + 1
+      i = i + 1
+    return total
+
+  fn reverse():
+    lo = 0
+    hi = size - 1
+    while lo < hi:
+      a = (head + lo) % cap
+      b = (head + hi) % cap
+      tmp = buf[a]
+      buf[a] = buf[b]
+      buf[b] = tmp
+      lo = lo + 1
+      hi = hi - 1
+
+  fn to_vector() -> Vector[Int]:
+    var out = Vector[Int]()
+    i = 0
+    while i < size:
+      out.push(buf[(head + i) % cap])
+      i = i + 1
+    return out
+
+fn zeros(n: Int) -> Vector[Int]:
+  var out = Vector[Int]()
+  i = 0
+  while i < n:
+    out.push(0)
+    i = i + 1
+  return out
+
+fn floor_mod(a: Int, m: Int) -> Int:
+  r = a % m
+  if r < 0:
+    r = r + m
+  return r
+
+# deque()
+fn new_deque() -> Deque:
+  return Deque(buf: zeros(4), head: 0, size: 0, cap: 4, maxlen: -1)
+
+# deque(maxlen=m); m >= 0
+fn new_bounded(m: Int) -> Deque:
+  assert(m >= 0)
+  c = m
+  if c == 0:
+    c = 1
+  return Deque(buf: zeros(c), head: 0, size: 0, cap: c, maxlen: m)
+
+# deque(values)
+fn deque_from(values: Vector[Int]) -> Deque:
+  var d = new_deque()
+  d.extend(values)
+  return d
+
+# deque(values, maxlen=m)
+fn deque_from_bounded(values: Vector[Int], m: Int) -> Deque:
+  var d = new_bounded(m)
+  d.extend(values)
+  return d
+
+test "empty deque":
+  d = new_deque()
+  assertEqual(d.len(), 0)
+  assertEqual(d.maxlen, -1)
+
+test "append and pop from the right":
+  var d = new_deque()
+  d.append(1)
+  d.append(2)
+  d.append(3)
+  assertEqual(d.len(), 3)
+  assertEqual(d.pop(), 3)
+  assertEqual(d.pop(), 2)
+  assertEqual(d.len(), 1)
+
+test "appendleft and popleft":
+  var d = new_deque()
+  d.appendleft(1)
+  d.appendleft(2)
+  d.appendleft(3)
+  assertEqual(d.to_vector(), [3, 2, 1])
+  assertEqual(d.popleft(), 3)
+  assertEqual(d.popleft(), 2)
+  assertEqual(d.popleft(), 1)
+  assertEqual(d.len(), 0)
+
+test "construct from vector":
+  d = deque_from([1, 2, 3, 4, 5, 6])
+  assertEqual(d.len(), 6)
+  assertEqual(d.to_vector(), [1, 2, 3, 4, 5, 6])
+
+test "maxlen append evicts from the left":
+  var d = deque_from_bounded([1, 2, 3], 3)
+  d.append(4)
+  assertEqual(d.to_vector(), [2, 3, 4])
+  d.append(5)
+  assertEqual(d.to_vector(), [3, 4, 5])
+  assertEqual(d.len(), 3)
+
+test "maxlen appendleft evicts from the right":
+  var d = deque_from_bounded([1, 2, 3], 3)
+  d.appendleft(0)
+  assertEqual(d.to_vector(), [0, 1, 2])
+  d.appendleft(-1)
+  assertEqual(d.to_vector(), [-1, 0, 1])
+
+test "construct bounded from longer vector keeps rightmost":
+  d = deque_from_bounded([1, 2, 3, 4, 5], 2)
+  assertEqual(d.to_vector(), [4, 5])
+
+test "maxlen zero discards everything":
+  var d = new_bounded(0)
+  d.append(1)
+  d.appendleft(2)
+  assertEqual(d.len(), 0)
+
+test "extend":
+  var d = deque_from([1, 2])
+  d.extend([3, 4, 5])
+  assertEqual(d.to_vector(), [1, 2, 3, 4, 5])
+
+test "extendleft reverses order":
+  var d = deque_from([1, 2])
+  d.extendleft([3, 4, 5])
+  assertEqual(d.to_vector(), [5, 4, 3, 1, 2])
+
+test "bounded extend and extendleft evict":
+  var d = new_bounded(3)
+  d.extend([1, 2, 3, 4, 5])
+  assertEqual(d.to_vector(), [3, 4, 5])
+  d.extendleft([6, 7])
+  assertEqual(d.to_vector(), [7, 6, 3])
+
+test "rotate right":
+  var d = deque_from([1, 2, 3, 4, 5])
+  d.rotate(2)
+  assertEqual(d.to_vector(), [4, 5, 1, 2, 3])
+
+test "rotate left":
+  var d = deque_from([1, 2, 3, 4, 5])
+  d.rotate(-2)
+  assertEqual(d.to_vector(), [3, 4, 5, 1, 2])
+
+test "rotate by more than len":
+  var d = deque_from([1, 2, 3, 4, 5])
+  d.rotate(7)
+  assertEqual(d.to_vector(), [4, 5, 1, 2, 3])
+  d.rotate(-12)
+  assertEqual(d.to_vector(), [1, 2, 3, 4, 5])
+  d.rotate(-6)
+  assertEqual(d.to_vector(), [2, 3, 4, 5, 1])
+  d.rotate(5)
+  assertEqual(d.to_vector(), [2, 3, 4, 5, 1])
+
+test "rotate full bounded deque":
+  var d = deque_from_bounded([1, 2, 3, 4], 4)
+  d.rotate(3)
+  assertEqual(d.to_vector(), [2, 3, 4, 1])
+  d.append(9)
+  assertEqual(d.to_vector(), [3, 4, 1, 9])
+
+test "rotate empty and singleton":
+  var e = new_deque()
+  e.rotate(3)
+  assertEqual(e.len(), 0)
+  var s = deque_from([7])
+  s.rotate(-4)
+  assertEqual(s.to_vector(), [7])
+
+test "indexing with positive and negative indices":
+  d = deque_from([10, 20, 30, 40])
+  assertEqual(d.at(0), 10)
+  assertEqual(d.at(3), 40)
+  assertEqual(d.at(-1), 40)
+  assertEqual(d.at(-4), 10)
+
+test "clear":
+  var d = deque_from([1, 2, 3])
+  d.clear()
+  assertEqual(d.len(), 0)
+  d.append(8)
+  assertEqual(d.to_vector(), [8])
+
+test "count":
+  d = deque_from([1, 2, 1, 3, 1])
+  assertEqual(d.count_of(1), 3)
+  assertEqual(d.count_of(3), 1)
+  assertEqual(d.count_of(9), 0)
+
+test "reverse":
+  var d = deque_from([1, 2, 3, 4])
+  d.reverse()
+  assertEqual(d.to_vector(), [4, 3, 2, 1])
+  var o = deque_from([1, 2, 3])
+  o.reverse()
+  assertEqual(o.to_vector(), [3, 2, 1])
+
+test "wraparound after many operations":
+  var d = new_bounded(4)
+  i = 0
+  while i < 50:
+    d.append(i)
+    i = i + 1
+  assertEqual(d.to_vector(), [46, 47, 48, 49])
+  assertEqual(d.popleft(), 46)
+  d.appendleft(100)
+  assertEqual(d.at(0), 100)
+  assertEqual(d.at(-1), 49)
+  var u = new_deque()
+  j = 0
+  while j < 30:
+    u.append(j)
+    u.popleft()
+    j = j + 1
+  u.append(1)
+  u.appendleft(0)
+  assertEqual(u.to_vector(), [0, 1])
+
+test "unbounded growth preserves order across wrap":
+  var d = new_deque()
+  d.append(3)
+  d.append(4)
+  d.appendleft(2)
+  d.appendleft(1)
+  d.append(5)
+  d.appendleft(0)
+  d.append(6)
+  assertEqual(d.cap, 8)
+  assertEqual(d.to_vector(), [0, 1, 2, 3, 4, 5, 6])
+  k = 7
+  while k < 100:
+    d.append(k)
+    k = k + 1
+  assertEqual(d.len(), 100)
+  assertEqual(d.at(0), 0)
+  assertEqual(d.at(99), 99)
+  assertEqual(d.at(-50), 50)
+
+fn main():
+  var d = deque_from([1, 2, 3])
+  d.appendleft(0)
+  d.append(4)
+  d.rotate(2)
+  echo "rotated len", d.len()
+  echo "first", d.at(0)
+  echo "last", d.at(-1)
+  var b = new_bounded(3)
+  b.extend([1, 2, 3, 4, 5])
+  echo "bounded first", b.at(0)
+  echo "bounded popped", b.pop()
+  echo "count of 3", b.count_of(3)
