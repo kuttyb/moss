@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). It doubles `[1, 2, 3, 4]`, filters values greater than 4, sums them, and prints `14`. The compiler check and formatting check pass, and execution outputs `14`.

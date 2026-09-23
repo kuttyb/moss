@@ -1,0 +1,3 @@
+Repaired [task/main.moss](/home/owner/daji/code/moss/task/main.moss): `Run` remains the externally messaged handler and calls the ordinary `Twice` function directly.
+
+The Moss check passes with no diagnostics, and interpreted execution outputs `42`.

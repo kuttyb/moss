@@ -1,0 +1,124 @@
+{
+  "command": "agent benchmark run",
+  "ok": true,
+  "result": {
+    "agent": null,
+    "attempts": null,
+    "changed_paths": [],
+    "diagnostics": [],
+    "outside_allowed_paths": [],
+    "status": "pass",
+    "task_id": "AB029",
+    "tool_calls": null,
+    "validation": [
+      {
+        "command": [
+          "$MOSS",
+          "agent",
+          "bootstrap",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 0,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"agent bootstrap\",\n  \"ok\": true,\n  \"result\": {\n    \"language_version\": \"moss-0.1\",\n    \"agent_protocol_version\": 1,\n    \"compiler_version\": \"0.1.0\",\n    \"project_root\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work\",\n    \"canonical_docs\": {\"practical_language_guide\": \"docs/GENTLE_INTRODUCTION_TO_MOSS.md\",\"formal_language_design\": \"docs/MOSS_V0_1_LANGUAGE_DESIGN.md\",\"project_workflow\": \"docs/PROJECT_WORKFLOW.md\",\"testing\": \"docs/TESTING.md\"},\n    \"tool_invocation\": {\"compiler\": {\"repo_local\": \"./moss\", \"path_name\": \"moss\", \"build_if_missing\": \"make\"},\"project_driver\": {\"repo_local\": \"./margo\", \"path_name\": \"margo\"},\"preferred_in_checkout\": \"repo_local\",\"path_names_allowed\": true,\"path_fallback\": \"PATH\",\"bootstrap_command\": \"./moss agent bootstrap --json\"} ,\n    \"capabilities\": [\"structured_diagnostics\", \"semantic_inspection\", \"static_call_graph\", \"ownership_effects\", \"observable_effects\", \"functional_optimization_explanations\", \"backend_lowering_explanations\", \"project_builds\", \"native_tests\", \"native_benchmarks\", \"benchmark_baselines\", \"durable_semantic_identities\", \"semantic_hashing\", \"impact_analysis\", \"incremental_verification\", \"modules\", \"qualified_imports\", \"module_interfaces\", \"generic_specialization_identity\", \"interpreted_domains\", \"fast_debug\", \"language_surface\", \"affected_tests\", \"formatter\", \"canonical_formatter\", \"semantic_edits\", \"repair_actions\", \"static_cost_facts\", \"source_provenance\", \"first_order_effect_graph\", \"structured_execution_trace\", \"synchronization_schema\", \"synchronization_plan\", \"concrete_domain_graph\", \"domain_ranks\", \"package_project_driver\", \"package_dependencies\", \"package_lockfile\", \"tool_invocation\", \"agent_benchmark_suite\"],\n    \"capability_catalog\": [{\"id\":\"structured_diagnostics\"}, {\"id\":\"language_surface\"}, {\"id\":\"semantic_queries\"}, {\"id\":\"durable_semantic_identities\"}, {\"id\":\"impact_analysis\"}, {\"id\":\"formatter\"}, {\"id\":\"semantic_edits\"}, {\"id\":\"affected_tests\"}, {\"id\":\"static_cost_facts\"}, {\"id\":\"synchronization_plan\"}, {\"id\":\"package_project_driver\"}, {\"id\":\"tool_invocation\"}, {\"id\":\"package_dependencies\"}, {\"id\":\"package_lockfile\"}, {\"id\":\"module_interfaces\"}, {\"id\":\"fast_debug\"}, {\"id\":\"structured_execution_trace\"}, {\"id\":\"project_workflow\"}, {\"id\":\"agent_benchmark_suite\"}],\n    \"capability_flags\": {\"impact_analysis\": true, \"incremental_verification\": true, \"affected_tests\": true, \"formatter\": true, \"semantic_edits\": true, \"repair_actions\": true, \"cost_facts\": true, \"language_surface\": true, \"package_project_driver\": true, \"package_dependencies\": true, \"package_lockfile\": true, \"tool_invocation\": true, \"agent_benchmark_suite\": true},\n    \"source_surface\": {\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}},\n    \"project_surface\": {\"manifest\": \"Moss.toml\",\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\",\"source_directory\": \"src\",\"project_driver\": \"./margo\"},\n    \"commands\": [\"moss check <source> --json\", \"moss inspect <target> --source <source> --json\", \"moss type <target> --source <source> --json\", \"moss effects <target> --source <source> --json\", \"moss ownership <target> --source <source> --json\", \"moss calls <target> --source <source> --json\", \"moss why <target> --source <source> --json\", \"moss cost <target> --source <source> --json\", \"moss inspect main --source <source> --json (includes concrete_domain_graph)\", \"moss impact <target> [--source <source>] --json\", \"moss edit rename <entity-id> <new-name> --json\", \"moss edit replace-expression <entity-id> <expression> --json\", \"moss edit change-argument <call-id> <index> <expression> --json\", \"moss fmt [--check] [--json]\", \"margo build [--release] [--json]\", \"margo run [--release]\", \"margo test [filter] [--release] [--json]\", \"margo bench [filter] [--json]\", \"margo clean\", \"Moss.toml package manifest; Moss.lock resolved Git dependency lock\", \"module-qualified imports and versioned .mossi interfaces\", \"moss test --affected [--json] (semantic reduced verification)\", \"moss build|test|bench|clean (project-command compatibility paths)\", \"moss agent benchmark list|show|validate|run [--json]\"],\n    \"semantic_queries\": [{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},{\"name\":\"effects\",\"purpose\":\"READ/WRITE/CONSUME and separate observable effects; includes synchronization plan\",\"command\":\"moss effects <target> --source <source> --json\"},{\"name\":\"ownership\",\"purpose\":\"inferred access capability and its checked reason\",\"command\":\"moss ownership <target> --source <source> --json\"},{\"name\":\"calls\",\"purpose\":\"direct statically resolved callers and callees\",\"command\":\"moss calls <target> --source <source> --json\"},{\"name\":\"why\",\"purpose\":\"stored functional, backend, and synchronization decision explanations\",\"command\":\"moss why <target> --source <source> --json\"},{\"name\":\"cost\",\"purpose\":\"known static cost facts, not runtime predictions\",\"command\":\"moss cost <target> --source <source> --json\"},{\"name\":\"impact\",\"purpose\":\"changed semantic unit, dependents, affected tests, and reuse facts\",\"command\":\"moss impact <target> --source <source> --json\"}],\n    \"actions\": [{\"name\":\"check\",\"command\":\"moss check <source> --json\",\"purpose\":\"structured Moss diagnostics\"},{\"name\":\"format\",\"command\":\"moss fmt [--check] [--json]\",\"purpose\":\"canonical source formatting\"},{\"name\":\"semantic_edit\",\"command\":\"moss edit rename|replace-expression|change-argument ... --json\",\"purpose\":\"exact compiler-resolved source edit\"},{\"name\":\"affected_test\",\"command\":\"moss test --affected --json\",\"purpose\":\"conservative impact-selected verification\"},{\"name\":\"package_build\",\"command\":\"margo build [--release] [--json]\",\"purpose\":\"canonical package build and dependency resolution\"},{\"name\":\"package_run\",\"command\":\"margo run [--release]\",\"purpose\":\"canonical package build and execution\"},{\"name\":\"package_test\",\"command\":\"margo test [filter] [--release] [--json]\",\"purpose\":\"canonical root-package test execution\"},{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"},{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}],\n    \"debugging_features\": [{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}],\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"},\n    \"recommended_workflow\": [\"In a repository checkout, prefer ./moss and ./margo; run make if ./moss is missing.\", \"Run ./moss agent bootstrap --json before modifying Moss source.\", \"For fresh Moss source-writing or unfamiliar language work, inspect source_surface; read canonical_docs.practical_language_guide when practical context is needed.\", \"For project-layout questions, inspect project_surface; read canonical_docs.project_workflow when more detail is needed.\", \"Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean.\", \"Run moss check --json before guessing at a Moss error.\", \"Use inspect, why, effects, ownership, and cost as needed.\", \"Edit Moss source, never generated Rust.\", \"Run moss fmt.\", \"Run moss impact <target> --json.\", \"Run moss test --affected during iteration.\", \"Run the full root-package tests with margo test when appropriate.\", \"Use moss agent benchmark list|show|validate|run for the fixed fresh-agent corpus.\", \"Prefer structured --json output for automation.\", \"Moss owns module/.mossi/semantic truth; Margo supplies package artifacts.\"],\n    \"workflow_hints\": [{\"question\":\"What is this symbol or concrete domain instance?\",\"capability\":\"inspect\",\"command\":\"moss inspect <target> --source <source> --json\"},{\"question\":\"What type or specialization did this resolve to?\",\"capability\":\"type\",\"command\":\"moss type <target> --source <source> --json\"},{\"question\":\"What does this READ, WRITE, or CONSUME?\",\"capability\":\"effects\",\"command\":\"moss effects <target> --source <source> --json\"},{\"question\":\"What access capability does this call require?\",\"capability\":\"ownership\",\"command\":\"moss ownership <target> --source <source> --json\"},{\"question\":\"What direct calls and callers are known?\",\"capability\":\"calls\",\"command\":\"moss calls <target> --source <source> --json\"},{\"question\":\"Why was a semantic, optimization, backend, or synchronization decision made?\",\"capability\":\"why\",\"command\":\"moss why <target> --source <source> --json\"},{\"question\":\"What static cost facts are known?\",\"capability\":\"cost\",\"command\":\"moss cost <target> --source <source> --json\"},{\"question\":\"Does Moss support this source construct, and what is the canonical form?\",\"capability\":\"language_surface\",\"command\":\"moss agent bootstrap --json\"},{\"question\":\"Which guide should I use for practical Moss source syntax and idioms?\",\"capability\":\"language_surface\",\"command\":\"canonical_docs.practical_language_guide\"},{\"question\":\"What is the minimal Moss project layout or manifest?\",\"capability\":\"package_project_driver\",\"command\":\"project_surface, then canonical_docs.project_workflow\"},{\"question\":\"Is this a Moss semantic restriction, frontend bug, native lowering bug, or Fast Debug limitation?\",\"capability\":\"language_surface\",\"command\":\"source_surface, moss check --json, ownership/effects/why, a minimal probe, then native verification\"},{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},{\"question\":\"How do I invoke Moss tools in this repository checkout?\",\"capability\":\"tool_invocation\",\"command\":\"./moss agent bootstrap --json\"},{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}],\n    \"safety_rules\": [\"Do not edit generated Rust.\", \"Do not infer dynamic targets; Moss dispatch is statically closed.\", \"Treat synchronous message as an explicit domain value boundary; await is retired.\", \"Do not self-send or chain handlers on the same domain; use an ordinary helper.\", \"Domain handles are static routing capabilities and do not cross ordinary value boundaries.\", \"Do not write locks or dynamically create domains; the compiler owns synchronization and topology.\", \"Preserve Moss diagnostics and source provenance.\"],\n    \"language_constraints\": [\"message is synchronous and reply terminates a handler\", \"await and spawn are retired source syntax\", \"incoming message payloads are immutable snapshots\", \"domain routes and concrete instances are statically composed\", \"traits are structural and dispatch/specialization are static\", \"ordinary recursion and general first-class closures are unsupported in v0.1\"],\n    \"agents_md_snippet\": \"This repository uses Moss.\\n\\nBefore changing Moss source, run:\\n\\n    ./moss agent bootstrap --json\\n\\nUse the repository-local tools: ./moss for language/semantic work and ./margo for package/project operations (./margo build|run|test|bench|clean). Use Moss semantic queries and structured diagnostics instead of reverse-engineering generated Rust.\\n\\nAfter edits, follow the workflow returned by bootstrap.\"\n  }\n}\n"
+      },
+      {
+        "command": [
+          "$MARGO",
+          "build",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 1,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\"artifacts\": {\"artifacts\": {\"cache_metadata\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/build/debug/ab029_workflow.mossbuild\", \"debug_map\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/build/debug/ab029_workflow.mossmap\", \"executable\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/build/debug/ab029_workflow\", \"generated_rust\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/build/debug/ab029_workflow.rs\", \"module_interfaces\": [], \"module_rlibs\": [], \"specialization_rlib\": null}, \"backend_toolchain\": {\"compile_flags\": [\"--edition=2021\", \"-D\", \"warnings\", \"-g\", \"-C\", \"opt-level=0\"], \"fingerprint\": \"2f48c0ef4ea1736c\", \"profile\": \"debug\", \"resolved_rustc\": \"/home/owner/.cargo/bin/rustc\", \"version_verbose\": \"rustc 1.98.1 (48a229cea 2026-09-01)\\nbinary: rustc\\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\\ncommit-date: 2026-09-01\\nhost: x86_64-unknown-linux-gnu\\nrelease: 1.98.1\\nLLVM version: 22.1.8\"}, \"incremental\": {\"generated_rust_units_rewritten\": 1, \"native_artifact_reused\": false, \"units_analyzed\": 2, \"units_reused\": 0}, \"profile\": \"debug\", \"project\": \"ab029-workflow\", \"reused\": false, \"source\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/src/main.moss\", \"sources\": [\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/src/main.moss\"]}, \"build_order\": [\"ab029-workflow\"], \"ok\": true, \"packages\": [{\"name\": \"ab029-workflow\", \"source\": {\"kind\": \"root\"}}], \"root_package\": \"ab029-workflow\", \"schema_version\": \"margo-1\"}\n"
+      },
+      {
+        "command": [
+          "$MARGO",
+          "test",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 2,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"test\",\n  \"ok\": true,\n  \"result\": {\"project\": \"ab029-workflow\", \"filter\": null, \"affected_only\": false, \"tests\": [{\"id\": \"test:tests/arithmetic.moss:addition\", \"name\": \"addition\", \"status\": \"pass\", \"source_file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB029-4jc5d6ui/work/tests/arithmetic.moss\", \"line\": 1, \"diagnostic\": null}], \"selection\": null, \"summary\": {\"passed\": 1, \"failed\": 0, \"total\": 1}}\n}\n"
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^\\[project\\]\\s*$",
+          "path": "Moss.toml"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 3,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^fn\\s+add\\s*\\(",
+          "path": "src/main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 4,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^test\\s+\"addition\"\\s*:",
+          "path": "tests/arithmetic.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 5,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\bassertEqual\\s*\\(\\s*add\\s*\\(",
+          "path": "tests/arithmetic.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 6,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "wall_time_ms": null
+  },
+  "schema_version": "moss-agent-benchmark-1"
+}

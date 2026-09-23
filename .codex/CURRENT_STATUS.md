@@ -375,6 +375,118 @@ Closed Phase 15.7 multi-module formatter semantic convergence:
   - Margo build/test/run for `graphlib` (12/12 tests) and `planner` (7/7 tests, deterministic run output).
   - `check_agent_skills.py`, `check_agent_api.py`, `make examples`, `sh -n tests/run.sh`, and `git diff --check`.
   - Full `tests/run.sh` suite: all compiler, formatter, agent, synchronization, Fast Debug, module/project, and 20/20 Emacs ERT checks passed. Reached only the known environment-specific LLDB/DAP real-integration handshake failure; it was not changed.
+## Phase 22.1 — Agent-Teaching Diagnostics (complete)
+
+Phase 22.1 started from the completed Phase 22.2 closeout commit
+`3668ce450ff3c5aedee3cb32d34cafe72b6d4b46`. The frozen pre-22.1 baseline under
+`benchmarks/agent/baselines/pre-22.1/` remains unchanged. Commits `9caaee6`,
+`75690b8`, and `bb388d4` implement and converge the evidence-backed diagnostics,
+documentation, and regressions. Domain/message rejection sites now distinguish
+self-message, same-instance handler chaining, direct cross-domain handler entry,
+missing/broken routes, and invalid message targets. Functional diagnostics
+distinguish placeholder, callable-invocation, and captured-mutation rules.
+`OWNERSHIP_CONFLICTING_ACCESS`, `QUERY_TARGET_NOT_FOUND`, and
+`TYPE_INFERENCE_FAILED` remain stable where they are the correct semantic classes,
+with richer compiler facts and sound guidance.
+
+The additive `moss-agent-1` teaching fields are `source`, `rule`,
+`cause.entities`, `related`, and `guidance`; concise human output is rendered from
+the same facts. Focused tests cover diagnostic codes, rule/cause/entity identities,
+access modes, related locations, legal rewrites, and negative misleading-guidance
+cases. No Moss syntax, accepted/rejected program set, ownership, domain, pipeline,
+lowering, synchronization, module, or Fast Debug semantics changed.
+
+The fixed-protocol post run is retained under
+`benchmarks/agent/baselines/post-22.1/` with raw artifacts, deterministic aggregate,
+machine-readable comparison, and report. It used the same AB001-AB030 corpus,
+prompt wrapper, Codex CLI 0.156.0, `gpt-6-sol`, medium reasoning, isolation,
+network restrictions, 900-second budget, and validators; there are no known
+model/runtime/protocol confounders. Compiler/orchestration commit `bb388d4` is the
+intended treatment.
+
+Pre/post outcomes were 28→28 final passes, 17→16 first-validation successes,
+30→30 eventually green, 1.433→1.467 mean attempts to green, 407→422 agent tool
+calls, and 157→156 Moss/Margo invocations. Failed semantic-query calls fell 4→2,
+`QUERY_TARGET_NOT_FOUND` fell 2→0, and repeated-diagnostic-loop tasks fell 2→1
+because AB015 used qualified targets immediately. AB022's intentional cross-command
+ownership exploration remained. The single stochastic trial therefore establishes
+diagnostic specificity and one narrower recovery improvement, not a broad headline
+or tool-efficiency gain. AB014 and AB017 again failed only exact output formatting
+after successful compilation; all repair tasks passed and all 30 sessions reached
+green.
+
+Closeout validation passes strict C++17 `-Werror`, Phase 22.1 teaching and negative
+regressions, agent API and skill drift, all 30 benchmark references/metadata,
+deterministic pre aggregate and post comparison checks, ownership/domain/functional,
+Margo/module, Fast Debug, `make examples`, Python/shell syntax, and whitespace.
+The full `make check` run passed every reached suite and stopped at the already
+documented unrelated Phase 10.6F native Rust error comparing `&String == String`
+in generated `phase106f/workload.rs`; it was neither repaired nor weakened.
+
+## Phase 22.2 — Agent Benchmark Suite
+
+Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's
+runner and stable result schema are complete; Phase 22.2C's canonical
+pre-Phase-22.1 fresh-agent baseline is complete; and Phase 22.2D's deterministic
+aggregate analysis and evidence report are complete. Phase 22.2 as a whole is
+complete. The next phase is Phase 22.1 — Agent-Teaching Diagnostics, driven by
+the diagnostic and workflow evidence in the Phase 22.2D report.
+
+The canonical baseline is stored under `benchmarks/agent/baselines/pre-22.1/`.
+It uses protocol `phase-22.2c-v1`, corpus commit
+`b187009f6ef06738c52216d34490342d76d7ab4c`, compiler commit
+`22fdb024e4f284d17fb9abfe887856e17127aae7`, orchestration commit
+`532dc4610d156946df5014573e5d69947f4d3546`, Codex CLI 0.156.0,
+`gpt-6-sol`, medium reasoning, and a 900-second per-task limit. Each AB001–AB030
+result came from one independent ephemeral session with no resume or retry.
+Starter-only trees and normal Moss tools/docs/skills were mounted over the source
+repository; benchmark references and usable Git history were absent, external web
+and shell network access were disabled, and final validation ran outside the
+agent-visible namespace.
+
+The raw execution result is 28 passes and 2 failures (`AB014`, `AB017`). Seventeen
+first meaningful validation commands passed. All 30 sessions eventually reached a
+successful Moss/Margo correctness command; attempts-to-green have mean 1.433 and
+median 1. The run recorded 407 agent tool calls and 157 Moss/Margo invocations,
+with no timeout, infrastructure failure, environment mutation, or outside-allowed-
+path change. Both final failures printed two requested values on separate lines
+where the frozen tasks require one space-separated line. Detailed ordered tool
+records, diagnostic codes, prompts, manifests, authoritative results, and final
+relevant files are retained per task.
+
+Two objective corpus corrections are documented in
+`benchmarks/agent/CORPUS_REVISIONS.md`; neither changed an agent-visible prompt,
+starter, expected reference, or compiler. Revision 1 made AB024 module assertions
+filename-independent. Revision 2 allowed AB020's explicitly requested pure stage
+to be either `map` or `filter`; its superseded session is retained under
+`pre-22.1/noncanonical/` and excluded from metrics. An earlier whole provisional
+series is also excluded because sanitized HOME hid rustup's compiler configuration;
+a compact invalidation record is retained under
+`benchmarks/agent/baselines/invalidated-pre-22.1-rustup/`. The corrected protocol
+pre-resolves native `rustc`, and its sanity check proves Margo build/test behavior
+inside the sanitized environment.
+
+Completed validation: strict C++17 `-O2 -Wall -Wextra -pedantic -Werror` build;
+metadata validation and all 30 reference solutions; all 30 retained canonical
+workspaces against the authoritative validator; benchmark, anti-shortcut, baseline
+isolation, agent API, and skill drift regressions; Margo path/Git DAG, module-
+provider, multi-file, separate-compilation, and Fast Debug project tests; Python
+and shell syntax checks; `make examples`; and Git whitespace checks. `make check`
+passed the benchmark and all subsequent compiler, Margo, module, Fast Debug,
+tooling, and editor checks until the already documented unrelated Phase 10.6F
+native `&String == String` failure. No compiler, language, lowering, interpreter,
+or diagnostic behavior changed.
+
+Phase 22.2D closeout additionally passed deterministic aggregate/report checking,
+the focused reconciliation and failure-separation regression (including prompt-hash
+drift, missing/duplicate runs, infrastructure failures, and no-green statistics),
+the agent benchmark/baseline/API/skill checks, Python and shell syntax checks,
+`make examples`, and Git whitespace checks. The canonical AB001–AB030 raw artifacts
+remain unchanged from the Phase 22.2C commit; no baseline task was rerun.
+
+Benchmark tasks must not be changed merely because future diagnostics or agent
+tooling improve. Any objectively necessary corpus correction must retain stable
+IDs and be documented as a corpus revision before comparison.
 
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 

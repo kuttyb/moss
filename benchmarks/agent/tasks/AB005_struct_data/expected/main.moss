@@ -1,0 +1,10 @@
+type Point:
+  x: Int
+  y: Int
+
+  fn score() -> Int:
+    return x + y
+
+fn main():
+  point = Point(x = 20, y = 22)
+  echo point.score()

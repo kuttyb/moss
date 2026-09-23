@@ -1,0 +1,3 @@
+Replaced the illegal same-domain message with a call to an ordinary arithmetic helper in [task/main.moss](/home/owner/daji/code/moss/task/main.moss). `Run` remains the only handler called from `main`.
+
+The file passes `moss check` and the formatting check; interpreted execution prints `42`.

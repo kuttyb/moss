@@ -1,0 +1,118 @@
+{
+  "agent": {
+    "configuration": "ephemeral, ignore user config/rules, no approvals, workspace-write",
+    "disabled_features": [
+      "apps",
+      "plugins",
+      "browser_use",
+      "browser_use_external",
+      "browser_use_full_cdp_access",
+      "in_app_browser",
+      "computer_use",
+      "image_generation",
+      "recommended_plugins",
+      "memories",
+      "multi_agent"
+    ],
+    "implementation": "OpenAI Codex CLI",
+    "model": "gpt-6-sol",
+    "reasoning_effort": "medium",
+    "runtime_version": "codex-cli 0.156.0"
+  },
+  "base_corpus_commit": "22fdb024e4f284d17fb9abfe887856e17127aae7",
+  "baseline_id": "pre-22.1",
+  "canonical_run": {
+    "completed_at_utc": "2026-09-23T06:37:09.856000Z",
+    "started_at_utc": "2026-09-23T05:35:02.384000Z",
+    "task_sessions": 30,
+    "trials_per_task": 1
+  },
+  "canonical_sessions": {
+    "AB001-AB019": "corrected full-series sessions",
+    "AB020": "one fresh replacement session after approved corpus revision 2",
+    "AB021-AB030": "corrected full-series sessions",
+    "count": 30,
+    "noncanonical_sessions_retained": 1
+  },
+  "compiler_commit": "22fdb024e4f284d17fb9abfe887856e17127aae7",
+  "corpus_commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+  "corpus_revisions": [
+    {
+      "affected_task": "AB024",
+      "agent_visible_prompt_changed": false,
+      "commit": "faee3cd46d15d08d046c3b93b43585df4406beba",
+      "compiler_changed": false,
+      "expected_reference_changed": false,
+      "number": 1,
+      "record": "benchmarks/agent/CORPUS_REVISIONS.md",
+      "starter_changed": false
+    },
+    {
+      "affected_task": "AB020",
+      "agent_visible_prompt_changed": false,
+      "commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+      "compiler_changed": false,
+      "expected_reference_changed": false,
+      "number": 2,
+      "record": "benchmarks/agent/CORPUS_REVISIONS.md",
+      "starter_changed": false
+    }
+  ],
+  "execution": {
+    "host": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "jobs": 3,
+    "python": "3.12.3",
+    "resolved_rustc": "/home/owner/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc"
+  },
+  "fresh_context": "one ephemeral Codex exec session per task; no resume or retry",
+  "isolation": {
+    "expected_trees_visible": false,
+    "external_web_lookup": false,
+    "git_history_visible": false,
+    "mount_namespace": "sanitized tree bind-mounted over source repository",
+    "shell_network_access": false,
+    "staging": "Git-free starter-only task plus whitelisted local tools and docs"
+  },
+  "limits": {
+    "agent_interaction_budget": null,
+    "canonical_trials": 1,
+    "retry_failed_task": false,
+    "wall_time_seconds": 900
+  },
+  "metrics": {
+    "final_pass": "authoritative moss agent benchmark run outside the agent namespace",
+    "first_validation_success": "exit status of the first direct meaningful validation command",
+    "meaningful_validation": {
+      "excluded": [
+        "bootstrap",
+        "inspect",
+        "type",
+        "effects",
+        "ownership",
+        "calls",
+        "why",
+        "cost"
+      ],
+      "margo": [
+        "build",
+        "test",
+        "run"
+      ],
+      "moss": [
+        "check",
+        "--check",
+        "build",
+        "test",
+        "debug",
+        "run --interp"
+      ]
+    },
+    "validation_attempts_to_green": "1-based direct meaningful validation attempt ending at first exit 0; null if none"
+  },
+  "orchestration_commit": "532dc4610d156946df5014573e5d69947f4d3546",
+  "prompt_wrapper_sha256": "a3ddf0a048d7b36fa502718151f3639f0c2a522f2f318356c8f725547bdd03ea",
+  "protocol_version": "phase-22.2c-v1",
+  "schema_version": "moss-agent-baseline-1",
+  "task_count": 30,
+  "trials_per_task": 1
+}

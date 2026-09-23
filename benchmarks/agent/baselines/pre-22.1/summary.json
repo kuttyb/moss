@@ -1,0 +1,43 @@
+{
+  "agent_tool_calls": 407,
+  "attempts_to_green_mean": 1.433,
+  "attempts_to_green_median": 1.0,
+  "baseline_id": "pre-22.1",
+  "diagnostic_codes": {
+    "FORMAT_CHECK_FAILED": 1,
+    "FUNCTIONAL_SEMANTIC_ERROR": 3,
+    "MOSS_COMPILE_ERROR": 4,
+    "OWNERSHIP_CONFLICTING_ACCESS": 4,
+    "OWNERSHIP_USE_AFTER_CONSUME": 1,
+    "QUERY_TARGET_NOT_FOUND": 2,
+    "TYPE_INFERENCE_FAILED": 2,
+    "UNKNOWN_SYMBOL_OR_TYPE": 1
+  },
+  "final_failures": 2,
+  "final_passes": 28,
+  "first_validation_successes": 17,
+  "infrastructure_failures": [],
+  "moss_margo_invocations": 157,
+  "schema_version": "moss-agent-baseline-1",
+  "tasks_attempted": 30,
+  "tasks_reaching_green": 30,
+  "tasks_with_outside_allowed_paths": 0,
+  "timed_out_tasks": [],
+  "tool_usage": {
+    "bootstrap": 30,
+    "calls": 1,
+    "check": 48,
+    "effects": 9,
+    "inspect": 2,
+    "interpreter": 25,
+    "margo-build": 1,
+    "margo-clean": 1,
+    "margo-run": 3,
+    "margo-test": 2,
+    "moss-fmt": 27,
+    "moss-help": 1,
+    "moss-run": 1,
+    "ownership": 2,
+    "trace": 4
+  }
+}

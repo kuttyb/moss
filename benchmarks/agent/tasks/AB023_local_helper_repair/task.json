@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "AB023",
+  "name": "local-helper-repair",
+  "category": "synchronization",
+  "task_type": "workflow",
+  "prompt": "Repair the illegal same-domain message from Run to Compute by extracting the arithmetic into an ordinary helper. Keep Run as the only handler used from main.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "The same-domain message is removed.",
+    "The ordinary helper computes 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "calls",
+        "handler:Service.Run",
+        "--source",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true,
+          "result.target.construct_kind": "handler"
+        },
+        "json_matches": {
+          "result.direct_calls.0.target": "^fn:"
+        }
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Service\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "not_matches": "\\bmessage\\s+self\\."
+    }
+  ],
+  "notes": "A compiler-feedback task requiring a local helper rather than another handler boundary."
+}

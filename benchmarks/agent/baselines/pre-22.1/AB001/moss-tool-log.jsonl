@@ -1,0 +1,3 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["check","task/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":2,"tool":"moss"}
+{"argv":["run","--interp","task/main.moss"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":3,"tool":"moss"}

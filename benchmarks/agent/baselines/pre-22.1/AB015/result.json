@@ -1,0 +1,143 @@
+{
+  "command": "agent benchmark run",
+  "ok": true,
+  "result": {
+    "agent": null,
+    "attempts": null,
+    "changed_paths": [],
+    "diagnostics": [],
+    "outside_allowed_paths": [],
+    "status": "pass",
+    "task_id": "AB015",
+    "tool_calls": null,
+    "validation": [
+      {
+        "command": [
+          "$MOSS",
+          "check",
+          "main.moss",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 0,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB015-chfejg_6/work/main.moss\", \"diagnostics\": []}\n}\n"
+      },
+      {
+        "command": [
+          "$MOSS",
+          "effects",
+          "handler:Store.Read",
+          "--source",
+          "main.moss",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 1,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"effects\",\n  \"ok\": true,\n  \"result\": {\"target\": {\"semantic_identity\": \"handler:Store.Read@15\", \"durable_identity\": \"entity-v1:handler:Store.Read\", \"identity_version\": \"entity-v1\", \"construct_kind\": \"handler\", \"source_identity\": \"handler:Store.Read@15\", \"specialization_identity\": null, \"name\": \"Store.Read\", \"module_identity\": null, \"export_visibility\": null, \"export_kind\": null, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB015-chfejg_6/work/main.moss\", \"line\": 15, \"column\": 1, \"span\": {\"start_line\": 15, \"start_column\": 1, \"end_line\": 15, \"end_column\": 1}}, \"type\": \"int\", \"specialization_fields\": [], \"provenance\": [\"handler:Store.Read@15\"], \"implementation_hash\": \"536dc732a4835eb3\", \"semantic_interface_hash\": \"90675466ee5e1f8d\"}, \"ownership\": [], \"observable_effects\": {\"local_capture_read\": false, \"local_mutation\": false, \"domain_read\": true, \"domain_write\": false, \"message\": true, \"external_io\": false, \"may_fail\": false, \"may_diverge\": false, \"unresolved\": false}, \"enclosing_callable_effects\": null, \"synchronization_plan\":{\"graph_identity\":\"domain-graph:637aa8558d72ef29\",\"physical_lowering\":\"handler_2pl\",\"domains\":[{\"concrete_instance_id\":\"main::store\",\"specialization_id\":\"domain-specialization:Store:store\",\"domain\":\"Store\",\"source_file\":\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB015-chfejg_6/work/main.moss\",\"line\":20,\"domain_rank\":0,\"state_leaves\":[\"payload.values\"],\"protected_mutable_leaves\":[],\"leaf_to_class\":{},\"sync_classes\":[],\"handlers\":[{\"handler_identity\":\"domain-specialization:Store:store::handler:Read\",\"name\":\"Read\",\"read_set\":[\"payload.values\"],\"write_set\":[],\"consume_set\":[],\"exclusive_set\":[],\"protected_read_set\":[],\"lock_set\":[],\"normalized_effects\":{\"payload.values\":\"READ\"},\"class_set\":[],\"class_modes\":{},\"path_placement\":{\"kind\":\"entry\",\"branch_line\":0,\"entry\":{},\"then\":{},\"else\":{},\"cancel_then\":[],\"cancel_else\":[],\"reason\":\"conservative entry placement: no eligible leading conditional\"},\"class_set_size\":0,\"shared_acquisitions\":0,\"exclusive_acquisitions\":0,\"read_only\":true,\"self_conflict\":false}],\"conflicts\":[],\"metrics\":{\"class_count\":0,\"root_count\":0,\"protected_leaf_count\":0,\"handler_count\":1,\"conflicting_handler_pairs\":0,\"disjoint_handler_pairs\":0,\"shared_reader_pairs\":0,\"state_leaf_count\":1,\"read_only_handler_count\":1,\"self_conflicting_handler_count\":0,\"total_handler_pairs\":0,\"non_conflicting_handler_pairs\":0,\"non_conflicting_percentage\":null,\"class_compression_ratio\":null},\"handler_order\":[\"domain-specialization:Store:store::handler:Read\"],\"conflict_matrix\":[[false]],\"class_opportunities\":[],\"class_splits\":[]},{\"concrete_instance_id\":\"main::reader\",\"specialization_id\":\"domain-specialization:Reader:reader\",\"domain\":\"Reader\",\"source_file\":\"/home/owner/daji/code/moss/tmp/agent-benchmark/AB015-chfejg_6/work/main.moss\",\"line\":19,\"domain_rank\":1,\"state_leaves\":[],\"protected_mutable_leaves\":[],\"leaf_to_class\":{},\"sync_classes\":[],\"handlers\":[{\"handler_identity\":\"domain-specialization:Reader:reader::handler:Accept\",\"name\":\"Accept\",\"read_set\":[],\"write_set\":[],\"consume_set\":[],\"exclusive_set\":[],\"protected_read_set\":[],\"lock_set\":[],\"normalized_effects\":{},\"class_set\":[],\"class_modes\":{},\"path_placement\":{\"kind\":\"entry\",\"branch_line\":0,\"entry\":{},\"then\":{},\"else\":{},\"cancel_then\":[],\"cancel_else\":[],\"reason\":\"conservative entry placement: no eligible leading conditional\"},\"class_set_size\":0,\"shared_acquisitions\":0,\"exclusive_acquisitions\":0,\"read_only\":true,\"self_conflict\":false}],\"conflicts\":[],\"metrics\":{\"class_count\":0,\"root_count\":0,\"protected_leaf_count\":0,\"handler_count\":1,\"conflicting_handler_pairs\":0,\"disjoint_handler_pairs\":0,\"shared_reader_pairs\":0,\"state_leaf_count\":0,\"read_only_handler_count\":1,\"self_conflicting_handler_count\":0,\"total_handler_pairs\":0,\"non_conflicting_handler_pairs\":0,\"non_conflicting_percentage\":null,\"class_compression_ratio\":null},\"handler_order\":[\"domain-specialization:Reader:reader::handler:Accept\"],\"conflict_matrix\":[[false]],\"class_opportunities\":[],\"class_splits\":[]}]}, \"synchronization_dump\":\"SynchronizationPlan domain-graph:637aa8558d72ef29\\nDomain Store\\ninstance: main::store\\nspecialization: domain-specialization:Store:store\\ndomain_rank: 0\\nX*: \\nMetrics: state_leaves=1 protected_leaves=0 classes=0 compression=n/a\\n  handler_pairs=0 conflicting=0 non_conflicting=0 shared_reader_pairs=0 read_only_handlers=1 self_conflicting_handlers=0\\nHandler Read\\n  R: payload.values\\n  W: \\n  C: \\n  X: \\n  ProtectedRead: \\n  LockSet (leaves): \\n  ClassSet (rank order):\\n  Static acquisition placement:\\n  Hold through complete handler and nested messages; release at completion.\\n  acquisitions: 0 (SHARED=0 EXCLUSIVE=0)\\n  self-conflict: no\\n\\nDomain Reader\\ninstance: main::reader\\nspecialization: domain-specialization:Reader:reader\\ndomain_rank: 1\\nX*: \\nMetrics: state_leaves=0 protected_leaves=0 classes=0 compression=n/a\\n  handler_pairs=0 conflicting=0 non_conflicting=0 shared_reader_pairs=0 read_only_handlers=1 self_conflicting_handlers=0\\nHandler Accept\\n  R: \\n  W: \\n  C: \\n  X: \\n  ProtectedRead: \\n  LockSet (leaves): \\n  ClassSet (rank order):\\n  Static acquisition placement:\\n  Hold through complete handler and nested messages; release at completion.\\n  acquisitions: 0 (SHARED=0 EXCLUSIVE=0)\\n  self-conflict: no\\n\\n\"}\n}\n"
+      },
+      {
+        "command": [
+          "$MOSS",
+          "run",
+          "--interp",
+          "main.moss"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 2,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "42\n"
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^type\\s+Payload\\s*:",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 3,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^domain\\s+Reader\\s*:",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 4,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^domain\\s+Store\\s*:",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 5,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\bmessage\\s+reader\\.Accept\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 6,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\bmessage\\s+store\\.Read\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 7,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "wall_time_ms": null
+  },
+  "schema_version": "moss-agent-benchmark-1"
+}

@@ -1,0 +1,3 @@
+Replaced Counter’s illegal self-send with an ordinary `advance` helper. `Increment` is now its only handler.
+
+`./moss check` passes, formatting is clean, and interpreted execution prints `42`.

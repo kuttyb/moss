@@ -1,0 +1,5 @@
+module App
+import Math
+
+fn main():
+  echo Math.answer()

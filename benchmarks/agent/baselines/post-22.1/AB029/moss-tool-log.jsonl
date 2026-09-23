@@ -1,0 +1,6 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":68,"exit_code":0,"origin":"margo-internal","sequence":3,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":118,"exit_code":0,"origin":"agent","sequence":2,"tool":"margo"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":6,"exit_code":0,"origin":"margo-internal","sequence":5,"tool":"moss"}
+{"argv":["test","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":81,"exit_code":0,"origin":"margo-internal","sequence":6,"tool":"moss"}
+{"argv":["test","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":157,"exit_code":0,"origin":"agent","sequence":4,"tool":"margo"}

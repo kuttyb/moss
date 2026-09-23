@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "AB026",
+  "name": "repair-path-dependency",
+  "category": "modules-margo",
+  "task_type": "workflow",
+  "prompt": "Repair app/Moss.toml so the app consumes the adjacent provider package through a Margo path dependency. Do not copy provider source into the app. Running Margo from app must print 42.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "app/Moss.toml",
+    "app/src/main.moss",
+    "provider/Moss.toml",
+    "provider/src/math.moss"
+  ],
+  "allowed_paths": [
+    "app/Moss.toml"
+  ],
+  "success_criteria": [
+    "The dependency names the provider package root.",
+    "Margo supplies the module provider.",
+    "The app prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MARGO",
+        "build",
+        "--json"
+      ],
+      "cwd": "app",
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MARGO",
+        "run"
+      ],
+      "cwd": "app",
+      "expect": {
+        "stdout": "42\n"
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "app/Moss.toml",
+      "matches": "(?m)^\\[dependencies\\]\\s*$"
+    },
+    {
+      "path": "app/Moss.toml",
+      "matches": "(?m)^Provider\\s*=\\s*\\{\\s*path\\s*=\\s*\"\\.\\./provider\"\\s*\\}\\s*$"
+    },
+    {
+      "path": "provider/src/math.moss",
+      "matches": "(?m)^module\\s+Math\\s*$"
+    },
+    {
+      "path": "provider/src/math.moss",
+      "matches": "(?m)^export\\s+fn\\s+answer\\s*\\("
+    },
+    {
+      "path": "app/src/main.moss",
+      "matches": "(?m)^import\\s+Math\\s*$"
+    },
+    {
+      "path": "app/src/main.moss",
+      "matches": "\\bMath\\.answer\\s*\\("
+    }
+  ],
+  "notes": "Exercises current path dependency and module-provider behavior without Git or network access."
+}

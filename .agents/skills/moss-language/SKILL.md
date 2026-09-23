@@ -144,6 +144,10 @@ architecture is unsupported. Before substantially restructuring an approach,
 reduce it and ask `moss ownership`, `moss effects`, and `moss check
 <minimal-reproducer> --json`. For example, one `Vector[Task]` ownership error
 does not establish that Moss requires primitive IDs instead of objects.
+When `OWNERSHIP_CONFLICTING_ACCESS` supplies structured argument entities, use their
+compiler-inferred modes and expressions directly: overlap is legal only when every
+reported mode is `READ`. Its `separate-conflicting-access` guidance never implies an
+automatic copy.
 
 For a typed `Map[K, V]`, strict indexing is `map[key]`; defaulted lookup is
 `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned
@@ -268,6 +272,10 @@ payload type; whether a backend representation is cheap to copy does not relax i
 There is no self-send and no same-domain handler chaining. Put shared handler
 implementation in an ordinary helper with normal lexical/module scope. The helper
 may operate on compiler-approved state access; it is not another domain boundary.
+The compiler distinguishes `DOMAIN_SELF_MESSAGE` / `DOMAIN_SAME_INSTANCE_MESSAGE`
+(`local-helper`) from a real cross-domain `DOMAIN_HANDLER_REQUIRES_MESSAGE`
+(`use-message`) and from missing static route declaration/binding diagnostics. Do not
+apply one repair across those different checked causes.
 
 ### Complete current example
 
@@ -370,6 +378,10 @@ work only when inferred effects, failure, and divergence facts prove it equivale
 An observable `message` is an effect boundary: do not assume a transformation can move
 across it. Use compiler `why` output rather than guessing why a pipeline did or did
 not fuse.
+Callable diagnostics distinguish an unsupported inline element spelling (use the `_`
+placeholder), an invoked function in callable position (pass its name without
+parentheses), and a callback that writes captured state (return a transformed value
+from a pure callback). These are separate rules, not one generic pipeline failure.
 
 ## Modules and projects
 

@@ -936,7 +936,7 @@ The formal claims rely on the following conditions:
 | 15.12 | Expression, control-flow, static-polymorphism, and module/package torture swarms; discovery only, corrective fixes pending |
 | Phase 20 | Rust interoperability |
 | Phase 21 | Error propagation and supervision |
-| Phase 22 | Agent agency tooling |
+| Phase 22 | Agent agency tooling; Phase 22.2 benchmark/baseline complete; Phase 22.1 compiler-owned teaching diagnostics and fixed-protocol post comparison complete |
 
 ## Appendix D - References
 

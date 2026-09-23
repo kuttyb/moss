@@ -1,0 +1,4 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task/provider","diagnostic_codes":[],"duration_ms":78,"exit_code":0,"origin":"margo-internal","sequence":3,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task/app","diagnostic_codes":[],"duration_ms":80,"exit_code":0,"origin":"margo-internal","sequence":4,"tool":"moss"}
+{"argv":["run"],"cwd":"task/app","diagnostic_codes":[],"duration_ms":228,"exit_code":0,"origin":"agent","sequence":2,"tool":"margo"}

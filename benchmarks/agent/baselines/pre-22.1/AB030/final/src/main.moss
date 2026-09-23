@@ -1,0 +1,5 @@
+fn answer() -> Int:
+  return 42
+
+fn main():
+  echo answer()

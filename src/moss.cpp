@@ -1345,6 +1345,23 @@ class Checker {
     throw error;
   }
 
+  [[noreturn]] void teaching_err(
+      int line, const string& code, const string& message,
+      const string& rule_id, const string& rule_summary,
+      const string& cause_kind, vector<DiagnosticEntity> entities,
+      const string& guidance_kind, const string& guidance_summary,
+      vector<DiagnosticRelated> related = {}) const {
+    CompileError error(line, message, code);
+    error.teaching.rule_id = rule_id;
+    error.teaching.rule_summary = rule_summary;
+    error.teaching.cause_kind = cause_kind;
+    error.teaching.entities = std::move(entities);
+    error.teaching.related = std::move(related);
+    error.teaching.guidance_kind = guidance_kind;
+    error.teaching.guidance_summary = guidance_summary;
+    throw error;
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
@@ -1849,17 +1866,42 @@ class Checker {
   }
 
   void check_static_message_receiver(int line, const string& receiver,
+                                     const string& handler,
                                      const TypeEnv& env) const {
     auto self = env.find("self");
     if (self != env.end() && domains_.count(self->second)) {
       const Domain& domain = *domains_.at(self->second);
-      if (receiver == "self")
-        err(line, "self-send is not allowed; move shared logic to an ordinary helper function");
+      if (receiver == "self") {
+        teaching_err(
+            line, "DOMAIN_SELF_MESSAGE",
+            "handler '" + domain.name + "." + handler +
+                "' cannot be messaged through self",
+            "domains.no-self-message",
+            "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
+            "self-message",
+            {{"domain", domain.name, "domain:" + domain.name, {}, {}, 0},
+             {"handler", domain.name + "." + handler,
+              "handler:" + domain.name + "." + handler, {}, {}, 0}},
+            "local-helper",
+            "move the shared logic into an ordinary non-domain helper and call it directly");
+      }
       auto route = std::find_if(domain.routes.begin(), domain.routes.end(),
           [&](const DomainRoute& slot) { return slot.name == receiver; });
-      if (route == domain.routes.end())
-        err(line, "message target '" + receiver +
-            "' must resolve through a declared domainroutes slot");
+      if (route == domain.routes.end()) {
+        teaching_err(
+            line, "DOMAIN_ROUTE_NOT_DECLARED",
+            "message target '" + receiver + "' is not a declared route of domain '" +
+                domain.name + "'",
+            "domains.static-routes",
+            "outbound domain dependencies must be declared with domainroutes and bound during static construction",
+            "undeclared-domain-route",
+            {{"domain", domain.name, "domain:" + domain.name, {}, {}, 0},
+             {"route", receiver, {}, receiver, {}, 0},
+             {"handler", handler, {}, {}, {}, 0}},
+            "declare-domain-route",
+            "declare '" + receiver + "' in domainroutes and bind it when constructing every '" +
+                domain.name + "' instance");
+      }
       // Uninstantiated module declarations have structural routes; every
       // instantiated copy must have that route in the authoritative graph.
       for (const auto& instance : p_.concrete_domain_graph.instances)
@@ -1869,7 +1911,18 @@ class Checker {
                 [&](const ConcreteRouteEdge& edge) {
                   return edge.source_instance == instance.identity && edge.route == receiver;
                 }))
-          err(line, "message route is absent from ConcreteDomainGraph");
+          teaching_err(
+              line, "DOMAIN_ROUTE_NOT_BOUND",
+              "route '" + receiver + "' of domain instance '" +
+                  instance.binding + "' is not bound",
+              "domains.static-routes",
+              "every declared route must be bound in main's static composition prefix",
+              "unbound-domain-route",
+              {{"domain-instance", instance.binding, instance.identity, {}, {}, 0},
+               {"route", receiver, {}, receiver, {}, 0}},
+              "bind-domain-route",
+              "bind route '" + receiver + "' when constructing '" +
+                  instance.binding + "'");
     } else if (std::none_of(p_.concrete_domain_graph.instances.begin(),
                            p_.concrete_domain_graph.instances.end(),
                  [&](const ConcreteDomainInstance& instance) {
@@ -1877,8 +1930,16 @@ class Checker {
                    return instance.binding == receiver && binding != env.end() &&
                        binding->second == instance.domain;
                  })) {
-      err(line, "message target '" + receiver +
-          "' is not a concrete composition binding or declared domainroutes slot");
+      teaching_err(
+          line, "DOMAIN_MESSAGE_TARGET_INVALID",
+          "message target '" + receiver +
+              "' is not a static domain instance or declared route",
+          "domains.static-routing",
+          "message targets are statically composed domain instances or declared domainroutes slots",
+          "invalid-message-target",
+          {{"domain-instance", receiver, {}, receiver, {}, 0}},
+          "use-static-domain-route",
+          "message a domain instance from main or a declared domainroutes dependency from a handler");
     }
   }
 
@@ -4403,16 +4464,21 @@ class Checker {
     return true;
   }
 
-  static string effect_access_name(Effect effect) {
-    if (effect == Effect::Write) return "mutation";
-    if (effect == Effect::Consume) return "transfer";
-    return "read";
+  static string diagnostic_effect_name(Effect effect) {
+    if (effect == Effect::Write) return "WRITE";
+    if (effect == Effect::Consume) return "CONSUME";
+    return "READ";
   }
 
   void check_conflicting_call_accesses(
       int line, const string& call_name, const vector<string>& expressions,
       const vector<Effect>& effects, const OwnershipEnv& env) const {
-    struct Access { StorageLocation location; Effect effect; };
+    struct Access {
+      StorageLocation location;
+      Effect effect;
+      string expression;
+      size_t argument_index = 0;
+    };
     vector<Access> accesses;
     for (size_t index = 0; index < expressions.size(); ++index) {
       auto location = storage_location(expressions[index], env.types);
@@ -4420,7 +4486,8 @@ class Checker {
       auto type = inferred_expr_type(expressions[index], env.types);
       if (!type || !transfer_type(*type)) continue;
       accesses.push_back(Access{*location,
-          index < effects.size() ? effects[index] : Effect::Read});
+          index < effects.size() ? effects[index] : Effect::Read,
+          expressions[index], index});
     }
     for (size_t left = 0; left < accesses.size(); ++left) {
       for (size_t right = left + 1; right < accesses.size(); ++right) {
@@ -4430,10 +4497,39 @@ class Checker {
         if (accesses[left].effect == Effect::Read &&
             accesses[right].effect == Effect::Read)
           continue;
-        err(line, "conflicting accesses to value '" + accesses[left].location.root +
-            "' in call to '" + call_name + "': " +
-            effect_access_name(accesses[left].effect) + " overlaps with " +
-            effect_access_name(accesses[right].effect));
+        const string left_mode = diagnostic_effect_name(accesses[left].effect);
+        const string right_mode = diagnostic_effect_name(accesses[right].effect);
+        vector<DiagnosticEntity> entities;
+        entities.push_back({functions_.count(call_name) ? "function" : "callable",
+                            call_name,
+                            functions_.count(call_name) ? "fn:" + call_name : string(),
+                            {}, {}, 0});
+        entities.push_back({"argument", "argument " +
+                                std::to_string(accesses[left].argument_index + 1),
+                            {}, accesses[left].expression, left_mode,
+                            static_cast<int>(accesses[left].argument_index + 1)});
+        entities.push_back({"argument", "argument " +
+                                std::to_string(accesses[right].argument_index + 1),
+                            {}, accesses[right].expression, right_mode,
+                            static_cast<int>(accesses[right].argument_index + 1)});
+        teaching_err(
+            line, "OWNERSHIP_CONFLICTING_ACCESS",
+            "'" + accesses[left].location.root + "' is passed to '" +
+                call_name + "' through overlapping " + left_mode + " and " +
+                right_mode + " accesses",
+            "ownership.overlapping-access",
+            "overlapping access to the same storage is permitted only when every access is READ",
+            "overlapping-actual-arguments", std::move(entities),
+            "separate-conflicting-access",
+            "pass distinct storage, or finish the read before beginning the write or consume",
+            {{{}, line, 1, "argument " +
+                                  std::to_string(accesses[left].argument_index + 1) +
+                                  " requires " + left_mode + " access to '" +
+                                  accesses[left].expression + "'"},
+             {{}, line, 1, "argument " +
+                                  std::to_string(accesses[right].argument_index + 1) +
+                                  " requires " + right_mode + " access to '" +
+                                  accesses[right].expression + "'"}});
       }
     }
   }
@@ -7191,7 +7287,12 @@ class Checker {
 
   std::optional<string> check_functional_callable(
       int line, const string& callable, const vector<string>& input_types,
-      const TypeEnv& env) {
+      const TypeEnv& env, const string& operation) {
+    string operation_name = operation;
+    std::transform(operation_name.begin(), operation_name.end(),
+                   operation_name.begin(), [](unsigned char character) {
+                     return static_cast<char>(std::tolower(character));
+                   });
     string identity = trim(callable);
     if (identity.empty()) err(line, "functional stage requires a callable");
     if (expression_uses(identity, "_")) {
@@ -7222,9 +7323,21 @@ class Checker {
                   argument_types, true, nullptr))
             mutates_object = method->receiver_effect != Effect::Read;
         }
-        if (mutates_collection || mutates_object)
-          err(line, "functional placeholder cannot mutate captured binding '" +
-              trim(capture_receiver) + "'");
+        if (mutates_collection || mutates_object) {
+          teaching_err(
+              line, "FUNCTIONAL_CAPTURE_MUTATION",
+              "callback '" + identity + "' for " + operation_name +
+                  " writes captured binding '" + trim(capture_receiver) + "'",
+              "functional.pure-callback",
+              "pipeline callbacks cannot WRITE or CONSUME captured state",
+              "mutable-pipeline-capture",
+              {{"pipeline-stage", operation_name, {}, {}, {}, 0},
+               {"callback", identity, {}, identity, {}, 0},
+               {"variable", trim(capture_receiver), {}, capture_receiver,
+                "WRITE", 0}},
+              "pure-pipeline-callback",
+              "return the transformed value from a pure callback instead of mutating the capture");
+        }
       }
       check_expression(line, identity, placeholder_env);
       auto result = inferred_expr_type(identity, placeholder_env);
@@ -7282,8 +7395,38 @@ class Checker {
       }
     }
     auto function = functions_.find(identity);
-    if (function == functions_.end())
+    if (function == functions_.end()) {
+      string invoked;
+      vector<string> invoked_arguments;
+      if (parse_simple_call(identity, invoked, invoked_arguments) &&
+          functions_.count(invoked)) {
+        teaching_err(
+            line, "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
+            operation_name + " expects a callable identity, but '" + identity +
+                "' invokes function '" + invoked + "' immediately",
+            "functional.supported-callable-form",
+            "functional stages accept a statically known named callable or a supported '_' placeholder expression",
+            "invoked-function-in-callable-position",
+            {{"pipeline-stage", operation_name, {}, {}, {}, 0},
+             {"function", invoked, "fn:" + invoked, identity, {}, 0}},
+            "named-pipeline-callable",
+            "pass the function name '" + invoked + "' without parentheses");
+      }
+      if (!plain_identifier(identity)) {
+        teaching_err(
+            line, "FUNCTIONAL_PLACEHOLDER_REQUIRED",
+            "callback expression '" + identity + "' for " + operation_name +
+                " does not use Moss placeholder '_'",
+            "functional.supported-callable-form",
+            "inline pipeline callbacks use '_' as their element placeholder",
+            "unsupported-placeholder-expression",
+            {{"pipeline-stage", operation_name, {}, {}, {}, 0},
+             {"callback", identity, {}, identity, {}, 0}},
+            "supported-pipeline-placeholder",
+            "replace the element name with '_', or pass a named pure function");
+      }
       err(line, "unresolved functional callable '" + identity + "'");
+    }
     if (function->second->params.size() != input_types.size())
       err(line, "functional callable '" + identity + "' expects " +
           std::to_string(function->second->params.size()) + " arguments, got " +
@@ -7318,8 +7461,17 @@ class Checker {
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)
-      err(line, "cannot determine the result type of functional callable '" +
-          identity + "'");
+      teaching_err(
+          line, "TYPE_INFERENCE_FAILED",
+          "cannot determine the result type of functional callable '" +
+              identity + "' used by " + operation_name,
+          "types.functional-callable-result",
+          "a pipeline callable must specialize to one statically known result type",
+          "unresolved-functional-callable-result",
+          {{"pipeline-stage", operation_name, {}, {}, {}, 0},
+           {"function", identity, "fn:" + identity, identity, {}, 0}},
+          "use-statically-typed-callable",
+          "use a named callable whose checked body and inputs determine one result type");
     return result;
   }
 
@@ -7350,7 +7502,8 @@ class Checker {
         case FunctionalNodeKind::Map: {
           require_arity(1);
           auto result = check_functional_callable(
-              line, stage.arguments.front(), {current_element}, env);
+              line, stage.arguments.front(), {current_element}, env,
+              functional_node_name(stage.kind));
           if (result) current_element = canonical_type_name(*result);
           break;
         }
@@ -7361,7 +7514,8 @@ class Checker {
             err(line, "filter over nontrivial element type '" + current_element +
                 "' cannot produce a new collection without an explicit deep copy");
           auto result = check_functional_callable(
-              line, stage.arguments.front(), {current_element}, env);
+              line, stage.arguments.front(), {current_element}, env,
+              functional_node_name(stage.kind));
           if (result && !unresolved_semantic_type(*result) &&
               canonical_type_name(*result) != "bool")
             err(line, "filter predicate returns '" + *result +
@@ -7373,9 +7527,21 @@ class Checker {
           check_expression(line, stage.arguments.front(), env);
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
           if (!accumulator)
-            err(line, "cannot infer reduce initial accumulator type");
+            teaching_err(
+                line, "TYPE_INFERENCE_FAILED",
+                "cannot infer the type of reduce seed '" +
+                    stage.arguments.front() + "'",
+                "types.reduce-seed",
+                "reduce requires an initial accumulator with one statically known type",
+                "unresolved-reduce-seed",
+                {{"pipeline-stage", "reduce", {}, {}, {}, 0},
+                 {"expression", stage.arguments.front(), {},
+                  stage.arguments.front(), {}, 1}},
+                "use-statically-typed-expression",
+                "use a concrete seed expression whose type matches the named reduce callable's accumulator");
           auto result = check_functional_callable(
-              line, stage.arguments[1], {*accumulator, current_element}, env);
+              line, stage.arguments[1], {*accumulator, current_element}, env,
+              functional_node_name(stage.kind));
           if (result && !unresolved_semantic_type(*result) &&
               !unresolved_semantic_type(*accumulator) &&
               !same_type(*result, *accumulator))
@@ -7404,7 +7570,8 @@ class Checker {
           string predicate_type = current_element;
           if (!stage.arguments.empty()) {
             auto result = check_functional_callable(
-                line, stage.arguments.front(), {current_element}, env);
+                line, stage.arguments.front(), {current_element}, env,
+                functional_node_name(stage.kind));
             if (result) predicate_type = *result;
           }
           if (!unresolved_semantic_type(predicate_type) &&
@@ -7433,17 +7600,28 @@ class Checker {
       if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
           !plain_identifier(receiver) || !plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
+      check_static_message_receiver(line, receiver, handler, env);
       auto binding = env.find(receiver);
       if (binding == env.end() || !domains_.count(canonical_type_name(binding->second)))
         err(line, "message receiver '" + receiver + "' is not a domain instance");
-      if (receiver == "self")
-        err(line, "self-send is not allowed; move shared logic to an ordinary helper function");
-      check_static_message_receiver(line, receiver, env);
       auto self_binding = env.find("self");
       if (self_binding != env.end() && receiver != "self" &&
-          canonical_type_name(binding->second) == canonical_type_name(self_binding->second))
-        err(line,
-            "same-domain handler chaining is not allowed; move shared logic to an ordinary helper function");
+          canonical_type_name(binding->second) == canonical_type_name(self_binding->second)) {
+        const string domain = canonical_type_name(self_binding->second);
+        teaching_err(
+            line, "DOMAIN_SAME_INSTANCE_MESSAGE",
+            "handler '" + domain + "." + handler +
+                "' cannot be entered on the same domain instance",
+            "domains.no-same-instance-handler-chain",
+            "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
+            "same-instance-handler-message",
+            {{"domain", domain, "domain:" + domain, {}, {}, 0},
+             {"domain-instance", receiver, {}, receiver, {}, 0},
+             {"handler", domain + "." + handler,
+              "handler:" + domain + "." + handler, {}, {}, 0}},
+            "local-helper",
+            "move the shared logic into an ordinary non-domain helper and call it directly");
+      }
       const Handler* target = check_call(line, receiver, handler, args, env);
       (void)target;
       for (const auto& argument : args) check_expression(line, argument, env);
@@ -7526,9 +7704,22 @@ class Checker {
         }
       }
       auto it = env.find(receiver);
-      if (it != env.end() && domains_.count(it->second))
-        err(line, "naked cross-domain call '" + receiver + "." + handler +
-            "' requires 'message'");
+      if (it != env.end() && domains_.count(canonical_type_name(it->second))) {
+        const string domain = canonical_type_name(it->second);
+        teaching_err(
+            line, "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+            "domain handler '" + domain + "." + handler +
+                "' must be called with message",
+            "domains.cross-domain-message",
+            "cross-domain handler calls use synchronous message syntax",
+            "direct-domain-handler-call",
+            {{"domain-instance", receiver, {}, receiver, {}, 0},
+             {"handler", domain + "." + handler,
+              "handler:" + domain + "." + handler, {}, {}, 0}},
+            "use-message",
+            "write 'message " + receiver + "." + handler +
+                "(...)' for this synchronous cross-domain call");
+      }
       if (it != env.end() && (it->second == "vector" || it->second == "queue" || it->second == "map" ||
           starts_with(it->second, "vector[") || starts_with(it->second, "queue[") || starts_with(it->second, "map["))) {
         if (handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
@@ -7766,21 +7957,31 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
-        check_static_message_receiver(statement.line, statement.a, current_env);
+        check_static_message_receiver(
+            statement.line, statement.a, statement.b, current_env);
         auto destination = current_env.find(statement.message_result);
         if (!statement.message_result.empty() && destination != current_env.end() &&
             contains_domain_handle(destination->second))
           err(statement.source_file, statement.line,
               "domain handle binding '" + statement.message_result + "' is immutable");
-        if (current && statement.a == "self")
-          err(statement.line,
-              "self-send is not allowed; move shared logic to an ordinary helper function");
         if (current) {
           auto receiver = current_env.find(statement.a);
           if (receiver != current_env.end() &&
-              canonical_type_name(receiver->second) == current->name)
-            err(statement.line,
-                "same-domain handler chaining is not allowed; move shared logic to an ordinary helper function");
+              canonical_type_name(receiver->second) == current->name) {
+            teaching_err(
+                statement.line, "DOMAIN_SAME_INSTANCE_MESSAGE",
+                "handler '" + current->name + "." + statement.b +
+                    "' cannot be entered on the same domain instance",
+                "domains.no-same-instance-handler-chain",
+                "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
+                "same-instance-handler-message",
+                {{"domain", current->name, "domain:" + current->name, {}, {}, 0},
+                 {"domain-instance", statement.a, {}, statement.a, {}, 0},
+                 {"handler", current->name + "." + statement.b,
+                  "handler:" + current->name + "." + statement.b, {}, {}, 0}},
+                "local-helper",
+                "move the shared logic into an ordinary non-domain helper and call it directly");
+          }
         }
         for (const auto& argument : statement.args) {
           if (auto pipeline = parse_functional_pipeline(argument)) {
@@ -7805,9 +8006,22 @@ class Checker {
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
           if (receiver != current_env.end() &&
-              domains_.count(canonical_type_name(receiver->second)))
-            err(statement.line, "naked cross-domain call '" + statement.a + "." +
-                statement.b + "' requires 'message'");
+              domains_.count(canonical_type_name(receiver->second))) {
+            const string domain = canonical_type_name(receiver->second);
+            teaching_err(
+                statement.line, "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+                "domain handler '" + domain + "." + statement.b +
+                    "' must be called with message",
+                "domains.cross-domain-message",
+                "cross-domain handler calls use synchronous message syntax",
+                "direct-domain-handler-call",
+                {{"domain-instance", statement.a, {}, statement.a, {}, 0},
+                 {"handler", domain + "." + statement.b,
+                  "handler:" + domain + "." + statement.b, {}, {}, 0}},
+                "use-message",
+                "write 'message " + statement.a + "." + statement.b +
+                    "(...)' for this synchronous cross-domain call");
+          }
           bool collection = receiver != current_env.end() &&
               (receiver->second == "vector" || receiver->second == "queue" ||
                receiver->second == "map" || starts_with(receiver->second, "vector[") ||
@@ -7880,6 +8094,12 @@ class Checker {
         if (!current || !current_handler || !current_handler->reply_type)
           err(statement.line,
               "reply is only valid in a handler declaring '-> Type'");
+        const bool checked_message = starts_with(trim(statement.a), "message ");
+        // Validate a message target before asking it for a reply type.  A
+        // missing static route is a domain-topology fact, not a request for a
+        // source-level type annotation.
+        if (checked_message)
+          check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
         if (auto pipeline = parse_functional_pipeline(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
@@ -7890,13 +8110,27 @@ class Checker {
                 "functional pipeline must be materialized in a local binding "
                 "before crossing a domain boundary");
         }
-        if (!actual)
-          err(statement.line, "cannot infer the type of this reply expression; add an annotation or use a statically typed value");
+        if (!actual) {
+          teaching_err(
+              statement.line, "TYPE_INFERENCE_FAILED",
+              "cannot infer the type of reply expression '" + statement.a + "'",
+              "types.reply-expression",
+              "a value-returning handler reply must resolve to one static type",
+              "unresolved-reply-expression",
+              {{"expression", statement.a, {}, statement.a, {}, 0},
+               {"handler", current->name + "." + current_handler->name,
+                "handler:" + current->name + "." + current_handler->name,
+                {}, {}, 0},
+               {"expected-type", *current_handler->reply_type, {}, {}, {}, 0}},
+              "use-statically-typed-expression",
+              "rewrite the reply using an expression whose type Moss can determine from checked declarations and uses");
+        }
         if (!same_type(*actual, *current_handler->reply_type))
           err(statement.line, "reply type mismatch: handler expects '" +
               *current_handler->reply_type + "', expression has type '" + *actual +
               "'");
-        check_expression(statement.line, statement.a, current_env);
+        if (!checked_message)
+          check_expression(statement.line, statement.a, current_env);
         return;
       }
 
@@ -7909,9 +8143,24 @@ class Checker {
       if (statement.kind == Stmt::Kind::Return && current_function &&
           !statement.a.empty()) {
         auto actual = inferred_expr_type(statement.a, current_env);
-        if (!actual)
-          err(statement.line, "cannot infer the type of this return expression in function '" +
-              current_function->name + "'");
+        if (!actual) {
+          vector<DiagnosticEntity> entities = {
+              {"expression", statement.a, {}, statement.a, {}, 0},
+              {"function", current_function->name,
+               "fn:" + current_function->name, {}, {}, 0}};
+          if (current_function->return_type)
+            entities.push_back(
+                {"expected-type", *current_function->return_type, {}, {}, {}, 0});
+          teaching_err(
+              statement.line, "TYPE_INFERENCE_FAILED",
+              "cannot infer the type of return expression '" + statement.a +
+                  "' in function '" + current_function->name + "'",
+              "types.return-expression",
+              "a function return expression must resolve to one static type",
+              "unresolved-return-expression", std::move(entities),
+              "use-statically-typed-expression",
+              "rewrite the return using supported operations whose operand types Moss can determine");
+        }
         bool trait_result_match = current_function->return_type &&
             traits_.count(canonical_type_name(*current_function->return_type)) &&
             concrete_specialization_type(*actual) &&
@@ -14107,7 +14356,7 @@ struct AgentCapabilityDescriptor {
 
 static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
   static const vector<AgentCapabilityDescriptor> catalog = {
-      {"structured_diagnostics", "Stable machine-readable Moss diagnostics, locations, identities, and repair alternatives.", "moss check <source> --json"},
+      {"structured_diagnostics", "Stable machine-readable Moss diagnostics with compiler-owned source, rule, cause, entity, related-location, and guidance facts.", "moss check <source> --json"},
       {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
       {"semantic_queries", "Checked-program type, ownership, effect, call, explanation, and cost facts.", "moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
@@ -14125,6 +14374,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"fast_debug", "Direct execution of checked reachable Moss source; use Margo for a resolved package graph.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
       {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean|debug"},
+      {"agent_benchmark_suite", "List, inspect, validate, and execute isolated validation for the fixed fresh-agent task corpus.", "moss agent benchmark list|show|validate|run"},
   };
   return catalog;
 }
@@ -14392,7 +14642,8 @@ static string semantic_identity_near_line(const Program* program, int line) {
 static void write_structured_error(
     std::ostream& out, const string& command, const string& code,
     const string& message, const string& source_file = {}, int line = 0,
-    const string& semantic_identity = {}, const string& symbol = {}) {
+    const string& semantic_identity = {}, const string& symbol = {},
+    const TeachingDiagnostic* teaching = nullptr) {
   write_agent_envelope_begin(out, command, false);
   out << "  \"error\": {\"code\": ";
   write_debug_json_string(out, code);
@@ -14407,12 +14658,94 @@ static void write_structured_error(
     out << "{\"start_line\": " << line
         << ", \"start_column\": 1, \"end_line\": " << line
         << ", \"end_column\": 1}";
+  out << ", \"source\": ";
+  if (source_file.empty() && line <= 0) {
+    out << "null";
+  } else {
+    out << "{\"file\": ";
+    if (source_file.empty()) out << "null";
+    else write_debug_json_string(out, source_file);
+    out << ", \"line\": " << line << ", \"column\": 1, \"span\": ";
+    if (line <= 0) out << "null";
+    else
+      out << "{\"start_line\": " << line
+          << ", \"start_column\": 1, \"end_line\": " << line
+          << ", \"end_column\": 1}";
+    out << "}";
+  }
   out << ", \"semantic_identity\": ";
   if (semantic_identity.empty()) out << "null";
   else write_debug_json_string(out, semantic_identity);
   out << ", \"symbol\": ";
   if (symbol.empty()) out << "null";
   else write_debug_json_string(out, symbol);
+  out << ", \"rule\": ";
+  if (!teaching || teaching->rule_id.empty()) {
+    out << "null";
+  } else {
+    out << "{\"id\": ";
+    write_debug_json_string(out, teaching->rule_id);
+    out << ", \"summary\": ";
+    write_debug_json_string(out, teaching->rule_summary);
+    out << "}";
+  }
+  out << ", \"cause\": ";
+  if (!teaching || teaching->cause_kind.empty()) {
+    out << "null";
+  } else {
+    out << "{\"kind\": ";
+    write_debug_json_string(out, teaching->cause_kind);
+    out << ", \"entities\": [";
+    for (size_t index = 0; index < teaching->entities.size(); ++index) {
+      if (index) out << ", ";
+      const auto& entity = teaching->entities[index];
+      out << "{\"kind\": ";
+      write_debug_json_string(out, entity.kind);
+      out << ", \"name\": ";
+      write_debug_json_string(out, entity.name);
+      out << ", \"semantic_identity\": ";
+      if (entity.semantic_identity.empty()) out << "null";
+      else write_debug_json_string(out, entity.semantic_identity);
+      out << ", \"expression\": ";
+      if (entity.expression.empty()) out << "null";
+      else write_debug_json_string(out, entity.expression);
+      out << ", \"access\": ";
+      if (entity.access.empty()) out << "null";
+      else write_debug_json_string(out, entity.access);
+      out << ", \"argument_index\": ";
+      if (entity.argument_index <= 0) out << "null";
+      else out << entity.argument_index;
+      out << "}";
+    }
+    out << "]}";
+  }
+  out << ", \"related\": [";
+  if (teaching) {
+    for (size_t index = 0; index < teaching->related.size(); ++index) {
+      if (index) out << ", ";
+      const auto& related = teaching->related[index];
+      out << "{\"source\": {\"file\": ";
+      const string& related_file = related.source_file.empty()
+          ? source_file : related.source_file;
+      if (related_file.empty()) out << "null";
+      else write_debug_json_string(out, related_file);
+      out << ", \"line\": " << related.line
+          << ", \"column\": " << related.column << "}, \"message\": ";
+      write_debug_json_string(out, related.message);
+      out << "}";
+    }
+  }
+  out << "]";
+  out << ", \"guidance\": ";
+  if (!teaching || teaching->guidance_kind.empty()) {
+    out << "null";
+  } else {
+    out << "{\"kind\": ";
+    write_debug_json_string(out, teaching->guidance_kind);
+    out << ", \"summary\": ";
+    write_debug_json_string(out, teaching->guidance_summary);
+    out << "}";
+  }
   out << ", \"details\": {\"ownership_expected\": ";
   if (code == "OWNERSHIP_USE_AFTER_CONSUME")
     write_debug_json_string(out, "AVAILABLE");
@@ -14461,10 +14794,6 @@ static void write_structured_error(
         "make the callee READ the value if that matches program intent",
         "keep the ownership transfer and stop using the old binding",
         "construct an explicit new owned value or explicit deep copy"};
-  else if (code == "TYPE_INFERENCE_FAILED")
-    alternatives = {
-        "add a concrete type annotation",
-        "use the value in a context that determines one static type"};
   else if (code == "UNKNOWN_SYMBOL_OR_TYPE")
     alternatives = {
         "rename the reference to an existing static symbol",
@@ -14479,6 +14808,27 @@ static void write_structured_error(
         "for an empty typed Vector use: var values = Vector[Int]()"};
   write_agent_string_array(out, alternatives);
   out << "}\n}\n";
+}
+
+static void write_human_error(std::ostream& out, const string& code,
+                              const string& message,
+                              const string& source_file, int line,
+                              const TeachingDiagnostic& teaching) {
+  out << "error[" << code << "]: " << message << "\n";
+  if (!source_file.empty())
+    out << "  --> " << source_file << ":" << line << ":1\n";
+  for (const auto& related : teaching.related) {
+    const string& file = related.source_file.empty()
+        ? source_file : related.source_file;
+    out << "  note: ";
+    if (!file.empty()) out << file << ":" << related.line << ":"
+                           << related.column << ": ";
+    out << related.message << "\n";
+  }
+  if (!teaching.rule_summary.empty())
+    out << "rule: " << teaching.rule_summary << "\n";
+  if (!teaching.guidance_summary.empty())
+    out << "help: " << teaching.guidance_summary << "\n";
 }
 
 static void write_bootstrap_json(std::ostream& out,
@@ -14523,7 +14873,7 @@ static void write_bootstrap_json(std::ostream& out,
             "first_order_effect_graph", "structured_execution_trace",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
             "domain_ranks", "package_project_driver", "package_dependencies",
-            "package_lockfile", "tool_invocation"});
+            "package_lockfile", "tool_invocation", "agent_benchmark_suite"});
   out << ",\n    \"capability_catalog\": ";
   write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
   out << ",\n    \"capability_flags\": {"
@@ -14538,7 +14888,13 @@ static void write_bootstrap_json(std::ostream& out,
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
          "\"package_lockfile\": true, "
-         "\"tool_invocation\": true}";
+         "\"tool_invocation\": true, "
+         "\"agent_benchmark_suite\": true}";
+  out << ",\n    \"diagnostic_contract\": {"
+         "\"additive_teaching_fields\": [\"source\", \"rule\", \"cause\", \"related\", \"guidance\"],"
+         "\"cause_entity_fields\": [\"kind\", \"name\", \"semantic_identity\", \"expression\", \"access\", \"argument_index\"],"
+         "\"guidance_kinds\": [\"local-helper\", \"use-message\", \"declare-domain-route\", \"bind-domain-route\", \"use-static-domain-route\", \"separate-conflicting-access\", \"supported-pipeline-placeholder\", \"named-pipeline-callable\", \"pure-pipeline-callback\", \"qualify-query-target\", \"use-statically-typed-expression\", \"use-statically-typed-callable\"],"
+         "\"human_and_json_share_facts\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
@@ -14576,7 +14932,8 @@ static void write_bootstrap_json(std::ostream& out,
             "Moss.toml package manifest; Moss.lock resolved Git dependency lock",
             "module-qualified imports and versioned .mossi interfaces",
             "moss test --affected [--json] (semantic reduced verification)",
-            "moss build|test|bench|clean (project-command compatibility paths)"});
+            "moss build|test|bench|clean (project-command compatibility paths)",
+            "moss agent benchmark list|show|validate|run [--json]"});
   out << ",\n    \"semantic_queries\": ["
          "{\"name\":\"inspect\",\"purpose\":\"compact checked target summary, callers, topology, and known planning facts\",\"command\":\"moss inspect <target> --source <source> --json\"},"
          "{\"name\":\"type\",\"purpose\":\"statically resolved type and specialization facts\",\"command\":\"moss type <target> --source <source> --json\"},"
@@ -14596,7 +14953,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_test\",\"command\":\"margo test [filter] [--release] [--json]\",\"purpose\":\"canonical root-package test execution\"},"
          "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
          "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"},"
-         "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"}]";
+         "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"},"
+         "{\"name\":\"agent_benchmark\",\"command\":\"moss agent benchmark list|show|validate|run [--json]\",\"purpose\":\"operate the fixed isolated fresh-agent benchmark corpus\"}]";
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
@@ -14615,6 +14973,7 @@ static void write_bootstrap_json(std::ostream& out,
             "Run moss impact <target> --json.",
             "Run moss test --affected during iteration.",
             "Run the full root-package tests with margo test when appropriate.",
+            "Use moss agent benchmark list|show|validate|run for the fixed fresh-agent corpus.",
             "Prefer structured --json output for automation.",
             "Moss owns module/.mossi/semantic truth; Margo supplies package artifacts."});
   out << ",\n    \"workflow_hints\": ["
@@ -14634,6 +14993,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"How do I invoke Moss tools in this repository checkout?\",\"capability\":\"tool_invocation\",\"command\":\"./moss agent bootstrap --json\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
          "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
+  // The benchmark corpus is repository tooling rather than a language semantic
+  // query, so it is exposed through the capability catalog and command schema.
   out << ",\n    \"safety_rules\": ";
   write_agent_string_array(
       out, {"Do not edit generated Rust.",
@@ -14686,7 +15047,8 @@ static void write_bootstrap_json(std::ostream& out,
            "\"semantics\": \"compiler-owned graph-relative SynchronizationPlan; production handler-level 2PL\"}";
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
-           "\"legal_alternatives\"], "
+           "\"legal_alternatives\", \"source\", \"rule\", \"cause\", "
+           "\"related\", \"guidance\"], "
            "\"identity_contracts\": {"
            "\"debug_provenance\": \"build/source-layout scoped\", "
            "\"durable_semantic_entity\": \"entity-v1\"}, "
@@ -14708,10 +15070,19 @@ static void write_bootstrap_json(std::ostream& out,
         {"identity contracts"}, {"AGENT_COMMAND_INVALID", "AGENT_ARGUMENT_INVALID"});
     out << ',';
     write_agent_command_schema(
+        out, "agent_benchmark", "List, show, validate, or run validation for a fixed fresh-agent benchmark task.",
+        {"list|show|validate|run"}, {"task id", "--workdir", "--json"},
+        "moss-agent-benchmark-1 envelope; run results contain task_id, status, validation, attempts, tool_calls, diagnostics, changed_paths, and outside_allowed_paths",
+        {"AB task id", "benchmark task name"},
+        {"BENCHMARK_METADATA_INVALID", "BENCHMARK_DUPLICATE_TASK", "BENCHMARK_TASK_NOT_FOUND", "BENCHMARK_VALIDATION_INVALID"});
+    out << ',';
+    write_agent_command_schema(
         out, "check", "Check Moss and return stable structured diagnostics.",
         {"source", "--json"}, {}, "moss-agent-1 envelope with diagnostics or error",
         {"source_identity when available"},
-        {"MOSS_COMPILE_ERROR", "OWNERSHIP_USE_AFTER_CONSUME", "TYPE_INFERENCE_FAILED"});
+        {"DOMAIN_SELF_MESSAGE", "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+         "DOMAIN_ROUTE_NOT_DECLARED", "OWNERSHIP_CONFLICTING_ACCESS",
+         "FUNCTIONAL_CAPTURE_MUTATION", "TYPE_INFERENCE_FAILED"});
     out << ',';
     write_agent_command_schema(
         out, "semantic_query", "Inspect existing checked facts; operations are inspect, type, effects, ownership, calls, why, and cost.",
@@ -15230,10 +15601,66 @@ static bool write_semantic_query_json(
   const SemanticTargetFact* target = resolve_semantic_target(
       targets, selector, source_file);
   if (!target) {
+    vector<const SemanticTargetFact*> candidates;
+    if (selector.find(':') == string::npos &&
+        selector.find('.') == string::npos) {
+      for (const auto& candidate : targets) {
+        if (candidate.kind != "function" && candidate.kind != "method" &&
+            candidate.kind != "handler" && candidate.kind != "domain")
+          continue;
+        size_t separator = candidate.name.rfind('.');
+        string short_name = separator == string::npos
+            ? candidate.name : candidate.name.substr(separator + 1);
+        if (short_name == selector) candidates.push_back(&candidate);
+      }
+      std::sort(candidates.begin(), candidates.end(),
+                [](const auto* left, const auto* right) {
+                  const string left_name = left->kind + ":" + left->name;
+                  const string right_name = right->kind + ":" + right->name;
+                  if (left_name != right_name) return left_name < right_name;
+                  return left->semantic_identity < right->semantic_identity;
+                });
+      candidates.erase(
+          std::unique(candidates.begin(), candidates.end(),
+                      [](const auto* left, const auto* right) {
+                        return left->kind == right->kind &&
+                            left->name == right->name;
+                      }),
+          candidates.end());
+    }
+    TeachingDiagnostic teaching;
+    string message = "no exact Moss semantic target matches '" + selector + "'";
+    if (!candidates.empty()) {
+      teaching.rule_id = "queries.exact-target";
+      teaching.rule_summary =
+          "semantic queries use exact canonical target identities";
+      teaching.cause_kind = "unqualified-query-target";
+      teaching.guidance_kind = "qualify-query-target";
+      std::ostringstream choices;
+      for (size_t index = 0; index < candidates.size(); ++index) {
+        const auto& candidate = *candidates[index];
+        const string canonical = candidate.kind + ":" + candidate.name;
+        if (index) choices << ", ";
+        choices << canonical;
+        teaching.entities.push_back(
+            {"query-target", canonical, candidate.durable_identity,
+             {}, {}, 0});
+        teaching.related.push_back(
+            {candidate.source_file, candidate.line, 1,
+             "candidate " + canonical});
+      }
+      message += candidates.size() == 1 ? "; possible target: " :
+                                          "; possible targets: ";
+      message += choices.str();
+      teaching.guidance_summary = candidates.size() == 1
+          ? "use the canonical target '" +
+                candidates.front()->kind + ":" + candidates.front()->name + "'"
+          : "choose one of the reported canonical qualified targets";
+    }
     write_structured_error(
         out, command, "QUERY_TARGET_NOT_FOUND",
-        "no exact Moss semantic target matches '" + selector + "'",
-        source_file);
+        message, source_file, 0, {}, {},
+        teaching.empty() ? nullptr : &teaching);
     return false;
   }
   write_agent_envelope_begin(out, command, true);
@@ -15329,11 +15756,13 @@ struct ProjectError : std::runtime_error {
   string code;
   string source_file;
   int line = 0;
+  TeachingDiagnostic teaching;
 
   ProjectError(string error_code, string message, string source = {},
-               int source_line = 0)
+               int source_line = 0, TeachingDiagnostic diagnostic = {})
       : std::runtime_error(std::move(message)), code(std::move(error_code)),
-        source_file(std::move(source)), line(source_line) {}
+        source_file(std::move(source)), line(source_line),
+        teaching(std::move(diagnostic)) {}
 };
 
 struct ProjectManifest {
@@ -17270,7 +17699,7 @@ static CompiledProjectUnit analyze_project_sources(
         error.what(), error.source_file.empty()
             ? (sources.empty() ? string() : sources.front().string())
             : error.source_file,
-        error.line);
+        error.line, error.teaching);
   }
 }
 
@@ -18739,7 +19168,8 @@ static void write_project_error_json(std::ostream& out,
                                      const string& command,
                                      const ProjectError& error) {
   write_structured_error(out, command, error.code, error.what(),
-                         error.source_file, error.line);
+                         error.source_file, error.line, {}, {},
+                         error.teaching.empty() ? nullptr : &error.teaching);
 }
 
 static int run_project_build(const ProjectManifest& manifest, bool release,
@@ -20660,6 +21090,9 @@ static int run_project_command(int argc, char** argv) {
                        "unknown project command '" + command + "'");
   } catch (const ProjectError& error) {
     if (json) write_project_error_json(std::cout, command, error);
+    else if (!error.teaching.empty())
+      write_human_error(std::cerr, error.code, error.what(),
+                        error.source_file, error.line, error.teaching);
     else {
       if (!error.source_file.empty())
         std::cerr << error.source_file;
@@ -20692,6 +21125,79 @@ static std::optional<string> nearest_moss_project_root(
   return std::nullopt;
 }
 
+static std::optional<std::filesystem::path> agent_benchmark_repository(
+    const char* executable_name) {
+  vector<std::filesystem::path> starts = {std::filesystem::current_path()};
+  std::error_code error;
+  auto executable = moss::resolve_executable(executable_name);
+  if (executable) starts.push_back(executable->parent_path());
+#if defined(__linux__)
+  error.clear();
+  auto proc_executable = std::filesystem::read_symlink("/proc/self/exe", error);
+  if (!error) starts.push_back(proc_executable.parent_path());
+#endif
+  for (auto start : starts) {
+    start = std::filesystem::absolute(start, error).lexically_normal();
+    if (error) continue;
+    while (!start.empty()) {
+      if (std::filesystem::is_regular_file(
+              start / "benchmarks/agent/runner.py", error) &&
+          std::filesystem::is_regular_file(start / "margo", error))
+        return start;
+      auto parent = start.parent_path();
+      if (parent == start) break;
+      start = std::move(parent);
+    }
+  }
+  return std::nullopt;
+}
+
+static int run_agent_benchmark(int argc, char** argv) {
+  auto repository = agent_benchmark_repository(argv[0]);
+  if (!repository) {
+    std::cerr << "moss: error[BENCHMARK_SUITE_MISSING]: cannot locate "
+                 "benchmarks/agent from the Moss executable or current directory\n";
+    return 2;
+  }
+  auto resolved_compiler = moss::resolve_executable(argv[0]);
+  auto compiler = resolved_compiler.value_or(
+      std::filesystem::absolute(argv[0]).lexically_normal());
+  vector<string> arguments = {
+      "python3", ((*repository) / "benchmarks/agent/runner.py").string()};
+  for (int index = 3; index < argc; ++index) arguments.push_back(argv[index]);
+  arguments.push_back("--compiler");
+  arguments.push_back(compiler.string());
+  arguments.push_back("--repo-root");
+  arguments.push_back(repository->string());
+
+  pid_t child = ::fork();
+  if (child < 0) {
+    std::cerr << "moss: error[BENCHMARK_RUNNER_FAILED]: cannot launch "
+              << "benchmark runner: " << std::strerror(errno) << "\n";
+    return 2;
+  }
+  if (child == 0) {
+    vector<char*> command;
+    command.reserve(arguments.size() + 1);
+    for (auto& argument : arguments) command.push_back(argument.data());
+    command.push_back(nullptr);
+    ::execvp(command.front(), command.data());
+    _exit(127);
+  }
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0) {
+    if (errno != EINTR) {
+      std::cerr << "moss: error[BENCHMARK_RUNNER_FAILED]: cannot wait for "
+                   "benchmark runner: "
+                << std::strerror(errno) << "\n";
+      return 2;
+    }
+  }
+  if (WIFEXITED(status)) return WEXITSTATUS(status);
+  if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+  return 2;
+}
+
 static void usage() {
   std::cerr << "Moss v0.1 - static compiler to Rust with domains and functional dataflow\n\n"
             << "Usage:\n"
@@ -20700,6 +21206,7 @@ static void usage() {
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
             << "  moss agent session-report-template --json\n"
+            << "  moss agent benchmark list|show|validate|run [--json]\n"
             << "  moss inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> --json\n"
             << "  moss impact <target> [--source <input.moss>] --json\n"
             << "  moss fmt [--check] [--json]\n"
@@ -20799,6 +21306,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
     moss::CompileError converted(error.line, error.what());
     converted.source_file = error.source_file;
     converted.code = error.code;
+    converted.teaching = error.teaching;
     throw converted;
   }
 }
@@ -20977,6 +21485,8 @@ int main(int argc, char** argv) {
         return 2;
       }
       string agent_command = argv[2];
+      if (agent_command == "benchmark")
+        return run_agent_benchmark(argc, argv);
       bool requested_json = false;
       for (int index = 3; index < argc; ++index) {
         if (string(argv[index]) == "--json") requested_json = true;
@@ -21125,6 +21635,11 @@ int main(int argc, char** argv) {
       } catch (const moss::ProjectError& error) {
         if (json_output) moss::write_project_error_json(
             std::cout, query_command.empty() ? active_command : query_command, error);
+        else if (!error.teaching.empty())
+          moss::write_human_error(
+              std::cerr, error.code, error.what(),
+              error.source_file.empty() ? diagnostic_source : error.source_file,
+              error.line, error.teaching);
         else std::cerr << (error.source_file.empty() ? diagnostic_source
                                                      : error.source_file)
                           << (error.line > 0 ? ":" + std::to_string(error.line)
@@ -21257,7 +21772,13 @@ int main(int argc, char** argv) {
       moss::write_structured_error(
           std::cout, active_command,
           e.code.empty() ? moss::diagnostic_code_for_message(e.what()) : e.code,
-          e.what(), active_input, e.line, identity, e.symbol);
+          e.what(), active_input, e.line, identity, e.symbol,
+          e.teaching.empty() ? nullptr : &e.teaching);
+    } else if (!e.teaching.empty()) {
+      moss::write_human_error(
+          std::cerr,
+          e.code.empty() ? moss::diagnostic_code_for_message(e.what()) : e.code,
+          e.what(), active_input, e.line, e.teaching);
     } else {
       std::cerr << diagnostic_source << ":" << e.line
                 << ": error: ["

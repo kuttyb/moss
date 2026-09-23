@@ -1,0 +1,1 @@
+Added a Margo path dependency in [app/Moss.toml](/home/owner/daji/code/moss/task/app/Moss.toml) pointing to `../provider`. No provider source was copied. Running `../../margo run` from `task/app` printed `42`.

@@ -75,6 +75,25 @@ for capability in ("impact_analysis", "formatter", "semantic_edits",
         fail(f"capability discovery omitted {capability}")
 if not schema["result"]["schema"]["diagnostic_codes_are_stable"]:
     fail("schema discovery did not promise stable diagnostic codes")
+teaching_fields = bootstrap["result"].get("diagnostic_contract", {}).get(
+    "additive_teaching_fields"
+)
+if teaching_fields != ["source", "rule", "cause", "related", "guidance"]:
+    fail("bootstrap omitted the additive teaching-diagnostic contract")
+guidance_kinds = bootstrap["result"]["diagnostic_contract"].get("guidance_kinds", [])
+for guidance_kind in (
+    "local-helper", "use-message", "declare-domain-route", "bind-domain-route",
+    "use-static-domain-route", "separate-conflicting-access",
+    "supported-pipeline-placeholder", "named-pipeline-callable",
+    "pure-pipeline-callback", "qualify-query-target",
+    "use-statically-typed-expression", "use-statically-typed-callable",
+):
+    if guidance_kind not in guidance_kinds:
+        fail(f"bootstrap omitted teaching guidance kind {guidance_kind}")
+repair_fields = schema["result"]["schema"].get("diagnostic_repair_fields", [])
+for field in ("source", "rule", "cause", "related", "guidance"):
+    if field not in repair_fields:
+        fail(f"agent schema omitted teaching diagnostic field {field}")
 if "impact" not in schema["result"]["schema"]["project_result_kinds"]:
     fail("schema discovery omitted impact result kind")
 if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:

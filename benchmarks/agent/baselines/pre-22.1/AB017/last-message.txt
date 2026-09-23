@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a named `add` function, a reduction from `0`, and an element count. It passes `moss check` and prints `42` and `3`.

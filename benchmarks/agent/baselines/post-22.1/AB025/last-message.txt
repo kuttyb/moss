@@ -1,0 +1,1 @@
+Exported `Math.answer` in [math.moss](/home/owner/daji/code/moss/task/src/math.moss:3), preserving the qualified import and call in App. The Moss check passes, and `margo run` prints `42`.
