@@ -6,11 +6,14 @@ experiment READMEs retain their detailed local observations.
 
 ## Summary
 
-- Distinct findings: 24
-- Open: 0
-- Fixed: 23
+- Distinct findings: 39
+- Open: 10
+- Fixed: 28
 - Not-a-bug / agent misunderstanding: 1
-- Independently reproduced by multiple experiments: 6
+- Independently reproduced by multiple experiments: 10
+
+(Counts recomputed on 2026-09-23 from the entries below; SWARM-016 was never
+allocated, and SWARM-026–030 had not yet been reflected in these totals.)
 
 Completed swarm experiments:
 
@@ -21,6 +24,8 @@ Completed swarm experiments:
 - [Python / HashMap](Python/HashMap/)
 - [Julia / DisjointSets](Julia/disjoint_sets/)
 - [Python / ChainMap](Python/chain_map/)
+- [Julia / FenwickTree](Julia/FenwickTree/)
+- [Python / deque](Python/deque/)
 
 ## Updating this ledger
 
@@ -986,3 +991,421 @@ Comparison lowering in `generated_split_binary` now wraps string operands with
 `.as_str()`, enabling clean `&str == &str` equality comparisons. In addition,
 `ConditionState` handler lowering now populates borrowed message parameters
 so condition branch comparisons lower properly.
+
+## SWARM-031 — Parenthesized subexpression lowers to redundant Rust parentheses
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: [Python / deque](Python/deque/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+fn main():
+  a = 12
+  b = 2
+  c = a * (b + 2)
+  echo c
+```
+
+```moss
+fn wrap(a: Int) -> Int:
+  return (a + 1)
+```
+
+### Observed behavior
+
+`moss check` accepts both, and `moss run --interp` prints `48` and `4`. Native
+builds (`margo build`, `margo test`) fail with `BUILD_BACKEND_ERROR`, because
+the generated Rust keeps the source parentheses around an already
+parenthesized method call, and rustc rejects them under `-D unused-parens`:
+
+```text
+let mut c = (a).wrapping_mul(((b).wrapping_add(2_i64)));
+return ((a).wrapping_add(1_i64));
+```
+
+The error contains raw rustc text with no Moss source line mapping.
+
+### Workaround
+
+Bind the parenthesized subexpression to a local first:
+
+```moss
+next = b + 2
+c = a * next
+```
+
+### Notes
+
+Found independently by both experiments. Any parenthesized operand of an
+arithmetic call-style lowering, or a parenthesized `return` value, triggers
+it; Fenwick hit it in `i % (p * 2)`.
+
+## SWARM-032 — Formatter rejects valid statements whose expression begins with `(`
+
+- Status: Open
+- Category: Tooling / formatter
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: [Python / deque](Python/deque/)
+- Observation count: 2
+
+### Minimal reproducer
+
+```moss
+fn f(i: Int) -> Int:
+  var p = 1
+  while (i / p) % 2 == 0:
+    p = p * 2
+  return p
+```
+
+```moss
+fn wrap(a: Int, m: Int) -> Int:
+  return (a + 1) % m
+```
+
+### Observed behavior
+
+`moss check`, Fast Debug, and native all accept both, but `moss fmt` fails:
+
+- `if`/`while` condition beginning with `(`:
+  `FORMAT_PARSE_ERROR: indentation jumps more than one block level`
+- `return (...) ...`:
+  `FORMAT_PARSE_ERROR: unknown local function 'return'`
+
+This appears to parse `keyword (` as a call to `keyword`.
+
+### Workaround
+
+Reorder so the expression does not start with `(` (for example
+`while i % (p * 2) == 0:`; beware SWARM-031), or bind to a local first.
+
+### Notes
+
+A different construct from SWARM-003 (unary minus in assertion operands),
+though both are formatter/checker disagreements. The formatter should accept
+exactly what `moss check` accepts.
+
+## SWARM-033 — Returning a unary-negated name fails type inference
+
+- Status: Open
+- Category: Compiler / type inference
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn negate(v: Int) -> Int:
+  return -v
+
+fn main():
+  echo negate(5)
+```
+
+### Observed behavior
+
+`TYPE_INFERENCE_FAILED: cannot infer the type of this return expression in
+function 'negate'`, even though the parameter and result are both annotated
+`Int`. The `legal_alternatives` suggestion to add a type annotation cannot
+apply.
+
+The failure is specific to the returned expression's type: `y = -x` in `main`
+and `s = -v` as an unused local both check. These fail the same way:
+
+```moss
+return -v + 0          # still fails
+v = 5
+return -v              # local, not parameter: still fails
+r = -v
+return r               # fails: r's type flows from -v
+```
+
+### Workaround
+
+```moss
+return 0 - v
+```
+
+### Notes
+
+Same family as SWARM-005 (return-expression inference), but a distinct
+construct. Negative literals (`-4`) are fine.
+
+## SWARM-034 — No-value function ending in a collection `push` fails result inference
+
+- Status: Open
+- Category: Compiler / type inference
+- First observed: [Python / deque](Python/deque/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn put(values: Vector[Int], x: Int):
+  values.push(x)
+
+fn main():
+  var v = [1, 2]
+  put(v, 3)
+  echo v[2]
+```
+
+The method form fails the same way:
+
+```moss
+type Box2:
+  values: Vector[Int]
+
+  fn put(x: Int):
+    values.push(x)
+```
+
+### Observed behavior
+
+`TYPE_INFERENCE_FAILED: cannot infer the result type of function 'put'`
+(method form: `cannot infer return type for method 'Box2.put'`). The
+suggested type annotation is not expressible for a no-value function.
+
+The same function checks when the last statement is anything else (`values[0]
+= x`, `echo x`, or any statement after the `push`). The tail `push` call
+appears to be treated as an implicit result expression.
+
+### Workaround
+
+End the function with a bare `return`:
+
+```moss
+fn put(values: Vector[Int], x: Int):
+  values.push(x)
+  return
+```
+
+## SWARM-035 — Nested mutating calls on the same receiver lower to a Rust double borrow
+
+- Status: Open
+- Category: Compiler / native lowering
+- First observed: [Python / deque](Python/deque/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+type Box2:
+  values: Vector[Int]
+
+  fn take() -> Int:
+    return values.pop()
+
+  fn put(x: Int):
+    values.push(x)
+    return
+
+  fn cycle():
+    put(take())
+
+fn main():
+  var b = Box2(values: [1, 2])
+  b.cycle()
+  b.put(b.take())
+  echo b.values[0]
+```
+
+### Observed behavior
+
+`moss check` accepts it and `moss run --interp` executes it correctly. The
+native build fails with rustc E0499 (`cannot borrow *self as mutable more than
+once at a time`) on both `self.put(self.take())` and `b.put(b.take())`.
+
+### Workaround
+
+Sequence the inner call into a local first:
+
+```moss
+moved = take()
+put(moved)
+```
+
+### Notes
+
+Related to SWARM-011, whose fix hoists a pure Copy-valued sibling *read*
+before the WRITE borrow. Here the argument is itself a WRITE call on the same
+receiver. Moss source order is well defined (argument first), so the lowering
+should hoist the argument call into a temporary in the same way.
+
+## SWARM-036 — Unsupported binary operators pass checking
+
+- Status: Open
+- Category: Compiler / frontend validation
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn main():
+  i = 6
+  j = 3
+  k = i | j
+  echo k
+```
+
+### Observed behavior
+
+None of `&`, `|`, `^`, `&&`, `||`, `and`, `or` (on `Int`) are in bootstrap's
+`source_surface.operators`, but all pass `moss check`, typed as `_value`.
+What happens next depends on the operator:
+
+| Operator on `Int` | `moss check` | Fast Debug | Native |
+| --- | --- | --- | --- |
+| `&`, `\|`, `^` | ok | `unsupported expression` | runs (Rust pass-through) |
+| `&&`, `\|\|`, `and`, `or` | ok | `unsupported expression` | rustc E0308 |
+| `<<`, `>>` | `invalid arithmetic expression` | same | same |
+
+With a parenthesized right operand, `&` is instead misreported as a call:
+`i & (0 - i)` gives `UNKNOWN_SYMBOL_OR_TYPE: unknown local function 'i &'`.
+
+### Workaround
+
+Express bit manipulation arithmetically (Fenwick computes `i & -i` by doubling
+a power of two while it divides `i`).
+
+### Notes
+
+Same class as SWARM-026 (binary `in`): the checker should reject every
+operator outside the supported surface with `UNSUPPORTED_EXPRESSION_OPERATOR`.
+Whether Moss v0.1 should gain bitwise operators is a separate language-design
+question and is not implied by this finding.
+
+## SWARM-037 — Boolean `and`/`or` work natively but not in Fast Debug, and are undocumented
+
+- Status: Open (needs a language-surface decision)
+- Category: Language surface / Fast Debug parity
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn main():
+  a = true
+  b = false
+  if a and b:
+    echo 1
+  if a or b:
+    echo 2
+```
+
+### Observed behavior
+
+`moss check` accepts it and native prints `2`. Fast Debug fails with
+`interpreter error: unsupported expression 'a and b'`. Neither bootstrap's
+`source_surface.operators` nor the Gentle Introduction mentions `and`/`or`
+(only `not`). Separately, `if not a or a:` is rejected with `not operand must
+have type 'Bool'`, which suggests `not` currently binds more loosely than `or`.
+
+### Resolution needed
+
+Decide whether short-circuit `and`/`or` are part of v0.1. If they are: add
+them to `source_surface` and the docs, implement them in Fast Debug, and fix
+`not` precedence. If not: reject them in the checker as SWARM-036 would.
+
+## SWARM-038 — `effects` reports a pure loop helper as divergent/unresolved yet it is accepted as a domain initializer
+
+- Status: Open
+- Category: Tooling / semantic query consistency
+- First observed: [Python / deque](Python/deque/)
+- Also observed: —
+- Observation count: 1
+
+### Minimal reproducer
+
+```moss
+fn zeros(n: Int) -> Vector[Int]:
+  var out = Vector[Int]()
+  i = 0
+  while i < n:
+    out.push(0)
+    i = i + 1
+  return out
+
+domain Ring:
+  buf = zeros(4)
+
+  fn Size() -> Int:
+    reply buf |> count
+
+fn main():
+  ring = Ring()
+  echo message ring.Size()
+```
+
+### Observed behavior
+
+`moss effects zeros --json` reports `may_diverge: true` and
+`unresolved: true`. The documented composition rule says divergent and
+unresolved work is rejected in a domain state initializer, yet `moss check`
+accepts `buf = zeros(4)`, and it runs correctly (`4`) in Fast Debug.
+
+### Notes
+
+Either the query is over-conservative for a bounded `while` loop, or the
+initializer check does not consult the same facts. Agents cannot tell which
+answer to trust. The accepted program matches the documented intent ("pure
+helper calls are accepted"), so the `effects` output is the likelier defect.
+
+## SWARM-039 — Fast Debug cannot execute `test` blocks
+
+- Status: Open
+- Category: Tooling / Fast Debug coverage
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: [Python / deque](Python/deque/)
+- Observation count: 2
+
+### Observed behavior
+
+`moss run --interp`, `moss debug`, and `margo debug` run only `main`.
+Bootstrap lists no interpreted test command, and `margo test` always builds
+natively. To check test parity in Fast Debug, both agents independently
+generated a scratch copy that rewrote each `test "name":` block as a plain
+function called from `main`.
+
+### Notes
+
+A `margo test --interp` (or `margo debug --tests`) mode would give test-level
+native/Fast Debug parity checks and a faster edit-test loop, especially while
+a native lowering defect (SWARM-031, SWARM-035) blocks `margo test`.
+
+## SWARM-040 — Failure/precondition mechanism for user code is undocumented
+
+- Status: Open
+- Category: Documentation / discoverability
+- First observed: [Julia / FenwickTree](Julia/FenwickTree/)
+- Also observed: [Python / deque](Python/deque/)
+- Observation count: 2
+
+### Observed behavior
+
+Both source libraries raise on misuse (Julia `throw(ArgumentError)`, Python
+`IndexError` from `pop`/indexing). Neither bootstrap, the skills, nor the
+Gentle Introduction says how a user function should fail. `fail(...)` and
+`panic(...)` are unknown symbols. The deque agent found by probing that
+`assert(condition)` is accepted outside `test` blocks and aborts both
+natively (exit 101) and in Fast Debug (exit 1), matching the fail-closed
+built-in `Vector.pop()` contract from SWARM-019. The Fenwick agent documented
+bounds as unchecked preconditions instead. There is also no way to write a
+test that expects a failure.
+
+### Notes
+
+If `assert` in ordinary code is the intended v0.1 failure primitive, say so in
+`source_surface`, `moss-language`, and the Gentle Introduction. An
+expected-failure test form is a separate, optional surface question.

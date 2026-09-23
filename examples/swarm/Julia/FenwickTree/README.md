@@ -88,8 +88,12 @@ lowbit forward as `start`, and the total doubling work across one `inc` or
 
 ## Friction (with classification)
 
-Reproducers are in `tmp/fenwick_repros/` (disposable). All are worked around in
+Reproducers were in `tmp/fenwick_repros/` (disposable). The minimal forms are
+preserved in the [findings ledger](../../FINDINGS.md). All are worked around in
 source, and the compiler was not changed.
+
+Ledger mapping: 1 → SWARM-031, 2 → SWARM-032, 3 → SWARM-033, 4 → SWARM-036,
+5 → SWARM-037, 6 → SWARM-039; the missing failure primitive is SWARM-040.
 
 1. **Parenthesized right operand fails native build.** *(native-lowering bug, new)*
    `c = a * (b + 2)` (also `a + (b * 2)`, `a % (b * 2)`) checks and runs in Fast

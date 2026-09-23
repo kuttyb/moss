@@ -91,8 +91,13 @@ mutated deque must be a `var` local.
 
 ## Friction encountered (with classification)
 
-Minimal reproducers are under `tmp/deque_repros/` (the repository's scratch
-directory).
+Minimal reproducers were under `tmp/deque_repros/` (the repository's disposable
+scratch directory); the minimal forms are preserved in the
+[findings ledger](../../FINDINGS.md).
+
+Ledger mapping: 1 → SWARM-032, 2 → SWARM-031, 3 → SWARM-035, 4 → SWARM-034,
+5 → not a defect (user types cannot overload `[]` in v0.1), 6 → SWARM-040,
+7 → SWARM-038; the missing interpreted test runner is SWARM-039.
 
 1. **`moss fmt` rejects `return (expr) % m`** with
    `UNKNOWN_SYMBOL_OR_TYPE: unknown local function 'return'`, while `moss check`,
