@@ -248,7 +248,7 @@ def main() -> int:
             fail(f"bootstrap did not flag {capability} as available")
     catalog = {item["id"]: item for item in capabilities["capability_catalog"]}
     for capability, marker in {
-        "package_project_driver": "margo build|run|test|bench|clean",
+        "package_project_driver": "margo build|run|test|bench|clean|debug",
         "package_dependencies": "Moss.toml",
         "package_lockfile": "Moss.lock",
         "module_interfaces": "margo build --json",

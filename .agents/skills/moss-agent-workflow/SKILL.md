@@ -289,6 +289,13 @@ production facility and needs source for Fast Debug. The interpreter has explici
 feature limits, so an unsupported construct reports a Moss-level limitation rather
 than silently switching execution engines.
 
+`moss debug` is for standalone or same-project source. For a package graph, use
+`margo debug` or `margo debug --trace`: Margo resolves path/Git packages and passes
+the exact dependency source-provider roots; Moss resolves modules and semantics; Fast
+Debug interprets the reachable source closure. Moss never resolves Margo manifests or
+performs Git operations. A reachable source-free `.mossi` provider is rejected with
+`FAST_DEBUG_NATIVE_DEPENDENCY`, before interpreter preparation.
+
 Current verified limits include `for` traversal. Supported built-in collection
 operations reached through object fields and the current eager functional pipeline
 surface execute in Fast Debug; use native validation as well when checking parity.
@@ -310,6 +317,8 @@ margo run
 margo test
 margo bench
 margo clean
+margo debug
+margo debug --trace
 ```
 
 `Moss.toml` is the package manifest; `Moss.lock` freezes resolved Git commits.

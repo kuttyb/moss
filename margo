@@ -23,6 +23,7 @@ class MargoError(Exception):
 
 REPO = Path(__file__).resolve().parent
 MOSS = Path(os.environ.get("MOSS", REPO / "moss")).resolve()
+FAST_DEBUG_SOURCE_ROOT_ENV = "MOSS_FAST_DEBUG_SOURCE_ROOTS"
 
 
 def manifest_at(root: Path) -> Path:
@@ -249,30 +250,53 @@ def main() -> int:
     parser.add_argument("filter", nargs="?")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--json", action="store_true")
-    args, rest = parser.parse_known_args()
+    parser.add_argument("--trace", action="store_true")
+    args = parser.parse_args()
     try:
+        if args.command == "debug" and (args.filter or args.release or args.json):
+            unsupported = []
+            if args.filter:
+                unsupported.append(args.filter)
+            if args.release:
+                unsupported.append("--release")
+            if args.json:
+                unsupported.append("--json")
+            raise MargoError(
+                "margo debug supports only 'margo debug' and 'margo debug --trace'; "
+                "unsupported arguments: " + " ".join(unsupported))
+        if args.command != "debug" and args.trace:
+            raise MargoError("--trace is supported only by margo debug")
         root_path = find_root(Path.cwd())
         root, ordered = resolve_graph(root_path)
 
         if args.command == "debug":
             # For debug, we do NOT build dependency packages (no rustc needed).
             # We resolve the package graph to get source roots, then invoke
-            # moss debug with MOSS_SOURCE_ROOTS set to dependency package roots.
-            # The root package is NOT included in MOSS_SOURCE_ROOTS because
+            # moss debug with an exact source-provider universe supplied through
+            # the narrowly scoped Margo-to-Fast-Debug handoff.
+            # The root package is NOT included in the source-provider handoff because
             # moss debug already knows to use the root project's source.
-            dep_roots = [str(p.root) for p in ordered if p is not root]
+            dep_roots = []
+            seen_roots = set()
+            for package in ordered:
+                if package is root:
+                    continue
+                package_root = str(package.root.resolve())
+                if package_root not in seen_roots:
+                    seen_roots.add(package_root)
+                    dep_roots.append(package_root)
             env = dict(os.environ)
+            # This invocation's resolved graph is authoritative. Never let an
+            # unrelated inherited provider list alter package-aware debugging.
+            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
+            env.pop("MOSS_SOURCE_ROOTS", None)
             if dep_roots:
-                env["MOSS_SOURCE_ROOTS"] = os.pathsep.join(dep_roots)
+                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
             # moss debug accepts the project root directory.
             debug_cmd = [str(MOSS), "debug", str(root.root)]
-            if rest:  # forward remaining args (e.g. --trace) to moss debug
-                debug_cmd.extend(rest)
+            if args.trace:
+                debug_cmd.append("--trace")
             return subprocess.run(debug_cmd, cwd=root.root, env=env).returncode
-
-        # All commands other than 'debug' reject unknown arguments.
-        if rest:
-            raise SystemExit("margo: unsupported arguments: " + " ".join(rest))
 
         if args.command == "clean":
             run([str(MOSS), "clean"] + (["--json"] if args.json else []), cwd=root.root)

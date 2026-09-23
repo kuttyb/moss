@@ -80,7 +80,7 @@ if "impact" not in schema["result"]["schema"]["project_result_kinds"]:
 if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:
     fail("bootstrap omitted the generated-Rust safety rule")
 catalog = {item["id"]: item for item in capabilities["result"]["capability_catalog"]}
-if catalog["package_project_driver"]["entrypoint"] != "margo build|run|test|bench|clean":
+if catalog["package_project_driver"]["entrypoint"] != "margo build|run|test|bench|clean|debug":
     fail("Margo is not the canonical package/project capability entrypoint")
 if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
     fail("language surface discovery lacks its bootstrap entrypoint")

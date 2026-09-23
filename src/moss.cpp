@@ -14039,14 +14039,14 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"affected_tests", "Conservative semantic-impact selected verification.", "moss test --affected --json"},
       {"static_cost_facts", "Known materialization, traversal, specialization, message-materialization, and backend facts; not runtime predictions.", "moss cost <target> --source <source> --json"},
       {"synchronization_plan", "Concrete graph plus R/W/C/X*/ProtectedRead/LockSet/ClassSet, modes, ranks, and conflict witnesses.", "moss inspect|effects|why <target> --source <source> --json"},
-      {"package_project_driver", "Resolve Moss packages and orchestrate project build, run, test, benchmark, and clean operations.", "margo build|run|test|bench|clean"},
+      {"package_project_driver", "Resolve Moss packages and orchestrate project build, run, test, benchmark, clean, and source-backed Fast Debug operations.", "margo build|run|test|bench|clean|debug"},
       {"tool_invocation", "Discover the repository-local Moss compiler and Margo project driver, how to build the compiler if absent, and when PATH-installed names may be used.", "moss agent bootstrap --json"},
       {"package_dependencies", "Resolve local path and Git package dependencies declared in Moss.toml.", "Moss.toml [dependencies] with path or git/rev/tag/branch"},
       {"package_lockfile", "Freeze resolved Git dependency commits deterministically.", "Moss.lock"},
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
-      {"fast_debug", "Direct execution of checked reachable Moss source when behavior is wrong.", "moss run --interp <source> | moss debug <project-or-source>"},
+      {"fast_debug", "Direct execution of checked reachable Moss source; use Margo for a resolved package graph.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
-      {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean"},
+      {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean|debug"},
   };
   return catalog;
 }
@@ -14494,6 +14494,7 @@ static void write_bootstrap_json(std::ostream& out,
             "margo test [filter] [--release] [--json]",
             "margo bench [filter] [--json]",
             "margo clean",
+            "margo debug [--trace]",
             "Moss.toml package manifest; Moss.lock resolved Git dependency lock",
             "module-qualified imports and versioned .mossi interfaces",
             "moss test --affected [--json] (semantic reduced verification)",
@@ -14516,7 +14517,8 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"package_run\",\"command\":\"margo run [--release]\",\"purpose\":\"canonical package build and execution\"},"
          "{\"name\":\"package_test\",\"command\":\"margo test [filter] [--release] [--json]\",\"purpose\":\"canonical root-package test execution\"},"
          "{\"name\":\"package_bench\",\"command\":\"margo bench [filter] [--json]\",\"purpose\":\"canonical package benchmark execution\"},"
-         "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"}]";
+         "{\"name\":\"package_clean\",\"command\":\"margo clean\",\"purpose\":\"remove project-local artifacts without clearing the shared Margo cache\"},"
+         "{\"name\":\"package_fast_debug\",\"command\":\"margo debug [--trace]\",\"purpose\":\"resolve package sources then interpret the reachable Moss closure without rustc\"}]";
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"limitations\":[\"no trace slicing/query API\",\"no physical lock or schedule simulation\"]}]";
@@ -14527,7 +14529,7 @@ static void write_bootstrap_json(std::ostream& out,
             "Run ./moss agent bootstrap --json before modifying Moss source.",
             "For fresh Moss source-writing or unfamiliar language work, inspect source_surface; read canonical_docs.practical_language_guide when practical context is needed.",
             "For project-layout questions, inspect project_surface; read canonical_docs.project_workflow when more detail is needed.",
-            "Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean.",
+            "Use Margo for package/project operations via ./margo: ./margo build|run|test|bench|clean|debug; use margo debug [--trace] for package-aware source Fast Debug.",
             "Run moss check --json before guessing at a Moss error.",
             "Use inspect, why, effects, ownership, and cost as needed.",
             "Edit Moss source, never generated Rust.",
@@ -14550,7 +14552,7 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"question\":\"What is the minimal Moss project layout or manifest?\",\"capability\":\"package_project_driver\",\"command\":\"project_surface, then canonical_docs.project_workflow\"},"
          "{\"question\":\"Is this a Moss semantic restriction, frontend bug, native lowering bug, or Fast Debug limitation?\",\"capability\":\"language_surface\",\"command\":\"source_surface, moss check --json, ownership/effects/why, a minimal probe, then native verification\"},"
          "{\"question\":\"What could this edit affect?\",\"capability\":\"impact\",\"command\":\"moss impact <target> --source <source> --json\"},"
-         "{\"question\":\"How do I resolve, build, run, test, benchmark, or clean a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean\"},"
+         "{\"question\":\"How do I resolve, build, run, test, benchmark, clean, or source-debug a package project?\",\"capability\":\"package_project_driver\",\"command\":\"margo build|run|test|bench|clean|debug\"},"
          "{\"question\":\"How do I invoke Moss tools in this repository checkout?\",\"capability\":\"tool_invocation\",\"command\":\"./moss agent bootstrap --json\"},"
          "{\"question\":\"What synchronization classes, ranks, modes, or conflict witnesses are derived?\",\"capability\":\"synchronization_plan\",\"command\":\"moss inspect|effects|why <target> --source <source> --json\"},"
          "{\"question\":\"What happened when checked code executed?\",\"capability\":\"fast_debug\",\"command\":\"moss run --interp --trace <source>\"}]";
@@ -14577,7 +14579,8 @@ static void write_bootstrap_json(std::ostream& out,
       "This repository uses Moss.\n\nBefore changing Moss source, run:\n\n"
       "    ./moss agent bootstrap --json\n\nUse the repository-local tools: ./moss for language/semantic work and "
       "./margo for package/project "
-      "operations (./margo build|run|test|bench|clean). Use Moss semantic queries and "
+      "operations (./margo build|run|test|bench|clean|debug). Use margo debug [--trace] "
+      "for package-aware Fast Debug. Use Moss semantic queries and "
       "structured diagnostics instead of reverse-engineering generated "
       "Rust.\n\nAfter edits, follow the workflow returned by bootstrap.");
   if (command == "schema") {
@@ -14665,8 +14668,8 @@ static void write_bootstrap_json(std::ostream& out,
         {"repo-local executable names"}, {"compiler checkout missing"});
     out << ',';
     write_agent_command_schema(
-        out, "package_project_driver", "Resolve packages and build, run, test, benchmark, or clean the root project through Margo.",
-        {"Margo project command"}, {"--json", "--release", "filter"},
+        out, "package_project_driver", "Resolve packages and build, run, test, benchmark, clean, or source-debug the root project through Margo.",
+        {"Margo project command"}, {"--json", "--release", "filter", "debug --trace"},
         "Margo project result with resolved package dependency/artifact facts",
         {"package identity", "resolved Git commit", "module artifact identities"},
         {"package dependency cycle", "lockfile error", "dependency acquisition/build failure"});
@@ -18395,8 +18398,8 @@ static SourceCompilationContext analyze_source_context(
 // source-module closure of the requested entry module.  This is a loading
 // decision only: the selected files still pass through check_project_sources
 // and therefore the ordinary Moss parser/checker remains authoritative.
-// When MOSS_SOURCE_ROOTS is set (colon-separated list of package root
-// directories, populated by 'margo debug'), dependency source files are
+// When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
+// root directories, populated only by 'margo debug'), dependency source files are
 // indexed alongside the root project's files so the transitive closure walk
 // can reach them.  Dependency modules that exist in the source index are
 // preferred over compiled .mossi providers by check_project_sources.
@@ -18408,33 +18411,52 @@ static vector<std::filesystem::path> fast_debug_source_closure(
   struct ModuleSources {
     vector<std::filesystem::path> files;
     vector<string> imports;
+    std::filesystem::path provider_root;
   };
   std::map<string, ModuleSources> modules;
   string entry_module;
   bool has_explicit_modules = false;
-  for (const auto& source : context.sources) {
-    std::ifstream input(source);
+  auto add_source = [&](const std::filesystem::path& source,
+                        const std::filesystem::path& provider_root) {
+    auto normalized = std::filesystem::absolute(source).lexically_normal();
+    auto normalized_provider =
+        std::filesystem::absolute(provider_root).lexically_normal();
+    std::ifstream input(normalized);
     if (!input)
       throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
-                         "cannot read Moss source '" + source.string() + "'",
-                         source.string());
-    Program parsed = Parser(lex_lines(input, source.string())).parse();
+                         "cannot read Moss source '" + normalized.string() + "'",
+                         normalized.string());
+    Program parsed = Parser(lex_lines(input, normalized.string())).parse();
     string module = parsed.explicit_module && !parsed.module_name.empty()
         ? parsed.module_name : context.manifest.name;
     auto& record = modules[module];
-    record.files.push_back(source);
+    if (record.provider_root.empty()) {
+      record.provider_root = normalized_provider;
+    } else if (record.provider_root != normalized_provider) {
+      throw ProjectError(
+          "MODULE_IMPORT_AMBIGUOUS",
+          "ambiguous source module '" + module + "'\nprovided by:\n  " +
+              record.provider_root.string() + "\n  " +
+              normalized_provider.string(),
+          normalized.string());
+    }
+    record.files.push_back(normalized);
     for (const auto& import : parsed.imports)
       record.imports.push_back(import.name);
     has_explicit_modules = has_explicit_modules || parsed.explicit_module;
-    if (source == context.requested_source) entry_module = module;
+    if (normalized == context.requested_source) entry_module = module;
     if (entry_module.empty() && parsed.main) entry_module = module;
-  }
+  };
+  for (const auto& source : context.sources)
+    add_source(source, context.manifest.root);
 
   // Extend the module provider universe with explicitly supplied dependency
-  // source roots (set by Margo's 'margo debug' command via MOSS_SOURCE_ROOTS).
+  // source roots (set by Margo's 'margo debug' command via its exact,
+  // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
   // Dependency source files are indexed here and merged into the same
   // compilation unit; their module declarations make them self-identifying.
-  if (const char* source_roots_env = std::getenv("MOSS_SOURCE_ROOTS")) {
+  if (const char* source_roots_env =
+          std::getenv("MOSS_FAST_DEBUG_SOURCE_ROOTS")) {
     string roots_value = source_roots_env;
     size_t begin = 0;
     while (begin <= roots_value.size()) {
@@ -18442,37 +18464,33 @@ static vector<std::filesystem::path> fast_debug_source_closure(
       string root_str = roots_value.substr(
           begin, end == string::npos ? string::npos : end - begin);
       begin = (end == string::npos) ? roots_value.size() + 1 : end + 1;
-      if (root_str.empty()) continue;
+      if (root_str.empty())
+        throw ProjectError(
+            "PROJECT_SOURCE_NOT_FOUND",
+            "Fast Debug received an empty dependency source root");
+      std::error_code absolute_error;
       std::filesystem::path dep_root =
-          std::filesystem::absolute(root_str).lexically_normal();
+          std::filesystem::absolute(root_str, absolute_error).lexically_normal();
+      if (absolute_error)
+        throw ProjectError(
+            "PROJECT_SOURCE_NOT_FOUND",
+            "cannot resolve Fast Debug dependency source root '" + root_str + "': " +
+                absolute_error.message(), root_str);
       std::error_code ec;
-      if (!std::filesystem::is_directory(dep_root, ec)) continue;
-      try {
-        ProjectManifest dep_manifest = load_project_manifest(dep_root);
-        vector<std::filesystem::path> dep_sources =
-            project_source_files(dep_manifest);
-        for (const auto& source : dep_sources) {
-          auto normalized =
-              std::filesystem::absolute(source).lexically_normal();
-          std::ifstream input(normalized);
-          if (!input) continue;
-          Program parsed =
-              Parser(lex_lines(input, normalized.string())).parse();
-          string module_name =
-              (parsed.explicit_module && !parsed.module_name.empty())
-                  ? parsed.module_name
-                  : dep_manifest.name;
-          auto& record = modules[module_name];
-          record.files.push_back(normalized);
-          for (const auto& import : parsed.imports)
-            record.imports.push_back(import.name);
-          has_explicit_modules = has_explicit_modules || parsed.explicit_module;
-        }
-      } catch (const ProjectError&) {
-        // Non-Moss directories or manifests that fail to load are silently
-        // skipped; only explicitly valid package roots contribute.
-        continue;
-      }
+      if (ec || !std::filesystem::is_directory(dep_root, ec))
+        throw ProjectError(
+            "PROJECT_SOURCE_NOT_FOUND",
+            "Fast Debug dependency source root is not a directory '" +
+                dep_root.string() + "'", dep_root.string());
+      ProjectManifest dep_manifest = load_project_manifest(dep_root);
+      if (dep_manifest.root != dep_root)
+        throw ProjectError(
+            "PROJECT_MANIFEST_ERROR",
+            "Fast Debug dependency source root must be a package root containing "
+            "Moss.toml: '" + dep_root.string() + "'", dep_root.string());
+      vector<std::filesystem::path> dep_sources = project_source_files(dep_manifest);
+      for (const auto& source : dep_sources)
+        add_source(source, dep_manifest.root);
     }
   }
 
@@ -20555,17 +20573,17 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
       auto sources = moss::fast_debug_source_closure(context);
       auto checked = moss::check_project_sources(
           context.manifest, sources, context.mode);
-      moss::FunctionalOptimizer(checked.program).run(false);
       if (!checked.program.external_modules.empty()) {
         string missing = *checked.program.external_modules.begin();
         throw moss::ProjectError(
             "FAST_DEBUG_NATIVE_DEPENDENCY",
             "Fast Debug requires source for all reachable Moss modules; "
             "module '" + missing + "' is available only as a compiled .mossi "
-            "provider. Provide the dependency's Moss source via MOSS_SOURCE_ROOTS "
-            "(use 'margo debug') or use native execution.",
+            "provider. Use 'margo debug' so Margo can supply the resolved "
+            "dependency source, or use native execution.",
             context.requested_source.string());
       }
+      moss::FunctionalOptimizer(checked.program).run(false);
       return std::move(checked.program);
     }
     std::ifstream source(input);
@@ -21047,7 +21065,10 @@ int main(int argc, char** argv) {
           e.what(), active_input, e.line, identity, e.symbol);
     } else {
       std::cerr << diagnostic_source << ":" << e.line
-                << ": error: " << e.what() << "\n";
+                << ": error: ["
+                << (e.code.empty() ? moss::diagnostic_code_for_message(e.what())
+                                   : e.code)
+                << "] " << e.what() << "\n";
     }
     return 1;
   } catch (const std::exception& e) {

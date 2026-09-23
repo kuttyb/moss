@@ -2,6 +2,34 @@
 
 Updated: 2026-09-22
 
+## Phase 15.8 — Cross-Package Fast Debug Source Convergence — COMPLETE
+
+Margo now resolves the package graph and supplies the exact transitive dependency
+source-root universe through the internal `MOSS_FAST_DEBUG_SOURCE_ROOTS` handoff for
+`margo debug` and `margo debug --trace`. Moss does not parse Margo dependency selectors,
+lockfiles, or Git sources: it indexes those supplied package roots, resolves Moss modules,
+checks the reachable source closure, rejects any remaining compiled-only Moss provider as
+`FAST_DEBUG_NATIVE_DEPENDENCY`, then runs interpreter-only optimization and Fast Debug.
+Invalid supplied roots fail closed; cross-package source module-provider collisions report
+deterministic `MODULE_IMPORT_AMBIGUOUS` errors. Same-package multi-file modules remain
+valid. `margo debug` accepts only its bare and `--trace` forms, clears inherited source-root
+state, and never invokes `rustc` for a fully source-backed graph.
+
+The Phase 15.8 regression is registered in `tests/run.sh`. It verifies source-backed path,
+transitive, and Git package closures; cached locked Git resolution; real source-free `.mossi`
+selection and rejection; native/interpreter fixture and Build Planner output parity; no-rustc
+debug; package-aware trace events; distinct same-filename provenance; invalid-root and
+duplicate-provider failures; CLI rejection; and standalone `moss debug` preservation. Build
+Planner runs through interpreted `graphlib` source with trace events in both packages.
+
+Completed validation: `make`; `check_phase15_8_cross_package_fast_debug.py` (9/9);
+`check_agent_skills.py`; `check_agent_api.py`; existing Fast Debug, Margo,
+module-provider, multifile-project, and project-workflow regressions; `make examples`;
+`sh -n tests/run.sh`; and `git diff --check`. A full `tests/run.sh` rerun passed all of
+the Phase 15.8 coverage, agent/project/tooling checks, 20/20 Emacs tests, and existing
+Fast Debug checks, then reached the known unrelated Phase 10.6F native Rust backend
+failure (`&String == String`). No Phase 15.8 test was weakened.
+
 ## Phase 15.7 — Multi-Module Formatter Semantic Convergence — COMPLETE
 
 Closed Phase 15.7 multi-module formatter semantic convergence:

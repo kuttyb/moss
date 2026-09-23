@@ -224,6 +224,10 @@ Before modifying Moss source, run:
     ./moss agent bootstrap --json
 
 Use ./moss for language/semantic operations and ./margo for project operations.
+For standalone or same-project source execution use `moss debug`; for a resolved
+path/Git package graph use `margo debug` or `margo debug --trace`. Margo supplies
+the resolved source roots, Moss resolves modules and semantics, and Fast Debug
+interprets the reachable source closure. Moss does not resolve Margo dependencies.
 Bare moss/margo are valid when already on PATH.
 
 Use Moss structured diagnostics and semantic queries rather than

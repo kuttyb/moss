@@ -10,6 +10,8 @@ margo run
 margo test
 margo bench
 margo clean
+margo debug
+margo debug --trace
 ```
 
 Margo resolves package dependencies before calling the existing Moss project
@@ -18,6 +20,15 @@ Git dependencies are cached in `${MARGO_HOME:-~/.margo}` and resolved commits ar
 frozen in `Moss.lock`. Moss still owns source modules, `import`, `.mossi`, and all
 language checking. Legacy `moss build`, `moss test`, and `moss bench` remain direct
 compiler-project compatibility commands.
+
+`margo debug` resolves the package graph without building native artifacts, then hands
+the exact resolved dependency source roots to Fast Debug. Moss resolves source modules
+and performs authoritative semantic checking; Fast Debug interprets the reachable Moss
+source closure. `margo debug --trace` adds structured execution trace events. Its only
+supported forms are `margo debug` and `margo debug --trace`; targets, `--release`, and
+`--json` are rejected. A source-free reachable `.mossi`/rlib Moss provider is rejected
+as `FAST_DEBUG_NATIVE_DEPENDENCY`; use native execution or provide source through the
+resolved package graph. Moss does not resolve Margo path/Git dependencies or run Git.
 
 This is the starting point for building, testing, and benchmarking a Moss
 project. The project commands invoke the same compiler pipeline as direct

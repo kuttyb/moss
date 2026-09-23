@@ -8,6 +8,8 @@ moss run --interp program.moss
 moss run --interp --trace program.moss
 moss test --interp tests/fast_debug.moss
 moss debug app
+margo debug
+margo debug --trace
 ```
 
 For a project, `moss debug` accepts the project name (`app`, the manifest name,
@@ -15,8 +17,13 @@ or `.`), a project directory, or an entry `.moss` file. It uses the same checked
 project analysis as native builds. Explicit-module projects interpret the
 transitive source-module closure; legacy projects use their complete
 `src/**/*.moss` uber-module. A source-free `.mossi` dependency cannot be mixed
-into interpreted execution: supply the reachable Moss source or use a native
-build. Phase 10.6E adds no Rust interoperability or new foreign-call ABI.
+into interpreted execution: Fast Debug rejects it with
+`FAST_DEBUG_NATIVE_DEPENDENCY`; use native execution or make the dependency source
+available through Margo's resolved package graph. `moss debug` does not resolve Margo
+path/Git dependencies itself. For a package graph use `margo debug` or `margo debug
+--trace`: Margo resolves packages, Moss resolves modules and semantics, and Fast Debug
+interprets the reachable Moss source closure. Phase 10.6E adds no Rust interoperability
+or new foreign-call ABI.
 
 The interpreter shares the parser, checker, effects, ownership rules, concrete
 domain graph, and specialization identities. It executes ordinary functions,

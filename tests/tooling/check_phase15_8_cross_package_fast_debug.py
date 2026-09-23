@@ -1,246 +1,264 @@
 #!/usr/bin/env python3
-"""Phase 15.8 — Cross-Package Fast Debug Source Convergence regression tests.
+"""Phase 15.8 cross-package Fast Debug regression coverage.
 
-Tests:
-  1. Path-dependency source-backed Fast Debug via MOSS_SOURCE_ROOTS env var
-  2. margo debug command works (resolves graph, no rustc needed)
-  3. RUSTC=/definitely/not/rustc margo debug still works (no rustc invoked)
-  4. Native/interpreter output parity via the fixture packages
-  5. Source-free dependency rejection (FAST_DEBUG_NATIVE_DEPENDENCY with module name)
-  6. Trace events include dependency source file paths
-  7. Standalone moss debug still works when MOSS_SOURCE_ROOTS is unset
+Margo resolves package graphs. Moss sees only resolved source-provider roots and
+remains responsible for module resolution, checking, and interpretation.
 """
-
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "phase15_8"
 PKG_GRAPHPKG = FIXTURES / "pkg_graphpkg"
 PKG_MAIN = FIXTURES / "pkg_main"
+SOURCE_ROOT_ENV = "MOSS_FAST_DEBUG_SOURCE_ROOTS"
 
 
-def run(cmd, *, cwd, env=None, check=True):
-    return subprocess.run(
-        cmd, cwd=cwd, env=env or dict(os.environ),
-        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        check=check,
-    )
+def run(command, *, cwd, env=None):
+    return subprocess.run(command, cwd=cwd, env=env or dict(os.environ), text=True,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
 
 
-def make_env(**extra):
+def env_for(compiler, **extra):
     env = dict(os.environ)
+    env["MOSS"] = str(compiler)
+    env.pop(SOURCE_ROOT_ENV, None)
+    env.pop("MOSS_SOURCE_ROOTS", None)
     env.update(extra)
     return env
 
 
-def test_moss_source_roots_fast_debug(compiler: Path) -> None:
-    """Test 1: MOSS_SOURCE_ROOTS lets moss debug cross-package source."""
-    env = make_env(
-        MOSS_SOURCE_ROOTS=str(PKG_GRAPHPKG),
-        RUSTC="/path/that/does/not/exist",
-    )
-    result = run(
-        [str(compiler), "debug", str(PKG_MAIN)],
-        cwd=PKG_MAIN, env=env, check=False,
-    )
-    if result.returncode != 0:
-        raise AssertionError(
-            f"moss debug with MOSS_SOURCE_ROOTS failed (rc={result.returncode}):\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    if result.stdout.strip() != "42":
-        raise AssertionError(
-            f"Unexpected output (expected '42'): {result.stdout!r}"
-        )
-    print("  [PASS] MOSS_SOURCE_ROOTS source-backed Fast Debug")
+def require_ok(result, context):
+    if result.returncode:
+        raise AssertionError(f"{context} failed (rc={result.returncode}):\n"
+                             f"stdout: {result.stdout}\nstderr: {result.stderr}")
 
 
-def test_margo_debug(compiler: Path) -> None:
-    """Test 2: margo debug command resolves graph and invokes moss debug."""
+def write_package(root, name, source, dependencies=""):
+    (root / "src").mkdir(parents=True)
+    (root / "Moss.toml").write_text(
+        f'[package]\nname = "{name}"\nversion = "0.1.0"\n\n'
+        f'[build]\nsource = "src"\n{dependencies}', encoding="utf-8")
+    (root / "src" / "main.moss").write_text(source, encoding="utf-8")
+
+
+def test_path_source_parity_and_no_rustc(compiler):
     margo = compiler.parent / "margo"
-    env = make_env(
-        MOSS=str(compiler),
-        RUSTC="/path/that/does/not/exist",
-    )
-    result = run([str(margo), "debug"], cwd=PKG_MAIN, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(
-            f"margo debug failed (rc={result.returncode}):\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    if result.stdout.strip() != "42":
-        raise AssertionError(
-            f"margo debug unexpected output (expected '42'): {result.stdout!r}"
-        )
-    print("  [PASS] margo debug command works")
+    native_env = env_for(compiler)
+    require_ok(run([str(margo), "build"], cwd=PKG_MAIN, env=native_env),
+               "fixture native package build")
+    native = run([str(margo), "run"], cwd=PKG_MAIN, env=native_env)
+    require_ok(native, "fixture native package run")
+    interpreted = run([str(margo), "debug"], cwd=PKG_MAIN,
+                      env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+    require_ok(interpreted, "source-backed margo debug without rustc")
+    if native.stdout != interpreted.stdout or native.stdout.strip() != "42":
+        raise AssertionError(f"native/interpreted output mismatch: {native.stdout!r} vs "
+                             f"{interpreted.stdout!r}")
+    direct = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
+                 env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
+                                           "RUSTC": "/definitely/not/rustc"}))
+    require_ok(direct, "direct source-provider Fast Debug")
+    if direct.stdout != native.stdout:
+        raise AssertionError("direct source-provider output differed from native output")
+    print("  [PASS] path source closure, no-rustc debug, and native/interpreter parity")
 
 
-def test_margo_debug_no_rustc(compiler: Path) -> None:
-    """Test 3: RUSTC=/definitely/not/rustc margo debug succeeds (interpreter path)."""
+def test_real_source_free_provider_rejection(compiler):
+    """Build a real interface, resolve it, then require the specific rejection."""
     margo = compiler.parent / "margo"
-    env = make_env(
-        MOSS=str(compiler),
-        RUSTC="/definitely/not/rustc",
-    )
-    result = run([str(margo), "debug"], cwd=PKG_MAIN, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(
-            f"margo debug with fake RUSTC failed (rc={result.returncode}):\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    if result.stdout.strip() != "42":
-        raise AssertionError(
-            f"margo debug (no rustc) unexpected output: {result.stdout!r}"
-        )
-    print("  [PASS] margo debug with fake RUSTC (no native build needed)")
-
-
-def test_source_free_rejection(compiler: Path) -> None:
-    """Test 5: When graphpkg source is absent, expect FAST_DEBUG_NATIVE_DEPENDENCY
-    error that names the specific missing module."""
-    env = make_env(RUSTC="/path/that/does/not/exist")
-    # No MOSS_SOURCE_ROOTS set — graphpkg source is unknown to moss debug
-    result = run(
-        [str(compiler), "debug", str(PKG_MAIN)],
-        cwd=PKG_MAIN, env=env, check=False,
-    )
-    if result.returncode == 0:
-        raise AssertionError(
-            "Expected failure when graphpkg source is missing, but got success.\n"
-            f"stdout: {result.stdout}"
-        )
+    require_ok(run([str(margo), "build"], cwd=PKG_MAIN, env=env_for(compiler)),
+               "build real graphpkg .mossi provider")
+    provider_dir = PKG_GRAPHPKG / "build" / "debug"
+    if not list(provider_dir.glob("*.mossi")):
+        raise AssertionError(f"native build did not emit graphpkg .mossi in {provider_dir}")
+    result = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
+                 env=env_for(compiler, MOSS_MODULE_PATH=str(provider_dir),
+                             RUSTC="/definitely/not/rustc"))
     combined = result.stdout + result.stderr
-    if "FAST_DEBUG_NATIVE_DEPENDENCY" not in combined and "graphpkg" not in combined:
-        raise AssertionError(
-            f"Expected FAST_DEBUG_NATIVE_DEPENDENCY or 'graphpkg' in error output:\n"
-            f"stdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    print("  [PASS] Source-free dependency rejected with proper error")
+    if result.returncode == 0 or "FAST_DEBUG_NATIVE_DEPENDENCY" not in combined or "graphpkg" not in combined:
+        raise AssertionError("expected semantic .mossi selection followed by "
+                             f"FAST_DEBUG_NATIVE_DEPENDENCY for graphpkg:\n{combined}")
+    print("  [PASS] real source-free .mossi provider is rejected before interpreter preparation")
 
 
-def test_trace_includes_dep_source_path(compiler: Path) -> None:
-    """Test 6: --trace events include the dependency source file path."""
-    env = make_env(
-        MOSS_SOURCE_ROOTS=str(PKG_GRAPHPKG),
-        RUSTC="/path/that/does/not/exist",
-    )
-    result = run(
-        [str(compiler), "debug", "--trace", str(PKG_MAIN)],
-        cwd=PKG_MAIN, env=env, check=False,
-    )
-    if result.returncode != 0:
-        raise AssertionError(
-            f"moss debug --trace failed (rc={result.returncode}):\n"
-            f"stderr: {result.stderr}"
-        )
-    # Trace goes to stderr; look for graphpkg source file path
-    dep_source = str((PKG_GRAPHPKG / "src" / "graphpkg.moss").resolve())
-    trace_lines = [l for l in result.stderr.strip().splitlines() if l.strip()]
-    # At least some trace events should reference the dep source path
-    found = any(dep_source in line for line in trace_lines)
-    if not found:
-        # Collect unique source files mentioned in trace for diagnostic
-        sources_in_trace = set()
-        for line in trace_lines:
-            try:
-                ev = json.loads(line)
-                if "source_file" in ev:
-                    sources_in_trace.add(ev["source_file"])
-            except json.JSONDecodeError:
-                pass
-        raise AssertionError(
-            f"Dependency source path {dep_source!r} not found in trace.\n"
-            f"Source files in trace: {sources_in_trace}"
-        )
-    print("  [PASS] Trace events include dependency source file paths")
+def trace_events(result, context):
+    require_ok(result, context)
+    events = []
+    for line in result.stderr.splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise AssertionError(f"trace was not NDJSON: {line!r}") from error
+    return events
 
 
-def test_standalone_moss_debug_unchanged(compiler: Path) -> None:
-    """Test 7: Standalone single-package moss debug still works without MOSS_SOURCE_ROOTS."""
-    with tempfile.TemporaryDirectory(prefix="moss-phase158-standalone-") as tmp:
+def test_trace_has_dependency_execution_event(compiler):
+    result = run([str(compiler), "debug", "--trace", str(PKG_MAIN)], cwd=PKG_MAIN,
+                 env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_GRAPHPKG),
+                                           "RUSTC": "/definitely/not/rustc"}))
+    events = trace_events(result, "source-backed trace")
+    dependency_file = str((PKG_GRAPHPKG / "src" / "graphpkg.moss").resolve())
+    if not any(event.get("source_file") == dependency_file and
+               event.get("event") == "FunctionEnter" and
+               event.get("semantic_identity") == "fn:graphpkg__double@3"
+               for event in events):
+        raise AssertionError(f"trace lacked semantic execution in graphpkg source: {events}")
+    print("  [PASS] structured trace includes semantic execution in dependency source")
+
+
+def test_invalid_root_and_ambiguous_provider_fail_closed(compiler):
+    missing = run([str(compiler), "debug", str(PKG_MAIN)], cwd=PKG_MAIN,
+                  env=env_for(compiler, **{SOURCE_ROOT_ENV: str(PKG_MAIN / "absent")}))
+    if missing.returncode == 0 or "PROJECT_SOURCE_NOT_FOUND" not in (missing.stdout + missing.stderr):
+        raise AssertionError("missing supplied source root was silently ignored")
+    with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
         root = Path(tmp)
-        (root / "src").mkdir()
-        (root / "Moss.toml").write_text(
-            '[package]\nname = "standalone"\nversion = "0.1.0"\n'
-            '[build]\nsource = "src"\n'
-        )
-        (root / "src" / "main.moss").write_text(
-            "module standalone\n\n"
-            "fn main():\n"
-            "  echo 99\n"
-        )
-        env = make_env(RUSTC="/path/that/does/not/exist")
-        result = run(
-            [str(compiler), "debug", str(root)],
-            cwd=root, env=env, check=False,
-        )
-        if result.returncode != 0:
-            raise AssertionError(
-                f"Standalone moss debug failed (rc={result.returncode}):\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
-            )
-        if result.stdout.strip() != "99":
-            raise AssertionError(
-                f"Unexpected standalone output: {result.stdout!r}"
-            )
-    print("  [PASS] Standalone moss debug works without MOSS_SOURCE_ROOTS")
+        write_package(root / "a", "a", "module shared\n\nexport fn value() -> Int:\n  return 1\n")
+        write_package(root / "b", "b", "module shared\n\nexport fn value() -> Int:\n  return 2\n")
+        write_package(root / "app", "app", "module app\nimport shared\n\nfn main():\n  echo shared.value()\n",
+                      "\n[dependencies]\na = { path = \"../a\" }\nb = { path = \"../b\" }\n")
+        result = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app",
+                     env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        text = result.stdout + result.stderr
+        if result.returncode == 0 or "MODULE_IMPORT_AMBIGUOUS" not in text or "shared" not in text:
+            raise AssertionError(f"duplicate source providers were not rejected:\n{text}")
+    print("  [PASS] invalid roots fail closed and cross-package providers are ambiguous")
 
 
-def test_margo_debug_trace_flag(compiler: Path) -> None:
-    """Test: margo debug --trace forwards --trace to moss debug."""
+def test_transitive_source_closure_and_identity(compiler):
+    with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
+        root = Path(tmp)
+        write_package(root / "leaf", "leaf", "module leaf\n\nexport fn value() -> Int:\n  return 40\n")
+        write_package(root / "middle", "middle", "module middle\nimport leaf\n\nexport fn value() -> Int:\n  return leaf.value() + 2\n",
+                      "\n[dependencies]\nleaf = { path = \"../leaf\" }\n")
+        write_package(root / "app", "app", "module app\nimport middle\n\nfn main():\n  echo middle.value()\n",
+                      "\n[dependencies]\nmiddle = { path = \"../middle\" }\n")
+        debug = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app",
+                    env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        require_ok(debug, "transitive source-backed margo debug")
+        if debug.stdout.strip() != "42":
+            raise AssertionError(f"transitive output was {debug.stdout!r}")
+        trace = run([str(compiler.parent / "margo"), "debug", "--trace"], cwd=root / "app",
+                    env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        sources = {event.get("source_file") for event in trace_events(trace, "transitive source trace")}
+        # The root main itself is not a traced function frame, but both
+        # dependency packages deliberately use the same local filename.
+        expected = {str((root / package / "src" / "main.moss").resolve())
+                    for package in ("middle", "leaf")}
+        if not expected <= sources:
+            raise AssertionError(f"same local filenames collapsed provenance: {sources}")
+    print("  [PASS] transitive source closure preserves package-aware source identities")
+
+
+def test_git_source_closure_and_cached_lock(compiler):
+    with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
+        root = Path(tmp)
+        remote = root / "remote"
+        write_package(remote, "gitleaf", "module gitleaf\n\nexport fn value() -> Int:\n  return 42\n")
+        require_ok(run(["git", "init", "--quiet"], cwd=remote), "initialize local Git dependency")
+        require_ok(run(["git", "add", "."], cwd=remote), "stage local Git dependency")
+        require_ok(run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                        "commit", "--quiet", "-m", "initial"], cwd=remote), "commit local Git dependency")
+        write_package(root / "app", "app", "module app\nimport gitleaf\n\nfn main():\n  echo gitleaf.value()\n",
+                      f"\n[dependencies]\ngitleaf = {{ git = \"{remote}\", branch = \"master\" }}\n")
+        environment = env_for(compiler, MARGO_HOME=str(root / "margo-cache"),
+                              RUSTC="/definitely/not/rustc")
+        first = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app", env=environment)
+        require_ok(first, "Git dependency Fast Debug")
+        if first.stdout.strip() != "42" or not (root / "app" / "Moss.lock").is_file():
+            raise AssertionError("Git debug did not execute the locked source dependency")
+        remote.rename(root / "remote-offline")
+        second = run([str(compiler.parent / "margo"), "debug"], cwd=root / "app", env=environment)
+        require_ok(second, "cached locked Git Fast Debug")
+        if second.stdout != first.stdout:
+            raise AssertionError("cached locked Git debug output differed")
+    print("  [PASS] resolved and cached locked Git dependency source executes without Moss Git access")
+
+
+def test_margo_cli_and_environment_are_exact(compiler):
     margo = compiler.parent / "margo"
-    env = make_env(
-        MOSS=str(compiler),
-        RUSTC="/path/that/does/not/exist",
-    )
-    result = run(
-        [str(margo), "debug", "--trace"],
-        cwd=PKG_MAIN, env=env, check=False,
-    )
-    if result.returncode != 0:
-        raise AssertionError(
-            f"margo debug --trace failed (rc={result.returncode}):\n"
-            f"stderr: {result.stderr}"
-        )
-    if not result.stderr.strip():
-        raise AssertionError("Expected trace output on stderr but got nothing")
-    print("  [PASS] margo debug --trace forwards trace flag to moss debug")
+    for arguments in (("debug", "target"), ("debug", "--release"),
+                      ("debug", "--json"), ("debug", "--typo")):
+        if run([str(margo), *arguments], cwd=PKG_MAIN, env=env_for(compiler)).returncode == 0:
+            raise AssertionError(f"margo {' '.join(arguments)} was silently accepted")
+    with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
+        root = Path(tmp)
+        write_package(root, "solo", "module solo\n\nfn main():\n  echo 7\n")
+        result = run([str(margo), "debug"], cwd=root,
+                     env=env_for(compiler, **{SOURCE_ROOT_ENV: "/not/a/source/root",
+                                              "RUSTC": "/definitely/not/rustc"}))
+        require_ok(result, "dependency-free margo debug with contaminated environment")
+        if result.stdout.strip() != "7":
+            raise AssertionError("margo debug inherited an unrelated source-root environment")
+    print("  [PASS] margo debug accepts only --trace and supplies an exact source universe")
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
+def test_standalone_debug_unchanged(compiler):
+    with tempfile.TemporaryDirectory(prefix="moss-phase158-", dir=REPO / "tmp") as tmp:
+        root = Path(tmp)
+        write_package(root, "standalone", "module standalone\n\nfn main():\n  echo 99\n")
+        result = run([str(compiler), "debug", str(root)], cwd=root,
+                     env=env_for(compiler, RUSTC="/definitely/not/rustc"))
+        require_ok(result, "standalone moss debug")
+        if result.stdout.strip() != "99":
+            raise AssertionError(f"unexpected standalone output: {result.stdout!r}")
+    print("  [PASS] standalone/same-project moss debug remains unchanged")
+
+
+def test_build_planner_dogfood(compiler):
+    graphlib = REPO / "projects" / "build_planner" / "graphlib"
+    planner = graphlib.parent / "planner"
+    margo = compiler.parent / "margo"
+    native_env = env_for(compiler)
+    for package, command in ((graphlib, "build"), (graphlib, "test"),
+                             (planner, "build"), (planner, "test")):
+        require_ok(run([str(margo), command], cwd=package, env=native_env),
+                   f"Build Planner {package.name} {command}")
+    native = run([str(margo), "run"], cwd=planner, env=native_env)
+    require_ok(native, "Build Planner native run")
+    debug_env = env_for(compiler, RUSTC="/definitely/not/rustc")
+    debug = run([str(margo), "debug"], cwd=planner, env=debug_env)
+    require_ok(debug, "Build Planner source Fast Debug")
+    if native.stdout != debug.stdout:
+        raise AssertionError(f"Build Planner mismatch: {native.stdout!r} vs {debug.stdout!r}")
+    trace = run([str(margo), "debug", "--trace"], cwd=planner, env=debug_env)
+    sources = {event.get("source_file") for event in trace_events(trace, "Build Planner source trace")}
+    if not any(source and source.startswith(str(planner.resolve()) + os.sep) for source in sources):
+        raise AssertionError("Build Planner trace lacked planner semantic events")
+    if not any(source and source.startswith(str(graphlib.resolve()) + os.sep) for source in sources):
+        raise AssertionError("Build Planner trace lacked graphlib semantic events")
+    print("  [PASS] Build Planner uses graphlib source with parity, trace, and no rustc")
+
+
+def main():
+    if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <path-to-moss-compiler>", file=sys.stderr)
         return 2
     compiler = Path(sys.argv[1]).resolve()
     if not compiler.is_file():
         print(f"Compiler not found: {compiler}", file=sys.stderr)
         return 2
-
+    (REPO / "tmp").mkdir(exist_ok=True)
     print("Phase 15.8 — Cross-Package Fast Debug Source Convergence")
-
-    tests = [
-        test_moss_source_roots_fast_debug,
-        test_margo_debug,
-        test_margo_debug_no_rustc,
-        test_source_free_rejection,
-        test_trace_includes_dep_source_path,
-        test_standalone_moss_debug_unchanged,
-        test_margo_debug_trace_flag,
-    ]
-    failed = 0
+    tests = [test_path_source_parity_and_no_rustc, test_real_source_free_provider_rejection,
+             test_trace_has_dependency_execution_event, test_invalid_root_and_ambiguous_provider_fail_closed,
+             test_transitive_source_closure_and_identity, test_git_source_closure_and_cached_lock,
+             test_margo_cli_and_environment_are_exact, test_standalone_debug_unchanged,
+             test_build_planner_dogfood]
+    failures = 0
     for test in tests:
         try:
             test(compiler)
-        except AssertionError as exc:
-            print(f"  [FAIL] {test.__name__}: {exc}")
-            failed += 1
-
-    if failed:
-        print(f"\n{failed}/{len(tests)} tests FAILED")
+        except AssertionError as error:
+            failures += 1
+            print(f"  [FAIL] {test.__name__}: {error}")
+    if failures:
+        print(f"\n{failures}/{len(tests)} tests FAILED")
         return 1
     print(f"\nAll {len(tests)} Phase 15.8 tests PASSED")
     return 0

@@ -18,7 +18,7 @@ those executables are already available on `PATH`.
 3. **Follow Discovery Routing**: For fresh Moss source-writing or unfamiliar language work, use `result.canonical_docs.practical_language_guide` as the primary practical guide. Use the other `canonical_docs` entries for formal semantics, project workflow, or testing detail as needed.
 4. **Verify Contract**: Ensure `result.language_version` matches `moss-0.1`.
 5. **Tooling Split**:
-   - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, and `./margo clean`.
+   - Use `margo` for package/project operations: `./margo build`, `./margo run`, `./margo test`, `./margo bench`, `./margo clean`, and package-aware Fast Debug via `./margo debug [--trace]`.
    - Use `moss` for language, semantic queries, diagnostics, and formatting: `moss check`, `inspect`, `type`, `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and `debug`.
 
 ## Before declaring a Moss gap
@@ -51,7 +51,7 @@ backend compiler bug even when Moss source semantics are valid.
 
 ### Fast Debug Workflow
 
-- **Deterministic Semantic Execution**: Run `moss run --interp <source>` or `moss debug <project-or-source>` to execute checked Moss code directly without rustc compilation.
+- **Deterministic Semantic Execution**: Run `moss run --interp <source>` or `moss debug <project-or-source>` for standalone/same-project source debugging. Use `margo debug [--trace]` when a package has resolved path/Git dependencies; Margo supplies their source roots, while Moss resolves modules and checks semantics.
 - **Structured Traces**: Use `--trace` (`moss run --interp --trace <source>` or `moss debug <target> --trace`) to stream newline-delimited JSON events (function/handler entry/exit, state access, branch, message/reply, assertions) on stderr.
 - **Query the Compiler**: Do not use interactive debuggers (e.g. LLDB) or guess semantics from generated Rust. Use semantic queries (`moss inspect`, `moss why`, `moss effects`, `moss ownership`, `moss calls`) to diagnose behavior and compiler decisions.
 
@@ -69,7 +69,8 @@ When working with Moss:
    semantics from generated Rust or historical compiler source when a semantic API
    exists.
 5. Use Margo for package/project operations: `./margo build`, `./margo run`,
-   `./margo test`, `./margo bench`, and `./margo clean`.
+   `./margo test`, `./margo bench`, `./margo clean`, and package-aware
+   source debugging with `./margo debug [--trace]`.
 6. Use Moss for language/compiler/agent operations: `moss check`, `inspect`, `type`,
    `effects`, `ownership`, `calls`, `why`, `cost`, `impact`, `edit`, `fmt`, and
    `debug`.
