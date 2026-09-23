@@ -1668,6 +1668,91 @@ class Checker {
     return nullptr;
   }
 
+  static string domain_semantic_identity(const Domain& domain) {
+    return "domain:" + domain.name + "@" + std::to_string(domain.line);
+  }
+
+  static string handler_semantic_identity(const Domain& domain,
+                                          const Handler& handler) {
+    return "handler:" + domain.name + "." + handler.name + "@" +
+        std::to_string(handler.line);
+  }
+
+  static string function_semantic_identity(const Function& function) {
+    return "fn:" + function.name + "@" + std::to_string(function.line);
+  }
+
+  string domain_instance_semantic_identity(const string& binding,
+                                           const string& domain) const {
+    auto instance = std::find_if(
+        p_.concrete_domain_graph.instances.begin(),
+        p_.concrete_domain_graph.instances.end(),
+        [&](const ConcreteDomainInstance& candidate) {
+          return candidate.binding == binding && candidate.domain == domain;
+        });
+    return instance == p_.concrete_domain_graph.instances.end()
+        ? string() : instance->identity;
+  }
+
+  const Domain* handler_domain(const Handler& handler) const {
+    for (const auto& domain : p_.domains)
+      for (const auto& candidate : domain.handlers)
+        if (&candidate == &handler) return &domain;
+    return nullptr;
+  }
+
+  const Handler* check_message_call_after_resolution(
+      int line, const string& receiver, const string& message,
+      const vector<string>& args, const TypeEnv& env) const {
+    if (env.count(receiver)) return check_call(line, receiver, message, args, env);
+
+    // A missing route name is absent from the handler's lexical environment,
+    // but the static composition graph may still prove exactly which domain
+    // instance the source named. Use that compiler fact only when it is unique,
+    // then validate the handler and its arguments before route-specific teaching.
+    auto self = env.find("self");
+    if (self == env.end() || !domains_.count(canonical_type_name(self->second)))
+      return check_call(line, receiver, message, args, env);
+    string resolved_domain;
+    for (const auto& instance : p_.concrete_domain_graph.instances) {
+      if (instance.binding != receiver) continue;
+      if (!resolved_domain.empty() && resolved_domain != instance.domain)
+        return check_call(line, receiver, message, args, env);
+      resolved_domain = instance.domain;
+    }
+    if (resolved_domain.empty() || !domains_.count(resolved_domain))
+      return check_call(line, receiver, message, args, env);
+    TypeEnv resolved_env = env;
+    resolved_env[receiver] = resolved_domain;
+    return check_call(line, receiver, message, args, resolved_env);
+  }
+
+  void check_message_target_existence(int line, const string& receiver,
+                                      const TypeEnv& env) const {
+    auto self = env.find("self");
+    if (self != env.end() && domains_.count(canonical_type_name(self->second)))
+      return;
+    const auto binding = env.find(receiver);
+    if (std::none_of(
+            p_.concrete_domain_graph.instances.begin(),
+            p_.concrete_domain_graph.instances.end(),
+            [&](const ConcreteDomainInstance& instance) {
+              return instance.binding == receiver && binding != env.end() &&
+                  canonical_type_name(binding->second) == instance.domain;
+            })) {
+      teaching_err(
+          line, "DOMAIN_MESSAGE_TARGET_INVALID",
+          "message target '" + receiver +
+              "' is not a static domain instance or declared route",
+          "domains.static-routing",
+          "message targets are statically composed domain instances or declared domainroutes slots",
+          "invalid-message-target",
+          {{"domain-instance", receiver, {}, receiver, {}, 0}},
+          "use-static-domain-route",
+          "message a domain instance from main or a declared domainroutes dependency from a handler");
+    }
+  }
+
   Handler* find_handler(Domain& d, const string& name) {
     for (auto& h : d.handlers) if (h.name == name) return &h;
     return nullptr;
@@ -1860,7 +1945,7 @@ class Checker {
   }
 
   void check_static_message_receiver(int line, const string& receiver,
-                                     const string& handler,
+                                     const Handler& resolved_handler,
                                      const TypeEnv& env) const {
     auto self = env.find("self");
     if (self != env.end() && domains_.count(self->second)) {
@@ -1868,20 +1953,21 @@ class Checker {
       if (receiver == "self") {
         teaching_err(
             line, "DOMAIN_SELF_MESSAGE",
-            "handler '" + domain.name + "." + handler +
+            "handler '" + domain.name + "." + resolved_handler.name +
                 "' cannot be messaged through self",
             "domains.no-self-message",
             "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
             "self-message",
-            {{"domain", domain.name, "domain:" + domain.name, {}, {}, 0},
-             {"handler", domain.name + "." + handler,
-              "handler:" + domain.name + "." + handler, {}, {}, 0}},
+            {{"domain", domain.name, domain_semantic_identity(domain), {}, {}, 0},
+             {"handler", domain.name + "." + resolved_handler.name,
+              handler_semantic_identity(domain, resolved_handler), {}, {}, 0}},
             "local-helper",
             "move the shared logic into an ordinary non-domain helper and call it directly");
       }
       auto route = std::find_if(domain.routes.begin(), domain.routes.end(),
           [&](const DomainRoute& slot) { return slot.name == receiver; });
       if (route == domain.routes.end()) {
+        const Domain* resolved_domain = handler_domain(resolved_handler);
         teaching_err(
             line, "DOMAIN_ROUTE_NOT_DECLARED",
             "message target '" + receiver + "' is not a declared route of domain '" +
@@ -1889,9 +1975,13 @@ class Checker {
             "domains.static-routes",
             "outbound domain dependencies must be declared with domainroutes and bound during static construction",
             "undeclared-domain-route",
-            {{"domain", domain.name, "domain:" + domain.name, {}, {}, 0},
+            {{"domain", domain.name, domain_semantic_identity(domain), {}, {}, 0},
              {"route", receiver, {}, receiver, {}, 0},
-             {"handler", handler, {}, {}, {}, 0}},
+             {"handler", resolved_handler.name,
+              resolved_domain ? handler_semantic_identity(
+                                    *resolved_domain, resolved_handler)
+                              : string(),
+              {}, {}, 0}},
             "declare-domain-route",
             "declare '" + receiver + "' in domainroutes and bind it when constructing every '" +
                 domain.name + "' instance");
@@ -1917,23 +2007,8 @@ class Checker {
               "bind-domain-route",
               "bind route '" + receiver + "' when constructing '" +
                   instance.binding + "'");
-    } else if (std::none_of(p_.concrete_domain_graph.instances.begin(),
-                           p_.concrete_domain_graph.instances.end(),
-                 [&](const ConcreteDomainInstance& instance) {
-                   auto binding = env.find(receiver);
-                   return instance.binding == receiver && binding != env.end() &&
-                       binding->second == instance.domain;
-                 })) {
-      teaching_err(
-          line, "DOMAIN_MESSAGE_TARGET_INVALID",
-          "message target '" + receiver +
-              "' is not a static domain instance or declared route",
-          "domains.static-routing",
-          "message targets are statically composed domain instances or declared domainroutes slots",
-          "invalid-message-target",
-          {{"domain-instance", receiver, {}, receiver, {}, 0}},
-          "use-static-domain-route",
-          "message a domain instance from main or a declared domainroutes dependency from a handler");
+    } else {
+      check_message_target_existence(line, receiver, env);
     }
   }
 
@@ -2677,7 +2752,8 @@ class Checker {
       auto domain = domains_.find(canonical_type_name(binding->second));
       if (domain == domains_.end()) return std::nullopt;
       const Handler* target = find_handler(*domain->second, handler);
-      return target && target->reply_type ? *target->reply_type : string("unit");
+      if (!target) return std::nullopt;
+      return target->reply_type ? *target->reply_type : string("unit");
     }
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return functional;
@@ -4494,9 +4570,12 @@ class Checker {
         const string left_mode = diagnostic_effect_name(accesses[left].effect);
         const string right_mode = diagnostic_effect_name(accesses[right].effect);
         vector<DiagnosticEntity> entities;
-        entities.push_back({functions_.count(call_name) ? "function" : "callable",
+        auto function = functions_.find(call_name);
+        entities.push_back({function != functions_.end() ? "function" : "callable",
                             call_name,
-                            functions_.count(call_name) ? "fn:" + call_name : string(),
+                            function != functions_.end()
+                                ? function_semantic_identity(*function->second)
+                                : string(),
                             {}, {}, 0});
         entities.push_back({"argument", "argument " +
                                 std::to_string(accesses[left].argument_index + 1),
@@ -7259,6 +7338,24 @@ class Checker {
     }
   }
 
+  bool provably_compatible_functional_callable(
+      const Function& function, const vector<string>& input_types,
+      const TypeEnv& env) const {
+    if (function.params.size() != input_types.size()) return false;
+    for (size_t index = 0; index < input_types.size(); ++index) {
+      const string actual = canonical_type_name(input_types[index]);
+      const string expected = canonical_type_name(function.params[index].type);
+      if (expected.empty() || unresolved_semantic_type(actual)) return false;
+      if (traits_.count(expected)) {
+        if (!trait_conforms(actual, expected)) return false;
+      } else if (!same_type(expected, actual)) {
+        return false;
+      }
+    }
+    auto result = functional_callable_result(function.name, input_types, env);
+    return result && !unresolved_semantic_type(*result);
+  }
+
   std::optional<string> check_functional_callable(
       int line, const string& callable, const vector<string>& input_types,
       const TypeEnv& env, const string& operation) {
@@ -7374,17 +7471,27 @@ class Checker {
       vector<string> invoked_arguments;
       if (parse_simple_call(identity, invoked, invoked_arguments) &&
           functions_.count(invoked)) {
-        teaching_err(
-            line, "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
-            operation_name + " expects a callable identity, but '" + identity +
-                "' invokes function '" + invoked + "' immediately",
-            "functional.supported-callable-form",
-            "functional stages accept a statically known named callable or a supported '_' placeholder expression",
-            "invoked-function-in-callable-position",
-            {{"pipeline-stage", operation_name, {}, {}, {}, 0},
-             {"function", invoked, "fn:" + invoked, identity, {}, 0}},
-            "named-pipeline-callable",
-            "pass the function name '" + invoked + "' without parentheses");
+        const Function& candidate = *functions_.at(invoked);
+        if (provably_compatible_functional_callable(
+                candidate, input_types, env)) {
+          teaching_err(
+              line, "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
+              operation_name + " expects a callable identity, but '" + identity +
+                  "' invokes function '" + invoked + "' immediately",
+              "functional.supported-callable-form",
+              "functional stages accept a statically known named callable or a supported '_' placeholder expression",
+              "invoked-function-in-callable-position",
+              {{"pipeline-stage", operation_name, {}, {}, {}, 0},
+               {"function", invoked,
+                function_semantic_identity(candidate), identity, {}, 0}},
+              "named-pipeline-callable",
+              "pass the function name '" + invoked + "' without parentheses");
+        }
+        err(line,
+            operation_name + " cannot use invoked function '" + identity +
+                "' as its callable because '" + invoked +
+                "' is not compatible with the stage input",
+            "FUNCTIONAL_SEMANTIC_ERROR");
       }
       if (!plain_identifier(identity)) {
         teaching_err(
@@ -7443,7 +7550,8 @@ class Checker {
           "a pipeline callable must specialize to one statically known result type",
           "unresolved-functional-callable-result",
           {{"pipeline-stage", operation_name, {}, {}, {}, 0},
-           {"function", identity, "fn:" + identity, identity, {}, 0}},
+           {"function", identity,
+            function_semantic_identity(*function->second), identity, {}, 0}},
           "use-statically-typed-callable",
           "use a named callable whose checked body and inputs determine one result type");
     return result;
@@ -7574,7 +7682,10 @@ class Checker {
       if (!parse_member_call(trim(original.substr(8)), receiver, handler, args) ||
           !plain_identifier(receiver) || !plain_identifier(handler))
         err(line, "message requires a domain call 'receiver.Handler(args)'");
-      check_static_message_receiver(line, receiver, handler, env);
+      check_message_target_existence(line, receiver, env);
+      const Handler* target = check_message_call_after_resolution(
+          line, receiver, handler, args, env);
+      check_static_message_receiver(line, receiver, *target, env);
       auto binding = env.find(receiver);
       if (binding == env.end() || !domains_.count(canonical_type_name(binding->second)))
         err(line, "message receiver '" + receiver + "' is not a domain instance");
@@ -7589,15 +7700,15 @@ class Checker {
             "domains.no-same-instance-handler-chain",
             "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
             "same-instance-handler-message",
-            {{"domain", domain, "domain:" + domain, {}, {}, 0},
-             {"domain-instance", receiver, {}, receiver, {}, 0},
+            {{"domain", domain,
+              domain_semantic_identity(*domains_.at(domain)), {}, {}, 0},
+             {"domain-instance", receiver,
+              domain_instance_semantic_identity(receiver, domain), receiver, {}, 0},
              {"handler", domain + "." + handler,
-              "handler:" + domain + "." + handler, {}, {}, 0}},
+              handler_semantic_identity(*domains_.at(domain), *target), {}, {}, 0}},
             "local-helper",
             "move the shared logic into an ordinary non-domain helper and call it directly");
       }
-      const Handler* target = check_call(line, receiver, handler, args, env);
-      (void)target;
       for (const auto& argument : args) check_expression(line, argument, env);
       return;
     }
@@ -7675,6 +7786,7 @@ class Checker {
       auto it = env.find(receiver);
       if (it != env.end() && domains_.count(canonical_type_name(it->second))) {
         const string domain = canonical_type_name(it->second);
+        const Handler* target = check_call(line, receiver, handler, args, env);
         teaching_err(
             line, "DOMAIN_HANDLER_REQUIRES_MESSAGE",
             "domain handler '" + domain + "." + handler +
@@ -7682,9 +7794,10 @@ class Checker {
             "domains.cross-domain-message",
             "cross-domain handler calls use synchronous message syntax",
             "direct-domain-handler-call",
-            {{"domain-instance", receiver, {}, receiver, {}, 0},
+            {{"domain-instance", receiver,
+              domain_instance_semantic_identity(receiver, domain), receiver, {}, 0},
              {"handler", domain + "." + handler,
-              "handler:" + domain + "." + handler, {}, {}, 0}},
+              handler_semantic_identity(*domains_.at(domain), *target), {}, {}, 0}},
             "use-message",
             "write 'message " + receiver + "." + handler +
                 "(...)' for this synchronous cross-domain call");
@@ -7919,8 +8032,13 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
+        check_message_target_existence(
+            statement.line, statement.a, current_env);
+        const Handler* target = check_message_call_after_resolution(
+            statement.line, statement.a, statement.b, statement.args,
+            current_env);
         check_static_message_receiver(
-            statement.line, statement.a, statement.b, current_env);
+            statement.line, statement.a, *target, current_env);
         auto destination = current_env.find(statement.message_result);
         if (!statement.message_result.empty() && destination != current_env.end() &&
             contains_domain_handle(destination->second))
@@ -7937,10 +8055,13 @@ class Checker {
                 "domains.no-same-instance-handler-chain",
                 "handlers are external message-entry boundaries; same-domain reuse belongs in an ordinary helper",
                 "same-instance-handler-message",
-                {{"domain", current->name, "domain:" + current->name, {}, {}, 0},
-                 {"domain-instance", statement.a, {}, statement.a, {}, 0},
+                {{"domain", current->name,
+                  domain_semantic_identity(*current), {}, {}, 0},
+                 {"domain-instance", statement.a,
+                  domain_instance_semantic_identity(statement.a, current->name),
+                  statement.a, {}, 0},
                  {"handler", current->name + "." + statement.b,
-                  "handler:" + current->name + "." + statement.b, {}, {}, 0}},
+                  handler_semantic_identity(*current, *target), {}, {}, 0}},
                 "local-helper",
                 "move the shared logic into an ordinary non-domain helper and call it directly");
           }
@@ -7956,8 +8077,6 @@ class Checker {
                   "before crossing a domain boundary");
           }
         }
-        check_call(statement.line, statement.a, statement.b, statement.args,
-                   current_env);
         for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
         }
@@ -7970,6 +8089,9 @@ class Checker {
           if (receiver != current_env.end() &&
               domains_.count(canonical_type_name(receiver->second))) {
             const string domain = canonical_type_name(receiver->second);
+            const Handler* target = check_call(
+                statement.line, statement.a, statement.b, statement.args,
+                current_env);
             teaching_err(
                 statement.line, "DOMAIN_HANDLER_REQUIRES_MESSAGE",
                 "domain handler '" + domain + "." + statement.b +
@@ -7977,9 +8099,12 @@ class Checker {
                 "domains.cross-domain-message",
                 "cross-domain handler calls use synchronous message syntax",
                 "direct-domain-handler-call",
-                {{"domain-instance", statement.a, {}, statement.a, {}, 0},
+                {{"domain-instance", statement.a,
+                  domain_instance_semantic_identity(statement.a, domain),
+                  statement.a, {}, 0},
                  {"handler", domain + "." + statement.b,
-                  "handler:" + domain + "." + statement.b, {}, {}, 0}},
+                  handler_semantic_identity(*domains_.at(domain), *target),
+                  {}, {}, 0}},
                 "use-message",
                 "write 'message " + statement.a + "." + statement.b +
                     "(...)' for this synchronous cross-domain call");
@@ -8056,12 +8181,10 @@ class Checker {
         if (!current || !current_handler || !current_handler->reply_type)
           err(statement.line,
               "reply is only valid in a handler declaring '-> Type'");
-        const bool checked_message = starts_with(trim(statement.a), "message ");
-        // Validate a message target before asking it for a reply type.  A
-        // missing static route is a domain-topology fact, not a request for a
-        // source-level type annotation.
-        if (checked_message)
-          check_expression(statement.line, statement.a, current_env);
+        // Validate expression legality before attaching inference guidance.
+        // This keeps unsupported operators and invalid calls from being
+        // mislabeled as expressions that merely need stronger type evidence.
+        check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
         if (auto pipeline = parse_functional_pipeline(statement.a)) {
           auto source_type = inferred_expr_type(pipeline->source, current_env);
@@ -8081,7 +8204,7 @@ class Checker {
               "unresolved-reply-expression",
               {{"expression", statement.a, {}, statement.a, {}, 0},
                {"handler", current->name + "." + current_handler->name,
-                "handler:" + current->name + "." + current_handler->name,
+                handler_semantic_identity(*current, *current_handler),
                 {}, {}, 0},
                {"expected-type", *current_handler->reply_type, {}, {}, {}, 0}},
               "use-statically-typed-expression",
@@ -8091,8 +8214,6 @@ class Checker {
           err(statement.line, "reply type mismatch: handler expects '" +
               *current_handler->reply_type + "', expression has type '" + *actual +
               "'");
-        if (!checked_message)
-          check_expression(statement.line, statement.a, current_env);
         return;
       }
 
@@ -8104,12 +8225,15 @@ class Checker {
         err(statement.line, "main cannot return a value");
       if (statement.kind == Stmt::Kind::Return && current_function &&
           !statement.a.empty()) {
+        // As with replies, syntax/call legality is authoritative and must be
+        // checked before suggesting a statically typed expression.
+        check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
         if (!actual) {
           vector<DiagnosticEntity> entities = {
               {"expression", statement.a, {}, statement.a, {}, 0},
               {"function", current_function->name,
-               "fn:" + current_function->name, {}, {}, 0}};
+               function_semantic_identity(*current_function), {}, {}, 0}};
           if (current_function->return_type)
             entities.push_back(
                 {"expected-type", *current_function->return_type, {}, {}, {}, 0});
@@ -8134,7 +8258,6 @@ class Checker {
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
               *actual + "' but is annotated '" + *current_function->return_type + "'");
-        check_expression(statement.line, statement.a, current_env);
       }
     };
 
@@ -14337,6 +14460,7 @@ static void write_agent_command_schema(
   write_agent_string_array(out, identities);
   out << ",\"common_failure_modes\":";
   write_agent_string_array(out, failures);
+  out << ",\"failure_modes_scope\":\"representative, not exhaustive\"";
   out << "}";
 }
 
@@ -14814,6 +14938,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"diagnostic_contract\": {"
          "\"additive_teaching_fields\": [\"source\", \"rule\", \"cause\", \"related\", \"guidance\"],"
          "\"cause_entity_fields\": [\"kind\", \"name\", \"semantic_identity\", \"expression\", \"access\", \"argument_index\"],"
+         "\"cause_entity_semantic_identity\": \"actual compiler semantic identity for a resolved entity, otherwise null; canonical selectors remain in name\","
          "\"guidance_kinds\": [\"local-helper\", \"use-message\", \"declare-domain-route\", \"bind-domain-route\", \"use-static-domain-route\", \"separate-conflicting-access\", \"supported-pipeline-placeholder\", \"named-pipeline-callable\", \"pure-pipeline-callback\", \"qualify-query-target\", \"use-statically-typed-expression\", \"use-statically-typed-callable\"],"
          "\"human_and_json_share_facts\": true}";
   out << ",\n    \"source_surface\": {"
@@ -14969,7 +15094,8 @@ static void write_bootstrap_json(std::ostream& out,
            "\"related\", \"guidance\"], "
            "\"identity_contracts\": {"
            "\"debug_provenance\": \"build/source-layout scoped\", "
-           "\"durable_semantic_entity\": \"entity-v1\"}, "
+           "\"durable_semantic_entity\": \"entity-v1\", "
+           "\"diagnostic_cause_entity\": \"semantic_identity is the actual compiler identity for a resolved entity or null; it is never a canonical selector or entity-v1 durable identity\"}, "
            "\"command_schemas\": [";
     write_agent_command_schema(
         out, "agent_bootstrap", "Discover the concise live Moss agent capability manifest.",
@@ -14998,8 +15124,11 @@ static void write_bootstrap_json(std::ostream& out,
         out, "check", "Check Moss and return stable structured diagnostics.",
         {"source", "--json"}, {}, "moss-agent-1 envelope with diagnostics or error",
         {"source_identity when available"},
-        {"DOMAIN_SELF_MESSAGE", "DOMAIN_HANDLER_REQUIRES_MESSAGE",
-         "DOMAIN_ROUTE_NOT_DECLARED", "OWNERSHIP_CONFLICTING_ACCESS",
+        {"DOMAIN_SELF_MESSAGE", "DOMAIN_SAME_INSTANCE_MESSAGE",
+         "DOMAIN_HANDLER_REQUIRES_MESSAGE", "DOMAIN_ROUTE_NOT_DECLARED",
+         "DOMAIN_ROUTE_NOT_BOUND", "DOMAIN_MESSAGE_TARGET_INVALID",
+         "OWNERSHIP_CONFLICTING_ACCESS", "FUNCTIONAL_PLACEHOLDER_REQUIRED",
+         "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
          "FUNCTIONAL_CAPTURE_MUTATION", "TYPE_INFERENCE_FAILED"});
     out << ',';
     write_agent_command_schema(
@@ -15561,8 +15690,7 @@ static bool write_semantic_query_json(
         if (index) choices << ", ";
         choices << canonical;
         teaching.entities.push_back(
-            {"query-target", canonical, candidate.durable_identity,
-             {}, {}, 0});
+            {"query-target", canonical, candidate.semantic_identity, {}, {}, 0});
         teaching.related.push_back(
             {candidate.source_file, candidate.line, 1,
              "candidate " + canonical});

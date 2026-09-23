@@ -1,0 +1,7 @@
+fn text_length(value: String) -> Int:
+  return 1
+
+fn main():
+  values = [1, 2]
+  result = values |> map(text_length())
+  echo result |> count

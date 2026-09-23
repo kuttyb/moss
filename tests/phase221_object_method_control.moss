@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+  fn Read() -> Int:
+    return value
+
+fn main():
+  box = Box(value: 42)
+  echo box.Read()

@@ -178,6 +178,9 @@ language-discovery surface for a Moss programmer or fresh agent.
    inferred `READ`/`WRITE`/`CONSUME` access. Missing teaching fields are deliberately
    `null` or empty—do not invent a repair. `fixes` remain uniquely mechanical actions,
    while `legal_alternatives` describe choices whose intent remains yours.
+   A cause entity's `semantic_identity` is the compiler's actual resolved identity or
+   `null`; canonical selectors stay in `name`, and durable `entity-v1` identifiers use
+   their own API fields.
 
 ## Ask the compiler semantic questions
 

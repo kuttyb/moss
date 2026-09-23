@@ -1,0 +1,8 @@
+domain Worker:
+  domainroutes(peer: Worker)
+
+  fn Read() -> Int:
+    reply 42
+
+  fn Forward() -> Int:
+    reply message peer.Read()

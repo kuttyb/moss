@@ -1,0 +1,10 @@
+trait ValueSource:
+  fn Value() -> Int
+
+fn missing_result(value: Int) -> ValueSource:
+  echo value
+
+fn main():
+  values = [1, 2]
+  result = values |> map(missing_result)
+  echo result |> count

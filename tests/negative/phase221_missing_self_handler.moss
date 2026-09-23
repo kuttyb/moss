@@ -1,0 +1,7 @@
+domain Worker:
+  fn Read() -> Int:
+    reply message self.DoesNotExist()
+
+fn main():
+  worker = Worker()
+  echo message worker.Read()

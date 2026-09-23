@@ -68,6 +68,30 @@ def check_valid(name: str) -> None:
         fail(f"legal rewrite for {name} was rejected")
 
 
+def fixture(name: str) -> pathlib.Path:
+    return root / "tests" / name
+
+
+def check_fixture_error(name: str) -> dict[str, object]:
+    result = document("check", str(fixture(name)), "--json", expect=1)
+    error = result["error"]
+    for field in ("source", "rule", "cause", "related", "guidance"):
+        if field not in error:
+            fail(f"{name} omitted additive field {field}")
+    return error
+
+
+def check_fixture_valid(name: str) -> None:
+    result = document("check", str(fixture(name)), "--json")
+    if not result["ok"]:
+        fail(f"legal control {name} was rejected")
+
+
+def actual_identity(entity: dict[str, object], prefix: str) -> bool:
+    identity = entity.get("semantic_identity")
+    return isinstance(identity, str) and identity.startswith(prefix) and "@" in identity
+
+
 self_send = check_error("AB008_repair_self_send", "DOMAIN_SELF_MESSAGE")
 if self_send["rule"]["id"] != "domains.no-self-message":
     fail("self-message rule identity drifted")
@@ -75,10 +99,35 @@ if self_send["cause"]["kind"] != "self-message":
     fail("self-message cause drifted")
 if self_send["guidance"]["kind"] != "local-helper":
     fail("self-message omitted local-helper guidance")
-if not any(entity["semantic_identity"] == "handler:Counter.Advance"
+if not any(actual_identity(entity, "handler:Counter.Advance@")
            for entity in self_send["cause"]["entities"]):
-    fail("self-message omitted the checked target handler")
+    fail("self-message omitted the checked target handler identity")
 check_valid("AB008_repair_self_send")
+
+same_instance = check_fixture_error("negative/phase221_same_domain_handler.moss")
+if same_instance["code"] != "DOMAIN_SAME_INSTANCE_MESSAGE":
+    fail("same-instance handler message lost its specific diagnostic")
+if same_instance["guidance"]["kind"] != "local-helper":
+    fail("same-instance handler message omitted local-helper guidance")
+if not any(actual_identity(entity, "handler:Worker.Read@")
+           for entity in same_instance["cause"]["entities"]):
+    fail("same-instance message omitted the resolved handler identity")
+
+for source in (
+    "negative/phase221_missing_domain_handler.moss",
+    "negative/phase221_missing_self_handler.moss",
+):
+    error = check_fixture_error(source)
+    if error["code"] in (
+        "DOMAIN_HANDLER_REQUIRES_MESSAGE", "DOMAIN_SELF_MESSAGE",
+        "DOMAIN_SAME_INSTANCE_MESSAGE",
+    ):
+        fail(f"{source} taught a domain rewrite before resolving the handler")
+    if error["guidance"] is not None:
+        fail(f"{source} received guidance for a nonexistent handler")
+    if "handler:Worker.DoesNotExist" in json.dumps(error):
+        fail(f"{source} fabricated a handler semantic entity")
+check_fixture_valid("phase221_object_method_control.moss")
 
 route = check_error("AB010_repair_domain_dag", "DOMAIN_ROUTE_NOT_DECLARED")
 if route["cause"]["kind"] != "undeclared-domain-route":
@@ -87,6 +136,13 @@ if route["guidance"]["kind"] != "declare-domain-route":
     fail("missing route omitted declaration/binding guidance")
 if "annotation" in json.dumps(route).lower():
     fail("missing route incorrectly suggested a type annotation")
+route_entities = {entity["kind"]: entity for entity in route["cause"]["entities"]}
+if not actual_identity(route_entities["domain"], "domain:Inventory@"):
+    fail("missing route omitted the actual enclosing domain identity")
+if not actual_identity(route_entities["handler"], "handler:Ledger.Read@"):
+    fail("missing route omitted the actual resolved handler identity")
+if route_entities["route"]["semantic_identity"] is not None:
+    fail("missing route fabricated an identity for an unresolved route")
 check_valid("AB010_repair_domain_dag")
 
 cross_domain = check_error(
@@ -96,6 +152,13 @@ if cross_domain["guidance"]["kind"] != "use-message":
     fail("cross-domain call omitted message guidance")
 if "local-helper" in json.dumps(cross_domain):
     fail("cross-domain call incorrectly suggested a local helper")
+if not any(actual_identity(entity, "handler:Worker.Read@")
+           for entity in cross_domain["cause"]["entities"]):
+    fail("cross-domain call omitted the resolved handler identity")
+domain_instances = [entity for entity in cross_domain["cause"]["entities"]
+                    if entity["kind"] == "domain-instance"]
+if len(domain_instances) != 1 or domain_instances[0]["semantic_identity"] != "main::worker":
+    fail("cross-domain call omitted the actual concrete instance identity")
 check_valid("AB021_repair_cross_domain_call")
 
 ownership = check_error(
@@ -116,6 +179,9 @@ if len(ownership["related"]) != 2:
     fail("ownership overlap omitted related access locations")
 if "copy" in json.dumps(ownership).lower():
     fail("ownership overlap emitted an unsound copy suggestion")
+if not any(actual_identity(entity, "fn:update_and_read@")
+           for entity in ownership["cause"]["entities"]):
+    fail("ownership overlap omitted the actual function identity")
 check_valid("AB022_repair_effect_conflict")
 for query in ("effects", "ownership"):
     repeated = document(
@@ -151,6 +217,24 @@ for task, code, cause, guidance in (
         fail(f"{task} omitted the source-level pipeline operation")
     check_valid(task)
 
+compatible = check_error(
+    "AB019_repair_named_callable", "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED"
+)
+if not any(actual_identity(entity, "fn:double@")
+           for entity in compatible["cause"]["entities"]):
+    fail("compatible invoked callable omitted the actual function identity")
+
+for source in (
+    "negative/phase221_callable_wrong_arity.moss",
+    "negative/phase221_callable_wrong_type.moss",
+):
+    error = check_fixture_error(source)
+    if error["code"] == "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED":
+        fail(f"{source} received an invalid remove-parentheses rewrite")
+    if error["guidance"] is not None or "without parentheses" in json.dumps(error):
+        fail(f"{source} received unsound named-callable guidance")
+check_fixture_valid("phase221_inference_legal.moss")
+
 unknown = document(
     "check",
     str(root / "tests" / "negative" / "phase221_unknown_pipeline_callable.moss"),
@@ -175,9 +259,15 @@ if query["code"] != "QUERY_TARGET_NOT_FOUND":
     fail("bare handler query changed stable diagnostic code")
 if query["guidance"]["kind"] != "qualify-query-target":
     fail("bare handler query omitted qualification guidance")
-candidates = [item["name"] for item in query["cause"]["entities"]]
+candidate_entities = query["cause"]["entities"]
+candidates = [item["name"] for item in candidate_entities]
 if candidates != ["handler:Left.Read", "handler:Right.Read"]:
     fail(f"query candidates are missing or nondeterministic: {candidates}")
+for candidate in candidate_entities:
+    if not actual_identity(candidate, candidate["name"] + "@"):
+        fail(f"query candidate lacks its actual semantic identity: {candidate}")
+    if str(candidate["semantic_identity"]).startswith("entity-v1:"):
+        fail("query candidate placed a durable identity in semantic_identity")
 for candidate in candidates:
     if not document(
         "effects", candidate, "--source", str(query_source), "--json"
@@ -189,6 +279,59 @@ missing = document(
 )["error"]
 if missing["guidance"] is not None or missing["cause"] is not None:
     fail("unrelated missing query target received a guessed suggestion")
+
+for source, rule, cause, guidance in (
+    ("negative/phase221_reduce_seed_inference.moss", "types.reduce-seed",
+     "unresolved-reduce-seed", "use-statically-typed-expression"),
+    ("negative/phase221_callable_result_inference.moss",
+     "types.functional-callable-result", "unresolved-functional-callable-result",
+     "use-statically-typed-callable"),
+    ("negative/phase221_return_inference.moss", "types.return-expression",
+     "unresolved-return-expression", "use-statically-typed-expression"),
+    ("negative/phase221_reply_inference.moss", "types.reply-expression",
+     "unresolved-reply-expression", "use-statically-typed-expression"),
+):
+    error = check_fixture_error(source)
+    if error["code"] != "TYPE_INFERENCE_FAILED":
+        fail(f"{source} reported {error['code']}, expected TYPE_INFERENCE_FAILED")
+    if error["rule"]["id"] != rule or error["cause"]["kind"] != cause:
+        fail(f"{source} omitted its concrete inference rule/cause")
+    if error["guidance"]["kind"] != guidance:
+        fail(f"{source} omitted legal inference guidance")
+    expressions = [entity for entity in error["cause"]["entities"]
+                   if entity.get("expression")]
+    if not expressions or not expressions[0]["expression"]:
+        fail(f"{source} omitted the unresolved source expression")
+
+callable_result = check_fixture_error(
+    "negative/phase221_callable_result_inference.moss"
+)
+if not any(actual_identity(entity, "fn:missing_result@")
+           for entity in callable_result["cause"]["entities"]):
+    fail("callable-result inference omitted the resolved function identity")
+
+return_error = check_fixture_error("negative/phase221_return_inference.moss")
+if not any(actual_identity(entity, "fn:broken@")
+           for entity in return_error["cause"]["entities"]):
+    fail("return inference omitted the resolved function identity")
+if not any(entity["kind"] == "expected-type" and entity["name"] == "int"
+           for entity in return_error["cause"]["entities"]):
+    fail("return inference omitted the expected type")
+
+reply_error = check_fixture_error("negative/phase221_reply_inference.moss")
+if not any(actual_identity(entity, "handler:Worker.Read@")
+           for entity in reply_error["cause"]["entities"]):
+    fail("reply inference omitted the resolved handler identity")
+
+unsupported = check_fixture_error(
+    "negative/phase221_unsupported_return_operator.moss"
+)
+if unsupported["code"] == "TYPE_INFERENCE_FAILED":
+    fail("unsupported operator was misreported as an inference problem")
+if unsupported["guidance"] is not None:
+    fail("unsupported operator received misleading inference guidance")
+if "annotation" in json.dumps(unsupported).lower():
+    fail("unsupported operator suggested an unavailable annotation")
 
 human = run("check", str(task_source("AB012_repair_write_alias")), expect=1)
 text = human.stderr.decode("utf-8", "replace")

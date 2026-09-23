@@ -276,6 +276,9 @@ The compiler distinguishes `DOMAIN_SELF_MESSAGE` / `DOMAIN_SAME_INSTANCE_MESSAGE
 (`local-helper`) from a real cross-domain `DOMAIN_HANDLER_REQUIRES_MESSAGE`
 (`use-message`) and from missing static route declaration/binding diagnostics. Do not
 apply one repair across those different checked causes.
+Handler-specific guidance is emitted only after the handler resolves. In structured
+diagnostics, a cause entity's `semantic_identity` is the actual compiler identity or
+`null`; a canonical selector such as `handler:Store.Read` belongs in `name`.
 
 ### Complete current example
 
