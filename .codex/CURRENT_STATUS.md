@@ -2,6 +2,23 @@
 
 Updated: 2026-09-23
 
+## Phase 22.1 — Agent-Teaching Diagnostics (active)
+
+Phase 22.1 started from the completed Phase 22.2 closeout commit
+`3668ce450ff3c5aedee3cb32d34cafe72b6d4b46`. The frozen pre-22.1 baseline under
+`benchmarks/agent/baselines/pre-22.1/` remains unchanged. Commit `9caaee6` completes
+the evidence mapping and compiler implementation for the targeted domain/message,
+ownership-conflict, functional-callable/capture, query-target, and concrete
+inference-context families. The additive `moss-agent-1` teaching fields are
+`source`, `rule`, `cause.entities`, `related`, and `guidance`; human output consumes
+the same facts. Focused legal-rewrite and misleading-guidance regressions pass,
+as do strict C++17 `-Werror`, agent API, and skill drift checks. No Moss acceptance,
+ownership, domain, pipeline, lowering, or Fast Debug semantics changed.
+
+22.1E convergence and the full validation matrix are next. Phase 22.1 remains
+active and must not close until a separate `post-22.1` benchmark and honest
+pre/post report are recorded.
+
 ## Phase 22.2 — Agent Benchmark Suite
 
 Phase 22.2A's 30-task corpus is complete, hardened, and frozen; Phase 22.2B's

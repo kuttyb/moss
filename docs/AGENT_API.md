@@ -59,10 +59,14 @@ All agent commands use this top-level envelope:
 }
 ```
 
-Failures replace `result` with a structured `error`. Protocol version 1 keeps a common
-diagnostic shape: code, severity, message, source file, line/column/span, source
-provenance identity and symbol where available, plus a fixed `details` object for richer
-ownership/cycle facts.
+Failures replace `result` with a structured `error`. Protocol version 1 keeps all
+existing fields and additively exposes compiler-owned teaching facts where the
+rejecting analysis has them: `source`, `rule`, `cause.entities`, `related`, and
+`guidance`. Cause entities can identify a semantic kind/name/identity, source
+expression, argument index, and inferred `READ`/`WRITE`/`CONSUME` access. Fields are
+`null` or empty when the compiler has no sound fact; clients must not manufacture a
+repair from missing data. The existing flat source fields and `details`, `fixes`, and
+`legal_alternatives` remain compatible.
 
 ## Structured diagnostics
 
@@ -74,8 +78,32 @@ Successful checks return a diagnostics array, including warnings such as
 `MESSAGE_PAYLOAD_COPY_LARGE` when the selected boundary physically materializes a
 payload. Compile failures return stable category codes such as
 `OWNERSHIP_USE_AFTER_CONSUME`, `RECURSION_CYCLE`, and
-`TYPE_INFERENCE_FAILED`. Human diagnostics remain the
-default for `moss --check source.moss` and `moss check source.moss`.
+`TYPE_INFERENCE_FAILED`. Phase 22.1 also gives established domain and functional
+rules specific IDs such as `DOMAIN_SELF_MESSAGE`,
+`DOMAIN_HANDLER_REQUIRES_MESSAGE`, `DOMAIN_ROUTE_NOT_DECLARED`,
+`FUNCTIONAL_PLACEHOLDER_REQUIRED`,
+`FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED`, and
+`FUNCTIONAL_CAPTURE_MUTATION`. `OWNERSHIP_CONFLICTING_ACCESS` and
+`QUERY_TARGET_NOT_FOUND` retain their existing stable IDs while gaining structured
+causes and guidance. Human diagnostics use the same facts and remain the default for
+`moss --check source.moss` and `moss check source.moss`.
+
+For example, an overlapping call exposes both actual argument roles:
+
+```json
+{
+  "code": "OWNERSHIP_CONFLICTING_ACCESS",
+  "rule": {"id": "ownership.overlapping-access"},
+  "cause": {
+    "kind": "overlapping-actual-arguments",
+    "entities": [
+      {"kind": "argument", "argument_index": 1, "expression": "item", "access": "WRITE"},
+      {"kind": "argument", "argument_index": 2, "expression": "item", "access": "READ"}
+    ]
+  },
+  "guidance": {"kind": "separate-conflicting-access"}
+}
+```
 
 ## Semantic queries
 
@@ -131,8 +159,11 @@ classes, handler footprints, conflict witnesses, and metrics come from the store
 `SynchronizationPlan`. These are analysis facts, not a claim that production
 class locks or handler-level 2PL have been emitted.
 
-Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`; Moss
-does not guess a nearby semantic entity or invent a dynamic target.
+Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`.
+When a bare name exactly matches the final component of compiler-known targets, the
+error reports every deterministic canonical candidate (for example,
+`handler:Store.Read`) and `qualify-query-target` guidance. This is symbol-table
+resolution, not fuzzy search; unrelated missing names receive no guessed candidate.
 
 ## Project, test, and benchmark results
 

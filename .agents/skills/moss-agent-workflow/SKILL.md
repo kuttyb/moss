@@ -172,8 +172,12 @@ language-discovery surface for a Moss programmer or fresh agent.
    `moss check path/to/file.moss --json`. In a project, use the source path that
    identifies the physical file you are investigating.
 5. Read structured diagnostics before guessing at a repair. Diagnostics include a
-   stable code, source span, identities where known, and only high-confidence
-   mechanical fixes. `legal_alternatives` describes choices whose intent remains yours.
+   stable code and source span. Specialized teaching diagnostics additionally expose
+   `rule`, `cause.entities`, `related` locations, and compiler-owned `guidance`; entity
+   facts may include an exact expression, argument index, semantic identity, and
+   inferred `READ`/`WRITE`/`CONSUME` access. Missing teaching fields are deliberately
+   `null` or empty—do not invent a repair. `fixes` remain uniquely mechanical actions,
+   while `legal_alternatives` describe choices whose intent remains yours.
 
 ## Ask the compiler semantic questions
 
@@ -345,11 +349,21 @@ performance verdict.
 
 - Retired `await` → use a synchronous `message` result directly.
 - Retired `spawn` → construct a domain in `main`'s composition prefix.
-- Self-send or same-domain handler message → extract an ordinary helper.
+- `DOMAIN_SELF_MESSAGE` or `DOMAIN_SAME_INSTANCE_MESSAGE` → extract an ordinary helper.
+- `DOMAIN_HANDLER_REQUIRES_MESSAGE` → use a synchronous `message`; do not extract a
+  local helper for a real cross-domain call.
+- `DOMAIN_ROUTE_NOT_DECLARED` / `DOMAIN_ROUTE_NOT_BOUND` → declare the static route
+  and bind it during construction, respectively.
 - Domain handle in a payload/parameter/reply/collection → declare a static
   `domainroutes` dependency instead.
-- Ownership conflict → inspect `ownership`/`effects`, then choose intent; do not
+- `OWNERSHIP_CONFLICTING_ACCESS` → first read the reported actual expressions,
+  argument indexes, and access modes. Overlap is legal only for `READ + READ`; do not
   invent implicit copies or source-level mode annotations.
+- Functional callable-form/capture diagnostics distinguish supported `_` placeholders,
+  named callable identities, and effectful captured state; follow the reported rule
+  rather than generically rewriting the whole pipeline.
+- `QUERY_TARGET_NOT_FOUND` may report deterministic canonical candidates such as
+  `handler:Store.Read`; these come from checked symbols, not fuzzy matching.
 - Pipeline/fusion surprise → use `why` and `effects`; an observable message or a
   callback that may fail/diverge is a real semantic boundary.
 
