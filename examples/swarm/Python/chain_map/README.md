@@ -2,7 +2,7 @@
 
 ## Result
 
-Complete success. The checked Moss source implements the meaningful core of Python's `collections.ChainMap` for `String -> Int` mappings, supporting multi-map composition, in-order prioritized lookup, containment search, defaulted lookup, front-only mutation, child/front scope derivation (`new_child`), parent/rest view derivation (`parents`), and key/value flattening (`flatten`, `keys`, `values`).
+Complete success. The checked Moss source implements the meaningful core of Python's `collections.ChainMap` for `String -> Int` mappings, supporting multi-map composition, in-order prioritized lookup, containment search, defaulted lookup, front-only mutation, child/front scope derivation (`new_child`, `new_child_empty`), parent/rest view derivation (`parents`), and key/value flattening (`flatten`, `keys`, `values`).
 
 All 13 unit tests pass natively under `margo test` and execute cleanly under Fast Debug (`moss run --interp` and `margo debug`).
 
@@ -17,9 +17,19 @@ All 13 unit tests pass natively under `margo test` and execute cleanly under Fas
   4. Containment checking (`contains`).
   5. Front-only mutation (`set` / `__setitem__`): mutations write strictly to `maps[0]`, never touching subsequent parent maps.
   6. Front-map shadowing: writing a key to the front map shadows any definition in parent maps without mutating them.
-  7. Scope extension (`new_child`): creates a new child ChainMap prepending a child map in front of the existing chain.
+  7. Scope extension (`new_child` / `new_child_empty`): creates a new child ChainMap prepending a child map in front of the existing chain.
   8. Scope retraction (`parents`): creates a new ChainMap viewing all maps except the first.
   9. Key/value flattening (`flatten`, `keys`, `values`): consolidates active bindings in chain order.
+
+## Value-Snapshot Semantics vs Shared-View Aliasing
+
+A notable semantic distinction exists between Python's reference-aliased collections and Moss's value model:
+- **Python `ChainMap`**: Stores a list of references to mutable dictionaries (`self.maps = list(maps)`). Mutations made directly to an underlying dictionary or via another alias are immediately visible across all `ChainMap` instances sharing that dictionary reference.
+- **Moss `ChainMap`**: Moss enforces value semantics with deterministic ownership. In accordance with Moss design principles, `ChainMap` operates on value snapshots:
+  - Child creation (`new_child`) snapshots existing mappings into independent mutable storage for the child chain.
+  - Front-only mutation (`set`) clones and updates the front mapping without mutating parent scopes.
+  - Scope retraction (`parents`) creates an independent snapshot of subsequent mappings.
+  - This guarantees scope isolation: child scopes cannot corrupt parent mappings, and parents cannot introduce race conditions or mutation side-effects into active child scopes.
 
 ## Design and Architecture
 
@@ -43,8 +53,8 @@ fn empty_map() -> Map[String, Int]:
 ```
 Deep copying maps (`clone_map`) is accomplished through explicit iteration over keys, ensuring independent mutable storage when constructing children or mutating the front mapping.
 
-### 3. Read-Only Borrow Invariance
-Moss infers parameter effects as `READ`, `WRITE`, or `CONSUME`. Direct index operations on collections (e.g. `v[i]`) can trigger value transfers if bound to local variables. By encapsulating map inspection in read-only helper functions (`map_contains`, `map_item`, `map_keys`), map reads borrow from `maps[i]` without consuming the containing vector.
+### 3. Read-Only Collection Access
+Moss infers parameter effects as `READ`, `WRITE`, or `CONSUME`. Collections indexed within methods (`maps[i]`) can be queried directly via method calls like `maps[i].get(key, default)` and `maps[i].keys()`.
 
 ### 4. Front-Only Mutation
 Python's `ChainMap` specifies that all mutations (insertions and updates) apply only to the first mapping (`self.maps[0]`). In Moss, `set` updates the front map while keeping all other maps strictly read-only:
@@ -57,28 +67,37 @@ fn set(key: String, val: Int):
 This preserves the invariant that parent scopes cannot be corrupted by child mutations.
 
 ### 5. Scope Management
-- **`new_child(child_map)`**: Prepend `child_map` in front of the current maps and return a new `ChainMap`.
-- **`chain_map_new_child_empty(cm)`**: Creates a child ChainMap with an empty front map.
+- **`new_child(child_map)`**: Prepend `child_map` in front of current mappings and return a new `ChainMap`.
+- **`new_child_empty()`**: Creates a child ChainMap with an empty front map via self-method delegation `self.new_child(empty_map())`.
 - **`parents()`**: Extracts maps `1..N` into a new `ChainMap`. If only one map was present, defaults to a single empty map (matching Python's `ChainMap(*self.maps[1:])` fallback).
 
-## Friction Encountered and Compiler Boundaries
+## Friction Encountered and Compiler Resolutions
 
-1. **`key in map` Expression Backend Gap**:
-   - The Moss frontend parses and checks `if "a" in m:`, but Fast Debug interpreter fails with `unsupported expression '"a" in m'`, and native lowering emits raw Rust `if "a" in m {` which fails rustc syntax parsing.
-   - *Resolution*: Implemented `map_contains(m, key)` which inspects `map.keys()`.
+During initial fresh-agent implementation, several boundary behaviors were identified and classified. In the Phase 15.10 corrective closeout pass, these were resolved as follows:
 
-2. **Rust Backend `String == &String` Comparison Mismatch**:
-   - Inside `map_contains`, comparing a `String` from `keys[i]` directly against a `key: String` function parameter lowered to Rust as `(keys[i]) == (key)`, which rustc rejected because `key` was a borrowed parameter `&String` while `keys[i]` was an owned `String`.
-   - *Resolution*: Materialized an owned string `target = "" + key` prior to the loop.
+1. **`key in map` Expression (Finding A / SWARM-026)**:
+   - *Issue*: Binary `in` syntax passed frontend type checking but failed in interpreter (`unsupported expression '"a" in m'`) and rustc syntax parsing.
+   - *Resolution*: Binary `in` is not part of the Moss v0.1 expression grammar. The checker now cleanly rejects binary `in` with stable diagnostic `UNSUPPORTED_EXPRESSION_OPERATOR` and instructs developers to use `Map.get`, key iteration, or explicit search.
+   - *Code pattern*: Use `map_contains` or `m.get(key, default)` instead of `key in m`.
 
-3. **Method-on-Vector-Element Lowering**:
-   - Calling `cm.maps[0].get("b", 0)` in test assertions lowered to `(cm.maps)[0].get("b".to_string(), 0_i64)` in Rust, which called Rust's standard `HashMap::get` (1 argument) rather than Moss's 2-argument `Map.get(key, default)`.
-   - Calling `cm.maps[i].keys()` in a method lowered to Rust's `.keys()` iterator instead of Moss's `Vector` snapshot.
-   - *Resolution*: Channeled map operations on indexed vector elements through typed helper functions (`map_get`, `map_keys`, `map_item`).
+2. **Method Dispatch on Indexed Collection Receivers (Finding B / SWARM-027)**:
+   - *Issue*: Calling methods on indexed elements like `cm.maps[0].get("b", 0)` or `maps[i].keys()` failed native lowering because `generated_expr_type` did not preserve the inner element type of indexed expressions, defaulting to Rust's native 1-argument `HashMap::get` and `.keys()` iterator.
+   - *Resolution*: Extended `generated_expr_type` to resolve index expressions (`parse_index`), preserving inner collection types (`Vector[T] -> T`, `Map[K, V] -> V`). Method calls on indexed elements now dispatch cleanly to Moss collection methods.
+   - *Code pattern*: Direct `cm.maps[0].get("b", 0)` and `maps[i].keys()` calls work without intermediate helper functions.
 
-4. **Self-Method Inter-Calling Lowering**:
-   - Calling `self.new_child(empty_map())` from another method inside `ChainMap` failed in native lowering because `empty_map()` was passed as an owned value rather than borrowed as expected by the lowered method signature `&HashMap`.
-   - *Resolution*: Exposed top-level helpers (`chain_map_new_child_empty`, `chain_map_values`) for composable cross-method utilities.
+3. **Self-Method Inter-Calling (Finding C / SWARM-028)**:
+   - *Issue*: Invoking sibling methods on `self` (`self.new_child(empty_map())` or `helper(m)`) failed in native lowering because the object code generator omitted `types["self"] = t.name` and expression-level simple calls did not resolve sibling method parameter effects, causing arguments to be emitted as owned values rather than borrowed references.
+   - *Resolution*: Populated `types["self"]` in `gen_object` and `check_objects`, and added sibling method resolution to expression call lowering so inferred parameter effects (`READ` / `WRITE`) correctly borrow arguments.
+   - *Code pattern*: Methods can freely invoke other methods on `self` (`new_child_empty()` calls `self.new_child(empty_map())`).
+
+4. **Nested Indexed Mutation (Finding D / SWARM-029)**:
+   - *Issue*: Assigning to nested index targets like `maps[0][key] = value` was attempted by analogy to Python.
+   - *Resolution*: Confirmed that nested indexed assignment is outside the Moss v0.1 specification. The checker now rejects nested index assignment with stable diagnostic `UNSUPPORTED_NESTED_INDEX_ASSIGNMENT`, directing users to extract the inner collection to a local variable, update it, and write it back.
+
+5. **String Comparison Between Owned and Borrowed Operands (Finding E / SWARM-030)**:
+   - *Issue*: Comparing `k == key` inside `map_contains` (where `k` is an owned `String` from `keys[i]` and `key` is a borrowed `&String` parameter) lowered to `(k) == (key)`, which failed rustc type checking because Rust does not implement `PartialEq` across `String` and `&String`.
+   - *Resolution*: Comparison lowering now wraps string operands with `.as_str()`, enabling uniform `&str == &str` comparison across owned and borrowed representations. Additionally, `ConditionState` in handler lowering now populates borrowed message parameters so comparisons in branch conditions lower correctly.
+   - *Code pattern*: Direct `k == key` comparisons compile and execute cleanly.
 
 ## Validation
 
@@ -119,7 +138,11 @@ All tools and execution modes were verified:
    ```sh
    ./margo run
    ```
-   Outputs expected configuration overlay values.
+   Outputs expected configuration overlay values:
+   ```text
+   theme: 2
+   show_line_numbers: 1
+   ```
 
 5. **Fast Debug Execution**:
    ```sh
@@ -127,4 +150,4 @@ All tools and execution modes were verified:
    ./margo debug
    ./margo debug --trace
    ```
-   Executes cleanly in interpreter mode and produces structured NDJSON execution traces.
+   Executes cleanly in interpreter mode and produces structured NDJSON execution traces matching native output.

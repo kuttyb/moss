@@ -46,6 +46,32 @@ Neither experiment required expanding Moss's language surface or altering core s
 - **Fast Debug Result**: Executed cleanly with 100% parity under `moss run --interp` and `margo debug [--trace]`.
 - **Agent/Tooling Feedback**: `moss check --json`, `moss fmt`, and `margo test` were effective. The agent noted that clearer diagnostics when syntax is accepted by the parser but invalid in expressions would eliminate trial-and-error.
 
+### Corrective Closeout Pass (Findings A–E / SWARM-026–030)
+
+Following the initial fresh-agent dogfood runs, a small corrective closeout pass resolved the consistency defects and frontend boundaries identified by the Python agent:
+
+1. **SWARM-026 (Finding A — Binary `in` Expression Rejection)**:
+   - *Fix*: `check_expression` in `src/moss.cpp` now detects and rejects binary `" in "` with `UNSUPPORTED_EXPRESSION_OPERATOR` and actionable guidance to use `Map.get`, key iteration, or an explicit search.
+   - *Regression*: `tests/negative/swarm_026_in_expression.moss` (registered via `reject_case`).
+2. **SWARM-027 (Finding B — Method Dispatch on Indexed Collection Receivers)**:
+   - *Fix*: `generated_expr_type` in `src/moss.cpp` extended to analyze indexed expressions (`parse_index`), preserving inner collection types (`Vector[T] -> T`, `Map[K, V] -> V`). Operations like `maps[0].get(key, default)` and `maps[i].keys()` dispatch through Moss collection semantics in both native lowering and Fast Debug.
+   - *Regression*: `tests/swarm_027_indexed_collection_method.moss` (verified in native and Fast Debug).
+3. **SWARM-028 (Finding C — Self and Sibling Method Argument Borrowing)**:
+   - *Fix*: `gen_object` and `check_objects` now populate `types["self"] = t.name` / `env["self"] = object.name`. Simple call lowering in `expr` resolves sibling methods on `self` and formats arguments using `method_call_argument` matching inferred parameter effects (`READ` / `WRITE`).
+   - *Regression*: `tests/swarm_028_self_method_argument_borrow.moss` (verified in native and Fast Debug).
+4. **SWARM-029 (Finding D — Nested Indexed Mutation Rejection)**:
+   - *Fix*: `check_statement` in `src/moss.cpp` rejects nested indexed assignment (`parse_index` on a base that is itself `parse_index`) with stable diagnostic `UNSUPPORTED_NESTED_INDEX_ASSIGNMENT`, instructing developers to extract the inner collection to a local variable, update it, and write it back.
+   - *Regression*: `tests/negative/swarm_029_nested_indexed_mutation.moss` (registered via `reject_case`).
+5. **SWARM-030 (Finding E — String Comparison and Handler Condition State)**:
+   - *Fix*: In `generated_split_binary`, string comparisons coerce operands to string slices (`.as_str()`), allowing clean comparison between owned `String` and borrowed `&String`. In `src/handler_lowering.inc`, `ConditionState` branch lowering now populates `borrowed_message_parameters_` and `view_parameters_`, resolving string comparisons in branch conditions and permanently eliminating the pre-existing Phase 10.6F failure in `check_phase106f.py`.
+   - *Regression*: `tests/swarm_030_string_comparison_borrowed.moss` (verified in native and Fast Debug).
+
+### ChainMap Workload Simplification & Semantic Documentation
+- **Simplifications**: Replaced workaround helpers in `examples/swarm/Python/chain_map/src/main.moss` with direct collection methods (`cm.maps[0].get("b", 0)`, `maps[i].keys()`), added `new_child_empty()` and `values()` methods directly to `ChainMap`, and simplified `map_contains` to compare `k == key` without manual string copy workarounds.
+- **Semantic Clarity**: Updated `examples/swarm/Python/chain_map/README.md` to document the distinction between Python's reference-aliased live mutable dictionaries and Moss's deterministic value-snapshot semantics (`new_child` and `parents` operate on value snapshots, ensuring complete scope isolation).
+- **Project Verification**: `margo test` (13/13 passing), `margo run`, and `margo debug [--trace]` all succeed with 100% agreement between native execution and Fast Debug.
+- **Julia DisjointSets Verification**: `margo test` (7/7 passing), `margo run`, and `margo debug [--trace]` all succeed with 100% agreement.
+
 ### Comparison Against Earlier Swarm Dogfood Experiments
 
 > Are fresh agents now learning and using Moss more successfully than during the earlier collection experiments?
@@ -62,7 +88,7 @@ Neither experiment required expanding Moss's language surface or altering core s
    - Neither agent required coordinator coaching or workarounds.
 3. **Execution Parity**:
    - Python ChainMap executed cleanly with identical results under native compilation and Fast Debug.
-   - The only compiler parity defect encountered (SWARM-025: Fast Debug unqualified sibling method dispatch) was isolated, reproduced, repaired in `src/interpreter.hpp`, and validated with dedicated regression coverage (`tests/swarm_025_fast_debug_sibling_method.moss`), giving both Julia and Python 100% native/Fast Debug execution parity.
+   - All 5 corrective findings (SWARM-026 through SWARM-030) and the Fast Debug sibling dispatch fix (SWARM-025) have dedicated regressions in `tests/run.sh` and the interpreter differential test suite, giving both Julia and Python 100% native/Fast Debug execution parity.
 
 ## Phase 15.9 — Cross-Package Static Specialization Convergence — COMPLETE
 

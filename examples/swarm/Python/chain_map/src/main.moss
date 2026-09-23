@@ -19,13 +19,12 @@ fn map_keys(m: Map[String, Int]) -> Vector[String]:
   return m.keys()
 
 fn map_contains(m: Map[String, Int], key: String) -> Bool:
-  target = "" + key
-  keys = map_keys(m)
+  keys = m.keys()
   total = keys |> count
   var i = 0
   while i < total:
     k = keys[i]
-    if k == target:
+    if k == key:
       return true
     i = i + 1
   return false
@@ -75,6 +74,10 @@ type ChainMap:
     m0[key] = val
     maps[0] = m0
 
+  # Creates a child ChainMap with an empty front map.
+  fn new_child_empty() -> ChainMap:
+    return self.new_child(empty_map())
+
   # Creates a new ChainMap with child_map at the front followed by all current mappings.
   fn new_child(child_map: Map[String, Int]) -> ChainMap:
     var new_maps = Vector[Map[String, Int]]()
@@ -106,12 +109,12 @@ type ChainMap:
     total = maps |> count
     var i = total - 1
     while i >= 0:
-      keys = map_keys(maps[i])
+      keys = maps[i].keys()
       k_count = keys |> count
       var j = 0
       while j < k_count:
         k = keys[j]
-        res[k] = map_item(maps[i], k)
+        res[k] = maps[i].get(k, 0)
         j = j + 1
       i = i - 1
     return res
@@ -123,7 +126,7 @@ type ChainMap:
     total = maps |> count
     var i = 0
     while i < total:
-      k_vec = map_keys(maps[i])
+      k_vec = maps[i].keys()
       k_total = k_vec |> count
       var j = 0
       while j < k_total:
@@ -132,6 +135,18 @@ type ChainMap:
           seen[k] = 1
           out.push(k)
         j = j + 1
+      i = i + 1
+    return out
+
+  # Returns values for all unique keys across all mappings in lookup order.
+  fn values() -> Vector[Int]:
+    var out = Vector[Int]()
+    k_vec = self.keys()
+    total = k_vec |> count
+    var i = 0
+    while i < total:
+      k = k_vec[i]
+      out.push(self.get(k, 0))
       i = i + 1
     return out
 
@@ -152,19 +167,10 @@ fn chain_map_two(m1: Map[String, Int], m2: Map[String, Int]) -> ChainMap:
   return ChainMap(maps: v)
 
 fn chain_map_new_child_empty(cm: ChainMap) -> ChainMap:
-  em = empty_map()
-  return cm.new_child(em)
+  return cm.new_child_empty()
 
 fn chain_map_values(cm: ChainMap) -> Vector[Int]:
-  var out = Vector[Int]()
-  k_vec = cm.keys()
-  total = k_vec |> count
-  var i = 0
-  while i < total:
-    k = k_vec[i]
-    out.push(cm.get(k, 0))
-    i = i + 1
-  return out
+  return cm.values()
 
 test "front map wins lookup":
   var m1 = empty_map()
@@ -198,8 +204,8 @@ test "assignment modifies only the front map":
   var cm = chain_map_two(m1, m2)
   cm.set("b", 20)
   assertEqual(cm.get("b", 0), 20)
-  assertEqual(map_get(cm.maps[0], "b", 0), 20)
-  assertEqual(map_get(cm.maps[1], "b", 0), 2)
+  assertEqual(cm.maps[0].get("b", 0), 20)
+  assertEqual(cm.maps[1].get("b", 0), 2)
 
 test "shadowing works":
   var m1 = empty_map()
@@ -211,7 +217,7 @@ test "shadowing works":
   assertEqual(cm.get("x", 0), 10)
   cm.set("y", 99)
   assertEqual(cm.get("y", 0), 99)
-  assertEqual(map_get(cm.maps[1], "y", 0), 30)
+  assertEqual(cm.maps[1].get("y", 0), 30)
 
 test "child front scope sees parent mappings":
   var m1 = empty_map()

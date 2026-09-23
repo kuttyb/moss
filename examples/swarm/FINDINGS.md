@@ -813,3 +813,176 @@ interpreter only searched top-level functions and object constructors, failing
 with `unsupported or unresolved callable '<method_name>'`. `FastInterpreter::eval`
 now checks the enclosing `self` receiver for matching methods, restoring
 parity with native lowering.
+
+## SWARM-026 — Unsupported binary `in` membership expression passed checking
+
+- Status: Fixed
+- Category: Compiler / frontend validation
+- First observed: [Python / ChainMap](Python/chain_map/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/negative/swarm_026_in_expression.moss`, invoked by
+`tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+fn main():
+  var m = Map()
+  if "a" in m:
+    ...
+```
+
+### Observed behavior
+
+The frontend accepted `split_binary` with `" in "`, but Fast Debug rejected
+it with `unsupported expression '"a" in m'` and native lowering emitted invalid
+Rust `if "a" in m {`.
+
+### Resolution
+
+Binary `in` is not part of the Moss v0.1 expression grammar. `check_expression`
+now rejects binary `in` with stable diagnostic `UNSUPPORTED_EXPRESSION_OPERATOR`
+and directs users to `Map.get`, key iteration, or an explicit search.
+
+## SWARM-027 — Method call on indexed collection receiver lost element type in native lowering
+
+- Status: Fixed
+- Category: Compiler / native lowering & type propagation
+- First observed: [Python / ChainMap](Python/chain_map/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_027_indexed_collection_method.moss`, invoked by
+`tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+var val = maps[0].get("a", 0)
+var keys = maps[i].keys()
+```
+
+### Observed behavior
+
+The checker accepted the operation, but native lowering's `generated_expr_type`
+did not recognize `parse_index` expressions. The receiver type was lost, causing
+lowering to fall back to Rust's 1-argument `HashMap::get` and `.keys()` iterator.
+
+### Resolution
+
+Extended `generated_expr_type` to resolve indexed expressions (`parse_index`),
+preserving inner collection types (`Vector[T] -> T`, `Map[K, V] -> V`). Method
+dispatch on indexed collection elements now correctly selects Moss collection
+semantics across both native lowering and Fast Debug.
+
+## SWARM-028 — Self and sibling method calls emitted owned arguments instead of borrowed references
+
+- Status: Fixed
+- Category: Compiler / native code generation & type environment
+- First observed: [Python / ChainMap](Python/chain_map/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_028_self_method_argument_borrow.moss`, invoked by
+`tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+type ChainMap:
+  maps: Vector[Map[String, Int]]
+
+  fn helper(m: Map[String, Int]) -> Int:
+    return m.get("a", 0)
+
+  fn explicit_self_call(m: Map[String, Int]) -> Int:
+    return self.helper(m)
+
+  fn call_with_temporary() -> Int:
+    return helper(empty_map())
+```
+
+### Observed behavior
+
+In native lowering, `gen_object` did not seed `types["self"] = t.name`, and
+expression-level simple call lowering did not resolve sibling method signatures.
+Arguments to sibling methods were emitted as owned values rather than borrowed
+references (`&m`), causing rustc type-mismatch errors.
+
+### Resolution
+
+Populated `types["self"]` in `gen_object` and `check_objects`, and added
+sibling method resolution to simple call lowering so inferred parameter
+borrow effects are respected for method inter-calls.
+
+## SWARM-029 — Unsupported nested indexed mutation passed checker and failed in backend
+
+- Status: Fixed
+- Category: Compiler / frontend validation
+- First observed: [Python / ChainMap](Python/chain_map/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/negative/swarm_029_nested_indexed_mutation.moss`, invoked by
+`tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+fn main():
+  var v = [Map()]
+  v[0]["key"] = 42
+```
+
+### Observed behavior
+
+Nested indexed mutation like `v[i][k] = value` was parsed and passed type
+checking, but emitted invalid Rust or caused backend errors.
+
+### Resolution
+
+Confirmed nested indexed assignment is unsupported in Moss v0.1. The checker
+now rejects nested index assignments in `check_statement` with stable
+diagnostic `UNSUPPORTED_NESTED_INDEX_ASSIGNMENT`, instructing developers to
+extract the inner collection to a local variable, update it, and write it back.
+
+## SWARM-030 — String comparison between owned String and borrowed &String failed rustc
+
+- Status: Fixed
+- Category: Compiler / backend lowering
+- First observed: [Python / ChainMap](Python/chain_map/)
+- Also observed: —
+- Observation count: 1
+
+Regression: `tests/swarm_030_string_comparison_borrowed.moss`, invoked by
+`tests/run.sh`.
+
+### Minimal reproducer
+
+```moss
+fn search_key(m: Map[String, Int], target: String) -> Bool:
+  var keys = m.keys()
+  var i = 0
+  while i < (keys |> count):
+    if keys[i] == target:
+      return true
+    i = i + 1
+  return false
+```
+
+### Observed behavior
+
+In functions taking `String` parameters with inferred `READ` effect, the
+parameter was lowered to Rust as `&String`, while `keys[i]` was an owned
+`String`. Comparing `keys[i] == target` lowered to `(keys[i]) == (target)`,
+which rustc rejected because `PartialEq` is not implemented between `String`
+and `&String`.
+
+### Resolution
+
+Comparison lowering in `generated_split_binary` now wraps string operands with
+`.as_str()`, enabling clean `&str == &str` equality comparisons. In addition,
+`ConditionState` handler lowering now populates borrowed message parameters
+so condition branch comparisons lower properly.
