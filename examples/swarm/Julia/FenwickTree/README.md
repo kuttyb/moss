@@ -125,10 +125,12 @@ Ledger mapping: 1 → SWARM-031, 2 → SWARM-032, 3 → SWARM-033, 4 → SWARM-0
    surface)* `if a and b:` on `Bool` builds and runs natively but Fast Debug reports
    `unsupported expression 'a and b'`. `source_surface` documents only `not`. Not
    used here. Repro: `bool_andor.moss`.
-6. **No Fast Debug path for `test` blocks.** *(tooling gap)* `moss run --interp` and
-   `margo debug` execute `main` only. For test parity I mechanically rewrote each
-   `test` block into a function called from a generated `main` (scratch file
-   `tmp/fw_tests_interp.moss`), and all 8 passed in the interpreter.
+6. **No project-wide Fast Debug test discovery/orchestration.** *(tooling gap)*
+   Standalone test sources can run through `moss test --interp`, but Margo has no
+   project-level interpreted test command mirroring native `margo test`. For test
+   parity here I mechanically rewrote each `test` block into a function called from
+   a generated `main` (scratch file `tmp/fw_tests_interp.moss`), and all 8 passed
+   in the interpreter.
 7. Minor: `moss fmt --help` / `moss debug --help` treat `--help` as a source path.
    Skill text says `Moss.toml`, while siblings (and this project) use `moss.toml`.
    Both work.

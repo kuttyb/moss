@@ -188,7 +188,8 @@ Sorted by cost (edit/check cycles consumed), highest first.
 - WANTED: run the `test` blocks in Fast Debug.
 - HAD TO: generate `tmp/surface_graphkit/fd_tests.moss`, rewriting each
   `test` into a function called from `main`.
-- CLASS: Fast Debug gap (matches SWARM-039)
+- CLASS: no project-wide interpreted test discovery/orchestration through Margo;
+  standalone test sources can use `moss test --interp` (matches SWARM-039)
 - COST: 1
 
 ### T1 — deleting from a Map (COST 0)

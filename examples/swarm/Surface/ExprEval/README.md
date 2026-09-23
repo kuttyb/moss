@@ -67,7 +67,7 @@ def evaluate(s: str) -> int | float:
 | 10 | `"unexpected operator " + c` | Fixed messages | String `+` checks and runs in interp; native rustc E0308 (`String + String`) | native-lowering bug | 1 |
 | 11 | `break` out of the number-scanning loop | A `scanning` flag | Check ok, native ok, interp "unknown local 'break'". `break` is not in `source_surface` | Fast Debug gap | 1 |
 | 12 | A Queue as the token stream, with emptiness via `q \|> count` | A reversed Vector | Queue has no `count` ("unknown local function 'count'") | missing surface | 1 |
-| 13 | Run the `test` blocks under Fast Debug | A generated scratch harness (tests become `fn`s, called from `main`) | No interpreted test runner (margo/moss test are native only) | Fast Debug gap (SWARM-039) | 1 |
+| 13 | Run the `test` blocks under Fast Debug | A generated scratch harness (tests become `fn`s, called from `main`) | No project-wide interpreted test discovery/orchestration through Margo; standalone `moss test --interp` is supported | Fast Debug gap (SWARM-039) | 1 |
 | 14 | `x % y` on Floats (Python allows it) | Runtime error "% requires Int operands" | TYPE_MISMATCH "integer remainder operands must have type 'Int'" | intended rule | 1 |
 | 15 | `moss edit rename` of `either_float` | Kept the name | Rename rejected with "unknown local function 'either_float'": the call site under `not` was not rewritten (renaming `negate` worked) | tooling bug | 1 |
 | 16 | `enum Kind` for token kinds | `kind: String` | No enum or tagged-union syntax in `source_surface` or the docs | missing surface | 0 |

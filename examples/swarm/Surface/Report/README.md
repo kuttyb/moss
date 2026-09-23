@@ -254,7 +254,10 @@ and native `margo run`, using `tmp/surface_report/matrix.sh`.
 
 **T23** (docs gap, cost 1)
 - `docs/TESTING.md` uses lowercase `int` types and says "Moss does not yet have a module or import system".
-- SWARM-039 says Fast Debug cannot run tests, but `moss test --interp <standalone.moss>` works. I ran it on src+tests concatenated into a scratch file.
+- Earlier SWARM-039 wording overstated the gap: `moss test --interp
+  <standalone.moss>` works. The remaining limitation is project-wide interpreted
+  discovery/orchestration through Margo; I ran this workload on src+tests
+  concatenated into a scratch file.
 
 **T24** (docs gap, cost 1)
 - `reduce(fn)` gives `Reduce stage expects 2 arguments`, and `reduce(fn, init)` gives `unresolved functional callable '0'`. The correct order is `reduce(init, fn)`, which no doc states.

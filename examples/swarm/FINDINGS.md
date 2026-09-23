@@ -1391,7 +1391,7 @@ initializer check does not consult the same facts. Agents cannot tell which
 answer to trust. The accepted program matches the documented intent ("pure
 helper calls are accepted"), so the `effects` output is the likelier defect.
 
-## SWARM-039 — No dedicated interpreted-only test runner mode
+## SWARM-039 — No project-wide Fast Debug test discovery/orchestration
 
 - Status: Open (narrowed 2026-09-23; original "cannot execute test blocks" claim superseded)
 - Category: Tooling / Fast Debug coverage
@@ -1402,24 +1402,28 @@ helper calls are accepted"), so the `effects` output is the likelier defect.
 ### Original claim (superseded)
 
 The original finding stated "Fast Debug cannot execute `test` blocks". That claim
-is no longer accurate: `margo debug` is a supported interpreted execution path listed
-in `moss agent bootstrap`. Test-bearing projects run cleanly under `margo test`
-(native) and their application logic executes under `margo debug` (interpreted). The
-Phase 15.12 swarms used `margo debug` and `margo debug --trace` for Fast Debug parity
-checks across all green workloads.
+is superseded. Standalone test sources can run through `moss test --interp
+<test-file.moss>`, including the command's interpreted filtering of that source.
+`margo debug` is also a supported interpreted execution path for a project's
+application source closure. Test-bearing projects run natively under `margo test`,
+and the Phase 15.12 swarms used `margo debug` and `margo debug --trace` for Fast
+Debug parity checks across green application workloads.
 
-### Remaining narrower gap
+### Actual remaining gap
 
-There is no `margo test --interp` or `margo debug --tests` mode that interprets
-test blocks without invoking `rustc`. When a native lowering defect blocks `margo
-test`, there is no interpreted-only path to run those specific test blocks.
+`margo test` provides project-wide native test discovery and orchestration, but
+there is no interpreted equivalent: `margo test --interp` and `margo debug --tests`
+are not supported. When a native lowering defect blocks `margo test`, an agent can
+still invoke individual standalone test sources manually with `moss test --interp`,
+but cannot ask Margo to discover the whole project test suite and execute all of
+those tests through Fast Debug in one project-level command.
 
 ### Notes
 
-A `margo test --interp` mode would give test-level native/Fast Debug parity checks
-and a faster edit-test loop when native lowering defects (e.g. SWARM-031, SWARM-035)
-block `margo test`. The original workaround — rewriting test blocks as plain functions
-called from `main` — remains functional but is not ergonomic.
+A project-wide interpreted test mode would give test-level native/Fast Debug parity
+checks and a faster edit-test loop when native lowering defects (e.g. SWARM-031,
+SWARM-035) block `margo test`. The original workaround — rewriting test blocks as
+plain functions called from `main` — remains functional but is not ergonomic.
 
 ## SWARM-040 — Failure/precondition mechanism for user code is undocumented
 

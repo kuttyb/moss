@@ -149,7 +149,7 @@ Margo resolves `data_tools` as a path dependency, compiles `data_tools` to emit 
 ### Fast Debug Limitations Identified
 1. **No Callable Arguments**: The Fast Debug interpreter evaluates function argument expressions as local variables. When a named function (`LogAnalytics.add_latency`) is passed as an argument, the interpreter looks for a local binding named `'LogAnalytics__add_latency'` and aborts.
 2. **No `for` Iteration**: Fast Debug aborts with `Fast Debug does not support for iteration yet` on `for` loops (as documented in bootstrap capability notes).
-3. **No Dedicated Test-Interp Mode**: `margo debug` executes the project's interpreted source closure (application logic) and is a supported Fast Debug path. Native tests run via `margo test`. However, there is no `margo test --interp` or `margo debug --tests` mode that interprets `test` blocks without invoking `rustc`. When a native lowering defect blocks `margo test`, there is no interpreted-only path to run those specific test blocks (see SWARM-039).
+3. **No Project-Wide Interpreted Test Orchestration**: Standalone test sources can run through `moss test --interp`. Project-wide interpreted test discovery is not available through Margo: `margo test` provides native discovery/orchestration, while `margo test --interp` and `margo debug --tests` are unsupported. If a native lowering defect blocks `margo test`, individual test source files may still be exercised manually with `moss test --interp`, but there is no single project-level interpreted test command mirroring native `margo test` (see SWARM-039).
 
 ---
 

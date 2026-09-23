@@ -150,7 +150,9 @@ Sorted by COST (edit/check cycles consumed), highest first. Reproducers are in
 13. **Fast Debug for `test` blocks**
     - WANTED: `margo debug` running the tests.
     - HAD TO: generate a scratch package that turns tests into functions (`fdtests/`).
-    - WHY: SWARM-039.
+    - WHY: Margo has no project-wide interpreted test discovery/orchestration
+      equivalent to `margo test`; standalone test sources can use
+      `moss test --interp` (SWARM-039).
     - CLASS: Fast Debug gap
     - COST: 1
 14. **`moss edit rename` in a module project**
