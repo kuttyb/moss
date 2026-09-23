@@ -1,0 +1,74 @@
+# Positive Control: Multi-Domain Idiomatic Topology
+# Demonstrating:
+# 1. Static DAG routing topology (OrderService -> PaymentService -> AuditService)
+# 2. Ordinary helper functions for shared logic within domains (no self-send / no chaining)
+# 3. Declared domainroutes instead of domain handle passing, replies, or collection storage
+# 4. Domain construction strictly in main's composition prefix
+# 5. Pure initializers with pure helper functions
+
+# Pure helper function used in state initialization
+fn initial_audit_count() -> Int:
+  return 0
+
+# Helper function for business math
+fn calculate_fee(amount: Int) -> Int:
+  return amount / 10
+
+# Domain 1: AuditService (leaf in DAG)
+domain AuditService:
+  records_count = initial_audit_count()
+
+  fn LogEvent(event_id: Int) -> Int:
+    records_count = records_count + 1
+    reply records_count
+
+  fn GetCount() -> Int:
+    reply records_count
+
+# Domain 2: PaymentService (routes to AuditService)
+domain PaymentService:
+  domainroutes(audit: AuditService)
+  total_processed = 0
+
+  fn ProcessPayment(payment_id: Int, amount: Int) -> Int:
+    fee = calculate_fee(amount)
+    total_processed = total_processed + amount + fee
+    audit_ack = message audit.LogEvent(payment_id)
+    reply total_processed
+
+  fn GetProcessedTotal() -> Int:
+    reply total_processed
+
+# Domain 3: OrderService (routes to PaymentService and AuditService)
+domain OrderService:
+  domainroutes(payment: PaymentService, audit: AuditService)
+  active_orders = 0
+
+  fn PlaceOrder(order_id: Int, amount: Int) -> Int:
+    active_orders = active_orders + 1
+    audit_ack = message audit.LogEvent(order_id)
+    payment_ack = message payment.ProcessPayment(order_id, amount)
+    reply active_orders
+
+  fn GetActiveCount() -> Int:
+    reply active_orders
+
+# Composition root: main
+fn main():
+  # Static composition prefix: DAG construction
+  audit = AuditService()
+  payment = PaymentService(audit: audit)
+  order = OrderService(payment: payment, audit: audit)
+
+  # Execution phase: strictly after composition prefix
+  o1 = message order.PlaceOrder(101, 500)
+  echo o1
+
+  o2 = message order.PlaceOrder(102, 200)
+  echo o2
+
+  total_paid = message payment.GetProcessedTotal()
+  echo total_paid
+
+  total_audits = message audit.GetCount()
+  echo total_audits

@@ -1,0 +1,12 @@
+# Probe 5a: Calling message inside domain state field initialization
+domain Worker:
+  fn GetInitial() -> Int:
+    reply 100
+
+domain Storage:
+  data: Int
+
+fn main():
+  worker = Worker()
+  storage = Storage(data: message worker.GetInitial())
+  echo storage

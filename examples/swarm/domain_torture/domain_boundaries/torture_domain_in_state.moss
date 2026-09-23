@@ -1,0 +1,10 @@
+domain WorkerB:
+  fn Ping():
+    echo "b"
+
+domain WorkerA:
+  state_worker: WorkerB
+
+fn main():
+  wb = WorkerB()
+  wa = WorkerA(state_worker: wb)

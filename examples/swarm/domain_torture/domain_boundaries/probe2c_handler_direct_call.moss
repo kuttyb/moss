@@ -1,0 +1,12 @@
+# Probe 2c: Handler calling another handler directly on self
+domain Worker:
+  fn Helper() -> Int:
+    reply 42
+
+  fn Work() -> Int:
+    v = self.Helper()
+    reply v
+
+fn main():
+  w = Worker()
+  message w.Work()

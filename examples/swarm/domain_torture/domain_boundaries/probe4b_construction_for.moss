@@ -1,0 +1,9 @@
+# Probe 4b: Domain construction inside for loop
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  for i in range(0, 3):
+    w = Worker()
+    message w.Ping()

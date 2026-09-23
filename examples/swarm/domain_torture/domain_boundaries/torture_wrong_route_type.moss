@@ -1,0 +1,13 @@
+domain ServiceB:
+  fn Ping():
+    echo "b"
+
+domain ServiceA:
+  domainroutes(b: ServiceB)
+  fn Ping():
+    message b.Ping()
+
+fn main():
+  x = 10
+  a = ServiceA(b: x)
+  message a.Ping()

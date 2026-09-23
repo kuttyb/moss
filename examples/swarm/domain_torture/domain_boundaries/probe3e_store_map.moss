@@ -1,0 +1,8 @@
+# Probe 3e: Domain handle stored in a Map
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w = Worker()
+  workers = {"primary": w}

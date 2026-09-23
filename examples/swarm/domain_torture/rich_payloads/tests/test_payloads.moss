@@ -1,0 +1,27 @@
+test "payload creation and total score":
+  cfg = Config(env: "test", rate: 5)
+  tq = TaskQueue(pending: Queue())
+  pkt = ComplexPayload(id: 42, title: "TestPacket", config: cfg, scores: [1, 2, 3, 4], metadata: Map(), tasks: tq)
+  assertEqual(pkt.id, 42)
+  assertEqual(pkt.total_score(), 10)
+
+test "receipt verification":
+  res_map = Map()
+  res_map["sum"] = 100
+  receipt = ProcessedReceipt(ack_id: 123, status: "PROCESSED", checksum: 105, summary_tags: ["ok"], result_map: res_map)
+  assert(verify_receipt(receipt, 123))
+  assert(receipt.verify(123))
+
+test "vector and map value snapshots":
+  var scores = [10, 20, 30]
+  total = compute_stats(scores)
+  assertEqual(total, 60)
+  scores.push(40)
+  assertEqual(scores |> sum, 100)
+
+test "queue operations":
+  tq = TaskQueue(pending: Queue())
+  assertEqual(tq.enqueue(55), 1)
+  assertEqual(tq.enqueue(66), 1)
+  assertEqual(tq.dequeue(), 55)
+  assertEqual(tq.dequeue(), 66)

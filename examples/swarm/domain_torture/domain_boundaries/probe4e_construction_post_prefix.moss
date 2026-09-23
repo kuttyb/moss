@@ -1,0 +1,10 @@
+# Probe 4e: Domain construction after composition prefix has closed
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w1 = Worker()
+  message w1.Ping()
+  w2 = Worker()
+  message w2.Ping()

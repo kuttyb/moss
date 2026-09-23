@@ -1,0 +1,13 @@
+# Probe 3b: Domain handle passed as handler parameter
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+domain Coordinator:
+  fn Manage(w: Worker):
+    message w.Ping()
+
+fn main():
+  worker = Worker()
+  coord = Coordinator()
+  message coord.Manage(worker)

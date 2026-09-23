@@ -1,0 +1,8 @@
+# Probe 3c: Domain handle returned through reply
+domain Worker:
+  fn GetSelf() -> Worker:
+    reply self
+
+fn main():
+  w = Worker()
+  res = message w.GetSelf()

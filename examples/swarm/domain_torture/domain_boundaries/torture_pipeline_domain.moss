@@ -1,0 +1,8 @@
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w = Worker()
+  items = [1, 2, 3]
+  res = items |> map(_ + w)

@@ -1,0 +1,16 @@
+# Probe 2a: Domain attempting message self.X()
+domain Worker:
+  count = 0
+
+  fn Work() -> Int:
+    count = count + 1
+    result = message self.Helper()
+    reply result
+
+  fn Helper() -> Int:
+    reply 42
+
+fn main():
+  w = Worker()
+  v = message w.Work()
+  echo v

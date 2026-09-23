@@ -1,0 +1,10 @@
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+type Container:
+  worker: Worker
+
+fn main():
+  w = Worker()
+  c = Container(worker: w)

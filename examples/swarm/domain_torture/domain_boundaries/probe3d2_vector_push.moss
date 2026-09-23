@@ -1,0 +1,9 @@
+# Probe 3d2: Domain handle pushed into Vector
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w = Worker()
+  var vec = Vector[Worker]()
+  vec.push(w)

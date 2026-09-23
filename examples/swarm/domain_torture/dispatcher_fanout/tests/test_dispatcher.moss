@@ -1,0 +1,36 @@
+# Unit tests for Dispatcher routing decisions and scoring policies
+
+test "priority bypass routing":
+  # Priority >= 10 must bypass task_type and route to Gamma (worker 3)
+  route = decide_route(1, 50, 15, 0, 0)
+  assertEqual(route, 3)
+
+test "normal type 1 alpha routing":
+  route = decide_route(1, 10, 0, 0, 0)
+  assertEqual(route, 1)
+
+test "normal type 2 beta routing":
+  route = decide_route(2, 20, 0, 1, 1)
+  assertEqual(route, 2)
+
+test "type 2 load shedding to alpha":
+  # When beta_dispatched (5) > 2 * alpha_dispatched (2), sheds to alpha (1)
+  route = decide_route(2, 20, 0, 5, 2)
+  assertEqual(route, 1)
+
+test "default gamma routing":
+  route = decide_route(3, 30, 0, 0, 0)
+  assertEqual(route, 3)
+
+test "worker score computation":
+  score_alpha = compute_score(1, 10, 5)
+  score_beta = compute_score(2, 10, 5)
+  score_gamma = compute_score(3, 10, 5)
+  assertEqual(score_alpha, 105)
+  assertEqual(score_beta, 205)
+  assertEqual(score_gamma, 305)
+
+test "validation helper":
+  assert(is_valid_result(0))
+  assert(is_valid_result(100))
+  assert(not is_valid_result(-1))

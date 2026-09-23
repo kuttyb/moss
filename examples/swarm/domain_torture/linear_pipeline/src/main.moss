@@ -1,0 +1,244 @@
+# Multi-Stage Linear Pipeline Torture Test
+# IngestDomain -> ValidateDomain -> TransformDomain -> AggregateDomain
+
+fn validate_input(val: Int, min_val: Int, max_val: Int) -> Bool:
+  if val < min_val:
+    return false
+  if val > max_val:
+    return false
+  return true
+
+fn normalize_payload(raw: Int, offset: Int) -> Int:
+  return raw + offset
+
+fn transform_payload(val: Int, scale: Int, bias: Int) -> Int:
+  return val * scale + bias
+
+fn update_min(cur_min: Int, val: Int, count: Int) -> Int:
+  if count == 1:
+    return val
+  if val < cur_min:
+    return val
+  return cur_min
+
+fn update_max(cur_max: Int, val: Int, count: Int) -> Int:
+  if count == 1:
+    return val
+  if val > cur_max:
+    return val
+  return cur_max
+
+domain AggregateDomain:
+  count = 0
+  sum = 0
+  min_val = 0
+  max_val = 0
+  last_received = 0
+
+  fn RecordAndAggregate(val: Int) -> Int:
+    count = count + 1
+    sum = sum + val
+    min_val = update_min(min_val, val, count)
+    max_val = update_max(max_val, val, count)
+    last_received = val
+    reply sum
+
+  fn GetTotal() -> Int:
+    reply sum
+
+  fn GetCount() -> Int:
+    reply count
+
+  fn GetMin() -> Int:
+    reply min_val
+
+  fn GetMax() -> Int:
+    reply max_val
+
+  fn GetLast() -> Int:
+    reply last_received
+
+domain TransformDomain:
+  domainroutes(aggregate: AggregateDomain)
+  scale: Int
+  bias: Int
+  transform_count = 0
+  last_transformed = 0
+
+  fn TransformAndForward(val: Int) -> Int:
+    transform_count = transform_count + 1
+    transformed = transform_payload(val, scale, bias)
+    last_transformed = transformed
+    agg_res = message aggregate.RecordAndAggregate(transformed)
+    reply agg_res
+
+  fn GetTransformCount() -> Int:
+    reply transform_count
+
+  fn GetLastTransformed() -> Int:
+    reply last_transformed
+
+domain ValidateDomain:
+  domainroutes(transform: TransformDomain)
+  min_bound: Int
+  max_bound: Int
+  offset: Int
+  total_inspected = 0
+  valid_count = 0
+  dropped_count = 0
+  last_valid_normalized = 0
+
+  fn ValidateAndForward(raw: Int) -> Int:
+    total_inspected = total_inspected + 1
+    if not validate_input(raw, min_bound, max_bound):
+      dropped_count = dropped_count + 1
+      reply 0 - 1
+    valid_count = valid_count + 1
+    normalized = normalize_payload(raw, offset)
+    last_valid_normalized = normalized
+    res = message transform.TransformAndForward(normalized)
+    reply res
+
+  fn GetInspected() -> Int:
+    reply total_inspected
+
+  fn GetValid() -> Int:
+    reply valid_count
+
+  fn GetDropped() -> Int:
+    reply dropped_count
+
+  fn GetLastNormalized() -> Int:
+    reply last_valid_normalized
+
+domain IngestDomain:
+  domainroutes(validate: ValidateDomain)
+  received_count = 0
+  accepted_acks = 0
+  rejected_acks = 0
+  last_submission = 0
+
+  fn Submit(raw_val: Int) -> Int:
+    received_count = received_count + 1
+    last_submission = raw_val
+    stage_reply = message validate.ValidateAndForward(raw_val)
+    if stage_reply == -1:
+      rejected_acks = rejected_acks + 1
+      reply 0 - 1
+    accepted_acks = accepted_acks + 1
+    reply stage_reply
+
+  fn GetReceived() -> Int:
+    reply received_count
+
+  fn GetAcceptedAcks() -> Int:
+    reply accepted_acks
+
+  fn GetRejectedAcks() -> Int:
+    reply rejected_acks
+
+  fn GetLastSubmission() -> Int:
+    reply last_submission
+
+fn main():
+  # Static composition prefix: 4-stage pipeline topology
+  # IngestDomain -> ValidateDomain -> TransformDomain -> AggregateDomain
+  agg = AggregateDomain()
+  trans = TransformDomain(aggregate: agg, scale: 3, bias: 7)
+  val = ValidateDomain(transform: trans, min_bound: 0, max_bound: 100, offset: 10)
+  ingest = IngestDomain(validate: val)
+
+  # Torture Scenario 1: First valid item
+  # Raw input: 10
+  # Validate: 10 in [0, 100] -> valid. Normalized = 10 + 10 = 20.
+  # Transform: (20 * 3) + 7 = 67.
+  # Aggregate: count = 1, sum = 67, min = 67, max = 67.
+  # Ripple reply: 67
+  r1 = message ingest.Submit(10)
+  assertEqual(r1, 67)
+
+  # Torture Scenario 2: Early exit with negative out-of-bounds input
+  # Raw input: -5 (< 0 min_bound)
+  # Validate: dropped! replies -1 early. Transform & Aggregate not touched.
+  r2 = message ingest.Submit(-5)
+  assertEqual(r2, -1)
+
+  # Verify state after early exit: Transform & Aggregate counts should still be 1!
+  assertEqual(message trans.GetTransformCount(), 1)
+  assertEqual(message agg.GetCount(), 1)
+  assertEqual(message val.GetDropped(), 1)
+  assertEqual(message ingest.GetRejectedAcks(), 1)
+
+  # Torture Scenario 3: Second valid item
+  # Raw input: 20
+  # Validate: 20 in [0, 100] -> valid. Normalized = 20 + 10 = 30.
+  # Transform: (30 * 3) + 7 = 97.
+  # Aggregate: count = 2, sum = 67 + 97 = 164, min = 67, max = 97.
+  # Ripple reply: 164
+  r3 = message ingest.Submit(20)
+  assertEqual(r3, 164)
+
+  # Torture Scenario 4: Early exit with upper out-of-bounds input
+  # Raw input: 105 (> 100 max_bound)
+  # Validate: dropped! replies -1 early.
+  r4 = message ingest.Submit(105)
+  assertEqual(r4, -1)
+
+  # Torture Scenario 5: Boundary conditions (min_bound = 0, max_bound = 100)
+  # Raw input: 0
+  # Validate: Normalized = 0 + 10 = 10.
+  # Transform: (10 * 3) + 7 = 37.
+  # Aggregate: count = 3, sum = 164 + 37 = 201, min = 37, max = 97.
+  # Ripple reply: 201
+  r5 = message ingest.Submit(0)
+  assertEqual(r5, 201)
+
+  # Raw input: 100
+  # Validate: Normalized = 100 + 10 = 110.
+  # Transform: (110 * 3) + 7 = 337.
+  # Aggregate: count = 4, sum = 201 + 337 = 538, min = 37, max = 337.
+  # Ripple reply: 538
+  r6 = message ingest.Submit(100)
+  assertEqual(r6, 538)
+
+  # Torture Scenario 6: Stream of items through while loop
+  var item = 1
+  while item <= 5:
+    # item in [1, 2, 3, 4, 5]
+    # normalized = item + 10
+    # transformed = (item + 10) * 3 + 7 = 3 * item + 37
+    # item=1: trans=40, agg=538+40=578
+    # item=2: trans=43, agg=578+43=621
+    # item=3: trans=46, agg=621+46=667
+    # item=4: trans=49, agg=667+49=716
+    # item=5: trans=52, agg=716+52=768
+    rep = message ingest.Submit(item)
+    assert(rep > 0)
+    item = item + 1
+
+  # Final Verification of all domain states
+  # IngestDomain metrics:
+  # Total submissions = 1 (item 10) + 1 (-5) + 1 (20) + 1 (105) + 1 (0) + 1 (100) + 5 (loop) = 11
+  assertEqual(message ingest.GetReceived(), 11)
+  assertEqual(message ingest.GetAcceptedAcks(), 9)
+  assertEqual(message ingest.GetRejectedAcks(), 2)
+  assertEqual(message ingest.GetLastSubmission(), 5)
+
+  # ValidateDomain metrics:
+  assertEqual(message val.GetInspected(), 11)
+  assertEqual(message val.GetValid(), 9)
+  assertEqual(message val.GetDropped(), 2)
+  assertEqual(message val.GetLastNormalized(), 15)  # 5 + 10
+
+  # TransformDomain metrics:
+  assertEqual(message trans.GetTransformCount(), 9)
+  assertEqual(message trans.GetLastTransformed(), 52)  # 15 * 3 + 7
+
+  # AggregateDomain metrics:
+  assertEqual(message agg.GetCount(), 9)
+  assertEqual(message agg.GetTotal(), 768)
+  assertEqual(message agg.GetMin(), 37)
+  assertEqual(message agg.GetMax(), 337)
+  assertEqual(message agg.GetLast(), 52)
+
+  echo "Linear pipeline 4-stage cascading execution verified successfully"

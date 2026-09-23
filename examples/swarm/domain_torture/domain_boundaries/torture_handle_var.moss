@@ -1,0 +1,7 @@
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  var w = Worker()
+  w = 42

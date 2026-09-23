@@ -1,0 +1,8 @@
+# Probe 3d: Domain handle stored in a Vector
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w = Worker()
+  vec = [w]

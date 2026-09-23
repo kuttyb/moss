@@ -1,0 +1,9 @@
+# Probe 3e2: Domain handle assigned into Map
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  w = Worker()
+  var workers = {"primary": 1}
+  workers["primary"] = w

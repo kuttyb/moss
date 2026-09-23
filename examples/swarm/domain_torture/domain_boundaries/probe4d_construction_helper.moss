@@ -1,0 +1,11 @@
+# Probe 4d: Domain construction inside helper function
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn make_worker():
+  w = Worker()
+  message w.Ping()
+
+fn main():
+  make_worker()

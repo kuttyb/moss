@@ -1,0 +1,10 @@
+# Probe 4c: Domain construction inside if conditional
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  var condition = true
+  if condition:
+    w = Worker()
+    message w.Ping()

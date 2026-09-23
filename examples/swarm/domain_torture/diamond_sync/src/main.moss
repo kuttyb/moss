@@ -1,0 +1,195 @@
+fn calculate_expected_sum(deltas: Vector[Int]) -> Int:
+  return deltas |> sum
+
+fn count_items(items: Vector[Int]) -> Int:
+  return items |> count
+
+fn verify_all_positive(items: Vector[Int]) -> Bool:
+  var i = 0
+  var n = items |> count
+  while i < n:
+    if items[i] <= 0:
+      return false
+    i = i + 1
+  return true
+
+domain SharedStoreDomain:
+  counter: Int
+  category_totals: Map[String, Int]
+  history: Vector[Int]
+  last_worker: String
+
+  fn Record(worker_name: String, cat: String, delta: Int) -> Int:
+    counter = counter + delta
+    val = delta + 0
+    history.push(val)
+    var cur = category_totals.get(cat, 0)
+    category_totals[cat] = cur + delta
+    if worker_name == "alpha":
+      last_worker = "alpha"
+    else:
+      last_worker = "beta"
+    reply counter
+
+  fn GetTotal() -> Int:
+    reply counter
+
+  fn GetCategory(cat: String) -> Int:
+    reply category_totals.get(cat, 0)
+
+  fn GetHistoryLength() -> Int:
+    reply history |> count
+
+  fn GetHistoryItem(index: Int) -> Int:
+    reply history[index]
+
+  fn GetLastWorker() -> String:
+    reply last_worker
+
+domain WorkerAlphaDomain:
+  alpha_ops: Int
+  alpha_accumulated: Int
+  domainroutes(store: SharedStoreDomain)
+
+  fn ProcessAlpha(cat: String, delta: Int) -> Int:
+    alpha_ops = alpha_ops + 1
+    alpha_accumulated = alpha_accumulated + delta
+    res = message store.Record("alpha", cat, delta)
+    reply res
+
+  fn InspectStoreCategory(cat: String) -> Int:
+    val = message store.GetCategory(cat)
+    reply val
+
+  fn InspectStoreTotal() -> Int:
+    tot = message store.GetTotal()
+    reply tot
+
+  fn GetAlphaOps() -> Int:
+    reply alpha_ops
+
+  fn GetAlphaAccumulated() -> Int:
+    reply alpha_accumulated
+
+domain WorkerBetaDomain:
+  beta_ops: Int
+  beta_accumulated: Int
+  domainroutes(store: SharedStoreDomain)
+
+  fn ProcessBeta(cat: String, delta: Int) -> Int:
+    beta_ops = beta_ops + 1
+    beta_accumulated = beta_accumulated + delta
+    res = message store.Record("beta", cat, delta)
+    reply res
+
+  fn InspectStoreCategory(cat: String) -> Int:
+    val = message store.GetCategory(cat)
+    reply val
+
+  fn InspectStoreTotal() -> Int:
+    tot = message store.GetTotal()
+    reply tot
+
+  fn GetBetaOps() -> Int:
+    reply beta_ops
+
+  fn GetBetaAccumulated() -> Int:
+    reply beta_accumulated
+
+domain CoordinatorDomain:
+  rounds: Int
+  audit_checksum: Int
+  domainroutes(alpha: WorkerAlphaDomain, beta: WorkerBetaDomain, store: SharedStoreDomain)
+
+  fn DispatchSequential(cat_a: String, delta_a: Int, cat_b: String, delta_b: Int) -> Int:
+    rounds = rounds + 1
+    tot_a = message alpha.ProcessAlpha(cat_a, delta_a)
+    tot_b = message beta.ProcessBeta(cat_b, delta_b)
+    audit_checksum = audit_checksum + tot_b
+    reply tot_b
+
+  fn DispatchInterleaved(cat_a: String, delta_a: Int, cat_b: String, delta_b: Int) -> Vector[Int]:
+    rounds = rounds + 1
+    t1 = message alpha.ProcessAlpha(cat_a, delta_a)
+    mid_store = message store.GetTotal()
+    t2 = message beta.ProcessBeta(cat_b, delta_b)
+    final_store = message store.GetTotal()
+    audit_checksum = audit_checksum + final_store
+    reply [t1, mid_store, t2, final_store]
+
+  fn DirectObserveStore(cat: String) -> Int:
+    reply message store.GetCategory(cat)
+
+  fn DirectObserveTotal() -> Int:
+    reply message store.GetTotal()
+
+  fn GetRounds() -> Int:
+    reply rounds
+
+  fn GetAuditChecksum() -> Int:
+    reply audit_checksum
+
+fn main():
+  store = SharedStoreDomain(counter: 0, category_totals: Map(), history: [], last_worker: "none")
+  alpha = WorkerAlphaDomain(alpha_ops: 0, alpha_accumulated: 0, store: store)
+  beta = WorkerBetaDomain(beta_ops: 0, beta_accumulated: 0, store: store)
+  coord = CoordinatorDomain(rounds: 0, audit_checksum: 0, alpha: alpha, beta: beta, store: store)
+
+  echo "=== Diamond Routing & Shared Domain Synchronization ==="
+
+  # Round 1: Sequential dispatch
+  seq_res = message coord.DispatchSequential("alpha_task", 100, "beta_task", 200)
+  echo "Round 1 Sequential Total:", seq_res
+
+  # Round 2: Interleaved dispatch with direct store read in flight
+  interleaved = message coord.DispatchInterleaved("alpha_task", 50, "beta_task", 75)
+  echo "Round 2 Interleaved [t1, mid, t2, final]:"
+  echo "  t1:", interleaved[0]
+  echo "  mid_store:", interleaved[1]
+  echo "  t2:", interleaved[2]
+  echo "  final_store:", interleaved[3]
+
+  # Verification of shared state from Coordinator directly
+  cat_alpha = message coord.DirectObserveStore("alpha_task")
+  cat_beta = message coord.DirectObserveStore("beta_task")
+  total_observed = message coord.DirectObserveTotal()
+
+  echo "Coordinator observed alpha_task:", cat_alpha
+  echo "Coordinator observed beta_task:", cat_beta
+  echo "Coordinator observed total:", total_observed
+
+  # Verification of shared state through WorkerAlpha and WorkerBeta
+  alpha_seen_beta = message alpha.InspectStoreCategory("beta_task")
+  beta_seen_alpha = message beta.InspectStoreCategory("alpha_task")
+  echo "Alpha inspected Beta task:", alpha_seen_beta
+  echo "Beta inspected Alpha task:", beta_seen_alpha
+
+  # Verification of local domain counters
+  alpha_ops = message alpha.GetAlphaOps()
+  beta_ops = message beta.GetBetaOps()
+  alpha_acc = message alpha.GetAlphaAccumulated()
+  beta_acc = message beta.GetBetaAccumulated()
+  rounds = message coord.GetRounds()
+
+  echo "Alpha ops / acc:", alpha_ops, alpha_acc
+  echo "Beta ops / acc:", beta_ops, beta_acc
+  echo "Coordinator rounds:", rounds
+
+  # Assert invariants
+  assertEqual(seq_res, 300)
+  assertEqual(interleaved[0], 350)
+  assertEqual(interleaved[1], 350)
+  assertEqual(interleaved[2], 425)
+  assertEqual(interleaved[3], 425)
+  assertEqual(cat_alpha, 150)
+  assertEqual(cat_beta, 275)
+  assertEqual(total_observed, 425)
+  assertEqual(alpha_seen_beta, 275)
+  assertEqual(beta_seen_alpha, 150)
+  assertEqual(alpha_ops, 2)
+  assertEqual(beta_ops, 2)
+  assertEqual(alpha_acc, 150)
+  assertEqual(beta_acc, 275)
+  assertEqual(rounds, 2)
+
+  echo "All diamond synchronization assertions verified successfully!"

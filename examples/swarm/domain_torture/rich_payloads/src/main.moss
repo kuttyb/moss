@@ -1,0 +1,164 @@
+type Config:
+  env: String
+  rate: Int
+
+type TaskQueue:
+  pending: Queue[Int]
+
+  fn enqueue(val: Int) -> Int:
+    pending.push(val)
+    return 1
+
+  fn dequeue() -> Int:
+    return pending.pop()
+
+type ComplexPayload:
+  id: Int
+  title: String
+  config: Config
+  scores: Vector[Int]
+  metadata: Map[String, Int]
+  tasks: TaskQueue
+
+  fn total_score() -> Int:
+    return scores |> sum
+
+  fn metadata_val(key: String) -> Int:
+    return metadata[key]
+
+type ProcessedReceipt:
+  ack_id: Int
+  status: String
+  checksum: Int
+  summary_tags: Vector[String]
+  result_map: Map[String, Int]
+
+  fn verify(expected_id: Int) -> Bool:
+    return ack_id == expected_id
+
+fn compute_stats(scores: Vector[Int]) -> Int:
+  return scores |> sum
+
+fn verify_receipt(receipt: ProcessedReceipt, expected_id: Int) -> Bool:
+  return receipt.ack_id == expected_id
+
+domain ConsumerDomain:
+  records_processed: Int
+  accumulated_scores: Vector[Int]
+  registry_totals: Map[String, Int]
+
+  fn ProcessPayload(payload: ComplexPayload) -> ProcessedReceipt:
+    records_processed = records_processed + 1
+    local_id = payload.id
+    accumulated_scores.push(local_id)
+    score_sum = payload.total_score()
+    rate_val = payload.config.rate
+    res_map = Map()
+    res_map["sum"] = score_sum
+    res_map["rate"] = rate_val
+    tags = ["ok", "verified"]
+    reply ProcessedReceipt(ack_id: payload.id, status: "PROCESSED", checksum: score_sum + rate_val, summary_tags: tags, result_map: res_map)
+
+  fn ConsumeVector(vec: Vector[Int]) -> Int:
+    reply vec |> sum
+
+  fn ConsumeMap(m: Map[String, Int]) -> Int:
+    reply m.get("scale", 0)
+
+  fn GetProcessedCount() -> Int:
+    reply records_processed
+
+domain RegistryDomain:
+  domainroutes(consumer: ConsumerDomain)
+  forward_count: Int
+  last_forwarded_id: Int
+
+  fn ForwardPacket(packet: ComplexPayload) -> ProcessedReceipt:
+    forward_count = forward_count + 1
+    last_forwarded_id = packet.id
+    receipt = message consumer.ProcessPayload(packet)
+    reply receipt
+
+  fn ForwardVector(vec: Vector[Int]) -> Int:
+    forward_count = forward_count + 1
+    res = message consumer.ConsumeVector(vec)
+    reply res
+
+  fn ForwardMap(m: Map[String, Int]) -> Int:
+    forward_count = forward_count + 1
+    res = message consumer.ConsumeMap(m)
+    reply res
+
+  fn GetForwardCount() -> Int:
+    reply forward_count
+
+domain ProducerDomain:
+  domainroutes(registry: RegistryDomain)
+  state_packet: ComplexPayload
+  dispatch_counter: Int
+
+  fn SendCurrentPacket() -> ProcessedReceipt:
+    receipt = message registry.ForwardPacket(state_packet)
+    # Mutate Producer state after message send to verify snapshot isolation
+    state_packet.id = 999
+    state_packet.scores[0] = 8888
+    dispatch_counter = dispatch_counter + 1
+    reply receipt
+
+  fn MutateState(new_id: Int, new_score: Int):
+    state_packet.id = new_id
+    state_packet.scores[0] = new_score
+
+  fn GetStateId() -> Int:
+    reply state_packet.id
+
+  fn GetScoreZero() -> Int:
+    reply state_packet.scores[0]
+
+  fn SendRawVector(v: Vector[Int]) -> Int:
+    dispatch_counter = dispatch_counter + 1
+    reply message registry.ForwardVector(v)
+
+  fn SendRawMap(m: Map[String, Int]) -> Int:
+    dispatch_counter = dispatch_counter + 1
+    reply message registry.ForwardMap(m)
+
+  fn ProduceQueue() -> Queue[Int]:
+    q = Queue()
+    q.push(111)
+    q.push(222)
+    reply q
+
+fn main():
+  consumer = ConsumerDomain(records_processed: 0, accumulated_scores: [], registry_totals: Map())
+  registry = RegistryDomain(consumer: consumer, forward_count: 0, last_forwarded_id: 0)
+  producer = ProducerDomain(registry: registry, state_packet: ComplexPayload(id: 101, title: "TelemetryBatch", config: Config(env: "prod", rate: 10), scores: [10, 20, 30], metadata: Map(), tasks: TaskQueue(pending: Queue())), dispatch_counter: 0)
+
+  # 1. Send rich nested struct across domains
+  receipt = message producer.SendCurrentPacket()
+  echo receipt.ack_id
+  echo receipt.status
+  echo receipt.checksum
+
+  # 2. Verify snapshot isolation: mutating Producer state did not affect the receipt
+  echo message producer.GetStateId()
+  echo message producer.GetScoreZero()
+
+  # 3. Send raw Vector across domains
+  v_sum = message producer.SendRawVector([100, 200, 300])
+  echo v_sum
+
+  # 4. Send raw Map across domains
+  m = Map()
+  m["scale"] = 42
+  m_res = message producer.SendRawMap(m)
+  echo m_res
+
+  # 5. Return Queue from domain reply and pop in caller
+  var returned_queue = message producer.ProduceQueue()
+  echo returned_queue.pop()
+  echo returned_queue.pop()
+
+  # 6. Verify consumer and registry counters
+  echo message consumer.GetProcessedCount()
+  echo message registry.GetForwardCount()

@@ -1,0 +1,24 @@
+test "expected total calculation":
+  deltas = [100, 200, 50, 75]
+  assertEqual(calculate_expected_sum(deltas), 425)
+
+test "item count verification":
+  deltas = [100, 200, 50, 75]
+  assertEqual(count_items(deltas), 4)
+
+test "positive delta validation":
+  deltas = [100, 200, 50, 75]
+  assert(verify_all_positive(deltas))
+
+test "non-positive delta rejection":
+  bad_deltas = [100, 0 - 5, 50]
+  assert(not verify_all_positive(bad_deltas))
+
+test "category delta balance":
+  alpha_deltas = [100, 50]
+  beta_deltas = [200, 75]
+  alpha_sum = calculate_expected_sum(alpha_deltas)
+  beta_sum = calculate_expected_sum(beta_deltas)
+  assertEqual(alpha_sum, 150)
+  assertEqual(beta_sum, 275)
+  assertEqual(alpha_sum + beta_sum, 425)

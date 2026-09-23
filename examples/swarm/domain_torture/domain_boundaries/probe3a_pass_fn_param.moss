@@ -1,0 +1,11 @@
+# Probe 3a: Domain handle passed as function parameter
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn delegate(w: Worker):
+  message w.Ping()
+
+fn main():
+  worker = Worker()
+  delegate(worker)

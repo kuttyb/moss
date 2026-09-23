@@ -1,0 +1,6 @@
+[project]
+name = "linear_pipeline"
+version = "0.1.0"
+
+[build]
+source = "src"

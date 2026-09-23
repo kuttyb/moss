@@ -1,0 +1,15 @@
+# Probe 1a: Direct 2-domain route cycle (A -> B -> A)
+domain ServiceA:
+  domainroutes(b: ServiceB)
+  fn Ping():
+    message b.Pong()
+
+domain ServiceB:
+  domainroutes(a: ServiceA)
+  fn Pong():
+    message a.Ping()
+
+fn main():
+  a = ServiceA(b: b)
+  b = ServiceB(a: a)
+  message a.Ping()

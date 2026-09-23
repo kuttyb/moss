@@ -1,0 +1,11 @@
+# Probe 4a: Domain construction inside while loop
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+fn main():
+  var i = 0
+  while i < 3:
+    w = Worker()
+    message w.Ping()
+    i = i + 1

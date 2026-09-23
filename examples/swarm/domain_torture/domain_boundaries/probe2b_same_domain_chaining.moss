@@ -1,0 +1,9 @@
+# Probe 2b: Same-domain handler chaining declaration check
+domain Worker:
+  domainroutes(other: Worker)
+
+  fn A():
+    message other.B()
+
+  fn B():
+    echo "b"

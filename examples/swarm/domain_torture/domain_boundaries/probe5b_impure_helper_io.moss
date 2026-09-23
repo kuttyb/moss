@@ -1,0 +1,11 @@
+# Probe 5b: Calling helper with I/O inside domain state field initialization
+fn compute_with_io() -> Int:
+  echo "computing initial value"
+  return 42
+
+domain Storage:
+  data: Int
+
+fn main():
+  storage = Storage(data: compute_with_io())
+  echo storage

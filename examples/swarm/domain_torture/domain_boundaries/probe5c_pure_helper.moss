@@ -1,0 +1,14 @@
+# Probe 5c: Calling pure helper inside domain state field initialization (should pass)
+fn compute_pure() -> Int:
+  return 40 + 2
+
+domain Storage:
+  data: Int
+
+  fn Read() -> Int:
+    reply data
+
+fn main():
+  storage = Storage(data: compute_pure())
+  val = message storage.Read()
+  echo val

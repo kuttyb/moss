@@ -1,0 +1,21 @@
+# Probe 1b: 3-domain route cycle (A -> B -> C -> A)
+domain NodeA:
+  domainroutes(next: NodeB)
+  fn Step():
+    message next.Step()
+
+domain NodeB:
+  domainroutes(next: NodeC)
+  fn Step():
+    message next.Step()
+
+domain NodeC:
+  domainroutes(next: NodeA)
+  fn Step():
+    message next.Step()
+
+fn main():
+  a = NodeA(next: b)
+  b = NodeB(next: c)
+  c = NodeC(next: a)
+  message a.Step()

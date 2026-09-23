@@ -1,0 +1,7 @@
+domain Worker:
+  fn Ping():
+    echo "pong"
+
+test "domain in test":
+  w = Worker()
+  message w.Ping()

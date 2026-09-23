@@ -1,6 +1,20 @@
 # Moss current status
 
-Updated: 2026-09-22
+Updated: 2026-09-23
+
+## Phase 15.11 — Multi-Domain Swarm Torture-Testing — COMPLETE
+
+Phase 15.11 executed a 5-subagent swarm torture-testing Moss v0.1 multi-domain
+architectures, synchronous messaging, 2PL synchronization derivation, ownership
+semantics, and compiler boundaries across 5 specialized projects under
+`examples/swarm/domain_torture/`:
+1. `linear_pipeline`: 4-hop cascading synchronous `message` pipeline (`Ingest -> Validate -> Transform -> Aggregate`), early-reply filtering, payload transformations, and 1,138 JSON execution trace events.
+2. `diamond_sync`: Diamond DAG routing (`Coordinator -> [WorkerAlpha, WorkerBeta] -> SharedStore`) with 4 fine-grained synchronization classes, 10 non-conflicting handler pairs executing concurrently, and in-flight shared store state observation.
+3. `rich_payloads`: Custom structs and collections (`Vector`, `Map`, `Queue`) across domain boundaries (`Producer -> Registry -> Consumer`), verifying snapshot isolation and zero-copy borrowed lowering under Phase 15.1.
+4. `dispatcher_fanout`: Star topology hub routing to 4 satellite domains with dynamic priority bypass, adaptive load shedding, interleaved state updates, and mixed value/fire-and-forget message styles.
+5. `domain_boundaries`: 28 negative boundary probes verifying zero-leak frontend enforcement on route cycles, illegal self-sends, same-domain chaining, domain handle escaping, dynamic construction, and impure initializers, plus an idiomatic positive control.
+
+All 21 package unit tests, 29 boundary probes, and end-to-end integration workflows passed natively (`margo test`, `margo run`) and in Fast Debug (`moss run --interp`, `margo debug [--trace]`) with 100% output parity.
 
 ## Phase 15.10 — Fresh-Agent Collection Dogfood II — COMPLETE
 

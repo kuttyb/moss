@@ -1,0 +1,13 @@
+domain ServiceB:
+  fn Ping():
+    echo "b"
+
+domain ServiceA:
+  domainroutes(next: ServiceB)
+
+  fn Swap(b2: ServiceB):
+    next = b2
+
+fn main():
+  b = ServiceB()
+  a = ServiceA(next: b)

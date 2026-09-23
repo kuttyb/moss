@@ -1,0 +1,285 @@
+# Star Topology / Central Dispatcher with Dynamic Work Distribution & Aggregation
+
+fn decide_route(task_type: Int, cost: Int, priority: Int, beta_dispatched: Int, alpha_dispatched: Int) -> Int:
+  if priority >= 10:
+    return 3
+  else:
+    if task_type == 1:
+      return 1
+    else:
+      if task_type == 2:
+        if beta_dispatched > 2 * alpha_dispatched:
+          return 1
+        else:
+          return 2
+      else:
+        return 3
+
+fn compute_score(worker_id: Int, task_id: Int, cost: Int) -> Int:
+  if worker_id == 1:
+    return task_id * 10 + cost
+  else:
+    if worker_id == 2:
+      return task_id * 20 + cost
+    else:
+      return task_id * 30 + cost
+
+fn is_valid_result(res: Int) -> Bool:
+  return res >= 0
+
+domain WorkerAlphaDomain:
+  processed_count = 0
+  total_cost = 0
+
+  fn Execute(taskId: Int, cost: Int) -> Int:
+    # Early reply pattern for zero/negative cost tasks
+    if cost <= 0:
+      reply 0
+
+    processed_count = processed_count + 1
+    total_cost = total_cost + cost
+
+    # Branch deferral based on workload magnitude
+    if cost > 500:
+      reply taskId * 10 + cost * 2
+    else:
+      reply taskId * 10 + cost
+
+  fn GetProcessedCount() -> Int:
+    reply processed_count
+
+  fn GetTotalCost() -> Int:
+    reply total_cost
+
+domain WorkerBetaDomain:
+  processed_count = 0
+  total_cost = 0
+
+  fn Execute(taskId: Int, cost: Int) -> Int:
+    # Early error reply pattern
+    if cost > 1000:
+      reply 0 - 1
+
+    processed_count = processed_count + 1
+    total_cost = total_cost + cost
+
+    # Branch deferral with cost parity handling
+    if cost % 2 == 0:
+      reply taskId * 20 + cost
+    else:
+      reply taskId * 20 + cost + 1
+
+  fn GetProcessedCount() -> Int:
+    reply processed_count
+
+  fn GetTotalCost() -> Int:
+    reply total_cost
+
+domain WorkerGammaDomain:
+  processed_count = 0
+  total_cost = 0
+
+  fn Execute(taskId: Int, cost: Int) -> Int:
+    processed_count = processed_count + 1
+    total_cost = total_cost + cost
+    reply taskId * 30 + cost
+
+  fn GetProcessedCount() -> Int:
+    reply processed_count
+
+  fn GetTotalCost() -> Int:
+    reply total_cost
+
+domain AuditLogDomain:
+  event_count = 0
+  last_event_code = 0
+  last_task_id = 0
+
+  # No-value, fire-and-forget message handlers
+  fn LogStart(taskId: Int, workerId: Int):
+    event_count = event_count + 1
+    last_event_code = 100 + workerId
+    last_task_id = taskId
+
+  fn LogComplete(taskId: Int, result: Int):
+    event_count = event_count + 1
+    last_event_code = 200
+    last_task_id = taskId
+
+  fn LogError(taskId: Int, err: Int):
+    event_count = event_count + 1
+    last_event_code = 300
+    last_task_id = taskId
+
+  fn GetEventCount() -> Int:
+    reply event_count
+
+  fn GetLastEventCode() -> Int:
+    reply last_event_code
+
+  fn GetLastTaskId() -> Int:
+    reply last_task_id
+
+domain DispatcherDomain:
+  domainroutes(
+    alpha: WorkerAlphaDomain,
+    beta: WorkerBetaDomain,
+    gamma: WorkerGammaDomain,
+    audit: AuditLogDomain
+  )
+
+  task_queue: Queue[Int]
+  type_queue: Queue[Int]
+  cost_queue: Queue[Int]
+  prio_queue: Queue[Int]
+
+  queue_len = 0
+  completed_count = 0
+  error_count = 0
+  alpha_dispatched = 0
+  beta_dispatched = 0
+  gamma_dispatched = 0
+  total_score = 0
+
+  fn Enqueue(taskId: Int, taskType: Int, cost: Int, priority: Int):
+    t_id = taskId
+    t_type = taskType
+    t_cost = cost
+    t_prio = priority
+    task_queue.push(t_id)
+    type_queue.push(t_type)
+    cost_queue.push(t_cost)
+    prio_queue.push(t_prio)
+    queue_len = queue_len + 1
+
+  fn RunDispatchLoop() -> Int:
+    while queue_len > 0:
+      tid = task_queue.pop()
+      ttype = type_queue.pop()
+      tcost = cost_queue.pop()
+      tprio = prio_queue.pop()
+      queue_len = queue_len - 1
+
+      target = decide_route(ttype, tcost, tprio, beta_dispatched, alpha_dispatched)
+
+      # Interleaved state update & external message BEFORE dispatch
+      message audit.LogStart(tid, target)
+
+      if target == 1:
+        alpha_dispatched = alpha_dispatched + 1
+        res_a = message alpha.Execute(tid, tcost)
+        if res_a < 0:
+          error_count = error_count + 1
+          message audit.LogError(tid, res_a)
+        else:
+          completed_count = completed_count + 1
+          total_score = total_score + res_a
+          message audit.LogComplete(tid, res_a)
+      else:
+        if target == 2:
+          beta_dispatched = beta_dispatched + 1
+          res_b = message beta.Execute(tid, tcost)
+          if res_b < 0:
+            error_count = error_count + 1
+            message audit.LogError(tid, res_b)
+          else:
+            completed_count = completed_count + 1
+            total_score = total_score + res_b
+            message audit.LogComplete(tid, res_b)
+        else:
+          gamma_dispatched = gamma_dispatched + 1
+          res_g = message gamma.Execute(tid, tcost)
+          if res_g < 0:
+            error_count = error_count + 1
+            message audit.LogError(tid, res_g)
+          else:
+            completed_count = completed_count + 1
+            total_score = total_score + res_g
+            message audit.LogComplete(tid, res_g)
+
+    reply total_score
+
+  fn GetCompletedCount() -> Int:
+    reply completed_count
+
+  fn GetErrorCount() -> Int:
+    reply error_count
+
+  fn GetAlphaDispatched() -> Int:
+    reply alpha_dispatched
+
+  fn GetBetaDispatched() -> Int:
+    reply beta_dispatched
+
+  fn GetGammaDispatched() -> Int:
+    reply gamma_dispatched
+
+  fn GetTotalScore() -> Int:
+    reply total_score
+
+fn main():
+  # Composition prefix: Construct star topology statically
+  alpha = WorkerAlphaDomain()
+  beta = WorkerBetaDomain()
+  gamma = WorkerGammaDomain()
+  audit = AuditLogDomain()
+  dispatcher = DispatcherDomain(alpha: alpha, beta: beta, gamma: gamma, audit: audit, task_queue: Queue(), type_queue: Queue(), cost_queue: Queue(), prio_queue: Queue())
+
+  # Enqueue diverse tasks torture-testing dynamic dispatch
+  # Task 1: Type 1, normal cost -> WorkerAlpha (cost 10 -> res 1*10 + 10 = 20)
+  message dispatcher.Enqueue(1, 1, 10, 0)
+
+  # Task 2: Type 2, even cost -> WorkerBeta (cost 20 -> res 2*20 + 20 = 60)
+  message dispatcher.Enqueue(2, 2, 20, 0)
+
+  # Task 3: Type 2, odd cost -> WorkerBeta parity branch (cost 25 -> res 3*20 + 25 + 1 = 86)
+  message dispatcher.Enqueue(3, 2, 25, 0)
+
+  # Task 4: Type 2, excessive cost -> WorkerBeta early error reply (-1, error_count incremented)
+  message dispatcher.Enqueue(4, 2, 5000, 0)
+
+  # Task 5: Type 1, cost 0 -> WorkerAlpha early reply pattern (0)
+  message dispatcher.Enqueue(5, 1, 0, 0)
+
+  # Task 6: Type 1, cost 600 -> WorkerAlpha high-cost branch deferral (cost > 500 -> 6*10 + 600*2 = 1260)
+  message dispatcher.Enqueue(6, 1, 600, 0)
+
+  # Task 7: Type 3, normal cost -> WorkerGamma (cost 30 -> res 7*30 + 30 = 240)
+  message dispatcher.Enqueue(7, 3, 30, 0)
+
+  # Task 8: Type 2, cost 10 -> WorkerBeta (cost 10 -> res 8*20 + 10 = 170)
+  message dispatcher.Enqueue(8, 2, 10, 0)
+
+  # Task 9: High priority (15) -> bypasses normal Type 1 routing directly to WorkerGamma!
+  # Res: 9 * 30 + 50 = 320
+  message dispatcher.Enqueue(9, 1, 50, 15)
+
+  # Task 10: Type 3, cost 100 -> WorkerGamma (cost 100 -> res 10*30 + 100 = 400)
+  message dispatcher.Enqueue(10, 3, 100, 0)
+
+  # Run dynamic dispatch loop across star topology
+  total_result = message dispatcher.RunDispatchLoop()
+
+  # Retrieve aggregation metrics
+  completed = message dispatcher.GetCompletedCount()
+  errors = message dispatcher.GetErrorCount()
+  alpha_count = message dispatcher.GetAlphaDispatched()
+  beta_count = message dispatcher.GetBetaDispatched()
+  gamma_count = message dispatcher.GetGammaDispatched()
+  total_score = message dispatcher.GetTotalScore()
+  audit_count = message audit.GetEventCount()
+  last_code = message audit.GetLastEventCode()
+
+  # Assert invariants
+  assertEqual(completed, 9)
+  assertEqual(errors, 1)
+  assertEqual(alpha_count, 3)
+  assertEqual(beta_count, 4)
+  assertEqual(gamma_count, 3)
+  assertEqual(completed + errors, 10)
+  assertEqual(audit_count, 20)
+  assertEqual(last_code, 200)
+  assertEqual(total_result, total_score)
+
+  echo "Dispatcher Star Topology Torture Test Passed Successfully!"
+  echo total_score

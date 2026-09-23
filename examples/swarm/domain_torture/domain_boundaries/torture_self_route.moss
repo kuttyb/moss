@@ -1,0 +1,8 @@
+domain Node:
+  domainroutes(next: Node)
+  fn Ping():
+    message next.Ping()
+
+fn main():
+  n = Node(next: n)
+  message n.Ping()
