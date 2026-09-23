@@ -38,30 +38,16 @@ discovery and report the mismatch rather than trusting historical guidance.
 ## Experimental feedback inventory
 
 If this task is a dogfood, swarm, fresh-agent, or language-surface experiment,
-create and maintain `FEEDBACK.jsonl` using
-`examples/swarm/feedback/OBSERVATION_TEMPLATE.json`. Place it at
-`examples/swarm/<experiment>/FEEDBACK.jsonl`; one nonblank line is one complete
-JSON observation object.
+read `examples/swarm/SWARM.md` before beginning the experiment. That file is
+the canonical operating contract for independent discovery, structured
+`FEEDBACK.jsonl` observations, coordinator classification, issue tracking, and
+closeout validation. Experiment prompts should define only the unique workload,
+scope, and experiment-specific constraints.
 
-At experiment start, capture the repository baseline for provenance:
-
-```sh
-git rev-parse HEAD
-```
-
-Set `baseline_commit` in every observation to that 40-hex SHA. Reuse it for the
-whole experiment. Do not update it merely because a coordinator later links an
-observation to a SWARM finding; it records the compiler revision under which the
-observation was first established.
-
-Update feedback during the experiment. Preserve first-attempt natural failures
-before applying workarounds, then attach minimization and execution-matrix
-evidence to that observation. Do not wait until closeout to reconstruct findings
-from memory, reports, or commit messages, and do not put a unique finding only in
-a commit message. Follow `examples/swarm/feedback/README.md` for the controlled
-vocabulary, observation identity, execution modes, and coordinator SWARM-linking
-rules. This requirement applies to experiments only, not ordinary Moss
-application development.
+The detailed feedback templates and schemas remain in
+`examples/swarm/feedback/`. The canonical issue database rules remain in
+`examples/swarm/issue_tracking/`. This requirement applies to experiments only,
+not ordinary Moss application development.
 
 Use the compiler as the authority on Moss semantics. This skill is a compact operating
 procedure for an agent working on `.moss` source; it complements `moss-language`,

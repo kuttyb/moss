@@ -2,6 +2,15 @@
 
 Updated: 2026-09-23
 
+## Canonical swarm operating contract — COMPLETE (2026-09-23)
+
+`examples/swarm/SWARM.md` is now the canonical operating contract for future
+dogfood, swarm, fresh-agent, and language-surface experiments. Future
+experiment prompts should specify only their unique workload/scope and
+reference this file instead of restating process boilerplate. Canonical feedback
+and issue database templates remain under `examples/swarm/feedback/` and
+`examples/swarm/issue_tracking/`.
+
 ## Canonical swarm feedback observation contract — COMPLETE
 
 Future dogfood, swarm, fresh-agent, and language-surface experiments use

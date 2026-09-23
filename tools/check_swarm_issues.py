@@ -53,6 +53,8 @@ REQUIRED_FIELDS = (
 )
 ISSUE_ID_RE = re.compile(r"^(SWARM|EXPRESS)-([0-9]+)$")
 SWARM_ID_RE = re.compile(r"^SWARM-[0-9]+$")
+FINDING_HEADING_RE = re.compile(r"^##\s+(SWARM-[0-9]+)\b")
+STATUS_RE = re.compile(r"^-\s+Status:\s*(.+?)\s*$")
 
 
 def relative(path: Path, root: Path) -> str:
@@ -195,6 +197,25 @@ def validate_schema(root: Path) -> list[str]:
     return errors
 
 
+def finding_ids_and_open_ids(findings: str) -> tuple[set[str], set[str]]:
+    finding_ids: set[str] = set()
+    open_ids: set[str] = set()
+    current_id: str | None = None
+
+    for line in findings.splitlines():
+        heading = FINDING_HEADING_RE.match(line)
+        if heading:
+            current_id = heading.group(1)
+            finding_ids.add(current_id)
+            continue
+        if current_id is None:
+            continue
+        status = STATUS_RE.match(line)
+        if status and status.group(1).startswith("Open"):
+            open_ids.add(current_id)
+    return finding_ids, open_ids
+
+
 def validate_repository(root: Path) -> list[str]:
     errors = validate_schema(root)
     issues_path = root / ISSUES_PATH
@@ -208,8 +229,9 @@ def validate_repository(root: Path) -> list[str]:
     except OSError as exc:
         return errors + [f"{FINDINGS_PATH}: cannot read findings ledger: {exc}"]
 
-    finding_ids = set(re.findall(r"^##\s+(SWARM-[0-9]+)\b", findings, re.MULTILINE))
+    finding_ids, open_finding_ids = finding_ids_and_open_ids(findings)
     records: list[dict[str, Any]] = []
+    records_by_swarm_id: dict[str, list[str]] = {}
     seen: dict[str, tuple[Path, int]] = {}
     for line_number, raw in enumerate(raw_lines, 1):
         if not raw.strip():
@@ -233,6 +255,11 @@ def validate_repository(root: Path) -> list[str]:
             else:
                 seen[issue_id] = (issues_path, line_number)
             records.append(record)
+            swarm_ids = record.get("swarm_ids")
+            if isinstance(swarm_ids, list):
+                for swarm_id in swarm_ids:
+                    if isinstance(swarm_id, str) and SWARM_ID_RE.fullmatch(swarm_id):
+                        records_by_swarm_id.setdefault(swarm_id, []).append(issue_id)
 
     express_numbers: list[int] = []
     for record in records:
@@ -263,6 +290,16 @@ def validate_repository(root: Path) -> list[str]:
 
     if express_numbers != sorted(set(express_numbers)):
         errors.append(f"{ISSUES_PATH}: EXPRESS IDs must be unique and monotonic")
+
+    for swarm_id in sorted(open_finding_ids):
+        issue_ids = records_by_swarm_id.get(swarm_id, [])
+        if not issue_ids:
+            errors.append(
+                f"{FINDINGS_PATH}: {swarm_id} is Open but has no issue record in {ISSUES_PATH}")
+        elif len(issue_ids) > 1:
+            errors.append(
+                f"{FINDINGS_PATH}: {swarm_id} is Open but has multiple issue records "
+                f"in {ISSUES_PATH}: {', '.join(issue_ids)}")
     return errors
 
 
@@ -273,7 +310,12 @@ def self_test() -> None:
         (root / ISSUES_PATH).parent.mkdir(parents=True, exist_ok=True)
         (root / FINDINGS_PATH).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / SCHEMA_PATH, root / SCHEMA_PATH)
-        (root / FINDINGS_PATH).write_text("## SWARM-001 — test finding\n", encoding="utf-8")
+        (root / FINDINGS_PATH).write_text(
+            "## SWARM-001 — test finding\n\n"
+            "- Status: Open\n\n"
+            "## SWARM-002 — missing classification\n\n"
+            "- Status: Fixed\n",
+            encoding="utf-8")
         valid = {
             "issue_id": "SWARM-001", "tracking_scope": "semantic",
             "category": "false_acceptance", "title": "test", "status": "open",
@@ -307,6 +349,14 @@ def self_test() -> None:
         bad_reference = copy.deepcopy(valid)
         bad_reference["swarm_ids"] = ["SWARM-999"]
         check([bad_reference], "SWARM-999 does not exist")
+        missing_open = copy.deepcopy(valid)
+        (root / FINDINGS_PATH).write_text(
+            "## SWARM-001 — test finding\n\n"
+            "- Status: Open\n\n"
+            "## SWARM-002 — missing classification\n\n"
+            "- Status: Open\n",
+            encoding="utf-8")
+        check([missing_open], "SWARM-002 is Open but has no issue record")
 
 
 def main() -> int:
