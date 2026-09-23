@@ -16970,7 +16970,8 @@ static CompiledProjectUnit analyze_project_sources(
     const vector<std::filesystem::path>& sources,
     bool optimized, bool debug_build, ProgramGenerationMode mode,
     const string& declaration_filter = {},
-    const std::set<string>* declaration_ids = nullptr) {
+    const std::set<string>* declaration_ids = nullptr,
+    const std::map<std::filesystem::path, string>* source_overrides = nullptr) {
   try {
     Program program;
     std::map<string,ParsedModuleUnit> modules;
@@ -16979,12 +16980,19 @@ static CompiledProjectUnit analyze_project_sources(
     std::map<string,std::filesystem::path> external_module_interfaces;
     bool has_explicit_modules = false;
     for (const auto& source : sources) {
-      std::ifstream input(source);
-      if (!input)
-        throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
-                           "cannot read Moss source '" + source.string() + "'",
-                           source.string());
-      Program parsed = Parser(lex_lines(input, source.string())).parse();
+      auto normalized = std::filesystem::absolute(source).lexically_normal();
+      Program parsed;
+      if (source_overrides && source_overrides->count(normalized)) {
+        std::istringstream input(source_overrides->at(normalized));
+        parsed = Parser(lex_lines(input, source.string())).parse();
+      } else {
+        std::ifstream input(source);
+        if (!input)
+          throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
+                             "cannot read Moss source '" + source.string() + "'",
+                             source.string());
+        parsed = Parser(lex_lines(input, source.string())).parse();
+      }
       assign_project_declaration_identities(
           parsed, project_relative_path(manifest, source));
       has_explicit_modules = has_explicit_modules || parsed.explicit_module;
@@ -17122,33 +17130,15 @@ static CompiledProjectUnit analyze_project_texts(
     const ProjectManifest& manifest,
     const vector<std::pair<std::filesystem::path, string>>& files,
     bool optimized, bool debug_build, ProgramGenerationMode mode) {
-  try {
-    Program program;
-    for (const auto& entry : files) {
-      const auto& source = entry.first;
-      std::istringstream input(entry.second);
-      Program parsed = Parser(lex_lines(input, source.string())).parse();
-      assign_project_declaration_identities(
-          parsed, project_relative_path(manifest, source));
-      merge_project_program(program, std::move(parsed), source.string());
-    }
-    Checker checker(program);
-    checker.run();
-    vector<Warning> warnings = checker.warnings();
-    FunctionalOptimizer(program).run(optimized);
-    OptimizationPlan plan = OptimizationPlan{optimized};
-    string rust = Generator(program, plan, debug_build, mode).generate();
-    return {std::move(program), std::move(plan), std::move(warnings),
-            std::move(rust), {}};
-  } catch (const CompileError& error) {
-    throw ProjectError(
-        error.code.empty() ? diagnostic_code_for_message(error.what())
-                           : error.code,
-        error.what(), error.source_file.empty()
-            ? (files.empty() ? string() : files.front().first.string())
-            : error.source_file,
-        error.line);
+  vector<std::filesystem::path> sources;
+  std::map<std::filesystem::path, string> overrides;
+  for (const auto& entry : files) {
+    auto norm = std::filesystem::absolute(entry.first).lexically_normal();
+    sources.push_back(norm);
+    overrides.emplace(norm, entry.second);
   }
+  return analyze_project_sources(manifest, sources, optimized, debug_build, mode,
+                                 {}, nullptr, &overrides);
 }
 
 static CompiledProjectUnit analyze_project_source(
@@ -19668,12 +19658,13 @@ static void validate_formatted_source(const string& source,
                                       const std::filesystem::path& file) {
   try {
     std::istringstream input(source);
-    Program program = Parser(lex_lines(input)).parse();
+    Program program = Parser(lex_lines(input, file.string())).parse();
     Checker checker(program);
     checker.run();
   } catch (const CompileError& error) {
     throw ProjectError(
-        "FORMAT_PARSE_ERROR", error.what(), file.string(), error.line);
+        error.code.empty() ? "FORMAT_PARSE_ERROR" : error.code,
+        error.what(), file.string(), error.line);
   }
 }
 
@@ -19693,54 +19684,90 @@ static int run_project_format(const ProjectManifest& manifest,
                               const vector<std::filesystem::path>& requested,
                               bool check, bool json) {
   bool project_scope = requested.empty();
-  vector<std::filesystem::path> files = requested.empty()
+  vector<std::filesystem::path> targets = requested.empty()
       ? project_moss_sources(manifest) : requested;
   vector<FormatResult> results;
-  for (auto file : files) {
+  std::map<std::filesystem::path, string> source_overrides;
+
+  // 1. Read all target files and compute formatted text in memory.
+  //    No files are written yet.
+  for (auto file : targets) {
     if (file.is_relative()) file = manifest.root / file;
     file = std::filesystem::absolute(file).lexically_normal();
     string original = read_text_file(file, "FORMAT_SOURCE_NOT_FOUND");
-    string normalized;
-    for (char character : original) {
-      if (character == '\t') normalized += "  ";
-      else normalized.push_back(character);
-    }
-    if (!project_scope) validate_formatted_source(normalized, file);
     string formatted = canonical_format_moss(original);
-    if (!project_scope) validate_formatted_source(formatted, file);
-    FormatResult result{file, formatted != original, formatted};
-    if (result.changed && !check) {
-      std::ofstream output(file, std::ios::binary);
-      if (!output)
-        throw ProjectError("FORMAT_WRITE_ERROR",
-                           "cannot write formatted source", file.string());
-      output << formatted;
-    }
-    results.push_back(std::move(result));
+    results.push_back(FormatResult{file, formatted != original, formatted});
+    source_overrides[file] = formatted;
   }
+
+  // 2. Validate proposed formatted files using authoritative project analysis.
   if (project_scope) {
-    Program merged;
-    try {
-      for (const auto& result : results) {
-        std::istringstream input(result.formatted);
-        Program parsed = Parser(lex_lines(input, result.file.string())).parse();
-        assign_project_declaration_identities(
-            parsed, project_relative_path(manifest, result.file));
-        merge_project_program(merged, std::move(parsed), result.file.string());
+    auto app_sources = project_source_files(manifest);
+    if (!app_sources.empty()) {
+      analyze_project_sources(manifest, app_sources, false, false,
+                              ProgramGenerationMode::Application, {}, nullptr,
+                              &source_overrides);
+    }
+    auto test_sources = project_declaration_sources(manifest, "tests");
+    if (test_sources.size() > app_sources.size()) {
+      analyze_project_sources(manifest, test_sources, false, false,
+                              ProgramGenerationMode::Tests, {}, nullptr,
+                              &source_overrides);
+    }
+    auto bench_sources = project_declaration_sources(manifest, "benches");
+    if (bench_sources.size() > app_sources.size()) {
+      analyze_project_sources(manifest, bench_sources, false, false,
+                              ProgramGenerationMode::Benchmarks, {}, nullptr,
+                              &source_overrides);
+    }
+  } else {
+    struct ProjectValidationTask {
+      ProjectManifest manifest;
+      ProgramGenerationMode mode;
+      vector<std::filesystem::path> sources;
+    };
+    std::map<std::pair<string, int>, ProjectValidationTask> project_tasks;
+
+    for (const auto& result : results) {
+      SourceCompilationContext context = analyze_source_context(result.file);
+      if (!context.project) {
+        validate_formatted_source(result.formatted, result.file);
+      } else {
+        auto key = std::make_pair(context.manifest.root.string(),
+                                  static_cast<int>(context.mode));
+        if (!project_tasks.count(key)) {
+          project_tasks.emplace(key, ProjectValidationTask{
+              context.manifest, context.mode, context.sources});
+        }
       }
-      Checker checker(merged);
-      checker.run();
-    } catch (const CompileError& error) {
-      throw ProjectError("FORMAT_PARSE_ERROR", error.what(),
-                         error.source_file.empty()
-                             ? manifest.manifest_file.string()
-                             : error.source_file,
-                         error.line);
+    }
+
+    for (const auto& entry : project_tasks) {
+      const auto& task = entry.second;
+      analyze_project_sources(task.manifest, task.sources, false, false,
+                              task.mode, {}, nullptr, &source_overrides);
     }
   }
+
+  // 3. Validation succeeded. Write changed files transactionally if !check.
   bool changed = std::any_of(
       results.begin(), results.end(),
       [](const FormatResult& result) { return result.changed; });
+
+  if (!check) {
+    for (const auto& result : results) {
+      if (result.changed) {
+        std::ofstream output(result.file, std::ios::binary);
+        if (!output)
+          throw ProjectError("FORMAT_WRITE_ERROR",
+                             "cannot write formatted source",
+                             result.file.string());
+        output << result.formatted;
+      }
+    }
+  }
+
+  // 4. Output results.
   if (json) {
     write_agent_envelope_begin(std::cout, "fmt", !(check && changed));
     std::cout << "  \"result\": {\"check\": "
@@ -20202,6 +20229,11 @@ static int run_project_command(int argc, char** argv) {
         if (argument == "--check") check = true;
         else sources.emplace_back(argument);
       }
+      if (sources.size() == 1 && std::filesystem::is_directory(sources.front())) {
+        std::filesystem::path dir = sources.front();
+        sources.clear();
+        manifest = load_project_manifest(dir);
+      }
       return run_project_format(manifest, sources, check, json);
     }
     if (command == "edit") {
@@ -20602,14 +20634,31 @@ int main(int argc, char** argv) {
             "standalone moss fmt requires a .moss source path");
         return 2;
       }
+      if (requested.size() == 1 && std::filesystem::is_directory(requested.front())) {
+        std::filesystem::path dir = requested.front();
+        requested.clear();
+        try {
+          moss::ProjectManifest manifest = moss::load_project_manifest(dir);
+          return moss::run_project_format(manifest, requested, check, json);
+        } catch (const moss::ProjectError& error) {
+          if (json) moss::write_project_error_json(std::cout, "fmt", error);
+          else std::cerr << (error.source_file.empty() ? "moss" : error.source_file)
+                         << (error.line > 0 ? ":" + std::to_string(error.line) : "")
+                         << ": error[" << error.code << "]: "
+                         << error.what() << "\n";
+          return 1;
+        }
+      }
       moss::ProjectManifest manifest;
       manifest.root = std::filesystem::current_path();
       try {
         return moss::run_project_format(manifest, requested, check, json);
       } catch (const moss::ProjectError& error) {
         if (json) moss::write_project_error_json(std::cout, "fmt", error);
-        else std::cerr << "moss: error[" << error.code << "]: "
-                        << error.what() << "\n";
+        else std::cerr << (error.source_file.empty() ? "moss" : error.source_file)
+                       << (error.line > 0 ? ":" + std::to_string(error.line) : "")
+                       << ": error[" << error.code << "]: "
+                       << error.what() << "\n";
         return 1;
       }
     }

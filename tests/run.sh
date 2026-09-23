@@ -12,6 +12,7 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 python3 tests/tooling/check_agent_skills.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_7_formatter_convergence.py "$compiler"
 
 fail() {
   echo "test failure: $*" >&2

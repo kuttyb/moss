@@ -2,6 +2,34 @@
 
 Updated: 2026-09-22
 
+## Phase 15.7 — Multi-Module Formatter Semantic Convergence
+
+Completed Phase 15.7 multi-module formatter semantic convergence:
+- Authoritative Project/Module Semantic Convergence:
+  - Eliminated isolated-file checking (`validate_formatted_source`) and legacy merged-namespace approximations (`merge_project_program` in `run_project_format` and `analyze_project_texts`).
+  - Factored `analyze_project_sources` to accept optional in-memory `source_overrides` mapping file paths to formatted source strings. Formatted source validation now directly executes the compiler's authoritative multi-module resolver and type checker across `Application`, `Tests`, and `Benchmarks` target generation modes.
+  - Selected-file formatting (`moss fmt path/to/file.moss`) resolves the containing project context and manifest via `analyze_source_context(file)`, validating the file against its full module dependencies and qualified types (e.g. `model.Graph`), while scoping writes strictly to the selected file without mutating sibling files.
+  - Standalone files outside any project context continue to be validated cleanly with standalone checks.
+- Transactional Formatting:
+  - `moss fmt` computes all formatted buffers in memory and validates the entire proposed project state before writing any files.
+  - If validation fails (or under `--check`), no files are modified on disk, ensuring complete transactional safety.
+- Directory and CLI ergonomics:
+  - Added support for passing project directories directly to `moss fmt <dir>` and `moss fmt <dir> --check`.
+- Regression Coverage:
+  - Added `tests/tooling/check_phase15_7_formatter_convergence.py` covering:
+    1. Selected-file formatting and check with imported qualified types (`model.Item`).
+    2. Verification that sibling modules are not touched when formatting a selected file.
+    3. Whole-project formatting, idempotency, and `--check`.
+    4. Transactional failure guarantees on semantically invalid projects and files (verifying byte-for-byte zero disk writes).
+    5. Clean resolution and compilation checks.
+  - Registered the new regression in `tests/run.sh`.
+- Completed Validation:
+  - `./moss fmt projects/build_planner/graphlib/src/graph.moss --check` (exits 0, previously failed with `unknown parameter type 'model.Graph'`).
+  - `./moss fmt projects/build_planner/graphlib --check` (exits 0).
+  - Regressions: `check_phase15_7_formatter_convergence.py`, `check_formatter_indexing.py`, `check_swarm_003_formatter.py`.
+  - Margo build/test/run for `graphlib` (12 tests) and `planner` (7 tests).
+  - `check_agent_skills.py`, `check_agent_api.py`, `make examples`, `sh -n tests/run.sh`, and `git diff --check`.
+
 ## Phase 15.6 — Multi-Package Build Planner Dogfood
 
 Completed Phase 15.6 multi-package dogfood experiment in `projects/build_planner/`:
