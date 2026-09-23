@@ -2,6 +2,50 @@
 
 Updated: 2026-09-22
 
+## Phase 15.9 — Cross-Package Static Specialization Convergence — COMPLETE
+
+Phase 15.9 closes the native artifact-boundary specialization gap. The root
+cause was projection, not checking: `Checker` created canonical static
+specializations correctly, but explicit-module lowering emitted every one into
+a final-root `moss-specializations` crate. A non-root provider rlib could then
+emit a call to `__moss_specialize_*` before that symbol existed in its own
+artifact context.
+
+The canonical specialization identity remains compiler-owned. Native lowering
+now deterministically projects it into each module artifact whose checked body
+contains the concrete call. Provider concrete wrappers therefore carry the
+specialization they execute in their own rlib. A consumer can still instantiate
+an imported generic: `.mossi` supplies its checked generic IR and private helper
+closure, while the consumer's calling artifact owns that projection and links
+the provider's ordinary rlib for concrete implementation. Native debug symbols
+are artifact-scoped, avoiding duplicate link symbols when the same semantic
+specialization is required in independent artifacts. No source folding, dynamic
+dispatch, Rust trait object, runtime dictionary, or Margo semantic behavior was
+introduced.
+
+`.mossi` now distinguishes statically dispatched exports and retains their
+semantic IR even when their open parameters are trait-constrained. Exported
+trait method contracts are preserved as interface metadata, so source-free
+structural specialization stays checked and static. This requires native ABI
+version 6, so pre-15.9 provider interfaces fail closed and must be rebuilt.
+The focused regression in `tests/tooling/check_phase15_9_cross_package_specialization.py` is registered
+in `tests/run.sh`; it covers same-module and cross-module calls, the historical
+provider concrete-wrapper reproduction, repeated use, structural trait
+specialization, Margo package build/run/test, and a consumer built after the
+provider source is hidden with only `.mossi` + `.rlib` artifacts. It also checks
+that provider and consumer generated Rust have the intended artifact ownership
+and no runtime-dispatch machinery.
+
+Build Planner now uses `model.identity_task` across the `graphlib` package
+boundary; the former `identity_task_typed` workaround was removed. `graphlib`
+(12/12) and `planner` (7/7) build, test, and run through Margo with the natural
+generic helper. Strict C++17 `-Werror`, Phase 15.9 and existing module-provider,
+Margo, Fast Debug, agent, examples, shell, and whitespace checks pass. A full
+`tests/run.sh` rerun passes through the new Phase 15.9 coverage and all reached
+compiler/tooling/Emacs suites; after the repair it again reaches only the known
+unrelated Phase 10.6F `&String == String` native Rust backend failure. Phase
+15.9 intentionally does not add language syntax or runtime generic dispatch.
+
 ## Phase 15.8 — Cross-Package Fast Debug Source Convergence — COMPLETE
 
 Margo now resolves the package graph and supplies the exact transitive dependency
@@ -89,7 +133,7 @@ Completed Phase 15.6 multi-package dogfood experiment in `projects/build_planner
   6. Borrowed parameter return value: Emitted `.clone()` / `.__moss_value()` for borrowed object parameters in return expressions.
   7. Foreign object view access: Guarded `gen_object_access` in `Generator::generate` to skip foreign objects whose defining module is not in `rust_dependencies_`.
 - Defect classifications and limitations:
-  1. Cross-package / cross-module generic structural dispatch into `moss-specializations.rs` is limited (tracked as known Phase 10.6F finding in `examples/projects/ledger/README.md`); concrete typed helpers used across packages.
+  1. Cross-package / cross-module generic structural dispatch was limited in the original Phase 15.6 dogfood; Phase 15.9 now projects specializations into their calling provider/consumer artifacts, so the concrete typed-helper workaround is no longer needed.
   2. `moss fmt` reports `FORMAT_PARSE_ERROR` on qualified parameter types in multi-module files because `validate_formatted_source` type-checks files in isolation.
   3. Fast Debug cannot mix interpreted Moss with compiled Moss module dependencies (`FAST_DEBUG_NATIVE_DEPENDENCY`), requiring reachable source.
 - Completed validation: `make`; `margo build`, `margo run`, and `margo test` in both `graphlib` and `planner`; `tests/tooling/check_agent_skills.py ./moss`; `tests/tooling/check_agent_api.py ./moss`; `make examples`; `sh -n tests/run.sh`; `git diff --check`. Full test suite passes to known sandbox LLDB/DAP handshake skip.

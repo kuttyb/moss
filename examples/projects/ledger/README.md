@@ -35,8 +35,9 @@ The v0.1 exercise found real module friction, recorded rather than redesigned:
   analytics main in the source tree produces duplicate-main diagnostics.
 - Use exported factories for provider-owned objects; direct constructor lowering
   can reach Rust's private-field diagnostics.
-- Cross-module generic structural dispatch is limited; use concrete exported
-  helpers here. The structural trait itself does not imply a runtime object.
+- Cross-module and source-free package generic structural dispatch is statically
+  specialized into the artifact containing the concrete call. The structural
+  trait itself does not imply a runtime object or dynamic dispatch.
 - Keep mutation helpers local to their module; some qualified statement calls
   are not handled by the current rewrite. Qualified expression calls are used
   for the model's concrete value-returning helpers.

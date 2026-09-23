@@ -119,6 +119,6 @@ assert 'struct provider__CounterRuntime' not in provider_rust
 assert 'struct provider__CounterRuntime' in application_rust
 assert '__moss_body_provider__Counter_Bump' in provider_rust
 interface=(project/'build/debug/provider.mossi').read_text()
-assert 'native_abi 5' in interface
+assert 'native_abi 6' in interface
 assert not any(x in interface for x in ('ClassState','RwLock','ClassSet','class_rank','MossRead'))
 print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, and uninstantiated/source-free provider body ABI passed.')

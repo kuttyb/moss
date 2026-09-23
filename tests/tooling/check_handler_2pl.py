@@ -290,7 +290,7 @@ for source_free in (False, True):
         assert physical not in interface
 interface_path = project / 'build/debug/provider.mossi'
 contents = interface_path.read_text()
-interface_path.write_text(contents.replace('native_abi 5\n', ''))
+interface_path.write_text(contents.replace('native_abi 6\n', ''))
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
 assert 'rebuild' in old and 'native calling convention' in old
 interface_path.write_text(contents)

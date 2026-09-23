@@ -76,9 +76,6 @@ export fn score_entity(item: Task) -> Int:
 export fn identity_task(item):
   return item
 
-export fn identity_task_typed(item: Task) -> Task:
-  return item
-
 export fn graph_task_count_val(g: Graph) -> Int:
   return g.task_count
 

@@ -58,15 +58,23 @@ from `domainroutes(...)`. These describe route edges for final application
 composition but never carry a whole-program `domain_rank`; ranks are assigned
 only after `main` constructs the concrete graph.
 
-For generic exports it records the semantic body hash, open parameter positions,
-inferred structural requirements, and dependencies needed for specialization.
-The current IR records parameter identities, constraints, statement/expression
-fields, result expressions, and private helper dependency records. A final
-build owns one deterministic specialization crate, keyed by module, generic
-entity, generic semantic hash, and concrete type tuple.
-The canonical specialization identity is the module identity, generic entity
-identity, generic semantic hash, and concrete type tuple. A specialization is
-materialized once per final build regardless of how many modules request it.
+For statically dispatched exports it records the semantic body hash, open
+parameter positions where applicable, inferred structural requirements, and
+dependencies needed for specialization. The current IR records parameter
+identities, constraints, statement/expression fields, result expressions, and
+private helper dependency records. The canonical specialization identity is the
+module identity, generic entity identity, generic semantic hash, and concrete
+type tuple.
+
+Native lowering projects that checked identity into the deterministic module
+artifact containing the concrete call. A provider concrete wrapper therefore
+emits its required specialization inside the provider rlib. A consumer that
+instantiates an exported generic from a source-free provider projects the
+`.mossi` semantic IR into its own calling artifact while linking the provider's
+ordinary rlib for concrete implementation. These projections remain private to
+Moss and use artifact-scoped native debug symbols, so repeated valid uses do
+not create exported-symbol collisions or a graph-wide final-application
+specialization crate. Provider source is never folded into the consumer.
 
 Optimization level and backend flags belong to the native artifact/cache key,
 not to the semantic `ModuleId`. A changed Rust compiler/toolchain fingerprint
@@ -97,12 +105,14 @@ Phase 10.6D introduced native ABI version 2 for inferred primitive WRITE
 references and plan-driven domain constructors. Phase 10.6D.1 introduced
 version 3 for reusable static borrowed-access helpers and provider decomposition
 entry points. Phase 10.6E used version 4 after removing await metadata and
-retired constructor/runtime plumbing. Phase 10.6F.1 uses **version 5**: providers
+retired constructor/runtime plumbing. Phase 10.6F.1 used version 5: providers
 export reusable typed borrowed handler bodies and static route contracts; the
 final application emits its own class structs, locks, and synchronized entries.
 Provider bodies can call private helpers through their compiled Rust crate.
 Bodies over aggregate access traits or route contracts use static Rust generics,
 not trait objects. Providers need no concrete domain instance at build time.
+Phase 15.9 uses **version 6**: interfaces preserve statically dispatched export
+IR and exported trait method contracts required by source-free specialization.
 Old providers must be rebuilt. No physical descriptor is passed at construction. `.mossi` continues to export semantic handler/formal leaf effects only;
 class IDs, ranks, ClassSets, and lock storage are not serialized as provider ABI.
 

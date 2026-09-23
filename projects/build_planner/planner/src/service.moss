@@ -30,7 +30,7 @@ export fn build_sample_graph() -> model.Graph:
   return d4
 
 export fn inspect_task_specialization(t: model.Task) -> model.Task:
-  return model.identity_task_typed(t)
+  return model.identity_task(t)
 
 export fn transfer_and_add(g: model.Graph, t: model.Task) -> model.Graph:
   return graph.graph_add_task(g, t)

@@ -58,6 +58,7 @@ class CompilerStageTimer {
 };
 
 static constexpr const char* kCompilerVersion = "0.1.0";
+static constexpr int kNativeAbiVersion = 6;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -11715,9 +11716,16 @@ class Generator {
     string semantic_identity = function_semantic_identity(f, specialization);
     string generated_symbol = specialization ? specialization->generated_name : f.name;
     if (view) generated_symbol = "__moss_view_" + generated_symbol;
+    // A specialization can be projected into distinct provider/consumer rlibs.
+    // Preserve native debug-map symbols, but scope them to the emitting module
+    // artifact so those otherwise-identical semantic projections cannot collide
+    // at final linkage.
     bool can_export = !view && (specialization || (!f.generic && !container_generic));
+    string native_identity = semantic_identity;
+    if (specialization && p_.explicit_module && !p_.module_name.empty())
+      native_identity += "@artifact:" + p_.module_name;
     string native_symbol = tooling_native_symbol(
-        "function", f.name, semantic_identity);
+        "function", f.name, native_identity);
     tooling_begin(o, 0, "function", semantic_identity, generated_symbol,
                   can_export ? native_symbol : "");
     source_comment(o, 0, f.line, f.header.empty() ? "fn " + f.name : f.header);
@@ -16597,7 +16605,7 @@ static ParsedModuleUnit load_module_interface(
   std::ostringstream content;
   content << input.rdbuf();
   string text = content.str();
-  if (text.find("\nnative_abi 5\n") == string::npos)
+  if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
@@ -16610,6 +16618,7 @@ static ParsedModuleUnit load_module_interface(
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
   Domain* current_domain = nullptr;
+  Trait* current_trait = nullptr;
   bool in_semantic_exports = false;
   bool in_imports = false;
   while (std::getline(lines, line)) {
@@ -16620,6 +16629,7 @@ static ParsedModuleUnit load_module_interface(
       current = nullptr;
       current_object = nullptr;
       current_domain = nullptr;
+      current_trait = nullptr;
       continue;
     }
     if (line == "imports") {
@@ -16638,8 +16648,9 @@ static ParsedModuleUnit load_module_interface(
       Function function;
       function.name = name;
       function.exported = false;
-      function.generic = interface_field(rest, "kind") == "generic";
-      function.static_dispatch = function.generic;
+      string kind = interface_field(rest, "kind");
+      function.generic = kind == "generic";
+      function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
       if (!return_type.empty()) function.return_type = std::move(return_type);
       function.observable_effects = interface_effects(rest);
@@ -16681,8 +16692,8 @@ static ParsedModuleUnit load_module_interface(
       // exact identity once, just as it does for source providers.
       function.name = name;
       function.exported = true;
-      function.generic = kind.find("generic") != string::npos;
-      function.static_dispatch = function.generic;
+      function.generic = kind == "generic";
+      function.static_dispatch = function.generic || kind == "static";
       string return_type = interface_field(rest, "return");
       if (!return_type.empty()) function.return_type = std::move(return_type);
       function.observable_effects = interface_effects(rest);
@@ -16690,6 +16701,7 @@ static ParsedModuleUnit load_module_interface(
       current = &provider.functions.back();
       current_object = nullptr;
       current_domain = nullptr;
+      current_trait = nullptr;
       continue;
     }
     if (starts_with(line, "export type ")) {
@@ -16703,6 +16715,7 @@ static ParsedModuleUnit load_module_interface(
       current_object = &provider.objects.back();
       current = nullptr;
       current_domain = nullptr;
+      current_trait = nullptr;
       continue;
     }
     if (starts_with(line, "export domain ")) {
@@ -16716,6 +16729,7 @@ static ParsedModuleUnit load_module_interface(
       current_domain = &provider.domains.back();
       current = nullptr;
       current_object = nullptr;
+      current_trait = nullptr;
       continue;
     }
     if (starts_with(line, "route ") && current_domain) {
@@ -16785,9 +16799,38 @@ static ParsedModuleUnit load_module_interface(
       trait.name = name;
       trait.exported = true;
       provider.traits.push_back(std::move(trait));
+      current_trait = &provider.traits.back();
       current = nullptr;
       current_object = nullptr;
       current_domain = nullptr;
+      continue;
+    }
+    if (starts_with(line, "trait_method ") && current_trait) {
+      std::istringstream method_line(line.substr(13));
+      TraitMethod method;
+      method_line >> method.name;
+      string rest;
+      std::getline(method_line, rest);
+      string return_type = interface_field(rest, "return");
+      if (!return_type.empty() && return_type != "unit")
+        method.return_type = std::move(return_type);
+      string count_text = interface_field(rest, "params");
+      size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
+      size_t parameters = rest.find("params=");
+      if (parameters == string::npos && count != 0)
+        throw CompileError(0, "invalid trait method in module interface");
+      if (parameters != string::npos) {
+        parameters = rest.find_first_of(" \t", parameters);
+        std::istringstream types(parameters == string::npos ? string() : rest.substr(parameters));
+        for (size_t index = 0; index < count; ++index) {
+          Param parameter;
+          if (!(types >> std::quoted(parameter.type)))
+            throw CompileError(0, "incomplete trait method parameters in module interface");
+          method.params.push_back(std::move(parameter));
+        }
+      }
+      if (method.name.empty()) throw CompileError(0, "invalid trait method in module interface");
+      current_trait->methods.push_back(std::move(method));
       continue;
     }
     if (starts_with(line, "public_representation field ") && current_object) {
@@ -17503,6 +17546,58 @@ static bool belongs_to_module(const string& qualified, const string& module) {
   return qualified == module || starts_with(qualified, module + "__");
 }
 
+static string specialization_calling_module(const Program& program,
+                                            const string& context,
+                                            const string& root_module) {
+  if (starts_with(context, "fn:"))
+    return module_name_from_symbol(context.substr(3));
+  if (starts_with(context, "method:")) {
+    string owner = context.substr(7);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  if (starts_with(context, "handler:")) {
+    string owner = context.substr(8);
+    size_t dot = owner.find('.');
+    return module_name_from_symbol(dot == string::npos ? owner : owner.substr(0, dot));
+  }
+  // main, test, and benchmark bodies are projected into the root module.
+  return !root_module.empty() ? root_module : program.main_module;
+}
+
+static bool edge_requires_specialization(const SemanticCallEdge& edge,
+                                         const Function& function,
+                                         const FunctionSpecialization& specialization) {
+  if ((edge.target != function.name && edge.target != "fn:" + function.name) ||
+      edge.argument_types.size() != specialization.parameter_types.size())
+    return false;
+  for (size_t index = 0; index < edge.argument_types.size(); ++index)
+    if (canonical_type_name(edge.argument_types[index]) !=
+        canonical_type_name(specialization.parameter_types[index]))
+      return false;
+  return true;
+}
+
+// A specialization remains one canonical checked fact on Function.  Native
+// lowering projects that fact into each artifact whose already-checked body
+// directly calls it.  This is deliberately not a graph-wide final-application
+// crate: a provider rlib must compile and execute its own concrete wrappers,
+// while a consumer can still instantiate an imported generic from .mossi IR.
+static bool module_requires_specialization(const Program& program,
+                                           const string& module,
+                                           const string& root_module,
+                                           const Function& function,
+                                           const FunctionSpecialization& specialization) {
+  return std::any_of(program.semantic_call_edges.begin(),
+                     program.semantic_call_edges.end(),
+                     [&](const SemanticCallEdge& edge) {
+                       return specialization_calling_module(program, edge.source,
+                                                            root_module) == module &&
+                           edge_requires_specialization(edge, function,
+                                                        specialization);
+                     });
+}
+
 // The semantic checker still sees the composed project.  Once that single
 // authority has produced its facts, this projection is what gives rustc one
 // crate per Moss module.  It intentionally copies no declarations from an
@@ -17514,26 +17609,53 @@ static Program module_program(const Program& whole, const string& module,
   result.module_name = module;
   result.explicit_module = true;
   result.imports = whole.imports;
-  std::set<string> generic_support;
+  string target_module = !root_module.empty() ? root_module : whole.main_module;
+  std::set<string> projected_static_functions;
+  for (const auto& function : whole.functions) {
+    bool local = belongs_to_module(function.name, module);
+    Function projected = function;
+    if (function.static_dispatch) {
+      projected.specializations.erase(
+          std::remove_if(projected.specializations.begin(),
+                         projected.specializations.end(),
+                         [&](const FunctionSpecialization& specialization) {
+                           return !module_requires_specialization(
+                               whole, module, target_module, function,
+                               specialization);
+                         }),
+          projected.specializations.end());
+      if (!projected.specializations.empty())
+        projected_static_functions.insert(function.name);
+    }
+    // Imported generic IR is semantic interface data, not provider source.
+    // It is projected only into the consumer artifact that has a concrete
+    // call site requiring one of its specializations.
+    if (local || !projected.specializations.empty())
+      result.functions.push_back(std::move(projected));
+  }
+  // Generic bodies can call private provider helpers.  A .mossi records that
+  // semantic closure, so retain just the helpers reachable from a static
+  // function projected above.  They remain private Rust items and never
+  // become imported Moss exports.
   bool changed = true;
   while (changed) {
     changed = false;
     for (const auto& edge : whole.semantic_call_edges) {
-      bool source_is_generic = starts_with(edge.source, "fn:");
-      string source_name = source_is_generic ? edge.source.substr(3) : string();
-      auto source = std::find_if(whole.functions.begin(), whole.functions.end(),
-          [&](const Function& function) { return function.name == source_name; });
-      if (source == whole.functions.end() ||
-          !(source->generic || generic_support.count(source->name))) continue;
-      for (const auto& function : whole.functions)
-        if (!function.exported && edge.target.find(function.name) != string::npos &&
-            generic_support.insert(function.name).second)
-          changed = true;
+      if (!starts_with(edge.source, "fn:")) continue;
+      string source_name = edge.source.substr(3);
+      if (!projected_static_functions.count(source_name)) continue;
+      auto target = std::find_if(whole.functions.begin(), whole.functions.end(),
+          [&](const Function& function) {
+            return edge.target == function.name ||
+                edge.target == "fn:" + function.name;
+          });
+      if (target == whole.functions.end() || target->exported) continue;
+      bool already_present = std::any_of(result.functions.begin(), result.functions.end(),
+          [&](const Function& function) { return function.name == target->name; });
+      if (!already_present) result.functions.push_back(*target);
+      if (projected_static_functions.insert(target->name).second) changed = true;
     }
   }
-  for (const auto& function : whole.functions)
-    if (belongs_to_module(function.name, module) &&
-        !generic_support.count(function.name)) result.functions.push_back(function);
   for (const auto& object : whole.objects)
     if (belongs_to_module(object.name, module)) result.objects.push_back(object);
   for (const auto& trait : whole.traits)
@@ -17541,7 +17663,6 @@ static Program module_program(const Program& whole, const string& module,
   for (const auto& domain : whole.domains)
     if (whole.main_module == module || belongs_to_module(domain.name, module)) result.domains.push_back(domain);
   if (whole.main && whole.main_module == module) result.main = whole.main;
-  string target_module = !root_module.empty() ? root_module : whole.main_module;
   for (const auto& test : whole.tests)
     if (!target_module.empty() && target_module == module)
       result.tests.push_back(test);
@@ -17659,16 +17780,18 @@ static vector<std::filesystem::path> write_module_interfaces(
     auto& out = contents[module];
     auto& abi = interface_contents[module];
     string public_name = function.name.substr(module.size() + 2);
+    string dispatch_kind = function.generic ? "generic"
+        : function.static_dispatch ? "static" : "concrete";
     string symbol = tooling_native_symbol(
         "function", function.name,
         "fn:" + function.name + "@" + std::to_string(function.line));
     abi << "fn " << public_name << " kind="
-        << (function.generic ? "generic" : "concrete")
+        << dispatch_kind
         << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects)
         << " symbol=" << symbol << "\n";
     out << "export fn " << function.name.substr(module.size() + 2)
-        << " kind=" << (function.generic ? "generic" : "concrete")
+        << " kind=" << dispatch_kind
         << " semantic_hash=";
     std::ostringstream body;
     body << function.header << "\n";
@@ -17700,11 +17823,14 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " mode=" << ownership_effect_name(effect)
           << " name=" << std::quoted(function.params[index].name) << "\n";
     }
-    if (function.generic) {
-      out << "  open_parameters";
-      for (size_t index = 0; index < function.params.size(); ++index)
-        if (function.params[index].type.empty()) out << " " << index;
-      out << "\n  requirements\n";
+    if (function.static_dispatch) {
+      if (function.generic) {
+        out << "  open_parameters";
+        for (size_t index = 0; index < function.params.size(); ++index)
+          if (function.params[index].type.empty()) out << " " << index;
+        out << "\n";
+      }
+      out << "  requirements\n";
       for (const auto& constraint : function.constraints)
         out << "    " << static_cast<int>(constraint.kind) << " "
             << constraint.subject << " " << constraint.detail << "\n";
@@ -17756,12 +17882,15 @@ static vector<std::filesystem::path> write_module_interfaces(
     if (module.empty() || program.external_modules.count(module)) continue;
     bool reachable = std::any_of(
         program.functions.begin(), program.functions.end(),
-        [](const Function& exported) { return exported.exported && exported.generic; });
+        [](const Function& exported) {
+          return exported.exported && exported.static_dispatch;
+        });
     if (!reachable) continue;
     auto& out = contents[module];
     out << "  generic_dependency_begin "
         << std::quoted(function.name.substr(module.size() + 2))
-        << " kind=" << (function.generic ? "generic" : "concrete")
+        << " kind=" << (function.generic ? "generic"
+            : function.static_dispatch ? "static" : "concrete")
         << " return=" << function.return_type.value_or("unit")
         << " effects=" << interface_effects_text(function.observable_effects)
         << "\n";
@@ -17804,7 +17933,16 @@ static vector<std::filesystem::path> write_module_interfaces(
     if (!trait.exported) continue;
     string module = module_name_from_symbol(trait.name);
     if (module.empty() || program.external_modules.count(module)) continue;
-    contents[module] << "export trait " << trait.name.substr(module.size() + 2) << "\n";
+    auto& out = contents[module];
+    out << "export trait " << trait.name.substr(module.size() + 2) << "\n";
+    for (const auto& method : trait.methods) {
+      out << "  trait_method " << method.name << " return="
+          << method.return_type.value_or("unit") << " params="
+          << method.params.size();
+      for (const auto& parameter : method.params)
+        out << " " << std::quoted(parameter.type);
+      out << "\n";
+    }
   }
   for (const auto& domain : program.domains) {
     if (!domain.exported) continue;
@@ -17856,7 +17994,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     header << "moss-module-interface-v1\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
-           << "native_abi 5\n"
+           << "native_abi " << kNativeAbiVersion << "\n"
            << "backend_fingerprint " << backend.fingerprint << "\n"
            << "backend_rustc " << backend.version_verbose << "\n"
            << "concrete_interface_hash "
@@ -17986,7 +18124,8 @@ static NativeArtifact compile_native_artifact(
                  << stable_hash(rlib_text.str()) << "\n";
     }
   }
-  source_key << "compiler\n" << kCompilerVersion << "\nmode\n"
+  source_key << "compiler\n" << kCompilerVersion << "\nnative_abi\n"
+             << kNativeAbiVersion << "\nmode\n"
              << static_cast<int>(mode) << "\nfilter\n" << declaration_filter
              << "\n";
   if (declaration_ids)
@@ -18054,87 +18193,11 @@ static NativeArtifact compile_native_artifact(
   std::map<string,std::filesystem::path> module_rlib;
   vector<string> module_order;
   string root_module;
-  bool has_specializations = false;
   if (unit.program.explicit_module) {
     module_order = module_topological_order(unit.program);
     root_module = unit.program.main_module.empty()
         ? (module_order.empty() ? string() : module_order.back())
         : unit.program.main_module;
-    has_specializations = std::any_of(
-        unit.program.functions.begin(), unit.program.functions.end(),
-        [](const Function& function) {
-          return function.static_dispatch && !function.specializations.empty();
-        });
-    std::filesystem::path specialization_rust =
-        directory / "moss-specializations.rs";
-    artifact.specialization_rlib = directory / "libmoss_specializations.rlib";
-    if (has_specializations) {
-      Program specialization_program;
-      specialization_program.explicit_module = true;
-      specialization_program.functions.reserve(unit.program.functions.size());
-      bool has_exported_generic = std::any_of(
-          unit.program.functions.begin(), unit.program.functions.end(),
-          [](const Function& function) {
-            return function.exported && function.generic;
-          });
-      for (const auto& function : unit.program.functions)
-        if (function.static_dispatch && !function.specializations.empty())
-          specialization_program.functions.push_back(function);
-      // Concrete private helpers reachable from a deferred generic are
-      // compiler-generated internal support in the specialization crate.  A
-      // private helper never becomes a Moss export or an imported source
-      // symbol, but its Moss body must remain available after source removal.
-      if (has_exported_generic)
-        {
-          std::set<string> support;
-          bool changed = true;
-          while (changed) {
-            changed = false;
-            for (const auto& edge : unit.program.semantic_call_edges) {
-              string source_name = starts_with(edge.source, "fn:")
-                  ? edge.source.substr(3) : string();
-              auto source = std::find_if(
-                  unit.program.functions.begin(), unit.program.functions.end(),
-                  [&](const Function& function) {
-                    return function.name == source_name;
-                  });
-              if (source == unit.program.functions.end() ||
-                  !(source->generic || support.count(source->name))) continue;
-              for (const auto& function : unit.program.functions)
-                if (!function.exported &&
-                    edge.target.find(function.name) != string::npos &&
-                    support.insert(function.name).second)
-                  changed = true;
-            }
-          }
-          for (const auto& function : unit.program.functions)
-            if (!function.exported && !function.static_dispatch &&
-                support.count(function.name))
-              specialization_program.functions.push_back(function);
-        }
-      specialization_program.functional_pipelines = unit.program.functional_pipelines;
-      string generated = Generator(
-          specialization_program, unit.plan, debug_build, mode, {},
-          &unit.program, true, true).generate();
-      rust_changed = update_file(specialization_rust, generated) || rust_changed;
-      vector<string> specialization_command = {
-          artifact.backend_toolchain.rustc_executable};
-      specialization_command.insert(
-          specialization_command.end(), artifact.backend_toolchain.compile_flags.begin(),
-          artifact.backend_toolchain.compile_flags.end());
-      specialization_command.push_back("--crate-type=rlib");
-      specialization_command.push_back("--crate-name");
-      specialization_command.push_back("moss_specializations");
-      specialization_command.push_back(specialization_rust.string());
-      specialization_command.push_back("-o");
-      specialization_command.push_back(artifact.specialization_rlib.string());
-      ProcessResult specialization_compiled = run_process(specialization_command);
-      if (specialization_compiled.exit_code != 0)
-        throw ProjectError(
-            "BUILD_BACKEND_ERROR",
-            "Moss specialization crate compilation failed\n" +
-                trim(specialization_compiled.output), specialization_rust.string());
-    }
     for (const auto& module : module_order) {
       std::filesystem::path rust_file = directory / (tooling_name(module) + ".rs");
       module_rust[module] = rust_file;
@@ -18146,14 +18209,8 @@ static NativeArtifact compile_native_artifact(
       Program projected = module_program(unit.program, module, root_module);
       OptimizationPlan projected_plan = module_plan(unit.plan, projected);
       vector<string> dependencies = module_dependencies(unit.program, module);
-      // The final/root crate owns the graph-wide specialization crate.  A
-      // dependency module is linked to it only when it actually needs to call
-      // a specialization; keeping ordinary module rlibs independent makes a
-      // generic provider consumable from just its .mossi + concrete rlib.
-      if (has_specializations && module == root_module)
-        dependencies.push_back("__moss_specializations__");
       string generated = Generator(projected, projected_plan, debug_build,
-                                   mode, dependencies, &unit.program, false).generate();
+                                   mode, dependencies, &unit.program).generate();
       rust_changed = update_file(rust_file, generated) || rust_changed;
       if (module == root_module) artifact.rust = rust_file;
     }
@@ -18210,11 +18267,6 @@ static NativeArtifact compile_native_artifact(
         module_command.push_back("--extern");
         module_command.push_back(tooling_name("moss_" + dependency) + "=" +
                                  module_rlib.at(dependency).string());
-      }
-      if (has_specializations && module == root_module) {
-        module_command.push_back("--extern");
-        module_command.push_back("moss_specializations=" +
-                                 artifact.specialization_rlib.string());
       }
       ProcessResult module_compiled = run_process(module_command);
       if (module_compiled.exit_code != 0)
@@ -18274,11 +18326,6 @@ static NativeArtifact compile_native_artifact(
       command.push_back("--extern");
       command.push_back(tooling_name("moss_" + dependency) + "=" +
                         module_rlib.at(dependency).string());
-    }
-    if (std::filesystem::is_regular_file(artifact.specialization_rlib)) {
-      command.push_back("--extern");
-      command.push_back("moss_specializations=" +
-                        artifact.specialization_rlib.string());
     }
     ProcessResult compiled = run_process(command);
     if (compiled.exit_code != 0)
