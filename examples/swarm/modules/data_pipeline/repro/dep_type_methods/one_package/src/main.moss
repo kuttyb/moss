@@ -1,0 +1,6 @@
+module app
+import shapes
+
+fn main():
+  b = shapes.make_box(2, 3)
+  echo b.area()

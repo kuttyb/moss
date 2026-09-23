@@ -1,0 +1,10 @@
+type Entry:
+  key: Int
+  id: Int
+
+fn make(k: Int):
+  return Entry(key: k, id: k * 10)
+
+fn main():
+  e = make(3)
+  echo e.key, e.id

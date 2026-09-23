@@ -1,0 +1,36 @@
+module errors
+
+# Error reporting shared by every stage of the calculator.
+# code 0 means "no error"; the stage constructors below fix the other codes.
+
+export type CalcError:
+  code: Int
+  message: String
+  pos: Int
+
+  fn failed() -> Bool:
+    return code != 0
+
+  fn stage() -> String:
+    return stage_name(code)
+
+export fn none() -> CalcError:
+  return CalcError(code: 0, message: "", pos: 0)
+
+export fn lex_error(message: String, pos: Int) -> CalcError:
+  return CalcError(code: 1, message: message, pos: pos)
+
+export fn parse_error(message: String, pos: Int) -> CalcError:
+  return CalcError(code: 2, message: message, pos: pos)
+
+export fn eval_error(message: String, pos: Int) -> CalcError:
+  return CalcError(code: 3, message: message, pos: pos)
+
+fn stage_name(code: Int) -> String:
+  if code == 1:
+    return "lex"
+  if code == 2:
+    return "parse"
+  if code == 3:
+    return "eval"
+  return "ok"

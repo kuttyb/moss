@@ -1,0 +1,81 @@
+module graph
+
+# Weighted directed graph over nodes 0..n-1 in "forward star" form: an edge
+# list, plus per-node head pointers threaded through a next-edge vector.
+
+export type Edge:
+  src: Int
+  dst: Int
+  cost: Int
+
+  # Edges are orderable by cost with heapkit's order helpers.
+  fn key():
+    return cost
+
+  fn from_node():
+    return src
+
+  fn to_node():
+    return dst
+
+export type Graph:
+  n: Int
+  edges: Vector[Edge]
+  head: Vector[Int]
+  nxt: Vector[Int]
+
+  fn node_count():
+    return n
+
+  fn edge_count():
+    return edges |> count
+
+  fn add_edge(u: Int, v: Int, cost: Int):
+    id = edges |> count
+    edges.push(Edge(src: u, dst: v, cost: cost))
+    nxt.push(head[u])
+    head[u] = id
+    return id
+
+  # Both directions inlined: methods cannot call sibling methods by bare
+  # name inside an explicit module (repro/sibling_method).
+  fn add_road(u: Int, v: Int, cost: Int):
+    id = edges |> count
+    edges.push(Edge(src: u, dst: v, cost: cost))
+    nxt.push(head[u])
+    head[u] = id
+    edges.push(Edge(src: v, dst: u, cost: cost))
+    nxt.push(head[v])
+    head[v] = id + 1
+    return id
+
+  # Edge ids leaving u: first_edge(u), then next_edge(e) ... until -1.
+  fn first_edge(u: Int):
+    return head[u]
+
+  fn next_edge(e: Int):
+    return nxt[e]
+
+  fn edge_cost(e: Int):
+    return edges[e].cost
+
+  fn edge_to(e: Int):
+    return edges[e].dst
+
+  fn edge_from(e: Int):
+    return edges[e].src
+
+# Vector[Edge]() would be mis-typed inside an explicit module
+# (see repro/vector_of_type), so build the empty vector from a seed.
+fn no_edges():
+  seed = [Edge(src: 0, dst: 0, cost: 0)]
+  seed.pop()
+  return seed
+
+export fn new_graph(n: Int):
+  head = Vector[Int]()
+  i = 0
+  while i < n:
+    head.push(-1)
+    i = i + 1
+  return Graph(n: n, edges: no_edges(), head: head, nxt: Vector[Int]())

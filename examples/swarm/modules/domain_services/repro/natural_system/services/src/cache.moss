@@ -1,0 +1,17 @@
+module cache
+
+import records
+import audit
+
+export domain Cache:
+  entries = Map()
+  domainroutes(audit_log: audit.Audit)
+
+  fn Put(key: String, value: Int):
+    entries[key] = records.Entry(key: key, value: value, hits: 0)
+
+  fn Get(key: String) -> Int:
+    e = entries.get(key, records.Entry(key: key, value: -1, hits: 0))
+    if e.value < 0:
+      message audit_log.Record(records.Event(source: "cache", level: 1, code: 404))
+    reply e.value

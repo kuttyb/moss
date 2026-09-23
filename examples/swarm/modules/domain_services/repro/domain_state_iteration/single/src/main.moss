@@ -1,0 +1,26 @@
+type Entry:
+  key: Int
+  value: Int
+
+fn make_entry(key: Int, value: Int) -> Entry:
+  return Entry(key: key, value: value)
+
+domain Config:
+  values: Map[Int, Int]
+  ids = Vector[Int]()
+
+  fn Set(key: Int, value: Int):
+    values[key] = value
+    ids.push(key)
+
+  fn Snapshot() -> Vector[Entry]:
+    out = Vector[Entry]()
+    for k in ids:
+      out.push(make_entry(k, values[k]))
+    reply out
+
+fn main():
+  cfg = Config()
+  message cfg.Set(1, 10)
+  snap = message cfg.Snapshot()
+  echo snap |> count

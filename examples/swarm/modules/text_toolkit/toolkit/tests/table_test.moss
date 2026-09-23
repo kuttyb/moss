@@ -1,0 +1,23 @@
+module table_test
+import table
+import stats
+
+test "float_text rounds to places":
+  assertEqual(table.float_text(3.14159, 2), "3.14")
+  assertEqual(table.float_text(2.0, 1), "2.0")
+  assertEqual(table.float_text(0.999, 2), "1.00")
+  assertEqual(table.float_text(15.5, 2), "15.50")
+
+test "row and bar":
+  assertEqual(table.row("widget", 3000, 6), "  3000  widget")
+  assertEqual(table.bar(3, "#"), "###")
+  assertEqual(table.pad_zero(5, 2), "05")
+
+test "summary line":
+  assertEqual(table.summary([12, 3, 40, 7]), "n=4 min=3 max=40 mean=15.50")
+
+test "histogram lines cover every bucket":
+  lines = table.histogram_lines(stats.histogram([3, 9, 25], 10), 10, 3)
+  assertEqual(lines[0], "0-9 | ##")
+  assertEqual(lines[1], "10-19 | ")
+  assertEqual(lines[2], "20-29 | #")

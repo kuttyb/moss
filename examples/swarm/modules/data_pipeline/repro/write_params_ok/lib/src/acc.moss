@@ -1,0 +1,17 @@
+module acc
+
+export type Rec:
+  key: Int
+  amount: Int
+
+export fn make(key: Int, amount: Int) -> Rec:
+  return Rec(key: key, amount: amount)
+
+export fn add_into(totals: Map[Int, Int], r: Rec):
+  totals[r.key] = totals.get(r.key, 0) + r.amount
+
+export fn bump(counter: Int) -> Int:
+  return counter + 1
+
+export fn incr(counter: Int):
+  counter = counter + 1

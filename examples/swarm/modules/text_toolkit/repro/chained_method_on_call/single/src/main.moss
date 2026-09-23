@@ -1,0 +1,17 @@
+type Stock:
+  n: Int
+
+  fn cats() -> Map[String, Int]:
+    m = Map()
+    m["a"] = n
+    return m
+
+fn sample() -> Stock:
+  return Stock(n: 2)
+
+fn total(m: Map[String, Int]) -> Int:
+  return m.get("a", 0)
+
+fn main():
+  c = sample().cats()
+  echo total(c)

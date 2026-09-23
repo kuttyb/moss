@@ -1,0 +1,8 @@
+module util_test
+import util
+
+fn twice_double(x: Int) -> Int:
+  return util.double(util.double(x))
+
+test "helper in the test file":
+  assertEqual(twice_double(3), 12)

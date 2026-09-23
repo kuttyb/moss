@@ -1,0 +1,50 @@
+module dsu
+
+# Disjoint-set forest with path halving and union by size.
+
+# Root of x's set. (A free helper: sibling methods cannot call each other
+# by bare name inside an explicit module -- see repro/sibling_method.)
+fn find_root(parent: Vector[Int], x: Int) -> Int:
+  cur = x
+  while parent[cur] != cur:
+    parent[cur] = parent[parent[cur]]
+    cur = parent[cur]
+  return cur
+
+export type UnionFind:
+  parent: Vector[Int]
+  sizes: Vector[Int]
+  sets: Int
+
+  fn find(x: Int):
+    return find_root(parent, x)
+
+  fn same(a: Int, b: Int):
+    return find_root(parent, a) == find_root(parent, b)
+
+  fn merge(a: Int, b: Int):
+    ra = find_root(parent, a)
+    rb = find_root(parent, b)
+    if ra == rb:
+      return false
+    if sizes[ra] < sizes[rb]:
+      parent[ra] = rb
+      sizes[rb] = sizes[rb] + sizes[ra]
+    else:
+      parent[rb] = ra
+      sizes[ra] = sizes[ra] + sizes[rb]
+    sets = sets - 1
+    return true
+
+  fn count_sets():
+    return sets
+
+export fn new_dsu(n: Int):
+  parent = Vector[Int]()
+  sizes = Vector[Int]()
+  i = 0
+  while i < n:
+    parent.push(i)
+    sizes.push(1)
+    i = i + 1
+  return UnionFind(parent: parent, sizes: sizes, sets: n)

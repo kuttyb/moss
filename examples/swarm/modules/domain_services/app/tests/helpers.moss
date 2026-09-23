@@ -1,0 +1,30 @@
+module helper_tests
+
+import records
+import metrics
+
+test "clamp bounds a value":
+  assertEqual(metrics.clamp(5, 0, 10), 5)
+  assertEqual(metrics.clamp(-3, 0, 10), 0)
+  assertEqual(metrics.clamp(99, 0, 10), 10)
+
+test "severity names":
+  assertEqual(metrics.severity_name(0), "info")
+  assertEqual(metrics.severity_name(2), "warn")
+  assertEqual(metrics.severity_name(5), "error")
+
+test "records round trip through accessors":
+  e = records.make_event(1, 2, 404)
+  assertEqual(records.event_source(e), 1)
+  assertEqual(records.event_level(e), 2)
+  assertEqual(records.event_code(e), 404)
+
+test "job weight":
+  j = records.make_job(7, 1, 21)
+  assertEqual(records.job_weight(j), 42)
+
+test "summarize picks the worst level":
+  evs = [records.make_event(1, 1, 0), records.make_event(2, 3, 0), records.make_event(2, 2, 0)]
+  s = metrics.summarize(evs)
+  assertEqual(records.summary_total(s), 3)
+  assertEqual(records.summary_worst(s), 3)

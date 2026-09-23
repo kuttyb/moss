@@ -1,0 +1,8 @@
+module app
+import inv
+
+fn main():
+  bag = inv.make()
+  echo bag.total()
+  echo bag.scaled(2)
+  echo bag.flag(2)

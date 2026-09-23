@@ -1,0 +1,58 @@
+module calc
+import lexer
+import parser
+import eval
+import env
+import errors
+
+# Facade over the whole pipeline: characters -> tokens -> AST -> value.
+
+export type Outcome:
+  ok: Bool
+  value: Int
+  error: errors.CalcError
+
+export type Session:
+  scope: env.Env
+  history: Vector[Int]
+  failures: Int
+
+  fn record(value: Int):
+    history.push(value)
+    return
+
+  fn fail():
+    failures = failures + 1
+
+  fn last() -> Int:
+    n = history |> count
+    return history[n - 1]
+
+  fn evaluated() -> Int:
+    return history |> count
+
+export fn new_session() -> Session:
+  return Session(scope: env.with_defaults(), history: Vector[Int](), failures: 0)
+
+fn failure(err: errors.CalcError) -> Outcome:
+  return Outcome(ok: false, value: 0, error: err)
+
+# Runs one line of source (one character per element) inside the session.
+export fn run(session: Session, chars: Vector[String]) -> Outcome:
+  lexed = lexer.tokenize(chars)
+  if lexed.error.failed():
+    session.fail()
+    return failure(lexed.error)
+  else:
+    parsed = parser.parse(lexed.tokens)
+    if parsed.error.failed():
+      session.fail()
+      return failure(parsed.error)
+    else:
+      result = eval.evaluate(parsed.ast, session.scope)
+      if result.error.failed():
+        session.fail()
+        return failure(result.error)
+      else:
+        session.record(result.value)
+        return Outcome(ok: true, value: result.value, error: errors.none())

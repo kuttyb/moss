@@ -1,0 +1,23 @@
+module model
+
+export trait Billable:
+  fn total() -> Int
+
+export type Item:
+  qty: Int
+  price: Int
+
+  fn total() -> Int:
+    return qty * price
+
+export type Bundle:
+  items: Vector[Item]
+
+  fn total() -> Int:
+    return items |> map(_.total()) |> sum
+
+export fn make_item(qty: Int, price: Int) -> Item:
+  return Item(qty: qty, price: price)
+
+export fn make_bundle(qty: Int, price: Int) -> Bundle:
+  return Bundle(items: [Item(qty: qty, price: price)])

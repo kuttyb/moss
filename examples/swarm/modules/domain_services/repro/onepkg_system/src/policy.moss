@@ -1,0 +1,23 @@
+module policy
+
+import records
+import metrics
+
+# Domain-free service logic.  Handlers delegate here so the behaviour can be
+# tested from outside the domains (test blocks cannot construct domains).
+
+export fn admit(cost: Int, limit: Int) -> Bool:
+  return cost <= limit
+
+export fn is_miss(value: Int) -> Bool:
+  return value < 0
+
+export fn cache_lookup(entries: Map[String, records.Entry], key: String) -> Int:
+  e = entries.get(key, records.make_entry(0, -1, 0))
+  return records.entry_value(e)
+
+export fn cache_store(entries: Map[String, records.Entry], key: String, value: Int):
+  entries[key] = records.make_entry(0, value, 0)
+
+export fn queued(job: records.JobSpec, limit: Int) -> records.JobSpec:
+  return records.make_job(records.job_id(job), records.job_kind(job), metrics.clamp(records.job_cost(job), 0, limit))

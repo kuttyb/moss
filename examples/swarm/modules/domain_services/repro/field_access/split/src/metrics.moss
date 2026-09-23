@@ -1,0 +1,6 @@
+module metrics
+
+import records
+
+export fn level_of(e: records.Event) -> Int:
+  return e.level

@@ -1,0 +1,9 @@
+fn f(n: Int):
+  rev = Vector[Int]()
+  if n < 0:
+    return rev
+  rev.push(n)
+  return rev
+
+fn main():
+  echo f(3) |> count

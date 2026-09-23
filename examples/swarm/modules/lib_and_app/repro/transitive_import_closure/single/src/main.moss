@@ -1,0 +1,15 @@
+type In:
+  v: Int
+
+  fn get() -> Int:
+    return v
+
+type Out:
+  i: In
+
+  fn get() -> Int:
+    return i.get()
+
+fn main():
+  o = Out(i: In(v: 4))
+  echo o.get()

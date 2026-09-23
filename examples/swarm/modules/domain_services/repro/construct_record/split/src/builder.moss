@@ -1,0 +1,6 @@
+module builder
+
+import records
+
+export fn build(level: Int) -> records.Event:
+  return records.Event(source: "x", level: level)

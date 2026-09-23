@@ -1,0 +1,8 @@
+module app
+
+import counter
+
+fn main():
+  c = counter.Counter()
+  message c.Bump()
+  echo 1

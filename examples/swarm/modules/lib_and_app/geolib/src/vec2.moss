@@ -1,0 +1,56 @@
+module vec2
+
+export type Vec2:
+  x: Float
+  y: Float
+
+  fn get_x() -> Float:
+    return x
+
+  fn get_y() -> Float:
+    return y
+
+  fn add(other: Vec2) -> Vec2:
+    return Vec2(x: x + other.x, y: y + other.y)
+
+  fn sub(other: Vec2) -> Vec2:
+    return Vec2(x: x - other.x, y: y - other.y)
+
+  fn scale(k: Float) -> Vec2:
+    return Vec2(x: x * k, y: y * k)
+
+  fn dot(other: Vec2) -> Float:
+    return x * other.x + y * other.y
+
+  fn cross(other: Vec2) -> Float:
+    return x * other.y - y * other.x
+
+  fn length_sq() -> Float:
+    return x * x + y * y
+
+  fn length() -> Float:
+    return sqrt(x * x + y * y)
+
+export fn origin() -> Vec2:
+  return Vec2(x: 0.0, y: 0.0)
+
+export fn vec(x: Float, y: Float) -> Vec2:
+  return Vec2(x: x, y: y)
+
+export fn plus(a: Vec2, b: Vec2) -> Vec2:
+  return a.add(b)
+
+export fn minus(a: Vec2, b: Vec2) -> Vec2:
+  return a.sub(b)
+
+export fn cross(a: Vec2, b: Vec2) -> Float:
+  return a.cross(b)
+
+export fn dist(a: Vec2, b: Vec2) -> Float:
+  return a.sub(b).length()
+
+export fn px(v: Vec2) -> Float:
+  return v.get_x()
+
+export fn py(v: Vec2) -> Float:
+  return v.get_y()

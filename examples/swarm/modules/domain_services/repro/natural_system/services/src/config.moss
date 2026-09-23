@@ -1,0 +1,18 @@
+module config
+
+import records
+
+export domain Config:
+  values = Map()
+
+  fn Set(key: String, value: Int):
+    values[key] = value
+
+  fn Get(key: String, fallback: Int) -> Int:
+    reply values.get(key, fallback)
+
+  fn Snapshot() -> Vector[records.Entry]:
+    out = Vector[records.Entry]()
+    for k in values.keys():
+      out.push(records.Entry(key: k, value: values[k], hits: 0))
+    reply out

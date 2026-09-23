@@ -1,0 +1,27 @@
+module app
+
+import records
+import metrics
+import audit
+import config
+import cache
+import queue
+
+fn main():
+  log = audit.Audit()
+  settings = config.Config()
+  store = cache.Cache(audit_log: log)
+  jobs = queue.JobQueue(settings: settings, audit_log: log)
+
+  message settings.Set("max_cost", 50)
+  message store.Put("alpha", 7)
+  echo message store.Get("alpha")
+  echo message store.Get("missing")
+
+  echo message jobs.Submit(records.JobSpec(id: 1, kind: "index", cost: 20))
+  echo message jobs.Submit(records.JobSpec(id: 2, kind: "reindex", cost: 80))
+  echo message jobs.RunNext()
+
+  summary = message log.Summarize()
+  echo summary.total, summary.worst
+  echo metrics.severity_name(summary.worst)

@@ -1,0 +1,10 @@
+import orders
+import stats
+
+fn main():
+  a = [orders.make_item("pen", 0, 12, 150), orders.make_item("ink", 0, 2, 900)]
+  b = [orders.make_item("desk", 1, 1, 25000)]
+  batch = [orders.make_order(1, 7, 0, a), orders.make_order(2, 8, 1, b)]
+  s = stats.summarize(batch)
+  echo "orders", s.order_count, "revenue", s.revenue, "avg", s.avg_order()
+  echo stats.revenue_by_region(batch).get(1, 0)

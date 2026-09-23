@@ -1,0 +1,20 @@
+type Item:
+  qty: Int
+
+type Stock:
+  items: Vector[Item]
+
+  fn add(item: Item):
+    items.push(item)
+    return
+
+  fn size() -> Int:
+    return items |> count
+
+fn empty_stock() -> Stock:
+  return Stock(items: Vector[Item]())
+
+fn main():
+  stock = empty_stock()
+  stock.add(Item(qty: 3))
+  echo stock.size()

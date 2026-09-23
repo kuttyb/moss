@@ -1,0 +1,6 @@
+module app
+
+import shapes
+
+fn main():
+  echo shapes.run()

@@ -1,0 +1,13 @@
+module batch
+
+# An app-local type that satisfies the shared structural trait
+# metrics.Weighted (no declaration needed: it just has weight()).
+export type Batch:
+  jobs: Int
+  unit: Int
+
+  fn weight():
+    return jobs * unit
+
+export fn make_batch(jobs: Int, unit: Int) -> Batch:
+  return Batch(jobs: jobs, unit: unit)

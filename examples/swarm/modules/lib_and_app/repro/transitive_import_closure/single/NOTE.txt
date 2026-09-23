@@ -1,0 +1,2 @@
+margo run   (cwd transitive_import_closure/single) rc=0: 4
+margo debug rc=0: 4

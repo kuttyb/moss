@@ -1,0 +1,42 @@
+module ast
+import node
+
+# Flat expression tree. Nodes live in one vector in post-order, so a node
+# only ever refers to nodes with a smaller index; evaluation is a single
+# forward sweep and needs no recursion.
+
+export type Ast:
+  nodes: Vector[node.Node]
+  root: Int
+
+  fn size() -> Int:
+    return nodes |> count
+
+  fn add_num(value: Int, pos: Int) -> Int:
+    nodes.push(node.Node(kind: 1, op: 0, value: value, left: -1, right: -1, pos: pos))
+    return last_index(nodes |> count)
+
+  fn add_var(slot: Int, pos: Int) -> Int:
+    nodes.push(node.Node(kind: 2, op: 0, value: slot, left: -1, right: -1, pos: pos))
+    return last_index(nodes |> count)
+
+  fn add_binary(op: Int, left: Int, right: Int, pos: Int) -> Int:
+    nodes.push(node.Node(kind: 3, op: op, value: 0, left: left, right: right, pos: pos))
+    return last_index(nodes |> count)
+
+  fn add_negate(operand: Int, pos: Int) -> Int:
+    nodes.push(node.Node(kind: 4, op: 0, value: 0, left: operand, right: -1, pos: pos))
+    return last_index(nodes |> count)
+
+  fn add_assign(slot: Int, expr: Int, pos: Int) -> Int:
+    nodes.push(node.Node(kind: 5, op: 0, value: slot, left: expr, right: -1, pos: pos))
+    return last_index(nodes |> count)
+
+  fn set_root(index: Int):
+    root = index
+
+fn last_index(count: Int) -> Int:
+  return count - 1
+
+export fn new_ast() -> Ast:
+  return Ast(nodes: Vector[node.Node](), root: -1)

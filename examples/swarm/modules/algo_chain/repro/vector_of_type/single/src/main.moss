@@ -1,0 +1,13 @@
+type Edge:
+  cost: Int
+
+type Graph:
+  edges: Vector[Edge]
+
+  fn add(c: Int):
+    edges.push(Edge(cost: c))
+    return edges |> count
+
+fn main():
+  g = Graph(edges: Vector[Edge]())
+  echo g.add(4)

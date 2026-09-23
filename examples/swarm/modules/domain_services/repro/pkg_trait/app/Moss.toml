@@ -1,0 +1,9 @@
+[project]
+name = "pt-app"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+pt-lib = { path = "../lib" }

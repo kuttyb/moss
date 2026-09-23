@@ -1,0 +1,9 @@
+[project]
+name = "pdr-app"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+pdr-svc = { path = "../svc" }

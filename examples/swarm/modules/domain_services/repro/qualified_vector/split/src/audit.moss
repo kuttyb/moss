@@ -1,0 +1,13 @@
+module audit
+
+import records
+import metrics
+
+export domain Audit:
+  events = Vector[records.Event]()
+
+  fn Record(level: Int):
+    events.push(records.make_event(level + 0))
+
+  fn Worst() -> Int:
+    reply metrics.worst(events)

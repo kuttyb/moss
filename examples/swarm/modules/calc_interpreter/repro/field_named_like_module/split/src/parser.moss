@@ -1,0 +1,8 @@
+module parser
+import tree
+
+export type Parsed:
+  tree: tree.Tree
+
+export fn parse() -> Parsed:
+  return Parsed(tree: tree.make(3))

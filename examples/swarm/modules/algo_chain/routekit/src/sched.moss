@@ -1,0 +1,48 @@
+module sched
+import heap
+
+# A priority-driven job scheduler built on heapkit's MinHeap. Lower priority
+# numbers run first; ties run in an unspecified order.
+
+export type Scheduler:
+  queue: heap.MinHeap
+  costs: Vector[Int]
+  clock: Int
+
+  # Submit a job and return its id.
+  fn submit(priority: Int, cost: Int):
+    id = costs |> count
+    costs.push(cost)
+    heap.push(queue, priority, id)
+    return id
+
+  # Run the most urgent job to completion. Returns its id, or -1 if idle.
+  fn run_next():
+    if heap.is_empty(queue):
+      return -1
+    top = heap.pop(queue)
+    id = heap.id_of(top)
+    clock = clock + costs[id]
+    return id
+
+  fn now():
+    return clock
+
+  fn pending():
+    return heap.size(queue)
+
+export fn new_scheduler() -> Scheduler:
+  return Scheduler(queue: heap.new_heap(), costs: Vector[Int](), clock: 0)
+
+# Function-style facade (methods of exported types don't cross packages).
+export fn submit(s: Scheduler, priority: Int, cost: Int) -> Int:
+  return s.submit(priority, cost)
+
+export fn run_next(s: Scheduler) -> Int:
+  return s.run_next()
+
+export fn now(s: Scheduler) -> Int:
+  return s.now()
+
+export fn pending(s: Scheduler) -> Int:
+  return s.pending()

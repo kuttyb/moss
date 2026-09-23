@@ -1,0 +1,11 @@
+type Sq:
+  s: Int
+
+  fn area() -> Int:
+    return s * s
+
+fn tot(shapes):
+  return shapes |> map(_.area()) |> sum
+
+fn main():
+  echo tot([Sq(s: 2), Sq(s: 3)])

@@ -1,0 +1,14 @@
+module m
+
+export type Item:
+  w: Float
+
+  fn describe():
+    echo "area", area()
+    return
+
+  fn area() -> Float:
+    return w * 2.0
+
+export fn item(w: Float) -> Item:
+  return Item(w: w)

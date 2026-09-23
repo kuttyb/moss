@@ -1,0 +1,22 @@
+module audit
+
+import records
+import metrics
+
+# Audit log.  Aggregate replies (a Summary record, a Vector) cannot be
+# returned from a domain consumed from another package (repro/pkg_domain_reply),
+# so summaries are exposed as scalar handlers and assembled by the caller.
+export domain Audit:
+  events: Vector[records.Event]
+
+  fn Record(e: records.Event):
+    events.push(records.copy_event(e))
+
+  fn Total() -> Int:
+    reply records.summary_total(metrics.summarize(events))
+
+  fn Worst() -> Int:
+    reply records.summary_worst(metrics.summarize(events))
+
+  fn Count() -> Int:
+    reply events |> count

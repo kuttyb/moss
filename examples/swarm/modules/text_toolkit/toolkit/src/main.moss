@@ -1,0 +1,29 @@
+module toolkit
+import strings
+import stats
+import table
+import inventory
+
+fn main():
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  stock.add(inventory.new_item("gadget", "hardware", 3, 1999))
+  stock.add(inventory.new_item("manual", "books", 40, 500))
+  stock.add(inventory.new_item("poster", "books", 7, 300))
+
+  for line in stock.report(8):
+    echo line
+
+  echo strings.concat("total cents: ", strings.int_text(stock.total_value()))
+  echo table.summary(stock.quantities())
+
+  low = stock.low_stock(10)
+  echo strings.concat("low stock: ", strings.join(strings.sorted_text(low), ", "))
+
+  by_cat = stock.qty_by_category()
+  echo strings.concat("books: ", strings.int_text(stats.count_of(by_cat, "books")))
+  echo strings.concat("toys: ", strings.int_text(stats.count_of(by_cat, "toys")))
+
+  h = stats.histogram(stock.quantities(), 10)
+  for row in table.histogram_lines(h, 10, 5):
+    echo row

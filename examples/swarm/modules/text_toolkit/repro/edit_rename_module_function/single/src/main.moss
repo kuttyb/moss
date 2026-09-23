@@ -1,0 +1,5 @@
+fn shout(n: Int) -> Int:
+  return n * 2
+
+fn main():
+  echo shout(4)

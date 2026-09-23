@@ -1,0 +1,28 @@
+module orders_test
+import orders
+import inventory
+import stats
+import strings
+
+test "describe uses the toolkit string helpers":
+  order = orders.new_order("ann", "widget", 5)
+  assertEqual(order.describe(), "ann wants widget x5")
+
+test "process fulfills what it can and logs the rest":
+  stock = inventory.empty_stock()
+  inventory.add_item(stock, inventory.new_item("widget", "hardware", 12, 250))
+  inventory.add_item(stock, inventory.new_item("gadget", "hardware", 3, 1999))
+  batch = [orders.new_order("ann", "widget", 5), orders.new_order("bob", "gadget", 4)]
+  log = orders.process(stock, batch)
+  assertEqual(log[0], "ok    ann wants widget x5")
+  assertEqual(log[1], "short bob wants gadget x4")
+  assertEqual(inventory.stock_quantities(stock), [7, 3])
+  assertEqual(inventory.stock_value(stock), 7 * 250 + 3 * 1999)
+
+test "demand by customer uses defaulted lookups from the toolkit":
+  batch = [orders.new_order("ann", "widget", 5), orders.new_order("bob", "gadget", 4), orders.new_order("ann", "manual", 10)]
+  demand = orders.demand_by_customer(batch)
+  assertEqual(stats.count_of(demand, "ann"), 15)
+  assertEqual(stats.count_of(demand, "bob"), 4)
+  assertEqual(stats.count_of(demand, "nobody"), 0)
+  assertEqual(strings.join(strings.sorted_text(demand.keys()), ","), ",ann,bob")

@@ -1,0 +1,5 @@
+fn helper() -> Int:
+  return twice(3)
+
+test "uses a helper declared in the test file":
+  assertEqual(helper(), 6)

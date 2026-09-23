@@ -1,0 +1,1 @@
+Positive control: Map/Int WRITE parameters (add_into/incr) on imported functions work natively and in Fast Debug (prints 12 / 1). Note push_rec(v: Vector[Rec], r) with body v.push(r) fails 'cannot infer the result type' even single-file (not boundary).

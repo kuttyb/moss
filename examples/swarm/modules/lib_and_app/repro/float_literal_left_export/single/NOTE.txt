@@ -1,0 +1,2 @@
+margo run   (cwd float_literal_left_export/single) rc=0: 6
+margo debug rc=0: 6

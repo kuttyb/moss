@@ -1,0 +1,26 @@
+type Event:
+  level: Int
+
+fn make_event(level: Int) -> Event:
+  return Event(level: level)
+
+fn worst(events: Vector[Event]) -> Int:
+  var w = 0
+  for e in events:
+    if e.level > w:
+      w = e.level
+  return w
+
+domain Audit:
+  events = Vector[Event]()
+
+  fn Record(level: Int):
+    events.push(make_event(level + 0))
+
+  fn Worst() -> Int:
+    reply worst(events)
+
+fn main():
+  a = Audit()
+  message a.Record(3)
+  echo message a.Worst()

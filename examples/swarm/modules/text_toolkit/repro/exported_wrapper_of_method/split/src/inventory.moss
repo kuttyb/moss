@@ -1,0 +1,23 @@
+module inventory
+
+export type Item:
+  qty: Int
+
+  fn value() -> Int:
+    return qty
+
+export type Stock:
+  items: Vector[Item]
+
+  fn total_value() -> Int:
+    var t = 0
+    for it in items:
+      t = t + it.value()
+    return t
+
+export fn stock_value(stock: Stock) -> Int:
+  return stock.total_value()
+
+export fn make() -> Stock:
+  return Stock(items: [Item(qty: 4), Item(qty: 5)])
+

@@ -1,0 +1,44 @@
+module parser_test
+import lexer
+import parser
+import node
+import token
+
+fn parse_chars(chars):
+  lexed = lexer.tokenize(chars)
+  return parser.parse(lexed.tokens)
+
+test "precedence builds a post order tree":
+  p = parse_chars(["1", "+", "2", "*", "3"])
+  assert(not p.error.failed())
+  # nodes: 1, 2, 3, 2*3, 1+(2*3)
+  assertEqual(p.ast.size(), 5)
+  assertEqual(p.ast.root, 4)
+  assertEqual(p.ast.nodes[4].kind, node.kind_binary())
+  assertEqual(p.ast.nodes[4].op, token.kind_plus())
+  assertEqual(p.ast.nodes[3].op, token.kind_star())
+
+test "parentheses override precedence":
+  p = parse_chars(["(", "1", "+", "2", ")", "*", "3"])
+  assertEqual(p.ast.nodes[p.ast.root].op, token.kind_star())
+
+test "unary minus":
+  p = parse_chars(["-", "5"])
+  assertEqual(p.ast.size(), 2)
+  assertEqual(p.ast.nodes[p.ast.root].kind, node.kind_negate())
+
+test "assignment node":
+  p = parse_chars(["b", "=", "4"])
+  assertEqual(p.ast.nodes[p.ast.root].kind, node.kind_assign())
+  assertEqual(p.ast.nodes[p.ast.root].value, 1)
+
+test "missing operand":
+  p = parse_chars(["1", "+"])
+  assert(p.error.failed())
+  assertEqual(p.error.stage(), "parse")
+
+test "unbalanced parentheses":
+  open = parse_chars(["(", "1"])
+  assert(open.error.failed())
+  close = parse_chars(["1", ")"])
+  assert(close.error.failed())

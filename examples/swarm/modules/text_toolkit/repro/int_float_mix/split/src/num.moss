@@ -1,0 +1,4 @@
+module num
+
+export fn scaled(a: Int, b: Float) -> Float:
+  return a + b

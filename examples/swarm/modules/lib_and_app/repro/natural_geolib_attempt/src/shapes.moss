@@ -1,0 +1,60 @@
+module shapes
+
+import vec2
+import measure
+
+export type Circle:
+  center: vec2.Vec2
+  radius: Float
+
+  fn area() -> Float:
+    return measure.pi() * radius * radius
+
+  fn perimeter() -> Float:
+    return 2.0 * measure.pi() * radius
+
+  fn contains(p: vec2.Vec2) -> Bool:
+    return vec2.dist(center, p) <= radius
+
+  fn moved(by: vec2.Vec2):
+    return Circle(center: center.add(by), radius: radius)
+
+export type Rect:
+  origin: vec2.Vec2
+  width: Float
+  height: Float
+
+  fn area() -> Float:
+    return width * height
+
+  fn perimeter() -> Float:
+    return 2.0 * (width + height)
+
+  fn contains(p: vec2.Vec2) -> Bool:
+    dx = p.x - origin.x
+    dy = p.y - origin.y
+    return dx >= 0.0 and dx <= width and dy >= 0.0 and dy <= height
+
+  fn moved(by: vec2.Vec2):
+    return Rect(origin: origin.add(by), width: width, height: height)
+
+export type Triangle:
+  a: vec2.Vec2
+  b: vec2.Vec2
+  c: vec2.Vec2
+
+  fn area() -> Float:
+    twice = b.sub(a).cross(c.sub(a))
+    return measure.abs_f(twice) / 2.0
+
+  fn perimeter() -> Float:
+    return vec2.dist(a, b) + vec2.dist(b, c) + vec2.dist(c, a)
+
+  fn moved(by: vec2.Vec2):
+    return Triangle(a: a.add(by), b: b.add(by), c: c.add(by))
+
+export fn unit_square() -> Rect:
+  return Rect(origin: vec2.origin(), width: 1.0, height: 1.0)
+
+export fn square(side: Float) -> Rect:
+  return Rect(origin: vec2.origin(), width: side, height: side)

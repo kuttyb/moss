@@ -1,0 +1,11 @@
+import vec2
+
+test "vec2 add":
+  a = vec2.vec(1.0, 2.0)
+  b = vec2.vec(3.0, 4.0)
+  c = vec2.plus(a, b)
+  assertEqual(c.get_x(), 4.0)
+  assertEqual(c.get_y(), 6.0)
+
+test "vec2 dist":
+  assertEqual(vec2.dist(vec2.origin(), vec2.vec(3.0, 4.0)), 5.0)

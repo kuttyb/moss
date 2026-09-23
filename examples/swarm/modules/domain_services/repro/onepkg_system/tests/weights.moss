@@ -1,0 +1,14 @@
+module weight_tests
+
+import metrics
+import batch
+
+fn describe(x: metrics.Weighted) -> Int:
+  return x.weight()
+
+test "trait bound function accepts an app-local type":
+  assertEqual(describe(batch.make_batch(3, 4)), 12)
+
+test "generic helper totals app-local values":
+  bs = [batch.make_batch(1, 1), batch.make_batch(2, 5)]
+  assertEqual(metrics.total_weight(bs), 11)

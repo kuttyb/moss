@@ -1,0 +1,17 @@
+module pipeline
+
+import orders
+import stats
+import validate
+
+# Work-queue style processing: drain `pending` orders from a Queue (a Queue has no
+# length/empty test in v0.1), keeping only valid, open ones.
+export fn drain_open(queue: Queue[orders.Order], pending: Int) -> stats.Summary:
+  kept = Vector[orders.Order]()
+  while pending > 0:
+    order = queue.pop()
+    if validate.order_ok(order):
+      if orders.order_is_open(order):
+        kept.push(order)
+    pending = pending - 1
+  return stats.summarize(kept)

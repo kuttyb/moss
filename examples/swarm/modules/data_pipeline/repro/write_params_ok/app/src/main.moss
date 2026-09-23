@@ -1,0 +1,13 @@
+module app
+
+import acc
+
+fn main():
+  totals = Map()
+  totals[0] = 0
+  acc.add_into(totals, acc.make(1, 5))
+  acc.add_into(totals, acc.make(1, 7))
+  echo totals.get(1, 0)
+  n = 0
+  acc.incr(n)
+  echo n

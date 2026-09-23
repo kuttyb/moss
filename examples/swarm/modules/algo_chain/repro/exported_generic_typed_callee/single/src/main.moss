@@ -1,0 +1,10 @@
+module app
+
+fn addone(x: Int):
+  return x + 1
+
+fn f(y):
+  return addone(y)
+
+fn main():
+  echo f(4)

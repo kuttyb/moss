@@ -1,0 +1,75 @@
+module eval
+import ast
+import node
+import env
+import errors
+import token
+
+export type EvalResult:
+  value: Int
+  error: errors.CalcError
+
+# Evaluates a flat AST with one forward sweep: every node's value is stored
+# at its own index, so parents just read their children's slots.
+export fn evaluate(tree: ast.Ast, scope: env.Env) -> EvalResult:
+  n = tree.size()
+  var values = Vector[Int]()
+  var err = errors.none()
+  var i = 0
+  while i < n:
+    err = eval_node(tree, scope, values, i)
+    if err.failed():
+      i = n
+    else:
+      i = i + 1
+  if err.failed():
+    return EvalResult(value: 0, error: err)
+  else:
+    if tree.root < 0:
+      return EvalResult(value: 0, error: errors.eval_error("empty program", 0))
+    return EvalResult(value: values[tree.root], error: err)
+
+fn eval_node(tree: ast.Ast, scope: env.Env, values: Vector[Int], i: Int) -> errors.CalcError:
+  kind = tree.nodes[i].kind
+  pos = tree.nodes[i].pos
+  if kind == node.kind_num():
+    values.push(tree.nodes[i].value)
+    return errors.none()
+  if kind == node.kind_var():
+    if not scope.has(tree.nodes[i].value):
+      return errors.eval_error("undefined variable", pos)
+    values.push(scope.get(tree.nodes[i].value))
+    return errors.none()
+  if kind == node.kind_negate():
+    values.push(0 - values[tree.nodes[i].left])
+    return errors.none()
+  if kind == node.kind_assign():
+    v = values[tree.nodes[i].left]
+    scope.set(tree.nodes[i].value, v)
+    values.push(v)
+    return errors.none()
+  # binary operator
+  op = tree.nodes[i].op
+  a = values[tree.nodes[i].left]
+  b = values[tree.nodes[i].right]
+  if divides(op):
+    if b == 0:
+      return errors.eval_error("division by zero", pos)
+  values.push(apply_op(op, a, b))
+  return errors.none()
+
+fn divides(op: Int) -> Bool:
+  if op == token.kind_slash():
+    return true
+  return op == token.kind_percent()
+
+fn apply_op(op: Int, a: Int, b: Int) -> Int:
+  if op == token.kind_plus():
+    return a + b
+  if op == token.kind_minus():
+    return a - b
+  if op == token.kind_star():
+    return a * b
+  if op == token.kind_slash():
+    return a / b
+  return a % b

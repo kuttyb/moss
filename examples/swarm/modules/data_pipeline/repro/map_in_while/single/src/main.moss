@@ -1,0 +1,14 @@
+fn score(v: Int, k: Int) -> Int:
+  return v * k
+
+fn by_key(batch: Vector[Int]) -> Map[Int, Int]:
+  totals = Map()
+  k = 0
+  while k < 3:
+    totals[k] = batch |> map(score(_, k)) |> sum
+    k = k + 1
+  return totals
+
+fn main():
+  m = by_key([1, 2, 3])
+  echo m.get(0, 0), m.get(1, 0), m.get(2, 0)

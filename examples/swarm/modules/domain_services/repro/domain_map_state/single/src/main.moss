@@ -1,0 +1,13 @@
+domain D:
+  values = Map()
+
+  fn Set(key: String, value: Int):
+    values[key] = value
+
+  fn Get(key: String) -> Int:
+    reply values.get(key, 0)
+
+fn main():
+  d = D()
+  message d.Set("a", 1)
+  echo message d.Get("a")

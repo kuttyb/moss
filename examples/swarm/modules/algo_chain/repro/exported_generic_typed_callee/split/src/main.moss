@@ -1,0 +1,5 @@
+module app
+import lib
+
+fn main():
+  echo lib.f(4)

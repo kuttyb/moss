@@ -1,0 +1,7 @@
+import orders
+import stats
+
+test "summary totals":
+  a = [orders.make_item("pen", 0, 12, 150)]
+  s = stats.summarize([orders.make_order(1, 7, 0, a)])
+  assertEqual(s.revenue, 1800)

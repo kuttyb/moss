@@ -1,0 +1,8 @@
+module twice_test
+import util
+
+fn helper() -> Int:
+  return util.twice(3)
+
+test "uses a helper declared in the test file":
+  assertEqual(helper(), 6)

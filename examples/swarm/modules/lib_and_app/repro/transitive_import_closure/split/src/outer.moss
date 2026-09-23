@@ -1,0 +1,12 @@
+module outer
+
+import inner
+
+export type Out:
+  i: inner.In
+
+  fn get() -> Int:
+    return i.get()
+
+export fn mk(v: Int) -> Out:
+  return Out(i: inner.mk(v))

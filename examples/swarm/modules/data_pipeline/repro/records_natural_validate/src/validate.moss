@@ -1,0 +1,19 @@
+module validate
+
+import orders
+
+export fn item_ok(item: orders.LineItem) -> Bool:
+  return item.qty > 0 and item.unit_cents >= 0
+
+export fn order_ok(order: orders.Order) -> Bool:
+  if order.line_count() == 0:
+    return false
+  return order.items |> all(item_ok(_))
+
+fn invalid_flag(order: orders.Order) -> Int:
+  if order_ok(order):
+    return 0
+  return 1
+
+export fn count_invalid(batch: Vector[orders.Order]) -> Int:
+  return batch |> map(invalid_flag(_)) |> sum

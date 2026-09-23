@@ -1,0 +1,7 @@
+import orders
+import validate
+
+fn main():
+  items = [orders.make_item("pen", "office", 12, 150), orders.make_item("ink", "office", 2, 900)]
+  o = orders.make_order(1, "acme", "west", items)
+  echo "order", o.id, o.total(), validate.order_ok(o)

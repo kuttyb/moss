@@ -1,0 +1,5 @@
+fn perimeter(w: Float, h: Float) -> Float:
+  return 2.0 * (w + h)
+
+fn main():
+  echo perimeter(1.0, 2.0)

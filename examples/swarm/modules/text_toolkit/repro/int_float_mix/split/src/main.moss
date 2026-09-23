@@ -1,0 +1,5 @@
+module app
+import num
+
+fn main():
+  echo num.scaled(1, 2.5)

@@ -1,0 +1,74 @@
+module eval
+import ast
+import env
+import errors
+import node
+import token
+
+# Evaluates a flat AST with one forward sweep: every node's value is stored
+# at its own index, so parents just read their children's slots. Errors go to
+# `diag`; the result is 0 when the Diag reports a failure.
+export fn evaluate(tree: ast.Ast, scope: env.Env, diag: errors.Diag) -> Int:
+  n = tree.size()
+  var values = Vector[Int]()
+  var i = 0
+  while i < n:
+    eval_node(tree, scope, values, diag, i)
+    if diag.failed():
+      i = n
+    else:
+      i = i + 1
+  if diag.failed():
+    return 0
+  if tree.root() < 0:
+    diag.report(errors.eval(errors.empty_program()), 0)
+    return 0
+  return values[tree.root()]
+
+fn eval_node(tree: ast.Ast, scope: env.Env, values: Vector[Int], diag: errors.Diag, i: Int):
+  kind = tree.kind_at(i)
+  pos = tree.pos_at(i)
+  if kind == node.kind_num():
+    values.push(tree.value_at(i))
+    return
+  if kind == node.kind_var():
+    slot = tree.value_at(i)
+    if not scope.has(slot):
+      diag.report(errors.eval(errors.undefined_variable()), pos)
+      return
+    values.push(scope.get(slot))
+    return
+  if kind == node.kind_negate():
+    values.push(0 - values[tree.left_at(i)])
+    return
+  if kind == node.kind_assign():
+    v = values[tree.left_at(i)]
+    scope.set(tree.value_at(i), v)
+    values.push(v)
+    return
+  # binary operator
+  op = tree.op_at(i)
+  a = values[tree.left_at(i)]
+  b = values[tree.right_at(i)]
+  if divides(op):
+    if b == 0:
+      diag.report(errors.eval(errors.division_by_zero()), pos)
+      return
+  values.push(apply_op(op, a, b))
+  return
+
+fn divides(op: Int) -> Bool:
+  if op == token.kind_slash():
+    return true
+  return op == token.kind_percent()
+
+fn apply_op(op: Int, a: Int, b: Int) -> Int:
+  if op == token.kind_plus():
+    return a + b
+  if op == token.kind_minus():
+    return a - b
+  if op == token.kind_star():
+    return a * b
+  if op == token.kind_slash():
+    return a / b
+  return a % b

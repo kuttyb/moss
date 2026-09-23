@@ -1,0 +1,21 @@
+module inventory
+
+export type Item:
+  qty: Int
+
+  fn amount() -> Int:
+    return qty
+
+export type Stock:
+  items: Vector[Item]
+
+  fn first_big(n: Int) -> Int:
+    var i = 0
+    while i < (items |> count):
+      if items[i].qty >= n:
+        return i
+      i = i + 1
+    return 0 - 1
+
+export fn make() -> Stock:
+  return Stock(items: [Item(qty: 10), Item(qty: 20)])

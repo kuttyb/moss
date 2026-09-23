@@ -1,0 +1,7 @@
+module mid
+import leaf
+
+# Generic (untyped) export whose body calls into another module.
+export fn scaled_bump(x):
+  y = x + x
+  return leaf.bump(1)

@@ -1,0 +1,6 @@
+[project]
+name = "mr_app"
+version = "0.1.0"
+
+[dependencies]
+mr_lib = { path = "../lib" }

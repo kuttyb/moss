@@ -1,0 +1,2 @@
+margo run   (cwd method_across_package/single) rc=0: 3
+margo debug rc=0: 3

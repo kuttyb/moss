@@ -1,0 +1,9 @@
+type P:
+  x: Int
+  y: Int
+
+fn sum_xy(p: P) -> Int:
+  return p.x + p.y
+
+fn main():
+  echo sum_xy(P(x: 1, y: 2))

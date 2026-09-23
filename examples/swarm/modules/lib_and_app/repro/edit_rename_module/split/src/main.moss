@@ -1,0 +1,6 @@
+module app
+
+import bag
+
+fn main():
+  echo bag.make()

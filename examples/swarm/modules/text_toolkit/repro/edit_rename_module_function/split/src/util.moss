@@ -1,0 +1,4 @@
+module util
+
+export fn shout(n: Int) -> Int:
+  return n * 2

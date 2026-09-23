@@ -1,0 +1,17 @@
+module inventory
+
+export type Item:
+  qty: Int
+
+export type Stock:
+  items: Vector[Item]
+
+  fn add(item: Item):
+    items.push(item)
+    return
+
+  fn size() -> Int:
+    return items |> count
+
+export fn empty_stock() -> Stock:
+  return Stock(items: Vector[Item]())

@@ -1,0 +1,7 @@
+module app
+import inventory
+
+fn main():
+  s = inventory.make()
+  s.add(2)
+  echo 1

@@ -1,0 +1,19 @@
+import heap
+
+test "heap pops in ascending key order":
+  h = heap.new_heap()
+  h.push(5, 50)
+  h.push(1, 10)
+  h.push(3, 30)
+  h.push(4, 40)
+  assertEqual(h.size(), 4)
+  a = h.pop()
+  b = h.pop()
+  c = h.pop()
+  d = h.pop()
+  assertEqual(a.key_of(), 1)
+  assertEqual(b.key_of(), 3)
+  assertEqual(c.key_of(), 4)
+  assertEqual(d.key_of(), 5)
+  assertEqual(d.id_of(), 50)
+  assert(h.is_empty())

@@ -1,0 +1,7 @@
+module app
+
+fn helper() -> Int:
+  return 41
+
+test "helper":
+  assertEqual(helper() + 1, 42)

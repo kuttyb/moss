@@ -1,0 +1,7 @@
+fn get(entries: Map[String, Int], key: String) -> Int:
+  return entries.get(key, -1)
+
+fn main():
+  m = Map()
+  m["a"] = 3
+  echo get(m, "a")

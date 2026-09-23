@@ -1,0 +1,10 @@
+module metrics
+
+import records
+
+export fn worst(events: Vector[records.Event]) -> Int:
+  var w = 0
+  for e in events:
+    if e.get_level() > w:
+      w = e.get_level()
+  return w

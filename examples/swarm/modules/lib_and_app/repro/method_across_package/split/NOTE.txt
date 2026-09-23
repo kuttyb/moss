@@ -1,0 +1,2 @@
+margo run   (cwd method_across_package/split/app) rc=1: MOSS_COMPILE_ERROR: no matching method 'pt__Pt.sum' for supplied arguments
+margo debug rc=0: 3

@@ -1,0 +1,4 @@
+module other
+
+export fn triple(x: Int) -> Int:
+  return x * 3

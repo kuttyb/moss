@@ -1,0 +1,9 @@
+[project]
+name = "gpi_consumer"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+provider = { path = "../provider" }

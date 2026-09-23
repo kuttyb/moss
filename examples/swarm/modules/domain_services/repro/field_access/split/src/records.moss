@@ -1,0 +1,8 @@
+module records
+
+export type Event:
+  source: String
+  level: Int
+
+export fn make_event(source: String, level: Int) -> Event:
+  return Event(source: source, level: level)

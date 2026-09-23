@@ -1,0 +1,2 @@
+margo run   (cwd sibling_method_call/split) rc=1: UNKNOWN_SYMBOL_OR_TYPE: unknown local function 'm__area'
+margo debug rc=1: moss:7: error: [UNKNOWN_SYMBOL_OR_TYPE] unknown local function 'm__area'

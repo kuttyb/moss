@@ -1,0 +1,6 @@
+module app
+
+import beta
+
+fn main():
+  echo beta.bad(1)

@@ -1,0 +1,18 @@
+fn total_weight(items) -> Int:
+  var t = 0
+  for item in items:
+    t = t + item.weight()
+  return t
+
+type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+fn run() -> Int:
+  blobs = [Blob(size: 1), Blob(size: 2)]
+  return total_weight(blobs)
+
+fn main():
+  echo run()

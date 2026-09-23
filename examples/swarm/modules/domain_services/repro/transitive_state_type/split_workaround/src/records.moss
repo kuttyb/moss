@@ -1,0 +1,10 @@
+module records
+
+export type Event:
+  level: Int
+
+  fn get_level():
+    return level
+
+export fn make_event(level: Int) -> Event:
+  return Event(level: level)

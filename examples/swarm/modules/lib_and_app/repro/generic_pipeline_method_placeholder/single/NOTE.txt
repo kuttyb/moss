@@ -1,0 +1,2 @@
+margo run   (cwd generic_pipeline_method_placeholder/single) rc=1: TYPE_INFERENCE_FAILED: cannot infer the type of this return expression in function 'tot'
+margo debug rc=1: moss:8: error: [TYPE_INFERENCE_FAILED] cannot infer the type of this return expression in function 'tot'

@@ -1,0 +1,2 @@
+margo run   (cwd sibling_method_call/single) rc=0: area 2
+margo debug rc=0: area 2

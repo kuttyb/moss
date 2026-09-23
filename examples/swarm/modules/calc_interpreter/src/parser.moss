@@ -1,0 +1,206 @@
+module parser
+import token
+import ast
+import node
+import errors
+
+# Operator-precedence (shunting-yard) parser producing the flat AST from
+# ast.moss. Grammar:
+#   line  := IDENT '=' expr | expr
+#   expr  := unary-minus, + - * / % (left associative), parentheses, numbers,
+#            identifiers
+
+# Pseudo operator kinds kept on the operator stack.
+fn op_paren() -> Int:
+  return 8
+
+fn op_unary_minus() -> Int:
+  return 100
+
+# Private parser working state.
+type Stacks:
+  operands: Vector[Int]
+  ops: Vector[Int]
+  op_pos: Vector[Int]
+  expect_operand: Bool
+
+  fn push_operand(index: Int):
+    operands.push(index)
+    return
+
+  fn pop_operand() -> Int:
+    return operands.pop()
+
+  fn operand_count() -> Int:
+    return operands |> count
+
+  fn push_op(kind: Int, pos: Int):
+    ops.push(kind)
+    op_pos.push(pos)
+    return
+
+  fn pop_op() -> Int:
+    op_pos.pop()
+    return ops.pop()
+
+  fn op_count() -> Int:
+    return ops |> count
+
+  fn top_op() -> Int:
+    n = ops |> count
+    return ops[n - 1]
+
+  fn top_pos() -> Int:
+    n = op_pos |> count
+    return op_pos[n - 1]
+
+fn new_stacks() -> Stacks:
+  return Stacks(operands: Vector[Int](), ops: Vector[Int](), op_pos: Vector[Int](), expect_operand: true)
+
+fn op_prec(kind: Int) -> Int:
+  if kind == op_unary_minus():
+    return 3
+  return token.precedence_of(kind)
+
+# Parses a token line (as produced by lexer.tokenize). Errors go to `diag`;
+# the returned tree is only meaningful when `diag` is still clean.
+export fn parse(tokens: Vector[token.Token], diag: errors.Diag) -> ast.Ast:
+  var tree = ast.new_ast()
+  var st = new_stacks()
+  n = tokens |> count
+  var i = 0
+  assigning = starts_with_assignment(tokens)
+  if assigning:
+    i = 2
+  while i < n:
+    step(tokens, i, tree, st, diag)
+    if diag.failed():
+      i = n
+    else:
+      i = i + 1
+  if not diag.failed():
+    finish(tokens, tree, st, assigning, diag)
+  return tree
+
+fn starts_with_assignment(tokens: Vector[token.Token]) -> Bool:
+  n = tokens |> count
+  if n < 3:
+    return false
+  ident = token.kind_ident()
+  assign = token.kind_assign()
+  if tokens[0].kind() != ident:
+    return false
+  return tokens[1].kind() == assign
+
+# Should the operator on top of the stack be applied before an incoming
+# operator of the given precedence?
+fn should_reduce(st: Stacks, prec: Int) -> Bool:
+  if st.op_count() == 0:
+    return false
+  top = st.top_op()
+  if top == op_paren():
+    return false
+  return op_prec(top) >= prec
+
+fn top_is_operator(st: Stacks) -> Bool:
+  if st.op_count() == 0:
+    return false
+  paren = op_paren()
+  return st.top_op() != paren
+
+fn apply_top(tree: ast.Ast, st: Stacks, diag: errors.Diag):
+  p = st.top_pos()
+  op = st.pop_op()
+  if op == op_unary_minus():
+    if st.operand_count() < 1:
+      diag.report(errors.parse(errors.missing_operand()), p)
+      return
+    a = st.pop_operand()
+    st.push_operand(tree.add_negate(a, p))
+    return
+  if st.operand_count() < 2:
+    diag.report(errors.parse(errors.missing_operand()), p)
+    return
+  b = st.pop_operand()
+  a = st.pop_operand()
+  st.push_operand(tree.add_binary(op, a, b, p))
+  return
+
+fn step(tokens: Vector[token.Token], i: Int, tree: ast.Ast, st: Stacks, diag: errors.Diag):
+  kind = tokens[i].kind()
+  pos = tokens[i].pos()
+  if kind == token.kind_end():
+    return
+  if kind == token.kind_num():
+    if not st.expect_operand:
+      diag.report(errors.parse(errors.unexpected_number()), pos)
+      return
+    st.push_operand(tree.add_num(tokens[i].value(), pos))
+    st.expect_operand = false
+    return
+  if kind == token.kind_ident():
+    if not st.expect_operand:
+      diag.report(errors.parse(errors.unexpected_name()), pos)
+      return
+    st.push_operand(tree.add_var(tokens[i].value(), pos))
+    st.expect_operand = false
+    return
+  if kind == token.kind_assign():
+    diag.report(errors.parse(errors.unexpected_assign()), pos)
+    return
+  if kind == token.kind_lparen():
+    if not st.expect_operand:
+      diag.report(errors.parse(errors.unexpected_lparen()), pos)
+      return
+    st.push_op(op_paren(), pos)
+    return
+  if kind == token.kind_rparen():
+    if st.expect_operand:
+      diag.report(errors.parse(errors.missing_operand()), pos)
+      return
+    while top_is_operator(st):
+      apply_top(tree, st, diag)
+      if diag.failed():
+        return
+    if st.op_count() == 0:
+      diag.report(errors.parse(errors.unmatched_rparen()), pos)
+      return
+    st.pop_op()
+    return
+  if kind == token.kind_minus():
+    if st.expect_operand:
+      st.push_op(op_unary_minus(), pos)
+      return
+  # remaining kinds are binary operators
+  if st.expect_operand:
+    diag.report(errors.parse(errors.missing_operand()), pos)
+    return
+  prec = token.precedence_of(kind)
+  while should_reduce(st, prec):
+    apply_top(tree, st, diag)
+    if diag.failed():
+      return
+  st.push_op(kind, pos)
+  st.expect_operand = true
+  return
+
+fn finish(tokens: Vector[token.Token], tree: ast.Ast, st: Stacks, assigning: Bool, diag: errors.Diag):
+  if st.expect_operand:
+    diag.report(errors.parse(errors.ends_unexpectedly()), 0)
+    return
+  while st.op_count() > 0:
+    paren = op_paren()
+    if st.top_op() == paren:
+      diag.report(errors.parse(errors.unmatched_lparen()), st.top_pos())
+      return
+    apply_top(tree, st, diag)
+    if diag.failed():
+      return
+  if st.operand_count() != 1:
+    diag.report(errors.parse(errors.malformed()), 0)
+    return
+  root = st.pop_operand()
+  if assigning:
+    root = tree.add_assign(tokens[0].value(), root, 0)
+  tree.set_root(root)
+  return

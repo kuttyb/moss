@@ -1,0 +1,7 @@
+module metrics
+
+export fn total_weight(items) -> Int:
+  var t = 0
+  for item in items:
+    t = t + item.weight()
+  return t

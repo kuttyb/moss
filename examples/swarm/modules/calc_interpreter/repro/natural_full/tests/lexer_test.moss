@@ -1,0 +1,35 @@
+module lexer_test
+import lexer
+import token
+
+test "numbers and operators":
+  r = lexer.tokenize(["1", "2", " ", "+", "3"])
+  assert(not r.error.failed())
+  assertEqual(r.tokens |> count, 4)
+  assertEqual(r.tokens[0].kind, token.kind_num())
+  assertEqual(r.tokens[0].value, 12)
+  assertEqual(r.tokens[1].kind, token.kind_plus())
+  assertEqual(r.tokens[2].value, 3)
+  assertEqual(r.tokens[3].kind, token.kind_end())
+
+test "identifier slots":
+  r = lexer.tokenize(["a", "=", "z"])
+  assertEqual(r.tokens[0].kind, token.kind_ident())
+  assertEqual(r.tokens[0].value, 0)
+  assertEqual(r.tokens[1].kind, token.kind_assign())
+  assertEqual(r.tokens[2].value, 25)
+
+test "token positions":
+  r = lexer.tokenize(["(", "7", "*", "8", ")"])
+  assertEqual(r.tokens[1].pos, 1)
+  assertEqual(r.tokens[3].pos, 3)
+
+test "bad character is reported":
+  r = lexer.tokenize(["1", "+", "$"])
+  assert(r.error.failed())
+  assertEqual(r.error.pos, 2)
+  assertEqual(r.error.stage(), "lex")
+
+test "empty input is just the end marker":
+  r = lexer.tokenize(Vector[String]())
+  assertEqual(r.tokens |> count, 1)

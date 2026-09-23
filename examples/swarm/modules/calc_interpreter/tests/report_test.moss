@@ -1,0 +1,10 @@
+module report_test
+import calc
+import report
+
+test "show and summary run on real outcomes":
+  s = calc.new_session()
+  report.show(calc.run(s, ["4", "*", "4"]))
+  report.show(calc.run(s, ["4", "/", "0"]))
+  report.summary(s)
+  assertEqual(s.evaluated(), 1)

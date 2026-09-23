@@ -1,0 +1,16 @@
+type S:
+  ops: Vector[Int]
+
+  fn top() -> Int:
+    n = ops |> count
+    return ops[n - 1]
+
+fn paren() -> Int:
+  return 8
+
+fn total(s: S) -> Int:
+  return s.top() + paren()
+
+fn main():
+  s = S(ops: [8, 3])
+  echo total(s)

@@ -1,0 +1,34 @@
+module model
+
+import vec2
+import shapes
+
+export type CircleItem:
+  name: String
+  shape: shapes.Circle
+
+  fn area() -> Float:
+    return shapes.circle_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.circle_perimeter(shape)
+
+export type RectItem:
+  name: String
+  shape: shapes.Rect
+
+  fn area() -> Float:
+    return shapes.rect_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.rect_perimeter(shape)
+
+export type TriItem:
+  name: String
+  shape: shapes.Triangle
+
+  fn area() -> Float:
+    return shapes.triangle_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.triangle_perimeter(shape)

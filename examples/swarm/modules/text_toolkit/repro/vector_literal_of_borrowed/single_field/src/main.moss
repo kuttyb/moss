@@ -1,0 +1,13 @@
+fn count_words(words: Vector[String]) -> Int:
+  return words |> count
+
+type Order:
+  customer: String
+  item: String
+
+  fn words() -> Int:
+    return count_words([customer, "wants", item])
+
+fn main():
+  order = Order(customer: "ann", item: "widget")
+  echo order.words()

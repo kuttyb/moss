@@ -1,0 +1,13 @@
+module services_policy_tests
+
+import records
+import policy
+
+test "admit":
+  assert(policy.admit(3, 3))
+  assert(not policy.admit(4, 3))
+
+test "queued keeps ids and clamps cost":
+  j = policy.queued(records.make_job(5, 2, 500), 100)
+  assertEqual(records.job_id(j), 5)
+  assertEqual(records.job_cost(j), 100)

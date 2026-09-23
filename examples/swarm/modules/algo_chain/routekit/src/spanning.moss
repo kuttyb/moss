@@ -1,0 +1,47 @@
+module spanning
+import graph
+import dsu
+import order
+import heap  # unused by name: order.order_by_key's generic body needs it linked (repro/generic_transitive_import)
+
+# Kruskal's minimum spanning forest. Edges are ranked with heapkit's generic
+# order_by_key, which works on graph.Edge because Edge has a key() method.
+
+export type Forest:
+  edge_ids: Vector[Int]
+  total: Int
+
+# Vector[Edge]() would be mis-typed in a module; seed and pop instead.
+fn no_edges(g: graph.Graph):
+  seed = [graph.edge(g, 0)]
+  seed.pop()
+  return seed
+
+export fn kruskal(g: graph.Graph) -> Forest:
+  edges = no_edges(g)
+  e = 0
+  m = graph.edge_count(g)
+  while e < m:
+    edges.push(graph.edge(g, e))
+    e = e + 1
+  ranked = order.order_by_key(edges)
+  uf = dsu.new_dsu(graph.node_count(g))
+  chosen = Vector[Int]()
+  total = 0
+  k = 0
+  while k < m:
+    ed = edges[ranked[k]]
+    if dsu.merge(uf, ed.src_of(), ed.dst_of()):
+      chosen.push(ed.id_of())
+      total = total + ed.cost_of()
+    k = k + 1
+  return Forest(edge_ids: chosen, total: total)
+
+export fn total_cost(f: Forest) -> Int:
+  return f.total
+
+export fn edge_count(f: Forest) -> Int:
+  return f.edge_ids |> count
+
+export fn edge_id(f: Forest, k: Int) -> Int:
+  return f.edge_ids[k]

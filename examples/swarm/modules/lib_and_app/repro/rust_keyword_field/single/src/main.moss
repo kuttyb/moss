@@ -1,0 +1,6 @@
+type Holder:
+  box: Int
+
+fn main():
+  h = Holder(box: 3)
+  echo h.box

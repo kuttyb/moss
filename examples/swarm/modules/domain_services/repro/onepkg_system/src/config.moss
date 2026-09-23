@@ -1,0 +1,23 @@
+module config
+
+import records
+
+export domain Config:
+  values: Map[Int, Int]
+  ids = Vector[Int]()
+
+  fn Set(key: Int, value: Int):
+    values[key] = value
+    ids.push(key + 0)
+
+  fn Get(key: Int, fallback: Int) -> Int:
+    reply values.get(key, fallback)
+
+  fn Size() -> Int:
+    reply ids |> count
+
+  fn KeyAt(index: Int) -> Int:
+    reply ids[index]
+
+  fn ValueAt(index: Int) -> Int:
+    reply values.get(ids[index], 0)

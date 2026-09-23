@@ -1,0 +1,2 @@
+margo run   (cwd trait_param_export/split) rc=1: margo: error: command failed (/home/kuttybanerjee/daji/moss3/moss build --json): moss: error: internal synchronization invariant: unresolved concrete method effect target
+margo debug rc=1: moss: error: internal synchronization invariant: unresolved concrete method effect target

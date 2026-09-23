@@ -1,0 +1,51 @@
+module app
+
+import records
+import metrics
+import audit
+import config
+import cache
+import queue
+import policy
+import batch
+
+# NOTE: `import batch` is unused here; it is needed only because the test
+# files import it (repro/test_import: tests may only import modules that the
+# root main module itself imports when built natively).
+#
+# Composition root.  Test blocks cannot construct domains, so the composed
+# topology is exercised here and verified with assertEqual (a failed
+# assertion makes `margo run` fail).
+fn main():
+  log = audit.Audit()
+  settings = config.Config()
+  store = cache.Cache(audit_log: log)
+  jobs = queue.JobQueue(settings: settings, audit_log: log)
+
+  message settings.Set(1, 50)
+  message store.Put("alpha", 7)
+  assertEqual(message store.Get("alpha"), 7)
+  assertEqual(message store.Get("missing"), -1)
+  assertEqual(message log.Count(), 1)
+
+  assertEqual(message jobs.Submit(records.make_job(1, 1, 20)), 1)
+  assertEqual(message jobs.Submit(records.make_job(2, 2, 80)), -1)
+  assertEqual(message jobs.Pending(), 1)
+  assertEqual(message jobs.RunNext(), 40)
+  assertEqual(message jobs.RunNext(), -1)
+
+  snap = Vector[records.Entry]()
+  n = message settings.Size()
+  i = 0
+  while i < n:
+    k = message settings.KeyAt(i)
+    v = message settings.ValueAt(i)
+    snap.push(records.make_entry(k, v, 0))
+    i = i + 1
+  assertEqual(snap |> count, 1)
+
+  assert(policy.admit(records.job_cost(records.make_job(9, 1, 5)), 10))
+
+  summary = records.make_summary(message log.Total(), message log.Worst())
+  echo "events", records.summary_total(summary), "worst", records.summary_worst(summary)
+  echo metrics.severity_name(records.summary_worst(summary))

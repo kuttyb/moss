@@ -1,0 +1,15 @@
+type P:
+  x: Int
+  y: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y
+
+fn f(p: P) -> Int:
+  return p.get_x() + p.get_y()
+
+fn main():
+  echo f(P(x: 1, y: 2))

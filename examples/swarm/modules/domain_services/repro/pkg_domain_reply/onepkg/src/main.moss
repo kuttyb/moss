@@ -1,0 +1,11 @@
+module app
+
+import audit
+
+fn main():
+  a = audit.Audit()
+  message a.Bump()
+  s = message a.Summarize()
+  echo audit.total_of(s)
+  v = message a.Levels()
+  echo v |> count

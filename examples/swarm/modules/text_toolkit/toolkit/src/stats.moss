@@ -1,0 +1,116 @@
+module stats
+
+export fn total(values: Vector[Int]) -> Int:
+  return values |> sum
+
+export fn smallest(values: Vector[Int]) -> Int:
+  var best = values[0]
+  for v in values:
+    if v < best:
+      best = v
+  return best
+
+export fn largest(values: Vector[Int]) -> Int:
+  var best = values[0]
+  for v in values:
+    if v > best:
+      best = v
+  return best
+
+# Truncating integer mean; 0 for an empty vector.
+export fn mean_int(values: Vector[Int]) -> Int:
+  n = values |> count
+  if n == 0:
+    return 0
+  return (values |> sum) / n
+
+# Int -> Float (there is no built-in numeric conversion). Binary expansion, so
+# it costs O(log n) Float additions.
+export fn to_float(n: Int) -> Float:
+  var rest = n
+  var negative = false
+  if rest < 0:
+    negative = true
+    rest = 0 - rest
+  var out = 0.0
+  var scale = 1.0
+  while rest > 0:
+    if rest % 2 == 1:
+      out = out + scale
+    scale = scale * 2.0
+    rest = rest / 2
+  if negative:
+    return 0.0 - out
+  else:
+    return out
+
+# Truncate a non-negative Float toward zero (no built-in Float -> Int).
+export fn to_int(x: Float) -> Int:
+  var limit = 1.0
+  var bits = 0
+  while limit * 2.0 <= x:
+    limit = limit * 2.0
+    bits = bits + 1
+  var rest = x
+  var out = 0
+  var place = 1
+  var i = 0
+  while i < bits:
+    place = place * 2
+    i = i + 1
+  while place >= 1 and limit >= 1.0:
+    if rest >= limit:
+      rest = rest - limit
+      out = out + place
+    limit = limit / 2.0
+    place = place / 2
+  return out
+
+# Floating-point mean of Int samples.
+export fn mean(values: Vector[Int]) -> Float:
+  n = values |> count
+  if n == 0:
+    return 0.0
+  total_f = to_float(values |> sum)
+  count_f = to_float(n)
+  return total_f / count_f
+
+export fn mean_float(values: Vector[Float]) -> Float:
+  n = values |> count
+  if n == 0:
+    return 0.0
+  count_f = to_float(n)
+  return (values |> sum) / count_f
+
+# Bucket each value by `width` and count how many land in each bucket.
+export fn histogram(values: Vector[Int], width: Int) -> Map[Int, Int]:
+  counts = Map()
+  counts[0] = 0
+  for v in values:
+    bucket = v / width
+    counts[bucket] = counts.get(bucket, 0) + 1
+  return counts
+
+# Count occurrences of each word. (The empty string is always present with a
+# count of 0: an empty Map cannot be typed without a first write.)
+export fn tally(words: Vector[String]) -> Map[String, Int]:
+  counts = Map()
+  counts[""] = 0
+  for w in words:
+    counts[w] = counts.get(w, 0) + 1
+  return counts
+
+export fn count_of(counts: Map[String, Int], key: String) -> Int:
+  return counts.get(key, 0)
+
+export fn bucket_of(counts: Map[Int, Int], bucket: Int) -> Int:
+  return counts.get(bucket, 0)
+
+# 10 raised to a non-negative power.
+export fn pow10(exponent: Int) -> Int:
+  var out = 1
+  var i = 0
+  while i < exponent:
+    out = out * 10
+    i = i + 1
+  return out

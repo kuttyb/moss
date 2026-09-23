@@ -1,0 +1,6 @@
+module app
+import counter
+
+fn main():
+  c = counter.make(3)
+  echo c.twice()

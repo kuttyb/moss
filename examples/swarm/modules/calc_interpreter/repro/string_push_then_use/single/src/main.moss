@@ -1,0 +1,12 @@
+type Env:
+  vars: Map[String, Int]
+  names: Vector[String]
+
+  fn set(name: String, value: Int):
+    names.push(name)
+    vars[name] = value
+
+fn main():
+  e = Env(vars: Map(), names: Vector[String]())
+  e.set("a", 1)
+  echo e.vars["a"]

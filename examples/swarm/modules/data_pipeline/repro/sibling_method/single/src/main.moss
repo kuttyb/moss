@@ -1,0 +1,12 @@
+type P:
+  x: Int
+
+  fn a() -> Int:
+    return x + 1
+
+  fn b() -> Int:
+    return a() + 1
+
+fn main():
+  p = P(x: 1)
+  echo p.b()

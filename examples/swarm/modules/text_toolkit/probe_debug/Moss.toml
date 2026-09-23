@@ -1,0 +1,6 @@
+[project]
+name = "probe_debug"
+version = "0.1.0"
+
+[dependencies]
+toolkit = { path = "../toolkit" }

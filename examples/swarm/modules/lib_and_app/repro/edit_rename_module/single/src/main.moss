@@ -1,0 +1,5 @@
+fn renamed() -> Int:
+  return 1
+
+fn main():
+  echo renamed()

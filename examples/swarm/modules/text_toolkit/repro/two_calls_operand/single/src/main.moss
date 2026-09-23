@@ -1,0 +1,8 @@
+fn half(n: Int) -> Float:
+  return 0.5
+
+fn ratio(a: Int, b: Int) -> Float:
+  return half(a) / half(b)
+
+fn main():
+  echo ratio(1, 2)

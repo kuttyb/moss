@@ -1,0 +1,11 @@
+module a
+
+export type P:
+  x: Int
+  y: Int
+
+  fn get_x() -> Int:
+    return x
+
+  fn get_y() -> Int:
+    return y

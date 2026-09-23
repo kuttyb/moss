@@ -1,0 +1,196 @@
+module parser
+import token
+import ast
+import errors
+
+# Operator-precedence (shunting-yard) parser producing the flat AST from
+# ast.moss. Grammar:
+#   line  := IDENT '=' expr | expr
+#   expr  := unary-minus, + - * / % (left associative), parentheses, numbers,
+#            identifiers
+
+export type ParseResult:
+  ast: ast.Ast
+  error: errors.CalcError
+
+# Pseudo operator kinds kept on the operator stack.
+fn op_paren() -> Int:
+  return 8
+
+fn op_unary_minus() -> Int:
+  return 100
+
+# Private parser working state.
+type Stacks:
+  operands: Vector[Int]
+  ops: Vector[Int]
+  op_pos: Vector[Int]
+  expect_operand: Bool
+
+  fn push_operand(index: Int):
+    operands.push(index)
+    return
+
+  fn pop_operand() -> Int:
+    return operands.pop()
+
+  fn operand_count() -> Int:
+    return operands |> count
+
+  fn push_op(kind: Int, pos: Int):
+    ops.push(kind)
+    op_pos.push(pos)
+    return
+
+  fn pop_op() -> Int:
+    op_pos.pop()
+    return ops.pop()
+
+  fn op_count() -> Int:
+    return ops |> count
+
+  fn top_op() -> Int:
+    n = ops |> count
+    return ops[n - 1]
+
+  fn top_pos() -> Int:
+    n = op_pos |> count
+    return op_pos[n - 1]
+
+fn new_stacks() -> Stacks:
+  return Stacks(operands: Vector[Int](), ops: Vector[Int](), op_pos: Vector[Int](), expect_operand: true)
+
+fn op_prec(kind: Int) -> Int:
+  if kind == op_unary_minus():
+    return 3
+  return token.precedence_of(kind)
+
+export fn parse(tokens: Vector[token.Token]) -> ParseResult:
+  var tree = ast.new_ast()
+  var st = new_stacks()
+  var err = errors.none()
+  n = tokens |> count
+  var i = 0
+  assigning = starts_with_assignment(tokens)
+  if assigning:
+    i = 2
+  while i < n:
+    err = step(tokens, i, tree, st)
+    if err.failed():
+      i = n
+    else:
+      i = i + 1
+  if not err.failed():
+    err = finish(tokens, tree, st, assigning)
+  return ParseResult(ast: tree, error: err)
+
+fn starts_with_assignment(tokens: Vector[token.Token]) -> Bool:
+  n = tokens |> count
+  if n < 3:
+    return false
+  ident = token.kind_ident()
+  assign = token.kind_assign()
+  if tokens[0].kind != ident:
+    return false
+  return tokens[1].kind == assign
+
+# Should the operator on top of the stack be applied before an incoming
+# operator of the given precedence?
+fn should_reduce(st: Stacks, prec: Int) -> Bool:
+  if st.op_count() == 0:
+    return false
+  top = st.top_op()
+  if top == op_paren():
+    return false
+  return op_prec(top) >= prec
+
+fn top_is_operator(st: Stacks) -> Bool:
+  if st.op_count() == 0:
+    return false
+  paren = op_paren()
+  return st.top_op() != paren
+
+fn apply_top(tree: ast.Ast, st: Stacks) -> errors.CalcError:
+  p = st.top_pos()
+  op = st.pop_op()
+  if op == op_unary_minus():
+    if st.operand_count() < 1:
+      return errors.parse_error("missing operand", p)
+    a = st.pop_operand()
+    st.push_operand(tree.add_negate(a, p))
+    return errors.none()
+  if st.operand_count() < 2:
+    return errors.parse_error("missing operand", p)
+  b = st.pop_operand()
+  a = st.pop_operand()
+  st.push_operand(tree.add_binary(op, a, b, p))
+  return errors.none()
+
+fn step(tokens: Vector[token.Token], i: Int, tree: ast.Ast, st: Stacks) -> errors.CalcError:
+  kind = tokens[i].kind
+  pos = tokens[i].pos
+  if kind == token.kind_end():
+    return errors.none()
+  if kind == token.kind_num():
+    if not st.expect_operand:
+      return errors.parse_error("unexpected number", pos)
+    st.push_operand(tree.add_num(tokens[i].value, pos))
+    st.expect_operand = false
+    return errors.none()
+  if kind == token.kind_ident():
+    if not st.expect_operand:
+      return errors.parse_error("unexpected name", pos)
+    st.push_operand(tree.add_var(tokens[i].value, pos))
+    st.expect_operand = false
+    return errors.none()
+  if kind == token.kind_assign():
+    return errors.parse_error("unexpected '='", pos)
+  if kind == token.kind_lparen():
+    if not st.expect_operand:
+      return errors.parse_error("unexpected '('", pos)
+    st.push_op(op_paren(), pos)
+    return errors.none()
+  if kind == token.kind_rparen():
+    if st.expect_operand:
+      return errors.parse_error("missing operand before ')'", pos)
+    while top_is_operator(st):
+      e = apply_top(tree, st)
+      if e.failed():
+        return e
+    if st.op_count() == 0:
+      return errors.parse_error("unmatched ')'", pos)
+    st.pop_op()
+    return errors.none()
+  if kind == token.kind_minus():
+    if st.expect_operand:
+      st.push_op(op_unary_minus(), pos)
+      return errors.none()
+  # remaining kinds are binary operators
+  if st.expect_operand:
+    return errors.parse_error("operator without left operand", pos)
+  prec = token.precedence_of(kind)
+  while should_reduce(st, prec):
+    e = apply_top(tree, st)
+    if e.failed():
+      return e
+  st.push_op(kind, pos)
+  st.expect_operand = true
+  return errors.none()
+
+fn finish(tokens: Vector[token.Token], tree: ast.Ast, st: Stacks, assigning: Bool) -> errors.CalcError:
+  if st.expect_operand:
+    return errors.parse_error("expression ends unexpectedly", 0)
+  while st.op_count() > 0:
+    paren = op_paren()
+    if st.top_op() == paren:
+      return errors.parse_error("unmatched '('", st.top_pos())
+    e = apply_top(tree, st)
+    if e.failed():
+      return e
+  if st.operand_count() != 1:
+    return errors.parse_error("malformed expression", 0)
+  root = st.pop_operand()
+  if assigning:
+    root = tree.add_assign(tokens[0].value, root, 0)
+  tree.set_root(root)
+  return errors.none()

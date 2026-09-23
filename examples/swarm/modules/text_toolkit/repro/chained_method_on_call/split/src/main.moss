@@ -1,0 +1,6 @@
+module app
+import inventory
+
+fn main():
+  c = inventory.sample().cats()
+  echo inventory.total(c)

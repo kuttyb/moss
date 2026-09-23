@@ -1,0 +1,9 @@
+module app
+import inventory
+
+fn make() -> inventory.Item:
+  return inventory.Item(name: "widget", qty: 3)
+
+fn main():
+  item = make()
+  echo item.qty

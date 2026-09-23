@@ -1,0 +1,5 @@
+fn scaled(a: Int, b: Float) -> Float:
+  return a + b
+
+fn main():
+  echo scaled(1, 2.5)

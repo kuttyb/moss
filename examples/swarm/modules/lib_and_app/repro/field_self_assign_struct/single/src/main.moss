@@ -1,0 +1,18 @@
+type P:
+  x: Float
+  y: Float
+
+fn moved(p: P, d: Float) -> P:
+  return P(x: p.x + d, y: p.y + d)
+
+type Holder:
+  pos: P
+
+  fn shift(d: Float):
+    pos = moved(pos, d)
+    return
+
+fn main():
+  h = Holder(pos: P(x: 1.0, y: 2.0))
+  h.shift(1.0)
+  echo 1

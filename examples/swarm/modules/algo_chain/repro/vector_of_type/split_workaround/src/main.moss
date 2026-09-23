@@ -1,0 +1,20 @@
+module app
+
+type Edge:
+  cost: Int
+
+type Graph:
+  edges: Vector[Edge]
+
+  fn add(c: Int):
+    edges.push(Edge(cost: c))
+    return edges |> count
+
+fn empty_edges():
+  v = [Edge(cost: 0)]
+  v.pop()
+  return v
+
+fn main():
+  g = Graph(edges: empty_edges())
+  echo g.add(4)

@@ -1,0 +1,7 @@
+module util
+
+export fn pad(n: Int) -> String:
+  text = "x" + "y"
+  if n > 3:
+    return text
+  return "-" + text

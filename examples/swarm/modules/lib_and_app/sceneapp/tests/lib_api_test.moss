@@ -1,0 +1,12 @@
+import vec2
+import shapes
+
+test "library area functions used from the app package":
+  c = shapes.circle(0.0, 0.0, 1.0)
+  assertEqual(shapes.circle_area(c), 3.14159)
+  r = shapes.rect(0.0, 0.0, 2.0, 5.0)
+  assertEqual(shapes.rect_perimeter(r), 14.0)
+  assert(shapes.rect_contains(r, vec2.vec(1.0, 1.0)))
+  moved = shapes.rect_moved(r, vec2.vec(10.0, 0.0))
+  assert(not shapes.rect_contains(moved, vec2.vec(1.0, 1.0)))
+  assertEqual(vec2.dist(vec2.origin(), vec2.vec(6.0, 8.0)), 10.0)

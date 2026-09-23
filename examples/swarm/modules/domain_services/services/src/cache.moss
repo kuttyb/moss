@@ -1,0 +1,18 @@
+module cache
+
+import records
+import audit
+import policy
+
+export domain Cache:
+  entries: Map[String, records.Entry]
+  domainroutes(audit_log: audit.Audit)
+
+  fn Put(key: String, value: Int):
+    policy.cache_store(entries, key, value)
+
+  fn Get(key: String) -> Int:
+    value = policy.cache_lookup(entries, key)
+    if policy.is_miss(value):
+      message audit_log.Record(records.make_event(1, 1, 404))
+    reply value

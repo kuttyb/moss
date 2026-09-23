@@ -1,0 +1,22 @@
+module report
+
+import vec2
+import shapes
+import model
+import scene
+
+export fn print_header(s: scene.Scene):
+  s.print_header()
+  return
+
+export fn print_shapes(s: scene.Scene):
+  s.print_circles()
+  s.print_rects()
+  s.print_tris()
+  return
+
+export fn print_summary(s: scene.Scene):
+  echo "shapes:", s.shape_count()
+  echo "total area:", s.total_area()
+  echo "total perimeter:", s.total_perimeter()
+  return

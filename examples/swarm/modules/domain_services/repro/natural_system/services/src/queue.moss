@@ -1,0 +1,31 @@
+module queue
+
+import records
+import metrics
+import audit
+import config
+
+export domain JobQueue:
+  pending = Queue()
+  size = 0
+  domainroutes(settings: config.Config, audit_log: audit.Audit)
+
+  fn Submit(job: records.JobSpec) -> Int:
+    limit = message settings.Get("max_cost", 100)
+    if job.cost > limit:
+      message audit_log.Record(records.Event(source: "queue", level: 2, code: job.id))
+      reply -1
+    pending.push(records.JobSpec(id: job.id, kind: job.kind, cost: metrics.clamp(job.cost, 0, limit)))
+    size = size + 1
+    reply size
+
+  fn RunNext() -> Int:
+    if size == 0:
+      reply -1
+    job = pending.pop()
+    size = size - 1
+    message audit_log.Record(records.Event(source: "queue", level: 0, code: job.id))
+    reply job.weight()
+
+  fn Pending() -> Int:
+    reply size

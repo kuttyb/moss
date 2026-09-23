@@ -1,0 +1,7 @@
+module tok
+
+export type Tok:
+  kind: Int
+
+  fn code() -> Int:
+    return kind

@@ -1,0 +1,20 @@
+module token_test
+import token
+
+test "binary operators have precedence":
+  plus = token.make(token.kind_plus(), "+", 0, 0)
+  star = token.make(token.kind_star(), "*", 0, 1)
+  assert(plus.is_binary_op())
+  assert(star.is_binary_op())
+  assert(star.precedence() > plus.precedence())
+
+test "non operators have no precedence":
+  num = token.make(token.kind_num(), "num", 42, 0)
+  assertEqual(num.precedence(), 0)
+  assert(not num.is_binary_op())
+
+test "token fields are readable from outside":
+  t = token.Token(kind: token.kind_ident(), text: "x", value: 23, pos: 4)
+  assertEqual(t.value, 23)
+  assertEqual(t.pos, 4)
+  assertEqual(t.text, "x")

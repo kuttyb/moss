@@ -1,0 +1,18 @@
+module app
+
+import metrics
+
+type Job:
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+fn main():
+  echo metrics.heavier(Job(cost: 3), Blob(size: 9))

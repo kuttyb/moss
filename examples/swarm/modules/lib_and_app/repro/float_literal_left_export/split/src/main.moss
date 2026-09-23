@@ -1,0 +1,6 @@
+module app
+
+import geom
+
+fn main():
+  echo geom.perimeter(1.0, 2.0)

@@ -1,0 +1,9 @@
+module app
+
+import queue
+
+fn main():
+  q = queue.Jobs()
+  message q.Push()
+  echo message q.Pop()
+  echo message q.Pop()

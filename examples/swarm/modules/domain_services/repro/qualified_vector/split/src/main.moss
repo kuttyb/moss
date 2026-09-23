@@ -1,0 +1,8 @@
+module app
+
+import audit
+
+fn main():
+  a = audit.Audit()
+  message a.Record(3)
+  echo message a.Worst()

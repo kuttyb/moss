@@ -1,0 +1,6 @@
+[project]
+name = "push_self_field_read"
+version = "0.1.0"
+
+[build]
+source = "src"

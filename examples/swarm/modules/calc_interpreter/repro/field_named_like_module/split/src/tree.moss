@@ -1,0 +1,10 @@
+module tree
+
+export type Tree:
+  n: Int
+
+  fn size() -> Int:
+    return n
+
+export fn make(n: Int) -> Tree:
+  return Tree(n: n)

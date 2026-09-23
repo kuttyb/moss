@@ -1,0 +1,6 @@
+[project]
+name = "export_two_calls_split"
+version = "0.1.0"
+
+[build]
+source = "src"

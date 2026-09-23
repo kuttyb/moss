@@ -1,0 +1,6 @@
+module app
+import parser
+
+fn main():
+  p = parser.parse()
+  echo p.tree.size()

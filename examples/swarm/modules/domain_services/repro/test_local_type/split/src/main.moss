@@ -1,0 +1,6 @@
+module app
+
+import metrics
+
+fn main():
+  echo 1

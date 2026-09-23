@@ -1,0 +1,13 @@
+module weight_tests
+
+import metrics
+
+type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+test "generic helper totals local values":
+  blobs = [Blob(size: 1), Blob(size: 2), Blob(size: 3)]
+  assertEqual(metrics.total_weight(blobs), 9)

@@ -1,0 +1,66 @@
+module token
+
+# Token kinds are plain integers; there are no top-level constants in Moss,
+# so each kind is a tiny exported function.
+
+export fn kind_num() -> Int:
+  return 1
+
+export fn kind_ident() -> Int:
+  return 2
+
+export fn kind_plus() -> Int:
+  return 3
+
+export fn kind_minus() -> Int:
+  return 4
+
+export fn kind_star() -> Int:
+  return 5
+
+export fn kind_slash() -> Int:
+  return 6
+
+export fn kind_percent() -> Int:
+  return 7
+
+export fn kind_lparen() -> Int:
+  return 8
+
+export fn kind_rparen() -> Int:
+  return 9
+
+export fn kind_assign() -> Int:
+  return 10
+
+export fn kind_end() -> Int:
+  return 11
+
+export type Token:
+  kind: Int
+  text: String
+  value: Int
+  pos: Int
+
+  fn is_binary_op() -> Bool:
+    return precedence_of(kind) > 0
+
+  fn precedence() -> Int:
+    return precedence_of(kind)
+
+# Binding strength of a binary operator kind; 0 for everything else.
+export fn precedence_of(kind: Int) -> Int:
+  if kind == 3:
+    return 1
+  if kind == 4:
+    return 1
+  if kind == 5:
+    return 2
+  if kind == 6:
+    return 2
+  if kind == 7:
+    return 2
+  return 0
+
+export fn make(kind: Int, text: String, value: Int, pos: Int) -> Token:
+  return Token(kind: kind, text: text, value: value, pos: pos)

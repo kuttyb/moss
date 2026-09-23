@@ -1,0 +1,124 @@
+module stats
+
+import orders
+import validate
+
+export type Summary:
+  order_count: Int
+  revenue: Int
+  units: Int
+  bulk_orders: Int
+  invalid: Int
+
+  fn avg_order() -> Int:
+    if order_count == 0:
+      return 0
+    return revenue / order_count
+
+  fn get_order_count() -> Int:
+    return order_count
+
+  fn get_revenue() -> Int:
+    return revenue
+
+  fn get_units() -> Int:
+    return units
+
+  fn get_bulk_orders() -> Int:
+    return bulk_orders
+
+  fn get_invalid() -> Int:
+    return invalid
+
+fn bulk_flag(order: orders.Order) -> Int:
+  if orders.order_has_bulk(order):
+    return 1
+  return 0
+
+export fn empty_summary() -> Summary:
+  return Summary(order_count: 0, revenue: 0, units: 0, bulk_orders: 0, invalid: 0)
+
+export fn summarize(batch: Vector[orders.Order]) -> Summary:
+  n = batch |> count
+  revenue = batch |> map(orders.order_total(_)) |> sum
+  units = batch |> map(orders.order_units(_)) |> sum
+  bulk = batch |> map(bulk_flag(_)) |> sum
+  bad = validate.count_invalid(batch)
+  return Summary(order_count: n, revenue: revenue, units: units, bulk_orders: bulk, invalid: bad)
+
+fn region_units(order: orders.Order, region: Int) -> Int:
+  if orders.order_region(order) == region:
+    return orders.order_units(order)
+  return 0
+
+fn region_orders(order: orders.Order, region: Int) -> Int:
+  if orders.order_region(order) == region:
+    return 1
+  return 0
+
+fn revenue_in_region(order: orders.Order, region: Int) -> Int:
+  if orders.order_region(order) == region:
+    return orders.order_total(order)
+  return 0
+
+# Known key set: one pipeline per key, no map seeding needed.
+export fn revenue_by_region(batch: Vector[orders.Order]) -> Map[Int, Int]:
+  totals = Map()
+  totals[0] = batch |> map(revenue_in_region(_, 0)) |> sum
+  region = 1
+  while region < 3:
+    totals[region] = batch |> map(revenue_in_region(_, region)) |> sum
+    region = region + 1
+  return totals
+
+export fn units_by_category(batch: Vector[orders.Order]) -> Map[Int, Int]:
+  totals = Map()
+  totals[0] = batch |> map(orders.order_units_in(_, 0)) |> sum
+  cat = 1
+  while cat < 3:
+    totals[cat] = batch |> map(orders.order_units_in(_, cat)) |> sum
+    cat = cat + 1
+  return totals
+
+# Open-ended key set: customers. Key 0 is a type-seeding sentinel (customer ids start at 1);
+# Map() cannot be typed any other way before the first .get.
+export fn revenue_by_customer(batch: Vector[orders.Order]) -> Map[Int, Int]:
+  totals = Map()
+  totals[0] = 0
+  i = 0
+  n = batch |> count
+  while i < n:
+    customer = orders.order_customer(batch[i])
+    totals[customer] = totals.get(customer, 0) + orders.order_total(batch[i])
+    i = i + 1
+  return totals
+
+export fn best_key(totals: Map[Int, Int]) -> Int:
+  best = -1
+  best_value = -1
+  ks = totals.keys()
+  n = ks |> count
+  i = 0
+  while i < n:
+    key = ks[i]
+    value = totals.get(key, 0)
+    if value > best_value:
+      best = key
+      best_value = value
+    i = i + 1
+  return best
+
+# Map with record values: per-region Summary. Bulk/invalid counts are left at 0 here
+# because filtering a Vector of orders into a sub-batch would need a deep copy.
+fn region_summary(batch: Vector[orders.Order], region: Int) -> Summary:
+  n = batch |> map(region_orders(_, region)) |> sum
+  revenue = batch |> map(revenue_in_region(_, region)) |> sum
+  units = batch |> map(region_units(_, region)) |> sum
+  return Summary(order_count: n, revenue: revenue, units: units, bulk_orders: 0, invalid: 0)
+
+export fn summaries_by_region(batch: Vector[orders.Order]) -> Map[Int, Summary]:
+  result = Map()
+  result[0] = region_summary(batch, 0)
+  result[1] = region_summary(batch, 1)
+  result[2] = region_summary(batch, 2)
+  return result

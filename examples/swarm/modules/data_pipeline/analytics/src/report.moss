@@ -1,0 +1,33 @@
+module report
+
+import orders
+import stats
+
+export fn print_summary(title: String, s: stats.Summary):
+  echo title
+  echo "  orders:", s.get_order_count()
+  echo "  revenue (cents):", s.get_revenue()
+  echo "  units:", s.get_units()
+  echo "  avg order (cents):", s.avg_order()
+  echo "  orders with a bulk line:", s.get_bulk_orders()
+  echo "  invalid orders:", s.get_invalid()
+
+export fn print_regions(totals: Map[Int, Int]):
+  region = 0
+  while region < 3:
+    echo "  region", orders.region_name(region), totals.get(region, 0)
+    region = region + 1
+
+export fn print_categories(totals: Map[Int, Int]):
+  cat = 0
+  while cat < 3:
+    echo "  category", orders.category_name(cat), totals.get(cat, 0)
+    cat = cat + 1
+
+export fn print_region_summaries(by_region: Map[Int, stats.Summary]):
+  echo "Per-region summaries"
+  region = 0
+  while region < 3:
+    s = by_region.get(region, stats.empty_summary())
+    echo "  region", orders.region_name(region), "orders", s.get_order_count(), "avg", s.avg_order()
+    region = region + 1

@@ -1,0 +1,109 @@
+--- field_access/single: /home/kuttybanerjee/daji/moss3/margo run
+  3
+--- field_access/single: /home/kuttybanerjee/daji/moss3/margo debug
+  3
+--- field_access/split: /home/kuttybanerjee/daji/moss3/margo run
+  ERR BUILD_BACKEND_ERROR module Rust crate compilation failed for 'b' | reported file: examples/swarm/modules/data_pipeline/repro/field_access/split/build/debug/b.rs line 0
+  rustc: error[E0616]: field `x` of struct `moss_a::a__P` is private
+--- field_access/split: /home/kuttybanerjee/daji/moss3/margo debug
+  3
+--- construct_across/single: /home/kuttybanerjee/daji/moss3/margo run
+  made
+--- construct_across/single: /home/kuttybanerjee/daji/moss3/margo debug
+  made
+--- construct_across/split: /home/kuttybanerjee/daji/moss3/margo run
+  ERR BUILD_BACKEND_ERROR module Rust crate compilation failed for 'fa' | reported file: examples/swarm/modules/data_pipeline/repro/construct_across/split/build/debug/fa.rs line 0
+  rustc: error[E0451]: fields `x` and `y` of struct `moss_a::a__P` are private
+--- construct_across/split: /home/kuttybanerjee/daji/moss3/margo debug
+  made
+--- two_method_calls/single: /home/kuttybanerjee/daji/moss3/margo run
+  3
+--- two_method_calls/single: /home/kuttybanerjee/daji/moss3/margo debug
+  3
+--- two_method_calls/split: /home/kuttybanerjee/daji/moss3/margo run
+  margo: error: command failed (/home/kuttybanerjee/daji/moss3/moss build --json): moss: error: internal synchronization invariant: unresolved concrete method effect target
+--- two_method_calls/split: /home/kuttybanerjee/daji/moss3/margo debug
+  moss: error: internal synchronization invariant: unresolved concrete method effect target
+--- sibling_method/single: /home/kuttybanerjee/daji/moss3/margo run
+  3
+--- sibling_method/single: /home/kuttybanerjee/daji/moss3/margo debug
+  3
+--- sibling_method/split: /home/kuttybanerjee/daji/moss3/margo run
+  ERR TYPE_INFERENCE_FAILED cannot infer the type of this return expression in function 'p__P.b' | reported file: examples/swarm/modules/data_pipeline/repro/sibling_method/split/src/main.moss line 10
+--- sibling_method/split: /home/kuttybanerjee/daji/moss3/margo debug
+  moss:10: error: [TYPE_INFERENCE_FAILED] cannot infer the type of this return expression in function 'p__P.b'
+--- range_in_module/single: /home/kuttybanerjee/daji/moss3/margo run
+  3
+--- range_in_module/single: /home/kuttybanerjee/daji/moss3/margo debug
+  moss:3: interpreter error: Fast Debug does not support for iteration yet
+--- range_in_module/split: /home/kuttybanerjee/daji/moss3/margo run
+  ERR TYPE_INFERENCE_FAILED cannot infer the static iterator source type | reported file: examples/swarm/modules/data_pipeline/repro/range_in_module/split/src/main.moss line 5
+--- range_in_module/split: /home/kuttybanerjee/daji/moss3/margo debug
+  moss:5: error: [TYPE_INFERENCE_FAILED] cannot infer the static iterator source type
+--- trait_across/single: /home/kuttybanerjee/daji/moss3/margo run
+  10
+  3
+--- trait_across/single: /home/kuttybanerjee/daji/moss3/margo debug
+  10
+  3
+--- trait_across/split: /home/kuttybanerjee/daji/moss3/margo run
+  margo: error: command failed (/home/kuttybanerjee/daji/moss3/moss build --json): moss: error: internal synchronization invariant: unresolved concrete method effect target
+--- trait_across/split: /home/kuttybanerjee/daji/moss3/margo debug
+  moss: error: internal synchronization invariant: unresolved concrete method effect target
+--- dep_type_methods/one_package: /home/kuttybanerjee/daji/moss3/margo run
+  6
+--- dep_type_methods/one_package: /home/kuttybanerjee/daji/moss3/margo debug
+  6
+--- dep_type_methods/two_packages/app: /home/kuttybanerjee/daji/moss3/margo run
+  ERR MOSS_COMPILE_ERROR no matching method 'shapes__Box.area' for supplied arguments | reported file: examples/swarm/modules/data_pipeline/repro/dep_type_methods/two_packages/app/src/main.moss line 6
+--- dep_type_methods/two_packages/app: /home/kuttybanerjee/daji/moss3/margo debug
+  6
+--- dep_implicit_main/app_implicit: /home/kuttybanerjee/daji/moss3/margo run
+  ERR BUILD_BACKEND_ERROR native compilation failed for 'src/main.moss' | reported file: examples/swarm/modules/data_pipeline/repro/dep_implicit_main/app_implicit/src/main.moss line 0
+  rustc: error[E0425]: cannot find value `shapes` in this scope
+--- dep_implicit_main/app_implicit: /home/kuttybanerjee/daji/moss3/margo debug
+  6
+--- dep_implicit_main/app_module: /home/kuttybanerjee/daji/moss3/margo run
+  6
+--- dep_implicit_main/app_module: /home/kuttybanerjee/daji/moss3/margo debug
+  6
+--- test_module_mismatch/implicit_test: /home/kuttybanerjee/daji/moss3/margo test
+  /home/kuttybanerjee/daji/moss3/examples/swarm/modules/data_pipeline/repro/test_module_mismatch/implicit_test/build/test/app.rs: error[BUILD_BACKEND_ERROR]: module Rust crate compilation failed for 'app'
+  error[E0425]: cannot find function `fa__helper` in this scope
+    --> /home/kuttybanerjee/daji/moss3/examples/swarm/modules/data_pipeline/repro/test_module_mismatch/implicit_test/build/test/app.r
+--- test_module_mismatch/implicit_test: /home/kuttybanerjee/daji/moss3/margo debug
+  hi
+--- test_module_mismatch/matching_module: /home/kuttybanerjee/daji/moss3/margo test
+  PASS tests/t.moss:helper
+  
+  1 passed
+  0 failed
+--- test_module_mismatch/matching_module: /home/kuttybanerjee/daji/moss3/margo debug
+  hi
+--- string_concat_field/single: /home/kuttybanerjee/daji/moss3/margo run
+  ERR BUILD_BACKEND_ERROR native compilation failed for 'src/main.moss' | reported file: examples/swarm/modules/data_pipeline/repro/string_concat_field/single/src/main.moss line 0
+  rustc: error[E0308]: mismatched types
+--- string_concat_field/single: /home/kuttybanerjee/daji/moss3/margo debug
+  west
+  west
+--- map_int_key/single: /home/kuttybanerjee/daji/moss3/margo run
+  ERR BUILD_BACKEND_ERROR native compilation failed for 'src/main.moss' | reported file: examples/swarm/modules/data_pipeline/repro/map_int_key/single/src/main.moss line 0
+  rustc: error[E0308]: mismatched types
+--- map_int_key/single: /home/kuttybanerjee/daji/moss3/margo debug
+  20
+  10
+  10
+--- map_in_while/single: /home/kuttybanerjee/daji/moss3/margo run
+  ERR MOSS_COMPILE_ERROR binding 'totals' has conflicting concrete types across control-flow paths: map and map[int,int] | reported file: examples/swarm/modules/data_pipeline/repro/map_in_while/single/src/main.moss line 7
+--- map_in_while/single: /home/kuttybanerjee/daji/moss3/margo debug
+  moss:7: error: [MOSS_COMPILE_ERROR] binding 'totals' has conflicting concrete types across control-flow paths: map and map[int,int]
+--- and_or_fast_debug/single: /home/kuttybanerjee/daji/moss3/margo run
+  true
+--- and_or_fast_debug/single: /home/kuttybanerjee/daji/moss3/margo debug
+  moss:2: interpreter error: unsupported expression '0 and b'
+--- write_params_ok/app: /home/kuttybanerjee/daji/moss3/margo run
+  12
+  1
+--- write_params_ok/app: /home/kuttybanerjee/daji/moss3/margo debug
+  12
+  1

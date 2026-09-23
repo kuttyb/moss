@@ -1,0 +1,23 @@
+module rank
+import order
+import heap  # generic body of order.order_by_key needs it linked (repro/generic_transitive_import)
+
+# Thin generic wrappers over heapkit's order helpers. Element types here are
+# whatever the *caller's* package defines, as long as they have a key() method.
+
+# Indices of `items`, cheapest key first.
+export fn best_first(items):
+  return order.order_by_key(items)
+
+# Indices of the k best (smallest-key) items.
+export fn top_k(items, k: Int):
+  ranked = order.order_by_key(items)
+  out = Vector[Int]()
+  i = 0
+  while i < k and i < (ranked |> count):
+    out.push(ranked[i])
+    i = i + 1
+  return out
+
+export fn total(items):
+  return order.total_key(items)

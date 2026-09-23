@@ -1,0 +1,3 @@
+test "counter adds":
+  c = Counter()
+  assertEqual(message c.Add(2), 2)

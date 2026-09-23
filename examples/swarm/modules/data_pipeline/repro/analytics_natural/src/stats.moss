@@ -1,0 +1,27 @@
+module stats
+
+import orders
+import validate
+
+export type Summary:
+  order_count: Int
+  revenue: Int
+  units: Int
+
+  fn avg_order() -> Int:
+    if order_count == 0:
+      return 0
+    return revenue / order_count
+
+export fn summarize(batch: Vector[orders.Order]) -> Summary:
+  n = batch |> count
+  revenue = batch |> map(_.total()) |> sum
+  units = batch |> map(_.item_count()) |> sum
+  return Summary(order_count: n, revenue: revenue, units: units)
+
+export fn revenue_by_region(batch: Vector[orders.Order]) -> Map[Int, Int]:
+  totals = Map()
+  totals[0] = 0
+  for order in batch:
+    totals[order.region] = totals.get(order.region, 0) + order.total()
+  return totals

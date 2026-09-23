@@ -1,0 +1,77 @@
+module calc
+import lexer
+import parser
+import eval
+import env
+import errors
+
+# Facade over the whole pipeline: characters -> tokens -> AST -> value.
+
+# What one line produced. Read it through the methods; ok() is true when
+# value() is meaningful, otherwise code()/pos() describe the failure.
+export type Outcome:
+  ok: Bool
+  value: Int
+  code: Int
+  pos: Int
+
+  fn ok() -> Bool:
+    return ok
+
+  fn value() -> Int:
+    return value
+
+  fn code() -> Int:
+    return code
+
+  fn pos() -> Int:
+    return pos
+
+export type Session:
+  scope: env.Env
+  history: Vector[Int]
+  failures: Int
+
+  fn record(value: Int):
+    history.push(value)
+    return
+
+  fn fail():
+    failures = failures + 1
+
+  fn failure_count() -> Int:
+    return failures
+
+  fn last() -> Int:
+    n = history |> count
+    return history[n - 1]
+
+  fn nth(i: Int) -> Int:
+    return history[i]
+
+  fn evaluated() -> Int:
+    return history |> count
+
+export fn new_session() -> Session:
+  return Session(scope: env.with_defaults(), history: Vector[Int](), failures: 0)
+
+fn failure(diag: errors.Diag) -> Outcome:
+  return Outcome(ok: false, value: 0, code: diag.code(), pos: diag.pos())
+
+# Runs one line of source (one character per element) inside the session.
+export fn run(session: Session, chars: Vector[String]) -> Outcome:
+  diag = errors.new_diag()
+  tokens = lexer.tokenize(chars, diag)
+  if diag.failed():
+    session.fail()
+    return failure(diag)
+  tree = parser.parse(tokens, diag)
+  if diag.failed():
+    session.fail()
+    return failure(diag)
+  value = eval.evaluate(tree, session.scope, diag)
+  if diag.failed():
+    session.fail()
+    return failure(diag)
+  session.record(value)
+  return Outcome(ok: true, value: value, code: 0, pos: 0)

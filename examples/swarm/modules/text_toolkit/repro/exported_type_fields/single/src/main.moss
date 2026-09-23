@@ -1,0 +1,11 @@
+type Item:
+  name: String
+  qty: Int
+
+  fn double() -> Int:
+    return qty * 2
+
+fn main():
+  item = Item(name: "widget", qty: 3)
+  echo item.qty
+  echo item.double()

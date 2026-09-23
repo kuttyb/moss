@@ -1,0 +1,6 @@
+[project]
+name = "pm-lib3"
+version = "0.1.0"
+
+[build]
+source = "src"

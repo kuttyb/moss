@@ -1,0 +1,5 @@
+fn label(name: String, kind: String) -> String:
+  return kind + ":" + name
+
+fn main():
+  echo label("a", "circle")

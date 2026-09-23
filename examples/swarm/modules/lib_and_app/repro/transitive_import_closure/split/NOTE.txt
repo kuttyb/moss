@@ -1,0 +1,2 @@
+margo run   (cwd transitive_import_closure/split) rc=1: BUILD_BACKEND_ERROR: module Rust crate compilation failed for 'app' | error[E0405]: cannot find trait `MossAccess_inner__In` in this scope | 54 | impl<F0: MossAccess_inner__In> std::fmt::Debug for outer__OutView<F0> {
+margo debug rc=0: 4

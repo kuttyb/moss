@@ -1,0 +1,4 @@
+module order
+
+export fn key_of(a):
+  return a.key()

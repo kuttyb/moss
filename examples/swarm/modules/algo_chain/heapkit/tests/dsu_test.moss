@@ -1,0 +1,24 @@
+import dsu
+
+test "fresh forest has singleton sets":
+  uf = dsu.new_dsu(5)
+  assertEqual(uf.count_sets(), 5)
+  assert(not uf.same(0, 1))
+
+test "merge joins sets and is idempotent":
+  uf = dsu.new_dsu(6)
+  assert(uf.merge(0, 1))
+  assert(uf.merge(1, 2))
+  assert(not uf.merge(0, 2))
+  assert(uf.same(0, 2))
+  assert(not uf.same(0, 3))
+  assertEqual(uf.count_sets(), 4)
+
+test "find is stable across a long chain":
+  uf = dsu.new_dsu(8)
+  i = 0
+  while i < 7:
+    uf.merge(i, i + 1)
+    i = i + 1
+  assertEqual(uf.count_sets(), 1)
+  assertEqual(uf.find(0), uf.find(7))

@@ -1,0 +1,6 @@
+module app
+import mid
+import leaf
+
+fn main():
+  echo mid.scaled_bump(10)

@@ -1,0 +1,11 @@
+module pt
+
+export type Pt:
+  x: Int
+  y: Int
+
+  fn sum() -> Int:
+    return x + y
+
+export fn make(x: Int, y: Int) -> Pt:
+  return Pt(x: x, y: y)

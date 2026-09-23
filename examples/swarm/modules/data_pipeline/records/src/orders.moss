@@ -1,0 +1,121 @@
+module orders
+
+# Region codes: 0 = west, 1 = east, 2 = north.
+# Category codes: 0 = office, 1 = furniture, 2 = tech.
+
+export type LineItem:
+  sku: String
+  category: Int
+  qty: Int
+  unit_cents: Int
+
+  fn get_category() -> Int:
+    return category
+
+  fn get_qty() -> Int:
+    return qty
+
+  fn total() -> Int:
+    return qty * unit_cents
+
+  fn qty_in(cat: Int) -> Int:
+    if category == cat:
+      return qty
+    return 0
+
+  fn is_bulk() -> Bool:
+    return qty >= 10
+
+  fn is_valid() -> Bool:
+    if qty <= 0:
+      return false
+    return unit_cents >= 0
+
+export type Order:
+  id: Int
+  customer: Int
+  region: Int
+  status: String
+  items: Vector[LineItem]
+
+  fn get_id() -> Int:
+    return id
+
+  fn get_customer() -> Int:
+    return customer
+
+  fn get_region() -> Int:
+    return region
+
+  fn total() -> Int:
+    return items |> map(_.total()) |> sum
+
+  fn item_count() -> Int:
+    return items |> map(_.qty) |> sum
+
+  fn line_count() -> Int:
+    return items |> count
+
+  fn units_in(cat: Int) -> Int:
+    return items |> map(_.qty_in(cat)) |> sum
+
+  fn is_open() -> Bool:
+    return status == "open"
+
+  fn has_bulk_line() -> Bool:
+    return items |> any(_.is_bulk())
+
+  fn is_valid() -> Bool:
+    n = items |> count
+    if n == 0:
+      return false
+    return items |> all(_.is_valid())
+
+export fn make_item(sku: String, category: Int, qty: Int, unit_cents: Int) -> LineItem:
+  return LineItem(sku: sku, category: category, qty: qty, unit_cents: unit_cents)
+
+export fn make_order(id: Int, customer: Int, region: Int, items: Vector[LineItem]) -> Order:
+  return Order(id: id, customer: customer, region: region, status: "open", items: items)
+
+export fn region_name(code: Int) -> String:
+  if code == 0:
+    return "west"
+  if code == 1:
+    return "east"
+  return "north"
+
+export fn category_name(code: Int) -> String:
+  if code == 0:
+    return "office"
+  if code == 1:
+    return "furniture"
+  return "tech"
+
+export fn dollars(cents: Int) -> Int:
+  return cents / 100
+
+# Free-function API. Downstream packages cannot call methods on these types
+# (methods are absent from the .mossi), so every operation is mirrored here.
+export fn order_id(o: Order) -> Int:
+  return o.get_id()
+
+export fn order_customer(o: Order) -> Int:
+  return o.get_customer()
+
+export fn order_region(o: Order) -> Int:
+  return o.get_region()
+
+export fn order_total(o: Order) -> Int:
+  return o.total()
+
+export fn order_units(o: Order) -> Int:
+  return o.item_count()
+
+export fn order_units_in(o: Order, cat: Int) -> Int:
+  return o.units_in(cat)
+
+export fn order_has_bulk(o: Order) -> Bool:
+  return o.has_bulk_line()
+
+export fn order_is_open(o: Order) -> Bool:
+  return o.is_open()

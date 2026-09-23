@@ -1,0 +1,13 @@
+type Item:
+  qty: Int
+  price: Int
+
+  fn value() -> Int:
+    return qty * price
+
+  fn double() -> Int:
+    return value() * 2
+
+fn main():
+  item = Item(qty: 2, price: 3)
+  echo item.double()

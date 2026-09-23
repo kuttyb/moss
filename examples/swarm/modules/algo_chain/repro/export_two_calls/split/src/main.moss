@@ -1,0 +1,10 @@
+module app
+
+fn first(v: Vector[Int], x: Int) -> Int:
+  return v[x]
+
+export fn sum_two(v: Vector[Int], a: Int, b: Int):
+  return first(v, a) + first(v, b)
+
+fn main():
+  echo sum_two([10, 20, 30], 1, 2)

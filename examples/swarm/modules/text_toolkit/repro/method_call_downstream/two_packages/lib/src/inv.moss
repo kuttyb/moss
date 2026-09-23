@@ -1,0 +1,22 @@
+module inv
+
+export type Bag:
+  xs: Vector[Int]
+
+  fn total() -> Int:
+    return xs |> sum
+
+  fn scaled(k: Int) -> Int:
+    return (xs |> sum) * k
+
+  fn snapshot() -> Vector[Int]:
+    out = Vector[Int]()
+    for x in xs:
+      out.push(x)
+    return out
+
+  fn flag(k: Int) -> Bool:
+    return k > 1
+
+export fn make() -> Bag:
+  return Bag(xs: [1, 2, 3])

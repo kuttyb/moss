@@ -1,0 +1,5 @@
+fn ok(a: Int, b: Int) -> Bool:
+  return a > 0 and b >= 0
+
+fn main():
+  echo ok(1, 2)

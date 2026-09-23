@@ -1,0 +1,8 @@
+module records
+
+export type Event:
+  source: String
+  level: Int
+
+  fn get_level():
+    return level

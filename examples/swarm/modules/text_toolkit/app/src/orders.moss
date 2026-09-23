@@ -1,0 +1,36 @@
+module orders
+import inventory
+import strings
+import stats
+
+export type Order:
+  customer: String
+  item: String
+  qty: Int
+
+  fn describe() -> String:
+    # (a vector literal of fields would try to move them out of `self`)
+    who = strings.concat(customer, " wants ")
+    what = strings.concat(item, strings.concat(" x", strings.int_text(qty)))
+    return strings.concat(who, what)
+
+export fn new_order(customer: String, item: String, qty: Int) -> Order:
+  return Order(customer: customer, item: item, qty: qty)
+
+# Try every order against the stock; returns one log line per order.
+export fn process(stock: inventory.Stock, batch: Vector[Order]) -> Vector[String]:
+  log = Vector[String]()
+  for order in batch:
+    if inventory.stock_fulfill(stock, order.item, order.qty):
+      log.push(strings.concat("ok    ", order.describe()))
+    else:
+      log.push(strings.concat("short ", order.describe()))
+  return log
+
+# How many units each customer asked for, across all orders.
+export fn demand_by_customer(batch: Vector[Order]) -> Map[String, Int]:
+  totals = Map()
+  totals[""] = 0
+  for order in batch:
+    totals[order.customer] = totals.get(order.customer, 0) + order.qty
+  return totals

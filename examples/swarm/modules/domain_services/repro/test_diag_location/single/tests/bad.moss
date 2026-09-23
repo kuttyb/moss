@@ -1,0 +1,3 @@
+test "bare map to typed param":
+  m = Map()
+  assertEqual(get(m, "a"), -1)

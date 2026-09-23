@@ -1,0 +1,5 @@
+module app
+import mid
+
+fn main():
+  echo mid.scaled_bump(10)

@@ -1,0 +1,23 @@
+module policy_tests
+
+import records
+import policy
+
+test "admit respects the limit":
+  assert(policy.admit(10, 10))
+  assert(policy.admit(1, 10))
+  assert(not policy.admit(11, 10))
+
+test "cache helpers behave like the cache domain":
+  entries = Map()
+  entries["seed"] = records.make_entry(0, 1, 0)
+  assert(policy.is_miss(policy.cache_lookup(entries, "a")))
+  policy.cache_store(entries, "a", 5)
+  assertEqual(policy.cache_lookup(entries, "a"), 5)
+  assert(not policy.is_miss(policy.cache_lookup(entries, "a")))
+
+test "queued clamps the cost to the limit":
+  j = policy.queued(records.make_job(1, 2, 90), 50)
+  assertEqual(records.job_id(j), 1)
+  assertEqual(records.job_kind(j), 2)
+  assertEqual(records.job_cost(j), 50)

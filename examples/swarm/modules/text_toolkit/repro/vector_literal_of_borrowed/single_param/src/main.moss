@@ -1,0 +1,13 @@
+type Item:
+  qty: Int
+
+type Stock:
+  items: Vector[Item]
+
+fn stock_from(first: Item) -> Stock:
+  items = [first]
+  return Stock(items: items)
+
+fn main():
+  s = stock_from(Item(qty: 1))
+  echo s.items |> count

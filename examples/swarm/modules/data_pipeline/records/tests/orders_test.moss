@@ -1,0 +1,48 @@
+import orders
+import validate
+
+fn sample_items():
+  return [orders.make_item("pen", 0, 12, 150), orders.make_item("ink", 0, 2, 900), orders.make_item("desk", 1, 1, 25000)]
+
+test "order total sums line totals":
+  o = orders.make_order(1, 7, 0, sample_items())
+  assertEqual(o.total(), 12 * 150 + 2 * 900 + 25000)
+
+test "order counts units and lines":
+  o = orders.make_order(1, 7, 0, sample_items())
+  assertEqual(o.item_count(), 15)
+  assertEqual(o.line_count(), 3)
+
+test "units by category":
+  o = orders.make_order(1, 7, 0, sample_items())
+  assertEqual(o.units_in(0), 14)
+  assertEqual(o.units_in(1), 1)
+  assertEqual(o.units_in(2), 0)
+
+test "bulk detection":
+  o = orders.make_order(1, 7, 0, sample_items())
+  assert(o.has_bulk_line())
+
+test "new orders are open":
+  o = orders.make_order(2, 8, 1, sample_items())
+  assert(o.is_open())
+
+test "region names":
+  assertEqual(orders.region_name(0), "west")
+  assertEqual(orders.region_name(1), "east")
+  assertEqual(orders.region_name(2), "north")
+
+test "validation accepts good orders":
+  o = orders.make_order(3, 7, 0, sample_items())
+  assert(validate.order_ok(o))
+
+test "validation rejects empty and negative orders":
+  empty = orders.make_order(4, 7, 0, Vector[orders.LineItem]())
+  assert(not validate.order_ok(empty))
+  bad = orders.make_order(5, 7, 0, [orders.make_item("x", 0, 0, 100)])
+  assert(not validate.order_ok(bad))
+
+test "count_invalid over a batch":
+  good = orders.make_order(3, 7, 0, sample_items())
+  bad = orders.make_order(5, 7, 0, [orders.make_item("x", 0, 0, 100)])
+  assertEqual(validate.count_invalid([good, bad]), 1)

@@ -1,0 +1,14 @@
+trait Measurable:
+  fn area() -> Float
+
+type Sq:
+  s: Float
+
+  fn area() -> Float:
+    return s * s
+
+fn area_of(shape: Measurable) -> Float:
+  return shape.area()
+
+fn main():
+  echo area_of(Sq(s: 3.0))

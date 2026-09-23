@@ -1,0 +1,32 @@
+import vec2
+import shapes
+import model
+import scene
+
+test "empty scene has no shapes":
+  s = scene.new_scene("empty")
+  assertEqual(s.shape_count(), 0)
+  assertEqual(s.total_area(), 0.0)
+
+test "scene counts and totals":
+  s = scene.new_scene("t")
+  s.add_rect("a", 0.0, 0.0, 2.0, 3.0)
+  s.add_rect("b", 1.0, 1.0, 1.0, 1.0)
+  s.add_tri("c", vec2.origin(), vec2.vec(4.0, 0.0), vec2.vec(0.0, 3.0))
+  assertEqual(s.shape_count(), 3)
+  assertEqual(s.total_area(), 13.0)
+  assertEqual(s.total_perimeter(), 10.0 + 4.0 + 12.0)
+
+test "big_count uses lib shape areas":
+  s = scene.new_scene("t")
+  s.add_circle("small", 0.0, 0.0, 0.5)
+  s.add_circle("big", 0.0, 0.0, 3.0)
+  s.add_rect("mid", 0.0, 0.0, 2.0, 2.0)
+  assertEqual(s.big_count(3.0), 2)
+
+test "shift_all keeps totals":
+  s = scene.new_scene("t")
+  s.add_rect("a", 0.0, 0.0, 2.0, 3.0)
+  before = s.total_area()
+  s.shift_all(vec2.vec(5.0, 5.0))
+  assertEqual(s.total_area(), before)

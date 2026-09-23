@@ -1,0 +1,21 @@
+type Box:
+  w: Int
+
+  fn size() -> Int:
+    return w
+
+type Bag:
+  boxes: Vector[Box]
+
+  fn total() -> Int:
+    t = 0
+    for x in boxes:
+      t = t + x.size()
+    return t
+
+fn show(b: Bag):
+  echo "total", b.total()
+
+fn main():
+  b = Bag(boxes: [Box(w: 2), Box(w: 3)])
+  show(b)

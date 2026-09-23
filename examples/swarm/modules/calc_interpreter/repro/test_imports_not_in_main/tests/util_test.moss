@@ -1,0 +1,5 @@
+module util_test
+import util
+
+test "double":
+  assertEqual(util.double(4), 8)

@@ -1,0 +1,12 @@
+type Counter:
+  n: Int
+
+  fn base():
+    return n
+
+  fn twice():
+    return base() + base()
+
+fn main():
+  c = Counter(n: 3)
+  echo c.twice()

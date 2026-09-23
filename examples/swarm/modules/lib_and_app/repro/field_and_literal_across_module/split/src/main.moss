@@ -1,0 +1,7 @@
+module app
+
+import vec2
+
+fn main():
+  a = vec2.Vec2(x: 1.0, y: 2.0)
+  echo a.x

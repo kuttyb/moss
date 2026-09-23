@@ -1,0 +1,8 @@
+module app
+
+import records
+import metrics
+
+fn main():
+  e = records.make_event("a", 3)
+  echo metrics.level_of(e)

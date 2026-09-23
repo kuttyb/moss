@@ -1,0 +1,9 @@
+module metrics
+
+export trait Weighted:
+  fn weight() -> Int
+
+export fn heavier(a: Weighted, b: Weighted) -> Int:
+  if a.weight() >= b.weight():
+    return a.weight()
+  return b.weight()

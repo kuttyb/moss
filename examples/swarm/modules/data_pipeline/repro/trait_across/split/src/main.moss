@@ -1,0 +1,8 @@
+import model
+import billing
+
+fn main():
+  it = model.make_item(2, 5)
+  b = model.make_bundle(1, 3)
+  echo billing.billed(it)
+  echo billing.billed(b)

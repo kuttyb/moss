@@ -1,0 +1,11 @@
+module inventory
+
+export type Item:
+  qty: Int
+  price: Int
+
+  fn value() -> Int:
+    return qty * price
+
+  fn double() -> Int:
+    return value() * 2

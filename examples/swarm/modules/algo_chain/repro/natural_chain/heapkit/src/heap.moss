@@ -1,0 +1,77 @@
+module heap
+
+# A binary min-heap of (key, id) entries.
+
+export type Entry:
+  key: Int
+  id: Int
+
+  fn key_of():
+    return key
+
+  fn id_of():
+    return id
+
+export type MinHeap:
+  keys: Vector[Int]
+  ids: Vector[Int]
+
+  fn size():
+    return keys |> count
+
+  fn is_empty():
+    return (keys |> count) == 0
+
+  fn peek_key():
+    return keys[0]
+
+  fn push(key: Int, id: Int):
+    keys.push(key)
+    ids.push(id)
+    i = (keys |> count) - 1
+    while i > 0:
+      parent = (i - 1) / 2
+      if keys[parent] <= keys[i]:
+        break
+      tk = keys[parent]
+      ti = ids[parent]
+      keys[parent] = keys[i]
+      ids[parent] = ids[i]
+      keys[i] = tk
+      ids[i] = ti
+      i = parent
+
+  fn pop():
+    n = keys |> count
+    top = Entry(key: keys[0], id: ids[0])
+    keys[0] = keys[n - 1]
+    ids[0] = ids[n - 1]
+    keys.pop()
+    ids.pop()
+    m = n - 1
+    i = 0
+    running = true
+    while running:
+      left = 2 * i + 1
+      right = left + 1
+      smallest = i
+      if left < m:
+        if keys[left] < keys[smallest]:
+          smallest = left
+      if right < m:
+        if keys[right] < keys[smallest]:
+          smallest = right
+      if smallest == i:
+        running = false
+      else:
+        tk = keys[smallest]
+        ti = ids[smallest]
+        keys[smallest] = keys[i]
+        ids[smallest] = ids[i]
+        keys[i] = tk
+        ids[i] = ti
+        i = smallest
+    return top
+
+export fn new_heap():
+  return MinHeap(keys: Vector[Int](), ids: Vector[Int]())

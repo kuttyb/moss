@@ -1,0 +1,5 @@
+fn f(w: Float, h: Float) -> Float:
+  return (w + h) * 2.0
+
+fn main():
+  echo f(1.0, 2.0)

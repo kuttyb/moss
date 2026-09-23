@@ -1,0 +1,4 @@
+import util
+
+fn main():
+  echo util.double(21)

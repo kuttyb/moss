@@ -1,0 +1,35 @@
+module calc_test
+import calc
+
+test "arithmetic end to end":
+  s = calc.new_session()
+  r = calc.run(s, ["1", "+", "2", "*", "3"])
+  assert(r.ok)
+  assertEqual(r.value, 7)
+
+test "variables persist across lines":
+  s = calc.new_session()
+  calc.run(s, ["x", "=", "6"])
+  r = calc.run(s, ["x", "*", "x"])
+  assertEqual(r.value, 36)
+  assertEqual(s.evaluated(), 2)
+  assertEqual(s.last(), 36)
+
+test "errors are counted and do not touch history":
+  s = calc.new_session()
+  calc.run(s, ["1", "+"])
+  calc.run(s, ["7", "/", "0"])
+  calc.run(s, ["2", "$", "3"])
+  assertEqual(s.failures, 3)
+  assertEqual(s.evaluated(), 0)
+
+test "defaults are visible":
+  s = calc.new_session()
+  r = calc.run(s, ["h", "+", "t"])
+  assertEqual(r.value, 110)
+
+test "history is a public vector":
+  s = calc.new_session()
+  calc.run(s, ["1"])
+  calc.run(s, ["2", "*", "5"])
+  assertEqual(s.history, [1, 10])

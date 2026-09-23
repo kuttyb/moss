@@ -1,0 +1,6 @@
+module app
+import maker
+
+fn main():
+  t = maker.make(2)
+  echo t.code()

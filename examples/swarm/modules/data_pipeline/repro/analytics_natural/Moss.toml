@@ -1,0 +1,9 @@
+[project]
+name = "analytics"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+records = { path = "../../records" }

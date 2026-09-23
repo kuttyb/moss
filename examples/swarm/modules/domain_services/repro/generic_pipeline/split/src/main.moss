@@ -1,0 +1,8 @@
+module app
+
+import jobs
+import stats
+
+fn main():
+  js = [jobs.make_job(1, 3), jobs.make_job(2, 4)]
+  echo stats.total_weight(js)

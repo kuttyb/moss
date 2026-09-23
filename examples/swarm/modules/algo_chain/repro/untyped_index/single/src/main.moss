@@ -1,0 +1,6 @@
+fn get(parent, x):
+  return parent[x]
+
+fn main():
+  p = [0, 0, 1]
+  echo get(p, 2)

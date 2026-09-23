@@ -1,0 +1,9 @@
+module app
+
+import vec2
+import holder
+
+fn main():
+  h = holder.make(vec2.vec(1.0, 2.0))
+  r = h.shifted(vec2.vec(1.0, 1.0))
+  echo r.get_x()

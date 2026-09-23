@@ -1,0 +1,2 @@
+margo run   (cwd field_and_literal_across_module/split) rc=1: BUILD_BACKEND_ERROR: module Rust crate compilation failed for 'app' | error[E0616]: field `x` of struct `moss_vec2::vec2__Vec2` is private | 77 |     println!("{}", a.x);
+margo debug rc=0: 1

@@ -1,0 +1,4 @@
+module leaf
+
+export fn bump(x: Int) -> Int:
+  return x + 1

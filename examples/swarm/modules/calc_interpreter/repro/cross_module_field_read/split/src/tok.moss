@@ -1,0 +1,5 @@
+module tok
+
+export type Tok:
+  kind: Int
+  text: String

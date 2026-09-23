@@ -1,0 +1,7 @@
+module util
+
+fn helper(x: Int) -> Int:
+  return x * 2
+
+export fn double(x: Int) -> Int:
+  return helper(x)

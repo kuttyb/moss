@@ -1,0 +1,31 @@
+module queue
+
+import records
+import audit
+import config
+import policy
+
+export domain JobQueue:
+  pending: Queue[records.JobSpec]
+  size = 0
+  domainroutes(settings: config.Config, audit_log: audit.Audit)
+
+  fn Submit(job: records.JobSpec) -> Int:
+    limit = message settings.Get(1, 100)
+    if not policy.admit(records.job_cost(job), limit):
+      message audit_log.Record(records.make_event(2, 2, records.job_id(job)))
+      reply 0 - 1
+    pending.push(policy.queued(job, limit))
+    size = size + 1
+    reply size
+
+  fn RunNext() -> Int:
+    if size == 0:
+      reply 0 - 1
+    job = pending.pop()
+    size = size - 1
+    message audit_log.Record(records.make_event(2, 0, records.job_id(job)))
+    reply records.job_weight(job)
+
+  fn Pending() -> Int:
+    reply size

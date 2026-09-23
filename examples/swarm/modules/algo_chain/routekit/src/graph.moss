@@ -1,0 +1,90 @@
+module graph
+
+# Weighted directed graph over nodes 0..n-1 in "forward star" form. Edge data
+# is kept as parallel vectors (from/to/cost) with per-node head pointers
+# threaded through a next-edge vector.
+
+# A single edge as a value, orderable by cost with heapkit's order helpers.
+export type Edge:
+  id: Int
+  src: Int
+  dst: Int
+  cost: Int
+
+  fn key():
+    return cost
+
+  fn id_of():
+    return id
+
+  fn src_of():
+    return src
+
+  fn dst_of():
+    return dst
+
+  fn cost_of():
+    return cost
+
+export type Graph:
+  n: Int
+  srcs: Vector[Int]
+  dsts: Vector[Int]
+  costs: Vector[Int]
+  head: Vector[Int]
+  nxt: Vector[Int]
+
+  # Mutation of collection fields has to live in a method: `g.srcs.push(..)`
+  # on a parameter is rejected (repro/field_push).
+  fn append_edge(u: Int, v: Int, cost: Int):
+    id = srcs |> count
+    first = head[u]
+    srcs.push(u)
+    dsts.push(v)
+    costs.push(cost)
+    nxt.push(first)
+    head[u] = id
+    return id
+
+export fn new_graph(n: Int) -> Graph:
+  head = Vector[Int]()
+  i = 0
+  while i < n:
+    head.push(-1)
+    i = i + 1
+  return Graph(n: n, srcs: Vector[Int](), dsts: Vector[Int](), costs: Vector[Int](), head: head, nxt: Vector[Int]())
+
+export fn node_count(g: Graph) -> Int:
+  return g.n
+
+export fn edge_count(g: Graph) -> Int:
+  return g.srcs |> count
+
+export fn add_edge(g: Graph, u: Int, v: Int, cost: Int) -> Int:
+  return g.append_edge(u, v, cost)
+
+# Undirected road: two directed edges; returns the id of the first.
+export fn add_road(g: Graph, u: Int, v: Int, cost: Int) -> Int:
+  id = g.append_edge(u, v, cost)
+  g.append_edge(v, u, cost)
+  return id
+
+# Edge ids leaving u: first_edge(g, u), then next_edge(g, e) ... until -1.
+export fn first_edge(g: Graph, u: Int) -> Int:
+  return g.head[u]
+
+export fn next_edge(g: Graph, e: Int) -> Int:
+  return g.nxt[e]
+
+export fn edge_cost(g: Graph, e: Int) -> Int:
+  return g.costs[e]
+
+export fn edge_to(g: Graph, e: Int) -> Int:
+  return g.dsts[e]
+
+export fn edge_from(g: Graph, e: Int) -> Int:
+  return g.srcs[e]
+
+# Edge e as a value.
+export fn edge(g: Graph, e: Int) -> Edge:
+  return Edge(id: e, src: g.srcs[e], dst: g.dsts[e], cost: g.costs[e])

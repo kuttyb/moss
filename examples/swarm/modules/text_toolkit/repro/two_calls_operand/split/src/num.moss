@@ -1,0 +1,7 @@
+module num
+
+fn half(n: Int) -> Float:
+  return 0.5
+
+export fn ratio(a: Int, b: Int) -> Float:
+  return half(a) / half(b)

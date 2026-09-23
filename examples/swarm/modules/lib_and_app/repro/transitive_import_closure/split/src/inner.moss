@@ -1,0 +1,10 @@
+module inner
+
+export type In:
+  v: Int
+
+  fn get() -> Int:
+    return v
+
+export fn mk(v: Int) -> In:
+  return In(v: v)

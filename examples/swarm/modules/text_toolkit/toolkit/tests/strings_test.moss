@@ -1,0 +1,30 @@
+module strings_test
+import strings
+
+test "int_text renders signed numbers":
+  assertEqual(strings.int_text(0), "0")
+  assertEqual(strings.int_text(1234), "1234")
+  assertEqual(strings.int_text(-42), "-42")
+
+test "pad_left_int right-aligns":
+  assertEqual(strings.pad_left_int(7, 4), "   7")
+  assertEqual(strings.pad_left_int(12345, 3), "12345")
+  assertEqual(strings.pad_left_int(-5, 4), "  -5")
+
+test "join and repeat":
+  parts = ["a", "b", "c"]
+  assertEqual(strings.join(parts, "-"), "a-b-c")
+  assertEqual(strings.repeat_text("ab", 3), "ababab")
+  assertEqual(strings.concat("x", "y"), "xy")
+
+test "sorted_text sorts a copy":
+  words = ["pear", "apple", "fig"]
+  sorted = strings.sorted_text(words)
+  assertEqual(strings.join(sorted, " "), "apple fig pear")
+  assertEqual(strings.join(words, " "), "pear apple fig")
+
+test "min and max text compare borrowed strings":
+  assertEqual(strings.min_text("pear", "apple"), "apple")
+  assertEqual(strings.max_text("pear", "apple"), "pear")
+  assert(strings.contains_text(["a", "b"], "b"))
+  assert(not strings.contains_text(["a", "b"], "z"))

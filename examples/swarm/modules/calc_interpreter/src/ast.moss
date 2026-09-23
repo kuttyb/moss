@@ -1,0 +1,63 @@
+module ast
+import node
+
+# Flat expression tree. Nodes live in one vector in post-order, so a node
+# only ever refers to nodes with a smaller index; evaluation is a single
+# forward sweep and needs no recursion.
+
+export type Ast:
+  nodes: Vector[node.Node]
+  root: Int
+
+  fn size() -> Int:
+    return nodes |> count
+
+  fn root() -> Int:
+    return root
+
+  fn set_root(index: Int):
+    root = index
+
+  fn add_num(value: Int, pos: Int) -> Int:
+    nodes.push(node.make(1, 0, value, -1, -1, pos))
+    return last_index(nodes |> count)
+
+  fn add_var(slot: Int, pos: Int) -> Int:
+    nodes.push(node.make(2, 0, slot, -1, -1, pos))
+    return last_index(nodes |> count)
+
+  fn add_binary(op: Int, left: Int, right: Int, pos: Int) -> Int:
+    nodes.push(node.make(3, op, 0, left, right, pos))
+    return last_index(nodes |> count)
+
+  fn add_negate(operand: Int, pos: Int) -> Int:
+    nodes.push(node.make(4, 0, 0, operand, -1, pos))
+    return last_index(nodes |> count)
+
+  fn add_assign(slot: Int, expr: Int, pos: Int) -> Int:
+    nodes.push(node.make(5, 0, slot, expr, -1, pos))
+    return last_index(nodes |> count)
+
+  fn kind_at(i: Int) -> Int:
+    return nodes[i].kind()
+
+  fn op_at(i: Int) -> Int:
+    return nodes[i].op()
+
+  fn value_at(i: Int) -> Int:
+    return nodes[i].value()
+
+  fn left_at(i: Int) -> Int:
+    return nodes[i].left()
+
+  fn right_at(i: Int) -> Int:
+    return nodes[i].right()
+
+  fn pos_at(i: Int) -> Int:
+    return nodes[i].pos()
+
+fn last_index(count: Int) -> Int:
+  return count - 1
+
+export fn new_ast() -> Ast:
+  return Ast(nodes: Vector[node.Node](), root: -1)

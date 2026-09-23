@@ -1,0 +1,24 @@
+trait Billable:
+  fn total() -> Int
+
+type Item:
+  qty: Int
+  price: Int
+
+  fn total() -> Int:
+    return qty * price
+
+type Bundle:
+  items: Vector[Item]
+
+  fn total() -> Int:
+    return items |> map(_.total()) |> sum
+
+fn billed(x: Billable) -> Int:
+  return x.total()
+
+fn main():
+  it = Item(qty: 2, price: 5)
+  b = Bundle(items: [Item(qty: 1, price: 3)])
+  echo billed(it)
+  echo billed(b)

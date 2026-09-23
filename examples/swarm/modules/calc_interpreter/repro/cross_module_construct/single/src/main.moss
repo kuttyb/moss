@@ -1,0 +1,12 @@
+type Tok:
+  kind: Int
+
+  fn code() -> Int:
+    return kind
+
+fn make(k: Int) -> Tok:
+  return Tok(kind: k)
+
+fn main():
+  t = make(2)
+  echo t.code()

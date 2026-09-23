@@ -1,0 +1,24 @@
+module inventory
+
+export type Item:
+  qty: Int
+
+  fn take(n: Int):
+    qty = qty - n
+
+  fn amount() -> Int:
+    return qty
+
+export type Stock:
+  items: Vector[Item]
+
+  fn take_all(n: Int):
+    for it in items:
+      it.take(n)
+    return
+
+  fn first_amount() -> Int:
+    return items[0].amount()
+
+export fn make() -> Stock:
+  return Stock(items: [Item(qty: 10), Item(qty: 20)])

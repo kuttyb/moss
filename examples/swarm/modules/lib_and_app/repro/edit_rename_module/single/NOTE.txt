@@ -1,0 +1,3 @@
+margo run   (cwd edit_rename_module/single) rc=0: 1
+margo debug rc=0: 1
+moss edit rename entity-v1:function:make rc=0: ok

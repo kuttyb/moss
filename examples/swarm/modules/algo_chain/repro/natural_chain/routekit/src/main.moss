@@ -1,0 +1,14 @@
+module routekit_demo
+import graph
+import route
+
+fn main():
+  g = graph.new_graph(5)
+  g.add_road(0, 1, 4)
+  g.add_road(0, 2, 1)
+  g.add_road(2, 1, 2)
+  g.add_road(1, 3, 5)
+  r = route.shortest_paths(g, 0)
+  echo r.distance_to(3)
+  echo r.path_to(3)
+  echo r.reachable(4)

@@ -1,0 +1,114 @@
+module errors
+
+# Error reporting shared by every stage of the calculator. A stage receives a
+# `Diag` and reports into it instead of returning a result record; callers ask
+# the Diag whether something went wrong. An error code is stage * 100 + detail.
+
+export type Diag:
+  code: Int
+  pos: Int
+
+  fn failed() -> Bool:
+    return code != 0
+
+  fn code() -> Int:
+    return code
+
+  fn pos() -> Int:
+    return pos
+
+  fn report(new_code: Int, new_pos: Int):
+    code = new_code
+    pos = new_pos
+    return
+
+export fn new_diag() -> Diag:
+  return Diag(code: 0, pos: 0)
+
+# Stage codes.
+export fn lex(detail: Int) -> Int:
+  return 100 + detail
+
+export fn parse(detail: Int) -> Int:
+  return 200 + detail
+
+export fn eval(detail: Int) -> Int:
+  return 300 + detail
+
+# Details (there are no top-level constants in Moss, so each is a function).
+export fn bad_character() -> Int:
+  return 1
+
+export fn unexpected_number() -> Int:
+  return 1
+
+export fn unexpected_name() -> Int:
+  return 2
+
+export fn unexpected_assign() -> Int:
+  return 3
+
+export fn unexpected_lparen() -> Int:
+  return 4
+
+export fn missing_operand() -> Int:
+  return 5
+
+export fn unmatched_rparen() -> Int:
+  return 6
+
+export fn unmatched_lparen() -> Int:
+  return 7
+
+export fn ends_unexpectedly() -> Int:
+  return 8
+
+export fn malformed() -> Int:
+  return 9
+
+export fn undefined_variable() -> Int:
+  return 1
+
+export fn division_by_zero() -> Int:
+  return 2
+
+export fn empty_program() -> Int:
+  return 3
+
+export fn stage_name(code: Int) -> String:
+  if code == 0:
+    return "ok"
+  if code < 200:
+    return "lex"
+  if code < 300:
+    return "parse"
+  return "eval"
+
+export fn message_for(code: Int) -> String:
+  if code == 101:
+    return "unexpected character"
+  if code == 201:
+    return "unexpected number"
+  if code == 202:
+    return "unexpected name"
+  if code == 203:
+    return "unexpected '='"
+  if code == 204:
+    return "unexpected '('"
+  if code == 205:
+    return "missing operand"
+  if code == 206:
+    return "unmatched ')'"
+  if code == 207:
+    return "unmatched '('"
+  if code == 208:
+    return "expression ends unexpectedly"
+  if code == 209:
+    return "malformed expression"
+  if code == 301:
+    return "undefined variable"
+  if code == 302:
+    return "division by zero"
+  if code == 303:
+    return "empty program"
+  return "no error"

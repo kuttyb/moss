@@ -1,0 +1,111 @@
+module shapes
+
+import vec2
+import measure
+
+export type Circle:
+  center: vec2.Vec2
+  radius: Float
+
+  fn area() -> Float:
+    return measure.pi() * radius * radius
+
+  fn perimeter() -> Float:
+    p = measure.pi()
+    return 2.0 * p * radius
+
+  fn contains(p: vec2.Vec2) -> Bool:
+    return vec2.dist(center, p) <= radius
+
+  fn moved(by: vec2.Vec2):
+    return Circle(center: vec2.plus(center, by), radius: radius)
+
+export type Rect:
+  origin: vec2.Vec2
+  width: Float
+  height: Float
+
+  fn area() -> Float:
+    return width * height
+
+  fn perimeter() -> Float:
+    s = width + height
+    return s * 2.0
+
+  fn contains(p: vec2.Vec2) -> Bool:
+    px = p.get_x()
+    py = p.get_y()
+    ox = origin.get_x()
+    oy = origin.get_y()
+    dx = px - ox
+    dy = py - oy
+    return dx >= 0.0 and dx <= width and dy >= 0.0 and dy <= height
+
+  fn moved(by: vec2.Vec2):
+    return Rect(origin: vec2.plus(origin, by), width: width, height: height)
+
+export type Triangle:
+  a: vec2.Vec2
+  b: vec2.Vec2
+  c: vec2.Vec2
+
+  fn area() -> Float:
+    twice = vec2.cross(vec2.minus(b, a), vec2.minus(c, a))
+    return measure.abs_f(twice) / 2.0
+
+  fn perimeter() -> Float:
+    ab = vec2.dist(a, b)
+    bc = vec2.dist(b, c)
+    ca = vec2.dist(c, a)
+    return ab + bc + ca
+
+  fn moved(by: vec2.Vec2):
+    return Triangle(a: vec2.plus(a, by), b: vec2.plus(b, by), c: vec2.plus(c, by))
+
+export fn unit_square() -> Rect:
+  return Rect(origin: vec2.origin(), width: 1.0, height: 1.0)
+
+export fn square(side: Float) -> Rect:
+  return Rect(origin: vec2.origin(), width: side, height: side)
+
+export fn circle(cx: Float, cy: Float, r: Float) -> Circle:
+  return Circle(center: vec2.vec(cx, cy), radius: r)
+
+export fn rect(x: Float, y: Float, w: Float, h: Float) -> Rect:
+  return Rect(origin: vec2.vec(x, y), width: w, height: h)
+
+export fn triangle(a: vec2.Vec2, b: vec2.Vec2, c: vec2.Vec2) -> Triangle:
+  return Triangle(a: a, b: b, c: c)
+
+export fn circle_area(c: Circle) -> Float:
+  return c.area()
+
+export fn circle_perimeter(c: Circle) -> Float:
+  return c.perimeter()
+
+export fn circle_contains(c: Circle, p: vec2.Vec2) -> Bool:
+  return c.contains(p)
+
+export fn circle_moved(c: Circle, by: vec2.Vec2) -> Circle:
+  return c.moved(by)
+
+export fn rect_area(r: Rect) -> Float:
+  return r.area()
+
+export fn rect_perimeter(r: Rect) -> Float:
+  return r.perimeter()
+
+export fn rect_contains(r: Rect, p: vec2.Vec2) -> Bool:
+  return r.contains(p)
+
+export fn rect_moved(r: Rect, by: vec2.Vec2) -> Rect:
+  return r.moved(by)
+
+export fn triangle_area(t: Triangle) -> Float:
+  return t.area()
+
+export fn triangle_perimeter(t: Triangle) -> Float:
+  return t.perimeter()
+
+export fn triangle_moved(t: Triangle, by: vec2.Vec2) -> Triangle:
+  return t.moved(by)

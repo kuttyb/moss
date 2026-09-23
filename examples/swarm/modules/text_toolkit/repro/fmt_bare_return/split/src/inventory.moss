@@ -1,0 +1,15 @@
+module inventory
+
+export type Stock:
+  items: Vector[Int]
+
+  fn add(x: Int):
+    items.push(x)
+    return
+
+export fn make() -> Stock:
+  return Stock(items: [1])
+
+export fn add_item(stock: Stock, x: Int):
+  stock.add(x)
+  return

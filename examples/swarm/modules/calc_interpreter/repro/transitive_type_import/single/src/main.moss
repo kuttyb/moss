@@ -1,0 +1,20 @@
+type Inner:
+  n: Int
+
+  fn get() -> Int:
+    return n
+
+type Outer:
+  part: Inner
+
+  fn value() -> Int:
+    return part.get()
+
+fn make() -> Outer:
+  return Outer(part: Inner(n: 5))
+
+fn show(o: Outer):
+  echo o.value()
+
+fn main():
+  show(make())

@@ -1,0 +1,13 @@
+type Item:
+  w: Float
+
+  fn describe():
+    echo "area", area()
+    return
+
+  fn area() -> Float:
+    return w * 2.0
+
+fn main():
+  a = Item(w: 1.0)
+  a.describe()

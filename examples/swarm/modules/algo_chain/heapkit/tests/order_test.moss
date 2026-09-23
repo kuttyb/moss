@@ -1,0 +1,34 @@
+import order
+
+type Job:
+  name: String
+  cost: Int
+
+  fn key():
+    return cost
+
+type Point:
+  x: Int
+  y: Int
+
+  fn key():
+    return x * x + y * y
+
+test "order_by_key over a caller-defined type":
+  jobs = [Job(name: "c", cost: 30), Job(name: "a", cost: 10), Job(name: "b", cost: 20)]
+  idx = order.order_by_key(jobs)
+  assertEqual(idx, [1, 2, 0])
+
+test "order_by_key over a different caller-defined type":
+  pts = [Point(x: 3, y: 4), Point(x: 1, y: 0), Point(x: 0, y: 2)]
+  assertEqual(order.order_by_key(pts), [1, 2, 0])
+
+test "total_key and min_key":
+  jobs = [Job(name: "a", cost: 5), Job(name: "b", cost: 7)]
+  assertEqual(order.total_key(jobs), 12)
+  assertEqual(order.min_key(jobs[0], jobs[1]), 5)
+
+test "clamp works for ints and floats":
+  assertEqual(order.clamp(15, 0, 10), 10)
+  assertEqual(order.clamp(-3, 0, 10), 0)
+  assertEqual(order.clamp(2.5, 0.0, 1.0), 1.0)

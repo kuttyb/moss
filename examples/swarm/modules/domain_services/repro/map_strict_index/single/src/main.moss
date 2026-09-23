@@ -1,0 +1,4 @@
+fn main():
+  m = Map()
+  m[1] = 10
+  echo m[1]

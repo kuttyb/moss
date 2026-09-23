@@ -1,0 +1,5 @@
+import shapes
+
+fn main():
+  b = shapes.make_box(2, 3)
+  echo shapes.area_of(b)

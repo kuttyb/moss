@@ -1,0 +1,11 @@
+module util
+import box
+
+# Generic (untyped) helper that uses Box methods internally.
+export fn fill(n):
+  b = box.new_box()
+  b.add(n)
+  return b.add(n + 1)
+
+export fn unrelated(x: Int) -> Int:
+  return x + 1

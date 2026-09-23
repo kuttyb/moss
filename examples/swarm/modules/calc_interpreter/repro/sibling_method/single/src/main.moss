@@ -1,0 +1,23 @@
+type Env:
+  names: Vector[String]
+
+  fn has(name: String) -> Bool:
+    n = names |> count
+    var i = 0
+    while i < n:
+      if names[i] == name:
+        return true
+      i = i + 1
+    return false
+
+  fn set(name: String):
+    if not has(name):
+      names.push(name)
+    return
+
+fn main():
+  e = Env(names: Vector[String]())
+  e.set("a")
+  e.set("a")
+  e.set("b")
+  echo e.names |> count

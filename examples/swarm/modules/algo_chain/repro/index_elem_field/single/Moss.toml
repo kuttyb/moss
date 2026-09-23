@@ -1,0 +1,6 @@
+[project]
+name = "index_elem_field"
+version = "0.1.0"
+
+[build]
+source = "src"

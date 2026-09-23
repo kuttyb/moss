@@ -1,0 +1,17 @@
+module holder
+
+export type Node:
+  kind: Int
+
+export type Holder:
+  nodes: Vector[Node]
+
+  fn add(k: Int):
+    nodes.push(Node(kind: k))
+    return
+
+  fn size() -> Int:
+    return nodes |> count
+
+export fn make() -> Holder:
+  return Holder(nodes: Vector[Node]())

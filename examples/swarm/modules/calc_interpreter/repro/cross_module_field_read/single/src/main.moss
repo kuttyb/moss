@@ -1,0 +1,7 @@
+type Tok:
+  kind: Int
+  text: String
+
+fn main():
+  t = Tok(kind: 2, text: "a")
+  echo t.kind

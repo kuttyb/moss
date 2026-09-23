@@ -1,0 +1,11 @@
+fn ok_one(x: Int) -> Int:
+  return x + 1
+
+fn ok_two(x: Int) -> Int:
+  return x + 2
+
+fn bad(x: Int) -> Int:
+  return x + "s"
+
+fn main():
+  echo bad(1)

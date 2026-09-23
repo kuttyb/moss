@@ -1,0 +1,17 @@
+module box
+
+export type Box:
+  items: Vector[Int]
+
+  fn size() -> Int:
+    return items |> count
+
+  fn add(x: Int) -> Int:
+    items.push(x)
+    return items |> count
+
+export fn new_box() -> Box:
+  return Box(items: Vector[Int]())
+
+export fn size_of(b: Box) -> Int:
+  return b.size()

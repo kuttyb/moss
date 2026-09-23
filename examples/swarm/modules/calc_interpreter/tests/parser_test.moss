@@ -1,0 +1,56 @@
+module parser_test
+import ast
+import errors
+import lexer
+import node
+import parser
+import token
+
+test "precedence builds a post order tree":
+  diag = errors.new_diag()
+  toks_tree = lexer.tokenize(["1", "+", "2", "*", "3"], diag)
+  tree = parser.parse(toks_tree, diag)
+  assert(not diag.failed())
+  # nodes: 1, 2, 3, 2*3, 1+(2*3)
+  assertEqual(tree.size(), 5)
+  assertEqual(tree.root(), 4)
+  assertEqual(tree.kind_at(4), node.kind_binary())
+  assertEqual(tree.op_at(4), token.kind_plus())
+  assertEqual(tree.op_at(3), token.kind_star())
+
+test "parentheses override precedence":
+  diag = errors.new_diag()
+  toks_tree = lexer.tokenize(["(", "1", "+", "2", ")", "*", "3"], diag)
+  tree = parser.parse(toks_tree, diag)
+  assertEqual(tree.op_at(tree.root()), token.kind_star())
+
+test "unary minus":
+  diag = errors.new_diag()
+  toks_tree = lexer.tokenize(["-", "5"], diag)
+  tree = parser.parse(toks_tree, diag)
+  assertEqual(tree.size(), 2)
+  assertEqual(tree.kind_at(tree.root()), node.kind_negate())
+
+test "assignment node":
+  diag = errors.new_diag()
+  toks_tree = lexer.tokenize(["b", "=", "4"], diag)
+  tree = parser.parse(toks_tree, diag)
+  assertEqual(tree.kind_at(tree.root()), node.kind_assign())
+  assertEqual(tree.value_at(tree.root()), 1)
+
+test "missing operand":
+  diag = errors.new_diag()
+  toks_tree = lexer.tokenize(["1", "+"], diag)
+  tree = parser.parse(toks_tree, diag)
+  assert(diag.failed())
+  assertEqual(errors.stage_name(diag.code()), "parse")
+
+test "unbalanced parentheses":
+  open = errors.new_diag()
+  toks_a = lexer.tokenize(["(", "1"], open)
+  a = parser.parse(toks_a, open)
+  assertEqual(open.code(), errors.parse(errors.unmatched_lparen()))
+  close = errors.new_diag()
+  toks_b = lexer.tokenize(["1", ")"], close)
+  b = parser.parse(toks_b, close)
+  assertEqual(close.code(), errors.parse(errors.unmatched_rparen()))

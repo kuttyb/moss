@@ -1,0 +1,5 @@
+module other_test
+import other
+
+test "triple":
+  assertEqual(other.triple(4), 12)

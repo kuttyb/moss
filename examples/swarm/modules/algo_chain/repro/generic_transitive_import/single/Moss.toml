@@ -1,0 +1,6 @@
+[project]
+name = "gti_single"
+version = "0.1.0"
+
+[build]
+source = "src"

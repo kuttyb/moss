@@ -1,0 +1,10 @@
+module util
+
+export fn smaller(a: String, b: String) -> String:
+  if b < a:
+    return "second"
+  else:
+    return "first"
+
+export fn in_range(x: Int) -> Bool:
+  return x >= 1 and x < 9

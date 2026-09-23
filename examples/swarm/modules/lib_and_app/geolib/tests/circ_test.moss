@@ -1,0 +1,6 @@
+import shapes
+import measure
+
+test "circle total":
+  cs = [shapes.circle(0.0, 0.0, 1.0), shapes.circle(5.0, 5.0, 2.0)]
+  assertEqual(measure.total_area(cs), 15.70795)

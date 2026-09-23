@@ -1,0 +1,16 @@
+module audit
+
+import records
+import metrics
+
+export domain Audit:
+  events = Vector[records.Event]()
+
+  fn Record(e: records.Event):
+    events.push(records.Event(source: e.source, level: e.level, code: e.code))
+
+  fn Summarize() -> records.Summary:
+    reply metrics.summarize(events)
+
+  fn Count() -> Int:
+    reply events |> count

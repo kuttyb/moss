@@ -1,0 +1,7 @@
+module bad_tests
+
+import lookup
+
+test "bare map to typed param":
+  m = Map()
+  assertEqual(lookup.get(m, "a"), -1)

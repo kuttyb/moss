@@ -1,0 +1,7 @@
+module order
+
+export trait Keyed:
+  fn key() -> Int
+
+export fn key_of(a: Keyed):
+  return a.key()

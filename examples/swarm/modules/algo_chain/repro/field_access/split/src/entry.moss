@@ -1,0 +1,8 @@
+module entry
+
+export type Entry:
+  key: Int
+  id: Int
+
+export fn make(k: Int):
+  return Entry(key: k, id: k * 10)

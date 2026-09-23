@@ -1,0 +1,5 @@
+fn dup(s: String) -> String:
+  return s + "x"
+
+fn main():
+  echo dup("a")

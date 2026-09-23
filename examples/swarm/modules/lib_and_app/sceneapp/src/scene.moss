@@ -1,0 +1,164 @@
+module scene
+
+import vec2
+import shapes
+import model
+
+fn shift_circle(it: model.CircleItem, by: vec2.Vec2):
+  it.shift(by)
+  return
+
+fn shift_rect(it: model.RectItem, by: vec2.Vec2):
+  it.shift(by)
+  return
+
+fn shift_tri(it: model.TriItem, by: vec2.Vec2):
+  it.shift(by)
+  return
+
+fn describe_circle(it: model.CircleItem):
+  it.describe()
+  return
+
+fn circle_area_of(it: model.CircleItem) -> Float:
+  return it.area()
+
+fn describe_rect(it: model.RectItem):
+  it.describe()
+  return
+
+fn rect_area_of(it: model.RectItem) -> Float:
+  return it.area()
+
+fn describe_tri(it: model.TriItem):
+  it.describe()
+  return
+
+fn tri_area_of(it: model.TriItem) -> Float:
+  return it.area()
+
+fn circle_perimeter_of(it: model.CircleItem) -> Float:
+  return it.perimeter()
+
+fn rect_perimeter_of(it: model.RectItem) -> Float:
+  return it.perimeter()
+
+fn tri_perimeter_of(it: model.TriItem) -> Float:
+  return it.perimeter()
+
+export type Scene:
+  title: String
+  circles: Vector[model.CircleItem]
+  rects: Vector[model.RectItem]
+  tris: Vector[model.TriItem]
+
+  fn print_header():
+    echo "== scene:", title, "=="
+    return
+
+  fn print_circles():
+    n = circles |> count
+    i = 0
+    while i < n:
+      describe_circle(circles[i])
+      i = i + 1
+    return
+
+  fn print_rects():
+    n = rects |> count
+    i = 0
+    while i < n:
+      describe_rect(rects[i])
+      i = i + 1
+    return
+
+  fn print_tris():
+    n = tris |> count
+    i = 0
+    while i < n:
+      describe_tri(tris[i])
+      i = i + 1
+    return
+
+  fn add_circle(name: String, x: Float, y: Float, r: Float):
+    circles.push(model.circle_item(name, shapes.circle(x, y, r)))
+    return
+
+  fn add_rect(name: String, x: Float, y: Float, w: Float, h: Float):
+    rects.push(model.rect_item(name, shapes.rect(x, y, w, h)))
+    return
+
+  fn add_tri(name: String, a: vec2.Vec2, b: vec2.Vec2, c: vec2.Vec2):
+    tris.push(model.tri_item(name, shapes.triangle(a, b, c)))
+    return
+
+  fn shape_count() -> Int:
+    nc = circles |> count
+    nr = rects |> count
+    nt = tris |> count
+    return nc + nr + nt
+
+  fn total_area() -> Float:
+    nc = circles |> count
+    nr = rects |> count
+    nt = tris |> count
+    total = 0.0
+    i = 0
+    while i < nc:
+      total = total + circle_area_of(circles[i])
+      i = i + 1
+    i = 0
+    while i < nr:
+      total = total + rect_area_of(rects[i])
+      i = i + 1
+    i = 0
+    while i < nt:
+      total = total + tri_area_of(tris[i])
+      i = i + 1
+    return total
+
+  fn total_perimeter() -> Float:
+    nc = circles |> count
+    nr = rects |> count
+    nt = tris |> count
+    total = 0.0
+    i = 0
+    while i < nc:
+      total = total + circle_perimeter_of(circles[i])
+      i = i + 1
+    i = 0
+    while i < nr:
+      total = total + rect_perimeter_of(rects[i])
+      i = i + 1
+    i = 0
+    while i < nt:
+      total = total + tri_perimeter_of(tris[i])
+      i = i + 1
+    return total
+
+  fn big_count(min_area: Float) -> Int:
+    a = circles |> map(_.area()) |> filter(_ > min_area) |> count
+    b = rects |> map(_.area()) |> filter(_ > min_area) |> count
+    c = tris |> map(_.area()) |> filter(_ > min_area) |> count
+    return a + b + c
+
+  fn shift_all(by: vec2.Vec2):
+    nc = circles |> count
+    nr = rects |> count
+    nt = tris |> count
+    i = 0
+    while i < nc:
+      shift_circle(circles[i], by)
+      i = i + 1
+    i = 0
+    while i < nr:
+      shift_rect(rects[i], by)
+      i = i + 1
+    i = 0
+    while i < nt:
+      shift_tri(tris[i], by)
+      i = i + 1
+    return
+
+export fn new_scene(title: String) -> Scene:
+  return Scene(title: title, circles: Vector[model.CircleItem](), rects: Vector[model.RectItem](), tris: Vector[model.TriItem]())

@@ -1,0 +1,12 @@
+module app
+
+import measure
+
+type Sq:
+  s: Float
+
+  fn area() -> Float:
+    return s * s
+
+fn main():
+  echo measure.area_of(Sq(s: 3.0))

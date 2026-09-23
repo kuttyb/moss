@@ -1,0 +1,7 @@
+module app
+
+import outer
+
+fn main():
+  o = outer.mk(4)
+  echo o.get()

@@ -1,0 +1,10 @@
+module blob
+
+export type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+export fn make_blob(size: Int) -> Blob:
+  return Blob(size: size)

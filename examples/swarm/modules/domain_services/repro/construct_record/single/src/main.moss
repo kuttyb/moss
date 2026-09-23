@@ -1,0 +1,12 @@
+type Event:
+  source: String
+  level: Int
+
+  fn get_level():
+    return level
+
+fn build(level: Int) -> Event:
+  return Event(source: "x", level: level)
+
+fn main():
+  echo build(4).get_level()

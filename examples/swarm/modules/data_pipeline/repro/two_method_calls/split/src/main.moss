@@ -1,0 +1,5 @@
+import a
+import b
+
+fn main():
+  echo b.f(a.make(1, 2))

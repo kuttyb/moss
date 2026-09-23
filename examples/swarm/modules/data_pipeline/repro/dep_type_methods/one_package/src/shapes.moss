@@ -1,0 +1,11 @@
+module shapes
+
+export type Box:
+  w: Int
+  h: Int
+
+  fn area() -> Int:
+    return w * h
+
+export fn make_box(w: Int, h: Int) -> Box:
+  return Box(w: w, h: h)

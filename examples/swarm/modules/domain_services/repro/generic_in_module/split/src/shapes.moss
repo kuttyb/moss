@@ -1,0 +1,13 @@
+module shapes
+
+import metrics
+
+type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+export fn run() -> Int:
+  blobs = [Blob(size: 1), Blob(size: 2)]
+  return metrics.total_weight(blobs)

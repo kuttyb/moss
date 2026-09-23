@@ -1,0 +1,4 @@
+module alpha
+
+export fn ok_one(x: Int) -> Int:
+  return x + 1

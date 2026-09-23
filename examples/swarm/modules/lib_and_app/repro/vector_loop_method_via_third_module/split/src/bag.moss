@@ -1,0 +1,19 @@
+module bag
+
+export type Box:
+  w: Int
+
+  fn size() -> Int:
+    return w
+
+export type Bag:
+  boxes: Vector[Box]
+
+  fn total() -> Int:
+    t = 0
+    for x in boxes:
+      t = t + x.size()
+    return t
+
+export fn new_bag() -> Bag:
+  return Bag(boxes: [Box(w: 2), Box(w: 3)])

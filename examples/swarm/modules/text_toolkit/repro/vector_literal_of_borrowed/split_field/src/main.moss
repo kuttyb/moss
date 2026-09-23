@@ -1,0 +1,6 @@
+module app
+import orders
+
+fn main():
+  order = orders.new_order("ann", "widget")
+  echo order.words()

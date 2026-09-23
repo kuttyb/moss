@@ -1,0 +1,9 @@
+module pk
+import box
+
+fn main():
+  b = box.new_box()
+  n = b.add(3)
+  echo n
+  echo b.size()
+  echo box.size_of(b)

@@ -1,0 +1,11 @@
+module records
+
+export type Entry:
+  value: Int
+  hits: Int
+
+export fn make_entry(value: Int, hits: Int) -> Entry:
+  return Entry(value: value, hits: hits)
+
+export fn entry_value(e: Entry) -> Int:
+  return e.value

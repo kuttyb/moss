@@ -1,0 +1,127 @@
+module inventory
+import strings
+import stats
+import table
+
+export type Item:
+  name: String
+  category: String
+  qty: Int
+  price_cents: Int
+
+  fn value() -> Int:
+    return qty * price_cents
+
+  fn is_low(threshold: Int) -> Bool:
+    return qty < threshold
+
+  # A copy with `n` fewer units (in-place updates of a `for` element do not
+  # lower natively, and `items[i].field` fails natively; see repro/).
+  fn taken(n: Int) -> Item:
+    return Item(name: strings.copy(name), category: strings.copy(category), qty: qty - n, price_cents: price_cents)
+
+  fn line(width: Int) -> String:
+    return table.row(name, self.value(), width)
+
+export type Stock:
+  items: Vector[Item]
+
+  fn add(item: Item):
+    items.push(item)
+    return
+
+  fn size() -> Int:
+    return items |> count
+
+  fn total_value() -> Int:
+    var total = 0
+    for it in items:
+      total = total + it.value()
+    return total
+
+  fn quantities() -> Vector[Int]:
+    out = Vector[Int]()
+    for it in items:
+      out.push(it.qty)
+    return out
+
+  fn names() -> Vector[String]:
+    out = Vector[String]()
+    for it in items:
+      out.push(strings.copy(it.name))
+    return out
+
+  fn low_stock(threshold: Int) -> Vector[String]:
+    out = Vector[String]()
+    for it in items:
+      if it.is_low(threshold):
+        out.push(strings.copy(it.name))
+    return out
+
+  # Remove `n` units of the named item; false when it is unknown or short.
+  fn fulfill(wanted: String, n: Int) -> Bool:
+    var rebuilt = Vector[inventory.Item]()
+    var done = false
+    for it in items:
+      if not done and it.name == wanted and it.qty >= n:
+        rebuilt.push(it.taken(n))
+        done = true
+      else:
+        rebuilt.push(it.taken(0))
+    items = rebuilt
+    return done
+
+  # Total quantity per category ("" is always present with 0).
+  fn qty_by_category() -> Map[String, Int]:
+    totals = Map()
+    totals[""] = 0
+    for it in items:
+      totals[it.category] = totals.get(it.category, 0) + it.qty
+    return totals
+
+  fn report(width: Int) -> Vector[String]:
+    lines = Vector[String]()
+    for it in items:
+      lines.push(it.line(width))
+    return lines
+
+export fn new_item(name: String, category: String, qty: Int, price_cents: Int) -> Item:
+  return Item(name: name, category: category, qty: qty, price_cents: price_cents)
+
+# `Vector[Item]()` inside this module does not type-check against the
+# module-qualified field type; spelling the module qualifier does.
+export fn empty_stock() -> Stock:
+  return Stock(items: Vector[inventory.Item]())
+
+# Function-style API. Methods of an exported type cannot be called from a
+# downstream *package* (see repro/method_call_downstream), so every operation
+# the `shop` app needs is also exported as an ordinary function.
+export fn add_item(stock: Stock, item: Item):
+  stock.add(item)
+  return
+
+export fn stock_size(stock: Stock) -> Int:
+  return stock.size()
+
+# (Sums item.qty * item.price_cents directly: calling `it.value()` from an
+# exported free function is an internal error, see repro/exported_wrapper_of_method.)
+export fn stock_value(stock: Stock) -> Int:
+  var total = 0
+  for it in stock.items:
+    total = total + it.qty * it.price_cents
+  return total
+
+export fn stock_quantities(stock: Stock) -> Vector[Int]:
+  return stock.quantities()
+
+export fn stock_low(stock: Stock, threshold: Int) -> Vector[String]:
+  return stock.low_stock(threshold)
+
+export fn stock_fulfill(stock: Stock, wanted: String, n: Int) -> Bool:
+  return stock.fulfill(wanted, n)
+
+export fn stock_report(stock: Stock, width: Int) -> Vector[String]:
+  return stock.report(width)
+
+export fn stock_by_category(stock: Stock) -> Map[String, Int]:
+  return stock.qty_by_category()

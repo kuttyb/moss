@@ -1,0 +1,13 @@
+type Event:
+  source: String
+  level: Int
+
+fn make_event(source: String, level: Int) -> Event:
+  return Event(source: source, level: level)
+
+fn level_of(e: Event) -> Int:
+  return e.level
+
+fn main():
+  e = make_event("a", 3)
+  echo level_of(e)

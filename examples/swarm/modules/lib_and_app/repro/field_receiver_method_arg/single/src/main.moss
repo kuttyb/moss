@@ -1,0 +1,17 @@
+type Vec2:
+  x: Float
+  y: Float
+
+  fn add(other: Vec2) -> Vec2:
+    return Vec2(x: x + other.x, y: y + other.y)
+
+type Holder:
+  pos: Vec2
+
+  fn shifted(by: Vec2) -> Vec2:
+    return pos.add(by)
+
+fn main():
+  h = Holder(pos: Vec2(x: 1.0, y: 2.0))
+  r = h.shifted(Vec2(x: 1.0, y: 1.0))
+  echo r.x

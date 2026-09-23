@@ -1,0 +1,6 @@
+module app
+import inventory
+
+fn main():
+  stock = inventory.make()
+  echo stock.first_big(15)

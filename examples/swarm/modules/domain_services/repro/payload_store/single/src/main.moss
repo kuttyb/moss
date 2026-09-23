@@ -1,0 +1,13 @@
+domain C:
+  ids = Vector[Int]()
+
+  fn Add(key: Int):
+    ids.push(key)
+
+  fn N() -> Int:
+    reply ids |> count
+
+fn main():
+  c = C()
+  message c.Add(1)
+  echo message c.N()

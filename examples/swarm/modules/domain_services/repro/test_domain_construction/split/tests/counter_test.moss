@@ -1,0 +1,7 @@
+module counter_tests
+
+import counter
+
+test "counter adds":
+  c = counter.Counter()
+  assertEqual(message c.Add(2), 2)

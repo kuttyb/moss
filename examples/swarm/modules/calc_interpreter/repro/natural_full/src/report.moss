@@ -1,0 +1,14 @@
+module report
+import calc
+import errors
+
+# Presentation of outcomes and session summaries.
+
+export fn show(outcome: calc.Outcome):
+  if outcome.ok:
+    echo "=", outcome.value
+    return
+  echo "error", outcome.error.stage(), outcome.error.message, "at", outcome.error.pos
+
+export fn summary(session: calc.Session):
+  echo "evaluated", session.evaluated(), "failed", session.failures

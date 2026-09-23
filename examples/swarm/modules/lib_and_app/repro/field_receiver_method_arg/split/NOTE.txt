@@ -1,0 +1,2 @@
+margo run   (cwd field_receiver_method_arg/split) rc=1: BUILD_BACKEND_ERROR: module Rust crate compilation failed for 'holder' | error[E0624]: method `__moss_view_add` is private | 82 |         return self.pos.__moss_view_add(&(*by));
+margo debug rc=0: 2

@@ -1,0 +1,63 @@
+module eval_test
+import ast
+import env
+import errors
+import eval
+import token
+
+# Trees are built by hand with the flat-AST API, independent of the parser.
+
+test "sum of two numbers":
+  tree = ast.new_ast()
+  a = tree.add_num(20, 0)
+  b = tree.add_num(22, 3)
+  root = tree.add_binary(token.kind_plus(), a, b, 1)
+  tree.set_root(root)
+  diag = errors.new_diag()
+  assertEqual(eval.evaluate(tree, env.new_env(), diag), 42)
+  assert(not diag.failed())
+
+test "variables come from the environment":
+  scope = env.new_env()
+  scope.set(23, 6)
+  tree = ast.new_ast()
+  x = tree.add_var(23, 0)
+  two = tree.add_num(2, 4)
+  root = tree.add_binary(token.kind_star(), x, two, 2)
+  tree.set_root(root)
+  diag = errors.new_diag()
+  assertEqual(eval.evaluate(tree, scope, diag), 12)
+
+test "undefined variable":
+  tree = ast.new_ast()
+  root = tree.add_var(5, 0)
+  tree.set_root(root)
+  diag = errors.new_diag()
+  eval.evaluate(tree, env.new_env(), diag)
+  assertEqual(diag.code(), errors.eval(errors.undefined_variable()))
+
+test "division by zero":
+  tree = ast.new_ast()
+  a = tree.add_num(1, 0)
+  b = tree.add_num(0, 2)
+  root = tree.add_binary(token.kind_slash(), a, b, 1)
+  tree.set_root(root)
+  diag = errors.new_diag()
+  eval.evaluate(tree, env.new_env(), diag)
+  assert(diag.failed())
+  assertEqual(diag.pos(), 1)
+
+test "assignment writes the environment":
+  scope = env.new_env()
+  tree = ast.new_ast()
+  v = tree.add_num(9, 4)
+  root = tree.add_assign(2, v, 0)
+  tree.set_root(root)
+  diag = errors.new_diag()
+  assertEqual(eval.evaluate(tree, scope, diag), 9)
+  assertEqual(scope.get(2), 9)
+
+test "empty tree":
+  diag = errors.new_diag()
+  eval.evaluate(ast.new_ast(), env.new_env(), diag)
+  assertEqual(diag.code(), errors.eval(errors.empty_program()))

@@ -1,0 +1,140 @@
+module strings
+
+# Moss has no built-in string formatting, so everything that builds text goes
+# through `concat`, which appends borrowed pieces onto a fresh String.
+export fn concat(left: String, right: String) -> String:
+  var out = ""
+  out = out + left
+  out = out + right
+  return out
+
+# An independent copy of `s` (reading `v[i]` out of a Vector[String] moves the
+# element, so sorting needs explicit copies).
+export fn copy(s: String) -> String:
+  var out = ""
+  out = out + s
+  return out
+
+# Repeat a piece of text `times` times.
+export fn repeat_text(piece: String, times: Int) -> String:
+  var out = ""
+  var i = 0
+  while i < times:
+    out = out + piece
+    i = i + 1
+  return out
+
+export fn spaces(n: Int) -> String:
+  return repeat_text(" ", n)
+
+# Join a vector of strings with a separator between neighbours.
+export fn join(parts: Vector[String], sep: String) -> String:
+  var out = ""
+  var first = true
+  for part in parts:
+    if first:
+      out = out + part
+      first = false
+    else:
+      out = out + sep
+      out = out + part
+  return out
+
+export fn digit_text(d: Int) -> String:
+  if d == 0:
+    return "0"
+  if d == 1:
+    return "1"
+  if d == 2:
+    return "2"
+  if d == 3:
+    return "3"
+  if d == 4:
+    return "4"
+  if d == 5:
+    return "5"
+  if d == 6:
+    return "6"
+  if d == 7:
+    return "7"
+  if d == 8:
+    return "8"
+  return "9"
+
+# Number of decimal digits in a non-negative Int (0 has one digit).
+export fn digit_count(n: Int) -> Int:
+  var rest = n
+  var count = 1
+  while rest >= 10:
+    rest = rest / 10
+    count = count + 1
+  return count
+
+# Decimal text for an Int (there is no built-in Int -> String conversion).
+export fn int_text(n: Int) -> String:
+  var rest = n
+  if n < 0:
+    rest = 0 - n
+  var digits = Vector[String]()
+  if rest == 0:
+    digits.push("0")
+  while rest > 0:
+    digits.push(digit_text(rest % 10))
+    rest = rest / 10
+  var parts = Vector[String]()
+  if n < 0:
+    parts.push("-")
+  var i = (digits |> count) - 1
+  while i >= 0:
+    parts.push(copy(digits[i]))
+    i = i - 1
+  return join(parts, "")
+
+# Right-align the decimal text of `n` in `width` columns.
+export fn pad_left_int(n: Int, width: Int) -> String:
+  text = int_text(n)
+  used = digit_count(n)
+  if n < 0:
+    used = used + 1
+  if used >= width:
+    return text
+  else:
+    return concat(spaces(width - used), text)
+
+# Lexicographically smaller / larger of two strings.
+export fn min_text(a: String, b: String) -> String:
+  if b < a:
+    return copy(b)
+  else:
+    return copy(a)
+
+export fn max_text(a: String, b: String) -> String:
+  if a < b:
+    return copy(b)
+  else:
+    return copy(a)
+
+export fn is_blank(s: String) -> Bool:
+  return s == ""
+
+# Returns a sorted copy of `words` (insertion sort; no built-in sort).
+export fn sorted_text(words: Vector[String]) -> Vector[String]:
+  var out = Vector[String]()
+  for w in words:
+    out.push(copy(w))
+    var i = (out |> count) - 1
+    while i > 0:
+      if out[i] < out[i - 1]:
+        tmp = copy(out[i])
+        out[i] = copy(out[i - 1])
+        out[i - 1] = tmp
+        i = i - 1
+      else:
+        i = 0
+  return out
+
+export fn contains_text(words: Vector[String], needle: String) -> Bool:
+  for w in words:
+    if w == needle:
+      return true
+  return false

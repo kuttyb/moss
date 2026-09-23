@@ -1,0 +1,24 @@
+type Item:
+  qty: Int
+
+  fn value() -> Int:
+    return qty
+
+type Stock:
+  items: Vector[Item]
+
+  fn total_value() -> Int:
+    var t = 0
+    for it in items:
+      t = t + it.value()
+    return t
+
+fn stock_value(stock: Stock) -> Int:
+  return stock.total_value()
+
+fn make() -> Stock:
+  return Stock(items: [Item(qty: 4), Item(qty: 5)])
+
+fn main():
+  s = make()
+  echo stock_value(s)

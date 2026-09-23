@@ -1,0 +1,7 @@
+[project]
+name = "pdr-one"
+version = "0.1.0"
+
+[build]
+source = "src"
+

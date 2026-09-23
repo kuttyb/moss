@@ -1,0 +1,11 @@
+module app
+import order
+
+type T:
+  k: Int
+
+  fn key():
+    return k
+
+fn main():
+  echo order.key_of(T(k: 3))

@@ -1,0 +1,6 @@
+module app
+
+import mathx
+
+fn main():
+  echo mathx.sum_to(5)

@@ -1,0 +1,9 @@
+[project]
+name = "shop"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+toolkit = { path = "../toolkit" }

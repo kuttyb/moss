@@ -1,0 +1,18 @@
+domain Jobs:
+  size = 0
+  audit = 0
+
+  fn Push():
+    size = size + 1
+
+  fn Pop() -> Int:
+    if size == 0:
+      reply 0 - 1
+    size = size - 1
+    reply size
+
+fn main():
+  q = Jobs()
+  message q.Push()
+  echo message q.Pop()
+  echo message q.Pop()

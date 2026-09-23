@@ -1,0 +1,5 @@
+Run inside a COPY (rename rewrites files):
+  single: moss edit rename entity-v1:function:shout yell --json   -> ok, rewrites decl and call
+  split : moss edit rename entity-v1:function:util__shout yell --json
+          -> EDIT_TARGET_AMBIGUOUS "rename could not map every semantic reference to one exact token"
+          (entity-v1:function:shout -> "does not exist in the current checked source")

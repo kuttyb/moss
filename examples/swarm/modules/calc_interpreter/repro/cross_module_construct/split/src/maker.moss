@@ -1,0 +1,5 @@
+module maker
+import tok
+
+export fn make(k: Int) -> tok.Tok:
+  return tok.Tok(kind: k)

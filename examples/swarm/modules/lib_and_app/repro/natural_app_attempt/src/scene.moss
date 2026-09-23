@@ -1,0 +1,33 @@
+module scene
+
+import vec2
+import shapes
+import measure
+import model
+
+export type Scene:
+  title: String
+  circles: Vector[model.CircleItem]
+  rects: Vector[model.RectItem]
+  tris: Vector[model.TriItem]
+
+  fn add_circle(name: String, x: Float, y: Float, r: Float):
+    circles.push(model.CircleItem(name: name, shape: shapes.circle(x, y, r)))
+    return
+
+  fn add_rect(name: String, x: Float, y: Float, w: Float, h: Float):
+    rects.push(model.RectItem(name: name, shape: shapes.rect(x, y, w, h)))
+    return
+
+  fn add_tri(name: String, a: vec2.Vec2, b: vec2.Vec2, c: vec2.Vec2):
+    tris.push(model.TriItem(name: name, shape: shapes.triangle(a, b, c)))
+    return
+
+  fn total_area() -> Float:
+    ca = measure.total_area(circles)
+    ra = measure.total_area(rects)
+    ta = measure.total_area(tris)
+    return ca + ra + ta
+
+export fn new_scene(title: String) -> Scene:
+  return Scene(title: title, circles: Vector[model.CircleItem](), rects: Vector[model.RectItem](), tris: Vector[model.TriItem]())

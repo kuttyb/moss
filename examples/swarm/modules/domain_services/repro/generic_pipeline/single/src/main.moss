@@ -1,0 +1,13 @@
+type Job:
+  id: Int
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+fn total_weight(items):
+  return items |> map(_.weight()) |> sum
+
+fn main():
+  jobs = [Job(id: 1, cost: 3), Job(id: 2, cost: 4)]
+  echo total_weight(jobs)

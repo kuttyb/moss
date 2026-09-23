@@ -1,0 +1,12 @@
+module app
+
+import vec2
+import scene
+
+fn main():
+  s = scene.new_scene("demo")
+  s.add_circle("sun", 0.0, 0.0, 2.0)
+  s.add_rect("floor", 0.0, 0.0, 10.0, 1.0)
+  s.add_tri("roof", vec2.vec(0.0, 1.0), vec2.vec(4.0, 1.0), vec2.vec(2.0, 3.0))
+  echo s.title
+  echo "total area", s.total_area()

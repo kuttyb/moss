@@ -1,0 +1,7 @@
+module app
+import env
+
+fn main():
+  e = env.new_env()
+  e.set("a", 1)
+  echo e.get("a")

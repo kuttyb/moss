@@ -1,0 +1,6 @@
+module billing
+
+import model
+
+export fn billed(x: model.Billable) -> Int:
+  return x.total()

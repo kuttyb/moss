@@ -1,0 +1,15 @@
+fn addone(x: Int):
+  return x + 1
+
+type T:
+  k: Int
+
+  fn key():
+    return k
+
+fn f(item):
+  a = item.key()
+  return addone(a + 0)
+
+fn main():
+  echo f(T(k: 3))

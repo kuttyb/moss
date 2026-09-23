@@ -1,0 +1,6 @@
+module report
+
+import bag
+
+export fn show(b: bag.Bag):
+  echo "total", b.total()

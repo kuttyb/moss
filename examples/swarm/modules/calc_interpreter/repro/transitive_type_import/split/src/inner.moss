@@ -1,0 +1,10 @@
+module inner
+
+export type Inner:
+  n: Int
+
+  fn get() -> Int:
+    return n
+
+export fn make(n: Int) -> Inner:
+  return Inner(n: n)

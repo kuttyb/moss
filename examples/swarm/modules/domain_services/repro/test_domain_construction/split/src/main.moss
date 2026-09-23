@@ -1,0 +1,7 @@
+module app
+
+import counter
+
+fn main():
+  c = counter.Counter()
+  echo message c.Add(2)

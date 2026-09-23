@@ -1,0 +1,5 @@
+fn twice_local(x: Int) -> Int:
+  return x * 4
+
+test "helper in a test file without a module header":
+  assertEqual(twice_local(3), 12)

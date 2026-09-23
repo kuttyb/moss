@@ -1,0 +1,6 @@
+module app
+import tok
+
+fn main():
+  t = tok.Tok(kind: 2, text: "a")
+  echo t.kind

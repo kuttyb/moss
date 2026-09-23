@@ -1,0 +1,5 @@
+module libmain
+import inv
+
+fn main():
+  echo 1

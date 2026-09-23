@@ -1,0 +1,10 @@
+type Bag:
+  items: Vector[Int]
+
+  fn add(v: Int):
+    items.push(v)
+
+fn main():
+  b = Bag(items: Vector[Int]())
+  b.add(3)
+  echo b.items[0]

@@ -1,0 +1,2 @@
+margo run   (cwd range_for_in_module/split) rc=1: TYPE_INFERENCE_FAILED: cannot infer the static iterator source type
+margo debug rc=1: moss:5: error: [TYPE_INFERENCE_FAILED] cannot infer the static iterator source type

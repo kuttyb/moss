@@ -1,0 +1,6 @@
+module app
+
+import util
+
+fn main():
+  echo 1

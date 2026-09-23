@@ -1,0 +1,52 @@
+module table
+import strings
+import stats
+
+# "####" style bar for a count.
+export fn bar(n: Int, glyph: String) -> String:
+  return strings.repeat_text(glyph, n)
+
+# Zero-padded (on the left) decimal text, e.g. 5 in width 2 -> "05".
+export fn pad_zero(n: Int, width: Int) -> String:
+  text = strings.int_text(n)
+  used = strings.digit_count(n)
+  if used >= width:
+    return text
+  else:
+    return strings.concat(strings.repeat_text("0", width - used), text)
+
+# Fixed-point text for a non-negative Float, e.g. (3.14159, 2) -> "3.14".
+export fn float_text(x: Float, places: Int) -> String:
+  scale = stats.pow10(places)
+  whole = stats.to_int(x)
+  rest = x - stats.to_float(whole)
+  frac = stats.to_int(rest * stats.to_float(scale) + 0.5)
+  if frac >= scale:
+    return strings.concat(strings.concat(strings.int_text(whole + 1), "."), pad_zero(0, places))
+  else:
+    return strings.concat(strings.concat(strings.int_text(whole), "."), pad_zero(frac, places))
+
+# Right-aligned number, two spaces, then a label.
+export fn row(label: String, value: Int, width: Int) -> String:
+  return strings.concat(strings.pad_left_int(value, width), strings.concat("  ", label))
+
+# One line per bucket: "lo-hi | ####".
+export fn histogram_lines(counts: Map[Int, Int], bucket_width: Int, buckets: Int) -> Vector[String]:
+  lines = Vector[String]()
+  var b = 0
+  while b < buckets:
+    lo = b * bucket_width
+    hi = lo + bucket_width - 1
+    span = strings.concat(strings.concat(strings.int_text(lo), "-"), strings.int_text(hi))
+    lines.push(strings.concat(strings.concat(span, " | "), bar(stats.bucket_of(counts, b), "#")))
+    b = b + 1
+  return lines
+
+# One-line numeric summary of Int samples.
+export fn summary(values: Vector[Int]) -> String:
+  parts = Vector[String]()
+  parts.push(strings.concat("n=", strings.int_text(values |> count)))
+  parts.push(strings.concat("min=", strings.int_text(stats.smallest(values))))
+  parts.push(strings.concat("max=", strings.int_text(stats.largest(values))))
+  parts.push(strings.concat("mean=", float_text(stats.mean(values), 2)))
+  return strings.join(parts, " ")

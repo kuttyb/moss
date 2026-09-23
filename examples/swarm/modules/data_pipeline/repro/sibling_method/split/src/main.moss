@@ -1,0 +1,5 @@
+import p
+
+fn main():
+  v = p.make(1)
+  echo v.b()

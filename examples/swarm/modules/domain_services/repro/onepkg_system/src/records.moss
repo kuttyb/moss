@@ -1,0 +1,82 @@
+module records
+
+# Wire records shared by every service.
+#
+# Workaround shape (see repro/): construction and field reads go through
+# exported free functions.  Direct construction/field access from another
+# module does not lower natively (repro/field_access, repro/construct_record)
+# and methods on an exported type cannot be called from a downstream package
+# (repro/pkg_method).
+
+export type Event:
+  source: Int
+  level: Int
+  code: Int
+
+export type JobSpec:
+  id: Int
+  kind: Int
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+export type Entry:
+  key: Int
+  value: Int
+  hits: Int
+
+export type Summary:
+  total: Int
+  worst: Int
+
+export fn make_event(source: Int, level: Int, code: Int) -> Event:
+  return Event(source: source, level: level, code: code)
+
+export fn copy_event(e: Event) -> Event:
+  return Event(source: e.source, level: e.level, code: e.code)
+
+export fn event_source(e: Event) -> Int:
+  return e.source
+
+export fn event_level(e: Event) -> Int:
+  return e.level
+
+export fn event_code(e: Event) -> Int:
+  return e.code
+
+export fn make_job(id: Int, kind: Int, cost: Int) -> JobSpec:
+  return JobSpec(id: id, kind: kind, cost: cost)
+
+export fn job_id(j: JobSpec) -> Int:
+  return j.id
+
+export fn job_kind(j: JobSpec) -> Int:
+  return j.kind
+
+export fn job_cost(j: JobSpec) -> Int:
+  return j.cost
+
+export fn job_weight(j: JobSpec) -> Int:
+  return j.cost * 2
+
+export fn make_entry(key: Int, value: Int, hits: Int) -> Entry:
+  return Entry(key: key, value: value, hits: hits)
+
+export fn entry_key(e: Entry) -> Int:
+  return e.key
+
+export fn entry_value(e: Entry) -> Int:
+  return e.value
+
+export fn entry_hits(e: Entry) -> Int:
+  return e.hits
+
+export fn make_summary(total: Int, worst: Int) -> Summary:
+  return Summary(total: total, worst: worst)
+
+export fn summary_total(s: Summary) -> Int:
+  return s.total
+
+export fn summary_worst(s: Summary) -> Int:
+  return s.worst

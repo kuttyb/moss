@@ -1,0 +1,14 @@
+trait Weighted:
+  fn weight() -> Int
+
+type Job:
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+fn describe(a: Weighted) -> Int:
+  return a.weight()
+
+fn main():
+  echo describe(Job(cost: 3))

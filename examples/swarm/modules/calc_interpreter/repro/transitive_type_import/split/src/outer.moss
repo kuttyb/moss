@@ -1,0 +1,11 @@
+module outer
+import inner
+
+export type Outer:
+  part: inner.Inner
+
+  fn value() -> Int:
+    return part.get()
+
+export fn make() -> Outer:
+  return Outer(part: inner.make(5))

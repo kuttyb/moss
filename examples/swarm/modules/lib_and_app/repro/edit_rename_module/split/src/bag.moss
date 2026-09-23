@@ -1,0 +1,4 @@
+module bag
+
+export fn make() -> Int:
+  return 1

@@ -1,0 +1,55 @@
+module node
+
+# AST node record and node kinds. Kept in its own module so that `ast` can
+# build an empty `Vector[node.Node]` (see repro/vector_local_type).
+
+export fn kind_num() -> Int:
+  return 1
+
+export fn kind_var() -> Int:
+  return 2
+
+export fn kind_binary() -> Int:
+  return 3
+
+export fn kind_negate() -> Int:
+  return 4
+
+export fn kind_assign() -> Int:
+  return 5
+
+export type Node:
+  kind: Int
+  op: Int
+  value: Int
+  left: Int
+  right: Int
+  pos: Int
+
+  fn kind() -> Int:
+    return kind
+
+  fn op() -> Int:
+    return op
+
+  fn value() -> Int:
+    return value
+
+  fn left() -> Int:
+    return left
+
+  fn right() -> Int:
+    return right
+
+  fn pos() -> Int:
+    return pos
+
+  fn is_leaf() -> Bool:
+    if kind == 1:
+      return true
+    return kind == 2
+
+# Nodes are built here because an exported record cannot be constructed with
+# field syntax from another module (see repro/cross_module_construct).
+export fn make(kind: Int, op: Int, value: Int, left: Int, right: Int, pos: Int) -> Node:
+  return Node(kind: kind, op: op, value: value, left: left, right: right, pos: pos)

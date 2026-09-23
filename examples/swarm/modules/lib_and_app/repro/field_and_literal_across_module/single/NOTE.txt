@@ -1,0 +1,2 @@
+margo run   (cwd field_and_literal_across_module/single) rc=0: 1
+margo debug rc=0: 1

@@ -1,0 +1,7 @@
+module lib
+
+fn addone(x: Int):
+  return x + 1
+
+export fn f(y):
+  return addone(y)

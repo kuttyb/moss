@@ -1,0 +1,5 @@
+module lib
+
+export fn plus_one(x):
+  one = 1
+  return x + one

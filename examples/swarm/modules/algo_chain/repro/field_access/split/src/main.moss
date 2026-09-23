@@ -1,0 +1,6 @@
+module app
+import entry
+
+fn main():
+  e = entry.make(3)
+  echo e.key, e.id

@@ -1,0 +1,12 @@
+module app
+
+import jobs
+
+trait Weighted:
+  fn weight() -> Int
+
+fn describe(x: Weighted) -> Int:
+  return x.weight()
+
+fn main():
+  echo describe(jobs.make_job(5))

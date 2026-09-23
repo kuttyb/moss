@@ -1,0 +1,16 @@
+domain D:
+  values = Map()
+
+  fn Set(key: String, value: Int):
+    values[key] = value
+
+  fn Keys() -> Int:
+    n = 0
+    for k in values.keys():
+      n = n + 1
+    reply n
+
+fn main():
+  d = D()
+  message d.Set("a", 1)
+  echo message d.Keys()

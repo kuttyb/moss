@@ -1,0 +1,44 @@
+module orders
+
+export type LineItem:
+  sku: String
+  category: String
+  qty: Int
+  unit_cents: Int
+
+  fn total() -> Int:
+    return qty * unit_cents
+
+  fn is_bulk() -> Bool:
+    return qty >= 10
+
+export type Order:
+  id: Int
+  customer: String
+  region: String
+  status: String
+  items: Vector[LineItem]
+
+  fn total() -> Int:
+    return items |> map(_.total()) |> sum
+
+  fn item_count() -> Int:
+    return items |> map(_.qty) |> sum
+
+  fn line_count() -> Int:
+    return items |> count
+
+  fn is_open() -> Bool:
+    return status == "open"
+
+  fn has_bulk_line() -> Bool:
+    return items |> any(_.is_bulk())
+
+export fn make_item(sku: String, category: String, qty: Int, unit_cents: Int) -> LineItem:
+  return LineItem(sku: sku, category: category, qty: qty, unit_cents: unit_cents)
+
+export fn make_order(id: Int, customer: String, region: String, items: Vector[LineItem]) -> Order:
+  return Order(id: id, customer: customer, region: region, status: "open", items: items)
+
+export fn dollars(cents: Int) -> Int:
+  return cents / 100

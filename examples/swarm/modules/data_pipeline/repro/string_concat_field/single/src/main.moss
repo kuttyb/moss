@@ -1,0 +1,11 @@
+type Order:
+  id: Int
+  region: String
+
+  fn get_region() -> String:
+    return region + ""
+
+fn main():
+  o = Order(id: 1, region: "west")
+  echo o.get_region()
+  echo o.get_region()

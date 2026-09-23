@@ -1,0 +1,35 @@
+import vec2
+import shapes
+import measure
+
+test "rect area and perimeter":
+  r = shapes.rect(0.0, 0.0, 3.0, 4.0)
+  assertEqual(r.area(), 12.0)
+  assertEqual(r.perimeter(), 14.0)
+
+test "circle area":
+  c = shapes.circle(0.0, 0.0, 2.0)
+  assertEqual(c.area(), 12.56636)
+
+test "triangle right":
+  t = shapes.triangle(vec2.origin(), vec2.vec(3.0, 0.0), vec2.vec(0.0, 4.0))
+  assertEqual(t.area(), 6.0)
+  assertEqual(t.perimeter(), 12.0)
+
+test "contains":
+  r = shapes.unit_square()
+  assert(r.contains(vec2.vec(0.5, 0.5)))
+  assert(not r.contains(vec2.vec(2.0, 0.5)))
+  c = shapes.circle(1.0, 1.0, 1.0)
+  assert(c.contains(vec2.vec(1.5, 1.0)))
+
+test "moved":
+  r = shapes.unit_square()
+  m = r.moved(vec2.vec(2.0, 3.0))
+  assert(m.contains(vec2.vec(2.5, 3.5)))
+  assert(not m.contains(vec2.vec(0.5, 0.5)))
+
+test "totals over a homogeneous collection":
+  rs = [shapes.square(1.0), shapes.square(2.0), shapes.square(3.0)]
+  assertEqual(measure.total_area(rs), 14.0)
+  assertEqual(measure.total_perimeter(rs), 24.0)

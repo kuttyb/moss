@@ -1,0 +1,24 @@
+module shop
+import strings
+import stats
+import table
+import inventory
+import orders
+
+fn main():
+  stock = inventory.empty_stock()
+  inventory.add_item(stock, inventory.new_item("widget", "hardware", 12, 250))
+  inventory.add_item(stock, inventory.new_item("gadget", "hardware", 3, 1999))
+  inventory.add_item(stock, inventory.new_item("manual", "books", 40, 500))
+
+  batch = [orders.new_order("ann", "widget", 5), orders.new_order("bob", "gadget", 4), orders.new_order("ann", "manual", 10)]
+  for line in orders.process(stock, batch):
+    echo line
+
+  demand = orders.demand_by_customer(batch)
+  echo strings.concat("ann asked for ", strings.int_text(stats.count_of(demand, "ann")))
+  echo strings.concat("zed asked for ", strings.int_text(stats.count_of(demand, "zed")))
+
+  echo table.summary(inventory.stock_quantities(stock))
+  for line in inventory.stock_report(stock, 8):
+    echo line

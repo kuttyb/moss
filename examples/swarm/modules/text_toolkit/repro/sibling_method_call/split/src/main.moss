@@ -1,0 +1,6 @@
+module app
+import inventory
+
+fn main():
+  item = inventory.Item(qty: 2, price: 3)
+  echo item.double()

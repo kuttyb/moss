@@ -1,0 +1,40 @@
+module metrics
+
+import records
+
+export trait Weighted:
+  fn weight() -> Int
+
+export fn clamp(value: Int, low: Int, high: Int) -> Int:
+  if value < low:
+    return low
+  if value > high:
+    return high
+  return value
+
+export fn severity_name(level: Int) -> String:
+  if level >= 3:
+    return "error"
+  if level == 2:
+    return "warn"
+  return "info"
+
+export fn total_weight(items) -> Int:
+  var t = 0
+  for item in items:
+    t = t + item.weight()
+  return t
+
+export fn heavier(a: Weighted, b: Weighted) -> Int:
+  if a.weight() >= b.weight():
+    return a.weight()
+  return b.weight()
+
+export fn summarize(events: Vector[records.Event]) -> records.Summary:
+  var worst = 0
+  var n = 0
+  for e in events:
+    if e.level > worst:
+      worst = e.level
+    n = n + 1
+  return records.Summary(total: n, worst: worst, count: n)

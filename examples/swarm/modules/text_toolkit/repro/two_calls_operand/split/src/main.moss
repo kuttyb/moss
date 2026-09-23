@@ -1,0 +1,5 @@
+module app
+import num
+
+fn main():
+  echo num.ratio(1, 2)

@@ -1,0 +1,64 @@
+module inventory_test
+import inventory
+import stats
+
+# Note: a private helper fn in a test file of an explicit-module project is not
+# emitted by the test build (see repro/test_file_helper), so each test builds
+# its own stock inline.
+
+test "stock totals":
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  stock.add(inventory.new_item("gadget", "hardware", 3, 1999))
+  stock.add(inventory.new_item("manual", "books", 40, 500))
+  assertEqual(stock.size(), 3)
+  assertEqual(stock.total_value(), 3000 + 5997 + 20000)
+
+test "items know their value and lowness":
+  item = inventory.new_item("gadget", "hardware", 3, 1999)
+  assertEqual(item.value(), 5997)
+  assert(item.is_low(5))
+  assert(not item.is_low(3))
+
+test "low stock names and quantities":
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  stock.add(inventory.new_item("gadget", "hardware", 3, 1999))
+  stock.add(inventory.new_item("manual", "books", 40, 500))
+  assertEqual(stock.low_stock(10) |> count, 1)
+  assertEqual(stock.quantities(), [12, 3, 40])
+  assertEqual(stats.total(stock.quantities()), 55)
+
+test "qty by category is queried through defaulted lookups":
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  stock.add(inventory.new_item("gadget", "hardware", 3, 1999))
+  stock.add(inventory.new_item("manual", "books", 40, 500))
+  by_cat = stock.qty_by_category()
+  assertEqual(stats.count_of(by_cat, "hardware"), 15)
+  assertEqual(stats.count_of(by_cat, "books"), 40)
+  assertEqual(stats.count_of(by_cat, "toys"), 0)
+
+test "report lines are aligned":
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  lines = stock.report(6)
+  assertEqual(lines[0], "  3000  widget")
+
+test "fulfill removes stock through a mutating method":
+  stock = inventory.empty_stock()
+  stock.add(inventory.new_item("widget", "hardware", 12, 250))
+  assert(stock.fulfill("widget", 5))
+  assert(not stock.fulfill("widget", 50))
+  assert(not stock.fulfill("nothing", 1))
+  assertEqual(stock.quantities(), [7])
+
+test "function-style API mirrors the methods":
+  stock = inventory.empty_stock()
+  inventory.add_item(stock, inventory.new_item("widget", "hardware", 12, 250))
+  inventory.add_item(stock, inventory.new_item("gadget", "hardware", 3, 1999))
+  assertEqual(inventory.stock_size(stock), 2)
+  assertEqual(inventory.stock_value(stock), 3000 + 5997)
+  assert(inventory.stock_fulfill(stock, "gadget", 2))
+  assertEqual(inventory.stock_quantities(stock), [12, 1])
+  assertEqual(inventory.stock_low(stock, 5) |> count, 1)

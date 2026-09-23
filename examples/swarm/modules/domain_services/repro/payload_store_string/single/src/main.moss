@@ -1,0 +1,17 @@
+type Event:
+  source: String
+  level: Int
+
+domain Log:
+  events = Vector[Event]()
+
+  fn Record(source: String, level: Int):
+    events.push(Event(source: source, level: level))
+
+  fn Count() -> Int:
+    reply events |> count
+
+fn main():
+  l = Log()
+  message l.Record("a", 1)
+  echo message l.Count()

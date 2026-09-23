@@ -1,0 +1,2 @@
+margo run   (cwd vector_loop_method_via_third_module/single) rc=0: total 5
+margo debug rc=1: total moss:12: interpreter error: Fast Debug does not support for iteration yet

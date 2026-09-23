@@ -1,0 +1,7 @@
+module app
+
+import m
+
+fn main():
+  a = m.item(1.0)
+  a.describe()

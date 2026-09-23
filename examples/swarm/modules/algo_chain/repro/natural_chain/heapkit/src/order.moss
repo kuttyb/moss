@@ -1,0 +1,45 @@
+module order
+import heap
+
+# Helpers written without any knowledge of the caller's element types.
+
+export trait Keyed:
+  fn key() -> Int
+
+fn key_of(item: Keyed) -> Int:
+  return item.key()
+
+# Indices of `items` in ascending key order. Works for any element type
+# that has a key() method.
+export fn order_by_key(items):
+  h = heap.new_heap()
+  i = 0
+  for item in items:
+    h.push(key_of(item), i)
+    i = i + 1
+  result = Vector[Int]()
+  while not h.is_empty():
+    e = h.pop()
+    result.push(e.id_of())
+  return result
+
+# Smaller of two keys. (Untyped rather than `a: Keyed`: exporting a
+# trait-typed function across a module boundary crashes -- see
+# repro/trait_export.)
+export fn min_key(a, b):
+  if a.key() <= b.key():
+    return a.key()
+  return b.key()
+
+export fn clamp(x, lo, hi):
+  if x < lo:
+    return lo
+  if x > hi:
+    return hi
+  return x
+
+export fn total_key(items):
+  total = 0
+  for item in items:
+    total = total + item.key()
+  return total

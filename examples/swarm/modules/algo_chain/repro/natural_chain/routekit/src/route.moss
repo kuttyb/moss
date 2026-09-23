@@ -1,0 +1,59 @@
+module route
+import graph
+import heap
+
+# Dijkstra shortest paths on top of heapkit's MinHeap.
+
+export type Routes:
+  dist: Vector[Int]
+  prev: Vector[Int]
+
+  fn distance_to(v: Int):
+    return dist[v]
+
+  fn reachable(v: Int):
+    return dist[v] < 1000000000
+
+  # Nodes on the shortest path src -> v (inclusive), or empty if unreachable.
+  # (Single exit: an early `return rev` makes later uses of rev a move error,
+  # see repro/early_return_move.)
+  fn path_to(v: Int):
+    rev = Vector[Int]()
+    out = Vector[Int]()
+    cur = v
+    if dist[v] >= 1000000000:
+      cur = -1
+    while cur != -1:
+      rev.push(cur)
+      cur = prev[cur]
+    while (rev |> count) > 0:
+      out.push(rev.pop())
+    return out
+
+export fn shortest_paths(g: graph.Graph, src: Int):
+  n = g.node_count()
+  dist = Vector[Int]()
+  prev = Vector[Int]()
+  i = 0
+  while i < n:
+    dist.push(1000000000)
+    prev.push(-1)
+    i = i + 1
+  dist[src] = 0
+  pq = heap.new_heap()
+  pq.push(0, src)
+  while not pq.is_empty():
+    top = pq.pop()
+    u = top.id_of()
+    d = top.key_of()
+    if d <= dist[u]:
+      e = g.first_edge(u)
+      while e != -1:
+        v = g.edge_to(e)
+        nd = d + g.edge_cost(e)
+        if nd < dist[v]:
+          dist[v] = nd
+          prev[v] = u
+          pq.push(nd, v)
+        e = g.next_edge(e)
+  return Routes(dist: dist, prev: prev)

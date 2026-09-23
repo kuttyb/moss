@@ -1,0 +1,9 @@
+module app
+import outer
+import inner
+
+fn show(o: outer.Outer):
+  echo o.value()
+
+fn main():
+  show(outer.make())

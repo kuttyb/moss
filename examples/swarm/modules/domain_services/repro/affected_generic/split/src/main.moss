@@ -1,0 +1,7 @@
+module app
+
+import metrics
+import blob
+
+fn main():
+  echo 1

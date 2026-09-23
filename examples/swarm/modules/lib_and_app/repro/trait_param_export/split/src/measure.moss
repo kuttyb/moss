@@ -1,0 +1,7 @@
+module measure
+
+export trait Measurable:
+  fn area() -> Float
+
+export fn area_of(shape: Measurable) -> Float:
+  return shape.area()

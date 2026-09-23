@@ -1,0 +1,5 @@
+module app
+import util
+
+fn main():
+  echo util.fill(1)

@@ -1,0 +1,13 @@
+module counter
+
+export type Counter:
+  n: Int
+
+  fn base():
+    return n
+
+  fn twice():
+    return base() + base()
+
+export fn make(n: Int):
+  return Counter(n: n)

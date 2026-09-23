@@ -1,0 +1,8 @@
+fn sum_to(n: Int) -> Int:
+  t = 0
+  for i in range(0, n):
+    t = t + i
+  return t
+
+fn main():
+  echo sum_to(5)

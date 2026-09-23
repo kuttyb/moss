@@ -1,0 +1,6 @@
+module app
+import inventory
+
+fn main():
+  s = inventory.make()
+  echo inventory.stock_value(s)

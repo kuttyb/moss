@@ -1,0 +1,8 @@
+fn repeat_text(piece: String, times: Int) -> String:
+  var out = ""
+  for i in range(0, times):
+    out = out + piece
+  return out
+
+fn main():
+  echo repeat_text("ab", 3)

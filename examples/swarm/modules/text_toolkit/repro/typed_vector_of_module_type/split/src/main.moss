@@ -1,0 +1,7 @@
+module app
+import inventory
+
+fn main():
+  stock = inventory.empty_stock()
+  stock.add(inventory.Item(qty: 3))
+  echo stock.size()

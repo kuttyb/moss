@@ -1,0 +1,12 @@
+type Tree:
+  n: Int
+
+  fn size() -> Int:
+    return n
+
+type Parsed:
+  tree: Tree
+
+fn main():
+  p = Parsed(tree: Tree(n: 3))
+  echo p.tree.size()

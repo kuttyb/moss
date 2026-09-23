@@ -1,0 +1,2 @@
+margo run   (cwd field_receiver_method_arg/single) rc=0: 2
+margo debug rc=0: 2

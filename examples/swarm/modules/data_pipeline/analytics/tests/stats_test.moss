@@ -1,0 +1,50 @@
+module app
+
+import orders
+import stats
+import pipeline
+
+fn batch():
+  a = [orders.make_item("pen", 0, 12, 150), orders.make_item("ink", 0, 2, 900)]
+  b = [orders.make_item("desk", 1, 1, 25000)]
+  return [orders.make_order(1, 7, 0, a), orders.make_order(2, 8, 1, b)]
+
+test "summary totals":
+  s = stats.summarize(batch())
+  assertEqual(s.get_order_count(), 2)
+  assertEqual(s.get_revenue(), 28600)
+  assertEqual(s.get_units(), 15)
+
+test "average order":
+  s = stats.summarize(batch())
+  assertEqual(s.avg_order(), 14300)
+
+test "revenue by region":
+  m = stats.revenue_by_region(batch())
+  assertEqual(m.get(0, -1), 3600)
+  assertEqual(m.get(1, -1), 25000)
+  assertEqual(m.get(2, -1), 0)
+
+test "orders built downstream work through the free-function API":
+  o = orders.make_order(9, 1, 0, [orders.make_item("x", 0, 2, 50)])
+  assertEqual(orders.order_total(o), 100)
+
+test "queue drain":
+  q = Queue()
+  q.push(orders.make_order(1, 7, 0, [orders.make_item("pen", 0, 2, 100)]))
+  q.push(orders.make_order(2, 7, 0, [orders.make_item("bad", 0, 0, 100)]))
+  s = pipeline.drain_open(q, 2)
+  assertEqual(s.get_order_count(), 1)
+
+test "per-region summaries":
+  m = stats.summaries_by_region(batch())
+  west = m.get(0, stats.empty_summary())
+  east = m.get(1, stats.empty_summary())
+  assertEqual(west.get_order_count(), 1)
+  assertEqual(east.get_revenue(), 25000)
+
+test "revenue by customer":
+  m = stats.revenue_by_customer(batch())
+  assertEqual(m.get(7, 0), 3600)
+  assertEqual(m.get(8, 0), 25000)
+  assertEqual(stats.best_key(m), 8)

@@ -1,0 +1,16 @@
+module metrics_tests
+
+import records
+import metrics
+
+test "clamp":
+  assertEqual(metrics.clamp(12, 0, 10), 10)
+
+test "source names":
+  assertEqual(metrics.source_name(1), "cache")
+  assertEqual(metrics.source_name(9), "unknown")
+
+test "summarize":
+  s = metrics.summarize([records.make_event(1, 2, 0), records.make_event(1, 1, 0)])
+  assertEqual(records.summary_total(s), 2)
+  assertEqual(records.summary_worst(s), 2)

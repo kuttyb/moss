@@ -1,0 +1,15 @@
+trait Measurable:
+  fn area() -> Int
+
+type Sq:
+  s: Int
+
+  fn area() -> Int:
+    return s * s
+
+fn one(x: Measurable) -> Int:
+  return x.area()
+
+fn main():
+  shapes = [Sq(s: 2), Sq(s: 3)]
+  echo shapes |> map(one) |> sum

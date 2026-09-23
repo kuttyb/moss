@@ -1,0 +1,6 @@
+module app
+
+import m
+
+fn main():
+  echo m.total()

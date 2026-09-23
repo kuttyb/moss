@@ -1,0 +1,14 @@
+module orders
+
+fn count_words(words: Vector[String]) -> Int:
+  return words |> count
+
+export type Order:
+  customer: String
+  item: String
+
+  fn words() -> Int:
+    return count_words([customer, "wants", item])
+
+export fn new_order(customer: String, item: String) -> Order:
+  return Order(customer: customer, item: item)

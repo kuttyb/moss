@@ -1,0 +1,12 @@
+module holder
+
+import vec2
+
+export type Holder:
+  pos: vec2.Vec2
+
+  fn shifted(by: vec2.Vec2) -> vec2.Vec2:
+    return pos.add(by)
+
+export fn make(p: vec2.Vec2) -> Holder:
+  return Holder(pos: p)

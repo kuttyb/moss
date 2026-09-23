@@ -1,0 +1,8 @@
+fn main():
+  m = Map()
+  m[1] = 10
+  m[2] = 20
+  k = 2
+  echo m[k]
+  echo m.get(1, 0)
+  echo m[1]

@@ -1,0 +1,7 @@
+module app
+
+import records
+
+fn main():
+  e = records.make_entry(7, 0)
+  echo e.get_value()

@@ -1,0 +1,9 @@
+[project]
+name = "r1-app"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+r1-lib = { path = "../lib" }

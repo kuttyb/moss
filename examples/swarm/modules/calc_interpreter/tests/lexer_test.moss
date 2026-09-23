@@ -1,0 +1,42 @@
+module lexer_test
+import errors
+import lexer
+import token
+
+test "numbers and operators":
+  diag = errors.new_diag()
+  toks = lexer.tokenize(["1", "2", " ", "+", "3"], diag)
+  assert(not diag.failed())
+  assertEqual(toks |> count, 4)
+  assertEqual(toks[0].kind(), token.kind_num())
+  assertEqual(toks[0].value(), 12)
+  assertEqual(toks[1].kind(), token.kind_plus())
+  assertEqual(toks[2].value(), 3)
+  assertEqual(toks[3].kind(), token.kind_end())
+
+test "identifier slots":
+  diag = errors.new_diag()
+  toks = lexer.tokenize(["a", "=", "z"], diag)
+  assertEqual(toks[0].kind(), token.kind_ident())
+  assertEqual(toks[0].value(), 0)
+  assertEqual(toks[1].kind(), token.kind_assign())
+  assertEqual(toks[2].value(), 25)
+
+test "token positions":
+  diag = errors.new_diag()
+  toks = lexer.tokenize(["(", "7", "*", "8", ")"], diag)
+  assertEqual(toks[1].pos(), 1)
+  assertEqual(toks[3].pos(), 3)
+
+test "bad character is reported":
+  diag = errors.new_diag()
+  toks = lexer.tokenize(["1", "+", "$"], diag)
+  assert(diag.failed())
+  assertEqual(diag.pos(), 2)
+  assertEqual(diag.code(), errors.lex(errors.bad_character()))
+  assertEqual(errors.stage_name(diag.code()), "lex")
+
+test "empty input is just the end marker":
+  diag = errors.new_diag()
+  toks = lexer.tokenize(Vector[String](), diag)
+  assertEqual(toks |> count, 1)

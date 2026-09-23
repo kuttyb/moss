@@ -1,0 +1,10 @@
+[project]
+name = "svc-app"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+svc-common = { path = "../common" }
+svc-services = { path = "../services" }

@@ -1,0 +1,7 @@
+module app
+import holder
+
+fn main():
+  h = holder.make()
+  h.add(7)
+  echo h.size()

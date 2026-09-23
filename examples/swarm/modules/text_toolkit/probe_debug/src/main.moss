@@ -1,0 +1,16 @@
+module probe
+import strings
+import stats
+import table
+
+# A for-free program, so Fast Debug can run it: every loop reached here is a
+# `while` inside the toolkit modules.
+fn main():
+  echo strings.concat("ab", "cd")
+  echo strings.digit_count(12345)
+  echo strings.repeat_text("ab", 3)
+  echo stats.to_float(10)
+  echo stats.to_float(-3)
+  echo stats.pow10(3)
+  echo table.bar(4, "#")
+  echo stats.to_float(7) / stats.to_float(2)

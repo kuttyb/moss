@@ -1,0 +1,9 @@
+module app
+import env
+
+fn main():
+  e = env.new_env()
+  e.set("a")
+  e.set("a")
+  e.set("b")
+  echo env.count_names(e)

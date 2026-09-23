@@ -1,0 +1,9 @@
+[project]
+name = "pm-app3"
+version = "0.1.0"
+
+[build]
+source = "src"
+
+[dependencies]
+pm-lib3 = { path = "../lib_fn" }

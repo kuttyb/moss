@@ -1,0 +1,12 @@
+domain Q:
+  size = 0
+
+  fn Submit(cost: Int) -> Int:
+    if cost > 10:
+      reply -1
+    size = size + 1
+    reply size
+
+fn main():
+  q = Q()
+  echo message q.Submit(30)

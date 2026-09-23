@@ -1,0 +1,25 @@
+module measure
+
+export trait Measurable:
+  fn area() -> Float
+  fn perimeter() -> Float
+
+export fn pi() -> Float:
+  return 3.14159
+
+export fn abs_f(v: Float) -> Float:
+  if v < 0.0:
+    return 0.0 - v
+  return v
+
+export fn total_area(shapes) -> Float:
+  total = 0.0
+  for s in shapes:
+    total = total + s.area()
+  return total
+
+export fn total_perimeter(shapes) -> Float:
+  total = 0.0
+  for s in shapes:
+    total = total + s.perimeter()
+  return total

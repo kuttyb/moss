@@ -1,0 +1,22 @@
+module audit
+
+export type Summary:
+  total: Int
+
+export fn total_of(s: Summary) -> Int:
+  return s.total
+
+export domain Audit:
+  n = 0
+
+  fn Bump():
+    n = n + 1
+
+  fn Levels() -> Vector[Int]:
+    out = Vector[Int]()
+    out.push(n)
+    out.push(n + 1)
+    reply out
+
+  fn Summarize() -> Summary:
+    reply Summary(total: n)

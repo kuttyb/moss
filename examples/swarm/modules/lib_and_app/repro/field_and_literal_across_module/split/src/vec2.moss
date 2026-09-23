@@ -1,0 +1,5 @@
+module vec2
+
+export type Vec2:
+  x: Float
+  y: Float

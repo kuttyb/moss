@@ -1,0 +1,105 @@
+module orders
+
+export type LineItem:
+  sku: String
+  category: String
+  qty: Int
+  unit_cents: Int
+
+  fn get_sku() -> String:
+    return sku + ""
+
+  fn get_category() -> String:
+    return category + ""
+
+  fn get_qty() -> Int:
+    return qty
+
+  fn get_unit_cents() -> Int:
+    return unit_cents
+
+  fn total() -> Int:
+    return qty * unit_cents
+
+  fn is_bulk() -> Bool:
+    return qty >= 10
+
+  fn is_valid() -> Bool:
+    return qty > 0 and unit_cents >= 0
+
+export type Order:
+  id: Int
+  customer: String
+  region: String
+  status: String
+  items: Vector[LineItem]
+
+  fn get_id() -> Int:
+    return id
+
+  fn get_customer() -> String:
+    return customer + ""
+
+  fn get_region() -> String:
+    return region + ""
+
+  fn get_status() -> String:
+    return status + ""
+
+  fn total() -> Int:
+    return items |> map(_.total()) |> sum
+
+  fn item_count() -> Int:
+    return items |> map(_.qty) |> sum
+
+  fn line_count() -> Int:
+    return items |> count
+
+  fn is_open() -> Bool:
+    return status == "open"
+
+  fn has_bulk_line() -> Bool:
+    return items |> any(_.is_bulk())
+
+  fn is_valid() -> Bool:
+    n = items |> count
+    if n == 0:
+      return false
+    return items |> all(_.is_valid())
+
+export fn make_item(sku: String, category: String, qty: Int, unit_cents: Int) -> LineItem:
+  return LineItem(sku: sku, category: category, qty: qty, unit_cents: unit_cents)
+
+export fn make_order(id: Int, customer: String, region: String, items: Vector[LineItem]) -> Order:
+  return Order(id: id, customer: customer, region: region, status: "open", items: items)
+
+export fn dollars(cents: Int) -> Int:
+  return cents / 100
+
+# Free-function API: downstream packages cannot use methods/fields of exported types.
+export fn order_id(o: Order) -> Int:
+  return o.get_id()
+
+export fn order_customer(o: Order) -> String:
+  return o.get_customer()
+
+export fn order_region(o: Order) -> String:
+  return o.get_region()
+
+export fn order_total(o: Order) -> Int:
+  return o.total()
+
+export fn order_units(o: Order) -> Int:
+  return o.item_count()
+
+export fn order_has_bulk(o: Order) -> Bool:
+  return o.has_bulk_line()
+
+export fn order_items(o: Order) -> Vector[LineItem]:
+  return o.items
+
+export fn item_category(i: LineItem) -> String:
+  return i.get_category()
+
+export fn item_qty(i: LineItem) -> Int:
+  return i.get_qty()

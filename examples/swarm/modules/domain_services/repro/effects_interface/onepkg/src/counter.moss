@@ -1,0 +1,7 @@
+module counter
+
+export domain Counter:
+  n = 0
+
+  fn Bump():
+    n = n + 1

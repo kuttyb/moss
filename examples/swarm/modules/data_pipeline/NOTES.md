@@ -1,0 +1,16 @@
+# Running log (first attempts recorded before fixes)
+1. records: `margo build` (records/src/validate.moss with `batch |> filter(not order_ok(_)) |> count` over Vector[orders.Order]) -> MOSS_COMPILE_ERROR "filter over nontrivial element type 'orders__Order' cannot produce a new collection without an explicit deep copy", reported at source_file .../src/main.moss line 14 col 1 (main.moss has 7 lines; real location validate.moss:14).
+2. Same code in single file /tmp-equivalent (tmp/data_pipeline/p1/a.moss): same filter-nontrivial error at correct file -> intended ownership rule (filter of objects needs deep copy), not boundary-related. Only the file attribution was wrong in the module case.
+3. records: rewrote count_invalid with map(..)|>sum. `margo build` -> BUILD_BACKEND_ERROR rustc E0616: field `qty`/`unit_cents`/`items` of struct moss_orders::orders__LineItem is private (validate.rs, direct field reads item.qty from another module). moss check presumably accepts.
+4. records: adding Order.is_valid() calling sibling method line_count() bare -> UNKNOWN_SYMBOL_OR_TYPE 'orders__line_count' (reported at main.moss:41). Paired repro repro/sibling_method (single ok; split TYPE_INFERENCE_FAILED). Workaround: inline.
+5. analytics (natural): margo build -> MOSS_COMPILE_ERROR "no matching method 'orders__Order.total' for supplied arguments" at analytics/src/main.moss:20 (probably stats.moss: batch |> map(_.total()) |> sum)
+   - direct field read across modules (item.qty from other module, even same package) -> moss check ok, rustc E0616 (repro/field_access)
+   - `a.P(x:..)` construction from another module -> rustc E0451 (same repro family)
+   - two method calls in one expression on imported-typed param (p.get_x() + p.get_y()) -> "internal synchronization invariant: unresolved concrete method effect target" (repro/two_method_calls)
+   - sibling method call in module type -> TYPE_INFERENCE_FAILED (repro/sibling_method)
+   - downstream package: methods on dependency types -> "no matching method" (.mossi lacks methods) (repro/dep_type_methods)
+   - main without `module app` importing dependency-package module -> rustc E0425 (repro/dep_implicit_main)
+   - `for i in range(a,b)` in a non-root module fn -> TYPE_INFERENCE_FAILED "cannot infer the static iterator source type" (repro/range_in_module)
+   - non-boundary: filter over objects requires deep copy; `Map()` needs seeded assignment before .get; String field read consumes receiver; String + String native rustc E0308 (repro/string_concat_field); Map[Int,_] strict m[k] rustc E0308 (repro/map_int_key)
+7. analytics tests/stats_test.moss (natural: s.order_count field reads, o.total() method on dependency type,  no module): margo test -> '.../src/main.moss:28: error[TEST_ASSERTION_CONFIGURATION_ERROR]: cannot infer assertEqual operand types' (file misattributed; tests/stats_test.moss line 28 = o.total())
+7. analytics tests/stats_test.moss (natural: s.order_count field reads, o.total() method on dependency type, tests without module decl): margo test -> ".../src/main.moss:28: error[TEST_ASSERTION_CONFIGURATION_ERROR]: cannot infer assertEqual operand types" (file misattributed; real location tests/stats_test.moss:28 = o.total())

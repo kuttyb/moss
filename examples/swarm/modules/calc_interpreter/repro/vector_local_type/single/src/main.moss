@@ -1,0 +1,14 @@
+type Node:
+  kind: Int
+
+type Holder:
+  nodes: Vector[Node]
+
+  fn add(k: Int):
+    nodes.push(Node(kind: k))
+    return
+
+fn main():
+  h = Holder(nodes: Vector[Node]())
+  h.add(7)
+  echo h.nodes |> count

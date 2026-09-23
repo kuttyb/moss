@@ -1,0 +1,24 @@
+module records
+
+export type Event:
+  source: String
+  level: Int
+  code: Int
+
+export type JobSpec:
+  id: Int
+  kind: String
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+export type Entry:
+  key: String
+  value: Int
+  hits: Int
+
+export type Summary:
+  total: Int
+  worst: Int
+  count: Int

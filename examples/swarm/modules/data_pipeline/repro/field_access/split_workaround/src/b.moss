@@ -1,0 +1,6 @@
+module b
+
+import a
+
+export fn sum_xy(p: a.P) -> Int:
+  return p.get_x() + p.get_y()

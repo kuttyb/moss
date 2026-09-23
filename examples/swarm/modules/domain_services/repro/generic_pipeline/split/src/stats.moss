@@ -1,0 +1,4 @@
+module stats
+
+export fn total_weight(items):
+  return items |> map(_.weight()) |> sum

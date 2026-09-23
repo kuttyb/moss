@@ -1,0 +1,14 @@
+trait Keyed:
+  fn key() -> Int
+
+fn key_of(a: Keyed):
+  return a.key()
+
+type T:
+  k: Int
+
+  fn key():
+    return k
+
+fn main():
+  echo key_of(T(k: 3))

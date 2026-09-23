@@ -1,0 +1,4 @@
+module traits
+
+export trait Weighted:
+  fn weight() -> Int

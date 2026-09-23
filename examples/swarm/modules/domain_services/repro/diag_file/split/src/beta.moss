@@ -1,0 +1,9 @@
+module beta
+
+import alpha
+
+export fn ok_two(x: Int) -> Int:
+  return alpha.ok_one(x) + 2
+
+export fn bad(x: Int) -> Int:
+  return x + "s"

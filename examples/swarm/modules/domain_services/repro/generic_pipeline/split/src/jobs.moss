@@ -1,0 +1,11 @@
+module jobs
+
+export type Job:
+  id: Int
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+export fn make_job(id: Int, cost: Int) -> Job:
+  return Job(id: id, cost: cost)

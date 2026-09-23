@@ -1,0 +1,8 @@
+module blob_tests
+
+import metrics
+import blob
+
+test "generic total":
+  blobs = [blob.make_blob(1), blob.make_blob(2)]
+  assertEqual(metrics.total_weight(blobs), 5)

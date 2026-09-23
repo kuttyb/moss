@@ -1,0 +1,13 @@
+module p
+
+export type P:
+  x: Int
+
+  fn a() -> Int:
+    return x + 1
+
+  fn b() -> Int:
+    return a() + 1
+
+export fn make(x: Int) -> P:
+  return P(x: x)

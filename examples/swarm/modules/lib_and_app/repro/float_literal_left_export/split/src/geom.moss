@@ -1,0 +1,4 @@
+module geom
+
+export fn perimeter(w: Float, h: Float) -> Float:
+  return 2.0 * (w + h)

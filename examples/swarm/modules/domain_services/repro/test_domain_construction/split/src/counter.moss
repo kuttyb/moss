@@ -1,0 +1,8 @@
+module counter
+
+export domain Counter:
+  n = 0
+
+  fn Add(k: Int) -> Int:
+    n = n + k
+    reply n

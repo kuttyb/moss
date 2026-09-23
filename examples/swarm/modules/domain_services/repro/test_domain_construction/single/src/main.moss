@@ -1,0 +1,10 @@
+domain Counter:
+  n = 0
+
+  fn Add(k: Int) -> Int:
+    n = n + k
+    reply n
+
+fn main():
+  c = Counter()
+  echo message c.Add(2)

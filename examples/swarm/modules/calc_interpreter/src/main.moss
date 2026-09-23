@@ -1,0 +1,27 @@
+module app
+import calc
+import env
+import report
+
+# The imports below are not used by main itself. `margo test` compiles every
+# test file into main's crate, so a module that a test imports has to be
+# imported here too (see repro/test_imports_not_in_main).
+import ast
+import errors
+import eval
+import lexer
+import node
+import parser
+import token
+
+fn main():
+  session = calc.new_session()
+  report.show(calc.run(session, ["1", "+", "2", "*", "3"]))
+  report.show(calc.run(session, ["x", " ", "=", " ", "(", "1", "0", "-", "4", ")", "*", "-", "2"]))
+  report.show(calc.run(session, ["y", "=", "x", "*", "x", "+", "t"]))
+  report.show(calc.run(session, ["y", "%", "7"]))
+  report.show(calc.run(session, ["y", "/", "(", "x", "+", "1", "2", ")"]))
+  report.show(calc.run(session, ["1", "+", "$"]))
+  report.show(calc.run(session, ["(", "1", "+"]))
+  report.show(calc.run(session, ["z", "+", "1"]))
+  report.summary(session)

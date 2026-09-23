@@ -1,0 +1,6 @@
+module app
+import util
+
+fn main():
+  echo util.smaller("pear", "apple")
+  echo util.in_range(5)

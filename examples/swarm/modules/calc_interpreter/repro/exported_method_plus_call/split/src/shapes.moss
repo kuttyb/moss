@@ -1,0 +1,17 @@
+module shapes
+
+export type S:
+  ops: Vector[Int]
+
+  fn top() -> Int:
+    n = ops |> count
+    return ops[n - 1]
+
+fn paren() -> Int:
+  return 8
+
+export fn total(s: S) -> Int:
+  return s.top() + paren()
+
+export fn make() -> S:
+  return S(ops: [8, 3])

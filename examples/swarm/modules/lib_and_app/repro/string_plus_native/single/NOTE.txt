@@ -1,0 +1,2 @@
+margo run   (cwd string_plus_native/single) rc=1: BUILD_BACKEND_ERROR: native compilation failed for 'src/main.moss' | error[E0369]: cannot add `String` to `&String` | 55 |     return ((kind) + (":".to_string())) + (name);
+margo debug rc=0: circle:a

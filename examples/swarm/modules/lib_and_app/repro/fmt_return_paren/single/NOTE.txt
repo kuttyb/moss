@@ -1,0 +1,3 @@
+margo run   (cwd fmt_return_paren/single) rc=0: 6
+margo debug rc=0: 6
+moss fmt --check rc=1: /home/kuttybanerjee/daji/moss3/examples/swarm/modules/lib_and_app/repro/fmt_return_paren/single/src/main.moss:2: error[UNKNOWN_SYMBOL_OR_TYPE]: unknown local function 'return'

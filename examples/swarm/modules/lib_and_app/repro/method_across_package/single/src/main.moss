@@ -1,0 +1,7 @@
+module app
+
+import pt
+
+fn main():
+  p = pt.make(1, 2)
+  echo p.sum()

@@ -1,0 +1,79 @@
+module model
+
+import vec2
+import shapes
+
+export type CircleItem:
+  name: String
+  shape: shapes.Circle
+
+  fn has_name(other: String) -> Bool:
+    return name == other
+
+  fn describe():
+    echo name, "area", shapes.circle_area(shape), "perimeter", shapes.circle_perimeter(shape)
+    return
+
+  fn area() -> Float:
+    return shapes.circle_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.circle_perimeter(shape)
+
+  fn shift(by: vec2.Vec2):
+    moved = shapes.circle_moved(shape, by)
+    shape = moved
+    return
+
+export type RectItem:
+  name: String
+  shape: shapes.Rect
+
+  fn has_name(other: String) -> Bool:
+    return name == other
+
+  fn describe():
+    echo name, "area", shapes.rect_area(shape), "perimeter", shapes.rect_perimeter(shape)
+    return
+
+  fn area() -> Float:
+    return shapes.rect_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.rect_perimeter(shape)
+
+  fn shift(by: vec2.Vec2):
+    moved = shapes.rect_moved(shape, by)
+    shape = moved
+    return
+
+export type TriItem:
+  name: String
+  shape: shapes.Triangle
+
+  fn has_name(other: String) -> Bool:
+    return name == other
+
+  fn describe():
+    echo name, "area", shapes.triangle_area(shape), "perimeter", shapes.triangle_perimeter(shape)
+    return
+
+  fn area() -> Float:
+    return shapes.triangle_area(shape)
+
+  fn perimeter() -> Float:
+    return shapes.triangle_perimeter(shape)
+
+  fn shift(by: vec2.Vec2):
+    moved = shapes.triangle_moved(shape, by)
+    shape = moved
+    return
+
+export fn circle_item(name: String, shape: shapes.Circle) -> CircleItem:
+  return CircleItem(name: name, shape: shape)
+
+export fn rect_item(name: String, shape: shapes.Rect) -> RectItem:
+  return RectItem(name: name, shape: shape)
+
+export fn tri_item(name: String, shape: shapes.Triangle) -> TriItem:
+  return TriItem(name: name, shape: shape)

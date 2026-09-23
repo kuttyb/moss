@@ -1,0 +1,36 @@
+module app
+
+import orders
+import pipeline
+import report
+import stats
+
+fn sample() -> Vector[orders.Order]:
+  a = [orders.make_item("pen", 0, 12, 150), orders.make_item("ink", 0, 2, 900)]
+  b = [orders.make_item("desk", 1, 1, 25000)]
+  c = [orders.make_item("pen", 0, 3, 150)]
+  d = [orders.make_item("laptop", 2, 1, 120000), orders.make_item("mouse", 2, 10, 2500)]
+  e = [orders.make_item("broken", 2, 0, 500)]
+  return [orders.make_order(1, 7, 0, a), orders.make_order(2, 8, 1, b), orders.make_order(3, 7, 1, c), orders.make_order(4, 9, 2, d), orders.make_order(5, 8, 0, e)]
+
+# Elements cannot be moved out of a Vector by index without consuming it, so the
+# work queue is fed directly from freshly built orders.
+fn incoming() -> Queue[orders.Order]:
+  q = Queue()
+  q.push(orders.make_order(11, 7, 0, [orders.make_item("pen", 0, 12, 150)]))
+  q.push(orders.make_order(12, 8, 1, [orders.make_item("desk", 1, 1, 25000)]))
+  q.push(orders.make_order(13, 9, 2, [orders.make_item("broken", 2, 0, 500)]))
+  q.push(orders.make_order(14, 9, 2, [orders.make_item("mouse", 2, 10, 2500)]))
+  return q
+
+fn main():
+  batch = sample()
+  report.print_summary("All orders", stats.summarize(batch))
+  echo "Revenue by region"
+  report.print_regions(stats.revenue_by_region(batch))
+  echo "Units by category"
+  report.print_categories(stats.units_by_category(batch))
+  report.print_region_summaries(stats.summaries_by_region(batch))
+  customers = stats.revenue_by_customer(batch)
+  echo "Top customer:", stats.best_key(customers)
+  report.print_summary("Valid open orders (queue)", pipeline.drain_open(incoming(), 4))

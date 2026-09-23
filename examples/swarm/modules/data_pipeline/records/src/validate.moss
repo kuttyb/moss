@@ -1,0 +1,14 @@
+module validate
+
+import orders
+
+export fn order_ok(order: orders.Order) -> Bool:
+  return order.is_valid()
+
+fn invalid_flag(order: orders.Order) -> Int:
+  if order_ok(order):
+    return 0
+  return 1
+
+export fn count_invalid(batch: Vector[orders.Order]) -> Int:
+  return batch |> map(invalid_flag(_)) |> sum

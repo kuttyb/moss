@@ -1,0 +1,12 @@
+type G:
+  xs: Vector[Int]
+  n: Int
+
+fn add(g: G, x: Int):
+  g.xs.push(x)
+  g.n = g.n + 1
+  return g.n
+
+fn main():
+  g = G(xs: [1], n: 1)
+  echo add(g, 5)

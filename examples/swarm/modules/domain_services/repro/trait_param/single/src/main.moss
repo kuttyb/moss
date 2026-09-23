@@ -1,0 +1,22 @@
+trait Weighted:
+  fn weight() -> Int
+
+type Job:
+  cost: Int
+
+  fn weight():
+    return cost * 2
+
+type Blob:
+  size: Int
+
+  fn weight():
+    return size + 1
+
+fn heavier(a: Weighted, b: Weighted) -> Int:
+  if a.weight() >= b.weight():
+    return a.weight()
+  return b.weight()
+
+fn main():
+  echo heavier(Job(cost: 3), Blob(size: 9))

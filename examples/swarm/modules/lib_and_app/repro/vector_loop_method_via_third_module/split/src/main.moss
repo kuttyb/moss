@@ -1,0 +1,8 @@
+module app
+
+import bag
+import report
+
+fn main():
+  b = bag.new_bag()
+  report.show(b)
