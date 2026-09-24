@@ -1,0 +1,16 @@
+trait Shape:
+  fn area() -> Int
+
+type Circle:
+  radius: Int
+
+  fn area() -> Int:
+    return radius * radius
+
+fn area_of(value: Shape) -> Int:
+  return value.area()
+
+fn main():
+  var circles = Vector[Circle]()
+  echo circles |> count
+  echo area_of(Circle(radius = 3))

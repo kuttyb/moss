@@ -238,6 +238,18 @@ run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_id
 run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 run_case swarm_025_fast_debug_sibling_method tests/swarm_025_fast_debug_sibling_method.moss '25'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
+reject_case swarm_036_bitwise_and "binary '&' expression is not supported"
+reject_case swarm_036_bitwise_or "binary '|' expression is not supported"
+reject_case swarm_036_bitwise_xor "binary '^' expression is not supported"
+reject_case swarm_036_symbolic_and "binary '&&' expression is not supported"
+reject_case swarm_036_symbolic_or "binary '||' expression is not supported"
+reject_case swarm_036_shift_left "binary '<<' expression is not supported"
+reject_case swarm_036_shift_right "binary '>>' expression is not supported"
+reject_case swarm_036_parenthesized_rhs "binary '&' expression is not supported"
+run_case swarm_036_word_boolean_operators tests/swarm_036_word_boolean_operators.moss '1'
+reject_case swarm_052_vector_trait "trait types are static structural constraints"
+reject_case swarm_052_nested_vector_trait "trait types are static structural constraints"
+run_case swarm_052_concrete_vector_trait_parameter tests/swarm_052_concrete_vector_trait_parameter.moss "$(printf '0\n9')"
 run_case swarm_027_indexed_collection_method tests/swarm_027_indexed_collection_method.moss '10'
 run_case swarm_028_self_method_argument_borrow tests/swarm_028_self_method_argument_borrow.moss '100'
 reject_case swarm_029_nested_indexed_mutation 'nested indexed mutation is not supported'

@@ -1345,17 +1345,46 @@ class Checker {
     throw error;
   }
 
+  bool contains_trait_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (traits_.count(type)) return true;
+    if ((starts_with(type, "vector[") || starts_with(type, "queue[") ||
+         starts_with(type, "seq[") || starts_with(type, "option[")) &&
+        ends_with(type, "]")) {
+      size_t open = type.find('[');
+      return contains_trait_type(
+          trim(type.substr(open + 1, type.size() - open - 2)));
+    }
+    if ((starts_with(type, "map[") || starts_with(type, "table[")) &&
+        ends_with(type, "]")) {
+      size_t open = type.find('[');
+      auto parts =
+          split_top_level(type.substr(open + 1, type.size() - open - 2), ',');
+      return parts.size() == 2 &&
+          (contains_trait_type(parts[0]) || contains_trait_type(parts[1]));
+    }
+    return false;
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type)) return true;
     if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
-    if (starts_with(type, "vector[") && ends_with(type, "]")) return valid_type(trim(type.substr(7, type.size()-8)));
-    if (starts_with(type, "queue[") && ends_with(type, "]")) return valid_type(trim(type.substr(6, type.size()-7)));
+    if (starts_with(type, "vector[") && ends_with(type, "]")) {
+      string element = trim(type.substr(7, type.size() - 8));
+      return !contains_trait_type(element) && valid_type(element);
+    }
+    if (starts_with(type, "queue[") && ends_with(type, "]")) {
+      string element = trim(type.substr(6, type.size() - 7));
+      return !contains_trait_type(element) && valid_type(element);
+    }
     if (starts_with(type, "map[") && ends_with(type, "]")) {
       auto ps = split_top_level(type.substr(4, type.size()-5), ',');
-      return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
+      return ps.size() == 2 &&
+          !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
+          valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
       return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
@@ -6513,6 +6542,11 @@ class Checker {
       return;
     }
     if (auto typed_vector = typed_empty_vector_constructor(value)) {
+      if (contains_trait_type(*typed_vector))
+        err(line,
+            "trait types are static structural constraints and cannot be stored "
+            "in concrete collections",
+            "TRAIT_COLLECTION_ELEMENT_UNSUPPORTED");
       if (!valid_type(*typed_vector))
         err(line, "invalid typed Vector constructor '" + value + "'",
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
@@ -7480,6 +7514,12 @@ class Checker {
           "UNSUPPORTED_EXPRESSION_OPERATOR");
       return;
     }
+    for (const auto& op :
+         vector<string>{"&&", "||", "<<", ">>", "&", "|", "^"}) {
+      if (split_binary(value, {op}))
+        err(line, "binary '" + op + "' expression is not supported",
+            "UNSUPPORTED_EXPRESSION_OPERATOR");
+    }
     for (const auto& operators : vector<vector<string>>{{" and ", " or "},
                                                          {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
@@ -7594,6 +7634,11 @@ class Checker {
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
       if (auto typed_vector = typed_empty_vector_constructor(value)) {
+        if (contains_trait_type(*typed_vector))
+          err(line,
+              "trait types are static structural constraints and cannot be stored "
+              "in concrete collections",
+              "TRAIT_COLLECTION_ELEMENT_UNSUPPORTED");
         if (!valid_type(*typed_vector))
           err(line, "invalid typed Vector constructor '" + value + "'",
               "INVALID_TYPED_VECTOR_CONSTRUCTOR");

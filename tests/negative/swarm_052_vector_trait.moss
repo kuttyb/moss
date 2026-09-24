@@ -1,0 +1,5 @@
+trait Shape:
+  fn area() -> Int
+
+fn main():
+  var shapes = Vector[Shape]()

@@ -14,17 +14,39 @@ jobs:
         run: make
       - name: Bootstrap Moss agent contract
         run: ./moss agent bootstrap --json
-      - name: Test hi example when present
+      - name: Test SWARM-036 and SWARM-052 frontend rejection
         shell: bash
         run: |
-          if [[ -f examples/hi.moss ]]; then
-            ./moss check examples/hi.moss --json
-            mkdir -p build/smoke
-            ./moss -Oshared-memory examples/hi.moss -o build/smoke/hi.rs
-            rustc -D warnings build/smoke/hi.rs -o build/smoke/hi
-            output="$(./build/smoke/hi)"
-            printf 'program output: %s\n' "$output"
-            test "$output" = "hi"
-          else
-            echo 'examples/hi.moss not present yet; bootstrap-only run'
-          fi
+          set -euo pipefail
+          expect_reject() {
+            source="$1"; code="$2"; message="$3"
+            set +e
+            output="$(./moss check "$source" --json 2>&1)"
+            status=$?
+            set -e
+            test "$status" -ne 0
+            printf '%s\n' "$output" | grep -F "$code"
+            printf '%s\n' "$output" | grep -F "$message"
+          }
+          expect_reject tests/negative/swarm_036_bitwise_and.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&' expression is not supported"
+          expect_reject tests/negative/swarm_036_bitwise_or.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '|' expression is not supported"
+          expect_reject tests/negative/swarm_036_bitwise_xor.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '^' expression is not supported"
+          expect_reject tests/negative/swarm_036_symbolic_and.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&&' expression is not supported"
+          expect_reject tests/negative/swarm_036_symbolic_or.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '||' expression is not supported"
+          expect_reject tests/negative/swarm_036_shift_left.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '<<' expression is not supported"
+          expect_reject tests/negative/swarm_036_shift_right.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '>>' expression is not supported"
+          expect_reject tests/negative/swarm_036_parenthesized_rhs.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&' expression is not supported"
+          expect_reject tests/negative/swarm_052_vector_trait.moss TRAIT_COLLECTION_ELEMENT_UNSUPPORTED "trait types are static structural constraints"
+          expect_reject tests/negative/swarm_052_nested_vector_trait.moss TRAIT_COLLECTION_ELEMENT_UNSUPPORTED "trait types are static structural constraints"
+      - name: Verify preserved legal cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/smoke
+          for name in swarm_036_word_boolean_operators swarm_052_concrete_vector_trait_parameter; do
+            ./moss check "tests/$name.moss" --json
+            ./moss -Oshared-memory "tests/$name.moss" -o "build/smoke/$name.rs"
+            rustc -D warnings "build/smoke/$name.rs" -o "build/smoke/$name"
+          done
+          test "$(build/smoke/swarm_036_word_boolean_operators)" = "1"
+          test "$(build/smoke/swarm_052_concrete_vector_trait_parameter)" = $'0\n9'
