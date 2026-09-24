@@ -4774,8 +4774,14 @@ class Checker {
       }
       if (leaf_effect_capture_ && receiver_type &&
           traits_.count(canonical_type_name(*receiver_type))) {
-        analyze_effect_expression(receiver, env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
+        // A trait parameter has a valid static effect summary but no concrete
+        // storage layout. Record the ordinary parameter READ without asking
+        // leaf-state capture to decompose an abstract trait into state leaves.
+        {
+          LeafCaptureScope no_trait_leaf_capture(leaf_effect_capture_, nullptr);
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        }
         for (const auto& argument : arguments)
           analyze_effect_expression(argument, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
