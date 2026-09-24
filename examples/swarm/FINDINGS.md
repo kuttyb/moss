@@ -1224,7 +1224,7 @@ Verified/fixed on the current compiler with a dedicated regression in the lost-s
 
 ## SWARM-035 — Nested mutating calls on the same receiver lower to a Rust double borrow
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Python / deque](Python/deque/)
 - Also observed: —
@@ -1274,6 +1274,11 @@ Related to SWARM-011, whose fix hoists a pure Copy-valued sibling *read*
 before the WRITE borrow. Here the argument is itself a WRITE call on the same
 receiver. Moss source order is well defined (argument first), so the lowering
 should hoist the argument call into a temporary in the same way.
+
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
 
 ## SWARM-036 — Unsupported binary operators pass checking
 
@@ -1707,7 +1712,7 @@ Verified/fixed on the current compiler with a dedicated regression in the lost-s
 
 ## SWARM-046 — Exported trait-annotated function crashes with internal synchronization invariant
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module interface projection
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
@@ -1756,6 +1761,11 @@ Leave the exported function parameter untyped (`export fn get_area(s) -> Int: re
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
+
 ## SWARM-047 — Compiler assertion abort on pipeline reduce with Map accumulator
 
 - Status: Open
@@ -1789,7 +1799,7 @@ Use an explicit `while` loop to accumulate into the Map instead of `|> reduce`.
 
 ## SWARM-048 — Fast Debug interpreter fails to resolve function identifier passed as callable argument
 
-- Status: Open
+- Status: Fixed
 - Category: Fast Debug interpreter / name resolution
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1825,6 +1835,11 @@ The interpreter evaluates call argument expressions in the local variable enviro
 Use direct inline logic, static pipeline lambdas (`_ > 0`), or execute natively with `margo run`.
 
 ---
+
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
 
 ## SWARM-049 — Fast Debug string relational comparison evaluates to false
 
@@ -2205,7 +2220,7 @@ Specifically module/package-boundary-dependent: introducing an explicit `module`
 
 ## SWARM-058 — Sibling method call within exported module type mis-mangles as module function
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module name resolution & lowering
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2248,6 +2263,11 @@ Inline the sibling method logic or declare a private top-level helper function i
 Specifically module/package-boundary-dependent: identical method structure passes in single-file non-module source and fails when placed inside a `module`.
 
 ---
+
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
 
 ## SWARM-059 — Multi-file project diagnostics misattribute error source file to root or first module
 

@@ -1,0 +1,15 @@
+fn is_positive(x: Int) -> Bool:
+  return x > 0
+
+fn filter_ints(items: Vector[Int], pred) -> Vector[Int]:
+  var out = Vector[Int]()
+  for x in items:
+    if pred(x):
+      out.push(x)
+  return out
+
+fn main():
+  nums = [1, -2, 3]
+  filtered = filter_ints(nums, is_positive)
+  echo filtered[0]
+  echo filtered[1]

@@ -125,6 +125,18 @@ jobs:
           (cd "$ROOT/examples/swarm/domain_torture/dispatcher_fanout" && "$ROOT/margo" build)
           (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/string_plus_native/single" && "$ROOT/margo" build)
           (cd "$ROOT/examples/swarm/polymorphism/tree_serialization" && "$ROOT/margo" test)
+      - name: Verify lost-semantics batch B
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          "$ROOT/moss" tests/swarm_035_nested_mutating_calls.moss -o /tmp/swarm035.rs
+          rustc -D warnings /tmp/swarm035.rs -o /tmp/swarm035
+          test "$(/tmp/swarm035)" = "1"
+          test "$("$ROOT/moss" run --interp tests/swarm_035_nested_mutating_calls.moss)" = "1"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/trait_across/split" && "$ROOT/margo" build)
+          test "$("$ROOT/moss" run --interp tests/swarm_048_callable_argument.moss)" = "$(printf '1\n3')"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/sibling_method/split" && "$ROOT/margo" build)
       - name: Baseline remaining lost semantics
         shell: bash
         run: |

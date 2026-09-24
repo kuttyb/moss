@@ -4672,6 +4672,17 @@ class Checker {
           return;
         }
       }
+      for (const auto& operators :
+           vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                  {"+", "-", "*", "/", "%"}}) {
+        if (auto binary = split_binary(value, operators)) {
+          analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
+      }
       if (starts_with(value, "not ")) {
         analyze_effect_expression(value.substr(4), env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
@@ -4746,7 +4757,6 @@ class Checker {
           return;
         }
       }
-      synchronization_require(!leaf_effect_capture_, "unresolved concrete method effect target");
       Effect possible_receiver = Effect::Read;
       vector<Effect> possible_parameters;
       if (receiver_type && possible_method_effects(*receiver_type, method,
@@ -4762,6 +4772,17 @@ class Checker {
                                     receiver_fields, possible_parameters[index]);
         return;
       }
+      if (leaf_effect_capture_ && receiver_type &&
+          traits_.count(canonical_type_name(*receiver_type))) {
+        analyze_effect_expression(receiver, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        for (const auto& argument : arguments)
+          analyze_effect_expression(argument, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      synchronization_require(!leaf_effect_capture_,
+                              "unresolved concrete method effect target");
       // An unresolved call with no bounded concrete candidate is diagnosed by
       // ordinary static dispatch checking; keep the effect walk conservative.
       analyze_effect_expression(receiver, env, params, parameter_effects,
@@ -11525,14 +11546,42 @@ class Generator {
                                                     result.push_back(generated_expr_type(argument, types).value_or(""));
                                                   return result;
                                                 }(), true, nullptr)) {
+          vector<string> argument_temporaries(member_arguments.size());
+          if (method->receiver_effect != Effect::Read) {
+            for (size_t index = 0; index < member_arguments.size(); ++index) {
+              string nested_receiver, nested_method;
+              vector<string> nested_arguments;
+              if (parse_member_call(member_arguments[index], nested_receiver,
+                                    nested_method, nested_arguments) &&
+                  trim(nested_receiver) == trim(member_receiver))
+                argument_temporaries[index] = "__moss_call_argument_" +
+                    std::to_string(call_argument_temp_++);
+            }
+          }
           std::ostringstream rendered;
           rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
-            rendered << method_call_argument(*method, index, member_arguments[index], d, locals, types);
+            rendered << method_call_argument(*method, index,
+                argument_temporaries[index].empty() ? member_arguments[index]
+                                                    : argument_temporaries[index],
+                d, locals, types);
           }
           rendered << ")";
           string result = rendered.str();
+          if (std::any_of(argument_temporaries.begin(),
+                          argument_temporaries.end(),
+                          [](const string& value) { return !value.empty(); })) {
+            std::ostringstream sequenced;
+            sequenced << "{ ";
+            for (size_t index = 0; index < member_arguments.size(); ++index)
+              if (!argument_temporaries[index].empty())
+                sequenced << "let " << argument_temporaries[index] << " = "
+                          << expr(member_arguments[index], d, locals, types)
+                          << "; ";
+            sequenced << result << " }";
+            result = sequenced.str();
+          }
           if ((concrete == "vector" || starts_with(concrete, "vector[") ||
                concrete == "queue" || starts_with(concrete, "queue[")) &&
               (member_name == "pop" || member_name == "pop_front"))
@@ -11635,6 +11684,23 @@ class Generator {
                 argument, generated_expr_type(argument, types).value_or("")));
           sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
         }
+        vector<string> sibling_temporaries(call_args.size());
+        if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
+          for (size_t i = 0; i < call_args.size(); ++i) {
+            string nested_name; vector<string> nested_args;
+            if (parse_simple_call(call_args[i], nested_name, nested_args) &&
+                objects_.count(d->name) &&
+                resolve_object_method(objects_, d->name, nested_name,
+                    [&]() {
+                      vector<string> result;
+                      for (const auto& argument : nested_args)
+                        result.push_back(generated_expr_type(argument, types).value_or(""));
+                      return result;
+                    }(), true, nullptr))
+              sibling_temporaries[i] = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+          }
+        }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << viewed_function_name(head, call_args, d, locals, types) << "(";
         size_t emitted_arguments = 0;
@@ -11645,11 +11711,26 @@ class Generator {
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
-            r << method_call_argument(*sibling_method, i, call_args[i], d, locals, types);
+            r << method_call_argument(*sibling_method, i,
+                sibling_temporaries[i].empty() ? call_args[i]
+                                               : sibling_temporaries[i],
+                d, locals, types);
           else
             r << expr(call_args[i], d, locals, types);
         }
-        r << ")"; return r.str();
+        r << ")";
+        if (std::any_of(sibling_temporaries.begin(), sibling_temporaries.end(),
+                        [](const string& value) { return !value.empty(); })) {
+          std::ostringstream sequenced;
+          sequenced << "{ ";
+          for (size_t i = 0; i < call_args.size(); ++i)
+            if (!sibling_temporaries[i].empty())
+              sequenced << "let " << sibling_temporaries[i] << " = "
+                        << expr(call_args[i], d, locals, types) << "; ";
+          sequenced << r.str() << " }";
+          return sequenced.str();
+        }
+        return r.str();
       }
     }
 
@@ -16488,7 +16569,8 @@ static string rewrite_module_type(string type, const string& module,
 static string rewrite_module_expression(
     string expression, const string& module,
     const std::map<string,ParsedModuleUnit>& modules,
-    const std::map<string,std::set<string>>& public_exports) {
+    const std::map<string,std::set<string>>& public_exports,
+    const std::set<string>* sibling_methods = nullptr) {
   std::set<string> functions = module_function_names(modules.at(module));
   std::set<string> types = module_type_names(modules.at(module));
   string result;
@@ -16551,7 +16633,8 @@ static string rewrite_module_expression(
     size_t before = i;
     while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
     bool member = before > 0 && expression[before - 1] == '.';
-    if (!member && token.find("__") == string::npos &&
+    if (!member && !(sibling_methods && sibling_methods->count(token)) &&
+        token.find("__") == string::npos &&
         (functions.count(token) || types.count(token) ||
          (after < expression.size() && expression[after] == '(' &&
           plain_identifier(token))) &&
@@ -16577,7 +16660,8 @@ static void rewrite_module_program(
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.type = type(param.type);
   };
-  auto body = [&](vector<Stmt>& statements) {
+  auto body = [&](vector<Stmt>& statements,
+                  const std::set<string>* sibling_methods = nullptr) {
     for (auto& statement : statements) {
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
         auto imported = public_exports.find(statement.a);
@@ -16588,6 +16672,7 @@ static void rewrite_module_program(
       } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
         string callee = trim(statement.a);
         if (callee.find('.') == string::npos && plain_identifier(callee) &&
+            !(sibling_methods && sibling_methods->count(callee)) &&
             callee != "assert" && callee != "assertEqual" &&
             !functional_stage_kind(callee).has_value() &&
             callee != "Map" && callee != "Queue" && callee != "Vector" &&
@@ -16596,15 +16681,22 @@ static void rewrite_module_program(
             callee.find("__") == string::npos)
           statement.a = module_symbol(module, callee);
         else {
-          string rewritten = expression(callee + "()");
+          string rewritten = rewrite_module_expression(
+              callee + "()", module, modules, public_exports, sibling_methods);
           if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
           statement.a = std::move(rewritten);
         }
       }
-      statement.a = expression(statement.a);
-      statement.b = expression(statement.b);
-      for (auto& argument : statement.args) argument = expression(argument);
-      if (!statement.text.empty()) statement.text = expression(statement.text);
+      statement.a = rewrite_module_expression(
+          statement.a, module, modules, public_exports, sibling_methods);
+      statement.b = rewrite_module_expression(
+          statement.b, module, modules, public_exports, sibling_methods);
+      for (auto& argument : statement.args)
+        argument = rewrite_module_expression(
+            argument, module, modules, public_exports, sibling_methods);
+      if (!statement.text.empty())
+        statement.text = rewrite_module_expression(
+            statement.text, module, modules, public_exports, sibling_methods);
     }
   };
   for (auto& function : program.functions) {
@@ -16617,14 +16709,19 @@ static void rewrite_module_program(
   }
   for (auto& object : program.objects) {
     string old = object.name;
+    std::set<string> sibling_methods;
+    for (const auto& method : object.methods) sibling_methods.insert(method.name);
     object.name = module_symbol(module, old);
     for (auto& field : object.fields) field.type = type(field.type);
     for (auto& method : object.methods) {
       method.owner = object.name;
       params(method.params);
       if (method.return_type) *method.return_type = type(*method.return_type);
-      body(method.body);
-      if (method.result_expression) *method.result_expression = expression(*method.result_expression);
+      body(method.body, &sibling_methods);
+      if (method.result_expression)
+        *method.result_expression = rewrite_module_expression(
+            *method.result_expression, module, modules, public_exports,
+            &sibling_methods);
     }
   }
   for (auto& trait : program.traits) {

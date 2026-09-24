@@ -116,7 +116,7 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -133,6 +133,7 @@ class FastInterpreter {
     static Value int_value(std::int64_t value);
     static Value float_value(double value);
     static Value string_value(std::string value);
+    static Value callable_value(std::string name);
     static Value struct_value(std::string type);
     static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value queue_value();
@@ -643,6 +644,14 @@ class FastInterpreter {
           return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
+        auto callable_local = frame.locals.find(callee);
+        if (callable_local != frame.locals.end() &&
+            callable_local->second.kind == Value::Kind::Callable) {
+          if (auto fn = function(callable_local->second.string))
+            return call(*fn, args, frame, line, output);
+          throw RuntimeError(line, "unresolved callable identity '" +
+              callable_local->second.string + "'");
+        }
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
         auto self_it = frame.locals.find("self");
         if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
@@ -711,6 +720,7 @@ class FastInterpreter {
         emit("LocalRead", frame, line, e);
         return found->second;
       }
+      if (function(e)) return Value::callable_value(e);
       throw RuntimeError(line, "unknown local '" + e + "'");
     }
     throw RuntimeError(line, "unsupported expression '" + e + "'");
@@ -805,6 +815,7 @@ class FastInterpreter {
       case Value::Kind::Int: return left.integer == right.integer;
       case Value::Kind::Float: return left.floating == right.floating;
       case Value::Kind::String: return left.string == right.string;
+      case Value::Kind::Callable: return left.string == right.string;
       case Value::Kind::Struct:
         if (!left.object || !right.object || left.object->type != right.object->type ||
             left.object->fields.size() != right.object->fields.size()) return false;
@@ -1036,6 +1047,9 @@ inline FastInterpreter::Value FastInterpreter::Value::float_value(double value) 
 inline FastInterpreter::Value FastInterpreter::Value::string_value(std::string value) {
   Value result; result.kind = Kind::String; result.string = std::move(value); return result;
 }
+inline FastInterpreter::Value FastInterpreter::Value::callable_value(std::string name) {
+  Value result; result.kind = Kind::Callable; result.string = std::move(name); return result;
+}
 inline FastInterpreter::Value FastInterpreter::Value::struct_value(std::string type) {
   Value result; result.kind = Kind::Struct;
   result.object = std::make_shared<StructValue>();
@@ -1078,6 +1092,7 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Int: return std::to_string(integer);
     case Kind::Float: out << std::setprecision(15) << floating; return out.str();
     case Kind::String: return string;
+    case Kind::Callable: return "<callable:" + string + ">";
     case Kind::Struct: return object ? object->type : "<struct>";
     case Kind::Vector:
       out << "[";

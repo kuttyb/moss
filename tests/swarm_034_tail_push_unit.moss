@@ -4,7 +4,7 @@ type Bag:
   fn add(x: Int):
     items.push(x)
 
-fn put(var values: Vector[Int], x: Int):
+fn put(values: Vector[Int], x: Int):
   values.push(x)
 
 fn main():
