@@ -103,6 +103,21 @@ static string tooling_native_symbol(const string& kind, const string& name,
       stable_hash(semantic_identity);
 }
 
+static bool rust_reserved_identifier(const string& value) {
+  static const std::set<string> reserved = {
+      "as","async","await","become","box","break","const","continue","crate",
+      "do","dyn","else","enum","extern","false","final","fn","for","if","impl",
+      "in","let","loop","macro","match","mod","move","override","priv","pub",
+      "ref","return","static","struct","super","trait","true","try","type",
+      "typeof","union","unsafe","unsized","use","virtual","where","while","yield"
+  };
+  return reserved.count(value) != 0;
+}
+
+static string rust_identifier(const string& value) {
+  return rust_reserved_identifier(value) ? "r#" + value : value;
+}
+
 static vector<string> split_top_level(const string& s, char delim) {
   vector<string> out;
   int par = 0, br = 0, sq = 0;
@@ -1542,9 +1557,9 @@ class Checker {
           }
         }
       }
-      if (expected_result == "$function_result" &&
-          (!function.return_type || starts_with(*function.return_type, "_")))
-        function.return_type = "_functional_result:" + function.name;
+      // Leave the return type open here. The typed inference pass below has
+      // the source environment needed to derive the pipeline terminal type
+      // (count -> Int, any/all -> Bool, map/filter -> collection, etc.).
       return;
     }
     string e = normalize_pipeline(std::move(original));
@@ -2843,6 +2858,17 @@ class Checker {
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
+        string concrete_base = canonical_type_name(*base);
+        if ((concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
+             concrete_base == "queue" || starts_with(concrete_base, "queue["))) {
+          if (method_name == "push" && method_args.size() == 1)
+            return string("unit");
+          if (method_name == "pop" && method_args.empty()) {
+            size_t open = concrete_base.find('[');
+            if (open != string::npos && ends_with(concrete_base, "]"))
+              return trim(concrete_base.substr(open + 1, concrete_base.size() - open - 2));
+          }
+        }
         if (auto map_types = map_key_value_types(*base)) {
           if (method_name == "get" && method_args.size() == 2)
             return map_types->second;
@@ -10218,6 +10244,18 @@ class Generator {
     if (parse_member_call(value, receiver, method_name, method_args)) {
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
+        string concrete_receiver = canonical_type_name(*receiver_type);
+        if ((concrete_receiver == "vector" || starts_with(concrete_receiver, "vector[") ||
+             concrete_receiver == "queue" || starts_with(concrete_receiver, "queue["))) {
+          if (method_name == "push" && method_args.size() == 1)
+            return string("unit");
+          if (method_name == "pop" && method_args.empty()) {
+            size_t open = concrete_receiver.find('[');
+            if (open != string::npos && ends_with(concrete_receiver, "]"))
+              return trim(concrete_receiver.substr(open + 1,
+                  concrete_receiver.size() - open - 2));
+          }
+        }
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if (method_name == "get" && method_args.size() == 2)
             return map_types->second;
@@ -11430,6 +11468,29 @@ class Generator {
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
 
+    auto projection_dot = e.rfind('.');
+    if (projection_dot != string::npos &&
+        e.find('(', projection_dot) == string::npos) {
+      string projection_base = trim(e.substr(0, projection_dot));
+      string projection_field = trim(e.substr(projection_dot + 1));
+      if (plain_identifier(projection_field)) {
+        auto projection_type = generated_expr_type(projection_base, types);
+        if (projection_type) {
+          auto object = objects_.find(canonical_type_name(*projection_type));
+          if (object != objects_.end()) {
+            auto field = std::find_if(object->second->fields.begin(),
+                object->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == projection_field;
+                });
+            if (field != object->second->fields.end()) {
+              string base_rendered = expr(projection_base, d, locals, types);
+              return "(" + base_rendered + ")." + rust_identifier(projection_field);
+            }
+          }
+        }
+      }
+    }
+
     string member_receiver, member_name;
     vector<string> member_arguments;
     if (parse_member_call(e, member_receiver, member_name, member_arguments)) {
@@ -11555,7 +11616,7 @@ class Generator {
           string v = expr(vit->second, d, locals, types);
           if (!first) r << ", ";
           first = false;
-          r << f.name << ": " << v;
+          r << rust_identifier(f.name) << ": " << v;
         }
         r << " }";
         return r.str();
@@ -11662,6 +11723,23 @@ class Generator {
     replace_word(e, "xor", "^");
     replace_word(e, "or", "||");
     replace_word(e, "not", "!");
+    // Escape Rust-reserved member names without changing the Moss identifier.
+    for (size_t pos = 0; pos + 1 < e.size();) {
+      if (e[pos] != '.') { ++pos; continue; }
+      size_t begin = pos + 1, end = begin;
+      while (end < e.size() &&
+             (std::isalnum(static_cast<unsigned char>(e[end])) || e[end] == '_'))
+        ++end;
+      if (end > begin) {
+        string member = e.substr(begin, end - begin);
+        string escaped = rust_identifier(member);
+        if (escaped != member) {
+          e.replace(begin, member.size(), escaped);
+          end += escaped.size() - member.size();
+        }
+      }
+      pos = end;
+    }
     return e;
   }
 
@@ -11830,7 +11908,8 @@ class Generator {
       << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << " {\n";
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
-      o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
+      o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
+        << rust_identifier(f.name) << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
     tooling_end(o, 0, type_identity);
@@ -11839,7 +11918,7 @@ class Generator {
     o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
     for (const auto& field : t.fields) o << rust_type(field.type) << ",";
     o << ") { (";
-    for (const auto& field : t.fields) o << "self." << field.name << ",";
+    for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
     o << ") }\n}\n";
     for (const auto& method : t.methods) for (bool view : {false, true}) {
       bool needs_view = false;

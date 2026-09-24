@@ -1,0 +1,9 @@
+fn has_large(values: Vector[Int]) -> Bool:
+  return values |> map((x) => x + 1) |> any((x) => x > 3)
+
+fn count_values(values: Vector[Int]) -> Int:
+  return values |> count
+
+fn main():
+  echo has_large([1, 3])
+  echo count_values([4, 5])

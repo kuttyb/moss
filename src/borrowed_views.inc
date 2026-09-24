@@ -34,7 +34,7 @@
       auto field = std::find_if(d->state.begin(), d->state.end(), [&](const auto& f) { return f.name == root; });
       if (field == d->state.end()) {
         auto route = std::find_if(d->routes.begin(), d->routes.end(), [&](const auto& r) { return r.name == root; });
-        if (route != d->routes.end() && parts.size() == 1) return "state." + root;
+        if (route != d->routes.end() && parts.size() == 1) return "state." + rust_identifier(root);
         return std::nullopt;
       }
       type = field->type; rendered = "state." + root;
@@ -46,7 +46,7 @@
       auto field = std::find_if(object->second->fields.begin(), object->second->fields.end(),
           [&](const auto& f) { return f.name == parts[i]; });
       if (field == object->second->fields.end()) return std::nullopt;
-      rendered += access ? ".__moss_field_" + parts[i] + (mutable_projection_ ? "_mut()" : "()") : "." + parts[i];
+      rendered += access ? ".__moss_field_" + parts[i] + (mutable_projection_ ? "_mut()" : "()") : "." + rust_identifier(parts[i]);
       type = field->type;
     }
     if (view_object_type(type) && (!access || (view_domain_access_ && parts.size() == 1 && !view_parameters_.count(root)))) return rendered;
@@ -124,7 +124,7 @@
       }
       o << "    fn __moss_value(&self) -> " << t.name << " { " << t.name << " { ";
       for (const auto& field : t.fields)
-        o << field.name << ": self.__moss_field_" << field.name << "()."
+        o << rust_identifier(field.name) << ": self.__moss_field_" << field.name << "()."
           << (view_object_type(field.type) ? "__moss_value()" : "clone()") << ", ";
       o << "} }\n    fn __moss_replace(&mut self, value: " << t.name << ") {\n";
       for (const auto& field : t.fields) {
@@ -208,7 +208,7 @@
     }
     o << "struct " << t.name << "View<" << generics << "> {\n";
     for (size_t i = 0; i < t.fields.size(); ++i)
-      o << "    " << t.fields[i].name << ": F" << i << ",\n";
+      o << "    " << rust_identifier(t.fields[i].name) << ": F" << i << ",\n";
     o << "}\nimpl<" << bounds << "> std::fmt::Debug for " << t.name << "View<" << generics << "> {\n"
       << "    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n"
       << "        f.debug_struct(\"" << t.name << "\")";
@@ -216,7 +216,7 @@
     o << ".finish()\n    }\n}\nimpl<" << bounds << "> " << trait << " for " << t.name << "View<" << generics << "> {\n";
     for (size_t i = 0; i < t.fields.size(); ++i) {
       const auto& field = t.fields[i];
-      string result = rust_type(field.type), access = "self." + field.name;
+      string result = rust_type(field.type), access = "self." + rust_identifier(field.name);
       if (view_object_type(field.type)) {
         result = "F" + std::to_string(i);
         o << "    type Field_" << field.name << " = " << result << ";\n";

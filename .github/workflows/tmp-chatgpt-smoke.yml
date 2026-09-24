@@ -101,6 +101,30 @@ jobs:
           set -euo pipefail
           python3 tools/check_swarm_feedback.py
           python3 tools/check_swarm_issues.py
+      - name: Verify lost-semantics batch A
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          "$ROOT/moss" tests/swarm_034_tail_push_unit.moss -o /tmp/swarm034.rs
+          rustc -D warnings /tmp/swarm034.rs -o /tmp/swarm034
+          test "$(/tmp/swarm034)" = "$(printf '1\n1')"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/field_access/split" && "$ROOT/margo" build)
+          "$ROOT/moss" tests/swarm_054_indexed_field.moss -o /tmp/swarm054.rs
+          rustc -D warnings /tmp/swarm054.rs -o /tmp/swarm054
+          test "$(/tmp/swarm054)" = "9"
+          "$ROOT/moss" tests/swarm_064_rust_keyword_field.moss -o /tmp/swarm064.rs
+          rustc -D warnings /tmp/swarm064.rs -o /tmp/swarm064
+          test "$(/tmp/swarm064)" = "3"
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/rust_keyword_field/single" && "$ROOT/margo" build)
+          "$ROOT/moss" tests/swarm_065_pipeline_return.moss -o /tmp/swarm065.rs
+          rustc -D warnings /tmp/swarm065.rs -o /tmp/swarm065
+          test "$(/tmp/swarm065)" = "$(printf 'true\n2')"
+          (cd "$ROOT/examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/domain_torture/rich_payloads" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/domain_torture/dispatcher_fanout" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/string_plus_native/single" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/polymorphism/tree_serialization" && "$ROOT/margo" test)
       - name: Baseline remaining lost semantics
         shell: bash
         run: |

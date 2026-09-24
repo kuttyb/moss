@@ -1099,7 +1099,7 @@ exactly what `moss check` accepts.
 
 ## SWARM-033 — Returning a unary-negated name fails type inference
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Multi-Domain Swarm / Linear Pipeline](domain_torture/linear_pipeline/),
@@ -1160,9 +1160,14 @@ Same family as SWARM-005 (return-expression inference), but a distinct
 construct. Negative literals (`-4`) in expressions are fine, but unary negation
 in `return` and `reply` positions triggers type inference failures during checking or formatting.
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-034 — No-value function ending in a collection `push` fails result inference
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Python / deque](Python/deque/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -1211,6 +1216,11 @@ fn put(values: Vector[Int], x: Int):
   values.push(x)
   return
 ```
+
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
 
 ## SWARM-035 — Nested mutating calls on the same receiver lower to a Rust double borrow
 
@@ -1461,7 +1471,7 @@ expected-failure test form is a separate, optional surface question.
 
 ## SWARM-041 — Collection method on struct field during handler effect analysis triggers internal invariant error
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / effect and synchronization analysis
 - First observed: [Multi-Domain Swarm / Rich Payloads](domain_torture/rich_payloads/)
 - Also observed: —
@@ -1512,9 +1522,14 @@ return (scores |> sum) + val
 
 The effect analyzer should reset `leaf_effect_capture_` after the pipeline stage finishes or treat built-in collection query methods on fields as pure/read effects during capture.
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-042 — Reassigning an initialized mutable local across all conditional branches triggers rustc `-D unused-assignments`
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Multi-Domain Swarm / Dispatcher Fan-out](domain_torture/dispatcher_fanout/)
 - Also observed: —
@@ -1568,6 +1583,11 @@ fn choose(flag: Bool) -> Int:
 ### Notes
 
 Similar class of backend warning leakage as SWARM-031 (`-D unused-parens`). Native lowering emits `let mut res = initial_expr;` even when every control-flow path reassigns `res` before any read, triggering Rust's `-D unused-assignments`. Lowering could emit uninitialized bindings where valid, avoid emitting mut when unneeded, or handle branch convergence.
+
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
 
 ## SWARM-043 — Untyped parameter field access monomorphizes function to first caller type
 
@@ -1640,7 +1660,7 @@ Wrap container operations in structural traits with `fn get(i: Int)` / `fn set(i
 
 ## SWARM-045 — Exported struct fields lower without pub modifier across modules
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module projection & native lowering
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/),
@@ -1679,6 +1699,11 @@ Lowering emits `pub struct Record { val: i64 }` where individual fields lack the
 Provide explicit exported getter methods (`fn get_val() -> Int: return val`) or constructors within the defining module.
 
 ---
+
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
 
 ## SWARM-046 — Exported trait-annotated function crashes with internal synchronization invariant
 
@@ -1961,7 +1986,7 @@ Store concrete types in separate typed collections (`Vector[Circle]()`, `Vector[
 
 ## SWARM-053 — Binary string concatenation between owned String and literal fails rustc
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -1987,9 +2012,14 @@ Use a multi-statement accumulator helper (`var out = ""; out = out + s; out = ou
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-054 — Chained field access on indexed vector in method omits usize cast in backend
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
@@ -2018,9 +2048,14 @@ Pass `items[i]` to a helper projection function (`fn item_score(it: Item) -> Int
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-055 — assertEqual with brace in string literal argument leaks unescaped brace into Rust format string
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / test lowering
 - First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
 - Also observed: —
@@ -2042,6 +2077,11 @@ Native compilation of test binary fails in `rustc` because `{` in the literal ar
 Bind expected string to a local variable before asserting: `expected = "{hello}"; assertEqual(actual, expected)`.
 
 ---
+
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
 
 ## SWARM-056 — Methods of exported types are omitted from compiled `.mossi` interface metadata
 
@@ -2466,7 +2506,7 @@ Specifically module/package-boundary-dependent: generated Rust view traits for i
 
 ## SWARM-064 — Struct field named with a Rust reserved keyword fails native compilation
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & symbol hygiene
 - First observed: [Modules / Lib and App](modules/lib_and_app/)
 - Also observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
@@ -2502,9 +2542,14 @@ Non-boundary defect (occurs equally in single-file and multi-module programs). R
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-065 — Boolean pipeline (`filter |> any`) fails native lowering with invalid return type
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Expression Surface / Numerical Tool](expression_surface_2026/numerical_tool/)
 - Observation count: 1
@@ -2553,6 +2598,11 @@ suggests the stage/function name is being spliced into a Rust type position with
 hygiene. Confirmed by expression-surface swarm (Phase 15.12A) with minimal reproducer.
 
 ---
+
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
 
 ## SWARM-066 — `for i in range(...)` accepted by checker but native lowering loses induction binding
 

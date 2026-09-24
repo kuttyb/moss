@@ -1,0 +1,16 @@
+type Bag:
+  items: Vector[Int]
+
+  fn add(x: Int):
+    items.push(x)
+
+fn put(var values: Vector[Int], x: Int):
+  values.push(x)
+
+fn main():
+  var values = Vector[Int]()
+  put(values, 1)
+  echo values |> count
+  var bag = Bag(items = Vector[Int]())
+  bag.add(7)
+  echo bag.items |> count
