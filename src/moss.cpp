@@ -11374,6 +11374,12 @@ class Generator {
       right = value_from_borrowed_message_parameter(binary->right, right, types);
       auto left_type = generated_expr_type(binary->left, types);
       auto right_type = generated_expr_type(binary->right, types);
+      bool string_concatenation = binary->op == "+" &&
+          left_type && right_type &&
+          canonical_type_name(*left_type) == "string" &&
+          canonical_type_name(*right_type) == "string";
+      if (string_concatenation)
+        return "format!(\"{}{}\", " + left + ", " + right + ")";
       bool integer_operation = left_type && right_type &&
           canonical_type_name(*left_type) == "int" &&
           canonical_type_name(*right_type) == "int";
