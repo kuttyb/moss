@@ -7581,6 +7581,20 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
+    if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
+      check_expression(line, ordering->first, env);
+      check_expression(line, ordering->second, env);
+      auto left = inferred_expr_type(ordering->first, env);
+      auto right = inferred_expr_type(ordering->second, env);
+      if ((left && canonical_type_name(*left) == "string") ||
+          (right && canonical_type_name(*right) == "string")) {
+        err(line,
+            "String ordering operators '<', '<=', '>', and '>=' are not supported; "
+            "String supports equality/inequality and built-in '+' concatenation only",
+            "UNSUPPORTED_STRING_ORDERING");
+        return;
+      }
+    }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
@@ -14651,7 +14665,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[]}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";

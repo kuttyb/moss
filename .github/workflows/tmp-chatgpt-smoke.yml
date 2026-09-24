@@ -56,6 +56,31 @@ jobs:
           printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
           test "$native" = "$expected"
           test "$interpreted" = "$expected"
+      - name: Check SWARM-049 String operator surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in lt le gt ge; do
+            set +e
+            output="$(./moss check "tests/negative/swarm_049_string_$name.moss" --json 2>&1)"
+            status=$?
+            set -e
+            test "$status" -ne 0
+            printf '%s\n' "$output" | grep -F '"code": "UNSUPPORTED_STRING_ORDERING"'
+          done
+          ./moss agent bootstrap --json > build-bootstrap.json
+          grep -F '"overloading":false' build-bootstrap.json
+          grep -F '"string_builtin":{"concatenation":"+","equality":["==","!="],"ordering":[]}' build-bootstrap.json
+          ./moss check tests/swarm_049_string_builtin_operators.moss --json
+          mkdir -p build/smoke
+          ./moss -Oshared-memory tests/swarm_049_string_builtin_operators.moss -o build/smoke/swarm_049.rs
+          rustc -D warnings build/smoke/swarm_049.rs -o build/smoke/swarm_049
+          expected="$(printf 'true\ntrue\nab')"
+          native="$(build/smoke/swarm_049)"
+          interpreted="$(./moss run --interp tests/swarm_049_string_builtin_operators.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
       - name: Validate swarm tracking
         shell: bash
         run: |

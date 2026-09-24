@@ -188,6 +188,17 @@ application generation omits both. `assert` requires a boolean; `assertEqual` re
 compatible statically resolved values. See [unit testing](TESTING.md) and
 [benchmarking](BENCHMARKING.md).
 
+### Operators are closed, not overloadable
+
+Moss v0.1 has a closed compiler-defined operator set. A user-defined `type`
+cannot declare, overload, or replace the meaning of an operator. Accepted
+operator/type combinations are language rules rather than methods discovered on
+the operand types.
+
+`String` supports built-in `+` concatenation and `==`/`!=` equality.
+Lexicographic ordering is intentionally not a v0.1 operator surface:
+`String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
+
 ### Boolean operators
 
 Moss uses the word operators `not`, `and`, `xor`, and `or`. They are

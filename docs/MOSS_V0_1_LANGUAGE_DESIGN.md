@@ -85,6 +85,11 @@ A `Circle` satisfies `Drawable` because the required operations match. No `imple
 
 Moss v0.1 does not have runtime trait objects or general dynamic dispatch. Structural conformance is resolved during specialization. This is important to the larger thesis: the language can feel duck-typed locally while still closing statically before native code generation.
 
+Moss v0.1 does not support user-defined operator overloading. The operator set
+and each accepted operand-type combination are closed compiler-defined language
+rules. In particular, `String` supports built-in `+` concatenation and
+`==`/`!=` equality, but no relational ordering operators.
+
 Boolean expressions use the word operators `not`, `and`, `xor`, and `or`.
 Operands are statically `Bool`; `and` and `or` short-circuit, while `xor`
 evaluates both operands and is true exactly when one operand is true. Their

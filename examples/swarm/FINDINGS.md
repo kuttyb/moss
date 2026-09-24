@@ -1805,11 +1805,14 @@ Use direct inline logic, static pipeline lambdas (`_ > 0`), or execute natively 
 
 ## SWARM-049 — Fast Debug string relational comparison evaluates to false
 
-- Status: Open
-- Category: Fast Debug interpreter / operator evaluation
+- Status: Fixed
+- Category: Language surface / frontend validation
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
 - Observation count: 1
+
+Regression: `tests/negative/swarm_049_string_{lt,le,gt,ge}.moss` and
+`tests/swarm_049_string_builtin_operators.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -1820,13 +1823,22 @@ fn main():
 
 ### Observed behavior
 
-Native execution correctly prints `true`.
-Fast Debug (`moss run --interp`) prints `false`.
-In `src/interpreter.hpp:739`, relational operators (`<`, `>`, `<=`, `>=`) only branch for integer types; for other types, they call `.as_float()`, which converts strings to `0.0`. Thus `"apple" < "banana"` computes `0.0 < 0.0 == false`.
+Native execution inherited Rust's String ordering and printed `true`, while
+Fast Debug coerced non-integer relational operands through its numeric path and
+printed `false`. The Moss language contract had not specified whether String
+ordering was legal.
 
-### Workaround
+### Resolution
 
-Test string comparison using native execution (`margo test`, `margo run`).
+Moss v0.1 has a closed compiler-defined operator set and does not support
+user-defined operator overloading. String ordering is not part of that set.
+The frontend now rejects String `<`, `<=`, `>`, and `>=` with stable
+diagnostic `UNSUPPORTED_STRING_ORDERING`, so backend behavior cannot define
+the language accidentally.
+
+String `+` remains a built-in concatenation operation, and String
+`==`/`!=` remain built-in equality operations. Native and Fast Debug
+regressions verify those supported operations agree.
 
 ---
 

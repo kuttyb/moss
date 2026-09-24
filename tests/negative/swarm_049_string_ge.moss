@@ -1,0 +1,2 @@
+fn main():
+  echo "banana" >= "apple"

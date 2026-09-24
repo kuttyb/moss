@@ -125,6 +125,11 @@ Ordinary `x = value` remains the usual inferred binding form.
 Integer arithmetic uses `+`, `-`, `*`, `/`, and `%`. The `%` operator is
 integer remainder and follows the same truncating signed-division model as `/`.
 
+Moss v0.1 has a closed set of built-in operators; user-defined types cannot
+overload or redefine them. `String` has three built-in operator forms:
+concatenation with `+`, equality with `==`, and inequality with `!=`.
+String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
+
 ---
 
 ## 2. Branches and Loops

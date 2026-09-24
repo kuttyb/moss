@@ -106,6 +106,13 @@ with `return`; `message` crosses domains. Every `fn` declared directly inside a
 ordinary helper `return`. Reusable implementation logic belongs in an ordinary
 non-domain function.
 
+### Closed operator surface
+
+Moss v0.1 does not support user-defined operator overloading. Operators and their
+accepted operand types are compiler-defined. `String` supports `+`
+concatenation and `==`/`!=` equality, but not `<`, `<=`, `>`, or
+`>=` ordering.
+
 ### Arithmetic and empty collections
 
 Current integer arithmetic uses `+`, `-`, `*`, `/`, and `%`:
