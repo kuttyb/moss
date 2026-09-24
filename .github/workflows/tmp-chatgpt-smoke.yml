@@ -101,6 +101,56 @@ jobs:
           set -euo pipefail
           python3 tools/check_swarm_feedback.py
           python3 tools/check_swarm_issues.py
+      - name: Baseline remaining lost semantics
+        shell: bash
+        run: |
+          set +e
+          ROOT="$GITHUB_WORKSPACE"
+          failures=0
+          run_file() {
+            id="$1"; file="$2"
+            rm -f /tmp/"$id".rs /tmp/"$id".bin
+            "$ROOT/moss" -Oshared-memory "$ROOT/$file" -o /tmp/"$id".rs >/tmp/"$id".log 2>&1 &&
+              rustc -D warnings /tmp/"$id".rs -o /tmp/"$id".bin >>/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -20 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_interp() {
+            id="$1"; file="$2"
+            "$ROOT/moss" run --interp "$ROOT/$file" >/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -20 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_project() {
+            id="$1"; path="$2"; cmd="$3"
+            (cd "$ROOT/$path" && "$ROOT/margo" "$cmd") >/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -30 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_file SWARM-033 examples/swarm/polymorphism/sort_search/reproducers/moss_fmt_return_negative.moss
+          run_project SWARM-034 examples/swarm/modules/lib_and_app/repro/method_tail_push/single build
+          run_project SWARM-041 examples/swarm/domain_torture/rich_payloads build
+          run_project SWARM-042 examples/swarm/domain_torture/dispatcher_fanout build
+          run_project SWARM-045 examples/swarm/modules/data_pipeline/repro/field_access/split build
+          run_project SWARM-046 examples/swarm/modules/data_pipeline/repro/trait_across/split build
+          run_file SWARM-047 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_reduce_map_abort.moss
+          run_interp SWARM-048 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_fast_debug_callable_arg.moss
+          run_file SWARM-050 examples/swarm/polymorphism/sort_search/reproducers/nested_generic_specialization.moss
+          run_file SWARM-051 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_unqualified_callable_arg.moss
+          run_project SWARM-053 examples/swarm/modules/lib_and_app/repro/string_plus_native/single build
+          run_file SWARM-054 examples/swarm/polymorphism/sort_search/reproducers/indexed_field_access_lowering.moss
+          run_project SWARM-055 examples/swarm/polymorphism/tree_serialization test
+          run_project SWARM-056 examples/swarm/modules/data_pipeline/repro/dep_type_methods/two_packages/app build
+          run_project SWARM-057 examples/swarm/modules/data_pipeline/repro/range_in_module/split build
+          run_project SWARM-058 examples/swarm/modules/data_pipeline/repro/sibling_method/split build
+          run_project SWARM-061 examples/swarm/modules/calc_interpreter/repro/test_imports_not_in_main test
+          run_project SWARM-062 examples/swarm/modules/algo_chain/repro/generic_transitive_import/split build
+          run_project SWARM-063 examples/swarm/modules/lib_and_app/repro/transitive_import_closure/split build
+          run_project SWARM-064 examples/swarm/modules/lib_and_app/repro/rust_keyword_field/single build
+          run_project SWARM-065 examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native build
+          run_project SWARM-066 examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer build
+          echo "BASELINE|TOTAL_FAILURES|$failures"
+          exit 0
       - name: Preserve SWARM-036 symbolic rejection
         shell: bash
         run: |
