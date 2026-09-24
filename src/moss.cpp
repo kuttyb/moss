@@ -11314,7 +11314,6 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e == "None") return "None";
-    if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
     if (generated_integer_literal(e)) {
       if (e.front() == '+') e.erase(e.begin());
       return e + "_i64";
@@ -11400,6 +11399,11 @@ class Generator {
         left = generated_integer_literal_as_float(binary->left);
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
+    // Only classify a quoted source form as a single literal after top-level
+    // operators have had a chance to split it. Expressions such as
+    // "a" + "b" and "a" == "b" also begin and end with quote characters.
+    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
+      return e + ".to_string()";
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
       std::ostringstream r; r << "vec![";
