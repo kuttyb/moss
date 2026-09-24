@@ -1,0 +1,30 @@
+name: Temporary Moss smoke test
+
+on:
+  push:
+    branches:
+      - tmp-chatgpt-codespace-doc-test-20260923
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Moss
+        run: make
+      - name: Bootstrap Moss agent contract
+        run: ./moss agent bootstrap --json
+      - name: Test hi example when present
+        shell: bash
+        run: |
+          if [[ -f examples/hi.moss ]]; then
+            ./moss check examples/hi.moss --json
+            mkdir -p build/smoke
+            ./moss -Oshared-memory examples/hi.moss -o build/smoke/hi.rs
+            rustc -D warnings build/smoke/hi.rs -o build/smoke/hi
+            output="$(./build/smoke/hi)"
+            printf 'program output: %s\n' "$output"
+            test "$output" = "hi"
+          else
+            echo 'examples/hi.moss not present yet; bootstrap-only run'
+          fi
