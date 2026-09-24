@@ -137,6 +137,16 @@ jobs:
           (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/trait_across/split" && "$ROOT/margo" build)
           test "$("$ROOT/moss" run --interp tests/swarm_048_callable_argument.moss)" = "$(printf '1\n3')"
           (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/sibling_method/split" && "$ROOT/margo" build)
+      - name: Verify lost-semantics module closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/dep_type_methods/two_packages/app" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/range_in_module/split" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/calc_interpreter/repro/test_imports_not_in_main" && "$ROOT/margo" test)
+          (cd "$ROOT/examples/swarm/modules/algo_chain/repro/generic_transitive_import/split" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/transitive_import_closure/split" && "$ROOT/margo" build)
       - name: Baseline remaining lost semantics
         shell: bash
         run: |

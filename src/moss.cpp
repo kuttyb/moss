@@ -12017,7 +12017,8 @@ class Generator {
       source_comment(o, 4, method.line,
                      "fn " + method.name);
       debug_symbol_attributes(o, 4, native_symbol, !view);
-      o << "    fn " << method_name;
+      o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
+        << "fn " << method_name;
       if (method.receiver_effect == Effect::Consume) o << "(self";
       else if (method.receiver_effect == Effect::Write) o << "(&mut self";
       else o << "(&self";
@@ -16602,7 +16603,7 @@ static string rewrite_module_expression(
     if (token == "assert" || token == "assertEqual" ||
         functional_stage_kind(token).has_value() ||
         token == "Map" || token == "Queue" || token == "Vector" ||
-        token == "Some" || token == "sqrt") {
+        token == "Some" || token == "sqrt" || token == "range") {
       result += token;
       i = end;
       continue;
@@ -16676,7 +16677,7 @@ static void rewrite_module_program(
             callee != "assert" && callee != "assertEqual" &&
             !functional_stage_kind(callee).has_value() &&
             callee != "Map" && callee != "Queue" && callee != "Vector" &&
-            callee != "Some" && callee != "sqrt" &&
+            callee != "Some" && callee != "sqrt" && callee != "range" &&
             !starts_with(callee, module + "__") &&
             callee.find("__") == string::npos)
           statement.a = module_symbol(module, callee);
@@ -17210,6 +17211,40 @@ static ParsedModuleUnit load_module_interface(
       }
       if (method.name.empty()) throw CompileError(0, "invalid trait method in module interface");
       current_trait->methods.push_back(std::move(method));
+      continue;
+    }
+    if (starts_with(line, "object_method ") && current_object) {
+      std::istringstream method_line(line.substr(string("object_method ").size()));
+      Method method;
+      method_line >> method.name;
+      string rest;
+      std::getline(method_line, rest);
+      method.owner = current_object->name;
+      method.source_file = file.string();
+      string return_type = interface_field(rest, "return");
+      if (!return_type.empty() && return_type != "unit")
+        method.return_type = std::move(return_type);
+      string receiver = interface_field(rest, "receiver");
+      if (auto effect = interface_effect(receiver)) method.receiver_effect = *effect;
+      string count_text = interface_field(rest, "params");
+      size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
+      size_t parameters = rest.find("params=");
+      if (parameters != string::npos)
+        parameters = rest.find_first_of(" \t", parameters);
+      std::istringstream values(parameters == string::npos ? string() : rest.substr(parameters));
+      for (size_t index = 0; index < count; ++index) {
+        Param parameter;
+        string effect_name;
+        if (!(values >> std::quoted(parameter.name) >> std::quoted(parameter.type)
+                    >> effect_name))
+          throw CompileError(0, "incomplete object method in module interface");
+        method.params.push_back(std::move(parameter));
+        method.parameter_effects.push_back(
+            interface_effect(effect_name).value_or(Effect::Read));
+      }
+      if (method.name.empty())
+        throw CompileError(0, "invalid object method in module interface");
+      current_object->methods.push_back(std::move(method));
       continue;
     }
     if (starts_with(line, "public_representation field ") && current_object) {
@@ -18125,11 +18160,31 @@ static vector<string> module_names_for_program(const Program& program) {
   return vector<string>(names.begin(), names.end());
 }
 
-static vector<string> module_dependencies(const Program& program,
-                                          const string& module) {
+static vector<string> module_direct_dependencies(const Program& program,
+                                                 const string& module) {
   std::set<string> result;
   for (const auto& import : program.imports)
     if (import.owner_module == module) result.insert(import.name);
+  return vector<string>(result.begin(), result.end());
+}
+
+static vector<string> module_dependencies(const Program& program,
+                                          const string& module) {
+  std::set<string> result;
+  vector<string> pending = module_direct_dependencies(program, module);
+  // Test code is emitted into the root test crate even when the test source
+  // declares its own module. Root native projection therefore needs every
+  // import reachable from the checked test set, not only main's imports.
+  if (module == program.main_module && !program.tests.empty())
+    for (const auto& import : program.imports)
+      pending.push_back(import.name);
+  while (!pending.empty()) {
+    string current = pending.back();
+    pending.pop_back();
+    if (current == module || !result.insert(current).second) continue;
+    for (const auto& dependency : module_direct_dependencies(program, current))
+      pending.push_back(dependency);
+  }
   return vector<string>(result.begin(), result.end());
 }
 
@@ -18145,7 +18200,7 @@ static vector<string> module_topological_order(const Program& program) {
     if (state[module] == 1)
       throw ProjectError("MODULE_IMPORT_CYCLE", "module import cycle detected at '" + module + "'");
     state[module] = 1;
-    for (const auto& dependency : module_dependencies(program, module)) {
+    for (const auto& dependency : module_direct_dependencies(program, module)) {
       if (!known.count(dependency))
         throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
                            "no provider for imported module '" + dependency + "'");
@@ -18377,6 +18432,20 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
+    for (const auto& method : object.methods) {
+      out << "  object_method " << method.name << " return="
+          << method.return_type.value_or("unit") << " receiver="
+          << ownership_effect_name(method.receiver_effect) << " params="
+          << method.params.size();
+      for (size_t index = 0; index < method.params.size(); ++index) {
+        Effect effect = index < method.parameter_effects.size()
+            ? method.parameter_effects[index] : Effect::Read;
+        out << " " << std::quoted(method.params[index].name)
+            << " " << std::quoted(method.params[index].type)
+            << " " << ownership_effect_name(effect);
+      }
+      out << "\n";
+    }
   }
   for (const auto& trait : program.traits) {
     if (!trait.exported) continue;

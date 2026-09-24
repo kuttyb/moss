@@ -2100,7 +2100,7 @@ Verified/fixed on the current compiler with a dedicated regression in the lost-s
 
 ## SWARM-056 — Methods of exported types are omitted from compiled `.mossi` interface metadata
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module interface projection
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2156,9 +2156,14 @@ Specifically module/package-boundary-dependent: strictly a cross-package compile
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-057 — `for i in range(...)` fails type inference when enclosed in an explicit module
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module type inference
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2217,6 +2222,11 @@ while i < 3:
 Specifically module/package-boundary-dependent: introducing an explicit `module` boundary breaks otherwise valid `range` type inference.
 
 ---
+
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
 
 ## SWARM-058 — Sibling method call within exported module type mis-mangles as module function
 
@@ -2367,7 +2377,7 @@ Specifically module/package-boundary-dependent: semantic renaming works cleanly 
 
 ## SWARM-061 — Test binary compilation fails when test modules import internal modules omitted from `main.moss`
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / test target lowering
 - First observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
@@ -2420,9 +2430,14 @@ Specifically module/package-boundary-dependent: test projection assumes the root
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-062 — Specialized imported generic function calling transitive module fails native lowering
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module specialization & lowering
 - First observed: [Modules / Algo Chain](modules/algo_chain/)
 - Also observed: —
@@ -2469,9 +2484,14 @@ Specifically module/package-boundary-dependent: monomorphization projects specia
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-063 — Transitive struct field types leak unimported Rust trait requirements across modules
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & type generation
 - First observed: [Modules / Lib and App](modules/lib_and_app/)
 - Also observed: —
@@ -2523,6 +2543,11 @@ Module `app` must explicitly import `inner` (`import inner`), exposing private i
 Specifically module/package-boundary-dependent: generated Rust view traits for imported composite types leak transitive module trait requirements into consumer crates.
 
 ---
+
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
 
 ## SWARM-064 — Struct field named with a Rust reserved keyword fails native compilation
 
