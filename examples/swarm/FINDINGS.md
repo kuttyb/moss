@@ -1314,12 +1314,15 @@ question and is not implied by this finding.
 
 ## SWARM-037 — Boolean `and`/`or` work natively but not in Fast Debug, and are undocumented
 
-- Status: Open (needs a language-surface decision)
+- Status: Fixed
 - Category: Language surface / Fast Debug parity
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Text Toolkit](modules/text_toolkit/)
 - Observation count: 3
+
+Regression: `tests/swarm_037_boolean_operators.moss` plus the
+`tests/negative/swarm_037_*_non_bool.moss` cases, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -1335,17 +1338,24 @@ fn main():
 
 ### Observed behavior
 
-`moss check` accepts it and native prints `2`. Fast Debug fails with
-`interpreter error: unsupported expression 'a and b'`. Neither bootstrap's
-`source_surface.operators` nor the Gentle Introduction mentions `and`/`or`
-(only `not`). Separately, `if not a or a:` is rejected with `not operand must
-have type 'Bool'`, which suggests `not` currently binds more loosely than `or`.
+`moss check` accepted `and`/`or` and native lowering executed them, while
+Fast Debug rejected the same checked expressions. The language surface and
+canonical docs mentioned only `not`. In addition, checker precedence parsed
+`not a or a` incorrectly.
 
-### Resolution needed
+### Resolution
 
-Decide whether short-circuit `and`/`or` are part of v0.1. If they are: add
-them to `source_surface` and the docs, implement them in Fast Debug, and fix
-`not` precedence. If not: reject them in the checker as SWARM-036 would.
+Moss v0.1 now has four Bool-only word operators: `not`, `and`, `xor`, and
+`or`. Precedence from highest to lowest is `not`, `and`, `xor`, `or`.
+`and` and `or` short-circuit; `xor` evaluates both operands and returns
+true exactly when one operand is true.
+
+Checker/type inference, ownership/effect traversal, native lowering, and Fast
+Debug now use the same Boolean expression structure. Untyped parameters used
+directly as Boolean operands are constrained to `Bool`. Non-Bool operands
+produce `TYPE_MISMATCH` before lowering. Bootstrap `source_surface`, the
+canonical language docs, and the Moss language agent skill document the same
+contract.
 
 ## SWARM-038 — `effects` reports a pure loop helper as divergent/unresolved yet it is accepted as a domain initializer
 

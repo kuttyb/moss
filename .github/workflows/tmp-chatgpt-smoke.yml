@@ -56,6 +56,12 @@ jobs:
           printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
           test "$native" = "$expected"
           test "$interpreted" = "$expected"
+      - name: Validate swarm tracking
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/check_swarm_feedback.py
+          python3 tools/check_swarm_issues.py
       - name: Preserve SWARM-036 symbolic rejection
         shell: bash
         run: |
