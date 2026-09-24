@@ -577,7 +577,6 @@ class FastInterpreter {
       }
       return Value::unit();
     }
-    if (e.front() == '"' && e.back() == '"') return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
 
     char* end = nullptr;
     const auto numeric = e.c_str();
@@ -600,6 +599,10 @@ class FastInterpreter {
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
       if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
     }
+    // As in native lowering, quoted binary expressions must be split before
+    // falling back to a single String literal.
+    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
+      return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
     if (e.front() == '[' && e.back() == ']') {
       std::vector<Value> values;
       auto inside = e.substr(1, e.size() - 2);
