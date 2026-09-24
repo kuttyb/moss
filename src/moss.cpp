@@ -12959,6 +12959,59 @@ class Generator {
           }
           bool implicit_method = in_function && d && objects_.count(d->name) &&
               s.b.empty() && !known_function;
+          auto call_receiver_type = implicit_method
+              ? std::optional<string>(d->name)
+              : !s.b.empty() ? generated_expr_type(s.a, &types)
+                             : std::optional<string>{};
+          const Method* call_method = nullptr;
+          if (call_receiver_type && (!s.b.empty() || implicit_method))
+            call_method = resolve_object_method(
+                objects_, canonical_type_name(*call_receiver_type),
+                implicit_method ? s.a : s.b, [&]() {
+                  vector<string> result;
+                  for (const auto& argument : s.args)
+                    result.push_back(nominalized_generated_argument_type(
+                        argument, generated_expr_type(argument, &types).value_or("")));
+                  return result;
+                }(), true, nullptr);
+          vector<string> argument_temporaries(s.args.size());
+          if (call_method && call_method->receiver_effect != Effect::Read) {
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              bool same_receiver_mutating_argument = false;
+              if (!s.b.empty()) {
+                string nested_receiver, nested_method;
+                vector<string> nested_args;
+                same_receiver_mutating_argument =
+                    parse_member_call(s.args[k], nested_receiver, nested_method,
+                                      nested_args) &&
+                    trim(nested_receiver) == trim(s.a);
+              } else if (implicit_method) {
+                string nested_name;
+                vector<string> nested_args;
+                if (parse_simple_call(s.args[k], nested_name, nested_args)) {
+                  vector<string> nested_types;
+                  for (const auto& argument : nested_args)
+                    nested_types.push_back(nominalized_generated_argument_type(
+                        argument, generated_expr_type(argument, &types).value_or("")));
+                  same_receiver_mutating_argument =
+                      resolve_object_method(objects_, d->name, nested_name,
+                                            nested_types, true, nullptr) != nullptr;
+                }
+              }
+              if (!same_receiver_mutating_argument) continue;
+              argument_temporaries[k] = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+              string temporary_type =
+                  generated_expr_type(s.args[k], &types).value_or("_value");
+              o << indent(level) << "let " << argument_temporaries[k] << " = "
+                << expr(s.args[k], d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, k))
+                << ";\n";
+              locals.insert(argument_temporaries[k]);
+              types[argument_temporaries[k]] = temporary_type;
+            }
+          }
           o << indent(level);
           if (benchmark_body_) o << "std::hint::black_box(";
           o << (implicit_method ? "self." : "")
@@ -12981,32 +13034,21 @@ class Generator {
             if (compile_time_callable) continue;
             if (emitted_arguments++) o << ", ";
             if (benchmark_body_) o << "std::hint::black_box(";
+            string argument_expression = argument_temporaries[k].empty()
+                ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
+              o << function_call_argument(*functions_.at(s.a), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k));
             } else if (!s.b.empty() || implicit_method) {
-              auto receiver_type = implicit_method
-                  ? std::optional<string>(d->name)
-                  : generated_expr_type(s.a, &types);
-              const Method* method = nullptr;
-              if (receiver_type)
-                method = resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                               implicit_method ? s.a : s.b, [&]() {
-                                                 vector<string> result;
-                                                 for (const auto& argument : s.args)
-                                                   result.push_back(nominalized_generated_argument_type(
-                                                       argument, generated_expr_type(argument, &types).value_or("")));
-                                                 return result;
-                                               }(), true, nullptr);
-              if (method)
+              if (call_method)
                 o << method_call_argument(
-                    *method, k, s.args[k], d, locals, &types,
+                    *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
               else
-                o << expr(s.args[k], d, locals, &types,
+                o << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
