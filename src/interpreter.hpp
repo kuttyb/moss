@@ -542,6 +542,21 @@ class FastInterpreter {
     if (auto stages = split_pipeline(e); !stages.empty())
       return eval_pipeline(stages, frame, line, output);
     if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
+    if (auto binary = split_operator(e, {" or "})) {
+      Value left = eval(binary->first, frame, line, output);
+      if (left.truthy()) return Value::boolean_value(true);
+      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    }
+    if (auto binary = split_operator(e, {" xor "})) {
+      bool left = eval(binary->first, frame, line, output).truthy();
+      bool right = eval(binary->second, frame, line, output).truthy();
+      return Value::boolean_value(left != right);
+    }
+    if (auto binary = split_operator(e, {" and "})) {
+      Value left = eval(binary->first, frame, line, output);
+      if (!left.truthy()) return Value::boolean_value(false);
+      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    }
     if (auto place = locate(e, frame, line, output); place.value) {
       if (place.domain) state_event("state_read", frame, line, place);
       else emit("LocalRead", frame, line, e);

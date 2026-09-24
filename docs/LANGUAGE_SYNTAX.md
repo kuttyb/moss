@@ -188,6 +188,23 @@ application generation omits both. `assert` requires a boolean; `assertEqual` re
 compatible statically resolved values. See [unit testing](TESTING.md) and
 [benchmarking](BENCHMARKING.md).
 
+### Boolean operators
+
+Moss uses the word operators `not`, `and`, `xor`, and `or`. They are
+statically Bool-only; Moss does not use Python's operand-returning truthiness
+semantics. `and` and `or` short-circuit, while `xor` evaluates both operands
+and returns true exactly when one operand is true. Precedence from highest to
+lowest is:
+
+```text
+not
+and
+xor
+or
+```
+
+Parentheses may be used to override this order.
+
 ### Built-in collections
 
 The current built-in collection surface is intentionally small:

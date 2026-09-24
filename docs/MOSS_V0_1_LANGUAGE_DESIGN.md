@@ -85,6 +85,11 @@ A `Circle` satisfies `Drawable` because the required operations match. No `imple
 
 Moss v0.1 does not have runtime trait objects or general dynamic dispatch. Structural conformance is resolved during specialization. This is important to the larger thesis: the language can feel duck-typed locally while still closing statically before native code generation.
 
+Boolean expressions use the word operators `not`, `and`, `xor`, and `or`.
+Operands are statically `Bool`; `and` and `or` short-circuit, while `xor`
+evaluates both operands and is true exactly when one operand is true. Their
+precedence from highest to lowest is `not`, `and`, `xor`, `or`.
+
 ### 3 Ownership effects are inferred, not spelled with parameter modifiers
 
 Moss uses three semantic access effects:

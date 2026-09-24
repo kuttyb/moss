@@ -1549,6 +1549,30 @@ class Checker {
     }
     string e = normalize_pipeline(std::move(original));
     if (e.empty()) return;
+    auto constrain_boolean_operand = [&](const string& operand) {
+      string candidate = strip_redundant_outer_parentheses(trim(operand));
+      for (auto& parameter : function.params)
+        if (parameter.type.empty() && candidate == parameter.name)
+          parameter.type = "bool";
+      derive_expression_constraints(function, operand, "bool");
+    };
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(e, {op})) {
+        constrain_boolean_operand(binary->first);
+        constrain_boolean_operand(binary->second);
+        if (expected_result == "$function_result" &&
+            (!function.return_type || starts_with(*function.return_type, "_")))
+          function.return_type = "bool";
+        return;
+      }
+    }
+    if (starts_with(e, "not ")) {
+      constrain_boolean_operand(trim(e.substr(4)));
+      if (expected_result == "$function_result" &&
+          (!function.return_type || starts_with(*function.return_type, "_")))
+        function.return_type = "bool";
+      return;
+    }
     string receiver, method;
     vector<string> member_args;
     bool member_call = parse_member_call(e, receiver, method, member_args);
@@ -2656,6 +2680,16 @@ class Checker {
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return functional;
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(e, {op})) {
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        return left && right &&
+                canonical_type_name(*left) == "bool" &&
+                canonical_type_name(*right) == "bool"
+            ? std::optional<string>("bool") : std::nullopt;
+      }
+    }
     if (starts_with(e, "not ")) {
       auto operand = inferred_expr_type(trim(e.substr(4)), env);
       return operand && canonical_type_name(*operand) == "bool"
@@ -4603,15 +4637,17 @@ class Checker {
                                     receiver_effect, receiver_fields, Effect::Read);
         return;
       }
+      for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+        if (auto binary = split_binary(value, {op})) {
+          analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
+      }
       if (starts_with(value, "not ")) {
         analyze_effect_expression(value.substr(4), env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
-        return;
-      }
-      if (auto binary = split_binary(value, {" and ", " or "})) {
-        analyze_effect_expression(binary->first, env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
-        analyze_effect_expression(binary->second, env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
@@ -4792,7 +4828,8 @@ class Checker {
       return;
     }
 
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -4822,7 +4859,8 @@ class Checker {
       return;
     }
 
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -5204,7 +5242,8 @@ class Checker {
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
@@ -5658,7 +5697,7 @@ class Checker {
 
     string value = normalize_pipeline(original);
     for (const auto& operators :
-         vector<vector<string>>{{" or ", " and "},
+         vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                 {"==", "!=", "<=", ">=", "<", ">"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
@@ -6537,6 +6576,13 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_ownership_expression(line, binary->first, env, Effect::Read);
+        check_ownership_expression(line, binary->second, env, Effect::Read);
+        return;
+      }
+    }
     if (starts_with(value, "not ")) {
       check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
       return;
@@ -6552,7 +6598,8 @@ class Checker {
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
@@ -7501,14 +7548,6 @@ class Checker {
     }
     if (check_functional_pipeline(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
-    if (starts_with(value, "not ")) {
-      string operand = trim(value.substr(4));
-      check_expression(line, operand, env);
-      auto operand_type = inferred_expr_type(operand, env);
-      if (!operand_type || canonical_type_name(*operand_type) != "bool")
-        err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
-      return;
-    }
     if (auto binary = split_binary(value, {" in "})) {
       err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
           "UNSUPPORTED_EXPRESSION_OPERATOR");
@@ -7520,8 +7559,29 @@ class Checker {
         err(line, "binary '" + op + "' expression is not supported",
             "UNSUPPORTED_EXPRESSION_OPERATOR");
     }
-    for (const auto& operators : vector<vector<string>>{{" and ", " or "},
-                                                         {"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        if (!left || !right ||
+            canonical_type_name(*left) != "bool" ||
+            canonical_type_name(*right) != "bool")
+          err(line, "boolean '" + trim(op) +
+              "' operands must have type 'Bool'", "TYPE_MISMATCH");
+        return;
+      }
+    }
+    if (starts_with(value, "not ")) {
+      string operand = trim(value.substr(4));
+      check_expression(line, operand, env);
+      auto operand_type = inferred_expr_type(operand, env);
+      if (!operand_type || canonical_type_name(*operand_type) != "bool")
+        err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
+      return;
+    }
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
@@ -10229,6 +10289,7 @@ class Generator {
       }
     }
     if (generated_split_binary(value, {" or "}) ||
+        generated_split_binary(value, {" xor "}) ||
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
@@ -11255,7 +11316,9 @@ class Generator {
       return "(" + expr(e.substr(1, e.size() - 2), d, locals, types) + ")";
 
     for (const auto& boolean_operator :
-         vector<std::pair<string, string>>{{" or ", "||"}, {" and ", "&&"}}) {
+         vector<std::pair<string, string>>{{" or ", "||"},
+                                                {" xor ", "^"},
+                                                {" and ", "&&"}}) {
       if (auto binary = generated_split_binary(e, {boolean_operator.first}))
         return "(" + expr(binary->left, d, locals, types) + ") " +
             boolean_operator.second + " (" +
@@ -11572,6 +11635,7 @@ class Generator {
       e = replace_unqualified_word(e, parameter, "(*" + parameter + ")");
     // Nim-ish boolean words.
     replace_word(e, "and", "&&");
+    replace_word(e, "xor", "^");
     replace_word(e, "or", "||");
     replace_word(e, "not", "!");
     return e;
@@ -14587,7 +14651,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
+         "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";

@@ -94,6 +94,10 @@ if not ready:
   ...
 ```
 
+Boolean expressions use `not`, `and`, `xor`, and `or`. They are Bool-only.
+`and` and `or` short-circuit; `xor` evaluates both operands. Precedence from
+highest to lowest is `not`, `and`, `xor`, `or`.
+
 `let` cannot be reassigned or used as the writable receiver of a mutating
 operation; use `var` when mutation is intended. `Vector`, `Map`, and `Queue`
 are the current built-in collections. Ordinary functions use `fn` and return

@@ -176,12 +176,22 @@ for i in range(0, 10):
   echo i
 ```
 
-Boolean negation is written with `not`:
+Boolean operators use Python-style words:
 
 ```moss
-if not ready:
-  echo "waiting"
+if ready and not cancelled:
+  echo "running"
+
+if cached or retrying:
+  echo "available"
+
+if primary xor fallback:
+  echo "exactly one path is active"
 ```
+
+All Boolean operators require `Bool` operands. `and` and `or` short-circuit;
+`xor` evaluates both operands and is true when exactly one is true. Precedence,
+from highest to lowest, is `not`, `and`, `xor`, `or`.
 
 ---
 

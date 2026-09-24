@@ -12,41 +12,57 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Moss
         run: make
-      - name: Bootstrap Moss agent contract
-        run: ./moss agent bootstrap --json
-      - name: Test SWARM-036 and SWARM-052 frontend rejection
+      - name: Verify Boolean language surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./moss agent bootstrap --json > build-bootstrap.json
+          grep -F '"boolean":["and","or","xor","not"]' build-bootstrap.json
+          grep -F '"boolean_precedence_high_to_low":["not","and","xor","or"]' build-bootstrap.json
+      - name: Check SWARM-037 negative cases
         shell: bash
         run: |
           set -euo pipefail
           expect_reject() {
-            source="$1"; code="$2"; message="$3"
+            source="$1"; message="$2"
             set +e
             output="$(./moss check "$source" --json 2>&1)"
             status=$?
             set -e
             test "$status" -ne 0
-            printf '%s\n' "$output" | grep -F "$code"
+            printf '%s\n' "$output" | grep -F '"code": "TYPE_MISMATCH"'
             printf '%s\n' "$output" | grep -F "$message"
           }
-          expect_reject tests/negative/swarm_036_bitwise_and.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&' expression is not supported"
-          expect_reject tests/negative/swarm_036_bitwise_or.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '|' expression is not supported"
-          expect_reject tests/negative/swarm_036_bitwise_xor.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '^' expression is not supported"
-          expect_reject tests/negative/swarm_036_symbolic_and.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&&' expression is not supported"
-          expect_reject tests/negative/swarm_036_symbolic_or.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '||' expression is not supported"
-          expect_reject tests/negative/swarm_036_shift_left.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '<<' expression is not supported"
-          expect_reject tests/negative/swarm_036_shift_right.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '>>' expression is not supported"
-          expect_reject tests/negative/swarm_036_parenthesized_rhs.moss UNSUPPORTED_EXPRESSION_OPERATOR "binary '&' expression is not supported"
-          expect_reject tests/negative/swarm_052_vector_trait.moss TRAIT_COLLECTION_ELEMENT_UNSUPPORTED "trait types are static structural constraints"
-          expect_reject tests/negative/swarm_052_nested_vector_trait.moss TRAIT_COLLECTION_ELEMENT_UNSUPPORTED "trait types are static structural constraints"
-      - name: Verify preserved legal cases
+          expect_reject tests/negative/swarm_037_and_non_bool.moss "boolean 'and' operands must have type 'Bool'"
+          expect_reject tests/negative/swarm_037_or_non_bool.moss "boolean 'or' operands must have type 'Bool'"
+          expect_reject tests/negative/swarm_037_xor_non_bool.moss "boolean 'xor' operands must have type 'Bool'"
+          set +e
+          output="$(./moss check tests/negative/swarm_012_not_int.moss --json 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep -F "not operand must have type 'Bool'"
+      - name: Native and Fast Debug parity
         shell: bash
         run: |
           set -euo pipefail
+          expected="$(printf 'true\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue')"
+          ./moss check tests/swarm_037_boolean_operators.moss --json
           mkdir -p build/smoke
-          for name in swarm_036_word_boolean_operators swarm_052_concrete_vector_trait_parameter; do
-            ./moss check "tests/$name.moss" --json
-            ./moss -Oshared-memory "tests/$name.moss" -o "build/smoke/$name.rs"
-            rustc -D warnings "build/smoke/$name.rs" -o "build/smoke/$name"
-          done
-          test "$(build/smoke/swarm_036_word_boolean_operators)" = "1"
-          test "$(build/smoke/swarm_052_concrete_vector_trait_parameter)" = $'0\n9'
+          ./moss -Oshared-memory tests/swarm_037_boolean_operators.moss -o build/smoke/swarm_037.rs
+          rustc -D warnings build/smoke/swarm_037.rs -o build/smoke/swarm_037
+          native="$(build/smoke/swarm_037)"
+          interpreted="$(./moss run --interp tests/swarm_037_boolean_operators.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
+      - name: Preserve SWARM-036 symbolic rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(./moss check tests/negative/swarm_036_symbolic_and.moss --json 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep -F UNSUPPORTED_EXPRESSION_OPERATOR
