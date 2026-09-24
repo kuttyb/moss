@@ -11259,7 +11259,10 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
               const vector<size_t>* message_argument_plans = nullptr) const {
-    e = trim(std::move(e));
+    // Moss parentheses are grouping syntax, not an observable expression node.
+    // Remove only complete balanced outer groups before lowering. Nested groups
+    // still protect precedence until their recursive expr() call reaches them.
+    e = strip_redundant_outer_parentheses(std::move(e));
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
       return "*" + e;
@@ -11324,9 +11327,6 @@ class Generator {
     }
     if (e == "Map()") return "std::collections::HashMap::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
-    if (e.size() >= 2 && e.front() == '(' && e.back() == ')' &&
-        matching_paren(e, 0) == e.size() - 1)
-      return "(" + expr(e.substr(1, e.size() - 2), d, locals, types) + ")";
 
     for (const auto& boolean_operator :
          vector<std::pair<string, string>>{{" or ", "||"},

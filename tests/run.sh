@@ -263,6 +263,7 @@ run_case swarm_027_indexed_collection_method tests/swarm_027_indexed_collection_
 run_case swarm_028_self_method_argument_borrow tests/swarm_028_self_method_argument_borrow.moss '100'
 reject_case swarm_029_nested_indexed_mutation 'nested indexed mutation is not supported'
 run_case swarm_030_string_comparison_borrowed tests/swarm_030_string_comparison_borrowed.moss '1'
+run_case swarm_031_parenthesized_lowering tests/swarm_031_parenthesized_lowering.moss "$(printf '48\n4\n3')"
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss

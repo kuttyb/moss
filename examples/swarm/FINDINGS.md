@@ -1004,11 +1004,14 @@ so condition branch comparisons lower properly.
 
 ## SWARM-031 — Parenthesized subexpression lowers to redundant Rust parentheses
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
+
+Regression: `tests/swarm_031_parenthesized_lowering.moss`, invoked by
+`tests/run.sh` and compiled under `rustc -D warnings`.
 
 ### Minimal reproducer
 
@@ -1027,32 +1030,27 @@ fn wrap(a: Int) -> Int:
 
 ### Observed behavior
 
-`moss check` accepts both, and `moss run --interp` prints `48` and `4`. Native
-builds (`margo build`, `margo test`) fail with `BUILD_BACKEND_ERROR`, because
-the generated Rust keeps the source parentheses around an already
-parenthesized method call, and rustc rejects them under `-D unused-parens`:
+`moss check` and Fast Debug accepted the legal grouped expressions, but native
+lowering re-emitted complete source parentheses around an already structured
+Rust expression. Arithmetic lowering then introduced its own method-call
+parentheses, producing `unused_parens` warnings that became native build
+failures under `-D warnings`.
 
-```text
-let mut c = (a).wrapping_mul(((b).wrapping_add(2_i64)));
-return ((a).wrapping_add(1_i64));
-```
+### Resolution
 
-The error contains raw rustc text with no Moss source line mapping.
+Native expression lowering now removes only complete balanced outer grouping
+parentheses at `expr()` entry using the existing quote-aware
+`strip_redundant_outer_parentheses` helper. It no longer re-emits those outer
+groups as Rust syntax. Parentheses nested inside a larger expression continue
+to protect Moss precedence until the recursive lowering call reaches that
+subexpression.
 
-### Workaround
+The regression covers `a * (b + 2)`, a parenthesized return value, and the
+Fenwick-style `i % (p * 2)` shape. Native compilation with
+`rustc -D warnings` and Fast Debug execution must both succeed with identical
+results.
 
-Bind the parenthesized subexpression to a local first:
-
-```moss
-next = b + 2
-c = a * next
-```
-
-### Notes
-
-Found independently by both experiments. Any parenthesized operand of an
-arithmetic call-style lowering, or a parenthesized `return` value, triggers
-it; Fenwick hit it in `i % (p * 2)`.
+---
 
 ## SWARM-032 — Formatter rejects valid statements whose expression begins with `(`
 

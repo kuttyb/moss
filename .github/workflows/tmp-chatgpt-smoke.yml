@@ -56,6 +56,20 @@ jobs:
           printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
           test "$native" = "$expected"
           test "$interpreted" = "$expected"
+      - name: Check SWARM-031 parenthesized lowering
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./moss check tests/swarm_031_parenthesized_lowering.moss --json
+          mkdir -p build/smoke
+          ./moss -Oshared-memory tests/swarm_031_parenthesized_lowering.moss -o build/smoke/swarm_031.rs
+          rustc -D warnings build/smoke/swarm_031.rs -o build/smoke/swarm_031
+          expected="$(printf '48\n4\n3')"
+          native="$(build/smoke/swarm_031)"
+          interpreted="$(./moss run --interp tests/swarm_031_parenthesized_lowering.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
       - name: Check SWARM-049 String operator surface
         shell: bash
         run: |
