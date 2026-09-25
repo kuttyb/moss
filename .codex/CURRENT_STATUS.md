@@ -52,30 +52,28 @@ SWARM-032, SWARM-038, SWARM-039, SWARM-059, and SWARM-060.
 
 ### Next: Phase 15.14 — Full Stabilization Closeout
 
-Phase 15.14 is the complete remaining stabilization pass. It should add no new
-general-purpose language expressiveness. It closes every outstanding non-expressiveness
-item from the Phase 15 swarm ledger:
+Phase 15.14 closes implementation/tooling defects without reopening language design.
+The parallel lost-semantics batch owns SWARM-047, SWARM-050, SWARM-051, and SWARM-066;
+SWARM-038 travels with that batch because it is a semantic-analysis consistency defect.
+The remaining tooling batch owns SWARM-032, SWARM-039, SWARM-059, and SWARM-060.
 
-- Ambiguous/specification: SWARM-040, SWARM-043, SWARM-044.
-- Semantic preservation/compiler correctness: SWARM-047, SWARM-050, SWARM-051,
-  SWARM-066.
-- Tooling and semantic-tool consistency: SWARM-032, SWARM-038, SWARM-039,
-  SWARM-059, SWARM-060.
+The Phase 15.14 exit criterion is: no known implementation, lowering, interpreter,
+formatter, diagnostic-attribution, semantic-query-consistency, or semantic-edit defect
+remains from the Phase 15 swarm ledger. Ambiguous language semantics are deliberately
+not resolved inside this implementation-stabilization phase.
 
-The exit criterion is stronger than the earlier 15.14 proposal: there should be no
-known outstanding Phase 15 SWARM defect outside Missing Expressiveness once this phase
-closes. Each repair or specification decision should carry focused regression coverage
-and native/Fast Debug parity checks where relevant.
+### Then: Phase 15.15 — Language Semantics & Missing Expressiveness
 
-### Then: Phase 15.15 — Missing Expressiveness
+Phase 15.15 is the deliberate language-rethink phase. It owns the ambiguous semantic
+questions SWARM-040, SWARM-043, and SWARM-044 together with the remaining expressiveness
+work: EXPRESS-002 (explicit copy for nontrivial values), EXPRESS-003 (core String
+manipulation), EXPRESS-004 (Map deletion), EXPRESS-005 (enums/tagged unions), and
+EXPRESS-006 (static Self/covariant trait return). These items may change or extend the
+language contract, so they follow stabilization rather than being mixed into compiler
+repair work.
 
-Phase 15.15 owns the remaining language-surface gaps that require deliberate feature
-design rather than stabilization repairs: EXPRESS-002 (explicit copy for nontrivial
-values), EXPRESS-003 (core String manipulation), EXPRESS-004 (Map deletion),
-EXPRESS-005 (enums/tagged unions), and EXPRESS-006 (static Self/covariant trait
-return). EXPRESS-007 remains explicitly deferred to Phase 21 — Error Propagation &
-Supervision because it is part of the larger recoverable-error design rather than a
-standalone Phase 15 surface addition.
+EXPRESS-007 remains explicitly deferred to Phase 21 — Error Propagation & Supervision
+because recoverable errors belong to that larger semantics design.
 
 ## Canonical swarm operating contract — COMPLETE (2026-09-23)
 
