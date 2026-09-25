@@ -649,12 +649,18 @@ class FastInterpreter {
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);
-        if (callable_local != frame.locals.end() &&
-            callable_local->second.kind == Value::Kind::Callable) {
-          if (auto fn = function(callable_local->second.string))
+        const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;
+        if (!callable_val) {
+          auto alias_it = frame.aliases.find(callee);
+          if (alias_it != frame.aliases.end() && alias_it->second.value) {
+            callable_val = alias_it->second.value;
+          }
+        }
+        if (callable_val && callable_val->kind == Value::Kind::Callable) {
+          if (auto fn = function(callable_val->string))
             return call(*fn, args, frame, line, output);
           throw RuntimeError(line, "unresolved callable identity '" +
-              callable_local->second.string + "'");
+              callable_val->string + "'");
         }
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
         auto self_it = frame.locals.find("self");

@@ -13,7 +13,7 @@ experiment READMEs retain their detailed local observations.
 - Independently reproduced by multiple experiments: 26
 
 (Counts recomputed from the detailed per-finding statuses on 2026-09-25 after
-the SWARM-047/050 follow-up and concurrent SWARM-051/038 closeout.)
+Phase 15.14 closeout of SWARM-047, SWARM-050, SWARM-051, and SWARM-038.)
 
 Completed swarm experiments:
 
@@ -1416,14 +1416,17 @@ accepts `buf = zeros(4)`, and it runs correctly (`4`) in Fast Debug.
 ### Resolution
 
 Observable effect analysis now recognizes monotonic bounded counter loops (`while`)
-as non-divergent and accounts for built-in collection methods (`Vector`/`Queue`
-`push`/`pop`, `Map` `get`/`keys`/`values`) without treating local mutation as
-observable side effects or leaving calls unresolved. Furthermore, domain state field
+as non-divergent under a conservative proof: the bound must be invariant and
+side-effect-free, there must be no induction-variable dependency in the bound, and no
+statement in the loop body may mutate variables used by the bound. Mutating collection
+methods (`pop`, `pop_front`) are marked as `may_fail: true`. Furthermore, domain state field
 initializers (`field.init`) are authoritatively validated for side-effect-freedom during
 domain checking using the same observable effect analysis.
 
 Regressions: `tests/swarm_038_effects_loop_helper.moss`,
-`tests/negative/swarm_038_impure_state_init.moss`, and
+`tests/negative/swarm_038_impure_state_init.moss`,
+`tests/negative/swarm_038_divergent_loop_state_init.moss`,
+`tests/negative/swarm_038_empty_pop_state_init.moss`, and
 `tests/tooling/check_phase15_14_swarm_038_051.py`.
 
 ## SWARM-039 — No project-wide Fast Debug test discovery/orchestration
@@ -2010,14 +2013,16 @@ Module function name mangling renames `double_val` to `App__double_val`, but low
 
 ### Resolution
 
-Module expression rewriting now tracks in-scope local variables and parameters,
-preventing parameter callables from being mangled with module prefixes.
-Unqualified sibling callable identifiers and explicitly module-qualified
+Module expression rewriting now tracks in-scope local variables and parameters with
+lexical and control-flow aware scoping per indentation level, preventing parameter
+callables from being mangled with module prefixes while properly handling branch/loop
+locals that shadow sibling function names, as well as body-local names used by trailing
+result expressions. Unqualified sibling callable identifiers and explicitly module-qualified
 callable identifiers (`App.double_val`) both correctly rewrite to the canonical
 module symbol (`App__double_val`). Fast Debug and static native specialization
 now both recognize and execute static callables across module boundaries. Both
 unqualified sibling syntax and explicitly qualified syntax converge to the same
-canonical semantic target and native behavior.
+canonical semantic target and native behavior, with explicit Fast Debug project coverage.
 
 Regression: `tests/tooling/check_phase15_14_swarm_038_051.py`.
 

@@ -5879,6 +5879,9 @@ class Checker {
           bool mutating = method == "push" || method == "pop" || method == "pop_front";
           bool query = method == "get" || method == "keys" || method == "values";
           if (mutating || query) {
+            if (method == "pop" || method == "pop_front") {
+              effects.may_fail = true;
+            }
             if (domain_fields.count(receiver)) {
               if (mutating) effects.domain_write = true;
               else effects.domain_read = true;
@@ -5952,6 +5955,32 @@ class Checker {
     }
   }
 
+  static std::set<string> extract_expression_identifiers(const string& expr) {
+    std::set<string> ids;
+    size_t i = 0;
+    while (i < expr.size()) {
+      if (std::isalpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
+        size_t start = i;
+        while (i < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
+          ++i;
+        }
+        ids.insert(expr.substr(start, i - start));
+      } else {
+        ++i;
+      }
+    }
+    return ids;
+  }
+
+  static string extract_root_identifier(const string& target) {
+    string root = trim(target);
+    auto dot = root.find('.');
+    auto bracket = root.find('[');
+    size_t end = std::min(dot == string::npos ? root.size() : dot,
+                          bracket == string::npos ? root.size() : bracket);
+    return trim(root.substr(0, end));
+  }
+
   bool is_bounded_while_loop(
       const vector<Stmt>& body, size_t while_index, const TypeEnv& env) const {
     const Stmt& while_stmt = body[while_index];
@@ -5969,30 +5998,36 @@ class Checker {
     if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
       return false;
 
+    // No induction-variable dependency in bound
+    auto bound_vars = extract_expression_identifiers(bound_expr);
+    if (bound_vars.count(var_name)) return false;
+
+    // Bound must be invariant and side-effect-free
+    ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
+    if (bound_effects.may_diverge || bound_effects.may_fail ||
+        bound_effects.message || bound_effects.external_io ||
+        bound_effects.domain_write || bound_effects.local_mutation ||
+        bound_effects.unresolved)
+      return false;
+
     size_t body_start = while_index + 1;
     size_t body_end = body_start;
     while (body_end < body.size() && body[body_end].indent > while_stmt.indent)
       ++body_end;
     if (body_start >= body_end) return false;
 
-    if (plain_identifier(bound_expr)) {
-      for (size_t i = body_start; i < body_end; ++i) {
-        const auto& s = body[i];
-        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
-          if (trim(s.a) == bound_expr) return false;
-        }
-      }
-    }
-
     int progress_steps = 0;
     int loop_body_indent = body[body_start].indent;
 
     for (size_t i = body_start; i < body_end; ++i) {
       const auto& s = body[i];
+      if (s.kind == Stmt::Kind::While) return false;
+
       if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
-        string target = trim(s.a);
-        if (target == var_name) {
-          if (s.indent != loop_body_indent)
+        string root = extract_root_identifier(s.a);
+        if (bound_vars.count(root)) return false;
+        if (root == var_name) {
+          if (trim(s.a) != var_name || s.indent != loop_body_indent)
             return false;
           if (is_less) {
             auto add = split_binary(trim(s.b), {"+"});
@@ -6015,6 +6050,13 @@ class Checker {
             ++progress_steps;
           }
         }
+      } else if (s.kind == Stmt::Kind::For) {
+        string target = trim(s.a);
+        if (bound_vars.count(target) || target == var_name) return false;
+      } else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+        string root = trim(s.a);
+        bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+        if (mutating && (bound_vars.count(root) || root == var_name)) return false;
       }
     }
     return progress_steps == 1;
@@ -6078,6 +6120,9 @@ class Checker {
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
         string root = trim(statement.a);
         bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+        if (statement.b == "pop" || statement.b == "pop_front") {
+          effects.may_fail = true;
+        }
         if (mutating) {
           if (domain_fields.count(root)) effects.domain_write = true;
           else if (parameters.count(root) ||
@@ -16955,9 +17000,30 @@ static void rewrite_module_program(
   };
   auto body = [&](vector<Stmt>& statements,
                   const std::set<string>& initial_locals = {},
-                  const std::set<string>* sibling_methods = nullptr) {
-    std::set<string> locals = initial_locals;
+                  const std::set<string>* sibling_methods = nullptr) -> std::set<string> {
+    std::vector<std::set<string>> scopes;
+    scopes.push_back(initial_locals);
+
+    auto get_active_locals = [&]() {
+      std::set<string> active;
+      for (const auto& s : scopes) {
+        active.insert(s.begin(), s.end());
+      }
+      return active;
+    };
+
     for (auto& statement : statements) {
+      int level = statement.indent;
+      if (level < 0) level = 0;
+      if (scopes.size() > static_cast<size_t>(level + 1)) {
+        scopes.resize(level + 1);
+      }
+      while (scopes.size() <= static_cast<size_t>(level)) {
+        scopes.push_back({});
+      }
+
+      std::set<string> active_locals = get_active_locals();
+
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
         if (statement.a == module) {
           if (functions.count(statement.b) || types.count(statement.b)) {
@@ -16975,7 +17041,7 @@ static void rewrite_module_program(
         string callee = trim(statement.a);
         if (callee.find('.') == string::npos && plain_identifier(callee) &&
             !(sibling_methods && sibling_methods->count(callee)) &&
-            !locals.count(callee) &&
+            !active_locals.count(callee) &&
             functions.count(callee) &&
             callee != "assert" && callee != "assertEqual" &&
             !functional_stage_kind(callee).has_value() &&
@@ -16986,28 +17052,41 @@ static void rewrite_module_program(
           statement.a = module_symbol(module, callee);
         else if (callee.find('.') != string::npos) {
           string rewritten = rewrite_module_expression(
-              callee + "()", module, modules, public_exports, sibling_methods, &locals);
+              callee + "()", module, modules, public_exports, sibling_methods, &active_locals);
           if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
           statement.a = std::move(rewritten);
         }
       }
-      statement.a = rewrite_module_expression(
-          statement.a, module, modules, public_exports, sibling_methods, &locals);
-      statement.b = rewrite_module_expression(
-          statement.b, module, modules, public_exports, sibling_methods, &locals);
-      for (auto& argument : statement.args)
-        argument = rewrite_module_expression(
-            argument, module, modules, public_exports, sibling_methods, &locals);
-      if (!statement.text.empty())
-        statement.text = rewrite_module_expression(
-            statement.text, module, modules, public_exports, sibling_methods, &locals);
       if (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var ||
-          statement.kind == Stmt::Kind::Assign ||
-          statement.kind == Stmt::Kind::For) {
-        if (plain_identifier(statement.a)) locals.insert(statement.a);
+          (statement.kind == Stmt::Kind::Assign && plain_identifier(statement.a))) {
+        statement.b = rewrite_module_expression(
+            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
+        if (plain_identifier(statement.a)) scopes[level].insert(statement.a);
+      } else if (statement.kind == Stmt::Kind::For) {
+        if (plain_identifier(statement.a)) {
+          if (scopes.size() <= static_cast<size_t>(level + 1)) {
+            scopes.resize(level + 2);
+          }
+          scopes[level + 1].insert(statement.a);
+        }
+        statement.b = rewrite_module_expression(
+            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
+      } else {
+        statement.a = rewrite_module_expression(
+            statement.a, module, modules, public_exports, sibling_methods, &active_locals);
+        statement.b = rewrite_module_expression(
+            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
       }
+      for (auto& argument : statement.args)
+        argument = rewrite_module_expression(
+            argument, module, modules, public_exports, sibling_methods, &active_locals);
+      if (!statement.text.empty() &&
+          (statement.kind == Stmt::Kind::Call || statement.kind == Stmt::Kind::Raw))
+        statement.text = rewrite_module_expression(
+            statement.text, module, modules, public_exports, sibling_methods, &active_locals);
     }
+    return scopes.empty() ? initial_locals : scopes[0];
   };
   for (auto& function : program.functions) {
     string old = function.name;
@@ -17016,10 +17095,10 @@ static void rewrite_module_program(
     if (function.return_type) *function.return_type = type(*function.return_type);
     std::set<string> initial_locals;
     for (const auto& p : function.params) initial_locals.insert(p.name);
-    body(function.body, initial_locals);
+    auto body_locals = body(function.body, initial_locals);
     if (function.result_expression)
       *function.result_expression = rewrite_module_expression(
-          *function.result_expression, module, modules, public_exports, nullptr, &initial_locals);
+          *function.result_expression, module, modules, public_exports, nullptr, &body_locals);
   }
   for (auto& object : program.objects) {
     string old = object.name;
@@ -17036,11 +17115,11 @@ static void rewrite_module_program(
       if (method.return_type) *method.return_type = type(*method.return_type);
       std::set<string> initial_locals{"self"};
       for (const auto& p : method.params) initial_locals.insert(p.name);
-      body(method.body, initial_locals, &sibling_methods);
+      auto body_locals = body(method.body, initial_locals, &sibling_methods);
       if (method.result_expression)
         *method.result_expression = rewrite_module_expression(
             *method.result_expression, module, modules, public_exports,
-            &sibling_methods, &initial_locals);
+            &sibling_methods, &body_locals);
     }
   }
   for (auto& trait : program.traits) {

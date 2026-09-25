@@ -1,0 +1,13 @@
+fn divergent_helper(n: Int) -> Int:
+  var i = 0
+  var limit = n
+  while i < limit:
+    limit = limit + 1
+    i = i + 1
+  return i
+
+domain DivergentDomain:
+  count: Int = divergent_helper(4)
+
+fn main():
+  d = DivergentDomain()

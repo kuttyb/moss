@@ -282,6 +282,8 @@ run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3
 run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"
 run_case swarm_038_effects_loop_helper tests/swarm_038_effects_loop_helper.moss '4'
 reject_case swarm_038_impure_state_init 'domain state initializers must be side-effect-free'
+reject_case swarm_038_divergent_loop_state_init 'domain state initializers must be side-effect-free'
+reject_case swarm_038_empty_pop_state_init 'domain state initializers must be side-effect-free'
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss
