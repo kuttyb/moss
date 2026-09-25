@@ -2715,10 +2715,34 @@ Verified/fixed on the current compiler with a dedicated regression in the lost-s
 
 ## SWARM-066 — `for i in range(...)` accepted by checker but native lowering loses induction binding
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Control Flow / Simulation Engine](control_flow_2026/simulation_engine/)
 - Observation count: 1
+
+Regression: `tests/swarm_066_for_range_lowering.moss`, registered in `tests/run.sh`.
+
+### Root cause
+
+In `gen_block` (`src/moss.cpp`), the `Stmt::Kind::For` / `is_range` path emitted:
+
+```rust
+for index in <start_expr>..<end_expr> { body }
+```
+
+When `<end_expr>` expands to a Rust block (e.g. a functional pipeline
+`values |> count` lowered to `{ let __moss_pipeline_source = ...; __moss_result }`),
+Rust parses `{ block }` after `..` as the **for-loop body**, not the upper bound.
+This created a `RangeFrom` (`start_expr..`) with the pipeline block as the body,
+leaving the actual Moss loop body unreachable. The induction variable was never
+declared in the loop scope, producing `E0425` and `E0308` from rustc.
+
+### Fix
+
+Range bounds are now always materialized into typed `let __moss_range_start_<line>: i64`
+and `let __moss_range_end_<line>: i64` bindings before the for-loop. The for-loop
+header then uses simple variable references, eliminating the precedence ambiguity
+entirely for any expression kind (literals, helper calls, functional pipelines, etc.).
 
 ### Minimal reproducer
 
@@ -2735,21 +2759,17 @@ fn main():
 
 Committed reproducer: `examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer/`.
 
-### Observed behavior
+### Observed behavior (before fix)
 
 `moss fmt` accepts the source. `moss check` passes. Fast Debug reports its documented
 limitation (`interpreter error: Fast Debug does not support for iteration yet`).
 
-Native compilation fails with:
+Native compilation failed with:
 
 ```
 error[E0425]: cannot find value `index` in this scope
 error[E0308]: mismatched types — expected `()`, found `i64`
 ```
-
-The induction variable `index` is referenced in the generated Rust loop body but was never
-declared in the loop scope, and the loop result type is mismatched. The lowering of `for/range`
-induction binding and result accumulation is incorrect.
 
 ### Classification distinction from SWARM-057
 
@@ -2758,20 +2778,8 @@ explicit module scope (a module/package-boundary defect). SWARM-066 is a differe
 the same construct is accepted by the checker in a plain single-file program but the native
 lowering backend emits invalid Rust. Distinct compiler phases, distinct failure signatures.
 
-### Workaround
-
-Replace `for index in range(start, end):` with an explicit `while` loop:
-
-```moss
-var index = 0
-while index < (values |> count):
-  result = result + values[index]
-  index = index + 1
-```
-
 ### Notes
 
 Non-boundary defect: fails in a single-file program without any module structure. Formatter and
-checker fully accept the source, making this a native-lowering-only parity gap. The control-flow
-swarm (Phase 15.12B) used `while` loops as the bounded workaround; `for`/`range` in any
-non-trivial function body is currently unreliable for native compilation.
+checker fully accept the source, making this a native-lowering-only parity gap. Fixed in
+Phase 15.14 by materializing range bounds before the for-loop header.

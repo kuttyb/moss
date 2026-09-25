@@ -1210,6 +1210,12 @@ phase47_element_effects_json="$test_build/phase47_element_effects.json"
 grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
   "$phase47_element_effects_json" >/dev/null ||
   fail 'for-loop effect analysis did not resolve the iterator element method effect'
+# SWARM-066: for/range native lowering preserves induction binding and loop body.
+# Tests: induction variable readable, nonzero start, computed end, pipeline end,
+# accumulator mutation, and nested for/range inside an ordinary function.
+run_case swarm_066_for_range_lowering \
+  tests/swarm_066_for_range_lowering.moss \
+  "$(printf '10\n18\n60\n7\n15\n18')"
 
 # One source domain may be inferred independently for each declared instance.
 # These semantic facts are compiler-owned and keep the source free of explicit

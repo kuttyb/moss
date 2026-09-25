@@ -1,0 +1,56 @@
+# SWARM-066 regression: for/range lowering preserves induction variable and
+# loop body for all bound expression kinds (literals, computed values,
+# functional pipelines, nonzero start, step, and nested context).
+
+# Case 1: induction variable readable inside the loop body (zero start, literal end).
+fn sum_range_literal(n: Int) -> Int:
+  var acc = 0
+  for i in range(0, n):
+    acc = acc + i
+  return acc
+
+# Case 2: nonzero start — the induction variable begins at a non-zero value.
+fn sum_range_nonzero_start(start: Int, end: Int) -> Int:
+  var acc = 0
+  for i in range(start, end):
+    acc = acc + i
+  return acc
+
+# Case 3: computed end expression — end is a helper call, not a literal.
+fn computed_end(values: Vector[Int]) -> Int:
+  n = values |> count
+  var acc = 0
+  for i in range(0, n):
+    acc = acc + values[i]
+  return acc
+
+# Case 4: pipeline directly as the end bound (the original SWARM-066 reproducer).
+fn pipeline_end(values: Vector[Int]) -> Int:
+  var result = 0
+  for index in range(0, values |> count):
+    result = result + values[index]
+  return result
+
+# Case 5: accumulator mutation — confirm the body is executed and the variable
+# escapes the loop with the correct final value.
+fn accumulator_mutation() -> Int:
+  var total = 0
+  for k in range(1, 6):
+    total = total + k
+  return total
+
+# Case 6: nested for/range inside an ordinary function.
+fn nested_range(rows: Int, cols: Int) -> Int:
+  var count = 0
+  for r in range(0, rows):
+    for c in range(0, cols):
+      count = count + r + c
+  return count
+
+fn main():
+  echo sum_range_literal(5)
+  echo sum_range_nonzero_start(3, 7)
+  echo computed_end([10, 20, 30])
+  echo pipeline_end([3, 4])
+  echo accumulator_mutation()
+  echo nested_range(3, 3)

@@ -12988,13 +12988,30 @@ class Generator {
           auto source_type = generated_expr_type(source, &types);
           string element_type = source_type ? canonical_type_name(*source_type) : "";
           if (is_range) {
-            o << indent(level) << "for " << s.a << " in "
-              << expr(range_args[0], d, locals, &types) << ".."
-              << expr(range_args[1], d, locals, &types);
-            if (range_args.size() == 3)
-              o << ".step_by((" << expr(range_args[2], d, locals, &types)
-                << ") as usize)";
-            o << " {\n";
+            // Materialize each range bound into a typed local before the
+            // for-loop.  An expression such as `values |> count` expands to a
+            // Rust block `{ … __moss_result }`.  When placed after `..` in
+            //   for index in start..{ block } { body }
+            // rustc parses `{ block }` as the for-body, not the upper bound,
+            // silently dropping the induction binding and the intended body.
+            // Binding the result first avoids this precedence ambiguity entirely.
+            string start_var = "__moss_range_start_" + std::to_string(s.line);
+            string end_var   = "__moss_range_end_"   + std::to_string(s.line);
+            o << indent(level) << "let " << start_var << ": i64 = "
+              << expr(range_args[0], d, locals, &types) << ";\n";
+            o << indent(level) << "let " << end_var << ": i64 = "
+              << expr(range_args[1], d, locals, &types) << ";\n";
+            if (range_args.size() == 3) {
+              string step_var = "__moss_range_step_" + std::to_string(s.line);
+              o << indent(level) << "let " << step_var << ": i64 = "
+                << expr(range_args[2], d, locals, &types) << ";\n";
+              o << indent(level) << "for " << s.a << " in ("
+                << start_var << ".." << end_var
+                << ").step_by(" << step_var << " as usize) {\n";
+            } else {
+              o << indent(level) << "for " << s.a << " in "
+                << start_var << ".." << end_var << " {\n";
+            }
             auto child_locals = locals;
             auto child_types = types;
             child_locals.insert(s.a);
