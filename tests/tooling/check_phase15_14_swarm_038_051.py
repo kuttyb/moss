@@ -234,6 +234,75 @@ def main() -> None:
         if out_for.strip() != expected_for:
             fail(f"for loop shadowing output incorrect: expected {expected_for!r}, got: {out_for!r}")
 
+        # 6. If/Else joined binding shadowing sibling function name & single branch isolation
+        main_shadow = (
+            "module app\n"
+            "import tools\n\n"
+            "fn double_val(x: Int) -> Int:\n"
+            "  return x * 2\n\n"
+            "fn test_shadow_joined(cond: Bool) -> Int:\n"
+            "  if cond:\n"
+            "    let double_val = 10\n"
+            "  else:\n"
+            "    let double_val = 20\n"
+            "  return double_val\n\n"
+            "fn test_one_branch(cond: Bool, x: Int) -> Int:\n"
+            "  if cond:\n"
+            "    let double_val = 99\n"
+            "  return double_val(x)\n\n"
+            "fn main():\n"
+            "  echo test_shadow_joined(true)\n"
+            "  echo test_shadow_joined(false)\n"
+            "  echo test_one_branch(true, 5)\n"
+            "  echo test_one_branch(false, 5)\n"
+        )
+        (proj_root / "src" / "main.moss").write_text(main_shadow)
+        expected_shadow = "10\n20\n10\n10"
+
+        # Native build and execution
+        build_doc_shadow = invoke(compiler, proj_root, "build", "--json")
+        if not build_doc_shadow.get("ok"):
+            fail(f"build failed for joined shadow syntax: {build_doc_shadow}")
+        exe_shadow = pathlib.Path(build_doc_shadow["result"]["artifacts"]["executable"])
+        out_shadow = subprocess.check_output([str(exe_shadow)], text=True)
+        if out_shadow.strip() != expected_shadow:
+            fail(f"joined shadow native output incorrect: expected {expected_shadow!r}, got: {out_shadow!r}")
+
+        # Fast Debug execution
+        debug_run_shadow = subprocess.run(
+            [str(compiler), "debug", str(proj_root)],
+            cwd=proj_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if debug_run_shadow.returncode != 0:
+            fail(f"Fast Debug failed for joined shadow project: {debug_run_shadow.stderr}")
+        if debug_run_shadow.stdout.strip() != expected_shadow:
+            fail(f"Fast Debug shadow output mismatch: expected {expected_shadow!r}, got: {debug_run_shadow.stdout!r}")
+
+        # 7. Verify legality status of returning a joined statically-known callable
+        callable_src = (
+            "fn add_one(x: Int) -> Int:\n"
+            "  return x + 1\n\n"
+            "fn test_callable(cond: Bool):\n"
+            "  if cond:\n"
+            "    let double_val = add_one\n"
+            "  else:\n"
+            "    let double_val = add_one\n"
+            "  return double_val\n"
+        )
+        callable_file = proj_root / "callable_check.moss"
+        callable_file.write_text(callable_src)
+        check_callable = invoke(compiler, proj_root, "check", str(callable_file), "--json", expect=1)
+        if check_callable.get("ok") is not False:
+            fail("check unexpectedly accepted returning a joined statically-known callable")
+        callable_err = check_callable.get("error", {}).get("message", "")
+        if "unknown return type" not in callable_err or "callable:add_one" not in callable_err:
+            fail(f"unexpected diagnostic when returning joined callable: {callable_err}")
+
 
 if __name__ == "__main__":
     main()
+

@@ -17018,92 +17018,142 @@ static void rewrite_module_program(
   auto body = [&](vector<Stmt>& statements,
                   const std::set<string>& initial_locals = {},
                   const std::set<string>* sibling_methods = nullptr) -> std::set<string> {
-    std::vector<std::set<string>> scopes;
-    scopes.push_back(initial_locals);
+    std::function<void(size_t&, int, std::set<string>&)> walk_block =
+        [&](size_t& index, int level, std::set<string>& locals) {
+      while (index < statements.size()) {
+        Stmt& statement = statements[index];
+        if (statement.indent < level) return;
+        if (statement.indent > level) {
+          ++index;
+          continue;
+        }
+        if (statement.kind == Stmt::Kind::Else) return;
 
-    auto get_active_locals = [&]() {
-      std::set<string> active;
-      for (const auto& s : scopes) {
-        active.insert(s.begin(), s.end());
+        if (statement.kind == Stmt::Kind::If) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> then_locals = incoming;
+          walk_block(index, level + 1, then_locals);
+
+          std::vector<std::set<string>> paths;
+          paths.push_back(std::move(then_locals));
+
+          if (index < statements.size() && statements[index].indent == level &&
+              statements[index].kind == Stmt::Kind::Else) {
+            ++index;
+            std::set<string> else_locals = incoming;
+            walk_block(index, level + 1, else_locals);
+            paths.push_back(std::move(else_locals));
+          } else {
+            paths.push_back(std::move(incoming));
+          }
+
+          std::set<string> joined;
+          for (const auto& binding : paths.front()) {
+            bool present_everywhere = true;
+            for (size_t p = 1; p < paths.size(); ++p) {
+              if (!paths[p].count(binding)) {
+                present_everywhere = false;
+                break;
+              }
+            }
+            if (present_everywhere) joined.insert(binding);
+          }
+          locals = std::move(joined);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::While) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> body_locals = incoming;
+          walk_block(index, level + 1, body_locals);
+          locals = std::move(incoming);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::For) {
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> body_locals = incoming;
+          if (plain_identifier(statement.a)) {
+            body_locals.insert(statement.a);
+          }
+          walk_block(index, level + 1, body_locals);
+          locals = std::move(incoming);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+          if (statement.a == module) {
+            if (functions.count(statement.b) || types.count(statement.b)) {
+              statement.a = module_symbol(module, statement.b);
+              statement.b.clear();
+            }
+          } else {
+            auto imported = public_exports.find(statement.a);
+            if (imported != public_exports.end() && imported->second.count(statement.b)) {
+              statement.a = module_symbol(statement.a, statement.b);
+              statement.b.clear();
+            }
+          }
+        } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
+          string callee = trim(statement.a);
+          if (callee.find('.') == string::npos && plain_identifier(callee) &&
+              !(sibling_methods && sibling_methods->count(callee)) &&
+              !locals.count(callee) &&
+              functions.count(callee) &&
+              callee != "assert" && callee != "assertEqual" &&
+              !functional_stage_kind(callee).has_value() &&
+              callee != "Map" && callee != "Queue" && callee != "Vector" &&
+              callee != "Some" && callee != "sqrt" && callee != "range" &&
+              !starts_with(callee, module + "__") &&
+              callee.find("__") == string::npos)
+            statement.a = module_symbol(module, callee);
+          else if (callee.find('.') != string::npos) {
+            string rewritten = rewrite_module_expression(
+                callee + "()", module, modules, public_exports, sibling_methods, &locals);
+            if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
+            statement.a = std::move(rewritten);
+          }
+        }
+
+        if (statement.kind == Stmt::Kind::Let ||
+            statement.kind == Stmt::Kind::Var ||
+            (statement.kind == Stmt::Kind::Assign && plain_identifier(statement.a))) {
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+          if (plain_identifier(statement.a)) locals.insert(statement.a);
+        } else {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+        }
+
+        for (auto& argument : statement.args)
+          argument = rewrite_module_expression(
+              argument, module, modules, public_exports, sibling_methods, &locals);
+
+        if (!statement.text.empty() &&
+            (statement.kind == Stmt::Kind::Call || statement.kind == Stmt::Kind::Raw))
+          statement.text = rewrite_module_expression(
+              statement.text, module, modules, public_exports, sibling_methods, &locals);
+
+        ++index;
       }
-      return active;
     };
 
-    for (auto& statement : statements) {
-      int level = statement.indent;
-      if (level < 0) level = 0;
-      if (scopes.size() > static_cast<size_t>(level + 1)) {
-        scopes.resize(level + 1);
-      }
-      while (scopes.size() <= static_cast<size_t>(level)) {
-        scopes.push_back({});
-      }
-
-      std::set<string> active_locals = get_active_locals();
-
-      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
-        if (statement.a == module) {
-          if (functions.count(statement.b) || types.count(statement.b)) {
-            statement.a = module_symbol(module, statement.b);
-            statement.b.clear();
-          }
-        } else {
-          auto imported = public_exports.find(statement.a);
-          if (imported != public_exports.end() && imported->second.count(statement.b)) {
-            statement.a = module_symbol(statement.a, statement.b);
-            statement.b.clear();
-          }
-        }
-      } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
-        string callee = trim(statement.a);
-        if (callee.find('.') == string::npos && plain_identifier(callee) &&
-            !(sibling_methods && sibling_methods->count(callee)) &&
-            !active_locals.count(callee) &&
-            functions.count(callee) &&
-            callee != "assert" && callee != "assertEqual" &&
-            !functional_stage_kind(callee).has_value() &&
-            callee != "Map" && callee != "Queue" && callee != "Vector" &&
-            callee != "Some" && callee != "sqrt" && callee != "range" &&
-            !starts_with(callee, module + "__") &&
-            callee.find("__") == string::npos)
-          statement.a = module_symbol(module, callee);
-        else if (callee.find('.') != string::npos) {
-          string rewritten = rewrite_module_expression(
-              callee + "()", module, modules, public_exports, sibling_methods, &active_locals);
-          if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
-          statement.a = std::move(rewritten);
-        }
-      }
-      if (statement.kind == Stmt::Kind::Let ||
-          statement.kind == Stmt::Kind::Var ||
-          (statement.kind == Stmt::Kind::Assign && plain_identifier(statement.a))) {
-        statement.b = rewrite_module_expression(
-            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
-        if (plain_identifier(statement.a)) scopes[level].insert(statement.a);
-      } else if (statement.kind == Stmt::Kind::For) {
-        if (plain_identifier(statement.a)) {
-          if (scopes.size() <= static_cast<size_t>(level + 1)) {
-            scopes.resize(level + 2);
-          }
-          scopes[level + 1].insert(statement.a);
-        }
-        statement.b = rewrite_module_expression(
-            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
-      } else {
-        statement.a = rewrite_module_expression(
-            statement.a, module, modules, public_exports, sibling_methods, &active_locals);
-        statement.b = rewrite_module_expression(
-            statement.b, module, modules, public_exports, sibling_methods, &active_locals);
-      }
-      for (auto& argument : statement.args)
-        argument = rewrite_module_expression(
-            argument, module, modules, public_exports, sibling_methods, &active_locals);
-      if (!statement.text.empty() &&
-          (statement.kind == Stmt::Kind::Call || statement.kind == Stmt::Kind::Raw))
-        statement.text = rewrite_module_expression(
-            statement.text, module, modules, public_exports, sibling_methods, &active_locals);
-    }
-    return scopes.empty() ? initial_locals : scopes[0];
+    std::set<string> locals = initial_locals;
+    size_t index = 0;
+    walk_block(index, 0, locals);
+    return locals;
   };
   for (auto& function : program.functions) {
     string old = function.name;

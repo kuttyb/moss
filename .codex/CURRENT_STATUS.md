@@ -8,7 +8,8 @@ Phase 15.14 corrective follow-up closes SWARM-051 and SWARM-038 with comprehensi
 
 1. **SWARM-051 (Unqualified sibling callable argument across modules fails native lowering)**:
    - Preserves canonical resolved identity of statically known callables when passed across explicit module boundaries without dynamic dispatch.
-   - Module expression rewriting now tracks in-scope local variables and parameters using lexical and control-flow aware scoping per indentation level.
+   - Module expression rewriting now tracks in-scope local variables and parameters using lexical and control-flow aware scoping matching `merge_type_environments`.
+   - `if/else` promotes a binding into the enclosing scope when defined on every path, while bindings defined in only one path do not leak outward and restore visibility to sibling functions.
    - Correctly handles branch and loop locals shadowing sibling function names (`if` branches and `while`/`for` loops), restoring visibility to sibling callables after nested scopes exit.
    - Body-local bindings are properly tracked and preserved for trailing result expressions without being confused with sibling functions.
    - Fast Debug and static native specialization both resolve and execute cross-module callables without dynamic dispatch, verified with project-level Fast Debug coverage.
@@ -24,7 +25,7 @@ Validated:
 - `tests/negative/swarm_038_impure_state_init.moss` (authoritative side-effect rejection)
 - `tests/negative/swarm_038_divergent_loop_state_init.moss` (conservative proof rejection)
 - `tests/negative/swarm_038_empty_pop_state_init.moss` (failing pop rejection)
-- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query, negative initializers, lexical/loop shadowing, trailing result expression, multi-module convergence, and Fast Debug project execution)
+- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query, negative initializers, lexical/loop shadowing, trailing result expression, if/else joined binding shadowing sibling function name, single-branch isolation, callable return legality, multi-module convergence, and Fast Debug project execution)
 - Full validation: `make check`, `make examples`, and `make all` pass cleanly.
 
 ## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)
