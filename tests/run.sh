@@ -276,6 +276,8 @@ grep -F '__moss_specialize_inner_1' "$test_build/swarm_050_nested_specialization
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
 run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3'
 run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"
+run_case swarm_038_effects_loop_helper tests/swarm_038_effects_loop_helper.moss '4'
+reject_case swarm_038_impure_state_init 'domain state initializers must be side-effect-free'
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss
@@ -1340,7 +1342,7 @@ interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
 interp_remainder_output=$($compiler run --interp tests/swarm_014_integer_remainder.moss)
 [ "$interp_remainder_output" = '1' ] || fail 'fast interpreter integer remainder execution differed'
-for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types swarm_023_pipeline_context_identity swarm_023_pipeline_test_context swarm_025_fast_debug_sibling_method swarm_027_indexed_collection_method swarm_028_self_method_argument_borrow swarm_030_string_comparison_borrowed; do
+for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types swarm_023_pipeline_context_identity swarm_023_pipeline_test_context swarm_025_fast_debug_sibling_method swarm_027_indexed_collection_method swarm_028_self_method_argument_borrow swarm_030_string_comparison_borrowed swarm_038_effects_loop_helper; do
   native_output=$("$test_build/$interp_case")
   interp_output=$($compiler run --interp "tests/$interp_case.moss")
   [ "$interp_output" = "$native_output" ] || fail "fast interpreter $interp_case execution differed"
@@ -1757,6 +1759,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106f.py "$compiler" "
 if command -v python3 >/dev/null 2>&1; then
   python3 tests/tooling/check_phase106f1.py "$compiler" "$test_build/phase106f1" ||
     fail 'static typed synchronization lowering regression'
+  python3 tests/tooling/check_phase15_14_swarm_038_051.py "$compiler" "$test_build/phase15_14" ||
+    fail 'Phase 15.14 SWARM-038/SWARM-051 regression'
 fi
 
 echo 'all Moss v0.1 tests passed'

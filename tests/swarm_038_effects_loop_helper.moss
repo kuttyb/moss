@@ -1,0 +1,17 @@
+fn zeros(n: Int) -> Vector[Int]:
+  var out = Vector[Int]()
+  i = 0
+  while i < n:
+    out.push(0)
+    i = i + 1
+  return out
+
+domain Ring:
+  buf: Vector[Int] = zeros(4)
+
+  fn Size() -> Int:
+    reply buf |> count
+
+fn main():
+  ring = Ring()
+  echo message ring.Size()

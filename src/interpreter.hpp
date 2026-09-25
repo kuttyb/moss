@@ -432,11 +432,15 @@ class FastInterpreter {
       callback.locals[name] = values[i]; names.push_back(name);
     }
     if (values.size() == 1) callback.locals["_"] = values.front();
-    if (auto fn = function(trim_copy(callable)))
+    std::string target_callable = trim_copy(callable);
+    auto local_it = callback.locals.find(target_callable);
+    if (local_it != callback.locals.end() && local_it->second.kind == Value::Kind::Callable)
+      target_callable = local_it->second.string;
+    if (auto fn = function(target_callable))
       return call(*fn, names, callback, line, output);
-    if (callable.find('_') != std::string::npos)
-      return eval(callable, callback, line, output);
-    std::string invocation = callable + "(";
+    if (target_callable.find('_') != std::string::npos)
+      return eval(target_callable, callback, line, output);
+    std::string invocation = target_callable + "(";
     for (size_t i = 0; i < names.size(); ++i) {
       if (i) invocation += ", ";
       invocation += names[i];

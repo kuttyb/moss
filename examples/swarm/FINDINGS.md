@@ -1377,7 +1377,7 @@ contract.
 
 ## SWARM-038 — `effects` reports a pure loop helper as divergent/unresolved yet it is accepted as a domain initializer
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / semantic query consistency
 - First observed: [Python / deque](Python/deque/)
 - Also observed: —
@@ -1412,12 +1412,18 @@ fn main():
 unresolved work is rejected in a domain state initializer, yet `moss check`
 accepts `buf = zeros(4)`, and it runs correctly (`4`) in Fast Debug.
 
-### Notes
+### Resolution
 
-Either the query is over-conservative for a bounded `while` loop, or the
-initializer check does not consult the same facts. Agents cannot tell which
-answer to trust. The accepted program matches the documented intent ("pure
-helper calls are accepted"), so the `effects` output is the likelier defect.
+Observable effect analysis now recognizes monotonic bounded counter loops (`while`)
+as non-divergent and accounts for built-in collection methods (`Vector`/`Queue`
+`push`/`pop`, `Map` `get`/`keys`/`values`) without treating local mutation as
+observable side effects or leaving calls unresolved. Furthermore, domain state field
+initializers (`field.init`) are authoritatively validated for side-effect-freedom during
+domain checking using the same observable effect analysis.
+
+Regressions: `tests/swarm_038_effects_loop_helper.moss`,
+`tests/negative/swarm_038_impure_state_init.moss`, and
+`tests/tooling/check_phase15_14_swarm_038_051.py`.
 
 ## SWARM-039 — No project-wide Fast Debug test discovery/orchestration
 
@@ -1957,7 +1963,7 @@ Inline helper logic into the outer generic function, or specialize the helper fu
 
 ## SWARM-051 — Unqualified sibling callable argument across modules fails native lowering
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module name resolution & lowering
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: —
@@ -1988,9 +1994,18 @@ fn main():
 Fails in native lowering with `missing static specialization with argument types (vector[int], unresolved)`.
 Module function name mangling renames `double_val` to `App__double_val`, but lowering looks up `"double_val"`.
 
-### Workaround
+### Resolution
 
-Explicitly qualify the sibling callable argument with the module name: `Tools.map_by(nums, App.double_val)`.
+Module expression rewriting now tracks in-scope local variables and parameters,
+preventing parameter callables from being mangled with module prefixes.
+Unqualified sibling callable identifiers and explicitly module-qualified
+callable identifiers (`App.double_val`) both correctly rewrite to the canonical
+module symbol (`App__double_val`). Fast Debug and static native specialization
+now both recognize and execute static callables across module boundaries. Both
+unqualified sibling syntax and explicitly qualified syntax converge to the same
+canonical semantic target and native behavior.
+
+Regression: `tests/tooling/check_phase15_14_swarm_038_051.py`.
 
 ---
 

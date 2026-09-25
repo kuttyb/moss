@@ -1968,6 +1968,24 @@ class Checker {
     for (const auto& f : d.state) {
       if (!valid_type(f.type)) err(f.line, "unknown state type '" + f.type + "'");
       if (!state_names.insert(f.name).second) err(f.line, "duplicate state field '" + f.name + "'");
+      if (!f.init.empty()) {
+        ObservableEffects initializer_effects =
+            observable_expression_effects(f.init, {});
+        if (initializer_effects.message ||
+            initializer_effects.domain_read || initializer_effects.domain_write ||
+            initializer_effects.local_mutation || initializer_effects.external_io ||
+            initializer_effects.may_fail || initializer_effects.may_diverge ||
+            initializer_effects.unresolved) {
+          string source_file = f.source_file.empty() ? d.source_file : f.source_file;
+          if (!source_file.empty()) {
+            err(source_file, f.line,
+                "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
+          } else {
+            err(f.line,
+                "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
+          }
+        }
+      }
     }
     std::set<string> route_names;
     for (const auto& route : d.routes) {
@@ -5289,7 +5307,11 @@ class Checker {
           if (!has_structural_requirement(*function->second,
                                           function->second->params[index].name,
                                           ConstraintKind::Callable,
-                                          "functional callable"))
+                                          "functional callable") &&
+              !has_structural_requirement(*function->second,
+                                          function->second->params[index].name,
+                                          ConstraintKind::Callable,
+                                          "static callable"))
             continue;
           string identity = trim(call_arguments[index]);
           if (functions_.count(identity))
@@ -5342,7 +5364,9 @@ class Checker {
       case Stmt::Kind::Call:
         expressions.push_back(!statement.text.empty()
             ? statement.text
-            : statement.a + "(" + join_arguments(statement.args) + ")");
+            : !statement.b.empty()
+                ? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+                : statement.a + "(" + join_arguments(statement.args) + ")");
         break;
       case Stmt::Kind::Message:
         expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
@@ -5676,7 +5700,8 @@ class Checker {
   ObservableEffects observable_expression_effects(
       const string& expression, const TypeEnv& env,
       const std::set<string>& domain_fields = {},
-      const ObjectType* implicit_object = nullptr) const {
+      const ObjectType* implicit_object = nullptr,
+      const std::set<string>& parameters = {}) const {
     ObservableEffects effects = no_observable_effects();
     string original = trim(expression);
     if (original.empty()) return effects;
@@ -5800,10 +5825,10 @@ class Checker {
     vector<string> arguments;
     if (parse_member_call(value, receiver, method, arguments)) {
       effects.merge(observable_expression_effects(
-          receiver, env, domain_fields, implicit_object));
+          receiver, env, domain_fields, implicit_object, parameters));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
-            argument, env, domain_fields, implicit_object));
+            argument, env, domain_fields, implicit_object, parameters));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
         // Built-in Map reads are resolved by the type checker without an
@@ -5826,6 +5851,28 @@ class Checker {
         if (domains_.count(canonical_type_name(*receiver_type))) {
           effects.domain_read = true;
           return effects;
+        }
+        string concrete = canonical_type_name(*receiver_type);
+        if (starts_with(concrete, "vector") ||
+            starts_with(concrete, "queue") ||
+            starts_with(concrete, "map")) {
+          bool mutating = method == "push" || method == "pop" || method == "pop_front";
+          bool query = method == "get" || method == "keys" || method == "values";
+          if (mutating || query) {
+            if (domain_fields.count(receiver)) {
+              if (mutating) effects.domain_write = true;
+              else effects.domain_read = true;
+            } else if (parameters.count(receiver) ||
+                       (implicit_object && (receiver == "self" ||
+                        std::any_of(implicit_object->fields.begin(),
+                                    implicit_object->fields.end(),
+                                    [&](const Field& field) {
+                                      return field.name == receiver;
+                                    })))) {
+              if (mutating) effects.local_mutation = true;
+            }
+            return effects;
+          }
         }
       }
       effects.unresolved = true;
@@ -5870,6 +5917,89 @@ class Checker {
     return effects;
   }
 
+  static bool is_positive_integer_literal(const string& text) {
+    string s = trim(text);
+    if (s.empty()) return false;
+    size_t start = (s.front() == '+') ? 1 : 0;
+    if (start >= s.size()) return false;
+    for (size_t i = start; i < s.size(); ++i) {
+      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    try {
+      return std::stoll(s) > 0;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  bool is_bounded_while_loop(
+      const vector<Stmt>& body, size_t while_index, const TypeEnv& env) const {
+    const Stmt& while_stmt = body[while_index];
+    string condition = trim(while_stmt.a);
+    auto cmp_less = split_binary(condition, {"<=", "<"});
+    auto cmp_greater = split_binary(condition, {">=", ">"});
+    if (!cmp_less && !cmp_greater) return false;
+
+    bool is_less = cmp_less.has_value();
+    string var_name = trim(is_less ? cmp_less->first : cmp_greater->first);
+    string bound_expr = trim(is_less ? cmp_less->second : cmp_greater->second);
+
+    if (!plain_identifier(var_name)) return false;
+    auto var_type = env.find(var_name);
+    if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
+      return false;
+
+    size_t body_start = while_index + 1;
+    size_t body_end = body_start;
+    while (body_end < body.size() && body[body_end].indent > while_stmt.indent)
+      ++body_end;
+    if (body_start >= body_end) return false;
+
+    if (plain_identifier(bound_expr)) {
+      for (size_t i = body_start; i < body_end; ++i) {
+        const auto& s = body[i];
+        if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
+          if (trim(s.a) == bound_expr) return false;
+        }
+      }
+    }
+
+    int progress_steps = 0;
+    int loop_body_indent = body[body_start].indent;
+
+    for (size_t i = body_start; i < body_end; ++i) {
+      const auto& s = body[i];
+      if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
+        string target = trim(s.a);
+        if (target == var_name) {
+          if (s.indent != loop_body_indent)
+            return false;
+          if (is_less) {
+            auto add = split_binary(trim(s.b), {"+"});
+            if (!add) return false;
+            string left = trim(add->first);
+            string right = trim(add->second);
+            string step_str;
+            if (left == var_name) step_str = right;
+            else if (right == var_name) step_str = left;
+            else return false;
+            if (!is_positive_integer_literal(step_str)) return false;
+            ++progress_steps;
+          } else {
+            auto sub = split_binary(trim(s.b), {"-"});
+            if (!sub) return false;
+            string left = trim(sub->first);
+            string right = trim(sub->second);
+            if (left != var_name) return false;
+            if (!is_positive_integer_literal(right)) return false;
+            ++progress_steps;
+          }
+        }
+      }
+    }
+    return progress_steps == 1;
+  }
+
   ObservableEffects observable_body_effects(
       const vector<Stmt>& body, TypeEnv env,
       const std::set<string>& parameters,
@@ -5877,15 +6007,32 @@ class Checker {
       const ObjectType* implicit_object = nullptr) const {
     ObservableEffects effects = no_observable_effects();
     std::set<string> locals = parameters;
-    for (const auto& statement : body) {
-      // Moss does not attempt a termination proof. A syntactic while is a
-      // conservative divergence seed, including when nested in control flow.
-      if (statement.kind == Stmt::Kind::While) effects.may_diverge = true;
-      if (statement.kind == Stmt::Kind::For &&
-          !(starts_with(trim(statement.b), "range(") ||
-            (starts_with(trim(statement.b), "[") &&
-             ends_with(trim(statement.b), "]"))))
-        effects.may_diverge = true;
+    for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
+      const auto& statement = body[stmt_idx];
+      if (statement.kind == Stmt::Kind::While) {
+        if (!is_bounded_while_loop(body, stmt_idx, env))
+          effects.may_diverge = true;
+      }
+      if (statement.kind == Stmt::Kind::For) {
+        bool bounded = false;
+        string iter_expr = trim(statement.b);
+        if (starts_with(iter_expr, "range(") ||
+            (starts_with(iter_expr, "[") && ends_with(iter_expr, "]"))) {
+          bounded = true;
+        } else {
+          auto collection_type = inferred_expr_type(iter_expr, env);
+          if (collection_type) {
+            string concrete = canonical_type_name(*collection_type);
+            if (starts_with(concrete, "vector") ||
+                starts_with(concrete, "queue") ||
+                starts_with(concrete, "map") ||
+                starts_with(concrete, "range")) {
+              bounded = true;
+            }
+          }
+        }
+        if (!bounded) effects.may_diverge = true;
+      }
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
       if (statement.kind == Stmt::Kind::Assign ||
@@ -5908,9 +6055,24 @@ class Checker {
           effects.local_mutation = true;
         locals.insert(statement.a);
       }
+      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+        string root = trim(statement.a);
+        bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+        if (mutating) {
+          if (domain_fields.count(root)) effects.domain_write = true;
+          else if (parameters.count(root) ||
+                   (implicit_object && (root == "self" ||
+                    std::any_of(implicit_object->fields.begin(),
+                                implicit_object->fields.end(),
+                                [&](const Field& field) {
+                                  return field.name == root;
+                                }))))
+            effects.local_mutation = true;
+        }
+      }
       for (const auto& expression_value : statement_expressions(statement))
         effects.merge(observable_expression_effects(
-            expression_value, env, domain_fields, implicit_object));
+            expression_value, env, domain_fields, implicit_object, parameters));
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -16668,7 +16830,8 @@ static string rewrite_module_expression(
     string expression, const string& module,
     const std::map<string,ParsedModuleUnit>& modules,
     const std::map<string,std::set<string>>& public_exports,
-    const std::set<string>* sibling_methods = nullptr) {
+    const std::set<string>* sibling_methods = nullptr,
+    const std::set<string>* locals = nullptr) {
   std::set<string> functions = module_function_names(modules.at(module));
   std::set<string> types = module_type_names(modules.at(module));
   string result;
@@ -16714,6 +16877,13 @@ static string rewrite_module_expression(
       while (member_end < expression.size() &&
              (std::isalnum(static_cast<unsigned char>(expression[member_end])) || expression[member_end] == '_')) ++member_end;
       string name = expression.substr(member, member_end - member);
+      if (token == module) {
+        if (functions.count(name) || types.count(name)) {
+          result += module_symbol(module, name);
+          i = member_end;
+          continue;
+        }
+      }
       auto imported = public_exports.find(token);
       if (imported != public_exports.end() && imported->second.count(name)) {
         result += module_symbol(token, name);
@@ -16732,11 +16902,10 @@ static string rewrite_module_expression(
     while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
     bool member = before > 0 && expression[before - 1] == '.';
     if (!member && !(sibling_methods && sibling_methods->count(token)) &&
+        !(locals && locals->count(token)) &&
         token.find("__") == string::npos &&
-        (functions.count(token) || types.count(token) ||
-         (after < expression.size() && expression[after] == '(' &&
-          plain_identifier(token))) &&
-        after < expression.size() && expression[after] == '(')
+        (functions.count(token) ||
+         (types.count(token) && after < expression.size() && expression[after] == '(')))
       result += module_symbol(module, token);
     else
       result += token;
@@ -16749,28 +16918,41 @@ static void rewrite_module_program(
     Program& program, const string& module,
     const std::map<string,ParsedModuleUnit>& modules,
     const std::map<string,std::set<string>>& public_exports) {
+  std::set<string> functions = module_function_names(modules.at(module));
+  std::set<string> types = module_type_names(modules.at(module));
   auto type = [&](string value) {
     return rewrite_module_type(std::move(value), module, modules, public_exports);
   };
-  auto expression = [&](string value) {
-    return rewrite_module_expression(std::move(value), module, modules, public_exports);
+  auto expression = [&](string value, const std::set<string>* locals = nullptr) {
+    return rewrite_module_expression(std::move(value), module, modules, public_exports, nullptr, locals);
   };
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.type = type(param.type);
   };
   auto body = [&](vector<Stmt>& statements,
+                  const std::set<string>& initial_locals = {},
                   const std::set<string>* sibling_methods = nullptr) {
+    std::set<string> locals = initial_locals;
     for (auto& statement : statements) {
       if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
-        auto imported = public_exports.find(statement.a);
-        if (imported != public_exports.end() && imported->second.count(statement.b)) {
-          statement.a = module_symbol(statement.a, statement.b);
-          statement.b.clear();
+        if (statement.a == module) {
+          if (functions.count(statement.b) || types.count(statement.b)) {
+            statement.a = module_symbol(module, statement.b);
+            statement.b.clear();
+          }
+        } else {
+          auto imported = public_exports.find(statement.a);
+          if (imported != public_exports.end() && imported->second.count(statement.b)) {
+            statement.a = module_symbol(statement.a, statement.b);
+            statement.b.clear();
+          }
         }
       } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
         string callee = trim(statement.a);
         if (callee.find('.') == string::npos && plain_identifier(callee) &&
             !(sibling_methods && sibling_methods->count(callee)) &&
+            !locals.count(callee) &&
+            functions.count(callee) &&
             callee != "assert" && callee != "assertEqual" &&
             !functional_stage_kind(callee).has_value() &&
             callee != "Map" && callee != "Queue" && callee != "Vector" &&
@@ -16778,23 +16960,29 @@ static void rewrite_module_program(
             !starts_with(callee, module + "__") &&
             callee.find("__") == string::npos)
           statement.a = module_symbol(module, callee);
-        else {
+        else if (callee.find('.') != string::npos) {
           string rewritten = rewrite_module_expression(
-              callee + "()", module, modules, public_exports, sibling_methods);
+              callee + "()", module, modules, public_exports, sibling_methods, &locals);
           if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
           statement.a = std::move(rewritten);
         }
       }
       statement.a = rewrite_module_expression(
-          statement.a, module, modules, public_exports, sibling_methods);
+          statement.a, module, modules, public_exports, sibling_methods, &locals);
       statement.b = rewrite_module_expression(
-          statement.b, module, modules, public_exports, sibling_methods);
+          statement.b, module, modules, public_exports, sibling_methods, &locals);
       for (auto& argument : statement.args)
         argument = rewrite_module_expression(
-            argument, module, modules, public_exports, sibling_methods);
+            argument, module, modules, public_exports, sibling_methods, &locals);
       if (!statement.text.empty())
         statement.text = rewrite_module_expression(
-            statement.text, module, modules, public_exports, sibling_methods);
+            statement.text, module, modules, public_exports, sibling_methods, &locals);
+      if (statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::For) {
+        if (plain_identifier(statement.a)) locals.insert(statement.a);
+      }
     }
   };
   for (auto& function : program.functions) {
@@ -16802,24 +16990,33 @@ static void rewrite_module_program(
     function.name = module_symbol(module, old);
     params(function.params);
     if (function.return_type) *function.return_type = type(*function.return_type);
-    body(function.body);
-    if (function.result_expression) *function.result_expression = expression(*function.result_expression);
+    std::set<string> initial_locals;
+    for (const auto& p : function.params) initial_locals.insert(p.name);
+    body(function.body, initial_locals);
+    if (function.result_expression)
+      *function.result_expression = rewrite_module_expression(
+          *function.result_expression, module, modules, public_exports, nullptr, &initial_locals);
   }
   for (auto& object : program.objects) {
     string old = object.name;
     std::set<string> sibling_methods;
     for (const auto& method : object.methods) sibling_methods.insert(method.name);
     object.name = module_symbol(module, old);
-    for (auto& field : object.fields) field.type = type(field.type);
+    for (auto& field : object.fields) {
+      field.type = type(field.type);
+      if (!field.init.empty()) field.init = expression(field.init);
+    }
     for (auto& method : object.methods) {
       method.owner = object.name;
       params(method.params);
       if (method.return_type) *method.return_type = type(*method.return_type);
-      body(method.body, &sibling_methods);
+      std::set<string> initial_locals{"self"};
+      for (const auto& p : method.params) initial_locals.insert(p.name);
+      body(method.body, initial_locals, &sibling_methods);
       if (method.result_expression)
         *method.result_expression = rewrite_module_expression(
             *method.result_expression, module, modules, public_exports,
-            &sibling_methods);
+            &sibling_methods, &initial_locals);
     }
   }
   for (auto& trait : program.traits) {
@@ -16831,12 +17028,17 @@ static void rewrite_module_program(
   }
   for (auto& domain : program.domains) {
     domain.name = module_symbol(module, domain.name);
-    for (auto& field : domain.state) field.type = type(field.type);
+    for (auto& field : domain.state) {
+      field.type = type(field.type);
+      if (!field.init.empty()) field.init = expression(field.init);
+    }
     for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
       params(handler.params);
       if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
-      body(handler.body);
+      std::set<string> initial_locals{"self"};
+      for (const auto& p : handler.params) initial_locals.insert(p.name);
+      body(handler.body, initial_locals);
     }
   }
   if (program.main) body(program.main->body);

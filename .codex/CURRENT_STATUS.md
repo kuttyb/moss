@@ -2,6 +2,26 @@
 
 Updated: 2026-09-25
 
+## Phase 15.14 — SWARM-051 and SWARM-038 Closeout — COMPLETE (2026-09-25)
+
+Phase 15.14 progress closes SWARM-051 and SWARM-038 with full regression coverage:
+
+1. **SWARM-051 (Unqualified sibling callable argument across modules fails native lowering)**:
+   - Preserves canonical resolved identity of statically known callables when passed across explicit module boundaries.
+   - Module expression rewriting now tracks in-scope local variables and parameters, preventing parameter callables from being mangled.
+   - Unqualified sibling callable identifiers and explicitly module-qualified identifiers (`App.double_val`) both rewrite to the canonical module symbol (`App__double_val`), converging to the same semantic target and native behavior.
+   - Fast Debug and static native specialization both resolve and execute cross-module callables without dynamic dispatch.
+
+2. **SWARM-038 (effects reports pure loop helper as divergent/unresolved while accepted as domain initializer)**:
+   - Observable effect analysis now recognizes monotonic bounded counter loops (`while`) as non-divergent and accounts for built-in collection methods (`Vector`/`Queue` `push`/`pop`, `Map` `get`/`keys`/`values`) without treating local mutation as observable side effects or leaving calls unresolved.
+   - Domain state field initializers (`field.init`) are authoritatively validated for side-effect-freedom during domain checking using the same observable effect analysis, ensuring that query semantics and domain initialization agree authoritatively rather than through query-specific presentation tweaks.
+
+Validated:
+- `tests/swarm_038_effects_loop_helper.moss` (native and Fast Debug execution)
+- `tests/negative/swarm_038_impure_state_init.moss` (authoritative side-effect rejection)
+- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query and multi-module convergence)
+- Full validation: `make check`, `make examples`, and `make all` pass cleanly.
+
 ## Phase 15.14 — SWARM-047 and SWARM-050 — COMPLETE (2026-09-25)
 
 SWARM-047 now carries the checked built-in Map `get` effect through functional
