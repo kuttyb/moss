@@ -1,0 +1,8 @@
+fn compute() -> Int:
+  var total = 0
+  for x in [10, 20, 30]:
+    total = total + x
+  return total
+
+fn main():
+  echo compute()

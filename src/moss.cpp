@@ -3338,7 +3338,21 @@ class Checker {
                                     visitor, reject_conflicts, record_join_types,
                                     record_semantic_types, join_context);
         body_env.erase(statement.a);
-        env = std::move(body_env);
+        TypeEnv joined;
+        for (const auto& entry : incoming) {
+          auto found = body_env.find(entry.first);
+          if (found != body_env.end()) {
+            joined[entry.first] = found->second;
+          } else {
+            joined[entry.first] = entry.second;
+          }
+        }
+        env = std::move(joined);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
@@ -7193,7 +7207,16 @@ class Checker {
                               current_domain, current_handler);
         body.types.erase(s.a);
         body.moved.erase(s.a);
-        env = std::move(body);
+        OwnershipEnv incoming = env;
+        TypeEnv joined_types;
+        for (const auto& entry : incoming.types) {
+          auto found = body.types.find(entry.first);
+          if (found != body.types.end()) joined_types[entry.first] = found->second;
+          else joined_types[entry.first] = entry.second;
+        }
+        env = incoming;
+        env.types = std::move(joined_types);
+        merge_moved(env, body);
         continue;
       }
 
@@ -8059,6 +8082,11 @@ class Checker {
       if (contains_domain_handle(env.at(binding)))
         err(line, "domain handle '" + binding +
             "' is not an ordinary value; use domainroutes and message targets only");
+    if (plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
+        !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
+        !traits_.count(value) && !env.count(value)) {
+      err(line, "unknown identifier '" + value + "'");
+    }
   }
 
   std::optional<string> iterator_element_type(int line, const string& source,

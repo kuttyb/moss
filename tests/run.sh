@@ -284,6 +284,10 @@ run_case swarm_038_effects_loop_helper tests/swarm_038_effects_loop_helper.moss 
 reject_case swarm_038_impure_state_init 'domain state initializers must be side-effect-free'
 reject_case swarm_038_divergent_loop_state_init 'domain state initializers must be side-effect-free'
 reject_case swarm_038_empty_pop_state_init 'domain state initializers must be side-effect-free'
+run_case for_loop_mutable_update tests/for_loop_mutable_update.moss '60'
+reject_case for_loop_local_leaked "unknown identifier 'y'"
+reject_case for_loop_local_leaked_empty "unknown identifier 'y'"
+reject_case for_loop_induction_leaked "unknown identifier 'i'"
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss

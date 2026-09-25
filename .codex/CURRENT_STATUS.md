@@ -14,7 +14,14 @@ Phase 15.14 corrective follow-up closes SWARM-051 and SWARM-038 with comprehensi
    - Body-local bindings are properly tracked and preserved for trailing result expressions without being confused with sibling functions.
    - Fast Debug and static native specialization both resolve and execute cross-module callables without dynamic dispatch, verified with project-level Fast Debug coverage.
 
-2. **SWARM-038 (effects reports pure loop helper as divergent/unresolved while accepted as domain initializer)**:
+2. **Phase 15.14 for-loop local binding false-acceptance/control-flow correction**:
+   - Fixed type-environment walker and ownership tracking so locals first introduced inside a `for` body and loop induction variables do not leak into the enclosing environment after the loop.
+   - Definite-initialization and child-environment semantics align with native lowering and module namespace rewriting (since loops may execute zero times).
+   - Pre-existing mutable locals updated inside `for` loops remain legal and available afterward.
+   - Direct references to unpromoted loop locals or induction variables after the loop are rejected at Moss checking with structured `unknown identifier` diagnostics rather than leaking to rustc.
+   - In explicit-module contexts, sibling functions shadowed by loop-local names become visible again after the loop.
+
+3. **SWARM-038 (effects reports pure loop helper as divergent/unresolved while accepted as domain initializer)**:
    - Observable effect analysis enforces a conservative bounded-loop proof: the bound expression must be invariant and side-effect-free, there must be no induction-variable dependency in the bound, and no statement in the loop body may mutate variables used by the bound.
    - Collection mutation operations `pop` and `pop_front` are marked as `may_fail: true`.
    - Domain state field initializers (`field.init`) authoritatively enforce side-effect-freedom during domain checking using the same observable effect analysis.
@@ -25,7 +32,11 @@ Validated:
 - `tests/negative/swarm_038_impure_state_init.moss` (authoritative side-effect rejection)
 - `tests/negative/swarm_038_divergent_loop_state_init.moss` (conservative proof rejection)
 - `tests/negative/swarm_038_empty_pop_state_init.moss` (failing pop rejection)
-- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query, negative initializers, lexical/loop shadowing, trailing result expression, if/else joined binding shadowing sibling function name, single-branch isolation, callable return legality, multi-module convergence, and Fast Debug project execution)
+- `tests/for_loop_mutable_update.moss` (pre-existing mutable local updated in for loop)
+- `tests/negative/for_loop_local_leaked.moss` (for-loop local rejected after loop)
+- `tests/negative/for_loop_local_leaked_empty.moss` (empty-iterable for-loop local rejected after loop)
+- `tests/negative/for_loop_induction_leaked.moss` (induction variable rejected after loop)
+- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query, negative initializers, lexical/loop shadowing, trailing result expression, if/else joined binding shadowing sibling function name, single-branch isolation, callable return legality, for-loop scope consistency, multi-module convergence, and Fast Debug project execution)
 - Full validation: `make check`, `make examples`, and `make all` pass cleanly.
 
 ## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)

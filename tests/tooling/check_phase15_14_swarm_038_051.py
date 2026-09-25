@@ -301,6 +301,92 @@ def main() -> None:
         callable_err = check_callable.get("error", {}).get("message", "")
         if "unknown return type" not in callable_err or "callable:add_one" not in callable_err:
             fail(f"unexpected diagnostic when returning joined callable: {callable_err}")
+        # 8. New local introduced only inside a for, then referenced after loop -> reject at checking
+        for_local_src = (
+            "fn test_local():\n"
+            "  for i in [1, 2]:\n"
+            "    let y = 10\n"
+            "  echo y\n"
+        )
+        f_for_local = proj_root / "for_local_reject.moss"
+        f_for_local.write_text(for_local_src)
+        check_doc = invoke(compiler, proj_root, "check", str(f_for_local), "--json", expect=1)
+        if check_doc.get("ok") is not False:
+            fail("check unexpectedly accepted loop-local variable referenced after for loop")
+        if "unknown identifier 'y'" not in check_doc.get("error", {}).get("message", ""):
+            fail(f"unexpected error message: {check_doc.get('error', {})}")
+
+        # 9. Same case with an empty iterable -> reject at checking
+        for_empty_src = (
+            "fn test_empty():\n"
+            "  let items = Vector[Int]()\n"
+            "  for i in items:\n"
+            "    let y = 10\n"
+            "  echo y\n"
+        )
+        f_for_empty = proj_root / "for_empty_reject.moss"
+        f_for_empty.write_text(for_empty_src)
+        check_doc = invoke(compiler, proj_root, "check", str(f_for_empty), "--json", expect=1)
+        if check_doc.get("ok") is not False:
+            fail("check unexpectedly accepted loop-local variable from empty iterable after for loop")
+        if "unknown identifier 'y'" not in check_doc.get("error", {}).get("message", ""):
+            fail(f"unexpected error message: {check_doc.get('error', {})}")
+
+        # 10. Pre-existing mutable local updated inside a for -> remains legal and available afterward
+        for_mut_src = (
+            "fn compute() -> Int:\n"
+            "  var total = 0\n"
+            "  for x in [10, 20, 30]:\n"
+            "    total = total + x\n"
+            "  return total\n\n"
+            "fn main():\n"
+            "  echo compute()\n"
+        )
+        (proj_root / "src" / "main.moss").write_text(for_mut_src)
+        build_doc_mut = invoke(compiler, proj_root, "build", "--json")
+        if not build_doc_mut.get("ok"):
+            fail(f"build failed for mutable local updated inside for loop: {build_doc_mut}")
+        exe_mut = pathlib.Path(build_doc_mut["result"]["artifacts"]["executable"])
+        out_mut = subprocess.check_output([str(exe_mut)], text=True)
+        if out_mut.strip() != "60":
+            fail(f"mutable update output incorrect: expected '60', got: {out_mut!r}")
+
+        # 11. Loop induction variable referenced afterward -> reject
+        for_ind_src = (
+            "fn test_ind():\n"
+            "  for i in [1, 2]:\n"
+            "    echo i\n"
+            "  echo i\n"
+        )
+        f_for_ind = proj_root / "for_ind_reject.moss"
+        f_for_ind.write_text(for_ind_src)
+        check_doc = invoke(compiler, proj_root, "check", str(f_for_ind), "--json", expect=1)
+        if check_doc.get("ok") is not False:
+            fail("check unexpectedly accepted induction variable referenced after for loop")
+        if "unknown identifier 'i'" not in check_doc.get("error", {}).get("message", ""):
+            fail(f"unexpected error message: {check_doc.get('error', {})}")
+
+        # 12. Explicit-module version with loop-local colliding with sibling function -> visible again afterward
+        mod_loop_shadow = (
+            "module app\n\n"
+            "fn double_val(x: Int) -> Int:\n"
+            "  return x * 2\n\n"
+            "fn test_loop_shadow(nums: Vector[Int], x: Int) -> Int:\n"
+            "  for double_val in nums:\n"
+            "    echo double_val\n"
+            "  return double_val(x)\n\n"
+            "fn main():\n"
+            "  echo test_loop_shadow([101], 5)\n"
+        )
+        (proj_root / "src" / "main.moss").write_text(mod_loop_shadow)
+        build_doc_mod = invoke(compiler, proj_root, "build", "--json")
+        if not build_doc_mod.get("ok"):
+            fail(f"build failed for module loop shadow project: {build_doc_mod}")
+        exe_mod = pathlib.Path(build_doc_mod["result"]["artifacts"]["executable"])
+        out_mod = subprocess.check_output([str(exe_mod)], text=True)
+        expected_mod = "101\n10"
+        if out_mod.strip() != expected_mod:
+            fail(f"module loop shadow output incorrect: expected {expected_mod!r}, got: {out_mod!r}")
 
 
 if __name__ == "__main__":
