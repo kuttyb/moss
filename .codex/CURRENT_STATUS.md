@@ -24,6 +24,42 @@ significant edit/check cycles; impact-selected testing was not used for this
 compiler-wide change. A single Make health target that checks the bootstrap
 contract and all examples would have exposed the rebase drift sooner.
 
+## Phase 15.13 — Swarm Stabilization / Quasi-Stable Language Checkpoint — COMPLETE (2026-09-25)
+
+Phase 15.13 records the corrective swarm work developed on the temporary branch,
+rebased into `main`, and stabilized as the new quasi-stable Moss baseline. The
+corrective sequence beginning with `c310b978` and ending with `4c6ab944`, followed
+by post-rebase health commit `4b4598b`, closes the recent frontend leaks, Boolean
+and String surface mismatches, parenthesized/native lowering faults, callable
+parameter/interpreter parity gaps, module-closure preservation defects, nested
+statement-call sequencing issue, and trait-effect projection failure that were
+addressed in that stabilization run.
+
+The Phase 15.13 baseline is green: `make check`, `make examples`, and `make all`
+pass on the stabilized `main` baseline. The canonical swarm trackers are reconciled
+with the landed fixes: SWARM-036 and SWARM-052 are fixed rather than open, and
+EXPRESS-001 (static callable parameters for ordinary functions) is closed by the
+stabilized callable-parameter path covered by `tests/swarm_048_callable_argument.moss`.
+The remaining cross-module callable identity defect is SWARM-051 and remains open.
+
+Outstanding semantic stabilization debt after this checkpoint is intentionally small:
+SWARM-043 and SWARM-044 require language/spec decisions; SWARM-047, SWARM-050,
+SWARM-051, and SWARM-066 are accepted-program semantic-preservation/compiler defects.
+SWARM-040 remains an error/precondition specification question adjacent to the
+deferred Phase 21 error-handling work. Missing expressiveness remains tracked
+separately as EXPRESS-002 through EXPRESS-006, and tooling-only defects remain
+SWARM-032, SWARM-038, SWARM-039, SWARM-059, and SWARM-060.
+
+### Next: Phase 15.14 — Semantic Correctness Closeout
+
+Phase 15.14 should avoid adding new general language surface. Its primary goal is to
+make the current accepted language internally consistent: decide SWARM-043 and
+SWARM-044, then fix SWARM-047, SWARM-050, SWARM-051, and SWARM-066 with focused
+positive/negative regressions and native/Fast Debug parity where applicable. Once
+those are closed, the remaining Phase 15 backlog is predominantly deliberate
+expressiveness, tooling, and Phase-21-deferred error semantics rather than correctness
+debt in currently legal Moss.
+
 ## Canonical swarm operating contract — COMPLETE (2026-09-23)
 
 `examples/swarm/SWARM.md` is now the canonical operating contract for future
