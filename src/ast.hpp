@@ -51,6 +51,10 @@ struct Stmt {
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.
   std::unordered_map<string,string> joined_types;
+  // A generic function's shared source statement is checked once per
+  // concrete specialization. Keep each exact join environment separately.
+  std::unordered_map<string,std::unordered_map<string,string>>
+      joined_types_by_context;
   // Exact functional plans for the expression slots emitted by this
   // statement, keyed by the concrete semantic context.  A function body can
   // have several static specializations, so one AST statement can legitimately
@@ -143,6 +147,10 @@ struct Function {
   ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
+  // A parameter may be both written and consumed. The joined effect is
+  // CONSUME, while native lowering still needs the checked WRITE fact to
+  // declare its owned binding mutable.
+  vector<bool> parameter_mutations;
   std::optional<StateLeafEffects> parameter_leaf_effects;
   string source_file;
 };

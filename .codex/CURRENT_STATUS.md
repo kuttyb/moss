@@ -22,6 +22,33 @@ Validated:
 - `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query and multi-module convergence)
 - Full validation: `make check`, `make examples`, and `make all` pass cleanly.
 
+## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)
+
+SWARM-047 remains fixed. Effect inference now retains each parameter's checked
+WRITE observation alongside the joined READ/WRITE/CONSUME effect. Native
+lowering uses it when a consumed owned parameter needs a mutable binding.
+Regressions cover Map index mutation inside `if` and `while` and through a
+normal helper. The functional IR assertion and Map read effect handling remain
+intact; no ownership contract or reduce semantics changed.
+
+SWARM-050 remains fixed. Control-flow join environments are recorded by exact
+static specialization context, and native generation requires the matching
+context for branch-created bindings. The focused regression exercises First
+and Second in both discovery orders and checks each outer-to-inner native
+call pair. No dynamic dispatch or trait object was introduced.
+
+Focused native and Fast Debug parity passed for the new tests and original
+committed reproducers. `make check`, `make examples`, `make all`, Moss format
+checking, the swarm feedback/issue validators, and `git diff --check` passed
+after compiler edits. At the follow-up closeout, FINDINGS had 54 fixed, 10
+open, and 1 agent misunderstanding across 65 detailed entries; after rebasing
+onto the concurrent SWARM-051/038 closeout, the recomputed totals are 56 fixed,
+8 open, and 1 agent misunderstanding. No remaining
+work is known for these two findings. The agent bootstrap matched `moss-0.1`;
+the structured ownership/effects output helped distinguish the consumed Map
+parameter from its hidden WRITE observation. One edit/check cycle fixed each
+root cause; impact-selected testing was not used for compiler-wide changes.
+
 ## Phase 15.14 — SWARM-047 and SWARM-050 — COMPLETE (2026-09-25)
 
 SWARM-047 now carries the checked built-in Map `get` effect through functional

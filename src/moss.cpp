@@ -1339,6 +1339,7 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   vector<Warning> warnings_;
 
   using TypeEnv = std::unordered_map<string,string>;
@@ -3265,7 +3266,8 @@ class Checker {
                                    const TypeEnvVisitor& visitor,
                                    bool reject_conflicts,
                                    bool record_join_types,
-                                   bool record_semantic_types) const {
+                                   bool record_semantic_types,
+                                   const string& join_context) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
       if (statement.indent < level) return;
@@ -3280,7 +3282,7 @@ class Checker {
         TypeEnv then_env = incoming;
         walk_type_environment_block(statements, index, level + 1, then_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
 
         vector<TypeEnv> paths;
         paths.push_back(std::move(then_env));
@@ -3290,14 +3292,17 @@ class Checker {
           TypeEnv else_env = incoming;
           walk_type_environment_block(statements, index, level + 1, else_env,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types);
+                                      record_semantic_types, join_context);
           paths.push_back(std::move(else_env));
         } else {
           paths.push_back(std::move(incoming));
         }
         env = merge_type_environments(paths, statement.line, reject_conflicts);
-        if (record_join_types)
+        if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
@@ -3308,11 +3313,14 @@ class Checker {
         TypeEnv body_env = incoming;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
-        if (record_join_types)
+        if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
@@ -3328,7 +3336,7 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type = element_type;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
         body_env.erase(statement.a);
         env = std::move(body_env);
         continue;
@@ -3344,11 +3352,12 @@ class Checker {
                                 const TypeEnvVisitor& visitor,
                                 bool reject_conflicts,
                                 bool record_join_types = false,
-                                bool record_semantic_types = false) const {
+                                bool record_semantic_types = false,
+                                const string& join_context = {}) const {
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
-                                record_semantic_types);
+                                record_semantic_types, join_context);
     if (index != statements.size())
       err(statements[index].line, "unexpected 'else' without matching 'if'");
     return env;
@@ -4616,6 +4625,9 @@ class Checker {
     if (parameter != params.end()) {
       size_t index = static_cast<size_t>(parameter - params.begin());
       if (index >= parameter_effects.size()) parameter_effects.resize(params.size(), Effect::Read);
+      if (parameter_mutation_capture_ && effect == Effect::Write &&
+          index < parameter_mutation_capture_->size())
+        (*parameter_mutation_capture_)[index] = true;
       parameter_effects[index] = join_effect(parameter_effects[index], effect);
       return;
     }
@@ -5619,6 +5631,9 @@ class Checker {
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         auto inferred = function.parameter_effects;
+        vector<bool> mutations(function.params.size(), false);
+        auto* previous_mutation_capture = parameter_mutation_capture_;
+        parameter_mutation_capture_ = &mutations;
         Effect receiver = Effect::Read;
         std::set<string> no_fields;
         size_t index = 0;
@@ -5627,6 +5642,7 @@ class Checker {
         if (function.result_expression)
           analyze_effect_expression(*function.result_expression, env, function.params,
                                     inferred, receiver, no_fields, Effect::Consume);
+        parameter_mutation_capture_ = previous_mutation_capture;
         for (const auto& constraint : function.constraints) {
           if (constraint.kind != ConstraintKind::Iterable ||
               constraint.detail != "static iterator")
@@ -5646,6 +5662,10 @@ class Checker {
         }
         if (inferred != function.parameter_effects) {
           function.parameter_effects = std::move(inferred);
+          changed = true;
+        }
+        if (mutations != function.parameter_mutations) {
+          function.parameter_mutations = std::move(mutations);
           changed = true;
         }
       }
@@ -8301,8 +8321,11 @@ class Checker {
       }
     };
 
+    string join_context = current_function && checking_specialization_
+        ? functional_function_context(*current_function, checking_specialization_)
+        : "";
     return walk_type_environment(statements, std::move(env), check_statement,
-                                 true, true, true);
+                                 true, true, true, join_context);
   }
 };
 
@@ -12348,13 +12371,7 @@ class Generator {
       bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
           borrowable_type(pt.empty() ? parameter_rust_type : pt));
       bool mutates_owned_parameter = effect == Effect::Consume && !view &&
-          std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
-            if (statement.kind != Stmt::Kind::Assign) return false;
-            string base, subscript;
-            return trim(statement.a) == f.params[index].name ||
-                (parse_index(statement.a, base, subscript) &&
-                 trim(base) == f.params[index].name);
-          });
+          index < f.parameter_mutations.size() && f.parameter_mutations[index];
       o << ((borrow && effect == Effect::Write) || mutates_owned_parameter ? "mut " : "")
         << f.params[index].name << ": "
         << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
@@ -12848,13 +12865,21 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::If: {
+          const auto exact_join = s.joined_types_by_context.find(functional_context);
+          if (functional_context.find('<') != string::npos &&
+              exact_join == s.joined_types_by_context.end())
+            throw std::runtime_error(
+                "internal error: missing checked control-flow join for " +
+                functional_context);
+          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+              ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
-          for (const auto& entry : s.joined_types)
+          for (const auto& entry : joined_types)
             if (!types.count(entry.first) && !starts_with(entry.second, "_"))
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            const string& type = s.joined_types.at(binding);
+            const string& type = joined_types.at(binding);
             backend_comment(o, (base + level) * 4,
                             "CONTROL-FLOW JOIN: binding has one definite static type on every path");
             o << indent(level) << "let mut " << binding << ": "
@@ -12890,9 +12915,8 @@ class Generator {
           } else {
             o << "\n";
           }
-          // Existing bindings already have a concrete type in this function
-          // instance. A shared statement's join metadata may have been
-          // populated while checking a different specialization.
+          // Existing bindings keep their already established type in this
+          // instance; only new joined locals use this context's checked type.
           break;
         }
         case Stmt::Kind::While: {

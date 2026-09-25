@@ -7,12 +7,13 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 12
-- Fixed: 52
+- Open: 8
+- Fixed: 56
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
-(Counts reconciled on 2026-09-25 after Phase 15.13 stabilization; the detailed per-finding statuses are authoritative.)
+(Counts recomputed from the detailed per-finding statuses on 2026-09-25 after
+the SWARM-047/050 follow-up and concurrent SWARM-051/038 closeout.)
 
 Completed swarm experiments:
 
@@ -1810,6 +1811,12 @@ Map parameter as mutable when its body assigns through an index. The assertion
 remains in place. The committed reproducer and `tests/swarm_047_reduce_map.moss`
 pass checking, native compilation/execution, and Fast Debug.
 
+Phase 15.14 follow-up: the checker now retains a parameter's WRITE observation
+separately when its final inferred effect is CONSUME. Native lowering uses that
+checked fact to declare the owned parameter mutable. The regression covers
+indexed Map mutation inside `if` and `while`, plus mutation through an ordinary
+helper, with native and Fast Debug result parity. SWARM-047 remains fixed.
+
 ### Workaround
 
 Use an explicit `while` loop to accumulate into the Map instead of `|> reduce`.
@@ -1954,6 +1961,13 @@ concrete type during native generation. Lowering now retains the concrete type
 already established for each function instance. The committed reproducer and
 `tests/swarm_050_nested_specialization.moss` pass native compilation/execution
 and Fast Debug; the regression calls two concrete outer and inner pairs.
+
+Phase 15.14 follow-up: each checked static specialization now retains its own
+control-flow join environment. Native lowering requires the matching context
+for a branch-created local, so later specializations cannot replace its type.
+`tests/swarm_050_join_specialization.moss` checks both discovery orders, native
+and Fast Debug results, and the exact outer-to-inner generated call pairs.
+SWARM-050 remains fixed.
 
 ### Workaround
 
