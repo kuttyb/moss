@@ -47,6 +47,13 @@ fn nested_range(rows: Int, cols: Int) -> Int:
       count = count + r + c
   return count
 
+# Case 7: three-argument range with explicit step.
+fn stepped_range() -> Int:
+  var total = 0
+  for i in range(1, 8, 2):
+    total = total + i
+  return total
+
 fn main():
   echo sum_range_literal(5)
   echo sum_range_nonzero_start(3, 7)
@@ -54,3 +61,5 @@ fn main():
   echo pipeline_end([3, 4])
   echo accumulator_mutation()
   echo nested_range(3, 3)
+  echo stepped_range()
+

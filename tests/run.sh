@@ -13,10 +13,14 @@ python3 tests/tooling/check_agent_skills.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_032_formatter_parentheses.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_7_formatter_convergence.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_8_cross_package_fast_debug.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_9_cross_package_specialization.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_039_project_fast_debug_tests.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_diagnostic_provenance.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_060_qualified_rename.py
 
 fail() {
   echo "test failure: $*" >&2
@@ -1219,7 +1223,7 @@ grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
 # accumulator mutation, and nested for/range inside an ordinary function.
 run_case swarm_066_for_range_lowering \
   tests/swarm_066_for_range_lowering.moss \
-  "$(printf '10\n18\n60\n7\n15\n18')"
+  "$(printf '10\n18\n60\n7\n15\n18\n16')"
 
 # One source domain may be inferred independently for each declared instance.
 # These semantic facts are compiler-owned and keep the source free of explicit

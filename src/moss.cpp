@@ -1340,24 +1340,29 @@ class Checker {
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
+  mutable string current_source_file_;
   vector<Warning> warnings_;
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
   [[noreturn]] void err(int line, const string& msg) const {
-    throw CompileError(line, msg);
+    CompileError error(line, msg);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    throw error;
   }
 
   [[noreturn]] void err(int line, const string& msg,
                         const string& diagnostic_code) const {
-    throw CompileError(line, msg, diagnostic_code);
+    CompileError error(line, msg, diagnostic_code);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    throw error;
   }
 
   [[noreturn]] void err(const string& source_file, int line,
                         const string& msg) const {
     CompileError error(line, msg);
-    error.source_file = source_file;
+    error.source_file = !source_file.empty() ? source_file : current_source_file_;
     throw error;
   }
 
@@ -1965,6 +1970,7 @@ class Checker {
   }
 
   void check_domain(const Domain& d) {
+    current_source_file_ = d.source_file;
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
       if (!valid_type(f.type)) err(f.line, "unknown state type '" + f.type + "'");
@@ -2001,6 +2007,7 @@ class Checker {
             "duplicate domain member '" + route.name + "' (state and route share one namespace)");
     }
     for (const auto& h : d.handlers) {
+      current_source_file_ = h.source_file.empty() ? d.source_file : h.source_file;
       if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
@@ -2042,6 +2049,7 @@ class Checker {
   }
 
   void check_main(const MainProc& m) {
+    current_source_file_ = m.source_file;
     std::unordered_map<string,string> env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr);
     OwnershipEnv ownership;
@@ -2332,6 +2340,7 @@ class Checker {
   }
 
   void check_function(const Function& f) {
+    current_source_file_ = f.source_file;
     std::unordered_map<string,string> env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
@@ -8162,6 +8171,7 @@ class Checker {
                       const Function* current_function = nullptr) {
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
+      if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         if (legacy_spawn_expression(statement.b))
@@ -20726,24 +20736,23 @@ static string canonicalize_code_spacing(const string& input) {
     bool unary_minus = unary_minus_at(index);
     bool previous_unary_minus = index > 0 && unary_minus_at(index - 1);
     bool space_before = !result.empty();
-    if (token.text == ")" || token.text == "]" || token.text == "}" ||
-        token.text == "," || token.text == ":" || token.text == "." ||
-        token.text == "(")
-      space_before = false;
-    // `not` is a word-form prefix operator, not a callable identifier. Keep
-    // its required separator before a grouped operand.
-    if (token.text == "(" && previous == "not") space_before = true;
     auto is_space_keyword = [](const string& word) {
       return word == "return" || word == "reply" || word == "echo" ||
              word == "in" || word == "not" || word == "and" || word == "or" ||
-             word == "case" || word == "yield" || word == "assert" ||
-             word == "assertEqual" || word == "if" || word == "else" ||
+             word == "case" || word == "yield" ||
+             word == "if" || word == "else" ||
              word == "while" || word == "for" || word == "let" ||
              word == "var" || word == "module" || word == "import" ||
              word == "export" || word == "domain" || word == "domainroutes" ||
              word == "trait" || word == "type" || word == "fn" ||
              word == "test" || word == "bench";
     };
+    if (token.text == ")" || token.text == "]" || token.text == "}" ||
+        token.text == "," || token.text == ":" || token.text == "." ||
+        token.text == "(")
+      space_before = false;
+    // Keywords and word-form prefix operators require a space before a grouped operand.
+    if (token.text == "(" && is_space_keyword(previous)) space_before = true;
     if (token.text == "[") {
       if (previous == "]" || previous == ")" ||
           (index > 0 && tokens[index - 1].word && !is_space_keyword(previous)))
@@ -21024,17 +21033,102 @@ static size_t replace_identifier_on_line(string& line, const string& old_name,
   return replacements;
 }
 
+static size_t replace_semantic_function_on_line(
+    string& line, const string& module, const string& old_name,
+    const string& new_name, bool is_target_source) {
+  if (module.empty()) {
+    return replace_identifier_on_line(line, old_name, new_name);
+  }
+  size_t replacements = 0;
+  string dot_prefix = module + ".";
+  string colon_prefix = module + "::";
+  size_t index = 0;
+  bool in_string = false;
+  bool escaped = false;
+  while (index < line.size()) {
+    char character = line[index];
+    if (in_string) {
+      if (escaped) escaped = false;
+      else if (character == '\\') escaped = true;
+      else if (character == '"') in_string = false;
+      ++index;
+      continue;
+    }
+    if (character == '"') {
+      in_string = true;
+      ++index;
+      continue;
+    }
+    if (character == '#') break;
+    bool left = index == 0 || !format_word_character(line[index - 1]);
+    if (left && line.compare(index, dot_prefix.size(), dot_prefix) == 0) {
+      size_t name_start = index + dot_prefix.size();
+      bool right = name_start + old_name.size() == line.size() ||
+          !format_word_character(line[name_start + old_name.size()]);
+      if (right && line.compare(name_start, old_name.size(), old_name) == 0) {
+        line.replace(name_start, old_name.size(), new_name);
+        index = name_start + new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    if (left && line.compare(index, colon_prefix.size(), colon_prefix) == 0) {
+      size_t name_start = index + colon_prefix.size();
+      bool right = name_start + old_name.size() == line.size() ||
+          !format_word_character(line[name_start + old_name.size()]);
+      if (right && line.compare(name_start, old_name.size(), old_name) == 0) {
+        line.replace(name_start, old_name.size(), new_name);
+        index = name_start + new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    if (is_target_source) {
+      bool right = index + old_name.size() == line.size() ||
+          !format_word_character(line[index + old_name.size()]);
+      if (left && right && line.compare(index, old_name.size(), old_name) == 0) {
+        line.replace(index, old_name.size(), new_name);
+        index += new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    ++index;
+  }
+  return replacements;
+}
+
 static const SemanticTargetFact* resolve_edit_target(
     const vector<SemanticTargetFact>& facts, const string& selector) {
   vector<const SemanticTargetFact*> matches;
   bool exact_identity = starts_with(selector, "entity-v1:") ||
       selector.find('@') != string::npos;
   for (const auto& fact : facts) {
+    string simple_name = fact.name.find("__") != string::npos
+        ? fact.name.substr(fact.name.rfind("__") + 2) : fact.name;
+    string dot_name = !fact.module_identity.empty()
+        ? fact.module_identity + "." + simple_name : simple_name;
+    string colon_name = !fact.module_identity.empty()
+        ? fact.module_identity + "::" + simple_name : simple_name;
+    string mangled_name = !fact.module_identity.empty()
+        ? fact.module_identity + "__" + simple_name : simple_name;
+
     bool match = fact.durable_identity == selector ||
-        fact.semantic_identity == selector;
-    if (!exact_identity)
+        fact.semantic_identity == selector ||
+        ("entity-v1:" + fact.kind + ":" + dot_name) == selector ||
+        ("entity-v1:" + fact.kind + ":" + colon_name) == selector ||
+        ("entity-v1:" + fact.kind + ":" + mangled_name) == selector;
+    if (!exact_identity) {
       match = match || fact.context == selector || fact.name == selector ||
-          fact.kind + ":" + fact.name == selector;
+          fact.kind + ":" + fact.name == selector ||
+          dot_name == selector || colon_name == selector ||
+          mangled_name == selector ||
+          fact.kind + ":" + dot_name == selector ||
+          fact.kind + ":" + colon_name == selector ||
+          fact.kind + ":" + mangled_name == selector ||
+          simple_name == selector ||
+          fact.kind + ":" + simple_name == selector;
+    }
     if (match) matches.push_back(&fact);
   }
   if (matches.empty())
@@ -21213,8 +21307,11 @@ static int run_semantic_edit(
       throw ProjectError(
           "EDIT_KIND_UNSUPPORTED",
           "rename currently supports exact function entities only");
-    string old_name = target->name;
+    string simple_name = target->name.find("__") != string::npos
+        ? target->name.substr(target->name.rfind("__") + 2) : target->name;
+    string old_name = simple_name;
     string new_name = operands[0];
+    string module_name = target->module_identity;
     changed_line_numbers[target_source].insert(target->line);
     for (const auto& edge : unit.program.semantic_call_edges)
       if (edge.target == target->context && !edge.source_file.empty())
@@ -21238,14 +21335,15 @@ static int run_semantic_edit(
                            "a resolved reference is outside the logical project context",
                            file_lines.first.string());
       expected += file_lines.second.size();
+      bool is_target_file = file_lines.first == target_source;
       for (int line_number : file_lines.second) {
         if (line_number <= 0 || static_cast<size_t>(line_number) > file_it->second.size())
           throw ProjectError("EDIT_TARGET_STALE",
                              "a resolved reference has no exact source range",
                              file_lines.first.string(), line_number);
-        replacements += replace_identifier_on_line(
-            file_it->second[static_cast<size_t>(line_number - 1)], old_name,
-            new_name);
+        replacements += replace_semantic_function_on_line(
+            file_it->second[static_cast<size_t>(line_number - 1)], module_name,
+            old_name, new_name, is_target_file);
       }
     }
     if (replacements != expected)
@@ -21253,7 +21351,11 @@ static int run_semantic_edit(
           "EDIT_TARGET_AMBIGUOUS",
           "rename could not map every semantic reference to one exact token",
           source.string(), target->line);
-    resulting_selector = "entity-v1:function:" + new_name;
+    if (!module_name.empty()) {
+      resulting_selector = "entity-v1:function:" + module_name + "__" + new_name;
+    } else {
+      resulting_selector = "entity-v1:function:" + new_name;
+    }
   } else if (operation == "replace-expression") {
     if (operands.size() != 1)
       throw ProjectError("EDIT_ARGUMENT_INVALID",
@@ -21636,9 +21738,39 @@ static std::filesystem::path resolve_fast_debug_entry(const string& target) {
   return requested.lexically_normal();
 }
 
-static moss::Program load_checked_interpreter_program(const std::filesystem::path& input) {
+static std::filesystem::path resolve_fast_debug_test_entry(const string& target) {
+  std::filesystem::path requested(target);
+  std::error_code error;
+  if (!target.empty() && std::filesystem::is_regular_file(requested, error))
+    return requested.lexically_normal();
+  if (!target.empty() && std::filesystem::is_directory(requested, error) &&
+      (std::filesystem::is_regular_file(requested / "Moss.toml", error) ||
+       std::filesystem::is_regular_file(requested / "moss.toml", error))) {
+    auto manifest = moss::load_project_manifest(requested);
+    auto test_sources = moss::project_declaration_sources(manifest, "tests");
+    if (!test_sources.empty()) return test_sources.front();
+    return moss::project_source_file(manifest);
+  }
+  auto root = nearest_moss_project_root(std::filesystem::current_path());
+  if (root) {
+    moss::ProjectManifest manifest = moss::load_project_manifest(*root);
+    auto test_sources = moss::project_declaration_sources(manifest, "tests");
+    if (!test_sources.empty()) return test_sources.front();
+    return moss::project_source_file(manifest);
+  }
+  if (!target.empty()) return requested.lexically_normal();
+  return std::filesystem::path();
+}
+
+static moss::Program load_checked_interpreter_program(const std::filesystem::path& input, bool test_mode = false) {
   try {
     auto context = moss::analyze_source_context(input);
+    if (test_mode && context.project) {
+      context.mode = moss::ProgramGenerationMode::Tests;
+      context.sources = moss::project_declaration_sources(context.manifest, "tests");
+      if (context.sources.empty())
+        context.sources = moss::project_source_files(context.manifest);
+    }
     if (context.project) {
       auto sources = moss::fast_debug_source_closure(context);
       auto checked = moss::check_project_sources(
@@ -21680,7 +21812,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
 
 static int run_fast_interpreter_source(const std::filesystem::path& input,
                                        bool trace) {
-  moss::Program program = load_checked_interpreter_program(input);
+  moss::Program program = load_checked_interpreter_program(input, false);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
@@ -21692,14 +21824,14 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
                                       const string& filter, bool trace) {
-  moss::Program program = load_checked_interpreter_program(input);
+  moss::Program program = load_checked_interpreter_program(input, true);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
-  interpreter.run_tests(std::cout, filter);
+  int status = interpreter.run_tests(std::cout, filter);
   if (trace) interpreter.write_trace(std::cerr);
-  return 0;
+  return status;
 }
 
 int main(int argc, char** argv) {
@@ -21749,20 +21881,19 @@ int main(int argc, char** argv) {
       }
     }
 
-    // A standalone test file can use the same checked interpreter backend;
-    // project test discovery remains on the compiled path until the domain
-    // scheduler checkpoint is complete.
+    // A standalone test file or multi-file project can use the checked interpreter backend.
     bool test_requests_interpreter = false;
     if (string(argv[1]) == "test") {
       for (int index = 2; index < argc; ++index)
-        if (string(argv[index]) == "--interp") test_requests_interpreter = true;
+        if (string(argv[index]) == "--interp" || string(argv[index]) == "--debug")
+          test_requests_interpreter = true;
     }
     if (test_requests_interpreter) {
       bool interpreter = false, trace = false;
       string input, filter;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
-        if (argument == "--interp") interpreter = true;
+        if (argument == "--interp" || argument == "--debug") interpreter = true;
         else if (argument == "--trace") trace = true;
         else if (argument == "--json") {
           std::cerr << "moss: test --interp does not yet support --json\n";
@@ -21775,16 +21906,22 @@ int main(int argc, char** argv) {
         }
       }
       if (interpreter) {
-        if (input.empty()) {
-          std::cerr << "moss: test --interp requires a standalone Moss source path\n";
+        std::error_code ec;
+        if (!input.empty() && !std::filesystem::exists(input, ec) && filter.empty() &&
+            nearest_moss_project_root(std::filesystem::current_path())) {
+          filter = input;
+          input.clear();
+        }
+        std::filesystem::path entry = resolve_fast_debug_test_entry(input);
+        if (entry.empty()) {
+          std::cerr << "moss: test --interp requires a Moss source path or project\n";
           return 2;
         }
         try {
-          return run_fast_interpreter_tests(
-              resolve_fast_debug_entry(input), filter, trace);
+          return run_fast_interpreter_tests(entry, filter, trace);
         } catch (const moss::FastInterpreter::RuntimeError& error) {
-          std::cerr << "moss:" << error.line() << ": interpreter error: "
-                    << error.what() << "\n";
+          std::cerr << "moss:" << (error.line() > 0 ? std::to_string(error.line()) + ": " : " ")
+                    << "interpreter error: " << error.what() << "\n";
           return 1;
         }
       }

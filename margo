@@ -251,9 +251,10 @@ def main() -> int:
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--trace", action="store_true")
+    parser.add_argument("--interp", action="store_true")
     args = parser.parse_args()
     try:
-        if args.command == "debug" and (args.filter or args.release or args.json):
+        if args.command == "debug" and (args.filter or args.release or args.json or args.interp):
             unsupported = []
             if args.filter:
                 unsupported.append(args.filter)
@@ -261,13 +262,45 @@ def main() -> int:
                 unsupported.append("--release")
             if args.json:
                 unsupported.append("--json")
+            if args.interp:
+                unsupported.append("--interp")
             raise MargoError(
                 "margo debug supports only 'margo debug' and 'margo debug --trace'; "
                 "unsupported arguments: " + " ".join(unsupported))
-        if args.command != "debug" and args.trace:
-            raise MargoError("--trace is supported only by margo debug")
+        if args.command != "debug" and args.command != "test" and args.trace:
+            raise MargoError("--trace is supported only by margo debug and margo test --interp")
+        if args.command != "test" and args.interp:
+            raise MargoError("--interp is supported only by margo test")
+        if args.command == "test" and args.trace and not args.interp:
+            raise MargoError("--trace with margo test requires --interp")
+        if args.command == "test" and args.interp and args.release:
+            raise MargoError("margo test --interp does not support --release")
         root_path = find_root(Path.cwd())
         root, ordered = resolve_graph(root_path)
+
+        if args.command == "test" and args.interp:
+            dep_roots = []
+            seen_roots = set()
+            for package in ordered:
+                if package is root:
+                    continue
+                package_root = str(package.root.resolve())
+                if package_root not in seen_roots:
+                    seen_roots.add(package_root)
+                    dep_roots.append(package_root)
+            env = dict(os.environ)
+            env.pop(FAST_DEBUG_SOURCE_ROOT_ENV, None)
+            env.pop("MOSS_SOURCE_ROOTS", None)
+            if dep_roots:
+                env[FAST_DEBUG_SOURCE_ROOT_ENV] = os.pathsep.join(dep_roots)
+            test_cmd = [str(MOSS), "test", "--interp"]
+            if args.filter:
+                test_cmd.append(args.filter)
+            if args.trace:
+                test_cmd.append("--trace")
+            if args.json:
+                test_cmd.append("--json")
+            return subprocess.run(test_cmd, cwd=root.root, env=env).returncode
 
         if args.command == "debug":
             # For debug, we do NOT build dependency packages (no rustc needed).

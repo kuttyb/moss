@@ -2,17 +2,16 @@
 
 Updated: 2026-09-25
 
-## Phase 15.14 — SWARM-051 and SWARM-038 Closeout — COMPLETE (2026-09-25)
+## Phase 15.14 — Final Stabilization Closeout — COMPLETE (2026-09-25)
 
-Phase 15.14 corrective follow-up closes SWARM-051 and SWARM-038 with comprehensive regression coverage:
+Phase 15.14 completes all remaining implementation and tooling stabilization work across the compiler, runtime/Fast Debug, formatter, and semantic tooling before Phase 15.15. No implementation/tooling defect remains open from the canonical swarm ledger.
 
-1. **SWARM-051 (Unqualified sibling callable argument across modules fails native lowering)**:
-   - Preserves canonical resolved identity of statically known callables when passed across explicit module boundaries without dynamic dispatch.
-   - Module expression rewriting now tracks in-scope local variables and parameters using lexical and control-flow aware scoping matching `merge_type_environments`.
-   - `if/else` promotes a binding into the enclosing scope when defined on every path, while bindings defined in only one path do not leak outward and restore visibility to sibling functions.
-   - Correctly handles branch and loop locals shadowing sibling function names (`if` branches and `while`/`for` loops), restoring visibility to sibling callables after nested scopes exit.
-   - Body-local bindings are properly tracked and preserved for trailing result expressions without being confused with sibling functions.
-   - Fast Debug and static native specialization both resolve and execute cross-module callables without dynamic dispatch, verified with project-level Fast Debug coverage.
+1. **SWARM-051 (Control-flow join correction in module namespace rewriting)**:
+   - Aligned `rewrite_module_program` with authoritative checker control-flow join semantics for module-local name visibility across `if`/`else` branches.
+   - Bindings introduced on all branches survive the join and remain visible as locals after the `if` block, preventing unwanted sibling function rewriting.
+   - Bindings introduced on only one branch do not survive the join, restoring visibility to sibling module callables.
+   - Pre-existing outer bindings remain visible; nested branch-only and loop-local induction bindings do not leak.
+   - Statically known callable references passed across explicit module boundaries retain their canonical resolved identity.
 
 2. **Phase 15.14 for-loop local binding false-acceptance/control-flow correction**:
    - Fixed type-environment walker and ownership tracking so locals first introduced inside a `for` body and loop induction variables do not leak into the enclosing environment after the loop.
@@ -27,17 +26,44 @@ Phase 15.14 corrective follow-up closes SWARM-051 and SWARM-038 with comprehensi
    - Domain state field initializers (`field.init`) authoritatively enforce side-effect-freedom during domain checking using the same observable effect analysis.
    - Negative regressions added and verified: infinite monotonic-looking loop with mutated bound (`tests/negative/swarm_038_divergent_loop_state_init.moss`) and empty-pop initializer (`tests/negative/swarm_038_empty_pop_state_init.moss`).
 
-Validated:
-- `tests/swarm_038_effects_loop_helper.moss` (native and Fast Debug execution)
-- `tests/negative/swarm_038_impure_state_init.moss` (authoritative side-effect rejection)
-- `tests/negative/swarm_038_divergent_loop_state_init.moss` (conservative proof rejection)
-- `tests/negative/swarm_038_empty_pop_state_init.moss` (failing pop rejection)
-- `tests/for_loop_mutable_update.moss` (pre-existing mutable local updated in for loop)
-- `tests/negative/for_loop_local_leaked.moss` (for-loop local rejected after loop)
-- `tests/negative/for_loop_local_leaked_empty.moss` (empty-iterable for-loop local rejected after loop)
-- `tests/negative/for_loop_induction_leaked.moss` (induction variable rejected after loop)
-- `tests/tooling/check_phase15_14_swarm_038_051.py` (semantic query, negative initializers, lexical/loop shadowing, trailing result expression, if/else joined binding shadowing sibling function name, single-branch isolation, callable return legality, for-loop scope consistency, multi-module convergence, and Fast Debug project execution)
-- Full validation: `make check`, `make examples`, and `make all` pass cleanly.
+4. **SWARM-066 — for/range lowering closeout**:
+   - Materializes range bounds into typed let-bindings before emitting the Rust `for` loop header, avoiding ambiguity with block expressions (such as pipelines).
+   - Added regression for three-argument stepped range (`range(1, 8, 2)` -> `16`) in `tests/swarm_066_for_range_lowering.moss`.
+   - Status wording corrected: native checking/compilation/execution passed; existing Fast Debug `for` limitation is unchanged and tracked separately.
+
+5. **SWARM-032 — Formatter parity for parenthesized expressions**:
+   - Formatter (`moss fmt`) now accepts statements starting with `(` (grouped arithmetic, grouped comparisons, nested groupings, parenthesized calls, and pipeline operands) without misparsing keywords as function calls or jumping block levels.
+   - Fixed `canonicalize_code_spacing` in `src/moss.cpp` to respect space-separated keywords before `(`.
+   - Idempotence (`format(input) == format(format(input))`) and negative malformed grouping coverage added in `tests/tooling/check_swarm_032_formatter_parentheses.py`.
+
+6. **SWARM-039 — Project-wide Fast Debug test discovery & orchestration**:
+   - Enabled project-wide test execution under Fast Debug via `moss test --interp` and `margo test --interp [--trace]`.
+   - Discovers and executes tests across multiple source files and modules without requiring Rust compilation or toolchain.
+   - Supports test filtering by name/identity, trace generation (`--trace`), and pass/fail summary and exit codes.
+   - Validated with `tests/tooling/check_swarm_039_project_fast_debug_tests.py`.
+
+7. **SWARM-059 — Multi-file diagnostic source provenance**:
+   - Preserved physical source file provenance through parsing, module composition, semantic checking, specialization, and structured JSON diagnostics.
+   - Diagnostics identify the exact physical source file containing the error rather than misattributing it to the root module file.
+   - Validated with human-readable and structured JSON tests in `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
+
+8. **SWARM-060 — Semantic rename of module-qualified entities**:
+   - `moss edit rename` resolves module-qualified entity selectors (e.g. `mod.fn`, `entity-v1:function:mod__fn`) using compiler-owned canonical identity without declaring ambiguity.
+   - Renames only the selected entity and its semantic references across declarations and call sites without `EDIT_TARGET_AMBIGUOUS`.
+   - Genuinely ambiguous unqualified requests continue to fail with `EDIT_TARGET_AMBIGUOUS`.
+   - Validated with `tests/tooling/check_swarm_060_qualified_rename.py`.
+
+9. **Canonical tracker reconciliation**:
+   - Recomputed detailed counts in `examples/swarm/FINDINGS.md` and updated `examples/swarm/ISSUES.jsonl`:
+     - 61 Fixed
+     - 3 Open (Phase 15.15 ambiguous-spec items: SWARM-040, SWARM-043, SWARM-044)
+     - 1 Agent misunderstanding
+     - 65 Total recorded findings
+   - Verified with `python3 tools/check_swarm_issues.py` and `python3 tools/check_swarm_feedback.py`.
+
+### Next: Phase 15.15 — Language Semantics & Missing Expressiveness
+- Scheduled language-design and expressiveness items: SWARM-040, SWARM-043, SWARM-044, and EXPRESS-002 through EXPRESS-006.
+- EXPRESS-007 remains deferred to Phase 21.
 
 ## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)
 
@@ -77,12 +103,11 @@ the loop body rather than the upper bound. The regression `tests/swarm_066_for_r
 covers induction variable readability, nonzero start, computed end, pipeline as end bound,
 accumulator mutation, and nested for/range in an ordinary function.
 
-Focused native compilation/execution and Fast Debug passed for new tests and the
-committed reproducers. `make check`, `make examples`, `make all`, Moss format checking,
-and swarm tracker validation passed after compiler edits. SWARM-066 is closed.
-The agent skills and compiler bootstrap agreed on `moss-0.1`.
-
-## Phase 15.14 — SWARM-047 and SWARM-050 — COMPLETE (2026-09-25)
+Focused native checking, compilation, and execution passed for the new regression
+and the committed reproducer. `make check`, `make examples`, `make all`, Moss format checking,
+and swarm tracker validation passed after compiler edits. The existing Fast Debug `for`
+limitation is unchanged and tracked separately; SWARM-066 itself was a native-lowering defect.
+SWARM-066 is closed. The agent skills and compiler bootstrap agreed on `moss-0.1`.
 
 
 ## Post-rebase Make health — GREEN (2026-09-25)

@@ -90,8 +90,10 @@ class FastInterpreter {
     execute(program_.main->body, frame, output);
   }
 
-  void run_tests(std::ostream& output, const std::string& filter = {}) {
+  int run_tests(std::ostream& output, const std::string& filter = {}) {
     size_t discovered = 0;
+    size_t passed = 0;
+    size_t failed = 0;
     for (const auto& test : program_.tests) {
       if (!filter.empty() && test.name.find(filter) == std::string::npos &&
           test.semantic_identity.find(filter) == std::string::npos)
@@ -102,13 +104,24 @@ class FastInterpreter {
       frame.functional_context = frame.function;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
-      execute(test.body, frame, output);
-      output << "PASS " << test.name << "\n";
+      try {
+        execute(test.body, frame, output);
+        output << "PASS " << test.name << "\n";
+        ++passed;
+      } catch (const RuntimeError& error) {
+        output << "FAIL " << test.name << ": " << error.what() << "\n";
+        ++failed;
+      }
     }
     if (!discovered)
       throw RuntimeError(0, filter.empty() ? "no Moss tests were found"
                                           : "no Moss tests matched filter '" + filter + "'");
-    output << discovered << " passed\n";
+    if (failed > 0) {
+      output << passed << " passed, " << failed << " failed\n";
+      return 1;
+    }
+    output << passed << " passed\n";
+    return 0;
   }
 
  private:

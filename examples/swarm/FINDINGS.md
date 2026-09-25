@@ -7,13 +7,13 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 8
-- Fixed: 56
+- Open: 3
+- Fixed: 61
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
 (Counts recomputed from the detailed per-finding statuses on 2026-09-25 after
-Phase 15.14 closeout of SWARM-047, SWARM-050, SWARM-051, and SWARM-038.)
+Phase 15.14 final closeout of SWARM-032, SWARM-039, SWARM-051, SWARM-059, SWARM-060, and SWARM-066.)
 
 Completed swarm experiments:
 
@@ -1055,11 +1055,15 @@ results.
 
 ## SWARM-032 — Formatter rejects valid statements whose expression begins with `(`
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / formatter
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
+
+### Resolution
+
+Fixed in Phase 15.14. `canonicalize_code_spacing` in `src/moss.cpp` now checks for keyword boundaries (`while`, `if`, `return`, `echo`, `not`) before `(`, preventing keyword-space stripping that caused the formatter to misparse statements as function calls or block level jumps. Verified with idempotence and malformed grouping tests in `tests/tooling/check_swarm_032_formatter_parentheses.py`.
 
 ### Minimal reproducer
 
@@ -1087,16 +1091,11 @@ fn wrap(a: Int, m: Int) -> Int:
 
 This appears to parse `keyword (` as a call to `keyword`.
 
-### Workaround
-
-Reorder so the expression does not start with `(` (for example
-`while i % (p * 2) == 0:`; beware SWARM-031), or bind to a local first.
-
 ### Notes
 
 A different construct from SWARM-003 (unary minus in assertion operands),
-though both are formatter/checker disagreements. The formatter should accept
-exactly what `moss check` accepts.
+though both are formatter/checker disagreements. The formatter accepts
+the same legal expression surface as `moss check`.
 
 ## SWARM-033 — Returning a unary-negated name fails type inference
 
@@ -1431,37 +1430,21 @@ Regressions: `tests/swarm_038_effects_loop_helper.moss`,
 
 ## SWARM-039 — No project-wide Fast Debug test discovery/orchestration
 
-- Status: Open (narrowed 2026-09-23; original "cannot execute test blocks" claim superseded)
+- Status: Fixed
 - Category: Tooling / Fast Debug coverage
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
 
-### Original claim (superseded)
+### Resolution
 
-The original finding stated "Fast Debug cannot execute `test` blocks". That claim
-is superseded. Standalone test sources can run through `moss test --interp
-<test-file.moss>`, including the command's interpreted filtering of that source.
-`margo debug` is also a supported interpreted execution path for a project's
-application source closure. Test-bearing projects run natively under `margo test`,
-and the Phase 15.12 swarms used `margo debug` and `margo debug --trace` for Fast
-Debug parity checks across green application workloads.
+Fixed in Phase 15.14. `moss test --interp` and `margo test --interp` now provide project-wide Fast Debug test discovery and orchestration across multi-file and multi-module project test suites, supporting test filtering and trace emission (`--trace`) without requiring Rust compilation.
 
-### Actual remaining gap
-
-`margo test` provides project-wide native test discovery and orchestration, but
-there is no interpreted equivalent: `margo test --interp` and `margo debug --tests`
-are not supported. When a native lowering defect blocks `margo test`, an agent can
-still invoke individual standalone test sources manually with `moss test --interp`,
-but cannot ask Margo to discover the whole project test suite and execute all of
-those tests through Fast Debug in one project-level command.
+Regression: `tests/tooling/check_swarm_039_project_fast_debug_tests.py`.
 
 ### Notes
 
-A project-wide interpreted test mode would give test-level native/Fast Debug parity
-checks and a faster edit-test loop when native lowering defects (e.g. SWARM-031,
-SWARM-035) block `margo test`. The original workaround — rewriting test blocks as
-plain functions called from `main` — remains functional but is not ergonomic.
+Project-wide interpreted testing gives test-level native/Fast Debug parity checks and a faster edit-test loop without invoking rustc.
 
 ## SWARM-040 — Failure/precondition mechanism for user code is undocumented
 
@@ -2345,13 +2328,19 @@ Fixed in the lost-semantics closeout pass with a focused regression preserving t
 
 ## SWARM-059 — Multi-file project diagnostics misattribute error source file to root or first module
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / diagnostic source attribution
 - First observed: [Modules / Domain Services](modules/domain_services/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Lib and App](modules/lib_and_app/),
   [Modules / Calc Interpreter](modules/calc_interpreter/)
 - Observation count: 4
+
+### Resolution
+
+Fixed in Phase 15.14. Physical source file provenance is now preserved during parsing, whole-project module composition, type checking, and specialization. Diagnostics and structured JSON errors accurately report the physical source file containing the construct rather than falling back to the project root or first loaded file.
+
+Regression: `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
 
 ### Minimal reproducer
 
@@ -2373,16 +2362,12 @@ export fn bad(x: Int) -> Int:
 
 Committed paired reproducer: `examples/swarm/modules/domain_services/repro/diag_file` (`split`).
 
-### Observed behavior
+### Observed behavior (before fix)
 
-`margo build` fails on the type mismatch in `beta.moss:6` (or `9`), but reports:
-`source_file: .../src/alpha.moss, line: 9`
+`margo build` fails on the type mismatch in `beta.moss`, but reported:
+`source_file: .../src/alpha.moss`
 even though `alpha.moss` has only 4 lines.
-During whole-project merged analysis, diagnostics retain the line and column offset within the originating module file, but overwrite or default the `source_file` path to the project root (`main.moss`) or the first source file loaded in the project.
-
-### Workaround
-
-Inspect the reported line and column against secondary module files, or run isolated `moss check <source> --json` directly on the suspected module file.
+During whole-project merged analysis, diagnostics retained the line offset within the originating module file, but defaulted the `source_file` path to the root module or the first source file loaded in the project.
 
 ### Notes
 
@@ -2392,13 +2377,19 @@ Specifically module/package-boundary-dependent: occurs only in multi-file projec
 
 ## SWARM-060 — `moss edit rename` fails on module-qualified entities with `EDIT_TARGET_AMBIGUOUS`
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / semantic edit
 - First observed: [Modules / Domain Services](modules/domain_services/)
 - Also observed: [Modules / Text Toolkit](modules/text_toolkit/),
   [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Lib and App](modules/lib_and_app/)
 - Observation count: 4
+
+### Resolution
+
+Fixed in Phase 15.14. `moss edit rename` and target resolution now handle module-qualified entity selectors (e.g. `mod.fn`, `entity-v1:function:mod__fn`) unambiguously. The rename engine maps module prefixes across qualified and unqualified declarations and call sites without `EDIT_TARGET_AMBIGUOUS`, while genuinely ambiguous unqualified requests continue to be rejected.
+
+Regression: `tests/tooling/check_swarm_060_qualified_rename.py`.
 
 ### Minimal reproducer
 
@@ -2422,16 +2413,11 @@ moss edit rename entity-v1:function:util__double triple --json
 
 Committed paired reproducer: `examples/swarm/modules/domain_services/repro/edit_rename` (`single` vs `split`).
 
-### Observed behavior
+### Observed behavior (before fix)
 
 In single-file code, `moss edit rename entity-v1:function:double triple --json` succeeds and updates declaration and callers.
-In multi-module code, `moss inspect util__double` succeeds and reports durable identity `entity-v1:function:util__double`. However, running `moss edit rename` fails with:
+In multi-module code, `moss inspect util__double` succeeds and reports durable identity `entity-v1:function:util__double`. However, running `moss edit rename` failed with:
 `error[EDIT_TARGET_AMBIGUOUS]: rename could not map every semantic reference to one exact token`.
-The semantic edit engine fails to map the mangled identity (`util__double`) across module-qualified call sites (`util.double`) and unqualified export declarations (`export fn double`).
-
-### Workaround
-
-Perform textual find-and-replace across project source files and verify with `moss check` and `margo test`.
 
 ### Notes
 
