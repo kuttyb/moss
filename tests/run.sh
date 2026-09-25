@@ -266,7 +266,7 @@ run_case swarm_030_string_comparison_borrowed tests/swarm_030_string_comparison_
 run_case swarm_031_parenthesized_lowering tests/swarm_031_parenthesized_lowering.moss "$(printf '48\n4\n3')"
 run_case swarm_034_tail_push_unit tests/swarm_034_tail_push_unit.moss "$(printf '1\n1')"
 run_case swarm_035_nested_mutating_calls tests/swarm_035_nested_mutating_calls.moss '1'
-run_case swarm_048_callable_argument tests/swarm_048_callable_argument.moss "$(printf '1\n3')"
+run_case swarm_048_callable_argument tests/swarm_048_callable_argument.moss "$(printf '1\n3\ntrue')"
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
 run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3'
 run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"
@@ -987,7 +987,7 @@ grep -F '// Moss line 10: fn square(x: Int) = x * x' "$test_build/frontend_synta
   fail "frontend syntax example omitted its function source annotation"
 grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not infer its function signature"
-grep -F 'square(quote.size)' "$test_build/frontend_syntax.rs" >/dev/null ||
+grep -F 'square((quote).size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
 run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
 grep -F 'fn Latest_shared(&self) -> Option<Quote>' \

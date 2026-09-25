@@ -1557,9 +1557,12 @@ class Checker {
           }
         }
       }
-      // Leave the return type open here. The typed inference pass below has
-      // the source environment needed to derive the pipeline terminal type
-      // (count -> Int, any/all -> Bool, map/filter -> collection, etc.).
+      // A generic pipeline needs a result placeholder until its source and
+      // callable parameters are specialized. Concrete pipelines can use the
+      // typed inference pass below to derive their terminal type.
+      if (function.generic && expected_result == "$function_result" &&
+          (!function.return_type || starts_with(*function.return_type, "_")))
+        function.return_type = "_functional_result:" + function.name;
       return;
     }
     string e = normalize_pipeline(std::move(original));
@@ -1657,6 +1660,16 @@ class Checker {
       }
     string callee; vector<string> call_args;
     if (parse_simple_call(e, callee, call_args) && !member_call) {
+      for (const auto& parameter : function.params)
+        if (callee == parameter.name && parameter.type.empty()) {
+          if (!has_structural_requirement(function, parameter.name,
+                                          ConstraintKind::Callable,
+                                          "static callable"))
+            function.constraints.push_back({ConstraintKind::Callable,
+                                            parameter.name, "static callable", ""});
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       const Function* called = functions_.count(callee) ? functions_.at(callee) : nullptr;
       for (size_t index = 0; index < call_args.size(); ++index) {
         string expected;
@@ -2335,6 +2348,7 @@ class Checker {
         const_cast<Function&>(f).return_type = *actual;
       } else if (!starts_with(*f.return_type, "_") &&
                  !starts_with(*actual, "_method_") &&
+                  !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
                  canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
         err(f.result_line ? f.result_line : f.line,
@@ -2782,7 +2796,15 @@ class Checker {
       }
       if (callee == "range" && (args.size() == 2 || args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(callee);
+      string target = callee;
+      auto binding = env.find(callee);
+      if (binding != env.end()) {
+        if (starts_with(binding->second, "callable:"))
+          target = binding->second.substr(9);
+        else if (starts_with(binding->second, "_generic:"))
+          return "_functional_callable_result:" + callee;
+      }
+      auto function = functions_.find(target);
       if (function == functions_.end() && current_object_) {
         vector<string> argument_types;
         for (const auto& argument : args)
@@ -3916,6 +3938,7 @@ class Checker {
             if (!function.return_type) function.return_type = *result;
             else if (!starts_with(*function.return_type, "_") &&
                      !starts_with(*result, "_method_") &&
+                      !starts_with(*result, "_functional_callable_result:") &&
                      !same_type(*function.return_type, *result))
               err(function.result_line, "function '" + function.name + "' returns '" + *result +
                   "' but is annotated '" + *function.return_type + "'");
@@ -7247,7 +7270,14 @@ class Checker {
         err(line, "assertEqual currently supports scalar, string, and Vector values; compare a field for other values");
       return;
     }
-    auto function = functions_.find(name);
+    string target = name;
+    auto binding = env.find(name);
+    if (binding != env.end()) {
+      if (starts_with(binding->second, "_generic:")) return;
+      if (starts_with(binding->second, "callable:"))
+        target = binding->second.substr(9);
+    }
+    auto function = functions_.find(target);
     if (function == functions_.end()) {
       if (name == "sqrt" || name == "sum") return;
       if (current_object_) {
@@ -8090,7 +8120,9 @@ class Checker {
             trait_conforms(*actual, *current_function->return_type);
         if (current_function->return_type &&
             !starts_with(*current_function->return_type, "_") &&
-            !starts_with(*actual, "_method_") && !trait_result_match &&
+            !starts_with(*actual, "_method_") &&
+            !starts_with(*actual, "_functional_callable_result:") &&
+            !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
@@ -10312,7 +10344,7 @@ class Generator {
       }
       if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(callee);
+      auto function = functions_.find(resolved_callable_identity(callee, types));
       if (function != functions_.end() && function->second->return_type) {
         vector<string> argument_types;
         for (const auto& argument : call_args)
@@ -11678,6 +11710,7 @@ class Generator {
       }
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
+        head = resolved_callable_identity(head, types);
         bool known_function = functions_.count(head);
         if (known_function)
           return render_known_function_call(*functions_.at(head), head, call_args,
@@ -12954,10 +12987,11 @@ class Generator {
             ++i;
             break;
           }
-          bool known_function = functions_.count(s.a);
+          string function_name = resolved_callable_identity(s.a, &types);
+          bool known_function = functions_.count(function_name);
           if (s.b.empty() && known_function && !benchmark_body_) {
             o << indent(level)
-              << render_known_function_call(*functions_.at(s.a), s.a, s.args,
+              << render_known_function_call(*functions_.at(function_name), function_name, s.args,
                                            d, locals, &types)
               << ";\n";
             ++i;
@@ -13022,7 +13056,7 @@ class Generator {
           if (benchmark_body_) o << "std::hint::black_box(";
           o << (implicit_method ? "self." : "")
             << (s.b.empty() && known_function
-                    ? viewed_function_name(s.a, s.args, d, locals, &types)
+                    ? viewed_function_name(function_name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           if (!s.b.empty()) {
@@ -13043,7 +13077,7 @@ class Generator {
             string argument_expression = argument_temporaries[k].empty()
                 ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              o << function_call_argument(*functions_.at(s.a), k, argument_expression, d,
+              o << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k));
@@ -14884,7 +14918,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[]}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[]}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";

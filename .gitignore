@@ -22,3 +22,4 @@ examples/projects/*/build/
 examples/projects/*/.moss/
 
 .aider*
+package-lock.json

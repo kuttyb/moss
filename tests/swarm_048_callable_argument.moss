@@ -8,8 +8,12 @@ fn filter_ints(items: Vector[Int], pred) -> Vector[Int]:
       out.push(x)
   return out
 
+fn invoke(is_positive, value: Int) -> Bool:
+  return is_positive(value)
+
 fn main():
   nums = [1, -2, 3]
   filtered = filter_ints(nums, is_positive)
   echo filtered[0]
   echo filtered[1]
+  echo invoke(is_positive, 1)

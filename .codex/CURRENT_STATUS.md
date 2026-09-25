@@ -1,6 +1,28 @@
 # Moss current status
 
-Updated: 2026-09-23
+Updated: 2026-09-25
+
+## Post-rebase Make health — GREEN (2026-09-25)
+
+`make check` and `make examples` both complete successfully on the checked-out
+`main` after the temporary-branch rebase. The compiler again emits the additive
+`boolean_negation` bootstrap field expected by the agent contract checks. Generic
+functional pipelines retain a result placeholder until static specialization,
+while concrete pipelines still infer their terminal result. Direct calls through
+statically known callable parameters now check and lower to their resolved target,
+including an annotated return and a parameter sharing its target's name. The
+SWARM-048 regression covers that case. The frontend syntax regression assertion
+was aligned with equivalent parenthesized Rust lowering.
+
+Final validation after the last compiler edit: `make check` passed the full Moss
+v0.1 suite and `make examples` built all intended-positive examples. The optional
+live LLDB tests were skipped because process tracing is unavailable. No Moss source
+files changed, and no requested work remains. Bootstrap discovery and structured
+diagnostics identified the failing contracts; targeted native compilations verified
+the callable and generic-pipeline repairs before the full rerun. This took five
+significant edit/check cycles; impact-selected testing was not used for this
+compiler-wide change. A single Make health target that checks the bootstrap
+contract and all examples would have exposed the rebase drift sooner.
 
 ## Canonical swarm operating contract — COMPLETE (2026-09-23)
 
