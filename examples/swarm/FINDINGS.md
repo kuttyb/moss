@@ -7,12 +7,12 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 36
-- Fixed: 28
+- Open: 12
+- Fixed: 52
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
-(Counts updated on 2026-09-23 incorporating SWARM-043–055 from Static Polymorphism, SWARM-056–064 from Module & Package Boundary Torture, and SWARM-065–066 from Expression/Control-Flow closeout cleanup; SWARM-016 was never allocated.)
+(Counts reconciled on 2026-09-25 after Phase 15.13 stabilization; the detailed per-finding statuses are authoritative.)
 
 Completed swarm experiments:
 
@@ -1282,7 +1282,7 @@ Fixed in the lost-semantics closeout pass with a focused regression preserving t
 
 ## SWARM-036 — Unsupported binary operators pass checking
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / frontend validation
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: —
@@ -1324,6 +1324,11 @@ Same class as SWARM-026 (binary `in`): the checker should reject every
 operator outside the supported surface with `UNSUPPORTED_EXPRESSION_OPERATOR`.
 Whether Moss v0.1 should gain bitwise operators is a separate language-design
 question and is not implied by this finding.
+
+### Resolution
+
+Fixed by `c310b9783d756a88360469f2f8f016ff866bff1c` (`Fix SWARM-036 and SWARM-052 frontend leaks`). Unsupported symbolic and bitwise binary operators are rejected during Moss frontend validation instead of leaking to Fast Debug or generated Rust. Focused negative regressions cover the rejected operator forms.
+
 
 ## SWARM-037 — Boolean `and`/`or` work natively but not in Fast Debug, and are undocumented
 
@@ -1971,7 +1976,7 @@ Explicitly qualify the sibling callable argument with the module name: `Tools.ma
 
 ## SWARM-052 — Vector[Trait]() passes frontend check but fails native compilation
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / frontend validation
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1998,6 +2003,11 @@ Moss v0.1 does not support runtime trait objects; collections cannot hold abstra
 Store concrete types in separate typed collections (`Vector[Circle]()`, `Vector[Rectangle]()`) or use dynamic dispatch wrappers. The checker should reject `Vector[<Trait>]` at compile time.
 
 ---
+
+### Resolution
+
+Fixed by `c310b9783d756a88360469f2f8f016ff866bff1c` (`Fix SWARM-036 and SWARM-052 frontend leaks`). Trait types are rejected in concrete collection element positions, preserving the v0.1 rule that traits are static constraints rather than runtime trait objects.
+
 
 ## SWARM-053 — Binary string concatenation between owned String and literal fails rustc
 
