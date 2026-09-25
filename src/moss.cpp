@@ -5806,6 +5806,14 @@ class Checker {
             argument, env, domain_fields, implicit_object));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
+        // Built-in Map reads are resolved by the type checker without an
+        // ObjectType method. Their arguments were evaluated above, including
+        // the eager default passed to get.
+        if (auto map_types = map_key_value_types(*receiver_type)) {
+          if ((method == "get" && arguments.size() == 2) ||
+              ((method == "keys" || method == "values") && arguments.empty()))
+            return effects;
+        }
         vector<string> argument_types;
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -12177,7 +12185,15 @@ class Generator {
           !ops.empty() && !ops.count("[]");
       bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
           borrowable_type(pt.empty() ? parameter_rust_type : pt));
-      o << (borrow && effect == Effect::Write ? "mut " : "")
+      bool mutates_owned_parameter = effect == Effect::Consume && !view &&
+          std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
+            if (statement.kind != Stmt::Kind::Assign) return false;
+            string base, subscript;
+            return trim(statement.a) == f.params[index].name ||
+                (parse_index(statement.a, base, subscript) &&
+                 trim(base) == f.params[index].name);
+          });
+      o << ((borrow && effect == Effect::Write) || mutates_owned_parameter ? "mut " : "")
         << f.params[index].name << ": "
         << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
         << parameter_rust_type;
@@ -12712,10 +12728,9 @@ class Generator {
           } else {
             o << "\n";
           }
-          for (const auto& entry : s.joined_types) {
-            if (starts_with(entry.second, "_")) continue;
-            types[entry.first] = entry.second;
-          }
+          // Existing bindings already have a concrete type in this function
+          // instance. A shared statement's join metadata may have been
+          // populated while checking a different specialization.
           break;
         }
         case Stmt::Kind::While: {

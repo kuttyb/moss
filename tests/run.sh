@@ -267,6 +267,12 @@ run_case swarm_031_parenthesized_lowering tests/swarm_031_parenthesized_lowering
 run_case swarm_034_tail_push_unit tests/swarm_034_tail_push_unit.moss "$(printf '1\n1')"
 run_case swarm_035_nested_mutating_calls tests/swarm_035_nested_mutating_calls.moss '1'
 run_case swarm_048_callable_argument tests/swarm_048_callable_argument.moss "$(printf '1\n3\ntrue')"
+run_case swarm_047_reduce_map tests/swarm_047_reduce_map.moss "$(printf '2\n1\n0')"
+run_case swarm_050_nested_specialization tests/swarm_050_nested_specialization.moss "$(printf '4\n9')"
+grep -F '__moss_specialize_inner_0' "$test_build/swarm_050_nested_specialization.rs" >/dev/null ||
+  fail 'first nested concrete specialization was not emitted'
+grep -F '__moss_specialize_inner_1' "$test_build/swarm_050_nested_specialization.rs" >/dev/null ||
+  fail 'second nested concrete specialization was not emitted'
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
 run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3'
 run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"

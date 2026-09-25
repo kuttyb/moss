@@ -1773,7 +1773,7 @@ Fixed in the lost-semantics closeout pass with a focused regression preserving t
 
 ## SWARM-047 — Compiler assertion abort on pipeline reduce with Map accumulator
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / functional pipeline lowering
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: —
@@ -1795,6 +1795,14 @@ fn main():
 
 Compiler terminates with SIGABRT:
 `Assertion '!node.effects.unresolved && !node.callable_identity.empty()' failed` at `src/moss.cpp:6054`.
+
+### Resolution
+
+The effect walker now recognizes checked built-in Map reads, including `get`,
+without marking the callback unresolved. Native lowering also binds a consumed
+Map parameter as mutable when its body assigns through an index. The assertion
+remains in place. The committed reproducer and `tests/swarm_047_reduce_map.moss`
+pass checking, native compilation/execution, and Fast Debug.
 
 ### Workaround
 
@@ -1887,7 +1895,7 @@ regressions verify those supported operations agree.
 
 ## SWARM-050 — Nested generic specialization fails in Rust lowering backend
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & specialization
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
@@ -1927,7 +1935,19 @@ fn main():
 ### Observed behavior
 
 `moss check` succeeds.
-Native compilation fails in `rustc` with `E0308: mismatched types`: the compiler monomorphizes `quicksort` for both `TypeA` and `TypeB`, but only emits a single specialization of `partition` for `TypeA`, calling `partition_TypeA` inside `quicksort_TypeB`.
+Native compilation fails in `rustc` with `E0308: mismatched types`: the
+compiler emits concrete `quicksort` and `partition` specializations for both
+types, but the first `quicksort` specialization calls the second `partition`
+specialization.
+
+### Resolution
+
+Both inner specializations were emitted, but shared branch join metadata from
+the later checked outer specialization replaced the earlier outer parameter's
+concrete type during native generation. Lowering now retains the concrete type
+already established for each function instance. The committed reproducer and
+`tests/swarm_050_nested_specialization.moss` pass native compilation/execution
+and Fast Debug; the regression calls two concrete outer and inner pairs.
 
 ### Workaround
 

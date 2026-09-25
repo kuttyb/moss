@@ -2,6 +2,25 @@
 
 Updated: 2026-09-25
 
+## Phase 15.14 — SWARM-047 and SWARM-050 — COMPLETE (2026-09-25)
+
+SWARM-047 now carries the checked built-in Map `get` effect through functional
+IR and lowers a consumed, index-mutated Map callback parameter as a mutable
+native binding. The functional IR assertion remains unchanged. SWARM-050 now
+keeps each concrete outer specialization's type when lowering nested generic
+calls across branch joins; two outer specializations call their matching inner
+specializations. No runtime dispatch or trait objects were added.
+
+Focused native compilation/execution and Fast Debug passed for both new tests
+and the committed reproducers. `make check`, `make examples`, `make all`, Moss
+format checking, and swarm tracker validation passed after compiler edits.
+Only SWARM-047 and SWARM-050 were closed; other Phase 15.14 findings remain
+open. The agent skills and compiler bootstrap agreed on `moss-0.1`. The
+structured effects query confirmed `record_freq` is resolved; direct native
+reproducers exposed the Map binding and concrete call target faults. No impact
+selection was used because compiler lowering changed globally. One missing
+compiler-agent capability was a per-specialization native call-target query.
+
 ## Post-rebase Make health — GREEN (2026-09-25)
 
 `make check` and `make examples` both complete successfully on the checked-out

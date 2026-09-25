@@ -1,0 +1,13 @@
+fn record_freq(counts: Map[Int, Int], item: Int) -> Map[Int, Int]:
+  current = counts.get(item, 0)
+  counts[item] = current + 1
+  return counts
+
+fn main():
+  items = [200, 404, 200]
+  var initial = Map()
+  initial[0] = 0
+  result = items |> reduce(initial, record_freq)
+  echo result.get(200, 0)
+  echo result.get(404, 0)
+  echo result.get(0, -1)

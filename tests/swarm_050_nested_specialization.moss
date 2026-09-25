@@ -1,0 +1,26 @@
+trait Measured:
+  fn measure() -> Int
+
+type First:
+  value: Int
+  fn measure() -> Int:
+    return value
+
+type Second:
+  value: Int
+  fn measure() -> Int:
+    return value * 2
+
+fn inner(item: Measured) -> Int:
+  return item.measure()
+
+fn outer(item: Measured) -> Int:
+  if item.measure() < 0:
+    return 0
+  return inner(item) + 1
+
+fn main():
+  first = First(value: 3)
+  second = Second(value: 4)
+  echo outer(first)
+  echo outer(second)
