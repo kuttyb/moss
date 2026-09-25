@@ -50,15 +50,32 @@ deferred Phase 21 error-handling work. Missing expressiveness remains tracked
 separately as EXPRESS-002 through EXPRESS-006, and tooling-only defects remain
 SWARM-032, SWARM-038, SWARM-039, SWARM-059, and SWARM-060.
 
-### Next: Phase 15.14 — Semantic Correctness Closeout
+### Next: Phase 15.14 — Full Stabilization Closeout
 
-Phase 15.14 should avoid adding new general language surface. Its primary goal is to
-make the current accepted language internally consistent: decide SWARM-043 and
-SWARM-044, then fix SWARM-047, SWARM-050, SWARM-051, and SWARM-066 with focused
-positive/negative regressions and native/Fast Debug parity where applicable. Once
-those are closed, the remaining Phase 15 backlog is predominantly deliberate
-expressiveness, tooling, and Phase-21-deferred error semantics rather than correctness
-debt in currently legal Moss.
+Phase 15.14 is the complete remaining stabilization pass. It should add no new
+general-purpose language expressiveness. It closes every outstanding non-expressiveness
+item from the Phase 15 swarm ledger:
+
+- Ambiguous/specification: SWARM-040, SWARM-043, SWARM-044.
+- Semantic preservation/compiler correctness: SWARM-047, SWARM-050, SWARM-051,
+  SWARM-066.
+- Tooling and semantic-tool consistency: SWARM-032, SWARM-038, SWARM-039,
+  SWARM-059, SWARM-060.
+
+The exit criterion is stronger than the earlier 15.14 proposal: there should be no
+known outstanding Phase 15 SWARM defect outside Missing Expressiveness once this phase
+closes. Each repair or specification decision should carry focused regression coverage
+and native/Fast Debug parity checks where relevant.
+
+### Then: Phase 15.15 — Missing Expressiveness
+
+Phase 15.15 owns the remaining language-surface gaps that require deliberate feature
+design rather than stabilization repairs: EXPRESS-002 (explicit copy for nontrivial
+values), EXPRESS-003 (core String manipulation), EXPRESS-004 (Map deletion),
+EXPRESS-005 (enums/tagged unions), and EXPRESS-006 (static Self/covariant trait
+return). EXPRESS-007 remains explicitly deferred to Phase 21 — Error Propagation &
+Supervision because it is part of the larger recoverable-error design rather than a
+standalone Phase 15 surface addition.
 
 ## Canonical swarm operating contract — COMPLETE (2026-09-23)
 
