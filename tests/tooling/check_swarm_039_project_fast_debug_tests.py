@@ -158,6 +158,52 @@ def test_fast_debug_test_failures(compiler):
     print("  [PASS] fast debug test failure reporting and nonzero exit")
 
 
+def test_dependency_source_closure(compiler):
+    margo = compiler.parent / "margo"
+    scratch = REPO / "tmp"
+    scratch.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=scratch) as tmpdir:
+        root = Path(tmpdir)
+        dependency = root / "mathlib"
+        app = root / "app"
+        (dependency / "src").mkdir(parents=True)
+        (app / "src").mkdir(parents=True)
+        (app / "tests").mkdir(parents=True)
+
+        (dependency / "Moss.toml").write_text(
+            '[package]\nname = "mathlib"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "src"\n', encoding="utf-8")
+        (dependency / "src" / "mathlib.moss").write_text(
+            'module mathlib\n\n'
+            'export fn triple(x: Int) -> Int:\n'
+            '  return x * 3\n', encoding="utf-8")
+
+        (app / "Moss.toml").write_text(
+            '[package]\nname = "dep_tests"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "src"\n\n'
+            '[dependencies]\nmathlib = { path = "../mathlib" }\n',
+            encoding="utf-8")
+        (app / "src" / "main.moss").write_text(
+            'module dep_tests\n'
+            'import mathlib\n\n'
+            'fn main():\n'
+            '  value = mathlib.triple(2)\n', encoding="utf-8")
+        (app / "tests" / "test_dependency.moss").write_text(
+            'module dependency_tests\n'
+            'import mathlib\n\n'
+            'test "dependency_source":\n'
+            '  assertEqual(mathlib.triple(7), 21)\n', encoding="utf-8")
+
+        no_rustc_env = env_for(compiler, RUSTC="/definitely/not/rustc")
+        result = run([str(margo), "test", "dependency_source", "--interp"],
+                     cwd=app, env=no_rustc_env)
+        require_ok(result, "margo test --interp with path dependency")
+        if "PASS dependency_source" not in result.stdout or "1 passed" not in result.stdout:
+            raise AssertionError(f"Expected dependency-backed test to pass:\n{result.stdout}")
+
+    print("  [PASS] dependency source closure without rustc")
+
+
 def main():
     compiler = REPO / "moss"
     if not compiler.exists():
@@ -165,6 +211,7 @@ def main():
     print("Testing SWARM-039 project-wide Fast Debug testing...")
     test_multifile_project_fast_debug_tests(compiler)
     test_fast_debug_test_failures(compiler)
+    test_dependency_source_closure(compiler)
     print("SWARM-039 tests passed.")
     return 0
 

@@ -19481,14 +19481,17 @@ static SourceCompilationContext analyze_source_context(
 // decision only: the selected files still pass through check_project_sources
 // and therefore the ordinary Moss parser/checker remains authoritative.
 // When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
-// root directories, populated only by 'margo debug'), dependency source files are
+// root directories, populated by 'margo debug' and 'margo test --interp'),
+// dependency source files are
 // indexed alongside the root project's files so the transitive closure walk
 // can reach them. Providers are only disambiguated when an import makes a
 // module reachable; root project source has precedence over external source
 // providers, matching ordinary native module-provider selection.
 static vector<std::filesystem::path> fast_debug_source_closure(
     const SourceCompilationContext& context) {
-  if (!context.project || context.mode != ProgramGenerationMode::Application)
+  if (!context.project ||
+      (context.mode != ProgramGenerationMode::Application &&
+       context.mode != ProgramGenerationMode::Tests))
     return context.sources;
 
   struct ModuleSourceProvider {
@@ -19530,7 +19533,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     add_source(source, context.manifest.root, true);
 
   // Extend the module provider universe with explicitly supplied dependency
-  // source roots (set by Margo's 'margo debug' command via its exact,
+  // source roots (set by Margo's Fast Debug commands via their exact,
   // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
   // Dependency source files are indexed here and merged into the same
   // compilation unit; their module declarations make them self-identifying.
@@ -19573,7 +19576,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     }
   }
 
-  if (!has_explicit_modules || entry_module.empty()) return context.sources;
+  if (!has_explicit_modules) return context.sources;
 
   auto select_provider = [&](const string& module)
       -> const ModuleSourceProvider* {
@@ -19599,7 +19602,22 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     result.insert(result.end(), provider->files.begin(), provider->files.end());
     for (const auto& imported : provider->imports) visit(imported);
   };
-  visit(entry_module);
+  if (context.mode == ProgramGenerationMode::Tests) {
+    // Every root-project module participates in project-wide test discovery.
+    // Treat each as a closure root so tests and application modules can reach
+    // source dependencies without pulling in unrelated dependency providers.
+    for (const auto& module : modules) {
+      for (const auto& provider : module.second) {
+        if (provider.second.root_project) {
+          visit(module.first);
+          break;
+        }
+      }
+    }
+  } else {
+    if (entry_module.empty()) return context.sources;
+    visit(entry_module);
+  }
 
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
@@ -21843,7 +21861,9 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
             "FAST_DEBUG_NATIVE_DEPENDENCY",
             "Fast Debug requires source for all reachable Moss modules; "
             "module '" + missing + "' is available only as a compiled .mossi "
-            "provider. Use 'margo debug' so Margo can supply the resolved "
+            "provider. Use '" +
+                string(test_mode ? "margo test --interp" : "margo debug") +
+                "' so Margo can supply the resolved "
             "dependency source, or use native execution.",
             context.requested_source.string());
       }
