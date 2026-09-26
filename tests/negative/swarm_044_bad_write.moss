@@ -1,0 +1,5 @@
+fn replace(items, value):
+  items[0] = value
+fn main():
+  var words = ["a"]
+  replace(words, 42)

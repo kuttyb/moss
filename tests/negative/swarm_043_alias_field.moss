@@ -1,0 +1,9 @@
+type Alpha:
+  name: String
+
+fn get_name(item):
+  alias = item
+  return alias.name
+
+fn main():
+  echo get_name(Alpha(name: "A"))

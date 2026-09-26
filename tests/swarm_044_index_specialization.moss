@@ -1,0 +1,28 @@
+fn first(items):
+  return items[0]
+
+fn at(items, key):
+  return items[key]
+
+fn replace(items, key, value):
+  items[key] = value
+
+fn main():
+  var words = ["old"]
+  var numbers = [1]
+  echo first(words)
+  echo first(numbers)
+  replace(words, 0, "new")
+  replace(numbers, 0, 2)
+  echo at(numbers, 0)
+  echo at(words, 0)
+  var labels = Map()
+  labels["a"] = 3
+  var other = Map()
+  other[4] = "b"
+  echo at(labels, "a")
+  echo at(other, 4)
+  replace(labels, "a", 5)
+  replace(other, 4, "c")
+  echo labels["a"]
+  echo other[4]

@@ -1,0 +1,22 @@
+type Alpha:
+  name: String
+
+  fn get_name() -> String:
+    return name
+
+type Beta:
+  name: String
+
+  fn get_name() -> String:
+    return name
+
+fn concrete_name(item: Alpha) -> String:
+  return item.name
+
+fn generic_name(item):
+  return item.get_name()
+
+fn main():
+  echo concrete_name(Alpha(name: "A"))
+  echo generic_name(Alpha(name: "A"))
+  echo generic_name(Beta(name: "B"))

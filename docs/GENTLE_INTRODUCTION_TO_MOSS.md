@@ -279,6 +279,12 @@ fn main():
 
 Moss resolves concrete versions for the uses it sees. It does not turn `x` into a dynamically typed runtime value.
 
+Untyped parameters may call methods supplied by each concrete caller. A direct
+field read needs a concrete parameter annotation: `fn name(user: User): return
+user.name` works when `User` declares `name`, while `fn name(user): return
+user.name` is rejected at the field access. A shared `user.name()` method can
+instead be inferred for each concrete caller or declared in a named trait.
+
 ### Passing a function to a function
 
 A function can take another named function as an argument and call it:
@@ -414,6 +420,13 @@ fn main():
 
 Vectors support `push(item)`, `pop()`, indexed reads (`vec[i]`) and writes
 (`vec[i] = item`). Use `vec |> count` for cardinality.
+
+An untyped helper can index built-in collections. Moss checks each concrete
+call separately, so `fn first(items): return items[0]` can return `Int` for a
+`Vector[Int]` caller and `String` for a `Vector[String]` caller. The container
+determines the key and value types; an incorrect key, assigned value, or
+non-indexable caller is a compile error. A valid index type does not guarantee
+that an element or Map key is present at runtime.
 
 Contained types are inferred:
 

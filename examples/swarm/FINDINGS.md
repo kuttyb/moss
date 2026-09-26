@@ -1598,7 +1598,7 @@ Verified/fixed on the current compiler with a dedicated regression in the lost-s
 
 ## SWARM-043 — Untyped parameter field access monomorphizes function to first caller type
 
-- Status: Open
+- Status: Fixed (Phase 15.15)
 - Category: Compiler / type inference & specialization
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1633,6 +1633,14 @@ In `src/moss.cpp:1561-1565`, untyped parameter field access (`item.name`) record
 Encapsulate the field behind a method (`item.get_name()`). Method calls on untyped parameters correctly trigger structural trait / generic specialization.
 
 ---
+
+
+### Phase 15.15 resolution
+
+Untyped parameters support inferred static method requirements, but not inferred
+field requirements. The checker rejects direct field access, including via an
+alias, with `UNTYPED_FIELD_ACCESS` at the function body. Annotate the parameter
+with a concrete type or expose shared behavior through a method/trait.
 
 ## SWARM-044 — Untyped collection indexing fails checking with container error
 

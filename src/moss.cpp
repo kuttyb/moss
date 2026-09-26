@@ -1646,13 +1646,6 @@ class Checker {
           derive_expression_constraints(function, member_args[index], expected);
         }
       }
-      if (!parameter.type.empty()) continue;
-      auto dot = e.find('.');
-      if (dot != string::npos && trim(e.substr(0, dot)) == parameter.name && e.find('(', dot) == string::npos) {
-        string field = trim(e.substr(dot + 1));
-        if (!field.empty() && !has_structural_requirement(function, parameter.name, ConstraintKind::Field, field))
-          function.constraints.push_back({ConstraintKind::Field, parameter.name, field, ""});
-      }
     }
     string ib, ii;
     if (parse_index(e, ib, ii)) {
@@ -1660,6 +1653,7 @@ class Checker {
         if (!has_structural_requirement(function, p.name, ConstraintKind::Indexable, "index"))
           function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", ""});
         function.generic = true;
+        function.static_dispatch = true;
       }
       derive_expression_constraints(function, ii);
     }
@@ -3909,6 +3903,71 @@ class Checker {
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
       SourceFileScope function_source(current_source_file_, function.source_file);
+      // Field requirements are not part of Moss's inferred method-only static
+      // duck typing. Check before calls can infer a first concrete parameter.
+      TypeEnv field_env;
+      for (const auto& parameter : function.params)
+        field_env[parameter.name] = parameter.type.empty()
+            ? "_generic:" + parameter.name : parameter.type;
+      auto reject_untyped_fields = [&](int line, const string& expression,
+                                       const TypeEnv& env) {
+        bool quoted = false;
+        bool escaped = false;
+        for (size_t i = 0; i < expression.size();) {
+          char ch = expression[i];
+          if (quoted) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') quoted = false;
+            ++i;
+            continue;
+          }
+          if (ch == '"') { quoted = true; ++i; continue; }
+          if (!std::isalpha(static_cast<unsigned char>(ch)) && ch != '_') {
+            ++i;
+            continue;
+          }
+          size_t start = i++;
+          while (i < expression.size() &&
+                 (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+                  expression[i] == '_')) ++i;
+          string receiver = expression.substr(start, i - start);
+          size_t dot = i;
+          while (dot < expression.size() && std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
+          if (dot >= expression.size() || expression[dot] != '.') continue;
+          size_t member = dot + 1;
+          while (member < expression.size() && std::isspace(static_cast<unsigned char>(expression[member]))) ++member;
+          if (member >= expression.size() ||
+              (!std::isalpha(static_cast<unsigned char>(expression[member])) &&
+               expression[member] != '_')) continue;
+          size_t end = member + 1;
+          while (end < expression.size() &&
+                 (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+                  expression[end] == '_')) ++end;
+          size_t next = end;
+          while (next < expression.size() && std::isspace(static_cast<unsigned char>(expression[next]))) ++next;
+          auto binding = env.find(receiver);
+          if (binding != env.end() && starts_with(binding->second, "_generic:") &&
+              (next >= expression.size() || expression[next] != '('))
+            err(line, "field access '" + receiver + "." +
+                expression.substr(member, end - member) +
+                "' requires a concrete receiver type; annotate the parameter or "
+                "expose the behavior through a method/trait", "UNTYPED_FIELD_ACCESS");
+        }
+      };
+      TypeEnvVisitor check_field = [&](const Stmt& statement, const TypeEnv& env) {
+        if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
+        reject_untyped_fields(statement.line, statement.a, env);
+        reject_untyped_fields(statement.line, statement.b, env);
+        for (const auto& argument : statement.args)
+          reject_untyped_fields(statement.line, argument, env);
+        if (statement.kind == Stmt::Kind::Raw || statement.kind == Stmt::Kind::Call)
+          reject_untyped_fields(statement.line, statement.text, env);
+      };
+      walk_type_environment(function.body, field_env, check_field, false);
+      if (function.result_expression)
+        reject_untyped_fields(function.result_line ? function.result_line : function.line,
+                              *function.result_expression, field_env);
       // An untyped identity helper is a statically specialized generic.  It
       // must be recognized before domain inference reaches its first call;
       // otherwise the first domain instance would permanently type the
@@ -3966,6 +4025,7 @@ class Checker {
           if (parse_index(expression, base, idx)) {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
+              function.static_dispatch = true;
               function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
               function.generic_results["element:" + p.name] = p.name;
             }
@@ -8108,6 +8168,9 @@ class Checker {
       check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
+      // An untyped parameter carries an indexing requirement. Its key and
+      // element types are checked again in each concrete specialization.
+      if (starts_with(*bt, "_generic:")) return;
       if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
         auto it = inferred_expr_type(ii, env);
         if (!it || *it != "int") err(line, "vector and queue indices must be Int");
@@ -8281,6 +8344,22 @@ class Checker {
             }
             auto container = current_env.find(base);
             auto value_type = inferred_expr_type(statement.b, current_env);
+            if (container != current_env.end() &&
+                (starts_with(container->second, "_generic:") ||
+                 container->second == "map")) {
+              // A generic is checked at its concrete call. A fresh Map()
+              // learns its key/value types from this first assignment.
+            } else {
+              check_expression(statement.line, statement.a, current_env);
+              auto element_type = inferred_expr_type(statement.a, current_env);
+              if (element_type && value_type &&
+                  !starts_with(*element_type, "_") &&
+                  !starts_with(*value_type, "_") &&
+                  !same_type(*element_type, *value_type))
+                err(statement.line, "indexed assignment requires value of type '" +
+                    canonical_type_name(*element_type) + "', found '" +
+                    canonical_type_name(*value_type) + "'");
+            }
             if (container != current_env.end() && value_type &&
                 container->second == "map" &&
                 !inferred_expr_type(index_expression, current_env))
@@ -10003,6 +10082,7 @@ class Generator {
   const Program& p_;
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
+  std::set<string> borrowed_function_parameters_;
   string construction_binding_;
   bool view_domain_ = false;
   bool view_domain_access_ = false;
@@ -11862,6 +11942,9 @@ class Generator {
           (canonical_type_name(*base_type) == "map" ||
            starts_with(canonical_type_name(*base_type), "map["));
       if (!string_index && !map_index) ir = "(" + ir + ") as usize";
+      else if (map_index && !string_index &&
+               !borrowed_function_parameters_.count(trim(ii)))
+        ir = "&(" + ir + ")";
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
@@ -12451,6 +12534,7 @@ class Generator {
 
   void gen_function_instance(std::ostringstream& o, const Function& f,
                              const FunctionSpecialization* specialization, bool view = false) {
+    borrowed_function_parameters_.clear();
     bool container_generic = !specialization &&
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
           return p.type == "vector" || p.type == "queue" || p.type == "map";
@@ -12516,6 +12600,8 @@ class Generator {
           !ops.empty() && !ops.count("[]");
       bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
           borrowable_type(pt.empty() ? parameter_rust_type : pt));
+      if (borrow && !copy_type(pt))
+        borrowed_function_parameters_.insert(f.params[index].name);
       bool mutates_owned_parameter = effect == Effect::Consume && !view &&
           index < f.parameter_mutations.size() && f.parameter_mutations[index];
       o << ((borrow && effect == Effect::Write) || mutates_owned_parameter ? "mut " : "")
@@ -12584,6 +12670,7 @@ class Generator {
     o << "}\n\n";
     tooling_end(o, 0, semantic_identity);
     write_through_parameters_.clear(); view_parameters_.clear();
+    borrowed_function_parameters_.clear();
     bool needs_view = false;
     for (size_t i = 0; i < f.params.size(); ++i)
       needs_view |= function_effect(f, i) != Effect::Consume &&
@@ -13300,15 +13387,24 @@ class Generator {
               if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
                 key = "(" + key + ").clone()";
+              string inserted = expr(s.b, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0));
+              if (borrowed_function_parameters_.count(trim(s.b)))
+                inserted = "(" + inserted + ").clone()";
               o << indent(level) << "(" << place_expr(mb, d, locals, &types)
                 << ").insert(" << key << ", "
-                << expr(s.b, d, locals, &types,
-                        statement_functional_pipeline_id(s, functional_context, 0))
+                << inserted
                 << ");\n";
             }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
-            else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
+            else {
+              string assigned = expr(s.b, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0));
+              if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
+                assigned = "(" + assigned + ").clone()";
+              o << indent(level) << lhs << " = " << assigned << ";\n";
+            }
             if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
           ++i;

@@ -1,0 +1,5 @@
+fn at(items, key):
+  return items[key]
+fn main():
+  words = ["a"]
+  echo at(words, "invalid")

@@ -600,9 +600,22 @@ call site is verified with the ordinary concrete-method resolver. A named trait
 uses that same resolver for every declared method. Method-constrained and
 trait-typed local functions are emitted as concrete call-site specializations;
 there is no runtime method search, trait object, vtable, or implicit `Any`.
+Direct field access through an untyped parameter or an alias of it is rejected
+at the field expression. Annotate the parameter with a concrete type to use its
+fields, or expose shared behavior through a method. Untyped method calls retain
+their inferred, unnamed static requirement; fields do not acquire one.
 Consequently a trait is not a storage type: `Vector[Shape]()`, nested forms such as
 `Vector[Vector[Shape]]`, and trait-typed collection fields are rejected. Keep each
 concrete type in its own collection.
+
+Indexing an untyped parameter with a built-in collection operation also
+specializes at each concrete call. `fn first(items): return items[0]` accepts
+both `Vector[Int]` and `Vector[String]` callers and returns the corresponding
+element type. For `items[key]`, the concrete Vector, Queue, or Map constrains
+the key; indexed assignment additionally constrains the assigned value and
+infers a WRITE effect. A non-indexable argument or incompatible key/value is
+rejected by Moss. These static checks do not prove bounds or Map key presence.
+User-defined indexing remains a separate proposed feature (EXPRESS-008).
 
 The current implementation has begun separating semantic data (`src/ast.hpp`),
 inferred requirements (`src/constraints.hpp`), and diagnostics

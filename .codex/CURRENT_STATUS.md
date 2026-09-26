@@ -1,5 +1,43 @@
 # Moss current status
 
+## Phase 15.15 SWARM-043/044 combined integration (2026-09-26)
+
+The isolated SWARM-043 and SWARM-044 implementation commits were cherry-picked
+into this integration checkout. The conflict in status and issue tracking was
+reconciled: SWARM-043 is fixed by its early field diagnostic; SWARM-044 remains
+open until native validation. Combined `make` compilation, issue/feedback
+validators, focused Moss check, both Fast Debug positive programs, all five
+negative diagnostics, and `git diff --check` passed. `make check` stops at the
+agent-skill prerequisite because `rustc` is not installed in this environment;
+`make examples` and native execution remain unverified. EXPRESS-008 is separate.
+
+
+## Phase 15.15 SWARM-043 implementation (2026-09-26)
+
+SWARM-043 now rejects member field access through an untyped ordinary-function
+parameter or alias at the source expression with `UNTYPED_FIELD_ACCESS`. Concrete
+typed fields and inferred untyped member-method calls remain accepted. Focused
+negative fixtures, a positive native/Fast Debug fixture, documentation, and the
+canonical issue/finding ledger were updated. SWARM-044 and EXPRESS-008 remain
+separate open workstreams.
+
+Validation after the final source edit: strict C++ build via `make all`, focused
+`moss check --json` negatives, and Fast Debug positive A/A/B output; issue and
+feedback validators and `git diff --check` passed. Native Rust and full gates
+could not complete because `rustc` is absent: `make examples` and the skill
+drift test stop on that tool requirement. Run `make check` and `make examples`
+in a Rust-equipped environment before integrating this branch.
+## Phase 15.15 SWARM-044 implementation checkpoint (2026-09-26)
+
+The isolated `phase-15.15-swarm-044` branch implements per-call concrete
+specialization for existing built-in indexing, checks indexed write value
+types, and adds positive and negative regressions. Focused Moss checker and
+Fast Debug runs pass for Vector and Map across distinct key/value types;
+generated Rust has distinct concrete functions. Native compilation and the
+full `make check` gate have not passed in this environment because `rustc`
+is unavailable. SWARM-044 remains open pending that gate and integration.
+EXPRESS-008 remains separate and unimplemented.
+
 ## Phase 15.15 SWARM-043/044 implementation plan (2026-09-26)
 
 The approved semantic direction and executable regression/validation plan are in

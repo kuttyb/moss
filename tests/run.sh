@@ -190,6 +190,9 @@ run_case frontend_syntax examples/frontend_syntax.moss 'note: 4'
 run_case concrete_method tests/concrete_method.moss '12.56636'
 run_case concrete_method_body tests/concrete_method_body.moss "$(printf '12.566368\n0')"
 run_case duck_typed_methods tests/duck_typed_methods.moss "$(printf '6\n9')"
+run_case swarm_043_typed_field_and_method tests/swarm_043_typed_field_and_method.moss "$(printf 'A\nA\nB')"
+reject_case swarm_043_untyped_field 'requires a concrete receiver type'
+reject_case swarm_043_alias_field 'requires a concrete receiver type'
 run_case static_trait_dispatch tests/static_trait_dispatch.moss "$(printf '18\n60')"
 run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf '112\n45')"
 run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
@@ -283,6 +286,10 @@ python3 tests/tooling/check_swarm_050_targets.py \
 python3 tests/tooling/check_swarm_050_targets.py \
   "$test_build/swarm_050_join_specialization.rs" outer_reversed inner First,Second
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
+run_case swarm_044_index_specialization tests/swarm_044_index_specialization.moss "$(printf 'old\n1\n2\nnew\n3\nb\n5\nc')"
+reject_case swarm_044_nonindexable 'is not an indexable container'
+reject_case swarm_044_bad_key 'vector and queue indices must be Int'
+reject_case swarm_044_bad_write 'indexed assignment requires value of type'
 run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3'
 run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"
 run_case swarm_038_effects_loop_helper tests/swarm_038_effects_loop_helper.moss '4'
