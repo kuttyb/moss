@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 15.15 SWARM-043/044 closeout — COMPLETE (2026-09-26)
+
+The combined implementation and native repair are on `main` at `418dd20` and
+`f727895`. SWARM-043 rejects untyped parameter field access while preserving
+untyped method specialization; SWARM-044 specializes existing Vector and Map
+indexing by concrete call. Both are marked fixed in the canonical issue tracker.
+
+The user reports that `make check` and `make examples` both passed locally on
+`f727895` with `rustc` available, completing the full validation that was
+pending in the checkpoint below. This result is user-reported rather than
+independently rerun in this workspace, which has no `rustc`. The SWARM-043/044
+workstream is green. Phase 15.15 remains open for EXPRESS-002 through 006 and
+the separate EXPRESS-008 user-defined indexing design and implementation.
+SWARM-040 remains deferred to Phase 21.
+
 ## Phase 15.15 SWARM-043/044 native validation repair (2026-09-26)
 
 The combined commit `418dd20` was validated with rustc available. The first
