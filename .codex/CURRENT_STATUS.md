@@ -1,5 +1,14 @@
 # Moss current status
 
+## Phase 15.15 indexing design handoff (2026-09-26)
+
+The proposed per-call static indexing rule and implementation handoff are in
+`docs/PHASE_15_15_INDEXING_PROPOSAL.md`. SWARM-044 covers built-in indexing
+inference; EXPRESS-008 separately tracks explicit user-defined indexing in this
+phase. The user-defined opt-in spelling remains a design checkpoint before coding.
+Neither item is implemented or marked fixed by this proposal. SWARM-043 remains
+separate, and SWARM-040 is deferred to Phase 21.
+
 Updated: 2026-09-25
 
 ## Phase 15.14 — SWARM-059 inference provenance hardening — COMPLETE (2026-09-25)
