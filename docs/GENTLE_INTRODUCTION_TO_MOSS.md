@@ -130,6 +130,9 @@ overload or redefine them. `String` has three built-in operator forms:
 concatenation with `+`, equality with `==`, and inequality with `!=`.
 String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 
+There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
+Boolean logic uses words rather than `&&` and `||` (Section 2).
+
 ---
 
 ## 2. Branches and Loops
@@ -198,6 +201,44 @@ All Boolean operators require `Bool` operands. `and` and `or` short-circuit;
 `xor` evaluates both operands and is true when exactly one is true. Precedence,
 from highest to lowest, is `not`, `and`, `xor`, `or`.
 
+### A name bound inside a loop or branch stays there
+
+Python lets a name assigned inside a loop or an `if` leak into the rest of the
+function. Moss does not:
+
+```moss
+fn main():
+  values = [10, 20, 30]
+  var total = 0
+
+  for value in values:
+    doubled = value * 2
+    total = total + doubled
+
+  echo total
+```
+
+After the loop, `total` is still available because it existed before the loop.
+`value` and `doubled` are not: using either one after the loop is a
+compile-time error. A name first bound inside a `for` or `while` body,
+including the loop variable, stays inside the loop, since the loop might not run
+at all.
+
+A name first bound inside an `if` is visible afterwards only when every branch
+binds it:
+
+```moss
+fn describe(n: Int) -> String:
+  if n < 0:
+    label = "negative"
+  else:
+    label = "non-negative"
+  return label
+```
+
+To carry a value out of a loop or a one-sided `if`, create it before and update
+it inside, as `total` does above.
+
 ---
 
 ## 3. Functions: Start Untyped, Add Types When Useful
@@ -237,6 +278,32 @@ fn main():
 ```
 
 Moss resolves concrete versions for the uses it sees. It does not turn `x` into a dynamically typed runtime value.
+
+### Passing a function to a function
+
+A function can take another named function as an argument and call it:
+
+```moss
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn inc(x: Int) -> Int:
+  return x + 1
+
+fn apply(f, x: Int) -> Int:
+  return f(x)
+
+fn main():
+  echo apply(double, 5)
+  echo apply(inc, 5)
+```
+
+This is still static. Every call passes a function the compiler can see, and
+Moss compiles a separate version of `apply` for each one, so there is no
+function pointer or dynamic call at run time. For now, the function you pass
+needs its parameter types annotated. A function passed this way can also be used
+as a pipeline stage (Section 6), but it cannot be returned, stored in a field or
+collection, or sent in a message.
 
 ---
 
@@ -598,6 +665,10 @@ fn f(x: Drawable):
 
 means "this interface requirement has a name."
 
+A trait names a requirement; it is not a storage type. `Vector[Drawable]()` is
+rejected, and a list literal that mixes `Circle` and `Rectangle` values does not
+type-check. Keep each concrete type in its own collection.
+
 ---
 
 ## 9. Iteration
@@ -766,14 +837,25 @@ Constructor argument order does not matter because fields and routes are named.
 The beginning of `main` establishes the concrete domain instances and their connections. After that, normal execution proceeds.
 
 This composition prefix is also the one domain topology for a program: a
-`test "name":` block is not another composition root. Constructor state
-initializers must be side-effect-free. The current checker permits pure ordinary
-helper calls there, but rejects messages, domain access, I/O, failing, divergent,
-and unresolved work. Here, **unresolved** means an expression or call whose
-relevant observable effects cannot be statically established; it does not mean
-ordinary local computation, local bindings, multi-statement pure helpers, or
-normal value allocation. See `docs/TESTING.md` for how tests participate in the
-project's composed program.
+`test "name":` block is not another composition root. See `docs/TESTING.md` for
+how tests participate in the project's composed program.
+
+Domain state initializers must be side-effect-free. The rule covers both a
+default written in the domain declaration, such as `value = 0` or one that
+calls a helper function, and a value passed to the constructor in `main`. The
+checker permits pure ordinary helper calls there, but rejects messages, domain
+access, I/O, failing, divergent, and unresolved work. **Failing** work includes
+operations that can fail at run time, such as division, indexing, or `pop()`. A
+helper's `while` loop is accepted when the checker can prove it terminates. In
+practice that means a simple counting loop, such as `while i < n:`, that moves
+`i` toward the bound by a fixed step once per pass. The bound must have no side
+effects and must not change inside the loop. A `for` over a vector is accepted
+too. **Unresolved** means an expression or call whose relevant observable
+effects cannot be statically established; it does not mean ordinary local
+computation, local bindings, multi-statement pure helpers, or normal value
+allocation. To check a helper before using it as an initializer, run
+`moss effects fn:<name> --source <file> --json`. It reports the same
+`may_fail`, `may_diverge`, and `unresolved` facts the checker uses.
 
 ### Messages have value semantics
 
@@ -912,6 +994,7 @@ Use **Margo** for current package/project work:
 margo build
 margo run
 margo test
+margo test --interp
 margo bench
 margo clean
 margo debug
@@ -950,6 +1033,17 @@ margo test
 
 `moss test` remains available as the direct compiler/project compatibility
 path.
+
+To run the project's tests through Fast Debug instead of a native build, use:
+
+```sh
+margo test --interp
+margo test --interp --trace
+```
+
+This discovers tests across the project's files and modules and does not invoke
+`rustc`. Fast Debug's current limits (Section 14) apply, so a test that uses
+`for` still needs native `margo test`.
 
 There are two simple assertion forms:
 
@@ -1028,6 +1122,9 @@ For a package graph, use:
 margo debug --trace
 ```
 
+To trace a project's tests instead, use `margo test --interp --trace`
+(Section 13).
+
 A reachable source-free `.mossi`/rlib provider cannot be mixed into Fast Debug.
 Use native execution or make that dependency's Moss source available through
 the resolved package graph.
@@ -1061,7 +1158,9 @@ There are no user-visible references or lifetime annotations.
 
 There is no general runtime dynamic dispatch or trait-object model.
 
-There are no general escaping closure values.
+There are no general escaping closure values. You can pass a named function to
+another function (Section 3), but that is static specialization, not a closure
+value.
 
 There is no requirement to write locks around domain state.
 
@@ -1118,14 +1217,16 @@ If you already know Python, the shortest useful way to approach Moss is:
 1. Write variables, functions, branches, loops, objects, and collections normally.
 2. Leave types out until an annotation improves the interface.
 3. Remember that owned objects do not silently alias when assigned.
-4. Use traits when you want to give a structural requirement a name.
-5. Use pipelines for collection transformations.
-6. Use domains when mutable state needs to be isolated and shared safely.
-7. Connect domains explicitly with `domainroutes`.
-8. Use modules as named namespaces and compilation units.
-9. Use Margo for package/project testing and package-aware Fast Debug; use
-   `moss debug` or `moss run --interp` for direct same-project or standalone
-   interpreted execution.
-10. Let the compiler worry about native lowering, synchronization, and the Rust backend.
+4. Remember that a name first bound inside a loop, or in only one branch of an
+   `if`, stays there.
+5. Use traits when you want to give a structural requirement a name.
+6. Use pipelines for collection transformations.
+7. Use domains when mutable state needs to be isolated and shared safely.
+8. Connect domains explicitly with `domainroutes`.
+9. Use modules as named namespaces and compilation units.
+10. Use Margo for package/project testing and package-aware Fast Debug; use
+    `moss debug` or `moss run --interp` for direct same-project or standalone
+    interpreted execution.
+11. Let the compiler worry about native lowering, synchronization, and the Rust backend.
 
 Moss is meant to let a programmer begin near Python's level of ceremony while retaining a much more static, native, systems-oriented execution model underneath.
