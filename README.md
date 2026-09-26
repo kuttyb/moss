@@ -563,6 +563,7 @@ For a minimal two-module project, see
 
 **Phase 15 — Dogfooding:** write substantial Moss programs, identify real friction,
 and let actual usage determine the next refinements. Later milestones are
-Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision, and
-Phase 22 Agent Agency Tooling. The [v0.1 roadmap](docs/V0_1.md) preserves current
+Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision,
+Phase 22 Agent Agency Tooling, Phase 23 Static Compiler Optimizations, and
+Phase 24 TileIR Integration (Dynamic Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
 restrictions and the future scoped-domain breadcrumb.
