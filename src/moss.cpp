@@ -1750,20 +1750,22 @@ class Checker {
 
   void check_traits() {
     for (const auto& trait : p_.traits) {
+      current_source_file_ = trait.source_file;
       std::set<string> signatures;
       for (const auto& method : trait.methods) {
+        string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         string signature = method.name + "/" + std::to_string(method.params.size());
         for (const auto& parameter : method.params) {
           if (!parameter.type.empty() && !valid_type(parameter.type))
-            err(method.line, "unknown parameter type '" + parameter.type +
+            err(method_source, method.line, "unknown parameter type '" + parameter.type +
                 "' in trait method '" + trait.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(parameter.type);
         }
         if (!signatures.insert(signature).second)
-          err(method.line, "duplicate trait method signature '" + trait.name + "." +
+          err(method_source, method.line, "duplicate trait method signature '" + trait.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
-          err(method.line, "unknown result type '" + *method.return_type +
+          err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in trait method '" + trait.name + "." + method.name + "'");
       }
     }
@@ -1771,34 +1773,38 @@ class Checker {
 
   void check_objects() {
     for (const auto& object : p_.objects) {
+      current_source_file_ = object.source_file;
       std::set<string> field_names;
       std::set<string> method_signatures;
       for (const auto& field : object.fields) {
-        if (!valid_type(field.type)) err(field.line, "unknown field type '" + field.type + "'");
+        string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+        if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
-          err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
+          err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
+        string method_source = method.source_file.empty() ? object.source_file : method.source_file;
+        current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
         std::unordered_map<string,string> env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
-            err(method.line, "cannot infer type for parameter '" + param.name +
+            err(method_source, method.line, "cannot infer type for parameter '" + param.name +
                 "' in method '" + object.name + "." + method.name + "'");
           if (!valid_type(param.type))
-            err(method.line, "unknown parameter type '" + param.type +
+            err(method_source, method.line, "unknown parameter type '" + param.type +
                 "' in method '" + object.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
         }
         if (!method_signatures.insert(signature).second)
-          err(method.line, "duplicate method signature '" + object.name + "." +
+          err(method_source, method.line, "duplicate method signature '" + object.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
-          err(method.line, "unknown result type '" + *method.return_type +
+          err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in method '" + object.name + "." + method.name + "'");
         TypeEnv entry_env = env;
         TypeEnv inferred_env = env;
@@ -1809,9 +1815,11 @@ class Checker {
             if (result) {
               if (!method.return_type) method.return_type = *result;
               else if (!option_none_compatible(*result, *method.return_type) &&
-                       !same_type(*method.return_type, *result))
-                err(s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
+                       !same_type(*method.return_type, *result)) {
+                string stmt_source = s.source_file.empty() ? method_source : s.source_file;
+                err(stmt_source, s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
                     "' but another return path has type '" + *method.return_type + "'");
+              }
             }
           }
         }
@@ -1821,7 +1829,7 @@ class Checker {
             if (!method.return_type) method.return_type = *result;
             else if (!option_none_compatible(*result, *method.return_type) &&
                      !same_type(*method.return_type, *result))
-              err(method.result_line ? method.result_line : method.line,
+              err(method_source, method.result_line ? method.result_line : method.line,
                   "method '" + object.name + "." + method.name + "' returns '" + *result +
                   "' but is annotated/inferred as '" + *method.return_type + "'");
           }
@@ -1832,13 +1840,14 @@ class Checker {
             });
         if (!method.return_type && !has_value_return) method.return_type = "unit";
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
         if (method.result_expression)
           check_expression(method.result_line ? method.result_line : method.line,
                            *method.result_expression, final_env);
         if (!method.return_type && has_value_return)
-          err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
+          err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
       current_object_ = nullptr;
     }
@@ -1902,12 +1911,13 @@ class Checker {
     };
     for (const auto& domain : p_.domains) {
       for (const auto& field : domain.state)
-        reject(field.type, domain.source_file, field.line, "stored as ordinary state");
+        reject(field.type, field.source_file.empty() ? domain.source_file : field.source_file, field.line, "stored as ordinary state");
       for (const auto& handler : domain.handlers) {
+        string handler_source = handler.source_file.empty() ? domain.source_file : handler.source_file;
         for (const auto& parameter : handler.params)
-          reject(parameter.type, handler.source_file, handler.line, "passed as handler payloads");
+          reject(parameter.type, handler_source, handler.line, "passed as handler payloads");
         if (handler.reply_type)
-          reject(*handler.reply_type, handler.source_file, handler.line, "returned through reply");
+          reject(*handler.reply_type, handler_source, handler.line, "returned through reply");
       }
     }
     for (const auto& function : p_.functions) {
@@ -1918,20 +1928,22 @@ class Checker {
     }
     for (const auto& object : p_.objects) {
       for (const auto& field : object.fields)
-        reject(field.type, object.source_file, field.line, "stored in aggregates");
+        reject(field.type, field.source_file.empty() ? object.source_file : field.source_file, field.line, "stored in aggregates");
       for (const auto& method : object.methods) {
+        string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         for (const auto& parameter : method.params)
-          reject(parameter.type, method.source_file, method.line, "passed as ordinary method parameters");
+          reject(parameter.type, method_source, method.line, "passed as ordinary method parameters");
         if (method.return_type)
-          reject(*method.return_type, method.source_file, method.line, "returned as ordinary values");
+          reject(*method.return_type, method_source, method.line, "returned as ordinary values");
       }
     }
     for (const auto& trait : p_.traits)
       for (const auto& method : trait.methods) {
+        string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         for (const auto& parameter : method.params)
-          reject(parameter.type, trait.source_file, trait.line, "passed as ordinary trait parameters");
+          reject(parameter.type, method_source, trait.line, "passed as ordinary trait parameters");
         if (method.return_type)
-          reject(*method.return_type, trait.source_file, trait.line, "returned as ordinary values");
+          reject(*method.return_type, method_source, trait.line, "returned as ordinary values");
       }
   }
 
@@ -1973,8 +1985,9 @@ class Checker {
     current_source_file_ = d.source_file;
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
-      if (!valid_type(f.type)) err(f.line, "unknown state type '" + f.type + "'");
-      if (!state_names.insert(f.name).second) err(f.line, "duplicate state field '" + f.name + "'");
+      string f_source = f.source_file.empty() ? d.source_file : f.source_file;
+      if (!valid_type(f.type)) err(f_source, f.line, "unknown state type '" + f.type + "'");
+      if (!state_names.insert(f.name).second) err(f_source, f.line, "duplicate state field '" + f.name + "'");
       if (!f.init.empty()) {
         ObservableEffects initializer_effects =
             observable_expression_effects(f.init, {});
@@ -1983,14 +1996,8 @@ class Checker {
             initializer_effects.local_mutation || initializer_effects.external_io ||
             initializer_effects.may_fail || initializer_effects.may_diverge ||
             initializer_effects.unresolved) {
-          string source_file = f.source_file.empty() ? d.source_file : f.source_file;
-          if (!source_file.empty()) {
-            err(source_file, f.line,
-                "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
-          } else {
-            err(f.line,
-                "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
-          }
+          err(f_source, f.line,
+              "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
         }
       }
     }
@@ -2007,33 +2014,34 @@ class Checker {
             "duplicate domain member '" + route.name + "' (state and route share one namespace)");
     }
     for (const auto& h : d.handlers) {
-      current_source_file_ = h.source_file.empty() ? d.source_file : h.source_file;
-      if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
-      if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
+      string h_source = h.source_file.empty() ? d.source_file : h.source_file;
+      current_source_file_ = h_source;
+      if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
+      if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
         return s.kind == Stmt::Kind::Reply;
       });
       if (has_reply && !h.reply_type)
-        err(h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
+        err(h_source, h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
             "'; add an annotation or use a statically typed reply expression");
       if (h.reply_type && !has_reply)
-        err(h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
+        err(h_source, h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
       if (h.reply_type) {
         size_t reply_index = 0;
         if (!every_handler_path_replies(h.body, reply_index, 0))
-          err(h.line, "reply handler '" + d.name + "." + h.name +
+          err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
               "' must reply on every normal control-flow path");
       }
       std::unordered_map<string,string> env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
         if (p.type.empty())
-          err(h.line, "cannot infer type for parameter '" + p.name +
+          err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
-        if (!valid_type(p.type)) err(h.line, "unknown parameter type '" + p.type + "'");
-        if (env.count(p.name)) err(h.line, "duplicate parameter '" + p.name + "'");
+        if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (env.count(p.name)) err(h_source, h.line, "duplicate parameter '" + p.name + "'");
         if (route_names.count(p.name))
-          err(h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
+          err(h_source, h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
         env[p.name] = p.type;
       }
       for (const auto& f : d.state) env[f.name] = f.type;
@@ -2344,13 +2352,13 @@ class Checker {
     std::unordered_map<string,string> env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
-      err(f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
+      err(f.source_file, f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
-        err(f.line, "cannot infer type for parameter '" + param.name +
+        err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.line, "unknown parameter type '" + param.type + "'");
-      if (!names.insert(param.name).second) err(f.line, "duplicate parameter: " + param.name);
+      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+      if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
     TypeEnv entry_env = env;
@@ -3523,9 +3531,11 @@ class Checker {
     }
     for (const auto& object : p_.objects) {
       for (const auto& field : object.fields) {
-        if (field.type.empty())
-          err(field.line, "cannot infer type for field '" + object.name + "." + field.name +
+        if (field.type.empty()) {
+          string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+          err(field_source, field.line, "cannot infer type for field '" + object.name + "." + field.name +
               "'; add an annotation or a constructor constraint");
+        }
       }
     }
   }
@@ -21035,7 +21045,7 @@ static size_t replace_identifier_on_line(string& line, const string& old_name,
 
 static size_t replace_semantic_function_on_line(
     string& line, const string& module, const string& old_name,
-    const string& new_name, bool is_target_source) {
+    const string& new_name, bool is_same_module) {
   if (module.empty()) {
     return replace_identifier_on_line(line, old_name, new_name);
   }
@@ -21083,7 +21093,7 @@ static size_t replace_semantic_function_on_line(
         continue;
       }
     }
-    if (is_target_source) {
+    if (is_same_module) {
       bool right = index + old_name.size() == line.size() ||
           !format_word_character(line[index + old_name.size()]);
       if (left && right && line.compare(index, old_name.size(), old_name) == 0) {
@@ -21326,6 +21336,57 @@ static int run_semantic_edit(
         changed_line_numbers[std::filesystem::absolute(pipeline.source_file)
                                  .lexically_normal()].insert(pipeline.line);
     }
+    std::map<std::filesystem::path, string> file_to_module;
+    for (const auto& file_pair : edited_lines) {
+      for (const auto& line : file_pair.second) {
+        string t = trim(line);
+        if (starts_with(t, "module ")) {
+          string mod = trim(t.substr(7));
+          if (!mod.empty()) {
+            file_to_module[file_pair.first] = mod;
+            break;
+          }
+        }
+      }
+    }
+    for (const auto& f : unit.program.functions) {
+      if (!f.source_file.empty()) {
+        auto norm = std::filesystem::absolute(f.source_file).lexically_normal();
+        string mod = module_name_from_symbol(f.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& obj : unit.program.objects) {
+      if (!obj.source_file.empty()) {
+        auto norm = std::filesystem::absolute(obj.source_file).lexically_normal();
+        string mod = module_name_from_symbol(obj.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& tr : unit.program.traits) {
+      if (!tr.source_file.empty()) {
+        auto norm = std::filesystem::absolute(tr.source_file).lexically_normal();
+        string mod = module_name_from_symbol(tr.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& dom : unit.program.domains) {
+      if (!dom.source_file.empty()) {
+        auto norm = std::filesystem::absolute(dom.source_file).lexically_normal();
+        string mod = module_name_from_symbol(dom.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& imp : unit.program.imports) {
+      if (!imp.source_file.empty() && !imp.owner_module.empty()) {
+        auto norm = std::filesystem::absolute(imp.source_file).lexically_normal();
+        file_to_module[norm] = imp.owner_module;
+      }
+    }
+    if (unit.program.main && !unit.program.main->source_file.empty() && !unit.program.main_module.empty()) {
+      auto norm = std::filesystem::absolute(unit.program.main->source_file).lexically_normal();
+      file_to_module[norm] = unit.program.main_module;
+    }
     size_t replacements = 0;
     size_t expected = 0;
     for (const auto& file_lines : changed_line_numbers) {
@@ -21335,7 +21396,8 @@ static int run_semantic_edit(
                            "a resolved reference is outside the logical project context",
                            file_lines.first.string());
       expected += file_lines.second.size();
-      bool is_target_file = file_lines.first == target_source;
+      bool is_same_module = (!module_name.empty() && file_to_module[file_lines.first] == module_name) ||
+                            (file_lines.first == target_source);
       for (int line_number : file_lines.second) {
         if (line_number <= 0 || static_cast<size_t>(line_number) > file_it->second.size())
           throw ProjectError("EDIT_TARGET_STALE",
@@ -21343,7 +21405,7 @@ static int run_semantic_edit(
                              file_lines.first.string(), line_number);
         replacements += replace_semantic_function_on_line(
             file_it->second[static_cast<size_t>(line_number - 1)], module_name,
-            old_name, new_name, is_target_file);
+            old_name, new_name, is_same_module);
       }
     }
     if (replacements != expected)

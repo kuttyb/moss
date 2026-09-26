@@ -43,17 +43,22 @@ Phase 15.14 completes all remaining implementation and tooling stabilization wor
    - Validated with `tests/tooling/check_swarm_039_project_fast_debug_tests.py`.
 
 7. **SWARM-059 — Multi-file diagnostic source provenance**:
-   - Preserved physical source file provenance through parsing, module composition, semantic checking, specialization, and structured JSON diagnostics.
-   - Diagnostics identify the exact physical source file containing the error rather than misattributing it to the root module file.
-   - Validated with human-readable and structured JSON tests in `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
+   - Preserved physical source file provenance through parsing, module composition, declaration validation (object field types, object method signatures, trait method signatures), semantic checking, specialization, and structured JSON diagnostics.
+   - Declaration-level and body-level diagnostics identify the exact physical source file containing the error rather than misattributing it to the root module file.
+   - Validated with human-readable and structured JSON tests covering body-level semantic errors, parse errors, object field declarations, object method declarations, and trait method declarations in `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
 
-8. **SWARM-060 — Semantic rename of module-qualified entities**:
+8. **SWARM-060 — Semantic rename of module-qualified entities & multi-file modules**:
    - `moss edit rename` resolves module-qualified entity selectors (e.g. `mod.fn`, `entity-v1:function:mod__fn`) using compiler-owned canonical identity without declaring ambiguity.
    - Renames only the selected entity and its semantic references across declarations and call sites without `EDIT_TARGET_AMBIGUOUS`.
+   - Supports semantic rename across multiple physical files belonging to the same explicit module, rewriting unqualified same-module call sites while preserving same-named functions and calls in other modules.
    - Genuinely ambiguous unqualified requests continue to fail with `EDIT_TARGET_AMBIGUOUS`.
    - Validated with `tests/tooling/check_swarm_060_qualified_rename.py`.
 
-9. **Canonical tracker reconciliation**:
+9. **Canonical tracker reconciliation & final Phase 15.14 exit statement**:
+   - SWARM-059 now covers both body-level and declaration-level physical source provenance.
+   - SWARM-060 now supports semantic rename across multiple physical files belonging to the same explicit module.
+   - All focused and repository-wide validation gates pass (`make check`, `make examples`, `make all`, tracker validators, `git diff --check`, bootstrap discovery).
+   - No known implementation, lowering, Fast Debug, formatter, diagnostic, or semantic-tooling defects remain in Phase 15.14. Phase 15.14 is fully closed.
    - Recomputed detailed counts in `examples/swarm/FINDINGS.md` and updated `examples/swarm/ISSUES.jsonl`:
      - 61 Fixed
      - 3 Open (Phase 15.15 ambiguous-spec items: SWARM-040, SWARM-043, SWARM-044)

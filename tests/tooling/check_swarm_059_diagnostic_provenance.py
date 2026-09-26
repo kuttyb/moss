@@ -144,6 +144,166 @@ def test_parse_error_provenance_non_root(compiler):
     print("  [PASS] parse error provenance in non-root module (human and JSON)")
 
 
+def test_invalid_object_field_type_non_root(compiler):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        src = root / "src"
+        src.mkdir(parents=True)
+
+        (root / "Moss.toml").write_text(
+            '[package]\nname = "obj_field_proj"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "src"\n', encoding="utf-8")
+
+        (src / "main.moss").write_text(
+            'module obj_field_proj\n'
+            'import models\n'
+            'fn main():\n'
+            '  x = 1\n', encoding="utf-8")
+
+        (src / "models.moss").write_text(
+            'module models\n\n'
+            'export type Broken:\n'
+            '  value: MissingType\n', encoding="utf-8")
+
+        # 1. Human-readable diagnostic from root check
+        res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
+        if res_human.returncode == 0:
+            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
+        combined = res_human.stderr + res_human.stdout
+        if "models.moss" not in combined:
+            raise AssertionError(f"Expected error to reference models.moss, got:\n{combined}")
+        if "main.moss" in combined and "models.moss" not in combined:
+            raise AssertionError(f"Error was incorrectly attributed to root main.moss:\n{combined}")
+
+        # 2. Structured JSON diagnostic from root check
+        res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
+        try:
+            payload = json.loads(res_json.stdout)
+        except json.JSONDecodeError as err:
+            raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
+
+        source_file = None
+        if not payload.get("ok"):
+            error_obj = payload.get("error", {})
+            source_file = error_obj.get("source_file")
+        else:
+            diagnostics = payload.get("result", {}).get("diagnostics", [])
+            if diagnostics:
+                source_file = diagnostics[0].get("source_file")
+
+        if not source_file or "models.moss" not in source_file:
+            raise AssertionError(
+                f"JSON diagnostic source_file did not identify models.moss: {source_file!r}\nPayload:\n{payload}")
+
+    print("  [PASS] invalid object field type provenance in non-root module (human and JSON)")
+
+
+def test_invalid_object_method_signature_non_root(compiler):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        src = root / "src"
+        src.mkdir(parents=True)
+
+        (root / "Moss.toml").write_text(
+            '[package]\nname = "obj_method_proj"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "src"\n', encoding="utf-8")
+
+        (src / "main.moss").write_text(
+            'module obj_method_proj\n'
+            'import models\n'
+            'fn main():\n'
+            '  x = 1\n', encoding="utf-8")
+
+        (src / "models.moss").write_text(
+            'module models\n\n'
+            'export type Worker:\n'
+            '  id: Int\n\n'
+            '  fn process(x: MissingType) -> Int:\n'
+            '    return 0\n', encoding="utf-8")
+
+        # 1. Human-readable diagnostic from root check
+        res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
+        if res_human.returncode == 0:
+            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
+        combined = res_human.stderr + res_human.stdout
+        if "models.moss" not in combined:
+            raise AssertionError(f"Expected error to reference models.moss, got:\n{combined}")
+
+        # 2. Structured JSON diagnostic from root check
+        res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
+        try:
+            payload = json.loads(res_json.stdout)
+        except json.JSONDecodeError as err:
+            raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
+
+        source_file = None
+        if not payload.get("ok"):
+            error_obj = payload.get("error", {})
+            source_file = error_obj.get("source_file")
+        else:
+            diagnostics = payload.get("result", {}).get("diagnostics", [])
+            if diagnostics:
+                source_file = diagnostics[0].get("source_file")
+
+        if not source_file or "models.moss" not in source_file:
+            raise AssertionError(
+                f"JSON diagnostic source_file did not identify models.moss: {source_file!r}\nPayload:\n{payload}")
+
+    print("  [PASS] invalid object method signature provenance in non-root module (human and JSON)")
+
+
+def test_invalid_trait_method_signature_non_root(compiler):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        src = root / "src"
+        src.mkdir(parents=True)
+
+        (root / "Moss.toml").write_text(
+            '[package]\nname = "trait_proj"\nversion = "0.1.0"\n\n'
+            '[build]\nsource = "src"\n', encoding="utf-8")
+
+        (src / "main.moss").write_text(
+            'module trait_proj\n'
+            'import contracts\n'
+            'fn main():\n'
+            '  x = 1\n', encoding="utf-8")
+
+        (src / "contracts.moss").write_text(
+            'module contracts\n\n'
+            'export trait Broken:\n'
+            '  fn perform(x: MissingType) -> Int\n', encoding="utf-8")
+
+        # 1. Human-readable diagnostic from root check
+        res_human = run([str(compiler), "check", str(src / "main.moss")], cwd=root)
+        if res_human.returncode == 0:
+            raise AssertionError(f"Expected check to fail, but succeeded:\n{res_human.stdout}")
+        combined = res_human.stderr + res_human.stdout
+        if "contracts.moss" not in combined:
+            raise AssertionError(f"Expected error to reference contracts.moss, got:\n{combined}")
+
+        # 2. Structured JSON diagnostic from root check
+        res_json = run([str(compiler), "check", str(src / "main.moss"), "--json"], cwd=root)
+        try:
+            payload = json.loads(res_json.stdout)
+        except json.JSONDecodeError as err:
+            raise AssertionError(f"Expected JSON output, got:\n{res_json.stdout}\n{res_json.stderr}") from err
+
+        source_file = None
+        if not payload.get("ok"):
+            error_obj = payload.get("error", {})
+            source_file = error_obj.get("source_file")
+        else:
+            diagnostics = payload.get("result", {}).get("diagnostics", [])
+            if diagnostics:
+                source_file = diagnostics[0].get("source_file")
+
+        if not source_file or "contracts.moss" not in source_file:
+            raise AssertionError(
+                f"JSON diagnostic source_file did not identify contracts.moss: {source_file!r}\nPayload:\n{payload}")
+
+    print("  [PASS] invalid trait method signature provenance in non-root module (human and JSON)")
+
+
 def main():
     compiler = REPO / "moss"
     if not compiler.exists():
@@ -151,6 +311,9 @@ def main():
     print("Testing SWARM-059 diagnostic source provenance...")
     test_semantic_error_provenance_non_root(compiler)
     test_parse_error_provenance_non_root(compiler)
+    test_invalid_object_field_type_non_root(compiler)
+    test_invalid_object_method_signature_non_root(compiler)
+    test_invalid_trait_method_signature_non_root(compiler)
     print("SWARM-059 tests passed.")
     return 0
 
