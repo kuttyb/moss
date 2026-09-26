@@ -963,10 +963,12 @@ The formal claims rely on the following conditions:
 | 15.12 | Expression, control-flow, static-polymorphism, and module/package torture swarms; discovery only, corrective fixes landed in 15.13–15.14 |
 | 15.13 | Swarm stabilization checkpoint: corrective fixes rebased into a quasi-stable baseline; static callable parameters for ordinary functions |
 | 15.14 | Full stabilization closeout: corrective pass over swarm-ledger implementation and tooling defects; control-flow-scoped local bindings; domain state initializer effect checks; project-wide Fast Debug tests |
-| 15.15 | Planned: language semantics and missing expressiveness |
-| Phase 20 | Rust interoperability |
-| Phase 21 | Error propagation and supervision |
-| Phase 22 | Agent agency tooling |
+| 15.15 | Language semantics and missing expressiveness; EXPRESS-005 and EXPRESS-008 design remains |
+| Phase 20 | Rust interoperability; proposal has open design questions to settle |
+| Phase 21 | Error propagation and supervision; clean-slate design after current contracts settle |
+| Phase 22 | Agent agency tooling; work in progress on separate branches |
+| Phase 23 | Static Compiler Optimizations; LLM proposals are one possible technique |
+| Phase 24 | TileIR Integration (Dynamic Optimizations); future design, not part of v0.1 |
 
 ## Appendix D - References
 
