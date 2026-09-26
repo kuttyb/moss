@@ -7,9 +7,9 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 2
+- Open: 1
 - Deferred to Phase 21: 1
-- Fixed: 61
+- Fixed: 62
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
@@ -1644,7 +1644,7 @@ with a concrete type or expose shared behavior through a method/trait.
 
 ## SWARM-044 — Untyped collection indexing fails checking with container error
 
-- Status: Open
+- Status: Fixed (Phase 15.15)
 - Category: Compiler / type inference & specialization
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/), [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
@@ -1672,6 +1672,14 @@ Untyped function parameters (`items`) are not inferred as generic container type
 Wrap container operations in structural traits with `fn get(i: Int)` / `fn set(i: Int, v)`, or pass concrete collections directly.
 
 ---
+
+### Phase 15.15 resolution
+
+Existing built-in Vector and Map indexing now creates an independent static
+specialization at each concrete call, including indexed writes. Native lowering
+also preserves String map-key borrowing for typed parameters, avoiding an
+invalid `&&String` Rust lookup. The regression covers Vector and Map key/value
+variation in both source call orders; user-defined indexing remains EXPRESS-008.
 
 ## SWARM-045 — Exported struct fields lower without pub modifier across modules
 

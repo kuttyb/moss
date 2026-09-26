@@ -9,7 +9,7 @@ type Quote:
 
 fn square(x: Int) = x * x
 
-fn score(quote):
+fn score(quote: Quote):
   value = quote.size |> square
   return value
 

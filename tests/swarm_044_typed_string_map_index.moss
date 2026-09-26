@@ -1,0 +1,10 @@
+type Lookup:
+  values: Map[String, Int]
+
+  fn read(key: String) -> Int:
+    return values[key]
+
+fn main():
+  lookup = Lookup(values: Map())
+  lookup.values["alpha"] = 7
+  echo lookup.read("alpha")

@@ -103,8 +103,8 @@ with tempfile.TemporaryDirectory(prefix="moss-sw-059-", dir=ROOT / "tmp") as nam
             "fn bad(item):\n"
             "  return item.value\n",
             "module app\nimport lib\nfn main():\n  echo 1\n",
-            "cannot infer type for parameter 'item'",
-            6,
+            "requires a concrete receiver type",
+            7,
         ),
         "domain state finalization": (
             "module lib\n"

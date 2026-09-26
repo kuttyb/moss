@@ -1,5 +1,22 @@
 # Moss current status
 
+## Phase 15.15 SWARM-043/044 native validation repair (2026-09-26)
+
+The combined commit `418dd20` was validated with rustc available. The first
+actual Rust failure was the valid SWARM-043 positive control: native view
+lowering called an owned method through a field-only access trait and through a
+borrowed object parameter. Native lowering now materializes an access view or
+clones that borrowed owned value only when invoking a consuming concrete method.
+
+The next native failure was SWARM-044-relevant typed String Map indexing:
+`HashMap<String, _>[&(key)]` passed `&&String` to Rust. String map-key reads
+now lower through `.as_str()`, while non-String keys retain their reference.
+The focused SWARM-043 native/Fast Debug regression and SWARM-044 Vector/Map
+read/write native/Fast Debug regression pass. `make examples` passes.
+The full `make check` run progressed through the new SWARM-043 test and then
+exposed/fixed the String-key error; it must be rerun to completion after this
+last compiler edit. SWARM-044 is fixed; EXPRESS-008 remains separate.
+
 ## Phase 15.15 SWARM-043/044 combined integration (2026-09-26)
 
 The isolated SWARM-043 and SWARM-044 implementation commits were cherry-picked

@@ -109,6 +109,18 @@ run_case_either_order() {
   fi
 }
 
+run_fast_debug_case() {
+  name=$1
+  source=$2
+  expected=$3
+  actual=$("$compiler" run --interp "$source")
+  if [ "$actual" != "$expected" ]; then
+    printf 'test failure: %s Fast Debug output\nexpected:\n%s\nactual:\n%s\n' \
+      "$name" "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
 run_shared_memory_case() {
   name=$1
   source=$2
@@ -191,6 +203,7 @@ run_case concrete_method tests/concrete_method.moss '12.56636'
 run_case concrete_method_body tests/concrete_method_body.moss "$(printf '12.566368\n0')"
 run_case duck_typed_methods tests/duck_typed_methods.moss "$(printf '6\n9')"
 run_case swarm_043_typed_field_and_method tests/swarm_043_typed_field_and_method.moss "$(printf 'A\nA\nB')"
+run_fast_debug_case swarm_043_typed_field_and_method tests/swarm_043_typed_field_and_method.moss "$(printf 'A\nA\nB')"
 reject_case swarm_043_untyped_field 'requires a concrete receiver type'
 reject_case swarm_043_alias_field 'requires a concrete receiver type'
 run_case static_trait_dispatch tests/static_trait_dispatch.moss "$(printf '18\n60')"
@@ -287,6 +300,8 @@ python3 tests/tooling/check_swarm_050_targets.py \
   "$test_build/swarm_050_join_specialization.rs" outer_reversed inner First,Second
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
 run_case swarm_044_index_specialization tests/swarm_044_index_specialization.moss "$(printf 'old\n1\n2\nnew\n3\nb\n5\nc')"
+run_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'
+run_fast_debug_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'
 reject_case swarm_044_nonindexable 'is not an indexable container'
 reject_case swarm_044_bad_key 'vector and queue indices must be Int'
 reject_case swarm_044_bad_write 'indexed assignment requires value of type'

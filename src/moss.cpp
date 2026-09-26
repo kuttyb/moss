@@ -11942,9 +11942,16 @@ class Generator {
           (canonical_type_name(*base_type) == "map" ||
            starts_with(canonical_type_name(*base_type), "map["));
       if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-      else if (map_index && !string_index &&
-               !borrowed_function_parameters_.count(trim(ii)))
-        ir = "&(" + ir + ")";
+      else if (map_index && !string_index) {
+        // HashMap<String, _> accepts `str` as a borrowed lookup key. This
+        // works for both an owned String and an already-borrowed &String,
+        // whereas another `&` would emit an invalid &&String lookup.
+        auto key_type = generated_expr_type(ii, types);
+        if (key_type && canonical_type_name(*key_type) == "string")
+          ir = "(" + ir + ").as_str()";
+        else if (!borrowed_function_parameters_.count(trim(ii)))
+          ir = "&(" + ir + ")";
+      }
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
     }
@@ -12006,6 +12013,17 @@ class Generator {
                                                     result.push_back(generated_expr_type(argument, types).value_or(""));
                                                   return result;
                                                 }(), true, nullptr)) {
+          // A consuming concrete method cannot be invoked through either a
+          // field-only access view or an ordinary borrowed function parameter.
+          // The former has no method surface at all; the latter must retain
+          // Moss's READ helper contract. Materialize the checked object value
+          // at this native boundary before selecting the owned method.
+          if (method->receiver_effect == Effect::Consume) {
+            if (is_object_view(member_receiver, d, locals, types))
+              receiver_expression = "(" + receiver_expression + ").__moss_value()";
+            else if (borrowed_function_parameters_.count(trim(member_receiver)))
+              receiver_expression = "(*(" + receiver_expression + ")).clone()";
+          }
           vector<string> argument_temporaries(member_arguments.size());
           if (method->receiver_effect != Effect::Read) {
             for (size_t index = 0; index < member_arguments.size(); ++index) {
