@@ -1,5 +1,19 @@
 # Moss current status
 
+## Roadmap direction (2026-09-26)
+
+Finish the remaining Phase 15.15 designs: EXPRESS-005 closed enums/tagged unions
+and exhaustive matching, EXPRESS-008 explicit user-defined indexing, and the
+open questions in the Phase 20 Rust interoperability proposal. Once those
+contracts are settled, start Phase 21 Error Propagation & Supervision with a
+clean-slate design discussion; SWARM-040, EXPRESS-007, and EXPRESS-009 are
+inputs, not predetermined solutions. Phase 22 Agent Agency Tooling has work in
+progress with separate agents and awaits their review; it is not closed.
+Phase 23 is **Static Compiler Optimizations**, with LLM-proposed,
+compiler-verified optimizations as one possible technique. Phase 24 is
+**TileIR Integration (Dynamic Optimizations)**. Both are future design work;
+this roadmap update does not reinstate TileIR in the v0.1 compiler.
+
 ## Phase 15.15 String / Map native validation repair (2026-09-26)
 
 On `phase-15.15-string-api`, full native validation with rustc exposed two
