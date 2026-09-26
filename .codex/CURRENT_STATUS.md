@@ -25,6 +25,25 @@ validators; `git diff --check`; and agent bootstrap reporting `moss-0.1`.
 Canonical swarm counts remain 61 fixed, 3 open, 1 agent misunderstanding, and
 65 total, with only SWARM-040, SWARM-043, and SWARM-044 open.
 
+## Phase 15.14 — Agent A reconciliation — COMPLETE (2026-09-25)
+
+Agent A rebased its preserved SWARM-032 / SWARM-059 work onto the Phase 15.14
+closeout at `a863941`. The formatter implementation and older formatter regression
+were fully superseded by main's canonical SWARM-032 fix and
+`check_swarm_032_formatter_parentheses.py`, so they were not retained.
+
+The remaining useful SWARM-059 delta scopes `current_source_file_` while each
+function is processed by signature inference. This preserves the physical provider
+file for diagnostics emitted before ordinary function body checking, including a
+non-root annotated-return mismatch. The additional project regression also covers
+unknown local calls and missing object methods in a non-root module. Agent C's
+separately assigned trait/object declaration-level provenance hardening was left
+untouched, and no tracker counts or Phase 15.15 semantics changed.
+
+Validation passed: the canonical SWARM-032 and SWARM-059 focused tests, the new
+function-inference provenance regression, `make check`, `make examples`, `make all`,
+both swarm validators, `git diff --check`, and the `moss-0.1` bootstrap contract.
+
 ## Phase 15.14 — Final Stabilization Closeout — COMPLETE (2026-09-25)
 
 Phase 15.14 completes all remaining implementation and tooling stabilization work across the compiler, runtime/Fast Debug, formatter, and semantic tooling before Phase 15.15. No implementation/tooling defect remains open from the canonical swarm ledger.

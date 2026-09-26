@@ -1250,6 +1250,19 @@ static const Method* resolve_object_method(
   return found;
 }
 
+class SourceFileScope {
+ public:
+  SourceFileScope(string& current, const string& source_file)
+      : current_(current), previous_(current) {
+    if (!source_file.empty()) current_ = source_file;
+  }
+  ~SourceFileScope() { current_ = std::move(previous_); }
+
+ private:
+  string& current_;
+  string previous_;
+};
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -3864,6 +3877,7 @@ class Checker {
 
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
+      SourceFileScope function_source(current_source_file_, function.source_file);
       // An untyped identity helper is a statically specialized generic.  It
       // must be recognized before domain inference reaches its first call;
       // otherwise the first domain instance would permanently type the
@@ -3986,6 +4000,7 @@ class Checker {
     }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
+        SourceFileScope function_source(current_source_file_, function.source_file);
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
         infer_statement_expressions(function.body, env);

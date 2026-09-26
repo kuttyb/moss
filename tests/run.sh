@@ -15,6 +15,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_032_formatter_parentheses.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_project_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_7_formatter_convergence.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_8_cross_package_fast_debug.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_9_cross_package_specialization.py "$compiler"
