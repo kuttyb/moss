@@ -12105,7 +12105,7 @@ class Generator {
             string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
             return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
                 "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
-                "); " + flag + " = __moss_removed.is_some(); " +
+                "); let _ = &(" + flag + "); " + flag + " = __moss_removed.is_some(); " +
                 "__moss_removed.unwrap_or(__moss_fallback) }";
           }
           if (member_name == "get" && member_arguments.size() == 2) {

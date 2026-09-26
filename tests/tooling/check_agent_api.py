@@ -103,9 +103,9 @@ if (vector.get("construction") != {"literal": "[a, b, c]", "empty_typed": "Vecto
 map_surface = collections.get("Map", {})
 if (map_surface.get("construction") != {"inferred": "Map()"}
         or map_surface.get("indexing") != {"read": "map[key]", "write": "map[key] = value"}
-        or map_surface.get("methods") != ["get(key, default)", "keys()", "values()"]
+        or map_surface.get("methods") != ["get(key, default)", "keys()", "values()", "delete(key, fallback, found)"]
         or map_surface.get("iteration_note") != "keys() and values() return eager owned Vector snapshots"
-        or map_surface.get("deletion_supported") is not False):
+        or map_surface.get("deletion_supported") is not True):
     fail("bootstrap collection surface omitted Map operations")
 queue = collections.get("Queue", {})
 if queue.get("construction") != {"inferred": "Queue()"} or queue.get("methods") != ["push(item)", "pop()"]:

@@ -1232,6 +1232,8 @@ run_case message_payload_copy tests/message_object_copy.moss '7'
 run_case reply_payload_copy tests/reply_payload_snapshot.moss '7'
 run_case nested_payload_copy tests/nested_payload_snapshot.moss '7'
 run_case string_payload_copy tests/string_payload_snapshot.moss 'fresh'
+# Phase 15.15: Unicode String methods and Map.delete must survive native lowering.
+run_case phase15_15_string_map tests/phase15_15_string_map.moss 'string/map ok'
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
 run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'
 phase47_element_effects_json="$test_build/phase47_element_effects.json"

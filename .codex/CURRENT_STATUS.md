@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 15.15 String / Map native validation repair (2026-09-26)
+
+On `phase-15.15-string-api`, full native validation with rustc exposed two
+Phase-15.15 integration defects. `check_agent_api.py` still asserted the
+pre-Map.delete bootstrap contract even though the compiler correctly exposed
+the new API; it now expects `delete(key, fallback, found)` and deletion support.
+The first valid native `Map.delete` program then failed `rustc -D warnings`:
+the required initialized writable Bool flag was overwritten before Rust read its
+initial value. Lowering now borrows that Bool place before assigning its presence
+result, retaining eager fallback evaluation/consumption and the existing owned
+removed-value behavior without adding copying or shared ownership. The existing
+Unicode String/Map regression is now a native `run_case` as well as its focused
+Fast Debug coverage. `make check`, `make examples`, both swarm validators, and
+`git diff --check` passed; no EXPRESS or swarm issue status was changed.
+
 ## Phase 15.15 EXPRESS-002/003/004 (2026-09-26, pending native validation)
 
 EXPRESS-002 was closed by user decision at `b09392c`: move and temporary
