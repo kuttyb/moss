@@ -7,7 +7,8 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 3
+- Open: 2
+- Deferred to Phase 21: 1
 - Fixed: 61
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
@@ -1448,7 +1449,7 @@ Project-wide interpreted testing gives test-level native/Fast Debug parity check
 
 ## SWARM-040 — Failure/precondition mechanism for user code is undocumented
 
-- Status: Open
+- Status: Deferred to Phase 21
 - Category: Documentation / discoverability
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
@@ -1471,6 +1472,9 @@ test that expects a failure.
 If `assert` in ordinary code is the intended v0.1 failure primitive, say so in
 `source_surface`, `moss-language`, and the Gentle Introduction. An
 expected-failure test form is a separate, optional surface question.
+
+Phase 15.15 scope decision: defer this failure/precondition specification
+question to Phase 21 alongside recoverable error propagation and supervision.
 
 ## SWARM-041 — Collection method on struct field during handler effect analysis triggers internal invariant error
 
