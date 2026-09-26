@@ -2,6 +2,16 @@
 
 Updated: 2026-09-25
 
+## Phase 15.14 — SWARM-059 inference provenance hardening — COMPLETE (2026-09-25)
+
+Inference and finalization diagnostics now retain authoritative physical source
+provenance while processing function signatures, domain state, and handler replies.
+Adjacent object-field and function-signature inference traversals establish the
+enclosing function, field, handler, main, test, or benchmark source before helper
+diagnostics can run. Focused multi-file regressions cover non-root function
+finalization, unresolved domain state, and conflicting handler replies in both human
+and JSON diagnostics. Canonical tracker counts and language semantics are unchanged.
+
 ## Phase 15.14 — Agent B reconciliation follow-up — COMPLETE (2026-09-25)
 
 Agent B's pre-integration SWARM-039/SWARM-060 work was preserved on

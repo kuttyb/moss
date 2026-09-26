@@ -3509,6 +3509,7 @@ class Checker {
     for (size_t round = 0;
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
       for (const auto& function : p_.functions) {
+        SourceFileScope function_source(current_source_file_, function.source_file);
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
         infer_statement_expressions(function.body, env);
@@ -3516,11 +3517,18 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
       }
       for (auto& domain : p_.domains) {
+        SourceFileScope domain_source(current_source_file_, domain.source_file);
         for (const auto& field : domain.state) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          SourceFileScope field_scope(current_source_file_, field_source);
           if (!field.init.empty())
             constrain_constructor_fields(field.line, field.init, {});
         }
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
@@ -3530,14 +3538,17 @@ class Checker {
         }
       }
       if (p_.main) {
+        SourceFileScope main_source(current_source_file_, p_.main->source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
+        SourceFileScope test_source(current_source_file_, test.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
+        SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(benchmark.body, env);
       }
@@ -3779,12 +3790,16 @@ class Checker {
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
+        SourceFileScope domain_source(current_source_file_, domain.source_file);
         std::unordered_map<string,string> initializer_env;
         initializer_env["self"] = domain.name;
         for (const auto& field : domain.state) {
           if (!field.type.empty()) initializer_env[field.name] = field.type;
         }
         for (auto& field : domain.state) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          SourceFileScope field_scope(current_source_file_, field_source);
           if (!field.init.empty()) {
             constrain_constructor_fields(field.line, field.init, initializer_env);
             if (auto actual = inferred_expr_type(field.init, initializer_env)) {
@@ -3796,7 +3811,7 @@ class Checker {
                 field.inferred = field.init.empty();
               }
               else if (!same_type(field.type, *actual))
-                err(field.line, "state field '" + domain.name + "." + field.name +
+                err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                     "' is annotated '" + field.type + "' but its initializer has type '" +
                     *actual + "'");
             }
@@ -3805,6 +3820,9 @@ class Checker {
         }
 
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
@@ -3817,10 +3835,13 @@ class Checker {
             if (field.type.empty()) {
               field.type = inferred->second;
               field.inferred = true;
-            } else if (!field.inferred && !same_type(field.type, inferred->second))
-              err(field.line, "state field '" + domain.name + "." + field.name +
+            } else if (!field.inferred && !same_type(field.type, inferred->second)) {
+              string field_source = field.source_file.empty()
+                  ? domain.source_file : field.source_file;
+              err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                   "' has conflicting inferred types '" + field.type + "' and '" +
                   inferred->second + "'");
+            }
           }
         }
       }
@@ -3828,9 +3849,12 @@ class Checker {
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& field : domain.state) {
-        if (field.type.empty())
-          err(field.line, "cannot infer type for state field '" + domain.name + "." +
+        if (field.type.empty()) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          err(field_source, field.line, "cannot infer type for state field '" + domain.name + "." +
               field.name + "'; add an annotation or initializer");
+        }
       }
     }
   }
@@ -3840,6 +3864,9 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
@@ -3853,7 +3880,9 @@ class Checker {
             if (!handler.reply_type) {
               handler.reply_type = *actual;
             } else if (!same_type(*handler.reply_type, *actual)) {
-              err(statement.line, "conflicting reply types in handler '" + domain.name +
+              string statement_source = statement.source_file.empty()
+                  ? handler_source : statement.source_file;
+              err(statement_source, statement.line, "conflicting reply types in handler '" + domain.name +
                   "." + handler.name + "': expected '" + *handler.reply_type +
                   "' but this reply has type '" + *actual + "'");
             }
@@ -3864,12 +3893,14 @@ class Checker {
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& handler : domain.handlers) {
+        string handler_source = handler.source_file.empty()
+            ? domain.source_file : handler.source_file;
         bool has_reply = std::any_of(handler.body.begin(), handler.body.end(),
                                      [](const Stmt& statement) {
                                        return statement.kind == Stmt::Kind::Reply;
                                      });
         if (has_reply && !handler.reply_type)
-          err(handler.line, "cannot infer reply type for handler '" + domain.name +
+          err(handler_source, handler.line, "cannot infer reply type for handler '" + domain.name +
               "." + handler.name + "'; add an annotation or use a statically typed reply expression");
       }
     }
@@ -4034,6 +4065,9 @@ class Checker {
       }
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
@@ -4043,20 +4077,24 @@ class Checker {
         }
       }
       if (p_.main) {
+        SourceFileScope main_source(current_source_file_, p_.main->source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
+        SourceFileScope test_source(current_source_file_, test.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
+        SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
+      SourceFileScope function_source(current_source_file_, function.source_file);
       if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
