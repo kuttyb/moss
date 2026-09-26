@@ -32,8 +32,8 @@ unavailable. Source-free dependency diagnostics now direct test users to
 Validated after the reconciliation: focused SWARM-039 and SWARM-060 tooling
 checks; `make check`; `make examples`; `make all`; swarm issue and feedback
 validators; `git diff --check`; and agent bootstrap reporting `moss-0.1`.
-Canonical swarm counts remain 61 fixed, 3 open, 1 agent misunderstanding, and
-65 total, with only SWARM-040, SWARM-043, and SWARM-044 open.
+Canonical swarm counts remain 61 fixed, 2 open, 1 deferred, 1 agent misunderstanding, and
+65 total. SWARM-043 and SWARM-044 remain in Phase 15.15; SWARM-040 moves to Phase 21.
 
 ## Phase 15.14 — Agent A reconciliation — COMPLETE (2026-09-25)
 
@@ -113,13 +113,15 @@ Phase 15.14 completes all remaining implementation and tooling stabilization wor
    - No known implementation, lowering, Fast Debug, formatter, diagnostic, or semantic-tooling defects remain in Phase 15.14. Phase 15.14 is fully closed.
    - Recomputed detailed counts in `examples/swarm/FINDINGS.md` and updated `examples/swarm/ISSUES.jsonl`:
      - 61 Fixed
-     - 3 Open (Phase 15.15 ambiguous-spec items: SWARM-040, SWARM-043, SWARM-044)
+     - 2 Open (Phase 15.15 ambiguous-spec items: SWARM-043, SWARM-044)
+     - 1 Deferred (SWARM-040, Phase 21)
      - 1 Agent misunderstanding
      - 65 Total recorded findings
    - Verified with `python3 tools/check_swarm_issues.py` and `python3 tools/check_swarm_feedback.py`.
 
 ### Next: Phase 15.15 — Language Semantics & Missing Expressiveness
-- Scheduled language-design and expressiveness items: SWARM-040, SWARM-043, SWARM-044, and EXPRESS-002 through EXPRESS-006.
+- Scheduled language-design and expressiveness items: SWARM-043, SWARM-044, and EXPRESS-002 through EXPRESS-006.
+- SWARM-040 failure/precondition semantics are deferred to Phase 21.
 - EXPRESS-007 remains deferred to Phase 21.
 
 ## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)
