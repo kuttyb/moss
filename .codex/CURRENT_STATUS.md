@@ -1,5 +1,14 @@
 # Moss current status
 
+## Phase 15.15 SWARM-043/044 implementation plan (2026-09-26)
+
+The approved semantic direction and executable regression/validation plan are in
+`docs/PHASE_15_15_SWARM_043_044_PLAN.md`. SWARM-043 rejects field access on an
+untyped parameter while preserving inferred method requirements. SWARM-044
+specializes existing built-in indexing independently for each concrete call.
+Neither compiler fix has been implemented by this planning commit. EXPRESS-008
+remains a separate user-defined indexing workstream.
+
 ## Phase 15.15 indexing design handoff (2026-09-26)
 
 The proposed per-call static indexing rule and implementation handoff are in
