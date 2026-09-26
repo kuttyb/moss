@@ -2924,6 +2924,14 @@ class Checker {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
         string concrete_base = canonical_type_name(*base);
+        if (concrete_base == "string") {
+          if (method_name == "length" && method_args.empty()) return string("int");
+          if (method_name == "char_at" && method_args.size() == 1) return string("string");
+          if ((method_name == "chars" && method_args.empty()) ||
+              (method_name == "split" && method_args.size() == 1))
+            return string("vector[string]");
+          if (method_name == "join" && method_args.size() == 1) return string("string");
+        }
         if ((concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
              concrete_base == "queue" || starts_with(concrete_base, "queue["))) {
           if (method_name == "push" && method_args.size() == 1)
@@ -2936,6 +2944,8 @@ class Checker {
         }
         if (auto map_types = map_key_value_types(*base)) {
           if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "delete" && method_args.size() == 3)
             return map_types->second;
           if (method_name == "keys" && method_args.empty())
             return "vector[" + map_types->first + "]";
@@ -4918,18 +4928,30 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
+        if (canonical_type_name(*receiver_type) == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : arguments)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
         string concrete = canonical_type_name(*receiver_type);
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
-          Effect receiver_use = (method == "push" || method == "pop")
+          Effect receiver_use = (method == "push" || method == "pop" || method == "delete")
               ? Effect::Write : Effect::Read;
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, receiver_use);
           for (size_t index = 0; index < arguments.size(); ++index)
             analyze_effect_expression(arguments[index], env, params, parameter_effects,
                                       receiver_effect, receiver_fields,
+                                      method == "delete" && index == 2 ? Effect::Write :
+                                      method == "delete" && index == 1 ? Effect::Consume :
                                       method == "push" && index == 0
                                           ? Effect::Consume : Effect::Read);
           return;
@@ -6000,10 +6022,24 @@ class Checker {
         // Built-in Map reads are resolved by the type checker without an
         // ObjectType method. Their arguments were evaluated above, including
         // the eager default passed to get.
+        if (canonical_type_name(*receiver_type) == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          if (method == "char_at" || method == "split") effects.may_fail = true;
+          return effects;
+        }
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if ((method == "get" && arguments.size() == 2) ||
               ((method == "keys" || method == "values") && arguments.empty()))
             return effects;
+          if (method == "delete" && arguments.size() == 3) {
+            auto flag_location = storage_location(arguments[2], env);
+            if (domain_fields.count(receiver) ||
+                (flag_location && domain_fields.count(flag_location->root)))
+              effects.domain_write = true;
+            else effects.local_mutation = true;
+            return effects;
+          }
         }
         vector<string> argument_types;
         for (const auto& argument : arguments)
@@ -6022,7 +6058,7 @@ class Checker {
         if (starts_with(concrete, "vector") ||
             starts_with(concrete, "queue") ||
             starts_with(concrete, "map")) {
-          bool mutating = method == "push" || method == "pop" || method == "pop_front";
+          bool mutating = method == "push" || method == "pop" || method == "pop_front" || method == "delete";
           bool query = method == "get" || method == "keys" || method == "values";
           if (mutating || query) {
             if (method == "pop" || method == "pop_front") {
@@ -7098,29 +7134,41 @@ class Checker {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          check_ownership_expression(line, receiver, env, Effect::Read);
+          for (const auto& argument : arguments)
+            check_ownership_expression(line, argument, env, Effect::Read);
+          return;
+        }
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
           auto location = storage_location(receiver, env.types);
-          if ((method == "push" || method == "pop") && location &&
+          if ((method == "push" || method == "pop" || method == "delete") && location &&
               env.active_read_traversals.count(location->root))
             err(line, "cannot structurally mutate collection '" + location->root +
                 "' during an active READ traversal");
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{
-              (method == "push" || method == "pop") ? Effect::Write : Effect::Read};
+              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read};
           for (size_t index = 0; index < arguments.size(); ++index) {
             access_expressions.push_back(arguments[index]);
-            access_effects.push_back(method == "push" && index == 0
+            access_effects.push_back(method == "delete" && index == 2 ? Effect::Write :
+                method == "delete" && index == 1 ? Effect::Consume :
+                method == "push" && index == 0
                 ? Effect::Consume : Effect::Read);
           }
           check_conflicting_call_accesses(line, method, access_expressions,
                                           access_effects, env);
           check_ownership_expression(line, receiver, env,
-              (method == "push" || method == "pop") ? Effect::Write : Effect::Read);
+              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
+                method == "delete" && index == 2 ? Effect::Write :
+                method == "delete" && index == 1 ? Effect::Consume :
                 method == "push" && index == 0 ? Effect::Consume : Effect::Read);
           return;
         }
@@ -8090,7 +8138,43 @@ class Checker {
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        if (canonical_type_name(*receiver_type) == "string") {
+          bool zero = handler == "length" || handler == "chars";
+          bool one = handler == "char_at" || handler == "split" || handler == "join";
+          if (!zero && !one) err(line, "unknown String method '" + handler + "'");
+          if (args.size() != (one ? 1u : 0u))
+            err(line, "String " + handler + " expects " + (one ? "one" : "no") + " argument(s)");
+          if (one) {
+            auto arg_type = inferred_expr_type(args[0], env);
+            string expected = handler == "char_at" ? "int" :
+                handler == "split" ? "string" : "vector[string]";
+            if (!arg_type || !same_type(*arg_type, expected))
+              err(line, "String " + handler + " expects " + expected, "TYPE_MISMATCH");
+          }
+          check_expression(line, receiver, env);
+          for (const auto& arg : args) check_expression(line, arg, env);
+          return;
+        }
         if (auto map_types = map_key_value_types(*receiver_type)) {
+          if (handler == "delete") {
+            if (args.size() != 3)
+              err(line, "map delete expects key, fallback, and writable Bool flag");
+            auto key_type = inferred_expr_type(args[0], env);
+            auto fallback_type = inferred_expr_type(args[1], env);
+            auto flag_type = inferred_expr_type(args[2], env);
+            if (!key_type || !same_type(map_types->first, *key_type))
+              err(line, "map delete key type mismatch", "TYPE_MISMATCH");
+            if (!fallback_type || !same_type(map_types->second, *fallback_type))
+              err(line, "map delete fallback type mismatch", "TYPE_MISMATCH");
+            if (!flag_type || !same_type(*flag_type, "bool"))
+              err(line, "map delete flag must be Bool", "TYPE_MISMATCH");
+            if (!storage_location(args[2], env))
+              err(line, "map delete flag must be a writable Bool location",
+                  "INVALID_WRITE_ARGUMENT");
+            check_expression(line, receiver, env);
+            for (const auto& arg : args) check_expression(line, arg, env);
+            return;
+          }
           if (handler == "get") {
             if (args.size() != 2)
               err(line, "map get expects key and default arguments");
@@ -10723,6 +10807,13 @@ class Generator {
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
         string concrete_receiver = canonical_type_name(*receiver_type);
+        if (concrete_receiver == "string") {
+          if (method_name == "length" && method_args.empty()) return string("int");
+          if (method_name == "char_at" && method_args.size() == 1) return string("string");
+          if ((method_name == "chars" && method_args.empty()) ||
+              (method_name == "split" && method_args.size() == 1)) return string("vector[string]");
+          if (method_name == "join" && method_args.size() == 1) return string("string");
+        }
         if ((concrete_receiver == "vector" || starts_with(concrete_receiver, "vector[") ||
              concrete_receiver == "queue" || starts_with(concrete_receiver, "queue["))) {
           if (method_name == "push" && method_args.size() == 1)
@@ -10736,6 +10827,8 @@ class Generator {
         }
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "delete" && method_args.size() == 3)
             return map_types->second;
           if (method_name == "keys" && method_args.empty())
             return "vector[" + map_types->first + "]";
@@ -11987,7 +12080,34 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "string") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "length" && member_arguments.empty())
+            return source + ".chars().count() as i64";
+          if (member_name == "chars" && member_arguments.empty())
+            return source + ".chars().map(|c| c.to_string()).collect::<std::vec::Vec<_>>()";
+          if (member_name == "char_at" && member_arguments.size() == 1)
+            return "{ let __moss_index = " + expr(member_arguments[0], d, locals, types) +
+                "; if __moss_index < 0 { std::process::abort(); } " + source +
+                ".chars().nth(__moss_index as usize).unwrap_or_else(|| std::process::abort()).to_string() }";
+          if (member_name == "split" && member_arguments.size() == 1)
+            return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
+                "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
+                ".split(__moss_separator.as_str()).map(|s| s.to_string()).collect::<std::vec::Vec<_>>() }";
+          if (member_name == "join" && member_arguments.size() == 1)
+            return "(" + expr(member_arguments[0], d, locals, types) + ").join(&" + source + ")";
+        }
         if (auto map_types = map_key_value_types(concrete)) {
+          if (member_name == "delete" && member_arguments.size() == 3) {
+            string key = expr(member_arguments[0], d, locals, types);
+            string fallback = expr(member_arguments[1], d, locals, types);
+            string flag = write_call_place(member_arguments[2], d, locals, types);
+            string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
+            return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
+                "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
+                "); " + flag + " = __moss_removed.is_some(); " +
+                "__moss_removed.unwrap_or(__moss_fallback) }";
+          }
           if (member_name == "get" && member_arguments.size() == 2) {
             string key = expr(member_arguments[0], d, locals, types);
             if (map_types->first == "string")
@@ -13429,6 +13549,22 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
+          string statement_receiver_type = !s.b.empty()
+              ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+          if (!s.b.empty() &&
+              (statement_receiver_type == "string" ||
+               (s.b == "delete" && (statement_receiver_type == "map" ||
+                                    starts_with(statement_receiver_type, "map["))))) {
+            string call = s.a + "." + s.b + "(";
+            for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              if (argument) call += ", ";
+              call += s.args[argument];
+            }
+            call += ")";
+            o << indent(level) << expr(call, d, locals, &types) << ";\n";
+            ++i;
+            break;
+          }
           if (s.b.empty() && s.a == "assert") {
             o << indent(level) << "if !("
               << expr(s.args.front(), d, locals, &types,
@@ -15396,10 +15532,10 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[]}},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
-         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
   out << ",\n    \"project_surface\": {"
          "\"manifest\": \"Moss.toml\","
          "\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\","

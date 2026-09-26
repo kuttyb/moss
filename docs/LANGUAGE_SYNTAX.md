@@ -220,6 +220,12 @@ operator/type combinations are language rules rather than methods discovered on
 the operand types.
 
 `String` supports built-in `+` concatenation and `==`/`!=` equality.
+The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,
+`chars() -> Vector[String]`, `split(String) -> Vector[String]`, and
+`join(Vector[String]) -> String` (called on the separator). Character positions
+are zero-based Unicode code-point positions. `char_at` fails on an invalid
+position, and `split` fails on an empty separator. String numeric parsing and
+recoverable invalid-input behavior are deferred to Phase 21.
 Lexicographic ordering is intentionally not a v0.1 operator surface:
 `String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
 
@@ -251,13 +257,18 @@ The current built-in collection surface is intentionally small:
 
 ```text
 Vector:  push(item), pop(), vec[i], vec[i] = item
-Map:     map[key], map[key] = value, get(key, default), keys(), values()
+Map:     map[key], map[key] = value, get(key, default), keys(), values(), delete(key, fallback, found)
 Queue:   push(item), pop()
 ```
 
 `Map.get(key, default)` is the safe/defaulted lookup; `map[key]` is strict.
 `keys()` and `values()` return eager owned `Vector` snapshots in unspecified
 order. Cardinality is available through the `count` pipeline terminal.
+`Map.delete(key, fallback, found)` writes the Map and the caller's writable Bool
+`found`. It returns the removed value and sets `found` to true when present;
+otherwise it returns the eagerly evaluated fallback and sets `found` to false.
+The fallback is transferred by value; a nontrivial binding is consumed on either
+path.
 
 ### Functional pipelines
 

@@ -1,0 +1,23 @@
+fn main():
+  text = "aé🙂b"
+  assertEqual(text.length(), 4)
+  assertEqual(text.char_at(1), "é")
+  assertEqual(text.char_at(2), "🙂")
+  assertEqual(text.chars() |> count, 4)
+  pieces = "one,two,".split(",")
+  assertEqual(pieces |> count, 3)
+  assertEqual(pieces[2], "")
+  assertEqual(",".join(pieces), "one,two,")
+  empty = Vector[String]()
+  assertEqual(",".join(empty), "")
+  values = Map()
+  values["red"] = 7
+  var found = false
+  first = values.delete("red", 0, found)
+  assertEqual(first, 7)
+  assert(found)
+  second = values.delete("red", 9, found)
+  assertEqual(second, 9)
+  assert(not found)
+  assertEqual(values.keys() |> count, 0)
+  echo "string/map ok"

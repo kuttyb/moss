@@ -692,6 +692,70 @@ class FastInterpreter {
         std::string method_name; std::vector<std::string> method_args;
         if (parse_call(member->second, method_name, method_args)) {
           auto receiver = eval(member->first, frame, line, output);
+          if (receiver.kind == Value::Kind::String) {
+            auto characters = [&]() {
+              std::vector<std::string> result;
+              const std::string& s = receiver.string;
+              for (size_t i = 0; i < s.size();) {
+                unsigned char byte = static_cast<unsigned char>(s[i]);
+                size_t width = byte < 0x80 ? 1 : (byte & 0xe0) == 0xc0 ? 2 :
+                    (byte & 0xf0) == 0xe0 ? 3 : (byte & 0xf8) == 0xf0 ? 4 : 0;
+                if (!width || i + width > s.size())
+                  throw RuntimeError(line, "invalid UTF-8 String");
+                for (size_t j = 1; j < width; ++j)
+                  if ((static_cast<unsigned char>(s[i+j]) & 0xc0) != 0x80)
+                    throw RuntimeError(line, "invalid UTF-8 String");
+                result.push_back(s.substr(i, width));
+                i += width;
+              }
+              return result;
+            };
+            if (method_name == "length" && method_args.empty())
+              return Value::int_value(static_cast<int64_t>(characters().size()));
+            if (method_name == "char_at" && method_args.size() == 1) {
+              Value index = eval(method_args[0], frame, line, output);
+              auto chars = characters();
+              if (index.kind != Value::Kind::Int || index.integer < 0 ||
+                  static_cast<uint64_t>(index.integer) >= chars.size())
+                throw RuntimeError(line, "String character index out of bounds");
+              return Value::string_value(chars[static_cast<size_t>(index.integer)]);
+            }
+            if (method_name == "chars" && method_args.empty()) {
+              std::vector<Value> result;
+              for (const auto& c : characters()) result.push_back(Value::string_value(c));
+              return Value::vector_value(std::move(result));
+            }
+            if (method_name == "split" && method_args.size() == 1) {
+              Value separator = eval(method_args[0], frame, line, output);
+              if (separator.kind != Value::Kind::String || separator.string.empty())
+                throw RuntimeError(line, "String split requires a nonempty separator");
+              std::vector<Value> result;
+              size_t start = 0;
+              while (true) {
+                size_t at = receiver.string.find(separator.string, start);
+                if (at == std::string::npos) {
+                  result.push_back(Value::string_value(receiver.string.substr(start)));
+                  break;
+                }
+                result.push_back(Value::string_value(receiver.string.substr(start, at-start)));
+                start = at + separator.string.size();
+              }
+              return Value::vector_value(std::move(result));
+            }
+            if (method_name == "join" && method_args.size() == 1) {
+              Value parts = eval(method_args[0], frame, line, output);
+              if (parts.kind != Value::Kind::Vector)
+                throw RuntimeError(line, "String join requires Vector[String]");
+              std::string joined;
+              for (const auto& part : *parts.vector) {
+                if (part.kind != Value::Kind::String)
+                  throw RuntimeError(line, "String join requires Vector[String]");
+                if (!joined.empty() || &part != &parts.vector->front()) joined += receiver.string;
+                joined += part.string;
+              }
+              return Value::string_value(joined);
+            }
+          }
           if (receiver.kind == Value::Kind::Vector || receiver.kind == Value::Kind::Queue) {
             auto values = receiver.kind == Value::Kind::Vector ? receiver.vector : receiver.queue;
             if (method_name == "push" && method_args.size() == 1) {
@@ -707,6 +771,19 @@ class FastInterpreter {
             }
           }
           if (receiver.kind == Value::Kind::Map) {
+            if (method_name == "delete" && method_args.size() == 3) {
+              Value key = eval(method_args[0], frame, line, output);
+              Value fallback = eval(method_args[1], frame, line, output);
+              for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
+                if (!equal(it->first, key)) continue;
+                Value removed = independent(it->second);
+                receiver.map->erase(it);
+                assign(method_args[2], Value::boolean_value(true), frame, line, output);
+                return removed;
+              }
+              assign(method_args[2], Value::boolean_value(false), frame, line, output);
+              return independent(fallback);
+            }
             if (method_name == "get" && method_args.size() == 2) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);

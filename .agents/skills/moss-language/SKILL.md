@@ -112,6 +112,9 @@ Moss v0.1 does not support user-defined operator overloading. Operators and thei
 accepted operand types are compiler-defined. `String` supports `+`
 concatenation and `==`/`!=` equality, but not `<`, `<=`, `>`, or
 `>=` ordering.
+Its read-only methods are `length()`, `char_at(index)`, `chars()`,
+`split(separator)`, and `join(parts)` on the separator. Positions count
+zero-based Unicode code points. Numeric parsing awaits Phase 21 error handling.
 
 ### Arithmetic and empty collections
 
@@ -164,7 +167,7 @@ views, and bare `Map` is not itself a `for` source.
 ### Collection operations reference
 
 - `Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`. Cardinality is `vec |> count` or manual tracking. Operations like `.len()`, `.size()`, `.remove()`, or `.clear()` do not exist.
-- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. Deletion/removal operations (`.remove()`, `.delete()`, `.clear()`) do not exist in v0.1.
+- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. `map.delete(key, fallback, found)` removes and returns a present owned value, writes `true` to the mutable Bool `found`, or returns the eager fallback and writes `false` when absent.
 - `Queue`: `queue.push(item)` and `queue.pop()`.
 
 For full examples, see `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.

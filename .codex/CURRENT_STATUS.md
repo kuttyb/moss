@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 15.15 EXPRESS-002/003/004 (2026-09-26, pending native validation)
+
+EXPRESS-002 was closed by user decision at `b09392c`: move and temporary
+READ/WRITE borrowing remain the ownership model. The tracker has no linked
+swarm program that establishes a need for independent copying; reconsider only
+with a concrete compelling workload. No general copy or shared ownership was
+added.
+
+EXPRESS-003 String methods `length`, `char_at`, `chars`, `split`, and `join` use
+zero-based Unicode code-point positions. EXPRESS-004 Map deletion uses
+`map.delete(key, fallback, found)`, returns the removed owned value or the
+eager fallback, and writes a Bool flag. Nontrivial fallback bindings are
+consumed. Initial native lowering was generated and inspected, but rustc is
+absent in this workspace; full `make check` and `make examples` require the
+user's local native toolchain before these workstreams are green. Focused
+Fast Debug checks and issue validation pass. EXPRESS-009 explicitly tracks
+numeric String parsing and recoverable parse errors under Phase 21, without
+an interim Option type. EXPRESS-006 is closed by user decision: unannotated
+trait returns are inferred and checked at concrete uses; no `Self` return
+constraint or wider concepts/where-clause system is added. EXPRESS-005 remains
+for design.
+
 ## Phase 15.15 SWARM-043/044 closeout — COMPLETE (2026-09-26)
 
 The combined implementation and native repair are on `main` at `418dd20` and

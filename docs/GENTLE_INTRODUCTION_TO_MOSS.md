@@ -130,6 +130,25 @@ overload or redefine them. `String` has three built-in operator forms:
 concatenation with `+`, equality with `==`, and inequality with `!=`.
 String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
 
+String methods read their inputs and return independent values. Character
+positions are zero-based Unicode code-point positions (like Python), not UTF-8
+byte offsets or grapheme clusters. A character is a one-code-point `String`:
+
+```moss
+fn main():
+  text = "aé🙂"
+  echo text.length()          # 3
+  echo text.char_at(1)        # é
+  letters = text.chars()      # Vector[String]
+  fields = "a,b,".split(",") # ["a", "b", ""]
+  echo ",".join(fields)       # a,b,
+```
+
+`char_at` requires a valid nonnegative position; `split` requires a nonempty
+separator. Invalid inputs fail under current runtime precondition behavior.
+`join` accepts `Vector[String]` and returns an empty String for an empty vector.
+String numeric parsing and recoverable invalid-input behavior belong to Phase 21.
+
 There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
 Boolean logic uses words rather than `&&` and `||` (Section 2).
 
@@ -453,13 +472,22 @@ fn main():
 
   keys = scores.keys()
   values = scores.values()
+  var found = false
+  prior = scores.delete("test", 0, found)
+  assert(found)
+  echo prior  # 9
 ```
 
 The key and value types are inferred from use.
 `get(key, default)` is the safe/defaulted lookup; `map[key]` remains strict and
 expects the key to exist. `keys()` and `values()` produce ordinary eager `Vector`
 snapshots. Map iteration order is unspecified. Map supports indexed writes
-(`map[key] = value`), but v0.1 has no deletion operation.
+(`map[key] = value`). `delete(key, fallback, found)` removes a present entry,
+returns its owned value, and sets the writable Bool `found` to `true`. For a
+missing key it returns the eagerly evaluated fallback and sets `found` to
+`false`. The map and flag are WRITE accesses; the key is READ and the fallback
+is evaluated eagerly and transferred by value (nontrivial bindings are consumed
+even when the key is present). This API does not introduce a new `Option` type.
 
 ### Queue
 
