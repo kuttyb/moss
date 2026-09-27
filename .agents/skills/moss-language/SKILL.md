@@ -109,10 +109,12 @@ non-domain function.
 Closed `enum` declarations have tag-only or named, typed payload fields:
 `enum Result:` with cases `Ok(value: Int)`, `Error(code: Int, message: String)`,
 and `Cancelled` is constructed as `Result.Ok(value: 42)` or
-`Result.Cancelled`. A statement `match result:` needs one `case` per variant.
-`match result` READ-borrows the whole enum; nontrivial payload bindings are
+`Result.Cancelled` (not `Result.Cancelled()`). A statement `match result:` needs
+one `case` per variant. A READ match may use a known enum expression such as
+`match envelope.result:` and READ-borrows that enum; nontrivial payload bindings are
 temporary READ views. `match consume result:` consumes the whole enum before
-branch selection and gives the selected case owned branch-local payloads.
+branch selection and gives the selected case owned branch-local payloads. It
+requires an owning named enum binding, not an aggregate field expression.
 Patterns never spell `move` or `ref`. Wildcards, guards, nested patterns,
 and match expressions are unsupported.
 

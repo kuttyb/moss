@@ -5,6 +5,7 @@ enum Outcome:
 
 type Envelope:
   result: Outcome
+  counter: Int
 
 fn size(text: String) -> Int:
   return text.length()
@@ -37,8 +38,26 @@ fn main():
   let roundtrip = identity(Outcome.Ready)
   echo inspect(roundtrip)
   echo take_message(Outcome.Failure(code: 8, message: "helper"))
-  let wrapped = Envelope(result: Outcome.Failure(code: 7, message: "bad"))
+  var wrapped = Envelope(result: Outcome.Failure(code: 7, message: "bad"), counter: 0)
+  match wrapped.result:
+    case Ready:
+      echo "ready"
+    case Number(value):
+      echo value
+    case Failure(code, message):
+      echo message
+      wrapped.counter = code
+  echo wrapped.counter
   echo inspect(wrapped.result)
+  let kept = wrapped
+  echo inspect(kept.result)
+  match identity(Outcome.Number(value: 11)):
+    case Ready:
+      echo "ready"
+    case Number(value):
+      echo value
+    case Failure(code, message):
+      echo message
   echo inspect(first)
   let last = Outcome.Failure(code: 9, message: "owned")
   match consume last:

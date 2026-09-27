@@ -129,12 +129,17 @@ scrutinee's concrete enum type and requires every case exactly once. There is
 no wildcard, guard, nested pattern, pattern-level ownership modifier, dynamic
 case extension, or match expression in v0.1.
 
-Pattern bindings never choose an ownership mode. `match value` READ-borrows the
-entire enum for all arms. A nontrivial payload binding is a temporary READ
+Pattern bindings never choose an ownership mode. `match expression` READ-borrows
+the enum for all arms. Any statically typed enum expression allowed by ordinary
+Moss READ semantics may be used, including a field of an aggregate; its source
+storage remains borrowed for the match, without an enum-specific copy. A
+nontrivial payload binding is a temporary READ
 view, subject to the ordinary borrow lifetime and forbidden from consuming,
 mutating, or escaping across a by-value boundary. Copy scalars retain their
 ordinary rules. The source enum remains live at the join. In contrast,
-`match consume value` consumes the whole enum before branch selection. The
+`match consume value` requires an owning named enum binding and consumes the
+whole enum before branch selection. It does not partially move enum fields
+from aggregates or consume arbitrary enum-valued expressions. The
 selected case's payload fields become owned branch locals; the original enum
 is dead on every branch and after the join. No partial-move state exists.
 Incoming immutable handler payloads cannot enter a consuming match. Recursive

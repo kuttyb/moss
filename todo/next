@@ -1,11 +1,15 @@
-## Phase 15.15 / EXPRESS-005 — complete, ready for review
+## Phase 15.15 / EXPRESS-005 — closed on main
 
 Closed enums with named typed case payloads, type-qualified construction,
 exhaustive statement matching, and whole-enum READ/CONSUME ownership modes are
-implemented on `phase-15.15-express-005`. Native lowering, Fast Debug,
+implemented on `main` following `badceae`. READ matches now accept statically
+typed enum expressions such as aggregate fields, while `match consume` requires
+an owning named enum binding and rejects interior moves. Tag-only cases use
+`Enum.Tag`, not `Enum.Tag()`. Native lowering, Fast Debug,
 structured diagnostics, semantic discovery, canonical docs, and focused
-regressions agree. `make check` and `make examples` pass; optional live LLDB
-tests skip because process tracing is unavailable. The historical HashMap
+regressions agree. The corrective pass passed `make check`, `make examples`,
+and `git diff HEAD --check`. Optional live LLDB tests skipped because process
+tracing is unavailable. The historical HashMap
 follow-up plan below is retained as an archive, not the current task.
 
 ---

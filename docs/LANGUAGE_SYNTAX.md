@@ -182,7 +182,8 @@ let b = Result.Error(code: 500, message: "bad")
 let c = Result.Cancelled
 ```
 
-Payload construction requires field names and the declared field types. Unknown
+Payload construction requires field names and the declared field types. A
+tag-only case uses `Result.Cancelled`, not `Result.Cancelled()`. Unknown
 cases, unknown or duplicate fields, missing fields, and type mismatches are
 compile-time errors. Recursive enum layouts, including cycles through ordinary
 aggregate fields, are unsupported.
@@ -201,13 +202,17 @@ match result:
     echo "cancelled"
 ```
 
-Patterns discriminate and bind; they never specify ownership. `match result`
-READ-borrows the whole enum for the match. Nontrivial payload bindings are
+Patterns discriminate and bind; they never specify ownership. A READ match
+accepts a statically known enum expression, including `match envelope.result:`.
+It READ-borrows the enum for the match, following ordinary Moss access rules
+for the expression and its containing storage. Nontrivial payload bindings are
 temporary READ views: they cannot be mutated, consumed, returned, stored, or
 sent across a by-value boundary. Trivial scalar fields follow ordinary copy
 rules. The original enum remains usable after a READ match.
 
-`match consume result` consumes the entire enum before selecting an arm. Its
+`match consume result` requires an owning named enum binding and consumes the
+entire enum before selecting an arm. It cannot partially move an enum field out
+of an aggregate with `match consume envelope.result:`. Its
 payload bindings are ordinary branch-local values, including owned values that
 may be transferred. The original enum is dead on every path after the match;
 there is no partial-move state. An immutable incoming handler payload cannot

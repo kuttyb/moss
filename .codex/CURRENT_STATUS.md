@@ -1,25 +1,36 @@
 # Moss current status
 
-## Phase 15.15 EXPRESS-005 — implementation complete (2026-09-27)
+## Phase 15.15 EXPRESS-005 — closed on main (2026-09-27)
 
-On `phase-15.15-express-005`, Moss now has closed enums with zero-or-more
+Main includes `badceae` and its corrective follow-up. Moss has closed enums with zero-or-more
 named typed fields per case, type-qualified construction, and exhaustive
-statement `match`. A plain match READ-borrows the whole enum and exposes
+statement `match`. A plain match accepts any statically typed enum expression
+allowed by ordinary READ semantics, including aggregate fields and enum-valued
+helper results. It READ-borrows the matched enum place and exposes
 temporary READ payload views; `match consume` consumes the whole scrutinee
 before branch selection and transfers selected payload fields as branch-local
-values. There is no partial-move state or pattern-level ownership syntax.
+values. A consuming match requires an owning named enum binding; it cannot
+partially move an enum out of an aggregate. Tag-only cases use `Enum.Tag`, not
+`Enum.Tag()`. There is no partial-move state or pattern-level ownership syntax.
 Parser, checking, ownership/effects, native lowering, Fast Debug, formatter,
 module interfaces, agent discovery, editor surface, and canonical docs were
 updated together. Focused regressions cover native/Fast Debug parity, message
-boundaries, exported and source-free modules, and 28 rejected forms.
+boundaries, exported and source-free modules, and 32 rejected forms.
 
-Validation: `make check`, `make examples`, and `git diff HEAD --check` passed.
+The corrective follow-up passed `make check`, `make examples`, and
+`git diff HEAD --check`. Focused check, native Rust (`-D warnings`), Fast Debug,
+Margo native/debug module runs, source-free provider, formatter, and all 32
+negative diagnostic cases passed.
 The full suite includes the ownership, borrowed-value, message, native,
 interpreter, and agent/bootstrap coverage. Optional live LLDB CLI and
 lldb-dap checks were skipped because process tracing is unavailable in this
 environment; this is not an enum product failure. No known EXPRESS-005
-semantic blocker remains. The branch is ready for review and merge after its
-local closeout commit; no push was performed.
+semantic blocker remains. EXPRESS-005 is closed on `main`; no push was performed
+by this session. Compiler-first bootstrap and structured diagnostics made the
+READ-versus-CONSUME distinction clear; focused tests found the field-borrow
+overlap issue before the full suite. Impact/affected-test selection was not
+used because full validation was required. A useful future agent improvement
+would be a direct semantic query for active borrow overlap at a match arm.
 
 ## Roadmap direction (2026-09-26)
 

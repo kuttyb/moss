@@ -7248,15 +7248,35 @@ class Checker {
     }
   }
 
+  std::optional<string> active_read_overlap(const string& expression,
+                                            const OwnershipEnv& env) const {
+    auto location = storage_location(expression, env.types);
+    if (!location) return std::nullopt;
+    for (const auto& source : env.active_read_traversals) {
+      auto borrowed = storage_location(source, env.types);
+      if (borrowed && storage_locations_overlap(*location, *borrowed))
+        return source;
+    }
+    return std::nullopt;
+  }
+
+  static string enum_payload_transfer_guidance(const string& source) {
+    return simple_identifier(source)
+        ? "use 'match consume " + source + ":'"
+        : "bind an owned enum value first, then use 'match consume value:'";
+  }
+
   void consume_binding(int line, const string& name, const OwnershipEnv& env,
                        const string& destination) const {
-    if (env.active_read_traversals.count(name))
-      err(line, "cannot consume '" + name + "' while it is READ-borrowed by a match",
+    if (auto source = active_read_overlap(name, env))
+      err(line, "cannot consume '" + name + "' while '" + *source +
+          "' is READ-borrowed by a match or traversal",
           "MATCH_READ_BORROW_ACTIVE");
     auto borrowed = env.borrowed_enum_payloads.find(name);
     if (borrowed != env.borrowed_enum_payloads.end())
       err(line, "payload '" + name + "' is borrowed from '" + borrowed->second +
-          "'; use 'match consume " + borrowed->second + ":' to transfer it",
+          "'; " + enum_payload_transfer_guidance(borrowed->second) +
+          " to transfer it",
           "BORROWED_ENUM_PAYLOAD_CONSUME");
     if (env.message_payloads.count(name)) {
       err(line, "cannot CONSUME incoming message payload '" + name +
@@ -7421,13 +7441,14 @@ class Checker {
       for (const auto& borrowed : env.borrowed_enum_payloads)
         if (expression_uses(value, borrowed.first))
           err(line, "payload '" + borrowed.first + "' is borrowed from '" +
-              borrowed.second + "'; use 'match consume " + borrowed.second +
-              ":' to transfer or mutate owned payloads",
+              borrowed.second + "'; " +
+              enum_payload_transfer_guidance(borrowed.second) +
+              " to transfer or mutate owned payloads",
               "BORROWED_ENUM_PAYLOAD_ACCESS");
-      for (const auto& source : env.active_read_traversals)
-        if (expression_uses(value, source))
-          err(line, "cannot mutate or consume '" + source +
-              "' while it is READ-borrowed by a match", "MATCH_READ_BORROW_ACTIVE");
+      if (auto source = active_read_overlap(value, env))
+        err(line, "cannot mutate or consume '" + *source +
+            "' while it is READ-borrowed by a match or traversal",
+            "MATCH_READ_BORROW_ACTIVE");
     }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(value, {op})) {
@@ -7529,7 +7550,7 @@ class Checker {
         if (collection) {
           auto location = storage_location(receiver, env.types);
           if ((method == "push" || method == "pop" || method == "delete") && location &&
-              env.active_read_traversals.count(location->root))
+              active_read_overlap(receiver, env))
             err(line, "cannot structurally mutate collection '" + location->root +
                 "' during an active READ traversal");
           vector<string> access_expressions{receiver};
@@ -7666,6 +7687,7 @@ class Checker {
     string base, index;
     if (parse_index(value, base, index)) {
       check_ownership_expression(line, base, env,
+                                 requested == Effect::Write ? Effect::Read :
                                  projection_effect(value, requested, env.types));
       check_ownership_expression(line, index, env, Effect::Read);
       return;
@@ -7674,6 +7696,7 @@ class Checker {
     auto dot = value.rfind('.');
     if (dot != string::npos && value.find('(', dot) == string::npos) {
       check_ownership_expression(line, value.substr(0, dot), env,
+                                 requested == Effect::Write ? Effect::Read :
                                  projection_effect(value, requested, env.types));
       return;
     }
@@ -7694,7 +7717,7 @@ class Checker {
       if (expression_uses(expression, borrowed.first))
         err(line, "payload '" + borrowed.first + "' is borrowed from '" +
             borrowed.second + "' and cannot cross a by-value boundary" + action +
-            "; use 'match consume " + borrowed.second + ":'",
+            "; " + enum_payload_transfer_guidance(borrowed.second),
             "BORROWED_ENUM_PAYLOAD_ESCAPE");
     // A message is Moss's explicit semantic copy boundary.  The source value
     // remains available after a message/reply; the backend materializes a
@@ -7730,11 +7753,21 @@ class Checker {
         auto type = inferred_expr_type(s.a, env.types);
         if (!type || !enums_.count(canonical_type_name(*type)))
           err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
-        if (!simple_identifier(s.a))
-          err(s.line, "match scrutinee must be a named enum binding", "MATCH_REQUIRES_BINDING");
-        require_available(s.line, s.a, env);
         bool consuming = s.b == "consume";
-        if (consuming) consume_binding(s.line, s.a, env, "consuming match");
+        if (consuming) {
+          if (!simple_identifier(s.a))
+            err(s.line, "consuming match requires an owning enum binding; "
+                "'match consume' consumes the whole enum and does not partially move "
+                "from aggregate fields or other expressions. Bind an owned enum "
+                "value first, then consume that binding",
+                "MATCH_CONSUME_REQUIRES_BINDING");
+          require_available(s.line, s.a, env);
+          consume_binding(s.line, s.a, env, "consuming match");
+        } else {
+          check_ownership_expression(s.line, s.a, env, Effect::Read);
+        }
+        bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+        bool prior_read = env.active_read_traversals.count(s.a);
         const EnumType& declaration = *enums_.at(canonical_type_name(*type));
         OwnershipEnv incoming = env;
         vector<TypeEnv> path_types;
@@ -7747,7 +7780,7 @@ class Checker {
           if (item == declaration.cases.end())
             err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
           OwnershipEnv branch = incoming;
-          if (!consuming) branch.active_read_traversals.insert(s.a);
+          if (read_place) branch.active_read_traversals.insert(s.a);
           for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
             const string& name = arm.args[field_index];
             const string& field_type = item->fields[field_index].type;
@@ -7772,7 +7805,7 @@ class Checker {
                   incoming.borrowed_enum_payloads.at(name);
             else branch.borrowed_enum_payloads.erase(name);
           }
-          branch.active_read_traversals.erase(s.a);
+          if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
           path_types.push_back(branch.types);
           for (const auto& moved : branch.moved)
             merged_moves.emplace(moved);
@@ -7877,11 +7910,11 @@ class Checker {
         case Stmt::Kind::Assign: {
           string lhs_base, lhs_index;
           if (parse_index(s.a, lhs_base, lhs_index))
-            check_ownership_expression(s.line, lhs_base, env, Effect::Write);
+            check_ownership_expression(s.line, s.a, env, Effect::Write);
           else {
             auto dot = s.a.rfind('.');
             if (dot != string::npos)
-              check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
+              check_ownership_expression(s.line, s.a, env, Effect::Write);
             else if (simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
@@ -8489,6 +8522,9 @@ class Checker {
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
         if (item == declaration.cases.end())
           err(line, "unknown enum case '" + enum_name + "." + case_name + "'", "UNKNOWN_ENUM_CASE");
+        if (item->fields.empty() && called && arguments.empty())
+          err(line, "tag-only enum case '" + enum_name + "." + case_name +
+              "' is constructed without parentheses", "ENUM_TAG_CALL_UNSUPPORTED");
         if (item->fields.empty() && called && !arguments.empty())
           err(line, "enum case '" + case_name + "' has no fields", "UNKNOWN_ENUM_FIELD");
         if (!item->fields.empty() && !called)
@@ -16214,8 +16250,8 @@ static void write_bootstrap_json(std::ostream& out,
          "\"tool_invocation\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
-         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match value: / match consume value:\"},"
-         "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match value:\",\"consume_match\":\"match consume value:\",\"pattern_ownership_modifiers\":false},"
+         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume binding:\"},"
+         "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume value:\",\"pattern_ownership_modifiers\":false},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"

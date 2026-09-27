@@ -440,11 +440,14 @@ Construct a case with its type name, such as `Job.Done(value: 42)` or
 `Job.Waiting`. A match must cover every case exactly once. The names in each
 arm bind the case fields in their declared order.
 
-`match job` reads the enum and leaves `job` usable afterward. A nontrivial
+`match job` reads the enum and leaves `job` usable afterward. A READ match
+may also use a statically known enum expression such as `envelope.job`; it
+borrows the containing value for the arm without copying the enum. A nontrivial
 payload such as `String` is only borrowed inside that arm. If an arm needs to
 transfer ownership of such a payload, write `match consume job:` instead;
-that consumes the entire `job` on every path. No `move` or `ref` annotation
-is written in the pattern.
+that consumes the entire `job` on every path. A consuming match requires an
+owning named enum binding; it cannot partially move `envelope.job` out of an
+aggregate. No `move` or `ref` annotation is written in the pattern.
 
 ## 5. Collections
 

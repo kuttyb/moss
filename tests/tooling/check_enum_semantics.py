@@ -104,6 +104,13 @@ CASES = {
 """,
         "UNKNOWN_ENUM_CASE",
     ),
+    "tag_only_called": (
+        """fn main():
+  let result = Result.Cancelled()
+  echo 0
+""",
+        "ENUM_TAG_CALL_UNSUPPORTED",
+    ),
     "missing_object_enum_field": (
         """type Holder:
   value: Result
@@ -127,6 +134,39 @@ fn main():
       echo 0
 """,
         "BORROWED_ENUM_PAYLOAD_CONSUME",
+    ),
+    "read_projection_payload_consume": (
+        """type Envelope:
+  result: Result
+
+fn main():
+  let envelope = Envelope(result: Result.Error(code: 1, message: "bad"))
+  match envelope.result:
+    case Ok(value):
+      echo value
+    case Error(code, message):
+      let escaped = message
+      echo escaped
+    case Cancelled:
+      echo 0
+""",
+        "BORROWED_ENUM_PAYLOAD_CONSUME",
+    ),
+    "read_projection_mutation": (
+        """type Envelope:
+  result: Result
+
+fn main():
+  var envelope = Envelope(result: Result.Cancelled)
+  match envelope.result:
+    case Ok(value):
+      echo value
+    case Error(code, message):
+      echo message
+    case Cancelled:
+      envelope.result = Result.Cancelled
+""",
+        "MATCH_READ_BORROW_ACTIVE",
     ),
     "read_payload_return": (
         """fn leak(result: Result) -> String:
@@ -226,6 +266,22 @@ fn main():
   message worker.Handle(Result.Cancelled)
 """,
         "cannot CONSUME incoming message payload",
+    ),
+    "aggregate_field_consume_match": (
+        """type Envelope:
+  result: Result
+
+fn main():
+  let envelope = Envelope(result: Result.Cancelled)
+  match consume envelope.result:
+    case Ok(value):
+      echo value
+    case Error(code, message):
+      echo message
+    case Cancelled:
+      echo 0
+""",
+        "MATCH_CONSUME_REQUIRES_BINDING",
     ),
     "scrutinee_after_consume": (
         """fn main():
@@ -337,7 +393,8 @@ def main():
         check=True,
     )
     surface = json.loads(bootstrap.stdout)["result"]["source_surface"]
-    if surface["enums"]["consume_match"] != "match consume value:":
+    if (surface["enums"]["read_match"] != "match expression:"
+            or surface["enums"]["consume_match"] != "match consume value:"):
         print("bootstrap omitted enum ownership surface", file=sys.stderr)
         return 1
     SCRATCH.mkdir(parents=True, exist_ok=True)
@@ -359,6 +416,10 @@ def main():
             details = result.stdout + result.stderr
         if result.returncode == 0 or expected not in details:
             failures.append(f"{name}: expected {expected}; got {details}")
+        if name == "aggregate_field_consume_match" and (
+                "does not partially move" not in details
+                or "Bind an owned enum value first" not in details):
+            failures.append(f"{name}: missing targeted guidance; got {details}")
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1

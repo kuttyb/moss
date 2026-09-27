@@ -1234,9 +1234,9 @@ run_case nested_payload_copy tests/nested_payload_snapshot.moss '7'
 run_case string_payload_copy tests/string_payload_snapshot.moss 'fresh'
 # Phase 15.15: Unicode String methods and Map.delete must survive native lowering.
 run_case phase15_15_string_map tests/phase15_15_string_map.moss 'string/map ok'
-run_case phase15_15_enum_positive tests/phase15_15_enum_positive.moss "$(printf '42\n0\nhelper\n3\n7\n42\nowned')"
+run_case phase15_15_enum_positive tests/phase15_15_enum_positive.moss "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')"
 run_case phase15_15_enum_message tests/phase15_15_enum_message.moss "$(printf '3\n3\nmessage\n3')"
-[ "$("$compiler" run --interp tests/phase15_15_enum_positive.moss)" = "$(printf '42\n0\nhelper\n3\n7\n42\nowned')" ] ||
+[ "$("$compiler" run --interp tests/phase15_15_enum_positive.moss)" = "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')" ] ||
   fail "enum standalone Fast Debug parity"
 [ "$("$compiler" run --interp tests/phase15_15_enum_message.moss)" = "$(printf '3\n3\nmessage\n3')" ] ||
   fail "enum message Fast Debug parity"
