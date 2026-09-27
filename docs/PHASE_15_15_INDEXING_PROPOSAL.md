@@ -1,6 +1,17 @@
 # Phase 15.15 indexing proposal and agent handoff
 
-Status: proposed for implementation. Language decisions recorded from the 2026-09-26 discussion. Scope: SWARM-044 and a separate user-defined indexing workstream, EXPRESS-008. SWARM-043 (field access) is adjacent but is not silently closed by this work. SWARM-040 is deferred to Phase 21.
+**Status: Rejected for Moss v0.1 / Phase 15.15 (EXPRESS-008).** Built-in
+indexing remains compiler-defined; SWARM-044's per-call Vector/Map
+specialization was implemented. User-defined indexing was considered and
+rejected because the demonstrated use cases do not justify expanding Moss
+toward a general operator-customization surface. Ordinary statically resolved
+methods/functions remain available. Reconsider only with compelling dogfooding
+evidence.
+
+The text below preserves the historical 2026-09-26 proposal and agent handoff;
+its implementation instructions and exit criteria are not active work. At the
+time of drafting, SWARM-044 and EXPRESS-008 were separate workstreams and
+SWARM-040 was deferred to Phase 21.
 
 ## Agreed semantic direction
 

@@ -1,6 +1,9 @@
 # Phase 15.15 implementation plan: SWARM-043 and SWARM-044
 
-Status: approved semantic direction; implementation pending. This plan is executable independently of EXPRESS-008 (user-defined indexing).
+**Status: Historical completed plan.** SWARM-043 and SWARM-044 were fixed and
+validated in Phase 15.15. The separate EXPRESS-008 user-defined indexing
+proposal was considered and rejected, not left pending. The implementation
+sequence and exit criteria below record the original plan, not current tasks.
 
 ## Decisions
 
@@ -44,4 +47,7 @@ This work covers current built-in indexable types only. User-defined opt-in synt
 
 ## Exit criteria
 
-SWARM-043 and SWARM-044 are independently fixed, with focused regressions and full repository gates passing or a precisely documented environment-only gate limitation. No new user-defined indexing syntax is shipped by this plan. EXPRESS-008 stays open for its opt-in contract checkpoint. SWARM-040 remains in Phase 21.
+SWARM-043 and SWARM-044 were independently fixed, with focused regressions and
+full repository gates passing. No new user-defined indexing syntax was shipped.
+EXPRESS-008 was later rejected by explicit design decision. SWARM-040 remains
+deferred to Phase 21.

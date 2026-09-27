@@ -684,7 +684,9 @@ element type. For `items[key]`, the concrete Vector, Queue, or Map constrains
 the key; indexed assignment additionally constrains the assigned value and
 infers a WRITE effect. A non-indexable argument or incompatible key/value is
 rejected by Moss. These static checks do not prove bounds or Map key presence.
-User-defined indexing remains a separate proposed feature (EXPRESS-008).
+User-defined indexing was considered and rejected for Moss v0.1 (EXPRESS-008).
+Use ordinary statically resolved methods/functions for custom access behavior;
+the built-in indexing operations above remain supported.
 
 The current implementation has begun separating semantic data (`src/ast.hpp`),
 inferred requirements (`src/constraints.hpp`), and diagnostics

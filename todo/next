@@ -1,18 +1,15 @@
-## Phase 15.15 / EXPRESS-005 — closed on main
+## Phase 15.15 — closed
 
-Closed enums with named typed case payloads, type-qualified construction,
-exhaustive statement matching, and whole-enum READ/CONSUME ownership modes are
-implemented on `main` following `badceae`. READ matches now accept statically
-typed enum expressions such as aggregate fields, while `match consume` requires
-an owning named enum binding and rejects interior moves. Tag-only cases use
-`Enum.Tag`, not `Enum.Tag()`. Native lowering, Fast Debug,
-structured diagnostics, semantic discovery, canonical docs, and focused
-regressions agree. The corrective pass passed `make check`, `make examples`,
-and `git diff HEAD --check`. Optional live LLDB tests skipped because process
-tracing is unavailable. The historical HashMap
-follow-up plan below is retained as an archive, not the current task.
+The language-semantics and expressiveness phase is complete on `main`.
+SWARM-043/044 and EXPRESS-003/004/005 are fixed; EXPRESS-002/006/008 were
+rejected by design. SWARM-040 and EXPRESS-007/009 are deferred to Phase 21,
+not open Phase 15.15 work. See `.codex/CURRENT_STATUS.md` and the canonical
+issue ledger for the full disposition. The historical HashMap follow-up plan
+below is retained as an archive, not the current task.
 
 ---
+
+## Archived HashMap follow-up plan (historical)
 
 Work from current repository HEAD.
 

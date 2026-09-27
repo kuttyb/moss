@@ -1,5 +1,39 @@
 # Moss current status
 
+## Phase 15.15 — COMPLETE (2026-09-27)
+
+Implemented and validated on `main`: SWARM-043 rejects untyped parameter field
+access while preserving typed access and static untyped-method specialization;
+SWARM-044 specializes built-in Vector/Map indexing per concrete call;
+EXPRESS-003 supplies the core Unicode String API; EXPRESS-004 supplies
+`Map.delete(...)`; and EXPRESS-005 supplies closed enums/tagged unions with
+exhaustive matching (commits `badceae` and `2e96565`). String/Map native repair
+and validation landed in `580c361` and `6245c35`. Native execution, Fast
+Debug, and the relevant full repository gates passed.
+
+Rejected by explicit language-design decision: EXPRESS-002 general explicit
+copying, EXPRESS-006 static `Self`/covariant trait returns, and EXPRESS-008
+user-defined indexing. For EXPRESS-008, built-in indexing and SWARM-044's
+per-call specialization remain; adding opt-in `x[i]` customization would
+expand Moss toward operator-like overloading without compelling workload
+evidence. Ordinary statically resolved methods/functions cover custom access.
+The historical indexing proposal is preserved for reference.
+
+Deferred outside Phase 15.15: SWARM-040, EXPRESS-007, and EXPRESS-009 target
+Phase 21 — Error Propagation & Supervision. Phase 15.15 has no remaining open
+work. Error-propagation and parsing issues previously discovered during
+dogfooding are intentionally carried into Phase 21 and do not block Phase
+15.15 closure. EXPRESS-001 was already fixed in earlier dogfooding work.
+
+This administrative closeout changed no compiler/runtime code. The issue and
+feedback ledger validators, agent-skill/bootstrap and agent-API consistency
+checks, and `git diff HEAD --check` passed. GitHub issue #1 (EXPRESS-005) was
+closed with a completion comment referencing `badceae` and `2e96565`; no other
+GitHub issues in this repository remain open. The compiler-first skills and
+live bootstrap confirmed that no language-surface change was needed;
+impact-selected tests were not relevant to this documentation-only
+reconciliation.
+
 ## Phase 15.15 EXPRESS-005 — closed on main (2026-09-27)
 
 Main includes `badceae` and its corrective follow-up. Moss has closed enums with zero-or-more
@@ -32,7 +66,10 @@ overlap issue before the full suite. Impact/affected-test selection was not
 used because full validation was required. A useful future agent improvement
 would be a direct semantic query for active borrow overlap at a match arm.
 
-## Roadmap direction (2026-09-26)
+## Roadmap direction (2026-09-26; historical snapshot)
+
+The following dated roadmap records what remained at the time. The Phase
+15.15 disposition above supersedes its EXPRESS-005/008 work list.
 
 Finish the remaining Phase 15.15 designs: EXPRESS-005 closed enums/tagged unions
 and exhaustive matching, EXPRESS-008 explicit user-defined indexing, and the
@@ -61,7 +98,11 @@ Unicode String/Map regression is now a native `run_case` as well as its focused
 Fast Debug coverage. `make check`, `make examples`, both swarm validators, and
 `git diff --check` passed; no EXPRESS or swarm issue status was changed.
 
-## Phase 15.15 EXPRESS-002/003/004 (2026-09-26, pending native validation)
+## Phase 15.15 EXPRESS-002/003/004 (2026-09-26 historical pre-validation checkpoint)
+
+The native-validation limitation described below applied only to that
+checkout. It was resolved by the later String/Map native repair and completed
+validation recorded above.
 
 EXPRESS-002 was closed by user decision at `b09392c`: move and temporary
 READ/WRITE borrowing remain the ownership model. The tracker has no linked

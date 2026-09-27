@@ -7,14 +7,15 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 1
+- Open: 0
 - Deferred to Phase 21: 1
-- Fixed: 62
+- Fixed: 63
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
-(Counts recomputed from the detailed per-finding statuses on 2026-09-25 after
-Phase 15.14 final closeout of SWARM-032, SWARM-039, SWARM-051, SWARM-059, SWARM-060, and SWARM-066.)
+(Counts recomputed from the detailed per-finding statuses on 2026-09-27 after
+the Phase 15.15 SWARM-043/044 closeout. SWARM-040 is intentionally deferred
+to Phase 21 and does not block Phase 15.15.)
 
 Completed swarm experiments:
 
@@ -1679,7 +1680,8 @@ Existing built-in Vector and Map indexing now creates an independent static
 specialization at each concrete call, including indexed writes. Native lowering
 also preserves String map-key borrowing for typed parameters, avoiding an
 invalid `&&String` Rust lookup. The regression covers Vector and Map key/value
-variation in both source call orders; user-defined indexing remains EXPRESS-008.
+variation in both source call orders. User-defined indexing was separately
+considered and rejected as EXPRESS-008; this built-in fix remains in place.
 
 ## SWARM-045 — Exported struct fields lower without pub modifier across modules
 
