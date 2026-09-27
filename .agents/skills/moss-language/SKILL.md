@@ -106,6 +106,16 @@ with `return`; `message` crosses domains. Every `fn` declared directly inside a
 ordinary helper `return`. Reusable implementation logic belongs in an ordinary
 non-domain function.
 
+Closed `enum` declarations have tag-only or named, typed payload fields:
+`enum Result:` with cases `Ok(value: Int)`, `Error(code: Int, message: String)`,
+and `Cancelled` is constructed as `Result.Ok(value: 42)` or
+`Result.Cancelled`. A statement `match result:` needs one `case` per variant.
+`match result` READ-borrows the whole enum; nontrivial payload bindings are
+temporary READ views. `match consume result:` consumes the whole enum before
+branch selection and gives the selected case owned branch-local payloads.
+Patterns never spell `move` or `ref`. Wildcards, guards, nested patterns,
+and match expressions are unsupported.
+
 ### Closed operator surface
 
 Moss v0.1 does not support user-defined operator overloading. Operators and their

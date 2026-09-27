@@ -38,7 +38,7 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, Reply, Return } kind = Kind::Raw;
+  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
@@ -98,6 +98,8 @@ struct DomainRoute {
 };
 struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
+struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
+struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct StaticSpecializationDependency {
   // Canonical Moss callable identity and concrete parameter types.  This is
@@ -240,6 +242,7 @@ struct Program {
   vector<Function> functions;
   vector<Trait> traits;
   vector<ObjectType> objects;
+  vector<EnumType> enums;
   vector<Domain> domains;
   vector<TestDecl> tests;
   vector<BenchDecl> benchmarks;

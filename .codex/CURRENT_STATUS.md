@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 15.15 EXPRESS-005 — implementation complete (2026-09-27)
+
+On `phase-15.15-express-005`, Moss now has closed enums with zero-or-more
+named typed fields per case, type-qualified construction, and exhaustive
+statement `match`. A plain match READ-borrows the whole enum and exposes
+temporary READ payload views; `match consume` consumes the whole scrutinee
+before branch selection and transfers selected payload fields as branch-local
+values. There is no partial-move state or pattern-level ownership syntax.
+Parser, checking, ownership/effects, native lowering, Fast Debug, formatter,
+module interfaces, agent discovery, editor surface, and canonical docs were
+updated together. Focused regressions cover native/Fast Debug parity, message
+boundaries, exported and source-free modules, and 28 rejected forms.
+
+Validation: `make check`, `make examples`, and `git diff HEAD --check` passed.
+The full suite includes the ownership, borrowed-value, message, native,
+interpreter, and agent/bootstrap coverage. Optional live LLDB CLI and
+lldb-dap checks were skipped because process tracing is unavailable in this
+environment; this is not an enum product failure. No known EXPRESS-005
+semantic blocker remains. The branch is ready for review and merge after its
+local closeout commit; no push was performed.
+
 ## Roadmap direction (2026-09-26)
 
 Finish the remaining Phase 15.15 designs: EXPRESS-005 closed enums/tagged unions

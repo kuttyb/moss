@@ -270,6 +270,20 @@ static bool parse_member_call(const string& text, string& receiver, string& hand
   return true;
 }
 
+static bool parse_enum_case_expression(const string& expression, string& enum_name,
+                                       string& case_name, vector<string>& fields,
+                                       bool& called) {
+  string value = trim(expression);
+  called = parse_member_call(value, enum_name, case_name, fields);
+  if (called) return plain_identifier(enum_name) && plain_identifier(case_name);
+  auto dot = value.find('.');
+  if (dot == string::npos || value.find('.', dot + 1) != string::npos) return false;
+  enum_name = trim(value.substr(0, dot));
+  case_name = trim(value.substr(dot + 1));
+  fields.clear();
+  return plain_identifier(enum_name) && plain_identifier(case_name);
+}
+
 // A bare `receiver.method` is a callable only inside a functional stage.  It
 // remains statically bound to one concrete receiver type and never becomes a
 // general runtime method value.
@@ -559,6 +573,7 @@ class Parser {
         }
         if (starts_with(declaration, "domain ")) p.domains.push_back(parse_domain(exported));
         else if (starts_with(declaration, "type ")) p.objects.push_back(parse_object(exported));
+        else if (starts_with(declaration, "enum ")) p.enums.push_back(parse_enum(exported));
         else if (starts_with(declaration, "trait ")) p.traits.push_back(parse_trait(exported));
         else if (starts_with(declaration, "fn ")) {
           auto function = parse_function(exported);
@@ -605,7 +620,7 @@ class Parser {
           if (p.main) fail(L, "duplicate proc main()");
           p.main = parse_main();
         } else {
-          fail(L, "expected 'module', 'import', 'domain', 'type Name:', 'trait', 'fn', 'export', 'test', 'bench', or 'proc main()'");
+          fail(L, "expected 'module', 'import', 'domain', 'type Name:', 'enum Name:', 'trait', 'fn', 'export', 'test', 'bench', or 'proc main()'");
         }
       }
     }
@@ -728,6 +743,52 @@ class Parser {
       o.fields.push_back(std::move(f));
     }
     return o;
+  }
+
+  EnumType parse_enum(bool exported = false) {
+    Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (!ends_with(head.text, ":")) fail(head, "enum declaration must end with ':'");
+    EnumType result;
+    result.name = trim(head.text.substr(5, head.text.size() - 6));
+    if (!identifier(result.name)) fail(head, "invalid enum name '" + result.name + "'");
+    result.header = head.text;
+    result.line = head.no;
+    result.source_file = head.source_file;
+    result.exported = exported;
+    while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
+      Line line = lines_[i_++];
+      if (line.indent != head.indent + indent_unit_)
+        fail(line, "enum cases must use one indentation level");
+      EnumCase item;
+      item.line = line.no;
+      item.source_file = line.source_file;
+      auto lp = line.text.find('(');
+      if (lp == string::npos) item.name = trim(line.text);
+      else {
+        auto rp = matching_paren(line.text, lp);
+        if (rp == string::npos || rp + 1 != line.text.size())
+          fail(line, "enum case fields must be named and typed");
+        item.name = trim(line.text.substr(0, lp));
+        for (const auto& param : parse_params(line, line.text.substr(lp + 1, rp - lp - 1))) {
+          if (param.type.empty()) fail(line, "enum case field '" + param.name + "' requires a type");
+          for (const auto& prior : item.fields)
+            if (prior.name == param.name) fail(line, "duplicate enum case field '" + param.name + "'");
+          Field field;
+          field.name = param.name;
+          field.type = param.type;
+          field.line = line.no;
+          field.source_file = line.source_file;
+          item.fields.push_back(std::move(field));
+        }
+      }
+      if (!identifier(item.name)) fail(line, "invalid enum case name '" + item.name + "'");
+      for (const auto& prior : result.cases)
+        if (prior.name == item.name) fail(line, "duplicate enum case '" + item.name + "'");
+      result.cases.push_back(std::move(item));
+    }
+    if (result.cases.empty()) fail(head, "enum must declare at least one case");
+    return result;
   }
 
   Trait parse_trait(bool exported = false) {
@@ -1033,6 +1094,45 @@ class Parser {
       if (ends_with(s.a, ":")) s.a = trim(s.a.substr(0, s.a.size() - 1));
       return s;
     }
+    if (starts_with(L.text, "match ")) {
+      if (!ends_with(L.text, ":")) fail(L, "match statement must end with ':'");
+      s.a = trim(L.text.substr(6, L.text.size() - 7));
+      if (starts_with(s.a, "consume ")) {
+        s.a = trim(s.a.substr(8));
+        s.b = "consume";
+      }
+      if (s.a.empty()) fail(L, "match requires an enum scrutinee");
+      s.kind = Stmt::Kind::Match;
+      return s;
+    }
+    if (starts_with(L.text, "case ")) {
+      if (!ends_with(L.text, ":")) fail(L, "case statement must end with ':'; guards are unsupported");
+      string pattern = trim(L.text.substr(5, L.text.size() - 6));
+      if (pattern == "_")
+        fail(L, "wildcard enum patterns are unsupported; list every case explicitly");
+      auto lp = pattern.find('(');
+      if (lp == string::npos) s.a = pattern;
+      else {
+        auto rp = matching_paren(pattern, lp);
+        if (rp == string::npos || rp + 1 != pattern.size())
+          fail(L, "enum patterns support only a case and plain field bindings");
+        s.a = trim(pattern.substr(0, lp));
+        string inside = pattern.substr(lp + 1, rp - lp - 1);
+        if (!trim(inside).empty()) for (auto binding : split_top_level(inside, ',')) {
+          binding = trim(binding);
+          if (!identifier(binding)) {
+            if (starts_with(binding, "move ") || starts_with(binding, "ref "))
+              fail(L, "ownership modifiers are not allowed in enum patterns; use 'match value:' to READ-borrow or 'match consume value:' to consume the whole enum");
+            fail(L, "enum patterns support only plain field bindings; wildcard and nested patterns are unsupported");
+          }
+          s.args.push_back(binding);
+        }
+      }
+      if (!identifier(s.a))
+        fail(L, "enum patterns require an unqualified case name; wildcard and guards are unsupported");
+      s.kind = Stmt::Kind::Case;
+      return s;
+    }
     if (L.text == "else" || L.text == "else:") { s.kind = Stmt::Kind::Else; return s; }
     if (starts_with(L.text, "while ")) {
       s.kind = Stmt::Kind::While;
@@ -1281,6 +1381,11 @@ class Checker {
       if (!objects_.emplace(o.name, &o).second)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
     }
+    for (auto& e : p_.enums) {
+      if (!enums_.emplace(e.name, &e).second || objects_.count(e.name) ||
+          domains_.count(e.name))
+        err(e.source_file, e.line, "duplicate enum type: " + e.name);
+    }
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
@@ -1297,10 +1402,12 @@ class Checker {
   }
 
   void run() {
+    check_enums();
     check_domain_handle_declarations();
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_enums();
     check_traits();
     check_objects();
     // Function results and handler replies can constrain each other through an
@@ -1345,6 +1452,7 @@ class Checker {
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
+  std::unordered_map<string, EnumType*> enums_;
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
@@ -1400,11 +1508,22 @@ class Checker {
     return false;
   }
 
+  bool contains_enum_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (enums_.count(type)) return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_enum_type(argument)) return true;
+    return false;
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
-    if (domains_.count(type) || objects_.count(type)) return true;
+    if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
     if (starts_with(type, "vector[") && ends_with(type, "]")) {
       string element = trim(type.substr(7, type.size() - 8));
@@ -1418,6 +1537,7 @@ class Checker {
       auto ps = split_top_level(type.substr(4, type.size()-5), ',');
       return ps.size() == 2 &&
           !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
+          !contains_enum_type(ps[0]) &&
           valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
@@ -1425,7 +1545,8 @@ class Checker {
     if (starts_with(type, "table[") && ends_with(type, "]")) {
       auto inside = type.substr(6, type.size()-7);
       auto ps = split_top_level(inside, ',');
-      return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
+      return ps.size() == 2 && !contains_enum_type(ps[0]) &&
+          valid_type(ps[0]) && valid_type(ps[1]);
     }
     return false;
   }
@@ -1886,6 +2007,23 @@ class Checker {
         if (then_replies && else_replies) return true;
         continue;
       }
+      if (statement.kind == Stmt::Kind::Match) {
+        ++index;
+        bool all_reply = true;
+        bool any_case = false;
+        while (index < statements.size() &&
+               statements[index].indent == level + 1 &&
+               statements[index].kind == Stmt::Kind::Case) {
+          any_case = true;
+          size_t body = index + 1;
+          all_reply &= every_handler_path_replies(statements, body, level + 2);
+          index = body;
+          while (index < statements.size() && statements[index].indent > level + 1)
+            ++index;
+        }
+        if (any_case && all_reply) return true;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::While || statement.kind == Stmt::Kind::For) {
         ++index;
         (void)every_handler_path_replies(statements, index, level + 1);
@@ -1901,12 +2039,64 @@ class Checker {
   bool contains_domain_handle(const string& type) const {
     string value = canonical_type_name(type);
     if (domains_.count(value)) return true;
+    auto enum_type = enums_.find(value);
+    if (enum_type != enums_.end())
+      for (const auto& item : enum_type->second->cases)
+        for (const auto& field : item.fields)
+          if (contains_domain_handle(field.type)) return true;
     auto bracket = value.find('[');
     if (bracket != string::npos && value.back() == ']')
       for (const auto& argument : split_top_level(
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
+  }
+
+  void check_enums() const {
+    std::set<string> visiting, visited;
+    std::function<void(const string&, const string&, int)> visit_type;
+    std::function<void(const string&, const string&, int)> visit =
+        [&](const string& type, const string& file, int line) {
+      string name = canonical_type_name(type);
+      if (visited.count(name)) return;
+      if (!visiting.insert(name).second)
+        err(file, line, "recursive enum or aggregate layout involving '" + name + "' is unsupported");
+      auto enumeration = enums_.find(name);
+      if (enumeration != enums_.end()) {
+        for (const auto& item : enumeration->second->cases)
+          for (const auto& field : item.fields)
+            visit_type(field.type, field.source_file, field.line);
+      }
+      auto object = objects_.find(name);
+      if (object != objects_.end()) {
+        for (const auto& field : object->second->fields)
+          visit_type(field.type, field.source_file, field.line);
+      }
+      visiting.erase(name);
+      visited.insert(name);
+    };
+    visit_type = [&](const string& type, const string& file, int line) {
+      string name = canonical_type_name(type);
+      if (enums_.count(name) || objects_.count(name)) {
+        visit(name, file, line);
+        return;
+      }
+      auto bracket = name.find('[');
+      if (bracket != string::npos && ends_with(name, "]"))
+        for (const auto& argument : split_top_level(
+                 name.substr(bracket + 1, name.size() - bracket - 2), ','))
+          visit_type(argument, file, line);
+    };
+    for (const auto& enumeration : p_.enums)
+      visit(enumeration.name, enumeration.source_file, enumeration.line);
+    for (const auto& declaration : p_.enums)
+      for (const auto& item : declaration.cases)
+        for (const auto& field : item.fields) {
+          if (!valid_type(field.type))
+            err(field.source_file, field.line, "unknown enum field type '" + field.type + "'");
+          if (contains_domain_handle(field.type))
+            err(field.source_file, field.line, "domain handles cannot be stored in enum payloads");
+        }
   }
 
   void check_domain_handle_declarations() {
@@ -2638,6 +2828,7 @@ class Checker {
     // a compile-time borrow marker used to reject structural mutation of the
     // traversed collection.
     std::set<string> active_read_traversals;
+    std::unordered_map<string,string> borrowed_enum_payloads;
     std::map<string,MoveInfo> moved;
   };
 
@@ -2736,6 +2927,14 @@ class Checker {
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name))
+        return enum_name;
+    }
     if (starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> args;
@@ -3309,6 +3508,81 @@ class Checker {
         err(statement.line, "indentation jumps more than one block level");
       if (statement.kind == Stmt::Kind::Else) return;
 
+      if (statement.kind == Stmt::Kind::Match) {
+        visitor(statement, env);
+        auto scrutinee_type = inferred_expr_type(statement.a, env);
+        if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
+          err(statement.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
+        if (record_semantic_types)
+          const_cast<Stmt&>(statement).semantic_type =
+              canonical_type_name(*scrutinee_type);
+        const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
+        std::set<string> seen;
+        vector<TypeEnv> paths;
+        ++index;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          if (arm.kind != Stmt::Kind::Case)
+            err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+              [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+          if (item == declaration.cases.end()) {
+            bool other_enum = false;
+            for (const auto& candidate : p_.enums)
+              if (candidate.name != declaration.name)
+                for (const auto& candidate_case : candidate.cases)
+                  other_enum |= candidate_case.name == arm.a;
+            err(arm.line, (other_enum ? "case belongs to another enum: " :
+                           "unknown enum case: ") + arm.a,
+                other_enum ? "WRONG_ENUM_CASE" : "UNKNOWN_ENUM_CASE");
+          }
+          if (!seen.insert(arm.a).second)
+            err(arm.line, "duplicate match case '" + arm.a + "'", "DUPLICATE_MATCH_CASE");
+          if (arm.args.size() != item->fields.size())
+            err(arm.line, "case '" + arm.a + "' must bind all " +
+                std::to_string(item->fields.size()) + " field(s)", "MATCH_BINDING_COUNT");
+          TypeEnv branch = env;
+          std::set<string> pattern_names;
+          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+            if (!pattern_names.insert(arm.args[field_index]).second)
+              err(arm.line, "duplicate enum pattern binding: " +
+                  arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
+            branch[arm.args[field_index]] = item->fields[field_index].type;
+          }
+          ++index;
+          if (index >= statements.size() || statements[index].indent != level + 2)
+            err(arm.line, "enum case requires a statement body", "EMPTY_MATCH_CASE");
+          walk_type_environment_block(statements, index, level + 2, branch,
+                                      visitor, reject_conflicts, record_join_types,
+                                      record_semantic_types, join_context);
+          for (const auto& name : arm.args) {
+            auto prior = env.find(name);
+            if (prior == env.end()) branch.erase(name);
+            else branch[name] = prior->second;
+          }
+          paths.push_back(std::move(branch));
+        }
+        if (seen.size() != declaration.cases.size()) {
+          string missing;
+          for (const auto& item : declaration.cases)
+            if (!seen.count(item.name)) {
+              if (!missing.empty()) missing += ", ";
+              missing += item.name;
+            }
+          err(statement.line, "non-exhaustive match; missing: " + missing,
+              "NON_EXHAUSTIVE_MATCH");
+        }
+        env = merge_type_environments(paths, statement.line, reject_conflicts);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Case)
+        err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
+
       if (statement.kind == Stmt::Kind::If) {
         visitor(statement, env);
         TypeEnv incoming = env;
@@ -3417,7 +3691,10 @@ class Checker {
       switch (statement.kind) {
         case Stmt::Kind::If:
         case Stmt::Kind::While:
+        case Stmt::Kind::Match:
           constrain_constructor_fields(statement.line, statement.a, current_env);
+          break;
+        case Stmt::Kind::Case:
           break;
         case Stmt::Kind::For:
           constrain_constructor_fields(statement.line, statement.b, current_env);
@@ -4899,6 +5176,28 @@ class Checker {
       }
     }
 
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item != declaration.cases.end()) for (const auto& argument : fields) {
+          string name, field_value;
+          if (!parse_named_argument(argument, name, field_value)) continue;
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field != item->fields.end())
+            analyze_effect_expression(field_value, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      transfer_type(field->type) ? Effect::Consume : Effect::Read);
+        }
+        return;
+      }
+    }
     if (starts_with(value, "message ")) {
       string receiver, handler;
       vector<string> arguments;
@@ -5168,6 +5467,39 @@ class Checker {
       const Stmt& statement = statements[index];
       if (statement.indent < level || statement.indent > level) return;
       if (statement.kind == Stmt::Kind::Else) return;
+      if (statement.kind == Stmt::Kind::Match) {
+        analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields,
+                                  statement.b == "consume" ? Effect::Consume : Effect::Read);
+        auto type = inferred_expr_type(statement.a, env);
+        const EnumType* declaration = type && enums_.count(canonical_type_name(*type))
+            ? enums_.at(canonical_type_name(*type)) : nullptr;
+        ++index;
+        vector<TypeEnv> paths;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          auto branch = env;
+          if (declaration) {
+            auto item = std::find_if(declaration->cases.begin(), declaration->cases.end(),
+                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+            if (item != declaration->cases.end())
+              for (size_t field_index = 0;
+                   field_index < arm.args.size() && field_index < item->fields.size();
+                   ++field_index)
+                branch[arm.args[field_index]] = item->fields[field_index].type;
+          }
+          ++index;
+          analyze_effect_block(statements, index, level + 2, branch, params,
+                               parameter_effects, receiver_effect, receiver_fields);
+          for (const auto& binding : arm.args) branch.erase(binding);
+          paths.push_back(std::move(branch));
+        }
+        if (leaf_effect_capture_ && !paths.empty())
+          env = merge_type_environments(paths, statement.line, false);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Case)
+        err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For) {
         Effect iteration_effect = Effect::Read;
@@ -5320,6 +5652,8 @@ class Checker {
         case Stmt::Kind::If:
         case Stmt::Kind::While:
         case Stmt::Kind::For:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           return;
       }
     }
@@ -5556,7 +5890,10 @@ class Checker {
         break;
       case Stmt::Kind::If:
       case Stmt::Kind::While:
+      case Stmt::Kind::Match:
         expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Case:
         break;
       case Stmt::Kind::For:
         expressions.push_back(statement.b);
@@ -5593,7 +5930,10 @@ class Checker {
         break;
       case Stmt::Kind::If:
       case Stmt::Kind::While:
+      case Stmt::Kind::Match:
         expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Case:
         break;
       case Stmt::Kind::For:
         expressions.push_back(statement.b);
@@ -6910,6 +7250,14 @@ class Checker {
 
   void consume_binding(int line, const string& name, const OwnershipEnv& env,
                        const string& destination) const {
+    if (env.active_read_traversals.count(name))
+      err(line, "cannot consume '" + name + "' while it is READ-borrowed by a match",
+          "MATCH_READ_BORROW_ACTIVE");
+    auto borrowed = env.borrowed_enum_payloads.find(name);
+    if (borrowed != env.borrowed_enum_payloads.end())
+      err(line, "payload '" + name + "' is borrowed from '" + borrowed->second +
+          "'; use 'match consume " + borrowed->second + ":' to transfer it",
+          "BORROWED_ENUM_PAYLOAD_CONSUME");
     if (env.message_payloads.count(name)) {
       err(line, "cannot CONSUME incoming message payload '" + name +
           "'; message payloads may only be read or forwarded");
@@ -7069,6 +7417,18 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    if (requested != Effect::Read) {
+      for (const auto& borrowed : env.borrowed_enum_payloads)
+        if (expression_uses(value, borrowed.first))
+          err(line, "payload '" + borrowed.first + "' is borrowed from '" +
+              borrowed.second + "'; use 'match consume " + borrowed.second +
+              ":' to transfer or mutate owned payloads",
+              "BORROWED_ENUM_PAYLOAD_ACCESS");
+      for (const auto& source : env.active_read_traversals)
+        if (expression_uses(value, source))
+          err(line, "cannot mutate or consume '" + source +
+              "' while it is READ-borrowed by a match", "MATCH_READ_BORROW_ACTIVE");
+    }
     for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
       if (auto binary = split_binary(value, {op})) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
@@ -7114,6 +7474,27 @@ class Checker {
         else
           err(line, "cannot CONSUME incoming message payload '" +
               location->root + "'; message payloads may only be read or forwarded");
+        return;
+      }
+    }
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item != declaration.cases.end()) for (const auto& argument : fields) {
+          string name, expression;
+          if (!parse_named_argument(argument, name, expression)) continue;
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field != item->fields.end())
+            check_ownership_expression(line, expression, env,
+                transfer_type(field->type) ? Effect::Consume : Effect::Read);
+        }
         return;
       }
     }
@@ -7309,6 +7690,12 @@ class Checker {
                                   const string& expected_type,
                                   const OwnershipEnv& env,
                                   const string& action) const {
+    for (const auto& borrowed : env.borrowed_enum_payloads)
+      if (expression_uses(expression, borrowed.first))
+        err(line, "payload '" + borrowed.first + "' is borrowed from '" +
+            borrowed.second + "' and cannot cross a by-value boundary" + action +
+            "; use 'match consume " + borrowed.second + ":'",
+            "BORROWED_ENUM_PAYLOAD_ESCAPE");
     // A message is Moss's explicit semantic copy boundary.  The source value
     // remains available after a message/reply; the backend materializes a
     // detached payload (or an equivalent proven optimization).  This helper is
@@ -7338,6 +7725,65 @@ class Checker {
       if (s.indent < level) return;
       if (s.indent > level) return;
       if (s.kind == Stmt::Kind::Else) return;
+
+      if (s.kind == Stmt::Kind::Match) {
+        auto type = inferred_expr_type(s.a, env.types);
+        if (!type || !enums_.count(canonical_type_name(*type)))
+          err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
+        if (!simple_identifier(s.a))
+          err(s.line, "match scrutinee must be a named enum binding", "MATCH_REQUIRES_BINDING");
+        require_available(s.line, s.a, env);
+        bool consuming = s.b == "consume";
+        if (consuming) consume_binding(s.line, s.a, env, "consuming match");
+        const EnumType& declaration = *enums_.at(canonical_type_name(*type));
+        OwnershipEnv incoming = env;
+        vector<TypeEnv> path_types;
+        std::map<string,MoveInfo> merged_moves = incoming.moved;
+        ++index;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+              [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+          if (item == declaration.cases.end())
+            err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
+          OwnershipEnv branch = incoming;
+          if (!consuming) branch.active_read_traversals.insert(s.a);
+          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+            const string& name = arm.args[field_index];
+            const string& field_type = item->fields[field_index].type;
+            branch.types[name] = field_type;
+            branch.moved.erase(name);
+            branch.immutable_locals.erase(name);
+            branch.message_payloads.erase(name);
+            branch.borrowed_enum_payloads.erase(name);
+            if (!consuming && transfer_type(field_type))
+              branch.borrowed_enum_payloads[name] = s.a;
+          }
+          ++index;
+          check_ownership_block(statements, index, level + 2, branch,
+                                current_domain, current_handler);
+          for (const auto& name : arm.args) {
+            if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
+            else branch.types.erase(name);
+            if (incoming.moved.count(name)) branch.moved[name] = incoming.moved.at(name);
+            else branch.moved.erase(name);
+            if (incoming.borrowed_enum_payloads.count(name))
+              branch.borrowed_enum_payloads[name] =
+                  incoming.borrowed_enum_payloads.at(name);
+            else branch.borrowed_enum_payloads.erase(name);
+          }
+          branch.active_read_traversals.erase(s.a);
+          path_types.push_back(branch.types);
+          for (const auto& moved : branch.moved)
+            merged_moves.emplace(moved);
+        }
+        env = incoming;
+        env.types = merge_type_environments(path_types, s.line, false);
+        env.moved = std::move(merged_moves);
+        continue;
+      }
+      if (s.kind == Stmt::Kind::Case)
+        err(s.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         require_available(s.line, s.a, env);
@@ -7525,6 +7971,8 @@ class Checker {
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
         case Stmt::Kind::For:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           return;
       }
     }
@@ -8027,6 +8475,47 @@ class Checker {
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
+    if (starts_with(original, "match "))
+      err(line, "match is a statement, not an expression",
+          "MATCH_EXPRESSION_UNSUPPORTED");
+    {
+      string enum_name, case_name;
+      vector<string> arguments;
+      bool called = false;
+      if (parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item == declaration.cases.end())
+          err(line, "unknown enum case '" + enum_name + "." + case_name + "'", "UNKNOWN_ENUM_CASE");
+        if (item->fields.empty() && called && !arguments.empty())
+          err(line, "enum case '" + case_name + "' has no fields", "UNKNOWN_ENUM_FIELD");
+        if (!item->fields.empty() && !called)
+          err(line, "enum case '" + case_name + "' requires named fields", "MISSING_ENUM_FIELD");
+        std::set<string> supplied;
+        for (const auto& argument : arguments) {
+          string name, value;
+          if (!parse_named_argument(argument, name, value))
+            err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
+          if (!supplied.insert(name).second)
+            err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field == item->fields.end())
+            err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
+          check_expression(line, value, env);
+          auto actual = inferred_expr_type(value, env);
+          if (!actual || !same_type(*actual, field->type))
+            err(line, "enum field '" + name + "' expects '" + field->type + "'",
+                "ENUM_FIELD_TYPE_MISMATCH");
+        }
+        for (const auto& field : item->fields)
+          if (!supplied.count(field.name))
+            err(line, "missing enum field '" + field.name + "'", "MISSING_ENUM_FIELD");
+        return;
+      }
+    }
     if (domain_constructor(original))
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
     if (starts_with(original, "message ")) {
@@ -8121,6 +8610,12 @@ class Checker {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
+          auto left_type = inferred_expr_type(binary->first, env);
+          auto right_type = inferred_expr_type(binary->second, env);
+          if ((left_type && contains_enum_type(*left_type)) ||
+              (right_type && contains_enum_type(*right_type)))
+            err(line, "enum equality and ordering are not supported; use an exhaustive match",
+                "ENUM_OPERATOR_UNSUPPORTED");
           if (binary->first.empty() || binary->second.empty())
             err(line, "invalid arithmetic expression");
           if (split_binary(value, {"%"})) {
@@ -8133,6 +8628,19 @@ class Checker {
           }
           return;
         }
+    }
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(value, callee, arguments) &&
+          callee == "assertEqual" && arguments.size() == 2) {
+        for (const auto& argument : arguments) {
+          auto type = inferred_expr_type(argument, env);
+          if (type && contains_enum_type(*type))
+            err(line, "automatic enum equality is not supported; match the cases explicitly",
+                "ENUM_OPERATOR_UNSUPPORTED");
+        }
+      }
     }
     string receiver, handler;
     vector<string> args;
@@ -8285,12 +8793,19 @@ class Checker {
         return;
       }
       if (objects_.count(callee)) {
+        std::set<string> supplied;
         for (const auto& arg : args) {
           string field_name, field_value;
           if (!parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
+          supplied.insert(field_name);
           check_expression(line, field_value, env);
         }
+        for (const auto& field : objects_.at(callee)->fields)
+          if (enums_.count(canonical_type_name(field.type)) &&
+              !supplied.count(field.name) && field.init.empty())
+            err(line, "enum field '" + callee + "." + field.name +
+                "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
       } else {
         check_function_call(line, callee, args, env);
         for (const auto& arg : args) check_expression(line, arg, env);
@@ -8453,7 +8968,8 @@ class Checker {
         return;
       }
 
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::Match) {
         check_expression(statement.line, statement.a, current_env);
         return;
       }
@@ -8572,8 +9088,13 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Echo) {
-        for (const auto& argument : statement.args)
+        for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
+          auto type = inferred_expr_type(argument, current_env);
+          if (type && enums_.count(canonical_type_name(*type)))
+            err(statement.line, "echo cannot display an enum directly; match its cases",
+                "ENUM_DISPLAY_UNSUPPORTED");
+        }
         return;
       }
 
@@ -10071,12 +10592,15 @@ class Generator {
       domains_[d.name] = &d;
     }
     for (const auto& o : p.objects) objects_[o.name] = &o;
+    for (const auto& e : p.enums) enums_[e.name] = &e;
     for (const auto& f : p.functions) functions_[f.name] = &f;
     if (resolution_program) {
       for (const auto& d : resolution_program->domains)
         domains_.emplace(d.name, &d);
       for (const auto& o : resolution_program->objects)
         objects_.emplace(o.name, &o);
+      for (const auto& e : resolution_program->enums)
+        enums_.emplace(e.name, &e);
       for (const auto& f : resolution_program->functions)
         functions_.emplace(f.name, &f);
     }
@@ -10107,6 +10631,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
     for (const auto& entry : view_objects) {
@@ -10190,6 +10715,7 @@ class Generator {
   std::unordered_map<string,string> specialization_sources_;
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
+  std::unordered_map<string, const EnumType*> enums_;
   std::unordered_map<string, const Function*> functions_;
   struct DomainInstanceBinding {
     // This is the semantic specialization key carried by a source binding;
@@ -10361,7 +10887,7 @@ class Generator {
     if (x == "unit") return "()";
     if (domains_.count(x))
       return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
-    if (objects_.count(x)) return x;
+    if (objects_.count(x) || enums_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
@@ -11936,6 +12462,28 @@ class Generator {
     }
     if (e == "Map()") return "std::collections::HashMap::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(e, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        std::ostringstream rendered;
+        rendered << enum_name << "::" << rust_identifier(case_name);
+        if (!fields.empty()) {
+          rendered << " { ";
+          for (size_t index = 0; index < fields.size(); ++index) {
+            string name, value;
+            if (!parse_named_argument(fields[index], name, value))
+              throw std::runtime_error("unchecked enum constructor field");
+            if (index) rendered << ", ";
+            rendered << rust_identifier(name) << ": " << expr(value, d, locals, types);
+          }
+          rendered << " }";
+        }
+        return rendered.str();
+      }
+    }
 
     for (const auto& boolean_operator :
          vector<std::pair<string, string>>{{" or ", "||"},
@@ -12577,6 +13125,26 @@ class Generator {
         !view_object_type(*type))
       return "*(" + rendered + ")";
     return rendered;
+  }
+
+  void gen_enum(std::ostringstream& o, const EnumType& declaration) {
+    o << "#[derive(Clone, Debug)]\n"
+      << ((declaration.exported || p_.explicit_module) ? "pub " : "")
+      << "enum " << declaration.name << " {\n";
+    for (const auto& item : declaration.cases) {
+      o << "    " << rust_identifier(item.name);
+      if (!item.fields.empty()) {
+        o << " { ";
+        for (size_t index = 0; index < item.fields.size(); ++index) {
+          if (index) o << ", ";
+          o << rust_identifier(item.fields[index].name) << ": "
+            << rust_type(item.fields[index].type);
+        }
+        o << " }";
+      }
+      o << ",\n";
+    }
+    o << "}\n\n";
   }
 
   void gen_object(std::ostringstream& o, const ObjectType& t) {
@@ -13235,6 +13803,78 @@ class Generator {
                 direct_functional->binding_materialization_reason);
 
       switch (s.kind) {
+        case Stmt::Kind::Match: {
+          auto scrutinee_type = generated_expr_type(s.a, &types);
+          if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
+            throw std::runtime_error("unchecked enum match");
+          const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
+          const auto exact_join = s.joined_types_by_context.find(functional_context);
+          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+              ? s.joined_types : exact_join->second;
+          vector<string> joined_bindings;
+          for (const auto& entry : joined_types)
+            if (!types.count(entry.first) && !starts_with(entry.second, "_"))
+              joined_bindings.push_back(entry.first);
+          std::sort(joined_bindings.begin(), joined_bindings.end());
+          for (const auto& binding : joined_bindings) {
+            o << indent(level) << "let mut " << binding << ": "
+              << rust_type(joined_types.at(binding)) << ";\n";
+            locals.insert(binding);
+            types[binding] = joined_types.at(binding);
+          }
+          o << indent(level) << "match ";
+          if (s.b != "consume") o << "&";
+          o << expr(s.a, d, locals, &types) << " {\n";
+          ++i;
+          while (i < ss.size() && ss[i].indent == level + 1) {
+            const Stmt& arm = ss[i];
+            auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+            if (item == declaration.cases.end())
+              throw std::runtime_error("unchecked enum case");
+            o << indent(level + 1) << declaration.name << "::"
+              << rust_identifier(arm.a);
+            if (!item->fields.empty()) {
+              o << " { ";
+              for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+                if (field_index) o << ", ";
+                string field_name = rust_identifier(item->fields[field_index].name);
+                if (field_name == arm.args[field_index])
+                  o << field_name;
+                else
+                  o << field_name << ": " << arm.args[field_index];
+              }
+              o << " }";
+            }
+            o << " => {\n";
+            auto branch_locals = locals;
+            auto branch_types = types;
+            auto saved_borrowed = borrowed_function_parameters_;
+            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+              const string& name = arm.args[field_index];
+              const string& type = item->fields[field_index].type;
+              branch_locals.insert(name);
+              branch_types[name] = type;
+              if (s.b != "consume") {
+                if (type == "int" || type == "bool" || type == "float")
+                  o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
+                else borrowed_function_parameters_.insert(name);
+              }
+            }
+            ++i;
+            auto branch_join = join_assignments;
+            branch_join.insert(joined_bindings.begin(), joined_bindings.end());
+            gen_block(o, ss, i, level + 2, d, current_handler, reply_slot,
+                      branch_locals, branch_types, base, in_handler, in_function,
+                      branch_join, functional_context);
+            borrowed_function_parameters_ = std::move(saved_borrowed);
+            o << indent(level + 1) << "},\n";
+          }
+          o << indent(level) << "}\n";
+          break;
+        }
+        case Stmt::Kind::Case:
+          throw std::runtime_error("case outside checked match");
         case Stmt::Kind::If: {
           const auto exact_join = s.joined_types_by_context.find(functional_context);
           if (functional_context.find('<') != string::npos &&
@@ -14432,6 +15072,8 @@ static string durable_identity_base(const SemanticTargetFact& fact) {
   if (fact.kind == "specialization")
     return prefix + "specialization:" + fact.context.substr(3);
   if (fact.kind == "type") return prefix + "type:" + fact.name;
+  if (fact.kind == "enum") return prefix + "enum:" + fact.name;
+  if (fact.kind == "enum_case") return prefix + "enum-case:" + fact.name;
   if (fact.kind == "field") return prefix + "field:" + fact.name;
   if (fact.kind == "method") return prefix + "method:" + fact.name;
   if (fact.kind == "trait") return prefix + "trait:" + fact.name;
@@ -14549,6 +15191,17 @@ static void finalize_semantic_target_facts(
                              << method.return_type.value_or("unit") << ":"
                              << method.params.size() << "\n";
       }
+    } else if (target.kind == "enum") {
+      auto enumeration = std::find_if(
+          program.enums.begin(), program.enums.end(),
+          [&](const EnumType& candidate) { return candidate.name == target.name; });
+      if (enumeration != program.enums.end())
+        for (const auto& item : enumeration->cases) {
+          interface_material << "case:" << item.name << "\n";
+          for (const auto& field : item.fields)
+            interface_material << "field:" << field.name << ":"
+                               << field.type << "\n";
+        }
     } else if (target.kind == "trait") {
       auto trait = std::find_if(
           program.traits.begin(), program.traits.end(),
@@ -14697,6 +15350,36 @@ static vector<SemanticTargetFact> semantic_target_facts(
       specialized.provenance = {specialized.semantic_identity,
                                 fact.semantic_identity};
       targets.push_back(std::move(specialized));
+    }
+  }
+
+  for (const auto& enumeration : program.enums) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "enum:" + enumeration.name + "@" +
+        std::to_string(enumeration.line);
+    fact.context = "enum:" + enumeration.name;
+    fact.kind = "enum";
+    fact.name = enumeration.name;
+    fact.type = enumeration.name;
+    fact.line = enumeration.line;
+    fact.module_identity = semantic_module_name(enumeration.name);
+    fact.export_visibility = enumeration.exported ? "exported" : "private";
+    fact.export_kind = enumeration.exported ? "nominal_type" : "private";
+    fact.provenance.push_back(fact.semantic_identity);
+    targets.push_back(std::move(fact));
+    for (const auto& item : enumeration.cases) {
+      SemanticTargetFact case_fact;
+      case_fact.semantic_identity = "enum_case:" + enumeration.name + "." +
+          item.name + "@" + std::to_string(item.line);
+      case_fact.context = "enum:" + enumeration.name;
+      case_fact.kind = "enum_case";
+      case_fact.name = enumeration.name + "." + item.name;
+      case_fact.type = enumeration.name;
+      case_fact.line = item.line;
+      case_fact.provenance.push_back(case_fact.semantic_identity);
+      for (const auto& field : item.fields)
+        case_fact.explanations.push_back("field " + field.name + ": " + field.type);
+      targets.push_back(std::move(case_fact));
     }
   }
 
@@ -15531,7 +16214,8 @@ static void write_bootstrap_json(std::ostream& out,
          "\"tool_invocation\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
-         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
+         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match value: / match consume value:\"},"
+         "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match value:\",\"consume_match\":\"match consume value:\",\"pattern_ownership_modifiers\":false},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
@@ -16762,6 +17446,13 @@ static void annotate_program_source(Program& program, const string& source_file)
       for (auto& field : method.body) field.source_file = source_file;
     }
   }
+  for (auto& enumeration : program.enums) {
+    enumeration.source_file = source_file;
+    for (auto& item : enumeration.cases) {
+      item.source_file = source_file;
+      for (auto& field : item.fields) field.source_file = source_file;
+    }
+  }
   for (auto& trait : program.traits) {
     trait.source_file = source_file;
     for (auto& method : trait.methods) method.source_file = source_file;
@@ -16807,6 +17498,9 @@ static void merge_project_program(Program& destination, Program source,
   destination.objects.insert(destination.objects.end(),
                              std::make_move_iterator(source.objects.begin()),
                              std::make_move_iterator(source.objects.end()));
+  destination.enums.insert(destination.enums.end(),
+                           std::make_move_iterator(source.enums.begin()),
+                           std::make_move_iterator(source.enums.end()));
   destination.domains.insert(destination.domains.end(),
                              std::make_move_iterator(source.domains.begin()),
                              std::make_move_iterator(source.domains.end()));
@@ -16951,6 +17645,7 @@ static SemanticSnapshot make_semantic_snapshot(
         fact.kind == "method" || fact.kind == "handler" ||
         fact.kind == "test" || fact.kind == "benchmark" ||
         fact.kind == "main" || fact.kind == "type" ||
+        fact.kind == "enum" ||
         fact.kind == "trait" || fact.kind == "domain";
     if (!unit) continue;
     SemanticSnapshotUnit record;
@@ -17187,6 +17882,7 @@ static std::set<string> module_type_names(const ParsedModuleUnit& unit) {
   std::set<string> result;
   for (const auto& file : unit.files) {
     for (const auto& object : file.first.objects) result.insert(object.name);
+    for (const auto& enumeration : file.first.enums) result.insert(enumeration.name);
     for (const auto& domain : file.first.domains) result.insert(domain.name);
     for (const auto& trait : file.first.traits) result.insert(trait.name);
   }
@@ -17200,6 +17896,8 @@ static std::set<string> module_export_names(const ParsedModuleUnit& unit) {
       if (function.exported) result.insert(function.name);
     for (const auto& object : file.first.objects)
       if (object.exported) result.insert(object.name);
+    for (const auto& enumeration : file.first.enums)
+      if (enumeration.exported) result.insert(enumeration.name);
     for (const auto& domain : file.first.domains)
       if (domain.exported) result.insert(domain.name);
     for (const auto& trait : file.first.traits)
@@ -17342,7 +18040,8 @@ static string rewrite_module_expression(
         !(locals && locals->count(token)) &&
         token.find("__") == string::npos &&
         (functions.count(token) ||
-         (types.count(token) && after < expression.size() && expression[after] == '(')))
+         (types.count(token) && after < expression.size() &&
+          (expression[after] == '(' || expression[after] == '.'))))
       result += module_symbol(module, token);
     else
       result += token;
@@ -17413,6 +18112,35 @@ static void rewrite_module_program(
             if (present_everywhere) joined.insert(binding);
           }
           locals = std::move(joined);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::Match) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          std::vector<std::set<string>> paths;
+          ++index;
+          while (index < statements.size() &&
+                 statements[index].indent == level + 1 &&
+                 statements[index].kind == Stmt::Kind::Case) {
+            const auto bindings = statements[index].args;
+            ++index;
+            auto branch_locals = incoming;
+            branch_locals.insert(bindings.begin(), bindings.end());
+            walk_block(index, level + 2, branch_locals);
+            for (const auto& binding : bindings)
+              if (!incoming.count(binding)) branch_locals.erase(binding);
+            paths.push_back(std::move(branch_locals));
+          }
+          if (!paths.empty()) {
+            std::set<string> joined;
+            for (const auto& binding : paths.front())
+              if (std::all_of(paths.begin() + 1, paths.end(),
+                              [&](const auto& path) { return path.count(binding); }))
+                joined.insert(binding);
+            locals = std::move(joined);
+          }
           continue;
         }
 
@@ -17540,6 +18268,12 @@ static void rewrite_module_program(
             &sibling_methods, &body_locals);
     }
   }
+  for (auto& enumeration : program.enums) {
+    enumeration.name = module_symbol(module, enumeration.name);
+    for (auto& item : enumeration.cases)
+      for (auto& field : item.fields)
+        field.type = type(field.type);
+  }
   for (auto& trait : program.traits) {
     trait.name = module_symbol(module, trait.name);
     for (auto& method : trait.methods) {
@@ -17577,6 +18311,8 @@ static void validate_module_exports(const std::map<string,ParsedModuleUnit>& mod
         if (function.exported) ++export_counts[function.name];
       for (const auto& object : file.first.objects)
         if (object.exported) ++export_counts[object.name];
+      for (const auto& enumeration : file.first.enums)
+        if (enumeration.exported) ++export_counts[enumeration.name];
       for (const auto& trait : file.first.traits)
         if (trait.exported) ++export_counts[trait.name];
       for (const auto& domain : file.first.domains)
@@ -17817,6 +18553,7 @@ static ParsedModuleUnit load_module_interface(
   string line;
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
+  EnumType* current_enum = nullptr;
   Domain* current_domain = nullptr;
   Trait* current_trait = nullptr;
   bool in_semantic_exports = false;
@@ -17916,6 +18653,41 @@ static ParsedModuleUnit load_module_interface(
       current = nullptr;
       current_domain = nullptr;
       current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "export enum ")) {
+      std::istringstream header(line.substr(12));
+      string name;
+      header >> name;
+      EnumType enumeration;
+      enumeration.name = name;
+      enumeration.exported = true;
+      enumeration.source_file = file.string();
+      provider.enums.push_back(std::move(enumeration));
+      current_enum = &provider.enums.back();
+      current = nullptr;
+      current_object = nullptr;
+      current_domain = nullptr;
+      current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "enum_case ") && current_enum) {
+      std::istringstream fields(line.substr(10));
+      EnumCase item;
+      size_t field_count = 0;
+      fields >> std::quoted(item.name) >> field_count;
+      if (!fields)
+        throw CompileError(0, "invalid enum case in module interface");
+      item.source_file = file.string();
+      for (size_t index = 0; index < field_count; ++index) {
+        Field field;
+        fields >> std::quoted(field.name) >> std::quoted(field.type);
+        if (!fields)
+          throw CompileError(0, "invalid enum field in module interface");
+        field.source_file = file.string();
+        item.fields.push_back(std::move(field));
+      }
+      current_enum->cases.push_back(std::move(item));
       continue;
     }
     if (starts_with(line, "export domain ")) {
@@ -18937,6 +19709,9 @@ static Program module_program(const Program& whole, const string& module,
   }
   for (const auto& object : whole.objects)
     if (belongs_to_module(object.name, module)) result.objects.push_back(object);
+  for (const auto& enumeration : whole.enums)
+    if (belongs_to_module(enumeration.name, module))
+      result.enums.push_back(enumeration);
   for (const auto& trait : whole.traits)
     if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
   for (const auto& domain : whole.domains)
@@ -18972,6 +19747,10 @@ static vector<string> module_names_for_program(const Program& program) {
     if (!module_name_from_symbol(object.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(object.name)))
       names.insert(module_name_from_symbol(object.name));
+  for (const auto& enumeration : program.enums)
+    if (!module_name_from_symbol(enumeration.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(enumeration.name)))
+      names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
     if (!module_name_from_symbol(domain.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(domain.name)))
@@ -19062,6 +19841,10 @@ static vector<std::filesystem::path> write_module_interfaces(
     if (!module_name_from_symbol(object.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
+  for (const auto& enumeration : program.enums)
+    if (!module_name_from_symbol(enumeration.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(enumeration.name)))
+      module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
     if (!module_name_from_symbol(domain.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(domain.name)))
@@ -19265,6 +20048,27 @@ static vector<std::filesystem::path> write_module_interfaces(
             << " " << ownership_effect_name(effect);
       }
       out << "\n";
+    }
+  }
+  for (const auto& enumeration : program.enums) {
+    if (!enumeration.exported) continue;
+    string module = module_name_from_symbol(enumeration.name);
+    if (module.empty() || program.external_modules.count(module)) continue;
+    string name = enumeration.name.substr(module.size() + 2);
+    auto& out = contents[module];
+    out << "export enum " << name << "\n";
+    interface_contents[module] << "enum " << name << "\n";
+    for (const auto& item : enumeration.cases) {
+      out << "  enum_case " << std::quoted(item.name) << " "
+          << item.fields.size();
+      interface_contents[module] << "case " << item.name;
+      for (const auto& field : item.fields) {
+        out << " " << std::quoted(field.name) << " "
+            << std::quoted(field.type);
+        interface_contents[module] << " " << field.name << ":" << field.type;
+      }
+      out << "\n";
+      interface_contents[module] << "\n";
     }
   }
   for (const auto& trait : program.traits) {

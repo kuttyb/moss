@@ -5,6 +5,7 @@
     if (source.object) {
       result.object = std::make_shared<StructValue>();
       result.object->type = source.object->type;
+      result.object->case_name = source.object->case_name;
       for (const auto& field : source.object->fields)
         result.object->fields[field.first] = independent(field.second);
     }

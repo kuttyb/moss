@@ -122,6 +122,24 @@ At a call site, the compiler checks capabilities. `read` requires readable stora
 
 This design keeps source lightweight while retaining static closure. It also makes synchronization derivation possible later: transitive writes through helpers are visible to the handler effect summary even when the handler body does not contain the mutation syntactically.
 
+Closed enums are tagged unions with a finite, declared case set. Cases have
+zero or more named typed fields, constructed with `Enum.Case(field: value)`;
+tag-only cases use `Enum.Case`. A statement `match` resolves arms against the
+scrutinee's concrete enum type and requires every case exactly once. There is
+no wildcard, guard, nested pattern, pattern-level ownership modifier, dynamic
+case extension, or match expression in v0.1.
+
+Pattern bindings never choose an ownership mode. `match value` READ-borrows the
+entire enum for all arms. A nontrivial payload binding is a temporary READ
+view, subject to the ordinary borrow lifetime and forbidden from consuming,
+mutating, or escaping across a by-value boundary. Copy scalars retain their
+ordinary rules. The source enum remains live at the join. In contrast,
+`match consume value` consumes the whole enum before branch selection. The
+selected case's payload fields become owned branch locals; the original enum
+is dead on every branch and after the join. No partial-move state exists.
+Incoming immutable handler payloads cannot enter a consuming match. Recursive
+enum layouts are rejected in this first implementation.
+
 ### 4 Functional/dataflow code without general closure objects
 
 Moss supports concise functional/dataflow forms such as map, filter, reduce, sum, count, any, and all, including restricted placeholder/capture forms. Static callable specialization occurs before effect derivation, and captures of domain state contribute to handler effects.
@@ -843,7 +861,7 @@ Phase 10 defines the Moss v0.1 usable-language milestone. The current post-v0.1 
 
 Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
-Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. Phases 15.13 and 15.14 were the corrective pass over the implementation, lowering, Fast Debug, formatter, diagnostic-attribution, and semantic-tooling defects recorded there. They also landed the first expressiveness item, statically known callable parameters for ordinary functions (Section 4). Phase 15.15 settles field access on an untyped parameter: it is rejected at the field expression, including through an alias. A concrete parameter type permits field access; untyped method calls retain inferred static requirements. SWARM-044 specializes built-in indexing. EXPRESS-002 general copying was rejected pending a compelling concrete use case. Phase 15.15 adds core `String` methods and Map deletion, pending native rustc validation. String numeric parsing and recoverable invalid-input semantics are explicitly tracked in Phase 21. The remaining expressiveness candidates include enums or tagged unions and explicit user-defined indexing. A static `Self`-returning trait constraint was rejected pending a compelling concrete use case: unannotated returns are inferred per specialization and checked where used. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
+Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. Phases 15.13 and 15.14 were the corrective pass over the implementation, lowering, Fast Debug, formatter, diagnostic-attribution, and semantic-tooling defects recorded there. They also landed the first expressiveness item, statically known callable parameters for ordinary functions (Section 4). Phase 15.15 settles field access on an untyped parameter: it is rejected at the field expression, including through an alias. A concrete parameter type permits field access; untyped method calls retain inferred static requirements. SWARM-044 specializes built-in indexing. EXPRESS-002 general copying was rejected pending a compelling concrete use case. Phase 15.15 adds core `String` methods, Map deletion, and the closed enums specified above. String numeric parsing and recoverable invalid-input semantics are explicitly tracked in Phase 21. Explicit user-defined indexing remains a separate expressiveness candidate. A static `Self`-returning trait constraint was rejected pending a compelling concrete use case: unannotated returns are inferred per specialization and checked where used. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
 
 ## Part IV - Related Work and Positioning
 

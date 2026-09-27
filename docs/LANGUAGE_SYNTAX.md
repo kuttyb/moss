@@ -19,8 +19,9 @@ Moss uses significant indentation. A file uses one indentation width throughout,
 set by its first indented line; `moss fmt` canonicalizes source to two spaces per
 block level, and the examples here use that form. Tabs are rejected. Comments begin
 with `#` outside a string. A trailing colon on a block header is optional and does
-not change the block's meaning, except that the `type Name:` declaration requires
-it; examples always write the colon. The frontend may retain compatibility spellings
+not change the block's meaning, except that `type Name:`, `enum Name:`,
+`match`, and `case` headers require it; examples always write the colon.
+The frontend may retain compatibility spellings
 while the syntax migration proceeds, but new examples should use the forms documented
 here.
 
@@ -164,6 +165,58 @@ Quote(symbol = "MOSS", price = 12.5, size = 100, ts = 1)
 The older `Quote(symbol: "MOSS", price: 12.5, size: 100, ts: 1)` form remains accepted
 during migration.
 The colon continues to mark type constraints in declarations and parameters.
+
+## Closed enums and exhaustive match
+
+An `enum` is a closed tagged union. Each case has zero or more named, typed
+fields. There is no separate `union` declaration.
+
+```moss
+enum Result:
+  Ok(value: Int)
+  Error(code: Int, message: String)
+  Cancelled
+
+let a = Result.Ok(value: 42)
+let b = Result.Error(code: 500, message: "bad")
+let c = Result.Cancelled
+```
+
+Payload construction requires field names and the declared field types. Unknown
+cases, unknown or duplicate fields, missing fields, and type mismatches are
+compile-time errors. Recursive enum layouts, including cycles through ordinary
+aggregate fields, are unsupported.
+
+`match` is a statement with one arm for every case of the scrutinee's statically
+known enum type. The names in an arm bind the case's fields in declaration order.
+Duplicate, unknown, foreign, or missing cases are errors.
+
+```moss
+match result:
+  case Ok(value):
+    echo value
+  case Error(code, message):
+    echo message
+  case Cancelled:
+    echo "cancelled"
+```
+
+Patterns discriminate and bind; they never specify ownership. `match result`
+READ-borrows the whole enum for the match. Nontrivial payload bindings are
+temporary READ views: they cannot be mutated, consumed, returned, stored, or
+sent across a by-value boundary. Trivial scalar fields follow ordinary copy
+rules. The original enum remains usable after a READ match.
+
+`match consume result` consumes the entire enum before selecting an arm. Its
+payload bindings are ordinary branch-local values, including owned values that
+may be transferred. The original enum is dead on every path after the match;
+there is no partial-move state. An immutable incoming handler payload cannot
+be consumed this way.
+
+Wildcards, guards, nested patterns, alternate patterns, pattern-level
+`move`/`ref`, and match expressions are not part of this construct.
+Enums do not automatically gain equality, ordering, hashing, or display
+operations; match their cases explicitly.
 
 ## Functions and expressions
 

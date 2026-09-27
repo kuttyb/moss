@@ -1,3 +1,15 @@
+## Phase 15.15 / EXPRESS-005 — complete, ready for review
+
+Closed enums with named typed case payloads, type-qualified construction,
+exhaustive statement matching, and whole-enum READ/CONSUME ownership modes are
+implemented on `phase-15.15-express-005`. Native lowering, Fast Debug,
+structured diagnostics, semantic discovery, canonical docs, and focused
+regressions agree. `make check` and `make examples` pass; optional live LLDB
+tests skip because process tracing is unavailable. The historical HashMap
+follow-up plan below is retained as an archive, not the current task.
+
+---
+
 Work from current repository HEAD.
 
 Current HashMap dogfooding experiment:
@@ -1219,4 +1231,3 @@ Programmers and agents should not need to know Rust backend imports, manufacture
 typed collections with dummy elements, or inspect compiler source merely to
 discover ordinary arithmetic syntax.
 ```
-

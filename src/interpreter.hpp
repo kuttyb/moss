@@ -157,6 +157,7 @@ class FastInterpreter {
 
   struct StructValue {
     std::string type;
+    std::string case_name;
     std::unordered_map<std::string, Value> fields;
   };
 
@@ -580,6 +581,31 @@ class FastInterpreter {
       else emit("LocalRead", frame, line, e);
       return *place.value;
     }
+    {
+      std::string qualified;
+      std::vector<std::string> arguments;
+      bool called = parse_call(e, qualified, arguments);
+      if (!called) qualified = e;
+      auto dot = qualified.find('.');
+      if (dot != std::string::npos && qualified.find('.', dot + 1) == std::string::npos) {
+        std::string enum_name = qualified.substr(0, dot);
+        std::string case_name = qualified.substr(dot + 1);
+        for (const auto& declaration : program_.enums)
+          if (declaration.name == enum_name) {
+            Value result = Value::struct_value(enum_name);
+            result.object->case_name = case_name;
+            for (const auto& argument : arguments) {
+              auto colon = argument.find(':');
+              if (colon == std::string::npos)
+                throw RuntimeError(line, "enum constructor requires named fields");
+              auto name = trim_copy(argument.substr(0, colon));
+              result.object->fields[name] =
+                  eval(argument.substr(colon + 1), frame, line, output);
+            }
+            return result;
+          }
+      }
+    }
     if (frame.handler_scope && frame.domain && frame.domain->routes.count(e)) {
       Value value; value.kind = Value::Kind::DomainHandle; value.domain = frame.domain->routes.at(e); return value;
     }
@@ -918,6 +944,7 @@ class FastInterpreter {
       case Value::Kind::Callable: return left.string == right.string;
       case Value::Kind::Struct:
         if (!left.object || !right.object || left.object->type != right.object->type ||
+            left.object->case_name != right.object->case_name ||
             left.object->fields.size() != right.object->fields.size()) return false;
         for (const auto& entry : left.object->fields) {
           auto other = right.object->fields.find(entry.first);
@@ -948,18 +975,25 @@ class FastInterpreter {
   Value construct(const ObjectType& object, const std::vector<std::string>& args,
                   Frame& frame, int line, std::ostream& output) {
     Value result = Value::struct_value(object.name);
-    for (const auto& field : object.fields) {
-      if (!field.init.empty()) result.object->fields[field.name] = eval(field.init, frame, field.line, output);
-      else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
-    }
+    std::unordered_map<std::string,std::string> supplied;
     for (const auto& argument : args) {
       auto equal_sign = argument.find_first_of(":=");
-      if (equal_sign == std::string::npos) throw RuntimeError(line, "object constructors require named fields");
-      auto name = trim_copy(argument.substr(0, equal_sign));
-      auto field = result.object->fields.find(name);
-      if (field == result.object->fields.end()) throw RuntimeError(line, "unknown field '" + name + "'");
-      field->second = eval(argument.substr(equal_sign + 1), frame, line, output);
+      if (equal_sign == std::string::npos)
+        throw RuntimeError(line, "object constructors require named fields");
+      supplied[trim_copy(argument.substr(0, equal_sign))] =
+          argument.substr(equal_sign + 1);
     }
+    for (const auto& field : object.fields) {
+      auto found = supplied.find(field.name);
+      if (found != supplied.end())
+        result.object->fields[field.name] = eval(found->second, frame, line, output);
+      else if (!field.init.empty())
+        result.object->fields[field.name] = eval(field.init, frame, field.line, output);
+      else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
+    }
+    for (const auto& entry : supplied)
+      if (!result.object->fields.count(entry.first))
+        throw RuntimeError(line, "unknown field '" + entry.first + "'");
     return result;
   }
 
@@ -1049,6 +1083,70 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      if (statement.kind == Stmt::Kind::Match) {
+        Value selected = eval(statement.a, frame, statement.line, output);
+        if (selected.kind != Value::Kind::Struct || !selected.object ||
+            selected.object->case_name.empty())
+          throw RuntimeError(statement.line, "match requires an enum value");
+        if (statement.b == "consume") frame.locals.erase(statement.a);
+        const EnumType* declaration = nullptr;
+        for (const auto& candidate : program_.enums)
+          if (candidate.name == selected.object->type) declaration = &candidate;
+        if (!declaration) throw RuntimeError(statement.line, "unknown matched enum");
+        size_t cursor = index + 1;
+        bool taken = false;
+        Flow flow;
+        while (cursor < end && statements[cursor].indent == statement.indent + 1) {
+          const Stmt& arm = statements[cursor];
+          size_t arm_end = cursor + 1;
+          while (arm_end < end && statements[arm_end].indent > arm.indent) ++arm_end;
+          if (arm.a == selected.object->case_name) {
+            taken = true;
+            emit("BranchTaken", frame, arm.line, arm.a);
+            std::unordered_map<std::string,std::optional<Value>> saved_locals;
+            std::unordered_map<std::string,std::optional<Place>> saved_aliases;
+            const EnumCase* item = nullptr;
+            for (const auto& candidate : declaration->cases)
+              if (candidate.name == arm.a) item = &candidate;
+            if (!item) throw RuntimeError(arm.line, "unknown enum case");
+            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+              const auto& binding = arm.args[field_index];
+              auto prior_local = frame.locals.find(binding);
+              saved_locals[binding] = prior_local == frame.locals.end()
+                  ? std::nullopt : std::optional<Value>(prior_local->second);
+              auto prior_alias = frame.aliases.find(binding);
+              saved_aliases[binding] = prior_alias == frame.aliases.end()
+                  ? std::nullopt : std::optional<Place>(prior_alias->second);
+              frame.locals.erase(binding);
+              frame.aliases.erase(binding);
+              auto field = selected.object->fields.find(item->fields[field_index].name);
+              if (field == selected.object->fields.end())
+                throw RuntimeError(arm.line, "missing enum payload");
+              if (statement.b == "consume" ||
+                  field->second.kind == Value::Kind::Int ||
+                  field->second.kind == Value::Kind::Bool ||
+                  field->second.kind == Value::Kind::Float)
+                frame.locals[arm.args[field_index]] = field->second;
+              else
+                frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
+            }
+            flow = execute(statements, frame, output, cursor + 1, arm_end);
+            for (const auto& binding : arm.args) {
+              frame.locals.erase(binding);
+              frame.aliases.erase(binding);
+              if (saved_locals.at(binding))
+                frame.locals[binding] = *saved_locals.at(binding);
+              if (saved_aliases.at(binding))
+                frame.aliases[binding] = *saved_aliases.at(binding);
+            }
+          }
+          cursor = arm_end;
+        }
+        if (!taken) throw RuntimeError(statement.line, "non-exhaustive checked match");
+        if (flow.returned) return flow;
+        index = cursor;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::If) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
@@ -1126,6 +1224,8 @@ class FastInterpreter {
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           break;
       }
       ++index;
@@ -1193,7 +1293,9 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Float: out << std::setprecision(15) << floating; return out.str();
     case Kind::String: return string;
     case Kind::Callable: return "<callable:" + string + ">";
-    case Kind::Struct: return object ? object->type : "<struct>";
+    case Kind::Struct:
+      return object ? object->type +
+          (object->case_name.empty() ? "" : "." + object->case_name) : "<struct>";
     case Kind::Vector:
       out << "[";
       if (vector) for (size_t i = 0; i < vector->size(); ++i) {

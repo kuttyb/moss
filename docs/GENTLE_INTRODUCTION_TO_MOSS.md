@@ -416,6 +416,36 @@ Module exports control the public boundary of a module. Ordinary type members do
 
 ---
 
+### Closed enums
+
+Use an `enum` when a value can be exactly one of a known set of cases:
+
+```moss
+enum Job:
+  Waiting
+  Done(value: Int)
+  Failed(code: Int, message: String)
+
+fn describe(job: Job):
+  match job:
+    case Waiting:
+      echo "waiting"
+    case Done(value):
+      echo value
+    case Failed(code, message):
+      echo message
+```
+
+Construct a case with its type name, such as `Job.Done(value: 42)` or
+`Job.Waiting`. A match must cover every case exactly once. The names in each
+arm bind the case fields in their declared order.
+
+`match job` reads the enum and leaves `job` usable afterward. A nontrivial
+payload such as `String` is only borrowed inside that arm. If an arm needs to
+transfer ownership of such a payload, write `match consume job:` instead;
+that consumes the entire `job` on every path. No `move` or `ref` annotation
+is written in the pattern.
+
 ## 5. Collections
 
 The built-in collection names are:

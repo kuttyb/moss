@@ -1,0 +1,8 @@
+module tags
+
+export enum Signal:
+  Off
+  On(value: Int)
+
+export fn make() -> Signal:
+  return Signal.On(value: 4)

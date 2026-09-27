@@ -1,0 +1,45 @@
+enum Reply:
+  Empty
+  Text(value: String)
+  Pair(code: Int, value: String)
+
+domain Relay:
+  fn Bounce(value: Reply) -> Reply:
+    match value:
+      case Empty:
+        echo "empty"
+      case Text(text):
+        echo text
+      case Pair(code, text):
+        echo code
+    reply value
+
+  fn Code(value: Reply) -> Int:
+    match value:
+      case Empty:
+        reply 0
+      case Text(text):
+        reply 1
+      case Pair(code, text):
+        reply code
+
+fn main():
+  relay = Relay()
+  let input = Reply.Pair(code: 3, value: "message")
+  let output = message relay.Bounce(input)
+  let code = message relay.Code(input)
+  echo code
+  match consume output:
+    case Empty:
+      echo "empty"
+    case Text(text):
+      echo text
+    case Pair(code, text):
+      echo text
+  match input:
+    case Empty:
+      echo "empty"
+    case Text(text):
+      echo text
+    case Pair(code, text):
+      echo code
