@@ -14382,7 +14382,6 @@ static SemanticQueryResolution resolve_semantic_target(
         target.source_file == source_file;
   };
   auto filters_match = [&](const SemanticTargetFact& target) {
-    if (!source_matches(target)) return false;
     if (!kind_filter.empty() && target.kind != kind_filter) return false;
     if (!enclosing_filter.empty() && target.context != enclosing_filter &&
         target.enclosing_semantic_identity != enclosing_filter &&
@@ -14401,7 +14400,7 @@ static SemanticQueryResolution resolve_semantic_target(
       // any other column selects all entities retained for the source line
       // and reports that precision in the candidate record.
       (void)requested_column;
-      if (target.line == requested_line) match_rank = 0;
+      if (target.line == requested_line && source_matches(target)) match_rank = 0;
     } else if (target.semantic_identity == selector ||
                target.durable_identity == selector) {
       match_rank = 0;

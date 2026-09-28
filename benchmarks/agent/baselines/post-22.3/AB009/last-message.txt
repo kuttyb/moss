@@ -1,0 +1,1 @@
+Repaired [Calculator](/home/owner/daji/code/moss2/task/main.moss): `Run` remains the externally messaged handler and calls an ordinary `twice` function directly. Moss check and formatting check pass; execution prints `42`.

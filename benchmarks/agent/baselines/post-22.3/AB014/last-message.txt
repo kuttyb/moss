@@ -1,0 +1,3 @@
+Created [task/main.moss](/home/owner/daji/code/moss2/task/main.moss). It sends a `Payload` containing 41 to a read-only `Worker` handler, changes the caller’s payload to 42, and prints `41 42`.
+
+Moss check passed, the compiler confirmed the handler’s payload effect is `READ`, and the program produced the expected output.

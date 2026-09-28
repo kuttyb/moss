@@ -1,0 +1,7 @@
+domain Worker:
+  fn Read() -> Int:
+    reply 42
+
+fn main():
+  worker = Worker()
+  echo message worker.Read()

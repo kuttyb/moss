@@ -1,0 +1,1 @@
+Updated [task/main.moss](/home/owner/daji/code/moss2/task/main.moss:11) to count `holder.values` after `replace` consumes `replacement`. The Moss check and format check pass; running the program prints `3`.

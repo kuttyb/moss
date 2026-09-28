@@ -14,6 +14,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "benchmarks" / "agent" / "baselines" / "pre-22.1"
 POST_BASELINE = ROOT / "benchmarks" / "agent" / "baselines" / "post-22.1"
+POST_223_BASELINE = ROOT / "benchmarks" / "agent" / "baselines" / "post-22.3"
 TASKS = ROOT / "benchmarks" / "agent" / "tasks"
 SCRATCH = ROOT / "tmp" / "agent-baseline-analysis-test"
 
@@ -107,6 +108,27 @@ def main() -> int:
     assert comparison["post"]["repeated_diagnostic_loop_tasks"] == 1
     assert comparison["pre"]["agent_tool_calls"] == 407
     assert comparison["post"]["agent_tool_calls"] == 422
+
+    phase223_check = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "benchmarks" / "agent" / "compare_baselines.py"),
+            "--pre-root", str(POST_BASELINE),
+            "--post-root", str(POST_223_BASELINE),
+            "--check",
+        ],
+        cwd=ROOT, text=True, capture_output=True, check=False, timeout=60,
+    )
+    assert phase223_check.returncode == 0, (phase223_check.stdout, phase223_check.stderr)
+    phase223 = json.loads((POST_223_BASELINE / "comparison.json").read_text(encoding="utf-8"))
+    assert phase223["pre"]["final_passes"] == phase223["post"]["final_passes"] == 28
+    assert phase223["post"]["first_validation_successes"] == 18
+    assert phase223["post"]["agent_tool_calls"] == 367
+    assert phase223["post"]["moss_margo_invocations"] == 134
+    assert phase223["semantic_query_metrics"]["post"]["resolution_statuses"] == {
+        "resolved": 8,
+    }
+    assert phase223["semantic_query_metrics"]["post"]["unresolved_or_ambiguous_rate"] == 0.0
 
     missing = fixture("missing")
     shutil.rmtree(missing / "AB030")

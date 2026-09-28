@@ -662,11 +662,15 @@ def build_aggregate(baseline_root: Path, tasks_root: Path) -> dict[str, Any]:
                 (len(query_records) - query_failures) / len(valid), 3
             ) if valid else None,
             "resolution_statuses": dict(sorted(query_statuses.items())),
+            "blocked_by_program_diagnostic_count": sum(
+                item.get("exit_code") != 0 and
+                item.get("semantic_query_status") is None
+                for item in query_records
+            ),
             "unresolved_or_ambiguous_rate": round(
                 (query_statuses["missing"] + query_statuses["ambiguous"])
-                / len(query_records), 3
-            ) if query_records and sum(query_statuses.values()) == len(query_records)
-            else None,
+                / sum(query_statuses.values()), 3
+            ) if query_statuses else None,
         }
     if aggregate["task_count"] != 30:
         raise AnalysisError(f"expected 30 canonical tasks, found {aggregate['task_count']}")

@@ -1,0 +1,1 @@
+Repaired [task/main.moss](/home/owner/daji/code/moss2/task/main.moss) by declaring and binding Inventory’s route to Ledger. The concrete graph has only the required acyclic routes: App → Inventory → Ledger. The compiler check passes, formatting passes, and the program outputs `42`.

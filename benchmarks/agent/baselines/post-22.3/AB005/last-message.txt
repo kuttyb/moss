@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss2/task/main.moss) with `Point`, its `score` method, and a `main` that prints the score of `(20, 22)`. The Moss check passed, and execution printed `42`.

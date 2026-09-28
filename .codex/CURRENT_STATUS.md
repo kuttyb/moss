@@ -2,6 +2,41 @@
 
 Updated: 2026-09-23
 
+## Phase 22.3 — Semantic Query Expansion (closeout validation in progress)
+
+Foundation commit `ae126f2` merges Phase 22.1 teaching diagnostics and the Phase
+22.2 benchmark onto the Phase 22.3 branch. Implementation commit `ddf927c` adds
+robust `resolve` targeting by stable/current ID, name, source location, kind, and
+enclosing entity; deterministic ambiguity candidates; structured type, ownership,
+direct/transitive effect, call/message, domain, synchronization, and why evidence;
+and explicit availability limits rather than approximated semantics. The query
+layer projects existing checker, specialization, `ObservableEffects`,
+`SemanticCallEdge`, `ConcreteDomainGraph`, and `SynchronizationPlan` records.
+
+Checked synchronous-message edges are now retained by the semantic call graph.
+Phase 22.1 diagnostic semantic identities resolve through the same target layer.
+Focused coverage is in `tests/tooling/check_semantic_queries.py`; the schema and
+benchmark behavior mapping are documented in `docs/AGENT_API.md` and
+`docs/PHASE_22_3_QUERY_MAPPING.md`. Commit `3886992` fixes benchmark telemetry so
+structured why reason codes are not misclassified as diagnostics.
+
+The canonical `post-22.3` AB001–AB030 run is complete with no infrastructure
+failures: 28/30 final passes, 18 first-validation successes, 30/30 eventually
+green, 1.400 mean attempts, 367 agent tool calls, and 134 Moss/Margo invocations.
+Against post-22.1 this is flat final completion, +2 first-validation successes,
+-0.067 mean attempts, -55 agent tool calls, and -22 Moss/Margo calls. Ten semantic
+queries were made; eight returned facts, two were blocked by the program's
+diagnostic, and all eight recorded target resolutions succeeded. No agent invoked
+the new `resolve` command, AB022 retained its diagnostic loop, and one stochastic
+trial does not establish causality. Raw and derived evidence is under
+`benchmarks/agent/baselines/post-22.3/`.
+
+Strict C++17 `-Werror`, Phase 22.3 focused queries, existing agent API, Phase 22.1
+teaching diagnostics, Phase 22.2 benchmark/baseline tooling, Python compilation,
+shell syntax, and diff hygiene have passed. Full repository, examples, Fast Debug,
+Margo/module overlap, and final clean-worktree validation remain to be recorded
+below before closeout.
+
 ## Repository-local Codex autonomy configuration — COMPLETE (2026-09-23)
 
 `.codex/config.toml` now selects a repository-scoped `moss-repository`

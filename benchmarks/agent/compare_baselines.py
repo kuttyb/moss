@@ -141,7 +141,7 @@ def build_comparison(pre_root: Path, post_root: Path) -> dict[str, Any]:
     protocol_matches["metrics"] = pre_protocol["metrics"] == post_protocol["metrics"]
     for key in ("implementation", "runtime_version", "model", "reasoning_effort", "configuration"):
         protocol_matches[f"agent.{key}"] = pre["agent"][key] == post["agent"][key]
-    return {
+    result = {
         "schema_version": SCHEMA_VERSION,
         "pre_baseline": pre["baseline"],
         "post_baseline": post["baseline"],
@@ -164,9 +164,135 @@ def build_comparison(pre_root: Path, post_root: Path) -> dict[str, Any]:
             "post_failed_query_calls": sum(item["post_failed_query_calls"] for item in task_comparison),
         },
     }
+    if include_query_expansion:
+        result["protocol_notes"] = [
+            "post-22.3 adds resolve to the informational-query exclusion list and records query resolution status; meaningful-validation definitions are unchanged"
+        ]
+        result["post_failures"] = [
+            {
+                "task_id": item["task_id"],
+                "failure_classes": item["failure_classes"],
+                "validation_failures": item["validation_failures"],
+                "first_validation_success": item["first_validation_success"],
+                "attempts_to_green": item["validation_attempts_to_green"],
+            }
+            for item in post["task_results"] if item["final_status"] == "fail"
+        ]
+        result["semantic_query_metrics"] = {
+            "pre": {
+                "successful_invocation_count": before["successful_semantic_query_calls"],
+                "successful_queries_per_completed_task": before["semantic_queries_per_completed_task"],
+                "resolution_statuses": "not_instrumented",
+                "unresolved_or_ambiguous_rate": None,
+            },
+            "post": post["semantic_queries"],
+        }
+    return result
+
+
+def render_phase223_report(comparison: dict[str, Any]) -> str:
+    before = comparison["pre"]
+    after = comparison["post"]
+    labels = [
+        ("Final passes", "final_passes"),
+        ("First-validation successes", "first_validation_successes"),
+        ("Eventually green", "eventually_green"),
+        ("Failed correctness attempts before green", "failed_correctness_attempts_before_green"),
+        ("Attempts-to-green mean", "attempts_to_green_mean"),
+        ("Diagnostic occurrences", "diagnostic_occurrences"),
+        ("Repeated-diagnostic-loop tasks", "repeated_diagnostic_loop_tasks"),
+        ("Failed semantic-query calls", "failed_semantic_query_calls"),
+        ("Successful semantic-query calls", "successful_semantic_query_calls"),
+        ("QUERY_TARGET_NOT_FOUND calls", "query_target_not_found_calls"),
+        ("Agent tool calls", "agent_tool_calls"),
+        ("Moss/Margo invocations", "moss_margo_invocations"),
+        ("Infrastructure failures", "infrastructure_failures"),
+        ("Timeouts", "timeouts"),
+    ]
+    lines = [
+        "# Moss Phase 22.3 Semantic Query Expansion Comparison",
+        "",
+        "## Protocol and interpretation",
+        "",
+        (f"This compares the fixed `post-22.1` run at compiler commit "
+         f"`{comparison['pre_compiler_commit']}` with `post-22.3` at compiler commit "
+         f"`{comparison['post_compiler_commit']}`. The AB001–AB030 corpus, prompts, "
+         "wrapper, one-session isolation, Codex CLI 0.156.0, `gpt-6-sol`, medium "
+         "reasoning, 900-second task limit, validators, and network policy match."),
+        "",
+        "Phase 22.3 adds query-resolution telemetry but does not change which commands count "
+        "as meaningful validation. There is one stochastic trial per task. Deltas are measured "
+        "observations, not causal or statistically significant claims.",
+        "",
+        "## Overall comparison",
+        "",
+        "| Metric | Post-22.1 | Post-22.3 | Delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for label, key in labels:
+        lines.append(
+            f"| {label} | {before[key]} | {after[key]} | "
+            f"{comparison['delta'][key]:+g} |"
+        )
+    query = comparison["semantic_query_metrics"]
+    post_query = query["post"]
+    lines += [
+        "",
+        "Headline completion was flat at 28/30 and all tasks again reached a green compiler "
+        "or execution command. First-validation success rose 16→18, mean attempts fell "
+        "1.467→1.400, agent tool calls fell 422→367, and Moss/Margo calls fell 156→134. "
+        "Because this is one stochastic trial, these changes do not establish that the query "
+        "API caused the reduction.",
+        "",
+        "## Semantic-query findings",
+        "",
+        f"Agents made {post_query['invocation_count']} semantic-query calls: "
+        f"{post_query['successful_invocation_count']} returned facts and "
+        f"{post_query['failed_invocation_count']} were blocked by the program diagnostic. "
+        f"Successful queries per completed task were "
+        f"{query['pre']['successful_queries_per_completed_task']:.3f}→"
+        f"{post_query['successful_queries_per_completed_task']:.3f}. The eight target "
+        "resolution outcomes were all `resolved`; ambiguous/missing rate was 0.000 and "
+        "`QUERY_TARGET_NOT_FOUND` remained 0.",
+        "",
+        "The benchmark did not invoke the new `resolve` command and did not log source-file "
+        "reads, so it cannot support a claim about semantic facts obtained without source "
+        "inspection. It also retained AB022's three-occurrence ownership diagnostic loop. "
+        "The new API is directly covered by compiler regressions, while this trial shows "
+        "limited spontaneous adoption by fresh agents.",
+        "",
+        "## Final failures",
+        "",
+    ]
+    for failure in comparison["post_failures"]:
+        details = "; ".join(failure["validation_failures"])
+        lines.append(
+            f"- **{failure['task_id']}**: {', '.join(failure['failure_classes'])}; "
+            f"{details}. It reached green in {failure['attempts_to_green']} meaningful "
+            "validation attempt(s)."
+        )
+    lines += [
+        "",
+        "AB017 failed exact output formatting after compiling successfully. AB020 recovered "
+        "from its compiler diagnostic but missed the validator's requested pipeline structure. "
+        "The failing-task identities differ from post-22.1, another reason not to overinterpret "
+        "aggregate movement.",
+        "",
+        "## Scope and retained evidence",
+        "",
+        "Moss semantics and the frozen corpus were unchanged. Raw prompts, final task trees, "
+        "tool logs, manifests, and validator results are retained beside this report. "
+        "`aggregate.json` and `comparison.json` are deterministic derived artifacts. Direct "
+        "callable effects, per-use move provenance, and line-to-expression source ranges remain "
+        "explicit availability gaps documented by Phase 22.3; trace slicing is Phase 22.4 and "
+        "repair/workflow automation is Phase 22.5.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def render_report(comparison: dict[str, Any]) -> str:
+    if comparison.get("post_baseline") == "post-22.3":
+        return render_phase223_report(comparison)
     before = comparison["pre"]
     after = comparison["post"]
     lines = [

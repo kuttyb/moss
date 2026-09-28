@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss2/task/main.moss) with a named `add` function. It reduces `[10, 20, 12]` from `0`, counts the elements, and prints `42` and `3` on separate lines. Moss check and execution passed.

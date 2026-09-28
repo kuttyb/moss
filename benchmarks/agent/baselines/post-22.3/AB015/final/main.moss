@@ -1,0 +1,21 @@
+type Payload:
+  values: Vector[Int]
+
+fn total(payload: Payload) -> Int:
+  return payload.values |> sum
+
+domain Reader:
+  fn Accept(payload: Payload) -> Int:
+    reply total(payload)
+
+domain Store:
+  domainroutes(reader: Reader)
+  payload: Payload
+
+  fn Read() -> Int:
+    reply message reader.Accept(payload)
+
+fn main():
+  reader = Reader()
+  store = Store(reader: reader, payload: Payload(values: [20, 22]))
+  echo message store.Read()

@@ -159,7 +159,9 @@ Phase 22.2B's runner and result schema are complete. Phase 22.2C's canonical
 fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded under
 `baselines/pre-22.1/`. Phase 22.2 is complete. Phase 22.1's agent-teaching
 diagnostics and honest post-run comparison are recorded under
-`baselines/post-22.1/`.
+`baselines/post-22.1/`. Phase 22.3's canonical query-expansion comparison and raw
+evidence are recorded under `baselines/post-22.3/`; it compares directly with
+post-22.1 rather than replacing either earlier frozen run.
 
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 

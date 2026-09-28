@@ -571,5 +571,11 @@ Phase 22.2A and 22.2B provide a hardened, frozen 30-task
 [fresh-agent benchmark](benchmarks/agent/README.md) and the isolated
 `moss agent benchmark list|show|validate|run` interface. Phase 22.2C's canonical
 pre-22.1 fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded.
-Phase 22.2 is complete; Phase 22.1 agent-teaching diagnostics is the next
-implementation phase.
+Phase 22.1's teaching diagnostics and post-change comparison are complete. Phase
+22.3 adds robust semantic target resolution plus compiler-owned type, ownership,
+effect, call/message, domain, synchronization, and structured why facts. Its fixed
+post-22.3 benchmark remains flat at 28/30 final passes while showing lower tool-call
+counts in one stochastic trial; see
+[`docs/PHASE_22_3_QUERY_MAPPING.md`](docs/PHASE_22_3_QUERY_MAPPING.md) and the
+[`post-22.3 report`](benchmarks/agent/baselines/post-22.3/REPORT.md). Phase 22.4
+structured trace slicing is next; Phase 22.5 owns repair/workflow automation.
