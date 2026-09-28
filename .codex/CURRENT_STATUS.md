@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 22 consolidation audit — validation in progress (2026-09-28)
+## Phase 22.1–22.4 consolidation — COMPLETE (2026-09-28)
 
 The dedicated `phase-22-integration` branch starts from upstream `main`
 `27b343def76897d4955d40cc0fb3ff2ad85d3913` and preserves that tree's newer
@@ -8,10 +8,10 @@ Phase 15 work. The semantic integration audit is:
 
 | Phase | Source branch/head | Integrated through | Status |
 |---|---|---|---|
-| 22.1 | `phase-22.1` / `7e4e1f9767ad78377992eb01a34345027b797bfb` | substantive hardening cherry-pick `6490e3a`; current-main fixture reconciliation `6a2286b` | complete; full validation pending |
-| 22.2 | `phase-22.2` / `b95b86b9c70a9c340305d7e5c90df140b8666582` | transitively through Phase 22.3 merge `9c2e14e` | complete; full validation pending |
-| 22.3 | `phase-22.3` / `4682068ea3bec2aef18846e3b79aad940b68c92b` | merge `9c2e14e`; report cleanup `234ee4f` | complete; full validation pending |
-| 22.4 | `phase-22.4` / `94d6834a144ce3d1d51ccf4aad60955960429a10` | merge `7ffc784` with the runtime query resolver reconciled to Phase 22.3 | complete; full validation pending |
+| 22.1 | `phase-22.1` / `7e4e1f9767ad78377992eb01a34345027b797bfb` | substantive hardening cherry-pick `6490e3a`; current-main fixture reconciliation `6a2286b` | complete |
+| 22.2 | `phase-22.2` / `b95b86b9c70a9c340305d7e5c90df140b8666582` | transitively through Phase 22.3 merge `9c2e14e` | complete |
+| 22.3 | `phase-22.3` / `4682068ea3bec2aef18846e3b79aad940b68c92b` | merge `9c2e14e`; report cleanup `234ee4f` | complete |
+| 22.4 | `phase-22.4` / `94d6834a144ce3d1d51ccf4aad60955960429a10` | merge `7ffc784` with the runtime query resolver reconciled to Phase 22.3 | complete |
 
 Phase 22.2 is transitively integrated through Phase 22.3; it was not merged a
 second time. Phase 22.4 reuses the Phase 22.3 resolver and semantic identities;
@@ -28,6 +28,23 @@ Disposition of the two Phase 22.1-only source commits:
 - `7e4e1f9767ad78377992eb01a34345027b797bfb` is a historical status-only
   closeout. Its substantive assertions are represented by the integrated code,
   tests, and this audit, so the administrative commit was not duplicated.
+
+Final validation used `rustc 1.98.1` and `cargo 1.98.1`. A clean strict compiler
+build passed with `-std=c++17 -O2 -Wall -Wextra -pedantic -Werror`; full
+`make check` and `make examples` passed. Dedicated Phase 22.1 teaching,
+Phase 22.2 benchmark/baseline/analysis, Phase 22.3 semantic-query and A/B
+determinism, and Phase 22.4 structured-debug/native-Margo parity checks all
+passed. The suite covered multi-module and path/Git packages, source-free
+`.mossi`/rlib providers, static specialization, enums/match, domains/messages,
+synchronization/2PL, Fast Debug/native parity, and the cross-phase identity and
+trace contracts. The Phase 22.4 context benchmark reproduced 6/6 successful
+cases, 177 raw events, 64 sliced events, and a 0.3616 slice/full-trace ratio.
+Optional LLDB CLI and real DAP integrations were skipped because their binaries
+are absent; they are not required Phase 22.4 functionality.
+
+No canonical Phase 22.3 A/B trial was rerun and no raw result was changed. Only
+deterministic derived artifacts were regenerated for the terminology/reporting
+cleanup. Phase 22.5 repair/workflow automation remains out of scope.
 
 ## Phase 22.3 quantitative A/B benchmark — COMPLETE (2026-09-28)
 
