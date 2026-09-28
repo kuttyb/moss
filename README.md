@@ -579,4 +579,6 @@ post-22.3 benchmark remains flat at 28/30 final passes while showing lower tool-
 counts in one stochastic trial; see
 [`docs/PHASE_22_3_QUERY_MAPPING.md`](docs/PHASE_22_3_QUERY_MAPPING.md) and the
 [`post-22.3 report`](benchmarks/agent/baselines/post-22.3/REPORT.md). Phase 22.4
-structured trace slicing is next; Phase 22.5 owns repair/workflow automation.
+adds bounded structured Fast Debug queries for events, semantic targets, causal
+subtrees, messages, control flow, writes, and failure slices. Phase 22.5 remains
+repair/workflow automation and is not part of this completed consolidation.

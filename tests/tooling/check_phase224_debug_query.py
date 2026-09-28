@@ -182,7 +182,18 @@ if len(loop_ids) < 2 or len(loop_ids) != len(set(loop_ids)):
 if not any(event.get("control_event_id") in loop_ids for event in full_failure["events"]):
     fail("loop body events did not retain their iteration control identity")
 
-domain_slice = query("message-subtree", "handler:Service.Run", domain, "--max-events", "50")["result"]
+static_calls = invoke(
+    "calls", "main", "--source", str(domain), "--json"
+)["result"]["direct_calls"]
+message_edge = next(
+    (edge for edge in static_calls
+     if edge["boundary"] == "synchronous_message_by_value"), None
+)
+if not message_edge or message_edge["target"] != "handler:Service.Run":
+    fail("static calls query omitted the domain/message relationship")
+domain_slice = query(
+    "message-subtree", message_edge["target_id"], domain, "--max-events", "50"
+)["result"]
 event_names = [event["event"] for event in domain_slice["events"]]
 if "message_call" not in event_names or "handler_enter" not in event_names or "message_return" not in event_names:
     fail("message subtree did not include synchronous message structure")

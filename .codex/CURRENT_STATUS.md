@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 22 consolidation audit — validation in progress (2026-09-28)
+
+The dedicated `phase-22-integration` branch starts from upstream `main`
+`27b343def76897d4955d40cc0fb3ff2ad85d3913` and preserves that tree's newer
+Phase 15 work. The semantic integration audit is:
+
+| Phase | Source branch/head | Integrated through | Status |
+|---|---|---|---|
+| 22.1 | `phase-22.1` / `7e4e1f9767ad78377992eb01a34345027b797bfb` | substantive hardening cherry-pick `6490e3a`; current-main fixture reconciliation `6a2286b` | complete; full validation pending |
+| 22.2 | `phase-22.2` / `b95b86b9c70a9c340305d7e5c90df140b8666582` | transitively through Phase 22.3 merge `9c2e14e` | complete; full validation pending |
+| 22.3 | `phase-22.3` / `4682068ea3bec2aef18846e3b79aad940b68c92b` | merge `9c2e14e`; report cleanup `234ee4f` | complete; full validation pending |
+| 22.4 | `phase-22.4` / `94d6834a144ce3d1d51ccf4aad60955960429a10` | merge `7ffc784` with the runtime query resolver reconciled to Phase 22.3 | complete; full validation pending |
+
+Phase 22.2 is transitively integrated through Phase 22.3; it was not merged a
+second time. Phase 22.4 reuses the Phase 22.3 resolver and semantic identities;
+there is no second target resolver. Static durable identities select the
+corresponding runtime trace events, including multi-module and synchronous
+domain-message coverage.
+
+Disposition of the two Phase 22.1-only source commits:
+
+- `c3af21057884a385efd5492accc7256c20bdec4b` was still semantically missing and
+  was cherry-picked as `6490e3a`. Its handler-resolution, arity/type gate,
+  callable-compatibility, diagnostic-identity, documentation, and regression
+  changes are retained.
+- `7e4e1f9767ad78377992eb01a34345027b797bfb` is a historical status-only
+  closeout. Its substantive assertions are represented by the integrated code,
+  tests, and this audit, so the administrative commit was not duplicated.
+
 ## Phase 22.3 quantitative A/B benchmark — COMPLETE (2026-09-28)
 
 A separate controlled semantic-query benchmark now lives under
@@ -17,6 +46,12 @@ lowering, Fast Debug, native execution, or Margo. Fresh trials use an ephemeral
 Codex context, an isolated task copy, empty Git metadata, no expected tree or
 other run artifacts, disabled plugins/browser/memory/multi-agent facilities,
 and disabled shell network access.
+
+The legacy condition is an externally visible post-22.1 projection over the
+current compiler, not execution of the historical query implementation. Shared
+compiler-internal resolution improvements may therefore reduce the measured
+treatment effect. Its 25% task-level `resolve` figure records attempted use of
+an unavailable command, not adoption; Phase 22.3 `resolve` adoption was 68.8%.
 
 The framework records exact semantic answers, semantic detour cost, source and
 documentation reads, query status/type/adoption, validation cycles, diagnostics,

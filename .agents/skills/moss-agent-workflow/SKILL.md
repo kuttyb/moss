@@ -70,6 +70,7 @@ moss_workflow_contract:
   generated_rust: implementation-artifact
   fast_debug: checked-moss-interpreter
   trace: newline-delimited-json
+  structured_debug_query: bounded-fast-debug-slices
   fresh_agent_bootstrap: required
   capability_discovery: agent-capabilities-and-schema
   synchronization_introspection: inspect-effects-why
@@ -248,6 +249,7 @@ The requested physical path still disambiguates a result.
 | What could this edit invalidate or which tests could it affect? | `impact` then `test --affected` |
 | What topology, classes, ranks, modes, or conflict witnesses are derived? | `inspect`, `effects`, or `why` → `synchronization_plan` |
 | What happened during checked execution? | Fast Debug with `--trace` |
+| What bounded dynamic slice explains an event, message, branch, failure, or write? | `debug-query` |
 
 Use `moss agent schema --json` when a route's inputs or result shape are unclear.
 
@@ -308,6 +310,8 @@ moss run --interp path/to/file.moss
 moss run --interp --trace path/to/file.moss
 moss debug <project-or-source>
 moss debug <project-or-source> --trace
+moss debug-query failure-slice --source <source> --json
+moss debug-query semantic <entity-v1-id> --source <source> --json
 ```
 
 All reachable Moss source in that run uses the interpreter; it does not dynamically mix
@@ -328,11 +332,13 @@ operations reached through object fields and the current eager functional pipeli
 surface execute in Fast Debug; use native validation as well when checking parity.
 
 With `--trace`, Fast Debug writes newline-delimited JSON events to standard error.
-Use a bounded trace to diagnose logical behavior: reproduce, inspect the relevant
-function/handler entry and exit, local/state access, branch, return, assertion, and
-message/reply events, patch, then replay. Existing traces carry source and semantic
-identity; they are not a physical lock, contention, or schedule simulator. Do not claim
-trace slicing/query features that the compiler has not exposed.
+`moss debug-query event|semantic|subtree|message-subtree|control-flow|writes|failure-slice`
+executes one checked Fast Debug run and returns a bounded JSON slice. Durable Phase
+22.3 `entity-v1` targets resolve through the same compiler target layer and correlate
+with runtime source identities. Queries expose causal event/message/handler/control
+links and bounded recent-write history; they are not dynamic taint, physical lock,
+contention, or schedule analysis. Use `moss agent schema --json` for selectors, bounds,
+and stable errors.
 
 ## Packages/projects versus semantic/compiler operations
 
@@ -366,6 +372,7 @@ moss edit rename|replace-expression|change-argument ... --json
 moss fmt
 moss test --affected --json
 moss debug <project-or-source> --trace
+moss debug-query <operation> [selector] --source <source> --json
 ```
 
 Generated Rust is useful for compiler/backend work and native debugging, but it is an
@@ -410,5 +417,5 @@ improvement. This is local dogfooding, not telemetry.
 
 The skill is operational guidance, not a substitute for the compiler or a new language
 specification. If it drifts, correct the skill/docs and retain current compiler
-semantics. Broader measured agent evaluation, richer trace slicing, and advanced repair
-work remain future Phase 22 work.
+semantics. Phase 22.4 provides bounded structured trace queries; broader measured agent
+evaluation and advanced repair work remain future work.

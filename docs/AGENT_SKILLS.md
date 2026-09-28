@@ -65,8 +65,9 @@ The hardened, frozen [agent benchmark](../benchmarks/agent/README.md) now suppli
 Phase 22.2A's 30-task corpus, Phase 22.2B's isolated validation/result tooling, and
 Phase 22.2C's canonical pre-22.1 fresh-agent baseline. Phase 22.2D's checked-in
 aggregate and report complete Phase 22.2. Phase 22.1's compiler-owned teaching
-diagnostics, structured JSON facts, and fixed-protocol post comparison are complete;
-systematic rewrite-bearing diagnostics, richer trace slicing, and advanced repair
-workflows also remain future work. During a real agent session, use
+diagnostics, structured JSON facts, and fixed-protocol post comparison are complete.
+Phase 22.3 provides static semantic observability, and Phase 22.4 provides bounded
+structured Fast Debug queries. Systematic rewrite-bearing diagnostics and advanced
+repair workflows remain future work. During a real agent session, use
 `moss agent session-report-template --json` to record whether the skills reduced
 ambiguity; no telemetry is collected.

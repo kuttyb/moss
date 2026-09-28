@@ -268,11 +268,12 @@ for candidate in candidate_entities:
         fail(f"query candidate lacks its actual semantic identity: {candidate}")
     if str(candidate["semantic_identity"]).startswith("entity-v1:"):
         fail("query candidate placed a durable identity in semantic_identity")
-for candidate in candidates:
+for candidate, entity in zip(candidates, candidate_entities):
     if not document(
-        "effects", candidate, "--source", str(query_source), "--json"
+        "effects", entity["semantic_identity"], "--source", str(query_source),
+        "--json"
     )["ok"]:
-        fail(f"suggested canonical query target {candidate} did not resolve")
+        fail(f"diagnostic semantic identity for {candidate} did not resolve")
 
 missing = document(
     "effects", "Absent", "--source", str(query_source), "--json", expect=1
