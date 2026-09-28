@@ -32,9 +32,9 @@ must restore it before read. Untyped ordinary match parameters specialize at
 concrete calls. `pass` is a reserved no-op. Legacy lowercase `option[T]` remains
 for Phase 21 convergence with Result/error semantics.
 
-No known EXPRESS-005 blocker remains after the listed full gates. The hardening
-branch is ready for merge after final validation. The older main closeout and
-checkpoint sections below are historical.
+No known EXPRESS-005 blocker remains after the listed full gates. The corrective
+hardening is merged into `main` at `6a371f975dd2bf908efe7ff4d717df8d8a9ab01d`;
+EXPRESS-005 is fixed. The older closeout and checkpoint sections below are historical.
 
 ## 2026-09-27 — EXPRESS-005 corrective hardening checkpoint (in progress)
 
