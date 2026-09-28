@@ -568,6 +568,71 @@ shell syntax, and diff hygiene have passed. Full repository, examples, Fast Debu
 Margo/module overlap, and final clean-worktree validation remain to be recorded
 below before closeout.
 
+### 2026-09-28 current-main integration checkpoint
+
+The old Phase 22.3 head is `ca50b580cea6ec12d331d5e0e60239b2ba1c4cb1`.
+The cached current-main ref is `27b343def76897d4955d40cc0fb3ff2ad85d3913`;
+integration commit `cc58466` merges it into Phase 22.3. A replay rebase was
+abandoned after the first of 19 historical commits conflicted in four files;
+the single merge produced three conflicts. The language-design and milestone
+conflicts retain main's Phase 15.13–15.15 and Phase 23–24 roadmap changes while
+recording completed Phase 22.1–22.3 work. The compiler conflict retains main's
+enum/trait type validation beside Phase 22.1 teaching diagnostics and attaches
+current physical source provenance to teaching errors.
+
+`tests/tooling/check_semantic_queries.py` now has a temporary multi-file project
+regression for the final `ca50b58` resolver policy. Same-line location queries
+are restricted by physical source; an exact durable `entity-v1` ID remains a
+project-wide identity even when the supplied source points to another file;
+same-name entities remain explicitly and deterministically ambiguous; `--kind`
+and `--enclosing` apply only their documented filters; and a line absent from
+the requested source returns structured `missing` even when another file has an
+entity on that line. The resolver implementation itself did not require a
+semantic change, so the frozen 30-task post-22.3 run still represents it.
+
+Completed validation in the integration scratch checkout: strict C++17
+`-O2 -Wall -Wextra -pedantic -Werror`; focused semantic queries; agent API;
+teaching diagnostics; baseline aggregate analysis; shell syntax; diff hygiene;
+enum rejection and diagnostic provenance regressions; qualified semantic rename;
+Fast Debug basic execution and trace; whole-project Fast Debug; project-wide
+interpreted tests/filtering; path-dependency interpreted tests through Margo;
+and the strict C++ synchronization-plan and lowering unit regressions. The
+cross-package Fast Debug suite passed its seven source-only tests and stopped
+three native-dependent tests at the unavailable Rust compiler.
+
+Closeout remains in progress. This session's permission profile exposes the
+original checkout's `.git` metadata read-only, so `git fetch origin` could not
+write `FETCH_HEAD` and the integration was performed in
+`tmp/phase-22.3-integration`. The sandbox also exposes neither `rustup` nor
+`rustc`. Consequently benchmark expected-solution validation, baseline tooling,
+`make examples`, native Margo/module/specialization checks, and synchronization
+provider builds stop at `BUILD_TOOL_NOT_FOUND`; `make check` was executed and
+stops immediately after retired-syntax hygiene because the agent-skill test
+requires `rustc`. Phase 22.3 must not be marked complete until those native gates
+and a full green `make check` run are completed in an environment with writable
+Git metadata and the repository's Rust toolchain.
+
+The integrated scratch branch is preserved for handoff in the repository-local
+`phase-22.3-integration.bundle` Git bundle.
+
+The remaining Phase 22.3 limitations are unchanged:
+
+- direct callable effects are not separately retained;
+- per-use move provenance is not retained;
+- source provenance is currently line-oriented;
+- some nested message expressions are not represented as semantic call edges;
+- trace slicing belongs to Phase 22.4;
+- automated repair/workflow belongs to Phase 22.5.
+
+The frozen post-22.3 evidence remains tied to compiler commit
+`ddf927ca490d092b776168c45d330c439d220268`: final passes 28 to 28,
+first-validation success 16 to 18, mean attempts-to-green 1.467 to 1.400,
+agent tool calls 422 to 367, Moss/Margo calls 156 to 134, ten semantic queries,
+eight successful queries, two queries blocked by program diagnostics, and 8/8
+resolved queried targets. Fresh agents invoked `resolve` zero times. One
+stochastic trial does not establish causality, does not show improved final
+completion, and records no source-read telemetry.
+
 ## Repository-local Codex autonomy configuration — COMPLETE (2026-09-23)
 
 `.codex/config.toml` now selects a repository-scoped `moss-repository`
