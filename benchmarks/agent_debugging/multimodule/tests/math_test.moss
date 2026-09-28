@@ -1,0 +1,6 @@
+module math_tests
+
+import Math
+
+test "module-qualified normalization":
+  assertEqual(Math.normalize(5), 14)

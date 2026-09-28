@@ -283,7 +283,8 @@ moss debug-query <operation> [selector] --source <source-or-project-entry> --jso
 
 The command executes the checked program once under Fast Debug, records the same
 structured semantic trace used by `--trace`, and returns a bounded slice. It does
-not start an interactive debugger or inspect generated Rust.
+not start an interactive debugger or inspect generated Rust. `--json` is
+required; accepting that flag is the command's explicit protocol selection.
 
 Operations:
 
@@ -297,7 +298,16 @@ Operations:
 
 Bounds are explicit: `--max-events`, `--max-depth`, `--before`, `--after`, and
 `--before-event`. Results include `truncated`, `returned_events`, and
-`available_more`; truncation is never silent.
+`available_more`; truncation is never silent and is true only when an actual
+candidate was omitted by an event or depth bound. Positive-only bounds reject
+zero, negative, malformed, and overflowing values through the structured error
+envelope.
+
+`writes local:<binding>` selects local writes only when the matching writes
+belong to one callable semantic scope. A bare state path selects state writes
+only when one concrete domain instance is dynamically relevant; otherwise use
+`<concrete-instance-id>.<path>`. Ambiguous selectors fail with
+`DEBUG_QUERY_SELECTOR_AMBIGUOUS` rather than combining unrelated histories.
 
 Trace events now expose execution-local `event_id`, `parent_event_id`,
 `call_event_id`, `message_event_id`, `handler_event_id`, `control_event_id`, and
@@ -308,7 +318,15 @@ serve as permanent runtime object identities.
 Stable debug-query errors include `DEBUG_QUERY_EVENT_NOT_FOUND`,
 `DEBUG_QUERY_SELECTOR_INVALID`, `DEBUG_QUERY_TARGET_NOT_FOUND`,
 `DEBUG_QUERY_NOT_EXECUTED`, `DEBUG_QUERY_NO_FAILURE`, and
-`DEBUG_QUERY_UNSUPPORTED_OPERATION`.
+`DEBUG_QUERY_UNSUPPORTED_OPERATION`. Argument and invocation failures use
+`DEBUG_QUERY_ARGUMENT_INVALID`, `DEBUG_QUERY_OPERATION_REQUIRED`,
+`DEBUG_QUERY_SOURCE_REQUIRED`, `DEBUG_QUERY_SELECTOR_REQUIRED`, and
+`DEBUG_QUERY_SELECTOR_AMBIGUOUS` as applicable.
+
+The command uses standalone or same-project source analysis and does not resolve
+Margo path/Git dependencies. Package-aware `margo debug [--trace]` supplies the
+resolved source closure for full Fast Debug execution, but there is deliberately
+no separate Margo-side query engine in Phase 22.4.
 
 The agent discovery commands advertise the feature as
 `structured_debug_query` and list the supported operations, selectors, bounds,

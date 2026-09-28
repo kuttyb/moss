@@ -16121,7 +16121,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"module_interfaces", "Generated .mossi semantic interfaces are source-free provider truth, not generated Rust.", "margo build --json -> result.artifacts.module_interfaces"},
       {"fast_debug", "Direct execution of checked reachable Moss source; use Margo for a resolved package graph.", "moss run --interp <source> | moss debug <project-or-source> | margo debug [--trace]"},
       {"structured_execution_trace", "Bounded deterministic newline-delimited semantic events during Fast Debug.", "moss run --interp --trace <source> | moss debug <target> --trace"},
-      {"structured_debug_query", "Bounded deterministic slices over one Fast Debug execution trace: events, subtrees, message subtrees, failures, control paths, and recent writes.", "moss debug-query <operation> [selector] --source <source> --json"},
+      {"structured_debug_query", "Bounded deterministic slices over one Fast Debug execution trace: events, subtrees, message subtrees, failures, control paths, and unambiguous recent writes.", "moss debug-query <operation> [selector] --source <source> --json"},
       {"project_workflow", "Margo owns canonical package/project orchestration; Moss remains the module and semantic authority.", "margo build|run|test|bench|clean|debug"},
   };
   return catalog;
@@ -16602,7 +16602,7 @@ static void write_bootstrap_json(std::ostream& out,
   out << ",\n    \"debugging_features\": ["
          "{\"name\":\"fast_debug\",\"command\":\"moss run --interp <source> | moss debug <project-or-source>\",\"purpose\":\"execute checked reachable Moss source without rustc\",\"limitations\":[\"no mixed interpreted/native Moss closure\",\"source-free providers require source\",\"for traversal is not currently supported\"]},"
          "{\"name\":\"structured_execution_trace\",\"command\":\"moss run --interp --trace <source> | moss debug <target> --trace\",\"format\":\"newline-delimited JSON on stderr\",\"events\":[\"function/handler entry and exit\",\"local/state access\",\"branch\",\"return/reply\",\"message\",\"assertion\"],\"relationships\":[\"event_id\",\"parent_event_id\",\"call_event_id\",\"message_event_id\",\"handler_event_id\",\"control_event_id\"],\"limitations\":[\"no physical lock or schedule simulation\"]},"
-         "{\"name\":\"structured_debug_query\",\"command\":\"moss debug-query <operation> [selector] --source <source> --json\",\"operations\":[\"event\",\"semantic\",\"subtree\",\"message-subtree\",\"control-flow\",\"writes\",\"failure-slice\"],\"bounds\":[\"--max-events\",\"--max-depth\",\"--before\",\"--after\",\"--before-event\"],\"limitations\":[\"last-write history, not full dynamic taint provenance\",\"one deterministic Fast Debug execution per query\",\"no interactive stepping\"]}]";
+         "{\"name\":\"structured_debug_query\",\"command\":\"moss debug-query <operation> [selector] --source <source> --json\",\"operations\":[\"event\",\"semantic\",\"subtree\",\"message-subtree\",\"control-flow\",\"writes\",\"failure-slice\"],\"bounds\":[\"--max-events\",\"--max-depth\",\"--before\",\"--after\",\"--before-event\"],\"limitations\":[\"last-write history, not full dynamic taint provenance\",\"ambiguous local or state write selectors are rejected\",\"one deterministic Fast Debug execution per query\",\"same-project or standalone source closure only; use margo debug for package-resolved unsliced traces\",\"no interactive stepping\"]}]";
   out << ",\n    \"discovery\": {\"capabilities_command\": \"./moss agent capabilities --json\", \"schema_command\": \"./moss agent schema --json\", \"protocol_vendor\": \"Moss\"}";
   out << ",\n    \"recommended_workflow\": ";
   write_agent_string_array(
@@ -16784,7 +16784,7 @@ static void write_bootstrap_json(std::ostream& out,
         {"operation", "--source", "--json"}, {"selector", "--max-events", "--max-depth", "--before", "--after", "--before-event"},
         "moss-agent-1 envelope with execution summary, bounds, truncation metadata, and event/write/control slices",
         {"event_id", "parent_event_id", "call_event_id", "message_event_id", "handler_event_id", "control_event_id", "entity-v1/source_identity"},
-        {"DEBUG_QUERY_EVENT_NOT_FOUND", "DEBUG_QUERY_TARGET_NOT_FOUND", "DEBUG_QUERY_NOT_EXECUTED", "DEBUG_QUERY_NO_FAILURE", "DEBUG_QUERY_UNSUPPORTED_OPERATION"});
+        {"DEBUG_QUERY_ARGUMENT_INVALID", "DEBUG_QUERY_OPERATION_REQUIRED", "DEBUG_QUERY_SOURCE_REQUIRED", "DEBUG_QUERY_SELECTOR_REQUIRED", "DEBUG_QUERY_SELECTOR_INVALID", "DEBUG_QUERY_SELECTOR_AMBIGUOUS", "DEBUG_QUERY_EVENT_NOT_FOUND", "DEBUG_QUERY_TARGET_NOT_FOUND", "DEBUG_QUERY_NOT_EXECUTED", "DEBUG_QUERY_NO_FAILURE", "DEBUG_QUERY_UNSUPPORTED_OPERATION"});
     out << ',';
     write_agent_command_schema(
         out, "module_interface", "Discover .mossi semantic interface artifacts from a successful module project build.",
@@ -23394,24 +23394,33 @@ static bool debug_query_starts_with(const string& value, const string& prefix) {
   return value.rfind(prefix, 0) == 0;
 }
 
+static bool debug_query_parse_integer(const string& value, int minimum,
+                                      int* parsed) {
+  if (value.empty()) return false;
+  int result = 0;
+  for (unsigned char ch : value) {
+    if (!std::isdigit(ch)) return false;
+    int digit = ch - '0';
+    if (result > (std::numeric_limits<int>::max() - digit) / 10)
+      return false;
+    result = result * 10 + digit;
+  }
+  if (result < minimum) return false;
+  *parsed = result;
+  return true;
+}
+
 static std::optional<int> debug_query_event_selector(const string& selector) {
-  string value = selector;
-  if (debug_query_starts_with(value, "event:")) value = value.substr(6);
-  if (value.empty() ||
-      !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-        return std::isdigit(ch);
-      }))
+  if (!debug_query_starts_with(selector, "event:")) return std::nullopt;
+  int event_id = 0;
+  if (!debug_query_parse_integer(selector.substr(6), 1, &event_id))
     return std::nullopt;
-  return std::stoi(value);
+  return event_id;
 }
 
 static bool debug_query_malformed_event_selector(const string& selector) {
-  if (!debug_query_starts_with(selector, "event:")) return false;
-  string value = selector.substr(6);
-  return value.empty() ||
-      !std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-        return std::isdigit(ch);
-      });
+  return debug_query_starts_with(selector, "event:") &&
+      !debug_query_event_selector(selector).has_value();
 }
 
 static const moss::FastInterpreter::TraceEvent* debug_event_by_id(
@@ -23497,14 +23506,22 @@ static void write_debug_event_array(
 
 static vector<moss::FastInterpreter::TraceEvent> debug_limit_events(
     const vector<moss::FastInterpreter::TraceEvent>& events,
-    const DebugQueryBounds& bounds, bool* truncated) {
+    const DebugQueryBounds& bounds, bool* truncated, bool keep_latest = false) {
   *truncated = static_cast<int>(events.size()) > bounds.max_events;
   if (!*truncated) return events;
+  if (keep_latest)
+    return vector<moss::FastInterpreter::TraceEvent>(
+        events.end() - bounds.max_events, events.end());
   return vector<moss::FastInterpreter::TraceEvent>(
       events.begin(), events.begin() + bounds.max_events);
 }
 
-static string debug_runtime_semantic_selector(
+struct DebugSemanticResolution {
+  string runtime_identity;
+  bool known = false;
+};
+
+static DebugSemanticResolution debug_runtime_semantic_selector(
     const moss::Program& program, const string& selector,
     const string& source_file) {
   string normalized = selector;
@@ -23513,8 +23530,8 @@ static string debug_runtime_semantic_selector(
   moss::OptimizationPlan plan;
   auto facts = moss::semantic_target_facts(program, plan);
   if (auto* target = moss::resolve_semantic_target(facts, normalized, source_file))
-    return target->semantic_identity;
-  return normalized;
+    return {target->semantic_identity, true};
+  return {normalized, false};
 }
 
 static void write_debug_query_error(
@@ -23541,24 +23558,39 @@ static vector<moss::FastInterpreter::TraceEvent> debug_events_for_selector(
       if (event.instance == value) matches.push_back(event);
     return matches;
   }
-  if (debug_query_starts_with(value, "handler:") &&
-      value.find('@') == string::npos) {
-    for (const auto& event : trace)
-      if (event.handler == value.substr(8) ||
-          debug_query_starts_with(event.semantic_identity, value))
-        matches.push_back(event);
-    return matches;
-  }
-  string semantic = debug_runtime_semantic_selector(program, value, source_file);
+  DebugSemanticResolution resolution =
+      debug_runtime_semantic_selector(program, value, source_file);
+  const string& semantic = resolution.runtime_identity;
   for (const auto& event : trace) {
     if (event.semantic_identity == semantic ||
         event.specialization == semantic ||
-        event.instance == semantic ||
-        (!semantic.empty() &&
-         debug_query_starts_with(event.semantic_identity, semantic + ":")))
+        event.instance == semantic)
       matches.push_back(event);
   }
   return matches;
+}
+
+static int debug_query_selector_not_matched(
+    const moss::Program& program, const string& selector,
+    const string& source_file, const string& purpose) {
+  if (debug_query_event_selector(selector)) {
+    write_debug_query_error(
+        "DEBUG_QUERY_EVENT_NOT_FOUND",
+        "event selector did not match an execution event", source_file);
+    return 1;
+  }
+  DebugSemanticResolution resolution =
+      debug_runtime_semantic_selector(program, selector, source_file);
+  if (resolution.known) {
+    write_debug_query_error(
+        "DEBUG_QUERY_NOT_EXECUTED",
+        "semantic identity did not execute", source_file);
+    return 1;
+  }
+  write_debug_query_error(
+      "DEBUG_QUERY_TARGET_NOT_FOUND",
+      purpose + " selector did not match an execution event", source_file);
+  return 1;
 }
 
 static int debug_focus_event_id_for_selector(
@@ -23571,15 +23603,17 @@ static int debug_focus_event_id_for_selector(
 
 static vector<moss::FastInterpreter::TraceEvent> debug_subtree_events(
     const vector<moss::FastInterpreter::TraceEvent>& trace, int root_id,
-    const DebugQueryBounds& bounds) {
+    const DebugQueryBounds& bounds, bool* omitted_by_depth) {
   vector<moss::FastInterpreter::TraceEvent> result;
+  *omitted_by_depth = false;
   const auto* root = debug_event_by_id(trace, root_id);
   if (!root) return result;
   for (const auto& event : trace) {
     if (!debug_is_descendant(trace, event.event_id, root_id)) continue;
-    if (bounds.max_depth >= 0 &&
-        event.depth - root->depth > bounds.max_depth)
+    if (event.depth - root->depth > bounds.max_depth) {
+      *omitted_by_depth = true;
       continue;
+    }
     result.push_back(event);
   }
   return result;
@@ -23614,8 +23648,10 @@ static vector<moss::FastInterpreter::TraceEvent> debug_control_path(
 
 static vector<moss::FastInterpreter::TraceEvent> debug_recent_writes(
     const vector<moss::FastInterpreter::TraceEvent>& trace, const string& target,
-    int before_event, const DebugQueryBounds& bounds) {
+    int before_event, bool* ambiguous) {
   vector<moss::FastInterpreter::TraceEvent> result;
+  std::set<string> matched_scopes;
+  *ambiguous = false;
   int upper = before_event > 0 ? before_event
       : trace.empty() ? 0 : trace.back().event_id + 1;
   string local = target;
@@ -23624,19 +23660,21 @@ static vector<moss::FastInterpreter::TraceEvent> debug_recent_writes(
     local = local.substr(6);
     local_target = true;
   }
+  if (local.empty()) return result;
   for (auto it = trace.rbegin(); it != trace.rend(); ++it) {
     if (it->event_id >= upper) continue;
     bool matches = false;
     if (it->kind == "LocalWrite")
-      matches = (local_target || it->path.empty()) && it->detail == local;
+      matches = local_target && it->detail == local;
     else if (it->kind == "state_write" || it->kind == "state_consume")
       matches = !local_target &&
           (it->path == local || it->path == target ||
            (!it->instance.empty() && it->instance + "." + it->path == target));
     if (!matches) continue;
     result.push_back(*it);
-    if (static_cast<int>(result.size()) >= bounds.max_events) break;
+    matched_scopes.insert(local_target ? it->semantic_identity : it->instance);
   }
+  *ambiguous = matched_scopes.size() > 1;
   return result;
 }
 
@@ -23693,51 +23731,44 @@ static int run_debug_query_command(int argc, char** argv) {
   string operation, selector, source;
   DebugQueryBounds bounds;
   bool requested_json = false;
+  for (int index = 2; index < argc; ++index)
+    if (string(argv[index]) == "--json") requested_json = true;
+  if (!requested_json) {
+    std::cerr << "moss: debug-query requires --json\n";
+    return 2;
+  }
+  auto parse_bound = [&](int& index, const string& option, int minimum,
+                         int* destination) {
+    if (++index >= argc ||
+        !debug_query_parse_integer(argv[index], minimum, destination)) {
+      write_debug_query_error(
+          "DEBUG_QUERY_ARGUMENT_INVALID",
+          option + " requires " +
+              (minimum == 0 ? "a non-negative integer" : "a positive integer"));
+      return false;
+    }
+    return true;
+  };
   for (int index = 2; index < argc; ++index) {
     string argument = argv[index];
-    if (argument == "--json") requested_json = true;
+    if (argument == "--json") continue;
     else if (argument == "--source") {
-      if (++index >= argc) {
+      if (++index >= argc || debug_query_starts_with(argv[index], "--")) {
         write_debug_query_error("DEBUG_QUERY_SOURCE_REQUIRED",
                                 "debug-query requires --source <source>");
         return 2;
       }
       source = argv[index];
     } else if (argument == "--max-events") {
-      if (++index >= argc) {
-        write_debug_query_error("DEBUG_QUERY_ARGUMENT_INVALID",
-                                "--max-events requires an integer");
-        return 2;
-      }
-      bounds.max_events = std::max(1, std::stoi(argv[index]));
+      if (!parse_bound(index, argument, 1, &bounds.max_events)) return 2;
     } else if (argument == "--max-depth") {
-      if (++index >= argc) {
-        write_debug_query_error("DEBUG_QUERY_ARGUMENT_INVALID",
-                                "--max-depth requires an integer");
-        return 2;
-      }
-      bounds.max_depth = std::stoi(argv[index]);
+      if (!parse_bound(index, argument, 0, &bounds.max_depth)) return 2;
     } else if (argument == "--before") {
-      if (++index >= argc) {
-        write_debug_query_error("DEBUG_QUERY_ARGUMENT_INVALID",
-                                "--before requires an integer");
-        return 2;
-      }
-      bounds.before = std::max(0, std::stoi(argv[index]));
+      if (!parse_bound(index, argument, 0, &bounds.before)) return 2;
     } else if (argument == "--after") {
-      if (++index >= argc) {
-        write_debug_query_error("DEBUG_QUERY_ARGUMENT_INVALID",
-                                "--after requires an integer");
-        return 2;
-      }
-      bounds.after = std::max(0, std::stoi(argv[index]));
+      if (!parse_bound(index, argument, 0, &bounds.after)) return 2;
     } else if (argument == "--before-event") {
-      if (++index >= argc) {
-        write_debug_query_error("DEBUG_QUERY_ARGUMENT_INVALID",
-                                "--before-event requires an integer");
-        return 2;
-      }
-      bounds.before_event = std::max(0, std::stoi(argv[index]));
+      if (!parse_bound(index, argument, 1, &bounds.before_event)) return 2;
     } else if (operation.empty()) {
       operation = argument;
     } else if (selector.empty()) {
@@ -23747,10 +23778,6 @@ static int run_debug_query_command(int argc, char** argv) {
                               "unexpected debug-query argument '" + argument + "'");
       return 2;
     }
-  }
-  if (!requested_json) {
-    std::cerr << "moss: debug-query requires --json\n";
-    return 2;
   }
   if (operation.empty()) {
     write_debug_query_error("DEBUG_QUERY_OPERATION_REQUIRED",
@@ -23765,6 +23792,32 @@ static int run_debug_query_command(int argc, char** argv) {
   if (selector.empty() && operation != "failure-slice") {
     write_debug_query_error("DEBUG_QUERY_SELECTOR_REQUIRED",
                             "debug-query operation requires a selector");
+    return 2;
+  }
+  if (!selector.empty() && operation == "failure-slice") {
+    write_debug_query_error(
+        "DEBUG_QUERY_ARGUMENT_INVALID",
+        "failure-slice does not accept a selector");
+    return 2;
+  }
+  static const std::set<string> supported_operations = {
+      "event", "semantic", "subtree", "message-subtree", "control-flow",
+      "writes", "failure-slice"};
+  if (!supported_operations.count(operation)) {
+    write_debug_query_error(
+        "DEBUG_QUERY_UNSUPPORTED_OPERATION",
+        "unsupported debug-query operation '" + operation + "'");
+    return 2;
+  }
+  if (!selector.empty() && debug_query_malformed_event_selector(selector)) {
+    write_debug_query_error(
+        "DEBUG_QUERY_SELECTOR_INVALID", "malformed event selector");
+    return 2;
+  }
+  if (operation == "writes" &&
+      (selector.empty() || selector == "local:")) {
+    write_debug_query_error(
+        "DEBUG_QUERY_SELECTOR_INVALID", "write selector is empty");
     return 2;
   }
 
@@ -23787,40 +23840,25 @@ static int run_debug_query_command(int argc, char** argv) {
   }
   execution.output = output.str();
   execution.trace = interpreter.trace();
+  if (bounds.before_event &&
+      !debug_event_by_id(execution.trace, bounds.before_event)) {
+    write_debug_query_error(
+        "DEBUG_QUERY_EVENT_NOT_FOUND",
+        "--before-event does not identify an execution event", absolute_source);
+    return 1;
+  }
 
   vector<moss::FastInterpreter::TraceEvent> selected;
   vector<moss::FastInterpreter::TraceEvent> control_path;
   string result_field = "events";
+  bool omitted_candidates = false;
+  bool keep_latest = false;
   if (operation == "event" || operation == "semantic") {
-    if (debug_query_malformed_event_selector(selector)) {
-      write_debug_query_error("DEBUG_QUERY_SELECTOR_INVALID",
-                              "malformed event selector", absolute_source);
-      return 2;
-    }
     selected = debug_events_for_selector(
         execution.trace, program, selector, absolute_source);
-    if (selected.empty()) {
-      if (debug_query_starts_with(selector, "event:") ||
-          debug_query_event_selector(selector)) {
-        write_debug_query_error("DEBUG_QUERY_EVENT_NOT_FOUND",
-                                "event selector did not match an execution event",
-                                absolute_source);
-        return 1;
-      }
-      string semantic = debug_runtime_semantic_selector(
-          program, selector, absolute_source);
-      auto facts = moss::semantic_target_facts(program, moss::OptimizationPlan{});
-      if (moss::resolve_semantic_target(facts, selector, absolute_source))
-        write_debug_query_error("DEBUG_QUERY_NOT_EXECUTED",
-                                "semantic identity did not execute",
-                                absolute_source);
-      else
-        write_debug_query_error("DEBUG_QUERY_TARGET_NOT_FOUND",
-                                "debug-query selector did not match an event",
-                                absolute_source);
-      (void)semantic;
-      return 1;
-    }
+    if (selected.empty())
+      return debug_query_selector_not_matched(
+          program, selector, absolute_source, "debug-query");
     if (bounds.before || bounds.after) {
       int focus = selected.front().event_id;
       selected.clear();
@@ -23830,42 +23868,52 @@ static int run_debug_query_command(int argc, char** argv) {
       for (int id = begin; id <= end; ++id)
         selected.push_back(execution.trace[static_cast<size_t>(id - 1)]);
     }
-  } else if (operation == "subtree" || operation == "execution-subtree") {
+  } else if (operation == "subtree") {
     int focus = debug_focus_event_id_for_selector(
         execution.trace, program, selector, absolute_source);
-    if (!focus) {
-      write_debug_query_error("DEBUG_QUERY_EVENT_NOT_FOUND",
-                              "subtree selector did not match an event",
-                              absolute_source);
-      return 1;
-    }
-    selected = debug_subtree_events(execution.trace, focus, bounds);
+    if (!focus)
+      return debug_query_selector_not_matched(
+          program, selector, absolute_source, "subtree");
+    selected = debug_subtree_events(
+        execution.trace, focus, bounds, &omitted_candidates);
   } else if (operation == "message-subtree") {
     int focus = debug_focus_event_id_for_selector(
         execution.trace, program, selector, absolute_source);
     int message_root = debug_message_root_for_event(execution.trace, focus);
+    if (!focus)
+      return debug_query_selector_not_matched(
+          program, selector, absolute_source, "message-subtree");
     if (!message_root) {
       write_debug_query_error("DEBUG_QUERY_EVENT_NOT_FOUND",
                               "selector is not inside a message subtree",
                               absolute_source);
       return 1;
     }
-    selected = debug_subtree_events(execution.trace, message_root, bounds);
+    selected = debug_subtree_events(
+        execution.trace, message_root, bounds, &omitted_candidates);
   } else if (operation == "control-flow") {
     int focus = debug_focus_event_id_for_selector(
         execution.trace, program, selector, absolute_source);
-    if (!focus) {
-      write_debug_query_error("DEBUG_QUERY_EVENT_NOT_FOUND",
-                              "control-flow selector did not match an event",
-                              absolute_source);
-      return 1;
-    }
+    if (!focus)
+      return debug_query_selector_not_matched(
+          program, selector, absolute_source, "control-flow");
     selected = debug_control_path(execution.trace, focus);
     result_field = "control_path";
   } else if (operation == "writes") {
     int before = bounds.before_event;
     if (!before && !execution.trace.empty()) before = execution.trace.back().event_id + 1;
-    selected = debug_recent_writes(execution.trace, selector, before, bounds);
+    bool ambiguous = false;
+    selected = debug_recent_writes(
+        execution.trace, selector, before, &ambiguous);
+    if (ambiguous) {
+      write_debug_query_error(
+          "DEBUG_QUERY_SELECTOR_AMBIGUOUS",
+          "write selector matches more than one local or domain instance; "
+          "use local:<name> only for a unique callable scope or qualify state "
+          "as <concrete-instance-id>.<path>",
+          absolute_source);
+      return 1;
+    }
     result_field = "writes";
   } else if (operation == "failure-slice") {
     int failure = 0;
@@ -23883,29 +23931,21 @@ static int run_debug_query_command(int argc, char** argv) {
                               absolute_source);
       return 1;
     }
-    int begin = std::max(1, failure - bounds.max_events + 1);
-    for (int id = begin; id <= failure; ++id)
+    for (int id = 1; id <= failure; ++id)
       selected.push_back(execution.trace[static_cast<size_t>(id - 1)]);
+    keep_latest = true;
     control_path = debug_control_path(execution.trace, failure);
     if (control_path.empty()) {
       for (const auto& event : selected)
         if (event.kind == "BranchTaken" || event.kind == "LoopIteration")
           control_path.push_back(event);
     }
-    vector<moss::FastInterpreter::TraceEvent> writes =
-        debug_recent_writes(execution.trace, "local:" + selected.back().detail,
-                            failure, bounds);
-    (void)writes;
-  } else {
-    write_debug_query_error("DEBUG_QUERY_UNSUPPORTED_OPERATION",
-                            "unsupported debug-query operation '" + operation + "'",
-                            absolute_source);
-    return 2;
   }
 
-  bool truncated = false;
+  bool limited_by_events = false;
   vector<moss::FastInterpreter::TraceEvent> limited =
-      debug_limit_events(selected, bounds, &truncated);
+      debug_limit_events(selected, bounds, &limited_by_events, keep_latest);
+  bool truncated = omitted_candidates || limited_by_events;
   write_debug_query_result(operation, selector, absolute_source, execution,
                            bounds, limited, truncated, result_field,
                            control_path);
@@ -23921,8 +23961,16 @@ int main(int argc, char** argv) {
   try {
     if (argc < 2) { usage(); return 2; }
 
-    if (string(argv[1]) == "debug-query")
+    if (string(argv[1]) == "debug-query") {
+      active_command = "debug-query";
+      for (int index = 2; index < argc; ++index) {
+        if (string(argv[index]) == "--json") json_output = true;
+        if (string(argv[index]) == "--source" && index + 1 < argc)
+          active_input = std::filesystem::absolute(argv[index + 1])
+                             .lexically_normal().string();
+      }
       return run_debug_query_command(argc, argv);
+    }
 
     if (string(argv[1]) == "run" || string(argv[1]) == "debug") {
       const bool debug_command = string(argv[1]) == "debug";

@@ -112,7 +112,8 @@ fails, Fast Debug still flushes the structured events recorded before the error.
 ## Structured debug queries
 
 `moss debug-query` executes the checked program once under Fast Debug and returns
-a bounded JSON slice of that execution:
+a bounded JSON slice of that execution. `--json` is required; the command has no
+second human-output protocol:
 
 ```sh
 moss debug-query failure-slice --source app.moss --json
@@ -128,6 +129,13 @@ Supported operations are `event`, `semantic`, `subtree`, `message-subtree`,
 compiler semantic identities such as `entity-v1:function:normalize`, source
 identities such as `fn:normalize@12`, `handler:Domain.Name`,
 `instance:<concrete-instance-id>`, `local:<binding>`, and domain state paths.
+A bare state path is accepted only when it identifies one dynamically relevant
+concrete instance. Qualify ambiguous state as
+`<concrete-instance-id>.<path>` (for example `main::account.balance`). A local
+name is accepted only when its matching writes belong to one callable semantic
+scope. Ambiguous write selectors fail with
+`DEBUG_QUERY_SELECTOR_AMBIGUOUS`; the API does not combine unrelated locals or
+domain instances.
 
 Every result reports its bounds and truncation status:
 
@@ -146,6 +154,13 @@ not execute, the command reports `DEBUG_QUERY_NOT_EXECUTED`; unknown events and
 malformed selectors use stable `DEBUG_QUERY_*` error codes. This is not an
 interactive debugger: there are no `step`, `next`, `continue`, breakpoint, or
 watchpoint commands.
+
+`debug-query --source` uses Moss's standalone or same-project source context.
+It does not resolve Margo path/Git dependencies. `margo debug [--trace]` remains
+the package-resolved Fast Debug path, but it currently exposes the full trace,
+not a second structured-query implementation. A structured query therefore
+requires the complete reachable source closure to be available in the source
+context supplied directly to Moss.
 
 ## Remaining interpreter limits
 

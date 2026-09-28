@@ -193,6 +193,7 @@ class FastInterpreter {
     std::string functional_context;
     std::string source_file;
     std::string semantic_identity;
+    std::string specialization_identity;
     std::unordered_map<std::string, Value> locals;
     std::unordered_map<std::string, std::string> local_types;
     std::unordered_map<std::string, Place> aliases;
@@ -247,7 +248,9 @@ class FastInterpreter {
     event.control_event_id = control_stack_.empty() ? 0 : control_stack_.back();
     event.depth = static_cast<int>(event_stack_.size());
     event.kind = kind; event.function = frame.function; event.source_file = frame.source_file.empty() ? options_.source_file : frame.source_file;
-    event.semantic_identity = frame.semantic_identity; event.line = line;
+    event.semantic_identity = frame.semantic_identity;
+    event.specialization = frame.specialization_identity;
+    event.line = line;
     event.detail = detail.substr(0, 256);
     if (frame.domain) { event.instance = frame.domain->concrete->identity;
       event.specialization = frame.domain->concrete->specialization; event.handler = frame.handler; }
@@ -1110,6 +1113,9 @@ class FastInterpreter {
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
+    if (specialization)
+      frame.specialization_identity = frame.functional_context + "@" +
+          std::to_string(target.line);
     bind_parameters(target.params, target.parameter_effects, arguments, caller, frame,
                     line, output, specialization ? &specialization->parameter_types : nullptr);
     int enter_id = emit("FunctionEnter", frame, target.line);
