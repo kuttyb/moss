@@ -31,3 +31,7 @@ sliced events: 64
 aggregate slice/full-trace ratio: 0.3616
 tool calls to slice: 1 per case
 ```
+
+This result was reproduced from a clean compiler build after the focused
+debug-query suite, generated Rust/rustc parity checks, Margo project checks,
+the full `make check` suite, and `make examples` passed.

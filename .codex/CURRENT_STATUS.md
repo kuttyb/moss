@@ -1,5 +1,60 @@
 # Moss current status
 
+## 2026-09-28 — Phase 22.4 structured debugging closeout — COMPLETE
+
+Phase 22.4 was recovered from snapshot
+`27b85ec95f0896c4b0b034395fdbcf0a7033eb66` onto current-main baseline
+`27b343def76897d4955d40cc0fb3ff2ad85d3913`. The snapshot is preserved by
+local ref `phase-22.4-snapshot-27b85ec`; the rebased semantic snapshot is
+`279c292`, and hardening is `601e429`. Conflicts in `src/interpreter.hpp` and
+`src/moss.cpp` were resolved against current parser, semantic-identity,
+interpreter, module, and agent-discovery infrastructure. Snapshot changes to
+`.codex/config.toml`, `.gitignore`, and the old status file were dropped rather
+than overwriting subsequent main work.
+
+The final machine API is
+`moss debug-query event|semantic|subtree|message-subtree|control-flow|writes|failure-slice
+[selector] --source <source> --json`. Trace events expose deterministic,
+execution-local `event_id`, `parent_event_id`, `call_event_id`,
+`message_event_id`, `handler_event_id`, `control_event_id`, and `depth`, while
+retaining compiler-owned semantic/source/specialization identities. Known but
+unexecuted semantic targets are distinct from unknown targets. Local and state
+write histories are scope/instance checked, and ambiguous selectors fail rather
+than combining unrelated histories. This remains last-write history, not taint
+or general provenance analysis.
+
+Argument parsing is non-throwing and rejects missing, malformed, negative,
+zero-where-illegal, and overflowing values through the JSON protocol. Actual
+omission, rather than equality with a limit, determines `truncated` and
+`available_more`. Stable errors covered by regressions are
+`DEBUG_QUERY_ARGUMENT_INVALID`, `DEBUG_QUERY_OPERATION_REQUIRED`,
+`DEBUG_QUERY_SOURCE_REQUIRED`, `DEBUG_QUERY_SELECTOR_REQUIRED`,
+`DEBUG_QUERY_SELECTOR_INVALID`, `DEBUG_QUERY_SELECTOR_AMBIGUOUS`,
+`DEBUG_QUERY_EVENT_NOT_FOUND`, `DEBUG_QUERY_TARGET_NOT_FOUND`,
+`DEBUG_QUERY_NOT_EXECUTED`, `DEBUG_QUERY_NO_FAILURE`, and
+`DEBUG_QUERY_UNSUPPORTED_OPERATION`.
+
+Validation used `rustc 1.98.1` and `cargo 1.98.1`. A clean `make` passed;
+`check_phase224_debug_query.py`, `check_phase224_native.py`, and
+`check_agent_api.py` passed; the native check compiled generated Rust and
+covered Fast Debug/native behavior plus Margo build/test/debug/run project
+paths. `sh -n tests/run.sh`, full `make check`, `make examples`, and
+`git diff --check` passed. The full suite's optional LLDB CLI and real DAP
+integrations were skipped because `lldb`/`lldb-dap` are absent; neither is part
+of Phase 22.4. Multi-module semantic identity, physical provenance,
+source-backed Fast Debug, native compilation, Margo resolution, nested calls,
+nested messages, branches, loop iterations, specializations, write bounds, and
+failure slicing are covered.
+
+The final benchmark reproduced 6/6 successful cases, 177 raw events, 64 sliced
+events, and a 0.3615819209039548 aggregate slice/full ratio. It demonstrates a
+material reduction in agent-visible dynamic context while retaining the small,
+deterministic smoke cases. Structured queries intentionally remain one-run,
+bounded, non-interactive Fast Debug operations. They do not add breakpoints,
+stepping, native debugger integration, generated-Rust tracing, scheduler/lock
+tracing, dynamic taint, or a Margo-side sliced-query engine; package-resolved
+Margo Fast Debug currently exposes the full trace.
+
 ## 2026-09-28 — Phase 15.15 EXPRESS-005 corrective closeout
 
 The in-progress `f378def` checkpoint entry below is superseded. The existing
