@@ -1250,6 +1250,10 @@ enum_module_expected=$(printf '4\n1')
   fail "enum module Fast Debug output"
 python3 tests/tooling/check_enum_source_free.py ||
   fail "source-free enum module interface"
+# EXPRESS-005 review registry: known bugs are strict expected failures (an
+# XPASS fails the suite so a fix gets promoted); open/control cases must hold.
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" ||
+  fail "EXPRESS-005 follow-up registry"
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
 run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'
 phase47_element_effects_json="$test_build/phase47_element_effects.json"

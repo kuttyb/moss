@@ -760,6 +760,8 @@ class Parser {
       Line line = lines_[i_++];
       if (line.indent != head.indent + indent_unit_)
         fail(line, "enum cases must use one indentation level");
+      if (starts_with(line.text, "fn "))
+        fail(line, "enum methods are not supported; use an ordinary function and match on the enum");
       EnumCase item;
       item.line = line.no;
       item.source_file = line.source_file;
@@ -769,6 +771,8 @@ class Parser {
         auto rp = matching_paren(line.text, lp);
         if (rp == string::npos || rp + 1 != line.text.size())
           fail(line, "enum case fields must be named and typed");
+        if (rp == lp + 1)
+          fail(line, "tag-only enum cases are declared without parentheses");
         item.name = trim(line.text.substr(0, lp));
         for (const auto& param : parse_params(line, line.text.substr(lp + 1, rp - lp - 1))) {
           if (param.type.empty()) fail(line, "enum case field '" + param.name + "' requires a type");
@@ -1116,10 +1120,14 @@ class Parser {
         auto rp = matching_paren(pattern, lp);
         if (rp == string::npos || rp + 1 != pattern.size())
           fail(L, "enum patterns support only a case and plain field bindings");
+        if (rp == lp + 1)
+          fail(L, "tag-only enum patterns are written without parentheses");
         s.a = trim(pattern.substr(0, lp));
         string inside = pattern.substr(lp + 1, rp - lp - 1);
         if (!trim(inside).empty()) for (auto binding : split_top_level(inside, ',')) {
           binding = trim(binding);
+          if (binding == "_")
+            fail(L, "wildcard enum patterns are not supported");
           if (!identifier(binding)) {
             if (starts_with(binding, "move ") || starts_with(binding, "ref "))
               fail(L, "ownership modifiers are not allowed in enum patterns; use 'match value:' to READ-borrow or 'match consume value:' to consume the whole enum");
@@ -2096,6 +2104,9 @@ class Checker {
             err(field.source_file, field.line, "unknown enum field type '" + field.type + "'");
           if (contains_domain_handle(field.type))
             err(field.source_file, field.line, "domain handles cannot be stored in enum payloads");
+          if (contains_trait_type(field.type))
+            err(field.source_file, field.line,
+                "trait types are static structural constraints and cannot be stored in enum payloads");
         }
   }
 
@@ -3544,6 +3555,10 @@ class Checker {
           TypeEnv branch = env;
           std::set<string> pattern_names;
           for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+            if (arm.args[field_index] != item->fields[field_index].name)
+              err(arm.line, "case '" + arm.a + "' requires payload field '" +
+                  item->fields[field_index].name + "' in declaration order",
+                  "MATCH_FIELD_NAME_MISMATCH");
             if (!pattern_names.insert(arm.args[field_index]).second)
               err(arm.line, "duplicate enum pattern binding: " +
                   arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
@@ -6351,6 +6366,23 @@ class Checker {
     }
     string receiver, method;
     vector<string> arguments;
+    // A constructor is pure apart from evaluation of its supplied payloads.
+    // Recognize it before the general member-call path, which would otherwise
+    // report the case as an unresolved method.
+    {
+      string enum_name, case_name;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
+          enums_.count(enum_name)) {
+        for (const auto& argument : arguments) {
+          string field, field_value;
+          effects.merge(observable_expression_effects(
+              parse_named_argument(argument, field, field_value) ? field_value : argument,
+              env, domain_fields, implicit_object, parameters));
+        }
+        return effects;
+      }
+    }
     if (parse_member_call(value, receiver, method, arguments)) {
       effects.merge(observable_expression_effects(
           receiver, env, domain_fields, implicit_object, parameters));
@@ -7786,7 +7818,7 @@ class Checker {
             const string& field_type = item->fields[field_index].type;
             branch.types[name] = field_type;
             branch.moved.erase(name);
-            branch.immutable_locals.erase(name);
+            branch.immutable_locals.insert(name);
             branch.message_payloads.erase(name);
             branch.borrowed_enum_payloads.erase(name);
             if (!consuming && transfer_type(field_type))
@@ -8532,6 +8564,11 @@ class Checker {
         std::set<string> supplied;
         for (const auto& argument : arguments) {
           string name, value;
+          size_t equal = top_level_assignment(argument);
+          size_t colon = top_level_colon(argument);
+          if (equal != string::npos && (colon == string::npos || equal < colon))
+            err(line, "enum constructor fields use ':' rather than '='",
+                "ENUM_FIELD_REQUIRES_COLON");
           if (!parse_named_argument(argument, name, value))
             err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
           if (!supplied.insert(name).second)
@@ -8804,10 +8841,22 @@ class Checker {
         if (!it || *it != "int") err(line, "vector and queue indices must be Int");
       } else if (starts_with(*bt, "map[")) {
         auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
+        if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
+          err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+              "ENUM_MAP_KEY_UNSUPPORTED");
         auto it = inferred_expr_type(ii, env);
         if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
       return;
+    }
+    {
+      auto dot = value.rfind('.');
+      if (dot != string::npos && value.find('(', dot) == string::npos) {
+        auto receiver_type = inferred_expr_type(value.substr(0, dot), env);
+        if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
+          err(line, "enum payload fields require match; field projection is unsupported",
+              "ENUM_FIELD_PROJECTION_UNSUPPORTED");
+      }
     }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
@@ -8999,6 +9048,14 @@ class Checker {
                 container->second == "map" &&
                 !inferred_expr_type(index_expression, current_env))
               err(statement.line, "cannot infer map key type");
+            if (container != current_env.end() &&
+                (container->second == "map" || starts_with(container->second, "map["))) {
+              auto key_type = inferred_expr_type(index_expression, current_env);
+              if (key_type && enums_.count(canonical_type_name(*key_type)))
+                err(statement.line,
+                    "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                    "ENUM_MAP_KEY_UNSUPPORTED");
+            }
           }
         }
         return;
@@ -9133,6 +9190,11 @@ class Checker {
         }
         return;
       }
+
+      if (statement.kind == Stmt::Kind::Raw &&
+          plain_identifier(statement.text) && statement.text != "pass")
+        err(statement.line, "bare identifier is not a statement; use 'pass' for a no-op",
+            "INVALID_BARE_IDENTIFIER_STATEMENT");
 
       if (statement.kind == Stmt::Kind::Reply) {
         if (!current || !current_handler || !current_handler->reply_type)
@@ -10652,7 +10714,7 @@ class Generator {
     o << "// Synchronous domain calls enter compiler-planned handler-level 2PL.\n";
     for (const auto& domain : p_.domains) o << "// Moss backend plan: " << domain.name << " = Handler2PL.\n";
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
-    o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
+    o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n#![allow(unused_assignments)]\n\n";
     for (const auto& dependency : rust_dependencies_) {
       string crate = dependency == "__moss_specializations__"
           ? "moss_specializations" : tooling_name("moss_" + dependency);
@@ -14505,6 +14567,11 @@ class Generator {
           ++i;
           break;
         case Stmt::Kind::Raw:
+          if (s.text == "pass") {
+            o << indent(level) << ";\n";
+            ++i;
+            break;
+          }
           o << indent(level);
           // A bare expression is a valid benchmark body.  Protect its value
           // just like an ordinary call result; otherwise rustc may erase the

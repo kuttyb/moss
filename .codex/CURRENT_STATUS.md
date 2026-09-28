@@ -1,5 +1,48 @@
 # Moss current status
 
+## 2026-09-27 — EXPRESS-005 corrective hardening checkpoint (in progress)
+
+Branch `phase-15.15-express-005-hardening` starts at current `main`
+`4b1e364c22f78b27c32caad71804103e139f6d9c`. The prior “no known blockers”
+closeout below is superseded by the peer review and the user's corrective task.
+EXPRESS-005 must not be described as blocker-free until F1–F13 and the updated
+D1–D13 regressions pass.
+
+Startup completed: read `AGENTS.md`, both repository Moss skills, and this
+status file; `./moss agent bootstrap --json` reports `moss-0.1`. The two peer
+patches are in `tmp/`. They were inspected, not applied wholesale. The review
+document and 125-probe harness were imported from patch 2, and the harness was
+wired into `tests/run.sh`. Patch 1 remains source material for later doc edits.
+
+Compiler edits made so far: F1 constructor observable effects; D1 exact field
+names in patterns; F5 wildcard binding rejection; F6 immutable pattern bindings;
+F9 trait payload rejection; F10 colon-only enum constructor fields; F12 native
+`unused_assignments` allowance; D12 tag-only parentheses rejection in declaration
+and pattern; D13 enum-method diagnostic; F7 enum Map key rejection; F8 enum
+field-projection rejection; and a first pass at `pass` and bare-identifier
+statement rejection. These later edits require a completed rebuild and focused
+validation. `pass` is currently represented as a special Raw statement and
+needs a review for all semantic, formatter, editor, and discovery paths.
+
+Validation completed before the later edits: the initial `--expect-fixed` peer
+harness passed F1a–F1c and reported the other 18 F bug cases failing as expected.
+The D cases still assert prior behavior and **must** be rewritten to the user's
+decisions. The first `make -j4` after frontend edits failed because an `err`
+overload was called with four arguments; that source error was fixed, but the
+subsequent rebuild was still running at checkpoint time. No `make check`,
+`make examples`, source-free validation, or final `--expect-fixed` result is
+claimed. Both staged and unstaged diffs passed `git diff --check` at checkpoint.
+
+Restart from this branch. First run `git status --short`, then read this entry,
+the user's task, and `docs/PHASE_15_15_EXPRESS_005_REVIEW.md`. Follow the
+mandatory Moss startup again, including skills and `./moss agent bootstrap
+--json`. Finish the build, run the peer harness with `--list` and
+`--expect-fixed`, and continue F2–F13 plus D1–D13. Pay particular attention
+to D2/D4 `replace` and owned-rvalue consuming match, D5 READ views at
+message/reply, D6 specialization, D7 and F11 loop ownership. Reconcile patch 1
+docs manually, update issue ledger and this status, then run all required gates.
+Do not push. All work so far is local and incomplete.
+
 ## Phase 15.15 — COMPLETE (2026-09-27)
 
 Implemented and validated on `main`: SWARM-043 rejects untyped parameter field

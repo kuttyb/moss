@@ -1200,7 +1200,8 @@ class FastInterpreter {
           break;
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
-          if (!statement.text.empty()) eval(statement.text, frame, statement.line, output);
+          if (!statement.text.empty() && statement.text != "pass")
+            eval(statement.text, frame, statement.line, output);
           break;
         case Stmt::Kind::Return:
           flow.returned = true;
