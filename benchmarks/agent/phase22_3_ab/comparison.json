@@ -1,6 +1,8 @@
 {
   "adoption": {
     "legacy": {
+      "legacy_resolve_attempt_rate": 0.25,
+      "legacy_resolve_attempt_rate_trials": 0.075,
       "query_type_distribution": {
         "calls": 39,
         "effects": 59,
@@ -10,10 +12,11 @@
         "type": 16,
         "why": 22
       },
-      "resolve_adoption": 0.25,
       "semantic_query_adoption": 0.875
     },
     "phase22_3": {
+      "phase22_3_resolve_adoption": 0.6875,
+      "phase22_3_resolve_adoption_trials": 0.6,
       "query_type_distribution": {
         "calls": 31,
         "effects": 41,
@@ -23,7 +26,6 @@
         "type": 11,
         "why": 12
       },
-      "resolve_adoption": 0.6875,
       "semantic_query_adoption": 0.875
     }
   },
@@ -843,6 +845,8 @@
       "final_task_pass_rate": 1.0,
       "first_validation_success_rate": 0.85,
       "infrastructure_failures": 0,
+      "legacy_resolve_attempt_rate": 0.25,
+      "legacy_resolve_attempt_rate_trials": 0.075,
       "metrics": {
         "agent_tool_calls": {
           "count": 100,
@@ -1085,8 +1089,6 @@
         "type": 16,
         "why": 22
       },
-      "resolve_adoption": 0.25,
-      "resolve_adoption_trials": 0.075,
       "semantic_fact_accuracy": 0.926923,
       "semantic_facts_correct": 241,
       "semantic_facts_requested": 260,
@@ -1335,6 +1337,8 @@
           "total": 12.0
         }
       },
+      "phase22_3_resolve_adoption": 0.6875,
+      "phase22_3_resolve_adoption_trials": 0.6,
       "query_type_distribution": {
         "calls": 31,
         "effects": 41,
@@ -1344,8 +1348,6 @@
         "type": 11,
         "why": 12
       },
-      "resolve_adoption": 0.6875,
-      "resolve_adoption_trials": 0.6,
       "semantic_fact_accuracy": 0.961538,
       "semantic_facts_correct": 250,
       "semantic_facts_requested": 260,
@@ -1460,5 +1462,5 @@
     "total_agent_runs": 200,
     "trials_per_task": 5
   },
-  "schema_version": "moss-phase22.3-ab-comparison-1"
+  "schema_version": "moss-phase22.3-ab-comparison-2"
 }

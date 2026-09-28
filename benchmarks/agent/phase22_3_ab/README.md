@@ -21,6 +21,11 @@ scorer compares only the requested exact fields.
 - `phase22_3` stages current docs/skills and passes current query/discovery JSON
   through unchanged.
 
+The legacy condition emulates the post-22.1 externally visible semantic-query
+contract over the current compiler. It does not execute the historical
+post-22.1 query implementation. Compiler-internal resolution improvements
+shared by both profiles can therefore reduce the measured treatment effect.
+
 The proxy does not gate parsing, checking, ownership rules, lowering,
 synchronization analysis, Fast Debug, native execution, or Margo. Profile tests
 compare semantic acceptance and execution under both conditions.

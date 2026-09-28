@@ -201,6 +201,11 @@ with tempfile.TemporaryDirectory(dir=ROOT / "tmp", prefix="phase223-analysis-") 
     aggregate = importlib.import_module("analyze").build_aggregate(runs, "phase22_3")
     if aggregate["summary"]["semantic_fact_accuracy"] != 1.0:
         fail("aggregate generation failed")
+    if aggregate["summary"]["phase22_3_resolve_adoption"] != 1.0 or "resolve_adoption" in aggregate["summary"]:
+        fail("treatment resolve adoption terminology regressed")
+    legacy_aggregate = importlib.import_module("analyze").build_aggregate(runs, "legacy")
+    if legacy_aggregate["summary"]["legacy_resolve_attempt_rate"] != 0.0 or "resolve_adoption" in legacy_aggregate["summary"]:
+        fail("legacy resolve attempt terminology regressed")
     comparison_one = compare.build_comparison(runs)
     comparison_two = compare.build_comparison(runs)
     if comparison_one != comparison_two or comparison_one["metrics"]["semantic_fact_accuracy"]["absolute_delta"] != 1.0:

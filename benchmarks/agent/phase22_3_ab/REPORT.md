@@ -12,6 +12,10 @@
 - Phase 22.3 docs/skills hashes: `{".agents/skills/moss-agent-workflow/SKILL.md": "65d7338079856a6bda5eff64d4ce976048145dd8b44c68789368eccf213abb8a", ".agents/skills/moss-language/SKILL.md": "45cf0921d5ac37f38111e6ae378d0c4f854735dc84afd4402b1a7cc13e9cfea6", ".codex/CURRENT_STATUS.md": "e6bfb2d0d0dc6f0aea5f73b3735d4104e3322d10a6d2aee55ba67a4f486d2756", "AGENTS.md": "71b1395081226aac8f8f0e322562d94498d12fa27267489aed541d6625b97957", "docs/AGENT_API.md": "ba84ea5a8c1c172978871f96f316bf1eacc0ab170b579a191596cae8d877ae4d"}`
 - Restrictions: Codex shell workspace sandbox network_access=false; workspace-write in a fresh mount namespace with Git metadata replaced by empty tmpfs
 
+## Experimental limitation
+
+The legacy condition emulates the post-22.1 externally visible semantic-query contract over the current compiler. It does not execute the historical post-22.1 query implementation. Compiler-internal resolution improvements shared by both profiles can therefore reduce the measured treatment effect.
+
 ## Headline result
 
 | Metric | Legacy | Phase 22.3 | Delta |
@@ -47,7 +51,8 @@ Bootstrap intervals are paired 95% intervals over task/trial observations and ar
 ## Adoption
 
 Legacy semantic-query adoption: 87.5%. Phase 22.3 adoption: 87.5%.
-Treatment `resolve` adoption: 68.8%.
+Legacy attempted use of unavailable `resolve`: 25.0% of semantic-heavy tasks (7.5% of semantic-heavy trials). These invocations were rejected by the legacy profile and are attempts, not adoption.
+Phase 22.3 `resolve` adoption: 68.8% of semantic-heavy tasks (60.0% of semantic-heavy trials).
 Legacy query distribution: `{"calls": 39, "effects": 59, "inspect": 98, "ownership": 17, "resolve": 8, "type": 16, "why": 22}`.
 Treatment query distribution: `{"calls": 31, "effects": 41, "inspect": 52, "ownership": 15, "resolve": 87, "type": 11, "why": 12}`.
 
@@ -61,7 +66,13 @@ Treatment query distribution: `{"calls": 31, "effects": 41, "inspect": 52, "owne
 
 ## Interpretation
 
-Under the controlled query-surface intervention, Phase 22.3 changed pooled semantic fact accuracy by 3.5%, mean semantic detour cost by -0.150, and final completion by 0.0%. These deltas concern agent semantic observability and workflow efficiency; they do not imply any change to Moss language semantics.
+Under the controlled query-surface intervention, pooled semantic fact accuracy increased from 92.7% to 96.2%, a gain of 3.5 percentage points (paired bootstrap 95% interval 1.6 to 5.7 percentage points).
+
+The strongest category result was effects/calls: accuracy increased by 9.2 percentage points, while mean semantic detour cost fell from 3.850 to 2.450 (-36.4%; paired interval -2.200 to -0.600). Type/ownership accuracy increased by 5.5 percentage points.
+
+Mean input tokens fell by 8.5%—about 21,878 fewer tokens per run—with a paired interval below zero (-41859.280 to -4998.230).
+
+The non-results matter: final task completion remained 100% in both profiles; median overall semantic detour cost remained 3; source inspection did not improve; aggregate tool-call and Moss/Margo-call deltas were small; and resolution-task correctness was already saturated. These measurements support a claim about agent semantic observability and efficiency under this controlled surface change, not a change to ordinary Moss semantics or broader causality.
 
 Phase 22.3 improves semantic retrieval when agents use it, while discovery/adoption remains a separate agent-workflow problem.
 

@@ -51,7 +51,7 @@ def rate(items: list[dict[str, Any]], predicate) -> float | None:
     return None if not items else round(sum(bool(predicate(item)) for item in items) / len(items), 6)
 
 
-def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize(items: list[dict[str, Any]], profile: str) -> dict[str, Any]:
     correct = sum(item.get("semantic_facts_correct", 0) for item in items)
     requested = sum(item.get("semantic_facts_requested", 0) for item in items)
     metric_fields = (
@@ -76,7 +76,7 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
     adopted_tasks = {item["task_id"] for item in semantic if item.get("semantic_query_invocations", 0) > 0}
     resolve_tasks = {item["task_id"] for item in semantic if item.get("resolve_invocations", 0) > 0}
     completed = [item for item in items if item.get("state") not in {"infrastructure_failure"}]
-    return {
+    summary = {
         "trials": len(items), "valid_agent_outcomes": len(completed),
         "infrastructure_failures": sum(item.get("state") == "infrastructure_failure" for item in items),
         "timeouts": sum(item.get("state") == "agent_timeout" for item in items),
@@ -88,11 +88,20 @@ def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
         "first_validation_success_rate": rate(completed, lambda item: item.get("first_validation_success") is True),
         "semantic_query_adoption": round(len(adopted_tasks) / len(semantic_tasks), 6) if semantic_tasks else None,
         "semantic_query_adoption_trials": rate(semantic, lambda item: item.get("semantic_query_invocations", 0) > 0),
-        "resolve_adoption": round(len(resolve_tasks) / len(semantic_tasks), 6) if semantic_tasks else None,
-        "resolve_adoption_trials": rate(semantic, lambda item: item.get("resolve_invocations", 0) > 0),
         "query_type_distribution": dict(sorted(query_distribution.items())),
         "metrics": {field: stats([item.get(field) for item in items]) for field in metric_fields},
     }
+    resolve_rate = round(len(resolve_tasks) / len(semantic_tasks), 6) if semantic_tasks else None
+    resolve_trial_rate = rate(semantic, lambda item: item.get("resolve_invocations", 0) > 0)
+    if profile == "legacy":
+        summary["legacy_resolve_attempt_rate"] = resolve_rate
+        summary["legacy_resolve_attempt_rate_trials"] = resolve_trial_rate
+    elif profile == "phase22_3":
+        summary["phase22_3_resolve_adoption"] = resolve_rate
+        summary["phase22_3_resolve_adoption_trials"] = resolve_trial_rate
+    else:
+        raise ValueError(f"unknown query profile: {profile}")
+    return summary
 
 
 def build_aggregate(runs_root: Path, profile: str) -> dict[str, Any]:
@@ -110,10 +119,10 @@ def build_aggregate(runs_root: Path, profile: str) -> dict[str, Any]:
     categories = sorted({item["category"] for item in manifests})
     tasks = sorted({item["task_id"] for item in manifests})
     return {
-        "schema_version": "moss-phase22.3-ab-aggregate-1", "profile": profile,
-        "protocol": protocol, "summary": summarize(manifests),
-        "categories": {category: summarize([item for item in manifests if item["category"] == category]) for category in categories},
-        "tasks": {task_id: summarize([item for item in manifests if item["task_id"] == task_id]) for task_id in tasks},
+        "schema_version": "moss-phase22.3-ab-aggregate-2", "profile": profile,
+        "protocol": protocol, "summary": summarize(manifests, profile),
+        "categories": {category: summarize([item for item in manifests if item["category"] == category], profile) for category in categories},
+        "tasks": {task_id: summarize([item for item in manifests if item["task_id"] == task_id], profile) for task_id in tasks},
         "trials": manifests,
     }
 

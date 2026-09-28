@@ -199,11 +199,11 @@ def build_comparison(runs_root: Path) -> dict[str, Any]:
             "semantic_detour_cost": paired_metric(left, right, PRIMARY["semantic_detour_cost"]),
         }
     return {
-        "schema_version": "moss-phase22.3-ab-comparison-1",
+        "schema_version": "moss-phase22.3-ab-comparison-2",
         "protocol": legacy["protocol"], "metrics": metrics, "categories": categories,
         "adoption": {
-            "legacy": {key: legacy["summary"][key] for key in ("semantic_query_adoption", "resolve_adoption", "query_type_distribution")},
-            "phase22_3": {key: treatment["summary"][key] for key in ("semantic_query_adoption", "resolve_adoption", "query_type_distribution")},
+            "legacy": {key: legacy["summary"][key] for key in ("semantic_query_adoption", "legacy_resolve_attempt_rate", "legacy_resolve_attempt_rate_trials", "query_type_distribution")},
+            "phase22_3": {key: treatment["summary"][key] for key in ("semantic_query_adoption", "phase22_3_resolve_adoption", "phase22_3_resolve_adoption_trials", "query_type_distribution")},
         },
         "failure_analysis": outcomes(legacy, treatment),
         "profile_summaries": {"legacy": legacy["summary"], "phase22_3": treatment["summary"]},
@@ -248,6 +248,8 @@ def report(document: dict[str, Any]) -> str:
         f"- Legacy docs/skills hashes: `{json.dumps(protocol['profile_docs_sha256']['legacy'], sort_keys=True)}`",
         f"- Phase 22.3 docs/skills hashes: `{json.dumps(protocol['profile_docs_sha256']['phase22_3'], sort_keys=True)}`",
         f"- Restrictions: {protocol['environment']['network_policy']}; {protocol['environment']['sandbox']}",
+        "", "## Experimental limitation", "",
+        "The legacy condition emulates the post-22.1 externally visible semantic-query contract over the current compiler. It does not execute the historical post-22.1 query implementation. Compiler-internal resolution improvements shared by both profiles can therefore reduce the measured treatment effect.",
         "", "## Headline result", "", "| Metric | Legacy | Phase 22.3 | Delta |", "|---|---:|---:|---:|",
     ]
     for label, key, as_percent in rows:
@@ -266,18 +268,32 @@ def report(document: dict[str, Any]) -> str:
     lines.extend([
         "", "## Adoption", "",
         f"Legacy semantic-query adoption: {fmt(adoption['legacy']['semantic_query_adoption'], True)}. Phase 22.3 adoption: {fmt(adoption['phase22_3']['semantic_query_adoption'], True)}.",
-        f"Treatment `resolve` adoption: {fmt(adoption['phase22_3']['resolve_adoption'], True)}.",
+        f"Legacy attempted use of unavailable `resolve`: {fmt(adoption['legacy']['legacy_resolve_attempt_rate'], True)} of semantic-heavy tasks ({fmt(adoption['legacy']['legacy_resolve_attempt_rate_trials'], True)} of semantic-heavy trials). These invocations were rejected by the legacy profile and are attempts, not adoption.",
+        f"Phase 22.3 `resolve` adoption: {fmt(adoption['phase22_3']['phase22_3_resolve_adoption'], True)} of semantic-heavy tasks ({fmt(adoption['phase22_3']['phase22_3_resolve_adoption_trials'], True)} of semantic-heavy trials).",
         f"Legacy query distribution: `{json.dumps(adoption['legacy']['query_type_distribution'], sort_keys=True)}`.",
         f"Treatment query distribution: `{json.dumps(adoption['phase22_3']['query_type_distribution'], sort_keys=True)}`.",
         "", "## Failure analysis", "",
     ])
     for key, values in document["failure_analysis"].items():
         lines.append(f"- {key.replace('_', ' ').title()}: {', '.join(values) if values else 'none'}")
-    accuracy = metrics["semantic_fact_accuracy"]["absolute_delta"]
-    detour = metrics["semantic_detour_cost"]["absolute_delta"]
-    completion = metrics["final_task_pass_rate"]["absolute_delta"]
+    accuracy_metric = metrics["semantic_fact_accuracy"]
+    effects_accuracy = document["categories"]["effects-calls"]["semantic_fact_accuracy"]
+    effects_detour = document["categories"]["effects-calls"]["semantic_detour_cost"]
+    type_accuracy = document["categories"]["type-ownership"]["semantic_fact_accuracy"]
+    input_tokens = metrics["input_tokens"]
     lines.extend(["", "## Interpretation", ""])
-    lines.append(f"Under the controlled query-surface intervention, Phase 22.3 changed pooled semantic fact accuracy by {fmt(accuracy, True)}, mean semantic detour cost by {fmt(detour)}, and final completion by {fmt(completion, True)}. These deltas concern agent semantic observability and workflow efficiency; they do not imply any change to Moss language semantics.")
+    lines.append(
+        f"Under the controlled query-surface intervention, pooled semantic fact accuracy increased from {fmt(accuracy_metric['legacy_mean'], True)} to {fmt(accuracy_metric['phase22_3_mean'], True)}, a gain of {accuracy_metric['absolute_delta'] * 100:.1f} percentage points (paired bootstrap 95% interval {accuracy_metric['paired_delta_bootstrap_95ci'][0] * 100:.1f} to {accuracy_metric['paired_delta_bootstrap_95ci'][1] * 100:.1f} percentage points)."
+    )
+    lines.append(
+        f"\nThe strongest category result was effects/calls: accuracy increased by {effects_accuracy['absolute_delta'] * 100:.1f} percentage points, while mean semantic detour cost fell from {fmt(effects_detour['legacy_mean'])} to {fmt(effects_detour['phase22_3_mean'])} ({effects_detour['percentage_delta']:.1f}%; paired interval {fmt(effects_detour['paired_delta_bootstrap_95ci'][0])} to {fmt(effects_detour['paired_delta_bootstrap_95ci'][1])}). Type/ownership accuracy increased by {type_accuracy['absolute_delta'] * 100:.1f} percentage points."
+    )
+    lines.append(
+        f"\nMean input tokens fell by {abs(input_tokens['percentage_delta']):.1f}%—about {abs(input_tokens['absolute_delta']):,.0f} fewer tokens per run—with a paired interval below zero ({fmt(input_tokens['paired_delta_bootstrap_95ci'][0])} to {fmt(input_tokens['paired_delta_bootstrap_95ci'][1])})."
+    )
+    lines.append(
+        "\nThe non-results matter: final task completion remained 100% in both profiles; median overall semantic detour cost remained 3; source inspection did not improve; aggregate tool-call and Moss/Margo-call deltas were small; and resolution-task correctness was already saturated. These measurements support a claim about agent semantic observability and efficiency under this controlled surface change, not a change to ordinary Moss semantics or broader causality."
+    )
     if adoption["phase22_3"]["semantic_query_adoption"] is not None and adoption["phase22_3"]["semantic_query_adoption"] < 1:
         lines.append("\nPhase 22.3 improves semantic retrieval when agents use it, while discovery/adoption remains a separate agent-workflow problem.")
     failures = sum(
