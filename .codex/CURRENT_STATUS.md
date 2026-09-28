@@ -753,7 +753,13 @@ repair work.
 EXPRESS-007 remains explicitly deferred to Phase 21 — Error Propagation & Supervision
 because recoverable errors belong to that larger semantics design.
 
-## Phase 22.3 — Semantic Query Expansion (closeout validation in progress)
+## Historical Phase 22.3 — Semantic Query Expansion (superseded closeout checkpoint)
+
+> **Historical / superseded.** This section records the in-progress Phase 22.3
+> closeout state before native validation, the quantitative A/B benchmark, and
+> the final Phase 22.1–22.4 consolidation. The authoritative current status is
+> the completed Phase 22.1–22.4 consolidation and Phase 22.3 COMPLETE sections
+> above. No work should be resumed from this checkpoint.
 
 Foundation commit `ae126f2` merges Phase 22.1 teaching diagnostics and the Phase
 22.2 benchmark onto the Phase 22.3 branch. Implementation commit `ddf927c` adds
