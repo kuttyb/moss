@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223009","name":"transitive-effects","category":"effects-calls",
+  "prompt":"wrapper performs no I/O textually, but its callee does. Determine wrapper's retained effect precision and transitive external-I/O fact. The program is already correct; do not change main.moss. Record callable_entity_id, direct_status, and transitive_external_io in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"4\n4\n"}}],
+  "semantic_heavy":true,"relevant_capability":"direct versus transitive observable-effect distinctions","requested_facts":["callable_entity_id","direct_status","transitive_external_io"]
+}

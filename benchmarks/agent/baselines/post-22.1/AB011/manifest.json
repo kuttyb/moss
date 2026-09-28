@@ -1,0 +1,74 @@
+{
+  "agent": {
+    "configuration": "ephemeral, ignore user config/rules, no approvals, workspace-write",
+    "disabled_features": [
+      "apps",
+      "plugins",
+      "browser_use",
+      "browser_use_external",
+      "browser_use_full_cdp_access",
+      "in_app_browser",
+      "computer_use",
+      "image_generation",
+      "recommended_plugins",
+      "memories",
+      "multi_agent"
+    ],
+    "implementation": "OpenAI Codex CLI",
+    "model": "gpt-6-sol",
+    "reasoning_effort": "medium",
+    "runtime_version": "codex-cli 0.156.0"
+  },
+  "agent_exit_code": 0,
+  "agent_runtime": {
+    "completed_item_types": {
+      "agent_message": 4,
+      "command_execution": 13,
+      "file_change": 1
+    },
+    "thread_id": "01a0cfb1-cea5-79e2-8938-46d972e7ebc1",
+    "token_usage": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 192640,
+      "input_tokens": 210285,
+      "output_tokens": 1282,
+      "reasoning_output_tokens": 256
+    },
+    "tool_calls": 14
+  },
+  "agent_timed_out": false,
+  "changed_paths": [
+    "main.moss"
+  ],
+  "compiler_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "corpus_commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+  "diagnostic_codes": {},
+  "diagnostic_events": [],
+  "environment_changed_paths": [],
+  "final_status": "pass",
+  "first_validation_success": true,
+  "infrastructure_error": null,
+  "moss_margo_invocations": 5,
+  "orchestration_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "outside_allowed_paths": [],
+  "prompt_wrapper_sha256": "a3ddf0a048d7b36fa502718151f3639f0c2a522f2f318356c8f725547bdd03ea",
+  "pruned_generated_paths": [],
+  "schema_version": "moss-agent-baseline-1",
+  "staged_tree_sha256": "ccb2990264b1f1a9d4ae59f70e25567fe5e69547502508313604c5d0820dc9aa",
+  "started_at_unix": 1790190930.968,
+  "starter_tree_sha256": "ccb2990264b1f1a9d4ae59f70e25567fe5e69547502508313604c5d0820dc9aa",
+  "state": "completed",
+  "task_id": "AB011",
+  "task_prompt_sha256": "06f874903c185adaa15ac05d0940d07e6f3234c12372874910cf7b8aff28bd00",
+  "tool_usage": {
+    "bootstrap": 1,
+    "check": 1,
+    "effects": 1,
+    "interpreter": 1,
+    "moss-fmt": 1
+  },
+  "trial": 1,
+  "validation_attempts_to_green": 1,
+  "validation_attempts_total": 2,
+  "wall_time_ms": 39527
+}

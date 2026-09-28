@@ -1,0 +1,21 @@
+domain Ledger:
+  fn Read() -> Int:
+    reply 42
+
+domain Inventory:
+  domainroutes(ledger: Ledger)
+
+  fn Lookup() -> Int:
+    reply message ledger.Read()
+
+domain App:
+  domainroutes(inventory: Inventory)
+
+  fn Run() -> Int:
+    reply message inventory.Lookup()
+
+fn main():
+  ledger = Ledger()
+  inventory = Inventory(ledger: ledger)
+  app = App(inventory: inventory)
+  echo message app.Run()

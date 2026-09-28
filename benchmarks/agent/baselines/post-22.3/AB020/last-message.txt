@@ -1,0 +1,1 @@
+Replaced the state-mutating callback in [task/main.moss](/home/owner/daji/code/moss2/task/main.moss) with the pure `sum` pipeline stage. The Moss check passes, and execution prints `42`.

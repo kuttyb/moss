@@ -77,14 +77,22 @@ When working with Moss:
 
 ## Temporary files and Git
 
-- Use `<repository-root>/tmp/` for temporary files and validation logs rather
-  than `/tmp`. Create the directory when needed.
+- Use `<repository-root>/tmp/` for all temporary files, caches, generated
+  validation artifacts, and logs rather than `/tmp` or another external temp
+  directory. Create it when needed without asking for permission.
 - This directory is disposable. Agents may create, read, modify, and delete
   its contents without additional user confirmation. Its contents may be
   removed after a session; do not store durable project information there.
-- Git operations within this repository are authorized without additional
-  user confirmation. Preserve unrelated work and keep operations scoped to
-  the current task.
+- Git and Python commands, repository scripts, builds, and tests that operate
+  entirely within this repository are authorized without additional user
+  confirmation. Preserve unrelated work and keep operations scoped to the
+  current task.
+- Creating, reading, modifying, renaming, and deleting files recursively within
+  this repository are authorized without additional user confirmation when
+  they are part of the current task. Continue to avoid destructive changes that
+  are unrelated to the task.
+- Never use `sudo`. If a task cannot be completed with the current user's
+  permissions and repository-local tooling, report the blocker instead.
 - For phase-completion commits, use a concise commit body as well as a title.
   Summarize implemented scope, validation, material blockers/workarounds, and
   phase closeout status so the commit is useful without the surrounding session.
@@ -114,4 +122,6 @@ When working with Moss:
 - **Full Autonomy**: Execute shell commands, file inspections, and edits without prompting for per-step confirmation.
 - **Sandboxing**: Stay strictly within the workspace root. Never access or modify paths outside this directory.
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
+- **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
+- **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
 - **Git Boundary**: You may stage files and create local git commits when explicitly directed by the user. You must NEVER run `git push`.

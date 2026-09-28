@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223008","name":"message-payload-boundary","category":"type-ownership",
+  "prompt":"The handler illegally reassigns its incoming message payload. Repair it while preserving the output. Determine the compiler-owned message boundary and payload restriction. Record boundary, payload_mode, and diagnostic_code in semantic-answer.json. The fixed program must print 8.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"8\n"}}],
+  "semantic_heavy":true,"relevant_capability":"message payload and reply ownership boundary facts","requested_facts":["boundary","payload_mode","diagnostic_code"]
+}

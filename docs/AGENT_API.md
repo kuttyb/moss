@@ -59,10 +59,14 @@ All agent commands use this top-level envelope:
 }
 ```
 
-Failures replace `result` with a structured `error`. Protocol version 1 keeps a common
-diagnostic shape: code, severity, message, source file, line/column/span, source
-provenance identity and symbol where available, plus a fixed `details` object for richer
-ownership/cycle facts.
+Failures replace `result` with a structured `error`. Protocol version 1 keeps all
+existing fields and additively exposes compiler-owned teaching facts where the
+rejecting analysis has them: `source`, `rule`, `cause.entities`, `related`, and
+`guidance`. Cause entities can identify a semantic kind/name/identity, source
+expression, argument index, and inferred `READ`/`WRITE`/`CONSUME` access. Fields are
+`null` or empty when the compiler has no sound fact; clients must not manufacture a
+repair from missing data. The existing flat source fields and `details`, `fixes`, and
+`legal_alternatives` remain compatible.
 
 ## Structured diagnostics
 
@@ -74,15 +78,46 @@ Successful checks return a diagnostics array, including warnings such as
 `MESSAGE_PAYLOAD_COPY_LARGE` when the selected boundary physically materializes a
 payload. Compile failures return stable category codes such as
 `OWNERSHIP_USE_AFTER_CONSUME`, `RECURSION_CYCLE`, and
-`TYPE_INFERENCE_FAILED`. Human diagnostics remain the
-default for `moss --check source.moss` and `moss check source.moss`.
+`TYPE_INFERENCE_FAILED`. Phase 22.1 also gives established domain and functional
+rules specific IDs such as `DOMAIN_SELF_MESSAGE`,
+`DOMAIN_HANDLER_REQUIRES_MESSAGE`, `DOMAIN_ROUTE_NOT_DECLARED`,
+`FUNCTIONAL_PLACEHOLDER_REQUIRED`,
+`FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED`, and
+`FUNCTIONAL_CAPTURE_MUTATION`. `OWNERSHIP_CONFLICTING_ACCESS` and
+`QUERY_TARGET_NOT_FOUND` retain their existing stable IDs while gaining structured
+causes and guidance. Human diagnostics use the same facts and remain the default for
+`moss --check source.moss` and `moss check source.moss`.
+
+`moss agent bootstrap --json` advertises the compiler-owned vocabulary in
+`diagnostic_contract.guidance_kinds`. Clients should treat these values as stable
+repair categories and use the accompanying summary for the concrete legal action;
+they must not infer unadvertised repairs from message text.
+
+For example, an overlapping call exposes both actual argument roles:
+
+```json
+{
+  "code": "OWNERSHIP_CONFLICTING_ACCESS",
+  "rule": {"id": "ownership.overlapping-access"},
+  "cause": {
+    "kind": "overlapping-actual-arguments",
+    "entities": [
+      {"kind": "argument", "argument_index": 1, "expression": "item", "access": "WRITE"},
+      {"kind": "argument", "argument_index": 2, "expression": "item", "access": "READ"}
+    ]
+  },
+  "guidance": {"kind": "separate-conflicting-access"}
+}
+```
 
 ## Semantic queries
 
-Queries accept a semantic identity, construct name, or exact source line. The source is
-provided explicitly:
+Ask the compiler for semantic facts before reconstructing them from source. Start with
+`resolve` when the entity is not already identified:
 
 ```sh
+moss resolve evaluate --source src/main.moss --json
+moss resolve at:18:9 --kind call --source src/main.moss --json
 moss inspect fn:evaluate --source src/main.moss --json
 moss type line:18 --source src/main.moss --json
 moss effects fn:normalize --source src/main.moss --json
@@ -91,37 +126,86 @@ moss calls fn:evaluate --source src/main.moss --json
 moss why main@24:expression:0 --source src/main.moss --json -O
 ```
 
-An exact location can alternatively be written as one target:
+Queries accept a durable `entity-v1` ID, current-build semantic identity, canonical
+construct name, unambiguous declaration name, or source location. A location can be
+written `line:18`, `at:18:9`, or as one target:
 
 ```sh
 moss inspect src/main.moss:18 --json
+moss inspect src/main.moss:18:9 --kind call --json
 ```
+
+Current compiler provenance is line-oriented. Columns are accepted as location hints,
+and candidate records say `precision: "line"`; the resolver never fabricates an exact
+expression range. `--kind KIND` and `--enclosing TARGET` narrow candidates using checked
+entity kind and enclosing semantic identity. A resolved result has `status: "resolved"`.
+Ambiguous targets fail rather than silently choosing one and return deterministic records
+at `error.details.resolution.candidates`:
+
+```json
+{
+  "status": "ambiguous",
+  "candidates": [
+    {
+      "id": "entity-v1:handler:Left.Read",
+      "kind": "handler",
+      "name": "Left.Read",
+      "source": {"file": "app.moss", "line": 2, "column": 1,
+                 "precision": "line"}
+    }
+  ]
+}
+```
+
+`QUERY_TARGET_NOT_FOUND` remains the compatible error code for both missing and
+formerly ambiguous bare-name failures. Use `details.resolution.status` to distinguish
+`missing` from `ambiguous`; do not parse the message.
 
 `inspect` combines type, ownership, observable effects, static calls, concrete topology, and
 existing compiler explanations. The focused commands return the same authoritative
 subsets. Ownership (`READ`, `WRITE`, `CONSUME`) remains separate from observable effects
 such as local mutation, domain access, synchronous message, I/O, failure, and divergence.
 
-Effect precision follows the selected target. Callable targets expose their transitive
-callable summary, and functional pipeline/node targets expose the precise summaries
-already retained by functional analysis. An ordinary statement or binding has
+`type_facts` distinguishes checked declarations, inferred values, collection types, and
+specializations. `ownership_facts` reports inferred parameter/receiver modes and message
+payload/reply boundaries. Per-use move provenance is explicitly `not_available` because
+the current checker validates but does not retain that history; illegal use-after-consume
+still carries structured evidence in its diagnostic.
+
+Effect precision follows the selected target. `effect_summary.direct` is exact for
+functional pipeline/node targets. Callable targets expose their retained transitive
+summary and report `direct_status: "not_retained"`; the API does not pretend that the
+transitive summary is direct. Unresolved summaries report conservative uncertainty. An
+ordinary statement or binding has
 `observable_effects: null` when Moss has no exact statement-level summary; it never
 inherits unrelated effects from the rest of its function. In that case,
 `enclosing_callable_effects` provides the separately labelled callable context when one
 exists. Phase 6A does not run a new statement-effect analysis to answer a query.
 
-`calls` reports only statically resolved targets retained by recursion validation.
+`calls` reports direct and transitive statically resolved targets retained by checking.
+Direct records include a durable call-site ID, callee ID, source, concrete argument
+types, selected specialization, and boundary. Checked message edges are retained as
+`synchronous_message_by_value` with their receiver binding; ordinary calls remain
+`ordinary_call`.
 The retired `awaits` query and await-only schema fields are removed. Concrete
 routing remains available through `inspect` and its `concrete_domain_graph`.
-`why` reuses existing functional materialization/fusion/semantic
-rewrite notes and backend lowering decisions; it does not reconstruct a separate
-optimization analysis.
+`domain` reports sender/receiver, handler, concrete instance precision, payload/reply
+boundaries, and legality for checked interactions. `synchronization` is a target-specific
+projection of the stored `SynchronizationPlan`: read/write/consume/protected-read/lock
+sets, acquisition classes and ranks, modes, and placement. The complete legacy plan is
+retained for compatibility.
+
+`why` returns a stable reason code and typed evidence records for resolved types,
+ownership, transitive effects, static calls, functional decisions, and synchronization.
+Legacy `explanations` remain additive compatibility data. Neither form constructs a
+free-form AI explanation or a second semantic analysis.
 
 Target JSON also includes `source_identity` (the semantic identity used for the current
 build) and `specialization_identity` when the selected target is an actual specialization
 record. Direct call records include `resolved: true`, `target_kind`, physical source
 location, argument types, and a specialization identity only when the compiler has an
-exact matching specialization. `inspect` and `calls` additionally expose `callers`
+exact matching specialization. `inspect` and `calls` additionally expose `callers` and
+`transitive_calls`
 from the same retained static call graph. No field is inferred from generated symbol
 spelling.
 
@@ -131,8 +215,10 @@ classes, handler footprints, conflict witnesses, and metrics come from the store
 `SynchronizationPlan`. These are analysis facts, not a claim that production
 class locks or handler-level 2PL have been emitted.
 
-Selectors must resolve exactly. A missing target returns `QUERY_TARGET_NOT_FOUND`; Moss
-does not guess a nearby semantic entity or invent a dynamic target.
+Every target exposes `id`, `kind`, `name`, source, optional `enclosing_entity`, aliases,
+and existing hashes/provenance. Fields are omitted or explicitly `not_available` when
+the compiler does not retain a sound answer. Targeting is symbol-table and source-map
+resolution, not fuzzy search; unrelated missing names receive no guessed candidate.
 
 ## Project, test, and benchmark results
 

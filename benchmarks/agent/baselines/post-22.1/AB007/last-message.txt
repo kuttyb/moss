@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). `Source.Read` replies `21`; `Doubler.Run` messages Source and replies with twice the result. Moss check passes, and running the program prints `42`.

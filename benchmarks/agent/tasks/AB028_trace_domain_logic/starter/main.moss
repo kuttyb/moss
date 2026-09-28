@@ -1,0 +1,10 @@
+domain Counter:
+  value = 40
+
+  fn Add(amount: Int) -> Int:
+    value = value - amount
+    reply value
+
+fn main():
+  counter = Counter()
+  echo message counter.Add(2)

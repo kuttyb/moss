@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223014","name":"handler-footprint","category":"domain-synchronization",
+  "prompt":"Determine Touch's exact compiler-owned domain-state READ, WRITE, and CONSUME footprint. The program is already correct; do not change main.moss. Record handler_identity, read_set, write_set, and consume_set in semantic-answer.json; sets must be JSON arrays in compiler order.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"4\n"}}],
+  "semantic_heavy":true,"relevant_capability":"target-specific handler footprint projection","requested_facts":["handler_identity","read_set","write_set","consume_set"]
+}

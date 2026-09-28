@@ -1001,7 +1001,7 @@ The formal claims rely on the following conditions:
 | 15.15 | Complete: SWARM-043/044 and EXPRESS-003/004/005 fixed; EXPRESS-002/006/008 rejected; SWARM-040 and EXPRESS-007/009 deferred to Phase 21 |
 | Phase 20 | Rust interoperability; proposal has open design questions to settle |
 | Phase 21 | Error propagation and supervision; clean-slate design after current contracts settle |
-| Phase 22 | Agent agency tooling; work in progress on separate branches |
+| Phase 22 | Agent agency tooling; Phase 22.1 teaching diagnostics, Phase 22.2 benchmark/baseline, and Phase 22.3 semantic-query expansion complete |
 | Phase 23 | Static Compiler Optimizations; LLM proposals are one possible technique |
 | Phase 24 | TileIR Integration (Dynamic Optimizations); future design, not part of v0.1 |
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "P223004",
+  "name": "specialization-target",
+  "category": "resolution",
+  "prompt": "identity is statically specialized for two concrete argument types. Identify the specialization selected by the numeric call in main, not the string call. The program is already correct; do not change main.moss. Record call_entity_id, specialization_identity, and argument_type in semantic-answer.json.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": ["main.moss"],
+  "allowed_paths": ["semantic-answer.json"],
+  "validation": [{"command": ["$MOSS", "check", "main.moss", "--json"]}, {"command": ["$MOSS", "run", "--interp", "main.moss"], "expect": {"stdout": "7\nmoss\n"}}],
+  "semantic_heavy": true,
+  "relevant_capability": "exact call-site specialization facts",
+  "requested_facts": ["call_entity_id", "specialization_identity", "argument_type"]
+}

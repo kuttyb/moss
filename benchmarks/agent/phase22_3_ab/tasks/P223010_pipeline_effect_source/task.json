@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223010","name":"pipeline-effect-source","category":"effects-calls",
+  "prompt":"The map pipeline has one callback that contributes observable external I/O. Identify the exact callback entity and the pipeline stage's external-I/O fact. The program is already correct; do not change main.moss. Record callback_entity_id, stage_entity_id, and external_io in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"1\n2\n5\n"}}],
+  "semantic_heavy":true,"relevant_capability":"pipeline-node local observable-effect facts","requested_facts":["callback_entity_id","stage_entity_id","external_io"]
+}

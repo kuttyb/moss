@@ -1,0 +1,6 @@
+fn combine(left: Int, right: Int) -> Int:
+  return left + right
+
+fn main():
+  total = combine(2, 3)
+  echo total

@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223005","name":"inferred-vector-type","category":"type-ownership",
+  "prompt":"The local values has no written type. Determine its exact compiler-resolved type, then make the type-sensitive change needed for the program to print 3 instead of 1. Record entity_id and resolved_type in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"3\n"}}],
+  "semantic_heavy":true,"relevant_capability":"inferred concrete collection type facts","requested_facts":["entity_id","resolved_type"]
+}

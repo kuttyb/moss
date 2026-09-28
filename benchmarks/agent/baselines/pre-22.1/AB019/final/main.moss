@@ -1,0 +1,7 @@
+fn double(value: Int) -> Int:
+  return value * 2
+
+fn main():
+  values = [21]
+  result = values |> map(double)
+  echo result[0]

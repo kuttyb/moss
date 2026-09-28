@@ -1,0 +1,3 @@
+Changed [task/main.moss](/home/owner/daji/code/moss2/task/main.moss:2) so `classify` returns `"positive"` only when the value is greater than zero; zero and negative values take the `"non-positive"` branch. The existing function and call remain intact.
+
+`moss check` passes, and the existing call prints `positive`.

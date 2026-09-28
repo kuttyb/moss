@@ -1,0 +1,12 @@
+domain Store:
+  a = 1
+  b = 2
+
+  fn Touch() -> Int:
+    current = a
+    b = b + 1
+    reply current + b
+
+fn main():
+  store = Store()
+  echo message store.Touch()

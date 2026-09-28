@@ -1,0 +1,1464 @@
+{
+  "adoption": {
+    "legacy": {
+      "query_type_distribution": {
+        "calls": 39,
+        "effects": 59,
+        "inspect": 98,
+        "ownership": 17,
+        "resolve": 8,
+        "type": 16,
+        "why": 22
+      },
+      "resolve_adoption": 0.25,
+      "semantic_query_adoption": 0.875
+    },
+    "phase22_3": {
+      "query_type_distribution": {
+        "calls": 31,
+        "effects": 41,
+        "inspect": 52,
+        "ownership": 15,
+        "resolve": 87,
+        "type": 11,
+        "why": 12
+      },
+      "resolve_adoption": 0.6875,
+      "semantic_query_adoption": 0.875
+    }
+  },
+  "categories": {
+    "control": {
+      "final_task_pass_rate": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223017": 0.0,
+          "P223018": 0.0,
+          "P223019": 0.0,
+          "P223020": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      },
+      "semantic_detour_cost": {
+        "absolute_delta": null,
+        "legacy_mean": null,
+        "legacy_median": null,
+        "paired_delta_bootstrap_95ci": null,
+        "paired_observations": 0,
+        "per_task_paired_delta": {},
+        "percentage_delta": null,
+        "phase22_3_mean": null,
+        "phase22_3_median": null
+      },
+      "semantic_fact_accuracy": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223017": 0.0,
+          "P223018": 0.0,
+          "P223019": 0.0,
+          "P223020": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      }
+    },
+    "domain-synchronization": {
+      "final_task_pass_rate": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223013": 0.0,
+          "P223014": 0.0,
+          "P223015": 0.0,
+          "P223016": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      },
+      "semantic_detour_cost": {
+        "absolute_delta": 0.2,
+        "legacy_mean": 1.7,
+        "legacy_median": 2.0,
+        "paired_delta_bootstrap_95ci": [
+          -0.25,
+          0.6
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223013": 0.4,
+          "P223014": 0.8,
+          "P223015": 0.0,
+          "P223016": -0.4
+        },
+        "percentage_delta": 11.764706,
+        "phase22_3_mean": 1.9,
+        "phase22_3_median": 2.0
+      },
+      "semantic_fact_accuracy": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223013": 0.0,
+          "P223014": 0.0,
+          "P223015": 0.0,
+          "P223016": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      }
+    },
+    "effects-calls": {
+      "final_task_pass_rate": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223009": 0.0,
+          "P223010": 0.0,
+          "P223011": 0.0,
+          "P223012": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      },
+      "semantic_detour_cost": {
+        "absolute_delta": -1.4,
+        "legacy_mean": 3.85,
+        "legacy_median": 3.5,
+        "paired_delta_bootstrap_95ci": [
+          -2.2,
+          -0.6
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223009": -3.2,
+          "P223010": -1.2,
+          "P223011": 0.0,
+          "P223012": -1.2
+        },
+        "percentage_delta": -36.363636,
+        "phase22_3_mean": 2.45,
+        "phase22_3_median": 2.0
+      },
+      "semantic_fact_accuracy": {
+        "absolute_delta": 0.092308,
+        "legacy_mean": 0.846154,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.03125,
+          0.15625
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223009": 0.266667,
+          "P223010": 0.0,
+          "P223011": 0.0,
+          "P223012": 0.1
+        },
+        "percentage_delta": 10.909091,
+        "phase22_3_mean": 0.938462,
+        "phase22_3_median": 1.0
+      }
+    },
+    "resolution": {
+      "final_task_pass_rate": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223001": 0.0,
+          "P223002": 0.0,
+          "P223003": 0.0,
+          "P223004": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      },
+      "semantic_detour_cost": {
+        "absolute_delta": 0.55,
+        "legacy_mean": 3.0,
+        "legacy_median": 3.0,
+        "paired_delta_bootstrap_95ci": [
+          0.05,
+          1.1
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223001": 0.6,
+          "P223002": -0.2,
+          "P223003": 0.2,
+          "P223004": 1.6
+        },
+        "percentage_delta": 18.333333,
+        "phase22_3_mean": 3.55,
+        "phase22_3_median": 3.5
+      },
+      "semantic_fact_accuracy": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223001": 0.0,
+          "P223002": 0.0,
+          "P223003": 0.0,
+          "P223004": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      }
+    },
+    "type-ownership": {
+      "final_task_pass_rate": {
+        "absolute_delta": 0.0,
+        "legacy_mean": 1.0,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.0
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223005": 0.0,
+          "P223006": 0.0,
+          "P223007": 0.0,
+          "P223008": 0.0
+        },
+        "percentage_delta": 0.0,
+        "phase22_3_mean": 1.0,
+        "phase22_3_median": 1.0
+      },
+      "semantic_detour_cost": {
+        "absolute_delta": 0.05,
+        "legacy_mean": 3.95,
+        "legacy_median": 4.0,
+        "paired_delta_bootstrap_95ci": [
+          -0.25,
+          0.35
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223005": 0.4,
+          "P223006": -0.2,
+          "P223007": 0.0,
+          "P223008": 0.0
+        },
+        "percentage_delta": 1.265823,
+        "phase22_3_mean": 4.0,
+        "phase22_3_median": 4.0
+      },
+      "semantic_fact_accuracy": {
+        "absolute_delta": 0.054545,
+        "legacy_mean": 0.836364,
+        "legacy_median": 1.0,
+        "paired_delta_bootstrap_95ci": [
+          0.0,
+          0.113208
+        ],
+        "paired_observations": 20,
+        "per_task_paired_delta": {
+          "P223005": 0.0,
+          "P223006": 0.0,
+          "P223007": 0.0,
+          "P223008": 0.2
+        },
+        "percentage_delta": 6.521739,
+        "phase22_3_mean": 0.890909,
+        "phase22_3_median": 1.0
+      }
+    }
+  },
+  "failure_analysis": {
+    "both_fail": [],
+    "both_pass_treatment_more_efficient": [
+      "P223002",
+      "P223006",
+      "P223009",
+      "P223010",
+      "P223012",
+      "P223016"
+    ],
+    "legacy_wins": [],
+    "treatment_regressions": [],
+    "treatment_wins": [
+      "P223008",
+      "P223009",
+      "P223012"
+    ]
+  },
+  "metrics": {
+    "agent_tool_calls": {
+      "absolute_delta": -0.29,
+      "legacy_mean": 14.94,
+      "legacy_median": 14.0,
+      "paired_delta_bootstrap_95ci": [
+        -1.25,
+        0.64
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 1.2,
+        "P223002": 0.6,
+        "P223003": 1.0,
+        "P223004": 0.8,
+        "P223005": 2.0,
+        "P223006": 0.4,
+        "P223007": -1.4,
+        "P223008": -1.6,
+        "P223009": -14.0,
+        "P223010": -4.2,
+        "P223011": 0.6,
+        "P223012": 2.6,
+        "P223013": 2.4,
+        "P223014": 2.0,
+        "P223015": 1.2,
+        "P223016": 0.4,
+        "P223017": -1.6,
+        "P223018": 0.6,
+        "P223019": 3.0,
+        "P223020": -1.8
+      },
+      "percentage_delta": -1.941098,
+      "phase22_3_mean": 14.65,
+      "phase22_3_median": 15.0
+    },
+    "control_task_pass_rate": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 1.0,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 20,
+      "per_task_paired_delta": {
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": 0.0,
+      "phase22_3_mean": 1.0,
+      "phase22_3_median": 1.0
+    },
+    "final_task_pass_rate": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 1.0,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": 0.0,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.0,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": 0.0,
+      "phase22_3_mean": 1.0,
+      "phase22_3_median": 1.0
+    },
+    "first_validation_success": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 0.85,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": 0.0,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.0,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": 0.0,
+      "phase22_3_mean": 0.85,
+      "phase22_3_median": 1.0
+    },
+    "generated_rust_inspection_commands": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 0.0,
+      "legacy_median": 0.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": 0.0,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.0,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": null,
+      "phase22_3_mean": 0.0,
+      "phase22_3_median": 0.0
+    },
+    "input_tokens": {
+      "absolute_delta": -21877.83,
+      "legacy_mean": 258363.52,
+      "legacy_median": 236951.5,
+      "paired_delta_bootstrap_95ci": [
+        -41859.28,
+        -4998.23
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": -14358.4,
+        "P223002": -5884.8,
+        "P223003": -19152.0,
+        "P223004": 9616.4,
+        "P223005": 23153.0,
+        "P223006": 4532.0,
+        "P223007": -1946.0,
+        "P223008": -55378.0,
+        "P223009": -354760.4,
+        "P223010": -83628.6,
+        "P223011": 28929.0,
+        "P223012": 30367.0,
+        "P223013": 13663.2,
+        "P223014": 31691.4,
+        "P223015": 12009.0,
+        "P223016": 9748.8,
+        "P223017": -34759.2,
+        "P223018": 2697.8,
+        "P223019": -16557.0,
+        "P223020": -17539.8
+      },
+      "percentage_delta": -8.467848,
+      "phase22_3_mean": 236485.69,
+      "phase22_3_median": 243244.5
+    },
+    "moss_margo_invocations": {
+      "absolute_delta": -0.24,
+      "legacy_mean": 6.01,
+      "legacy_median": 5.0,
+      "paired_delta_bootstrap_95ci": [
+        -0.68,
+        0.18
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.4,
+        "P223002": -1.6,
+        "P223003": -0.4,
+        "P223004": 1.4,
+        "P223005": 0.6,
+        "P223006": 0.0,
+        "P223007": 0.2,
+        "P223008": -0.8,
+        "P223009": -5.2,
+        "P223010": -2.2,
+        "P223011": 0.4,
+        "P223012": 1.2,
+        "P223013": 0.2,
+        "P223014": 0.6,
+        "P223015": 1.0,
+        "P223016": -0.2,
+        "P223017": -0.2,
+        "P223018": 0.0,
+        "P223019": 0.2,
+        "P223020": -0.4
+      },
+      "percentage_delta": -3.993344,
+      "phase22_3_mean": 5.77,
+      "phase22_3_median": 6.0
+    },
+    "moss_source_inspection_commands": {
+      "absolute_delta": 0.06,
+      "legacy_mean": 1.23,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        -0.09,
+        0.21
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": -0.4,
+        "P223002": -0.8,
+        "P223003": 0.2,
+        "P223004": 0.0,
+        "P223005": 0.4,
+        "P223006": 0.2,
+        "P223007": 0.0,
+        "P223008": -0.2,
+        "P223009": 0.0,
+        "P223010": -0.2,
+        "P223011": -0.2,
+        "P223012": 0.0,
+        "P223013": 0.4,
+        "P223014": 0.6,
+        "P223015": 0.0,
+        "P223016": 0.2,
+        "P223017": 0.0,
+        "P223018": 0.8,
+        "P223019": 0.4,
+        "P223020": -0.2
+      },
+      "percentage_delta": 4.878049,
+      "phase22_3_mean": 1.29,
+      "phase22_3_median": 1.0
+    },
+    "queries_per_correct_fact": {
+      "absolute_delta": -0.12,
+      "legacy_mean": 0.969167,
+      "legacy_median": 0.75,
+      "paired_delta_bootstrap_95ci": [
+        -0.273333,
+        0.02
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.2,
+        "P223002": -0.466666,
+        "P223003": 0.0,
+        "P223004": 0.466667,
+        "P223005": 0.0,
+        "P223006": -0.066667,
+        "P223007": 0.0,
+        "P223008": -0.6,
+        "P223009": -2.3,
+        "P223010": -0.6,
+        "P223011": 0.333333,
+        "P223012": 0.216667,
+        "P223013": 0.0,
+        "P223014": 0.15,
+        "P223015": 0.4,
+        "P223016": -0.133333,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": -12.381771,
+      "phase22_3_mean": 0.849167,
+      "phase22_3_median": 1.0
+    },
+    "semantic_detour_cost": {
+      "absolute_delta": -0.15,
+      "legacy_mean": 3.125,
+      "legacy_median": 3.0,
+      "paired_delta_bootstrap_95ci": [
+        -0.475,
+        0.1625
+      ],
+      "paired_observations": 80,
+      "per_task_paired_delta": {
+        "P223001": 0.6,
+        "P223002": -0.2,
+        "P223003": 0.2,
+        "P223004": 1.6,
+        "P223005": 0.4,
+        "P223006": -0.2,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": -3.2,
+        "P223010": -1.2,
+        "P223011": 0.0,
+        "P223012": -1.2,
+        "P223013": 0.4,
+        "P223014": 0.8,
+        "P223015": 0.0,
+        "P223016": -0.4
+      },
+      "percentage_delta": -4.8,
+      "phase22_3_mean": 2.975,
+      "phase22_3_median": 3.0
+    },
+    "semantic_fact_accuracy": {
+      "absolute_delta": 0.034615,
+      "legacy_mean": 0.926923,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.015504,
+        0.05668
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.2,
+        "P223009": 0.266667,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.1,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": 3.73444,
+      "phase22_3_mean": 0.961538,
+      "phase22_3_median": 1.0
+    },
+    "semantic_heavy_pass_rate": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 1.0,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 80,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": 0.0,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.0,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0
+      },
+      "percentage_delta": 0.0,
+      "phase22_3_mean": 1.0,
+      "phase22_3_median": 1.0
+    },
+    "semantic_query_invocations": {
+      "absolute_delta": -0.1,
+      "legacy_mean": 2.59,
+      "legacy_median": 2.0,
+      "paired_delta_bootstrap_95ci": [
+        -0.45,
+        0.23
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.6,
+        "P223002": -1.4,
+        "P223003": 0.0,
+        "P223004": 1.4,
+        "P223005": 0.0,
+        "P223006": -0.2,
+        "P223007": 0.0,
+        "P223008": -0.2,
+        "P223009": -4.0,
+        "P223010": -1.8,
+        "P223011": 1.0,
+        "P223012": 1.2,
+        "P223013": 0.0,
+        "P223014": 0.6,
+        "P223015": 1.2,
+        "P223016": -0.4,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": -3.861004,
+      "phase22_3_mean": 2.49,
+      "phase22_3_median": 3.0
+    },
+    "validation_attempts_to_green": {
+      "absolute_delta": 0.0,
+      "legacy_mean": 1.15,
+      "legacy_median": 1.0,
+      "paired_delta_bootstrap_95ci": [
+        0.0,
+        0.0
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 0.0,
+        "P223002": 0.0,
+        "P223003": 0.0,
+        "P223004": 0.0,
+        "P223005": 0.0,
+        "P223006": 0.0,
+        "P223007": 0.0,
+        "P223008": 0.0,
+        "P223009": 0.0,
+        "P223010": 0.0,
+        "P223011": 0.0,
+        "P223012": 0.0,
+        "P223013": 0.0,
+        "P223014": 0.0,
+        "P223015": 0.0,
+        "P223016": 0.0,
+        "P223017": 0.0,
+        "P223018": 0.0,
+        "P223019": 0.0,
+        "P223020": 0.0
+      },
+      "percentage_delta": 0.0,
+      "phase22_3_mean": 1.15,
+      "phase22_3_median": 1.0
+    },
+    "wall_time_ms": {
+      "absolute_delta": -1122.0,
+      "legacy_mean": 44524.38,
+      "legacy_median": 41419.5,
+      "paired_delta_bootstrap_95ci": [
+        -3901.68,
+        1448.47
+      ],
+      "paired_observations": 100,
+      "per_task_paired_delta": {
+        "P223001": 5098.2,
+        "P223002": -6985.2,
+        "P223003": -1705.4,
+        "P223004": 3409.6,
+        "P223005": 7755.4,
+        "P223006": 1383.0,
+        "P223007": 4926.2,
+        "P223008": -2055.0,
+        "P223009": -43671.8,
+        "P223010": -3512.4,
+        "P223011": 1803.6,
+        "P223012": 10506.0,
+        "P223013": 3323.0,
+        "P223014": 4248.0,
+        "P223015": 1611.0,
+        "P223016": -866.2,
+        "P223017": -4727.2,
+        "P223018": -744.8,
+        "P223019": -3348.6,
+        "P223020": 1112.6
+      },
+      "percentage_delta": -2.519968,
+      "phase22_3_mean": 43402.38,
+      "phase22_3_median": 41551.5
+    }
+  },
+  "profile_summaries": {
+    "legacy": {
+      "control_pass_rate": 1.0,
+      "final_task_pass_rate": 1.0,
+      "first_validation_success_rate": 0.85,
+      "infrastructure_failures": 0,
+      "metrics": {
+        "agent_tool_calls": {
+          "count": 100,
+          "mean": 14.94,
+          "median": 14.0,
+          "standard_deviation": 4.972287,
+          "total": 1494.0
+        },
+        "ambiguous_queries": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "approx_source_bytes_read": {
+          "count": 100,
+          "mean": 179.29,
+          "median": 163.0,
+          "standard_deviation": 99.772195,
+          "total": 17929.0
+        },
+        "cached_input_tokens": {
+          "count": 100,
+          "mean": 231022.08,
+          "median": 208192.0,
+          "standard_deviation": 92579.579153,
+          "total": 23102208.0
+        },
+        "calls_invocations": {
+          "count": 100,
+          "mean": 0.39,
+          "median": 0.0,
+          "standard_deviation": 0.601261,
+          "total": 39.0
+        },
+        "cost_invocations": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "diagnostic_occurrences": {
+          "count": 100,
+          "mean": 0.68,
+          "median": 0.0,
+          "standard_deviation": 1.179625,
+          "total": 68.0
+        },
+        "documentation_inspection_commands": {
+          "count": 100,
+          "mean": 5.2,
+          "median": 5.0,
+          "standard_deviation": 2.940487,
+          "total": 520.0
+        },
+        "effects_invocations": {
+          "count": 100,
+          "mean": 0.59,
+          "median": 0.0,
+          "standard_deviation": 1.189983,
+          "total": 59.0
+        },
+        "failed_semantic_queries": {
+          "count": 100,
+          "mean": 0.52,
+          "median": 0.0,
+          "standard_deviation": 1.105359,
+          "total": 52.0
+        },
+        "generated_rust_inspection_commands": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "input_tokens": {
+          "count": 100,
+          "mean": 258363.52,
+          "median": 236951.5,
+          "standard_deviation": 97805.297777,
+          "total": 25836352.0
+        },
+        "inspect_invocations": {
+          "count": 100,
+          "mean": 0.98,
+          "median": 1.0,
+          "standard_deviation": 1.014839,
+          "total": 98.0
+        },
+        "missing_queries": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "moss_margo_invocations": {
+          "count": 100,
+          "mean": 6.01,
+          "median": 5.0,
+          "standard_deviation": 2.890231,
+          "total": 601.0
+        },
+        "moss_source_inspection_commands": {
+          "count": 100,
+          "mean": 1.23,
+          "median": 1.0,
+          "standard_deviation": 0.509605,
+          "total": 123.0
+        },
+        "mossi_inspection_commands": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "output_tokens": {
+          "count": 100,
+          "mean": 1461.08,
+          "median": 1363.0,
+          "standard_deviation": 433.693642,
+          "total": 146108.0
+        },
+        "ownership_invocations": {
+          "count": 100,
+          "mean": 0.17,
+          "median": 0.0,
+          "standard_deviation": 0.58698,
+          "total": 17.0
+        },
+        "queries_per_correct_fact": {
+          "count": 100,
+          "mean": 0.969167,
+          "median": 0.75,
+          "standard_deviation": 1.033573,
+          "total": 96.916665
+        },
+        "reasoning_tokens": {
+          "count": 100,
+          "mean": 297.66,
+          "median": 226.5,
+          "standard_deviation": 216.861974,
+          "total": 29766.0
+        },
+        "repeated_diagnostic_loops": {
+          "count": 100,
+          "mean": 0.27,
+          "median": 0.0,
+          "standard_deviation": 0.664466,
+          "total": 27.0
+        },
+        "resolve_invocations": {
+          "count": 100,
+          "mean": 0.08,
+          "median": 0.0,
+          "standard_deviation": 0.338744,
+          "total": 8.0
+        },
+        "resolved_queries": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "semantic_detour_cost": {
+          "count": 80,
+          "mean": 3.125,
+          "median": 3.0,
+          "standard_deviation": 1.671617,
+          "total": 250.0
+        },
+        "semantic_query_invocations": {
+          "count": 100,
+          "mean": 2.59,
+          "median": 2.0,
+          "standard_deviation": 2.644205,
+          "total": 259.0
+        },
+        "successful_semantic_queries": {
+          "count": 100,
+          "mean": 2.07,
+          "median": 2.0,
+          "standard_deviation": 1.876247,
+          "total": 207.0
+        },
+        "type_invocations": {
+          "count": 100,
+          "mean": 0.16,
+          "median": 0.0,
+          "standard_deviation": 0.506922,
+          "total": 16.0
+        },
+        "unique_moss_source_files_read": {
+          "count": 100,
+          "mean": 1.1,
+          "median": 1.0,
+          "standard_deviation": 0.301511,
+          "total": 110.0
+        },
+        "validation_attempts_to_green": {
+          "count": 100,
+          "mean": 1.15,
+          "median": 1.0,
+          "standard_deviation": 0.35887,
+          "total": 115.0
+        },
+        "validation_attempts_total": {
+          "count": 100,
+          "mean": 2.1,
+          "median": 2.0,
+          "standard_deviation": 0.731679,
+          "total": 210.0
+        },
+        "wall_time_ms": {
+          "count": 100,
+          "mean": 44524.38,
+          "median": 41419.5,
+          "standard_deviation": 12664.470851,
+          "total": 4452438.0
+        },
+        "why_invocations": {
+          "count": 100,
+          "mean": 0.22,
+          "median": 0.0,
+          "standard_deviation": 0.523778,
+          "total": 22.0
+        }
+      },
+      "query_type_distribution": {
+        "calls": 39,
+        "effects": 59,
+        "inspect": 98,
+        "ownership": 17,
+        "resolve": 8,
+        "type": 16,
+        "why": 22
+      },
+      "resolve_adoption": 0.25,
+      "resolve_adoption_trials": 0.075,
+      "semantic_fact_accuracy": 0.926923,
+      "semantic_facts_correct": 241,
+      "semantic_facts_requested": 260,
+      "semantic_heavy_pass_rate": 1.0,
+      "semantic_query_adoption": 0.875,
+      "semantic_query_adoption_trials": 0.8625,
+      "timeouts": 0,
+      "trials": 100,
+      "valid_agent_outcomes": 100
+    },
+    "phase22_3": {
+      "control_pass_rate": 1.0,
+      "final_task_pass_rate": 1.0,
+      "first_validation_success_rate": 0.85,
+      "infrastructure_failures": 0,
+      "metrics": {
+        "agent_tool_calls": {
+          "count": 100,
+          "mean": 14.65,
+          "median": 15.0,
+          "standard_deviation": 3.062893,
+          "total": 1465.0
+        },
+        "ambiguous_queries": {
+          "count": 100,
+          "mean": 0.39,
+          "median": 0.0,
+          "standard_deviation": 0.694786,
+          "total": 39.0
+        },
+        "approx_source_bytes_read": {
+          "count": 100,
+          "mean": 180.86,
+          "median": 160.0,
+          "standard_deviation": 105.254288,
+          "total": 18086.0
+        },
+        "cached_input_tokens": {
+          "count": 100,
+          "mean": 213990.4,
+          "median": 217536.0,
+          "standard_deviation": 44380.027467,
+          "total": 21399040.0
+        },
+        "calls_invocations": {
+          "count": 100,
+          "mean": 0.31,
+          "median": 0.0,
+          "standard_deviation": 0.56309,
+          "total": 31.0
+        },
+        "cost_invocations": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "diagnostic_occurrences": {
+          "count": 100,
+          "mean": 0.64,
+          "median": 0.0,
+          "standard_deviation": 0.822904,
+          "total": 64.0
+        },
+        "documentation_inspection_commands": {
+          "count": 100,
+          "mean": 4.99,
+          "median": 5.0,
+          "standard_deviation": 2.195013,
+          "total": 499.0
+        },
+        "effects_invocations": {
+          "count": 100,
+          "mean": 0.41,
+          "median": 0.0,
+          "standard_deviation": 0.739847,
+          "total": 41.0
+        },
+        "failed_semantic_queries": {
+          "count": 100,
+          "mean": 0.5,
+          "median": 0.0,
+          "standard_deviation": 0.858705,
+          "total": 50.0
+        },
+        "generated_rust_inspection_commands": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "input_tokens": {
+          "count": 100,
+          "mean": 236485.69,
+          "median": 243244.5,
+          "standard_deviation": 47177.670526,
+          "total": 23648569.0
+        },
+        "inspect_invocations": {
+          "count": 100,
+          "mean": 0.52,
+          "median": 0.0,
+          "standard_deviation": 0.703239,
+          "total": 52.0
+        },
+        "missing_queries": {
+          "count": 100,
+          "mean": 0.09,
+          "median": 0.0,
+          "standard_deviation": 0.287623,
+          "total": 9.0
+        },
+        "moss_margo_invocations": {
+          "count": 100,
+          "mean": 5.77,
+          "median": 6.0,
+          "standard_deviation": 2.233152,
+          "total": 577.0
+        },
+        "moss_source_inspection_commands": {
+          "count": 100,
+          "mean": 1.29,
+          "median": 1.0,
+          "standard_deviation": 0.555869,
+          "total": 129.0
+        },
+        "mossi_inspection_commands": {
+          "count": 100,
+          "mean": 0.0,
+          "median": 0.0,
+          "standard_deviation": 0.0,
+          "total": 0.0
+        },
+        "output_tokens": {
+          "count": 100,
+          "mean": 1451.74,
+          "median": 1422.5,
+          "standard_deviation": 277.411761,
+          "total": 145174.0
+        },
+        "ownership_invocations": {
+          "count": 100,
+          "mean": 0.15,
+          "median": 0.0,
+          "standard_deviation": 0.457817,
+          "total": 15.0
+        },
+        "queries_per_correct_fact": {
+          "count": 100,
+          "mean": 0.849167,
+          "median": 1.0,
+          "standard_deviation": 0.75114,
+          "total": 84.916665
+        },
+        "reasoning_tokens": {
+          "count": 100,
+          "mean": 264.48,
+          "median": 232.5,
+          "standard_deviation": 109.434956,
+          "total": 26448.0
+        },
+        "repeated_diagnostic_loops": {
+          "count": 100,
+          "mean": 0.16,
+          "median": 0.0,
+          "standard_deviation": 0.465366,
+          "total": 16.0
+        },
+        "resolve_invocations": {
+          "count": 100,
+          "mean": 0.87,
+          "median": 0.0,
+          "standard_deviation": 1.228081,
+          "total": 87.0
+        },
+        "resolved_queries": {
+          "count": 100,
+          "mean": 1.99,
+          "median": 2.0,
+          "standard_deviation": 1.714437,
+          "total": 199.0
+        },
+        "semantic_detour_cost": {
+          "count": 80,
+          "mean": 2.975,
+          "median": 3.0,
+          "standard_deviation": 1.41399,
+          "total": 238.0
+        },
+        "semantic_query_invocations": {
+          "count": 100,
+          "mean": 2.49,
+          "median": 3.0,
+          "standard_deviation": 2.231523,
+          "total": 249.0
+        },
+        "successful_semantic_queries": {
+          "count": 100,
+          "mean": 1.99,
+          "median": 2.0,
+          "standard_deviation": 1.714437,
+          "total": 199.0
+        },
+        "type_invocations": {
+          "count": 100,
+          "mean": 0.11,
+          "median": 0.0,
+          "standard_deviation": 0.37322,
+          "total": 11.0
+        },
+        "unique_moss_source_files_read": {
+          "count": 100,
+          "mean": 1.12,
+          "median": 1.0,
+          "standard_deviation": 0.326599,
+          "total": 112.0
+        },
+        "validation_attempts_to_green": {
+          "count": 100,
+          "mean": 1.15,
+          "median": 1.0,
+          "standard_deviation": 0.35887,
+          "total": 115.0
+        },
+        "validation_attempts_total": {
+          "count": 100,
+          "mean": 2.15,
+          "median": 2.0,
+          "standard_deviation": 0.821123,
+          "total": 215.0
+        },
+        "wall_time_ms": {
+          "count": 100,
+          "mean": 43402.38,
+          "median": 41551.5,
+          "standard_deviation": 9106.903432,
+          "total": 4340238.0
+        },
+        "why_invocations": {
+          "count": 100,
+          "mean": 0.12,
+          "median": 0.0,
+          "standard_deviation": 0.326599,
+          "total": 12.0
+        }
+      },
+      "query_type_distribution": {
+        "calls": 31,
+        "effects": 41,
+        "inspect": 52,
+        "ownership": 15,
+        "resolve": 87,
+        "type": 11,
+        "why": 12
+      },
+      "resolve_adoption": 0.6875,
+      "resolve_adoption_trials": 0.6,
+      "semantic_fact_accuracy": 0.961538,
+      "semantic_facts_correct": 250,
+      "semantic_facts_requested": 260,
+      "semantic_heavy_pass_rate": 1.0,
+      "semantic_query_adoption": 0.875,
+      "semantic_query_adoption_trials": 0.8625,
+      "timeouts": 0,
+      "trials": 100,
+      "valid_agent_outcomes": 100
+    }
+  },
+  "protocol": {
+    "agent": {
+      "configuration": "ephemeral; no resume; ignore user config/rules; workspace-write; no approvals",
+      "disabled_features": [
+        "apps",
+        "plugins",
+        "browser",
+        "networked shell",
+        "memories",
+        "multi_agent"
+      ],
+      "implementation": "OpenAI Codex CLI",
+      "model": "gpt-6-sol",
+      "reasoning_effort": "medium",
+      "runtime_version": "codex-cli 0.158.0"
+    },
+    "benchmark_commit": "6c8cd5b7ce249fb59d95231cfa52e4caf0470104",
+    "compiler_binary_sha256": "8a1799f7f758820d66e8a933c46f2d4dfc249e21c7d8145a94a8ab18a5a79146",
+    "compiler_commit": "6c8cd5b7ce249fb59d95231cfa52e4caf0470104",
+    "environment": {
+      "host": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+      "network_policy": "Codex shell workspace sandbox network_access=false",
+      "python": "3.12.3",
+      "rustc_path": "/home/owner/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+      "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8",
+      "sandbox": "workspace-write in a fresh mount namespace with Git metadata replaced by empty tmpfs"
+    },
+    "integrity": {
+      "expected_trees_visible": false,
+      "fresh_context_per_trial": true,
+      "git_history_visible": false,
+      "prompt_identical_between_profiles": true,
+      "same_compiler_binary_both_profiles": true,
+      "validator_identical_between_profiles": true
+    },
+    "language_version": "moss-0.1",
+    "limits": {
+      "retry_failed_trial": false,
+      "wall_time_seconds": 900
+    },
+    "profile_definitions": {
+      "legacy": {
+        "docs_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+        "query_profile": "legacy",
+        "query_projection": "post-22.1",
+        "resolve": false
+      },
+      "phase22_3": {
+        "docs_commit": "6c8cd5b7ce249fb59d95231cfa52e4caf0470104",
+        "query_profile": "phase22_3",
+        "query_projection": "full-current",
+        "resolve": true
+      }
+    },
+    "profile_docs_sha256": {
+      "legacy": {
+        ".agents/skills/moss-agent-workflow/SKILL.md": "1dd00e7372da850a13b06ddff686a36f26ed6ae767c4fb5c661dc2644a7a5379",
+        ".agents/skills/moss-language/SKILL.md": "6fe19ff1cc287e359b241d1f8eb914fb702eb9b78e324380c7983eb3429fd8d9",
+        ".codex/CURRENT_STATUS.md": "faf5d5fd8163945870a89f4a5028c6d629aa91fcfa620b08ca28fbfdadc6ae29",
+        "AGENTS.md": "4262a3e6a91b2acd8fba55cd416b05ac481a1ad31e3a23cfceab98644887370f",
+        "docs/AGENT_API.md": "35fff03177ca0b20101ce56529c2f167a6348c6f141ff4824d13454323e7df7f"
+      },
+      "phase22_3": {
+        ".agents/skills/moss-agent-workflow/SKILL.md": "65d7338079856a6bda5eff64d4ce976048145dd8b44c68789368eccf213abb8a",
+        ".agents/skills/moss-language/SKILL.md": "45cf0921d5ac37f38111e6ae378d0c4f854735dc84afd4402b1a7cc13e9cfea6",
+        ".codex/CURRENT_STATUS.md": "e6bfb2d0d0dc6f0aea5f73b3735d4104e3322d10a6d2aee55ba67a4f486d2756",
+        "AGENTS.md": "71b1395081226aac8f8f0e322562d94498d12fa27267489aed541d6625b97957",
+        "docs/AGENT_API.md": "ba84ea5a8c1c172978871f96f316bf1eacc0ab170b579a191596cae8d877ae4d"
+      }
+    },
+    "profiles": [
+      "legacy",
+      "phase22_3"
+    ],
+    "protocol_version": "phase22.3-ab-v1",
+    "random_seed": 223,
+    "schema_version": "moss-phase22.3-ab-protocol-1",
+    "task_count": 20,
+    "task_ids": [
+      "P223001",
+      "P223002",
+      "P223003",
+      "P223004",
+      "P223005",
+      "P223006",
+      "P223007",
+      "P223008",
+      "P223009",
+      "P223010",
+      "P223011",
+      "P223012",
+      "P223013",
+      "P223014",
+      "P223015",
+      "P223016",
+      "P223017",
+      "P223018",
+      "P223019",
+      "P223020"
+    ],
+    "total_agent_runs": 200,
+    "trials_per_task": 5
+  },
+  "schema_version": "moss-phase22.3-ab-comparison-1"
+}

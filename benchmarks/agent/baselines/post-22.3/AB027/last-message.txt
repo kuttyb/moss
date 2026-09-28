@@ -1,0 +1,1 @@
+Fixed [shipping_cost](/home/owner/daji/code/moss2/task/main.moss:2) so totals of `50` or more receive free shipping. The interpreter trace now shows an order total of `60` returning and printing `0`; the Moss check passes.

@@ -1,0 +1,1 @@
+{"schema_version":1,"task_id":"P223012","facts":{"sender":"handler:Worker.Run","receiver":"main::audit","target_handler":"entity-v1:handler:Audit.Record","boundary":"synchronous_message_by_value"}}

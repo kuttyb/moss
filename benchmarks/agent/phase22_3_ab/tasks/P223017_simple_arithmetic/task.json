@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223017","name":"simple-arithmetic","category":"control",
+  "prompt":"Fix the trivial arithmetic expression so the program prints 5. Record result with numeric value 5 in semantic-answer.json. No semantic compiler fact is needed.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"5\n"}}],
+  "semantic_heavy":false,"relevant_capability":"negative control: arithmetic","requested_facts":["result"]
+}

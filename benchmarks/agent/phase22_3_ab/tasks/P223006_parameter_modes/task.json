@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223006","name":"parameter-modes","category":"type-ownership",
+  "prompt":"Determine the compiler-inferred ownership access modes of mutate's left and right parameters. The program is already correct; do not change main.moss. Record function_entity_id, left_mode, and right_mode in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"9\n"}}],
+  "semantic_heavy":true,"relevant_capability":"inferred READ WRITE CONSUME parameter facts","requested_facts":["function_entity_id","left_mode","right_mode"]
+}

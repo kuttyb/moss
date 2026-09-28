@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "AB009",
+  "name": "repair-handler-chain",
+  "category": "domains-messages",
+  "task_type": "repair",
+  "prompt": "Repair the same-domain handler chain in Calculator. Keep Run as the externally messaged handler and move the reusable doubling logic to an ordinary function.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": [
+    "main.moss"
+  ],
+  "allowed_paths": [
+    "main.moss"
+  ],
+  "success_criteria": [
+    "Run does not message another handler on the same instance.",
+    "The program prints 42."
+  ],
+  "validation": [
+    {
+      "command": [
+        "$MOSS",
+        "check",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true
+        }
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "run",
+        "--interp",
+        "main.moss"
+      ],
+      "expect": {
+        "stdout": "42\n"
+      }
+    },
+    {
+      "command": [
+        "$MOSS",
+        "calls",
+        "handler:Calculator.Run",
+        "--source",
+        "main.moss",
+        "--json"
+      ],
+      "expect": {
+        "json_equals": {
+          "ok": true,
+          "result.target.construct_kind": "handler"
+        },
+        "json_matches": {
+          "result.direct_calls.0.target": "^fn:"
+        }
+      }
+    }
+  ],
+  "assertions": [
+    {
+      "path": "main.moss",
+      "matches": "(?m)^domain\\s+Calculator\\s*:"
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^\\s+fn\\s+Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "(?m)^fn\\s+(?!main\\b)\\w+\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "matches": "\\bmessage\\s+\\w+\\.Run\\s*\\("
+    },
+    {
+      "path": "main.moss",
+      "not_matches": "\\bmessage\\s+self\\."
+    }
+  ],
+  "notes": "Covers the same-domain message restriction and local helper pattern."
+}

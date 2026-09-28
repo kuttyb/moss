@@ -1,0 +1,1 @@
+{"schema_version":1,"task_id":"P223015","facts":{"handler_identity":"domain-specialization:Account:account::handler:Deposit","class_set":["main::account::sync:0","main::account::sync:1"],"class_modes":{"main::account::sync:0":"EXCLUSIVE","main::account::sync:1":"SHARED"}}}

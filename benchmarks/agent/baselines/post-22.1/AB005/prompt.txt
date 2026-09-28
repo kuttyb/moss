@@ -1,0 +1,13 @@
+You are working on one Moss benchmark task in a sanitized workspace.
+The starter project is in task/. Do all task work there.
+Use only the supplied task files and available local Moss documentation and tooling.
+Do not use network or web resources.
+Solve the task completely. You may compile, inspect, debug, and iterate.
+Do not ask for or search for a reference solution.
+Stop when you believe the task is complete.
+Do not modify unrelated files.
+
+Task ID: AB005
+
+Task prompt (verbatim):
+Create main.moss defining a Point type with Int x and y fields and a score method that returns x + y. Construct Point(20, 22) and print its score.

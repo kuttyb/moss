@@ -1,0 +1,2 @@
+test "addition":
+  assertEqual(add(20, 22), 42)

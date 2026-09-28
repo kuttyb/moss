@@ -1,0 +1,1 @@
+Fixed [Counter.Add](/home/owner/daji/code/moss2/task/main.moss:5) to add `amount` to `value`. Fast Debug with `--trace` now shows the state changing from 40 to 42 and the handler replying 42. `moss check` passes.

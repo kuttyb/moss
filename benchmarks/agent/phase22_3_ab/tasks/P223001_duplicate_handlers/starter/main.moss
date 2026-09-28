@@ -1,0 +1,17 @@
+domain Left:
+  value = 10
+
+  fn Read() -> Int:
+    reply value
+
+domain Right:
+  value = 20
+
+  fn Read() -> Int:
+    reply value
+
+fn main():
+  left = Left()
+  right = Right()
+  selected = message left.Read()
+  echo selected

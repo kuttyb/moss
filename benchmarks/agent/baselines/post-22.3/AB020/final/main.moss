@@ -1,0 +1,4 @@
+fn main():
+  values = [20, 22]
+  result = values |> sum
+  echo result

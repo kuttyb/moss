@@ -1,0 +1,7 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","semantic_query_status":null,"sequence":1,"tool":"moss"}
+{"argv":["check","task/src/app.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","semantic_query_status":null,"sequence":2,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":105,"exit_code":0,"origin":"margo-internal","semantic_query_status":null,"sequence":4,"tool":"moss"}
+{"argv":["run"],"cwd":"task","diagnostic_codes":[],"duration_ms":159,"exit_code":0,"origin":"agent","semantic_query_status":null,"sequence":3,"tool":"margo"}
+{"argv":["fmt","--check","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","semantic_query_status":null,"sequence":5,"tool":"moss"}
+{"argv":["clean"],"cwd":"task","diagnostic_codes":[],"duration_ms":3,"exit_code":0,"origin":"margo-internal","semantic_query_status":null,"sequence":7,"tool":"moss"}
+{"argv":["clean"],"cwd":"task","diagnostic_codes":[],"duration_ms":54,"exit_code":0,"origin":"agent","semantic_query_status":null,"sequence":6,"tool":"margo"}

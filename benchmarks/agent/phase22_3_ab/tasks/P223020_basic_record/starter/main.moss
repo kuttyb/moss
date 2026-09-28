@@ -1,0 +1,7 @@
+type Point:
+  x: Int
+  y: Int
+
+fn main():
+  point = Point(x = 2, y = 3)
+  echo point.y

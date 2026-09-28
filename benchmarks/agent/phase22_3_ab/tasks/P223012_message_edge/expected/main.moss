@@ -1,0 +1,20 @@
+domain Audit:
+  total = 0
+
+  fn Record(amount: Int) -> Int:
+    total = total + amount
+    reply total
+
+domain Worker:
+  domainroutes(audit: Audit)
+
+  fn Run(amount: Int) -> Int:
+    recorded = message audit.Record(amount)
+    reply recorded
+
+fn main():
+  audit = Audit()
+  worker = Worker(audit: audit)
+  result = message worker.Run(3)
+  echo result
+  echo message audit.Record(0)

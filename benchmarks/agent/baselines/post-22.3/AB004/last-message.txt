@@ -1,0 +1,1 @@
+Updated [task/main.moss](/home/owner/daji/code/moss2/task/main.moss:4) so the loop includes `limit`. Moss check and formatting pass, and running the program prints `15`.

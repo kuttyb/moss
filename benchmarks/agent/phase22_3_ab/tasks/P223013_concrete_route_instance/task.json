@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223013","name":"concrete-route-instance","category":"domain-synchronization",
+  "prompt":"There are two concrete Worker instances. Determine which exact instance Router's target route references, including the source and target instance identities and route name. The program is already correct; do not change main.moss. Record source_instance, route, and target_instance in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"0\n"}}],
+  "semantic_heavy":true,"relevant_capability":"concrete closed-domain topology facts","requested_facts":["source_instance","route","target_instance"]
+}

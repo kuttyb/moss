@@ -1,0 +1,7 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss) with a `Payload` record and a read-only `Worker` handler. The caller sends `41`, changes its original payload to `42`, and prints both values.
+
+Moss check passed, the handler’s inferred payload access is `READ`, and execution prints:
+```text
+41
+42
+```

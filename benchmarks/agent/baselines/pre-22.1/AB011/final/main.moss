@@ -1,0 +1,9 @@
+type Box:
+  value: Int
+
+fn sum_boxes(left: Box, right: Box) -> Int:
+  return left.value + right.value
+
+fn main():
+  box = Box(value: 21)
+  echo sum_boxes(box, box)

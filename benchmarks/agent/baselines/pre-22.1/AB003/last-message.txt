@@ -1,0 +1,1 @@
+Changed `classify` in [task/main.moss](/home/owner/daji/code/moss/task/main.moss:2) to use `value > 0`, keeping the function and call intact. Moss check passes, and the existing call prints `positive`.

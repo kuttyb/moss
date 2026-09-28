@@ -1,0 +1,4 @@
+fn main():
+  values = [1, 2, 3]
+  first = values[0]
+  echo first + 2

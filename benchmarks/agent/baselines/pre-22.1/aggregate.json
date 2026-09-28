@@ -1,0 +1,2931 @@
+{
+  "agent": {
+    "configuration": "ephemeral, ignore user config/rules, no approvals, workspace-write",
+    "disabled_features": [
+      "apps",
+      "plugins",
+      "browser_use",
+      "browser_use_external",
+      "browser_use_full_cdp_access",
+      "in_app_browser",
+      "computer_use",
+      "image_generation",
+      "recommended_plugins",
+      "memories",
+      "multi_agent"
+    ],
+    "implementation": "OpenAI Codex CLI",
+    "model": "gpt-6-sol",
+    "reasoning_effort": "medium",
+    "runtime_version": "codex-cli 0.156.0"
+  },
+  "agent_stopped_but_validator_failed_count": 2,
+  "agent_stopped_but_validator_failed_task_ids": [
+    "AB014",
+    "AB017"
+  ],
+  "attempts_to_green": {
+    "count": 30,
+    "max": 2,
+    "mean": 1.433,
+    "median": 1.0
+  },
+  "baseline": "pre-22.1",
+  "by_category": {
+    "basic-language": {
+      "attempts_to_green": {
+        "count": 5,
+        "max": 1,
+        "mean": 1,
+        "median": 1
+      },
+      "diagnostics": {},
+      "eventually_green_count": 5,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 5,
+      "infrastructure_failure_count": 0,
+      "pass_count": 5,
+      "task_count": 5,
+      "task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 5,
+        "moss check": 6,
+        "moss fmt": 2,
+        "moss run --interp": 5
+      },
+      "valid_task_count": 5
+    },
+    "domains-messages": {
+      "attempts_to_green": {
+        "count": 5,
+        "max": 2,
+        "mean": 1.6,
+        "median": 2
+      },
+      "diagnostics": {
+        "MOSS_COMPILE_ERROR": 2,
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "eventually_green_count": 5,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 2,
+      "infrastructure_failure_count": 0,
+      "pass_count": 5,
+      "task_count": 5,
+      "task_ids": [
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 5,
+        "moss calls": 1,
+        "moss check": 8,
+        "moss fmt": 5,
+        "moss inspect": 2,
+        "moss run --interp": 5
+      },
+      "valid_task_count": 5
+    },
+    "fast-debug": {
+      "attempts_to_green": {
+        "count": 2,
+        "max": 1,
+        "mean": 1,
+        "median": 1.0
+      },
+      "diagnostics": {},
+      "eventually_green_count": 2,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 2,
+      "infrastructure_failure_count": 0,
+      "pass_count": 2,
+      "task_count": 2,
+      "task_ids": [
+        "AB027",
+        "AB028"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 2,
+        "moss check": 4,
+        "moss fmt": 2,
+        "trace": 4
+      },
+      "valid_task_count": 2
+    },
+    "functional-dataflow": {
+      "attempts_to_green": {
+        "count": 5,
+        "max": 2,
+        "mean": 1.8,
+        "median": 2
+      },
+      "diagnostics": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 3,
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "eventually_green_count": 5,
+      "fail_count": 1,
+      "failure_classes": {
+        "exact-output-format-mismatch": 1
+      },
+      "first_validation_success_count": 1,
+      "infrastructure_failure_count": 0,
+      "pass_count": 4,
+      "task_count": 5,
+      "task_ids": [
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 5,
+        "moss check": 12,
+        "moss fmt": 8,
+        "moss run --interp": 7
+      },
+      "valid_task_count": 5
+    },
+    "modules-margo": {
+      "attempts_to_green": {
+        "count": 3,
+        "max": 2,
+        "mean": 1.333,
+        "median": 1
+      },
+      "diagnostics": {
+        "UNKNOWN_SYMBOL_OR_TYPE": 1
+      },
+      "eventually_green_count": 3,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 2,
+      "infrastructure_failure_count": 0,
+      "pass_count": 3,
+      "task_count": 3,
+      "task_ids": [
+        "AB024",
+        "AB025",
+        "AB026"
+      ],
+      "tool_usage": {
+        "margo clean": 1,
+        "margo run": 3,
+        "moss agent bootstrap": 3,
+        "moss check": 4,
+        "moss fmt": 1
+      },
+      "valid_task_count": 3
+    },
+    "ownership-effects": {
+      "attempts_to_green": {
+        "count": 5,
+        "max": 2,
+        "mean": 1.4,
+        "median": 1
+      },
+      "diagnostics": {
+        "FORMAT_CHECK_FAILED": 1,
+        "OWNERSHIP_CONFLICTING_ACCESS": 1,
+        "OWNERSHIP_USE_AFTER_CONSUME": 1,
+        "QUERY_TARGET_NOT_FOUND": 2
+      },
+      "eventually_green_count": 5,
+      "fail_count": 1,
+      "failure_classes": {
+        "exact-output-format-mismatch": 1
+      },
+      "first_validation_success_count": 3,
+      "infrastructure_failure_count": 0,
+      "pass_count": 4,
+      "task_count": 5,
+      "task_ids": [
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 5,
+        "moss check": 8,
+        "moss effects": 7,
+        "moss fmt": 7,
+        "moss help": 1,
+        "moss run": 1,
+        "moss run --interp": 5
+      },
+      "valid_task_count": 5
+    },
+    "synchronization": {
+      "attempts_to_green": {
+        "count": 3,
+        "max": 2,
+        "mean": 2,
+        "median": 2
+      },
+      "diagnostics": {
+        "MOSS_COMPILE_ERROR": 2,
+        "OWNERSHIP_CONFLICTING_ACCESS": 3
+      },
+      "eventually_green_count": 3,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 0,
+      "infrastructure_failure_count": 0,
+      "pass_count": 3,
+      "task_count": 3,
+      "task_ids": [
+        "AB021",
+        "AB022",
+        "AB023"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 3,
+        "moss check": 6,
+        "moss effects": 2,
+        "moss fmt": 2,
+        "moss ownership": 2,
+        "moss run --interp": 3
+      },
+      "valid_task_count": 3
+    },
+    "tooling-navigation": {
+      "attempts_to_green": {
+        "count": 2,
+        "max": 1,
+        "mean": 1,
+        "median": 1.0
+      },
+      "diagnostics": {},
+      "eventually_green_count": 2,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 2,
+      "infrastructure_failure_count": 0,
+      "pass_count": 2,
+      "task_count": 2,
+      "task_ids": [
+        "AB029",
+        "AB030"
+      ],
+      "tool_usage": {
+        "margo build": 1,
+        "margo test": 2,
+        "moss agent bootstrap": 2
+      },
+      "valid_task_count": 2
+    }
+  },
+  "by_task_type": {
+    "repair": {
+      "attempts_to_green": {
+        "count": 10,
+        "max": 2,
+        "mean": 1.8,
+        "median": 2.0
+      },
+      "diagnostics": {
+        "FORMAT_CHECK_FAILED": 1,
+        "FUNCTIONAL_SEMANTIC_ERROR": 3,
+        "MOSS_COMPILE_ERROR": 2,
+        "OWNERSHIP_CONFLICTING_ACCESS": 1,
+        "OWNERSHIP_USE_AFTER_CONSUME": 1,
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "eventually_green_count": 10,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 2,
+      "infrastructure_failure_count": 0,
+      "pass_count": 10,
+      "task_count": 10,
+      "task_ids": [
+        "AB003",
+        "AB004",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB012",
+        "AB013",
+        "AB018",
+        "AB019",
+        "AB020"
+      ],
+      "tool_usage": {
+        "moss agent bootstrap": 10,
+        "moss calls": 1,
+        "moss check": 20,
+        "moss fmt": 10,
+        "moss inspect": 2,
+        "moss run --interp": 10
+      },
+      "valid_task_count": 10
+    },
+    "workflow": {
+      "attempts_to_green": {
+        "count": 10,
+        "max": 2,
+        "mean": 1.4,
+        "median": 1.0
+      },
+      "diagnostics": {
+        "MOSS_COMPILE_ERROR": 2,
+        "OWNERSHIP_CONFLICTING_ACCESS": 3,
+        "QUERY_TARGET_NOT_FOUND": 2,
+        "UNKNOWN_SYMBOL_OR_TYPE": 1
+      },
+      "eventually_green_count": 10,
+      "fail_count": 0,
+      "failure_classes": {},
+      "first_validation_success_count": 6,
+      "infrastructure_failure_count": 0,
+      "pass_count": 10,
+      "task_count": 10,
+      "task_ids": [
+        "AB015",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB025",
+        "AB026",
+        "AB027",
+        "AB028",
+        "AB029",
+        "AB030"
+      ],
+      "tool_usage": {
+        "margo build": 1,
+        "margo run": 2,
+        "margo test": 2,
+        "moss agent bootstrap": 10,
+        "moss check": 13,
+        "moss effects": 7,
+        "moss fmt": 4,
+        "moss ownership": 2,
+        "moss run --interp": 4,
+        "trace": 4
+      },
+      "valid_task_count": 10
+    },
+    "write": {
+      "attempts_to_green": {
+        "count": 10,
+        "max": 2,
+        "mean": 1.1,
+        "median": 1.0
+      },
+      "diagnostics": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "eventually_green_count": 10,
+      "fail_count": 2,
+      "failure_classes": {
+        "exact-output-format-mismatch": 2
+      },
+      "first_validation_success_count": 9,
+      "infrastructure_failure_count": 0,
+      "pass_count": 8,
+      "task_count": 10,
+      "task_ids": [
+        "AB001",
+        "AB002",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB011",
+        "AB014",
+        "AB016",
+        "AB017",
+        "AB024"
+      ],
+      "tool_usage": {
+        "margo clean": 1,
+        "margo run": 1,
+        "moss agent bootstrap": 10,
+        "moss check": 15,
+        "moss effects": 2,
+        "moss fmt": 13,
+        "moss help": 1,
+        "moss run": 1,
+        "moss run --interp": 11
+      },
+      "valid_task_count": 10
+    }
+  },
+  "compiler_commit": "22fdb024e4f284d17fb9abfe887856e17127aae7",
+  "corpus_commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+  "diagnostics": {
+    "FORMAT_CHECK_FAILED": {
+      "additional_correctness_attempts_to_green": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null
+      },
+      "diagnostic_before_first_green_task_ids": [],
+      "final_pass_count": 1,
+      "final_pass_task_ids": [
+        "AB013"
+      ],
+      "per_task": {
+        "AB013": {
+          "additional_correctness_attempts_to_green": null,
+          "commands": [
+            "moss fmt --check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": true,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": false
+        }
+      },
+      "recovered_to_green_count": 0,
+      "task_count": 1,
+      "task_ids": [
+        "AB013"
+      ],
+      "total_occurrences": 1
+    },
+    "FUNCTIONAL_SEMANTIC_ERROR": {
+      "additional_correctness_attempts_to_green": {
+        "count": 3,
+        "max": 1,
+        "mean": 1,
+        "median": 1
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB018",
+        "AB019",
+        "AB020"
+      ],
+      "final_pass_count": 3,
+      "final_pass_task_ids": [
+        "AB018",
+        "AB019",
+        "AB020"
+      ],
+      "per_task": {
+        "AB018": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB019": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB020": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 3,
+      "task_count": 3,
+      "task_ids": [
+        "AB018",
+        "AB019",
+        "AB020"
+      ],
+      "total_occurrences": 3
+    },
+    "MOSS_COMPILE_ERROR": {
+      "additional_correctness_attempts_to_green": {
+        "count": 4,
+        "max": 1,
+        "mean": 1,
+        "median": 1.0
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB008",
+        "AB009",
+        "AB021",
+        "AB023"
+      ],
+      "final_pass_count": 4,
+      "final_pass_task_ids": [
+        "AB008",
+        "AB009",
+        "AB021",
+        "AB023"
+      ],
+      "per_task": {
+        "AB008": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB009": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB021": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB023": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 4,
+      "task_count": 4,
+      "task_ids": [
+        "AB008",
+        "AB009",
+        "AB021",
+        "AB023"
+      ],
+      "total_occurrences": 4
+    },
+    "OWNERSHIP_CONFLICTING_ACCESS": {
+      "additional_correctness_attempts_to_green": {
+        "count": 2,
+        "max": 1,
+        "mean": 1,
+        "median": 1.0
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB012",
+        "AB022"
+      ],
+      "final_pass_count": 2,
+      "final_pass_task_ids": [
+        "AB012",
+        "AB022"
+      ],
+      "per_task": {
+        "AB012": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB022": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json",
+            "moss effects update_and_read --source task/main.moss --json",
+            "moss ownership update_and_read --source task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 3,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 2,
+      "task_count": 2,
+      "task_ids": [
+        "AB012",
+        "AB022"
+      ],
+      "total_occurrences": 4
+    },
+    "OWNERSHIP_USE_AFTER_CONSUME": {
+      "additional_correctness_attempts_to_green": {
+        "count": 1,
+        "max": 1,
+        "mean": 1,
+        "median": 1
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB013"
+      ],
+      "final_pass_count": 1,
+      "final_pass_task_ids": [
+        "AB013"
+      ],
+      "per_task": {
+        "AB013": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 1,
+      "task_count": 1,
+      "task_ids": [
+        "AB013"
+      ],
+      "total_occurrences": 1
+    },
+    "QUERY_TARGET_NOT_FOUND": {
+      "additional_correctness_attempts_to_green": {
+        "count": 0,
+        "max": null,
+        "mean": null,
+        "median": null
+      },
+      "diagnostic_before_first_green_task_ids": [],
+      "final_pass_count": 1,
+      "final_pass_task_ids": [
+        "AB015"
+      ],
+      "per_task": {
+        "AB015": {
+          "additional_correctness_attempts_to_green": null,
+          "commands": [
+            "moss effects Read --source task/main.moss --json",
+            "moss effects Accept --source task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": true,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 2,
+          "recovered_to_green_after_diagnostic": false
+        }
+      },
+      "recovered_to_green_count": 0,
+      "task_count": 1,
+      "task_ids": [
+        "AB015"
+      ],
+      "total_occurrences": 2
+    },
+    "TYPE_INFERENCE_FAILED": {
+      "additional_correctness_attempts_to_green": {
+        "count": 2,
+        "max": 1,
+        "mean": 1,
+        "median": 1.0
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB010",
+        "AB017"
+      ],
+      "final_pass_count": 1,
+      "final_pass_task_ids": [
+        "AB010"
+      ],
+      "per_task": {
+        "AB010": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss run --interp task/main.moss",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        },
+        "AB017": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/main.moss --json"
+          ],
+          "final_status": "fail",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 2,
+      "task_count": 2,
+      "task_ids": [
+        "AB010",
+        "AB017"
+      ],
+      "total_occurrences": 2
+    },
+    "UNKNOWN_SYMBOL_OR_TYPE": {
+      "additional_correctness_attempts_to_green": {
+        "count": 1,
+        "max": 1,
+        "mean": 1,
+        "median": 1
+      },
+      "diagnostic_before_first_green_task_ids": [
+        "AB025"
+      ],
+      "final_pass_count": 1,
+      "final_pass_task_ids": [
+        "AB025"
+      ],
+      "per_task": {
+        "AB025": {
+          "additional_correctness_attempts_to_green": 1,
+          "commands": [
+            "moss check task/src/main.moss --json"
+          ],
+          "final_status": "pass",
+          "green_before_diagnostic": false,
+          "green_command": "moss check task/src/main.moss --json",
+          "occurrences": 1,
+          "recovered_to_green_after_diagnostic": true
+        }
+      },
+      "recovered_to_green_count": 1,
+      "task_count": 1,
+      "task_ids": [
+        "AB025"
+      ],
+      "total_occurrences": 1
+    }
+  },
+  "eventually_green_count": 30,
+  "fail_count": 2,
+  "failure_classes": {
+    "exact-output-format-mismatch": 2
+  },
+  "first_validation_success_count": 17,
+  "first_validation_success_percentage": 56.7,
+  "infrastructure_failure_count": 0,
+  "infrastructure_failure_task_ids": [],
+  "limits": {
+    "agent_interaction_budget": null,
+    "canonical_trials": 1,
+    "retry_failed_task": false,
+    "wall_time_seconds": 900
+  },
+  "never_green_count": 0,
+  "orchestration_commit": "532dc4610d156946df5014573e5d69947f4d3546",
+  "out_of_scope_modification_task_count": 0,
+  "pass_count": 28,
+  "pass_percentage": 93.3,
+  "prompt_wrapper_sha256": "a3ddf0a048d7b36fa502718151f3639f0c2a522f2f318356c8f725547bdd03ea",
+  "protocol_version": "phase-22.2c-v1",
+  "recovery": [
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss fmt task/main.moss",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB008"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB009"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "TYPE_INFERENCE_FAILED"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss run --interp task/main.moss",
+      "next_tool_after_first_diagnostic": "moss fmt task/main.moss",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB010"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "OWNERSHIP_CONFLICTING_ACCESS"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss run --interp task/main.moss",
+      "next_tool_after_first_diagnostic": "moss run --interp task/main.moss",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB012"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "OWNERSHIP_USE_AFTER_CONSUME"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB013"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "TYPE_INFERENCE_FAILED"
+      ],
+      "final_status": "fail",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB017"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss run --interp task/main.moss",
+      "next_tool_after_first_diagnostic": "moss run --interp task/main.moss",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB018"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB019"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss fmt task/main.moss --check --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB020"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss run --interp task/main.moss",
+      "next_tool_after_first_diagnostic": "moss run --interp task/main.moss",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB021"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "OWNERSHIP_CONFLICTING_ACCESS"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss effects update_and_read --source task/main.moss --json",
+      "semantic_queries_before_green": [
+        "moss effects",
+        "moss ownership"
+      ],
+      "source_change_sequence_available": false,
+      "task_id": "AB022"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB023"
+    },
+    {
+      "correctness_attempts_to_green": 2,
+      "debug_tools_before_green": [],
+      "diagnostic_sequence": [
+        "UNKNOWN_SYMBOL_OR_TYPE"
+      ],
+      "final_status": "pass",
+      "first_green_command": "moss check task/src/main.moss --json",
+      "next_tool_after_first_diagnostic": "moss check task/src/main.moss --json",
+      "semantic_queries_before_green": [],
+      "source_change_sequence_available": false,
+      "task_id": "AB025"
+    }
+  ],
+  "repeated_diagnostic_loops": [
+    {
+      "commands": [
+        "moss effects Read --source task/main.moss --json",
+        "moss effects Accept --source task/main.moss --json"
+      ],
+      "diagnostic": "QUERY_TARGET_NOT_FOUND",
+      "final_status": "pass",
+      "green_before_loop": true,
+      "later_green_command": "moss run --interp task/main.moss",
+      "occurrences": 2,
+      "task_id": "AB015"
+    },
+    {
+      "commands": [
+        "moss check task/main.moss --json",
+        "moss effects update_and_read --source task/main.moss --json",
+        "moss ownership update_and_read --source task/main.moss --json"
+      ],
+      "diagnostic": "OWNERSHIP_CONFLICTING_ACCESS",
+      "final_status": "pass",
+      "green_before_loop": false,
+      "later_green_command": "moss check task/main.moss --json",
+      "occurrences": 3,
+      "task_id": "AB022"
+    }
+  ],
+  "schema_version": "moss-agent-baseline-aggregate-1",
+  "task_count": 30,
+  "task_results": [
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 10,
+      "category": "basic-language",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "simple-computation",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB001",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 33209
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 12,
+      "category": "basic-language",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "named-functions",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB002",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 40408
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 10,
+      "category": "basic-language",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-branch",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB003",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 35802
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "basic-language",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-iteration",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB004",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 33931
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 10,
+      "category": "basic-language",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "struct-data",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB005",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 38191
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "domains-messages",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "construct-domain",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB006",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 47654
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "domains-messages",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "cross-domain-reply",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB007",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 44322
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 15,
+      "category": "domains-messages",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-self-send",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB008",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss inspect": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 42991
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "domains-messages",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-handler-chain",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB009",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss calls": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 39113
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "domains-messages",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "diagnostic_sequence": [
+        "TYPE_INFERENCE_FAILED"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-domain-dag",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB010",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss inspect": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 41193
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "ownership-effects",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "read-alias",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB011",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss effects": 1,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 34408
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 12,
+      "category": "ownership-effects",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 1
+      },
+      "diagnostic_sequence": [
+        "OWNERSHIP_CONFLICTING_ACCESS"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-write-alias",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB012",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 33847
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 17,
+      "category": "ownership-effects",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "FORMAT_CHECK_FAILED": 1,
+        "OWNERSHIP_USE_AFTER_CONSUME": 1
+      },
+      "diagnostic_sequence": [
+        "OWNERSHIP_USE_AFTER_CONSUME",
+        "FORMAT_CHECK_FAILED"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-consume-use",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB013",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 3,
+        "moss fmt": 3,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 4,
+      "validation_failures": [],
+      "wall_time_ms": 41179
+    },
+    {
+      "agent_stopped_but_validator_failed": true,
+      "agent_tool_calls": 18,
+      "category": "ownership-effects",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [
+        "exact-output-format-mismatch"
+      ],
+      "final_status": "fail",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "message-payload",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB014",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss effects": 1,
+        "moss fmt": 2,
+        "moss help": 1,
+        "moss run": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [
+        "stdout did not match exactly"
+      ],
+      "wall_time_ms": 62079
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 12,
+      "category": "ownership-effects",
+      "changed_paths": [],
+      "diagnostic_codes": {
+        "QUERY_TARGET_NOT_FOUND": 2
+      },
+      "diagnostic_sequence": [
+        "QUERY_TARGET_NOT_FOUND",
+        "QUERY_TARGET_NOT_FOUND"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "borrowed-payload-query",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB015",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 1,
+        "moss effects": 5,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 35313
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 23,
+      "category": "functional-dataflow",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "map-filter",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB016",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 3,
+        "moss fmt": 4,
+        "moss run --interp": 3
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 6,
+      "validation_failures": [],
+      "wall_time_ms": 56732
+    },
+    {
+      "agent_stopped_but_validator_failed": true,
+      "agent_tool_calls": 19,
+      "category": "functional-dataflow",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "TYPE_INFERENCE_FAILED": 1
+      },
+      "diagnostic_sequence": [
+        "TYPE_INFERENCE_FAILED"
+      ],
+      "failure_classes": [
+        "exact-output-format-mismatch"
+      ],
+      "final_status": "fail",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "reduce-terminals",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB017",
+      "task_type": "write",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 3,
+        "moss fmt": 2,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 4,
+      "validation_failures": [
+        "stdout did not match exactly"
+      ],
+      "wall_time_ms": 62372
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "functional-dataflow",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-placeholder",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB018",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 33945
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 11,
+      "category": "functional-dataflow",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-named-callable",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB019",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 34214
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "functional-dataflow",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "FUNCTIONAL_SEMANTIC_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "FUNCTIONAL_SEMANTIC_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-pipeline-capture",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB020",
+      "task_type": "repair",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 49542
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 12,
+      "category": "synchronization",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-cross-domain-call",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB021",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 36343
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 17,
+      "category": "synchronization",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "OWNERSHIP_CONFLICTING_ACCESS": 3
+      },
+      "diagnostic_sequence": [
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "OWNERSHIP_CONFLICTING_ACCESS",
+        "OWNERSHIP_CONFLICTING_ACCESS"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-effect-conflict",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB022",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss effects": 2,
+        "moss fmt": 1,
+        "moss ownership": 2,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 43400
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "synchronization",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {
+        "MOSS_COMPILE_ERROR": 1
+      },
+      "diagnostic_sequence": [
+        "MOSS_COMPILE_ERROR"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "local-helper-repair",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB023",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "moss run --interp": 1
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 45558
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 16,
+      "category": "modules-margo",
+      "changed_paths": [
+        "Moss.toml",
+        "src/main.moss",
+        "src/math.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "write-modules",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB024",
+      "task_type": "write",
+      "tool_usage": {
+        "margo clean": 1,
+        "margo run": 1,
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 54372
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 11,
+      "category": "modules-margo",
+      "changed_paths": [
+        "src/math.moss"
+      ],
+      "diagnostic_codes": {
+        "UNKNOWN_SYMBOL_OR_TYPE": 1
+      },
+      "diagnostic_sequence": [
+        "UNKNOWN_SYMBOL_OR_TYPE"
+      ],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "eventually-green",
+      "first_validation_success": false,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-module-export",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB025",
+      "task_type": "workflow",
+      "tool_usage": {
+        "margo run": 1,
+        "moss agent bootstrap": 1,
+        "moss check": 2
+      },
+      "validation_attempts_to_green": 2,
+      "validation_attempts_total": 3,
+      "validation_failures": [],
+      "wall_time_ms": 44075
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 12,
+      "category": "modules-margo",
+      "changed_paths": [
+        "app/Moss.toml"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-path-dependency",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB026",
+      "task_type": "workflow",
+      "tool_usage": {
+        "margo run": 1,
+        "moss agent bootstrap": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 1,
+      "validation_failures": [],
+      "wall_time_ms": 37947
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 14,
+      "category": "fast-debug",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "debug-branch-logic",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB027",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "trace": 2
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 4,
+      "validation_failures": [],
+      "wall_time_ms": 47382
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "fast-debug",
+      "changed_paths": [
+        "main.moss"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "trace-domain-logic",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB028",
+      "task_type": "workflow",
+      "tool_usage": {
+        "moss agent bootstrap": 1,
+        "moss check": 2,
+        "moss fmt": 1,
+        "trace": 2
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 4,
+      "validation_failures": [],
+      "wall_time_ms": 55097
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 13,
+      "category": "tooling-navigation",
+      "changed_paths": [],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "discover-project-workflow",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB029",
+      "task_type": "workflow",
+      "tool_usage": {
+        "margo build": 1,
+        "margo test": 1,
+        "moss agent bootstrap": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 2,
+      "validation_failures": [],
+      "wall_time_ms": 35396
+    },
+    {
+      "agent_stopped_but_validator_failed": false,
+      "agent_tool_calls": 8,
+      "category": "tooling-navigation",
+      "changed_paths": [
+        "workflow.txt"
+      ],
+      "diagnostic_codes": {},
+      "diagnostic_sequence": [],
+      "failure_classes": [],
+      "final_status": "pass",
+      "first_attempt_class": "first-attempt-green",
+      "first_validation_success": true,
+      "infrastructure_error": null,
+      "infrastructure_failure": false,
+      "name": "repair-workflow-command",
+      "outside_allowed_paths": [],
+      "state": "completed",
+      "task_id": "AB030",
+      "task_type": "workflow",
+      "tool_usage": {
+        "margo test": 1,
+        "moss agent bootstrap": 1
+      },
+      "validation_attempts_to_green": 1,
+      "validation_attempts_total": 1,
+      "validation_failures": [],
+      "wall_time_ms": 26779
+    }
+  ],
+  "tool_usage": {
+    "margo build": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 1,
+      "explicitly_relevant_task_ids": [
+        "AB029"
+      ],
+      "invocation_count": 1,
+      "later_green_count": 1,
+      "successful_invocation_task_count": 1,
+      "successful_invocation_task_ids": [
+        "AB029"
+      ],
+      "tasks_with_later_green_command": [
+        "AB029"
+      ],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB029"
+      ]
+    },
+    "margo clean": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 1,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 1,
+      "successful_invocation_task_ids": [
+        "AB024"
+      ],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB024"
+      ]
+    },
+    "margo run": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB025",
+        "AB026"
+      ],
+      "invocation_count": 3,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 3,
+      "successful_invocation_task_ids": [
+        "AB024",
+        "AB025",
+        "AB026"
+      ],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 3,
+      "used_task_ids": [
+        "AB024",
+        "AB025",
+        "AB026"
+      ]
+    },
+    "margo test": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB029",
+        "AB030"
+      ],
+      "invocation_count": 2,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 2,
+      "successful_invocation_task_ids": [
+        "AB029",
+        "AB030"
+      ],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 2,
+      "used_task_ids": [
+        "AB029",
+        "AB030"
+      ]
+    },
+    "moss agent bootstrap": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 1,
+      "explicitly_relevant_task_ids": [
+        "AB029"
+      ],
+      "invocation_count": 30,
+      "later_green_count": 30,
+      "successful_invocation_task_count": 30,
+      "successful_invocation_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB026",
+        "AB027",
+        "AB028",
+        "AB029",
+        "AB030"
+      ],
+      "tasks_with_later_green_command": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB026",
+        "AB027",
+        "AB028",
+        "AB029",
+        "AB030"
+      ],
+      "used_before_first_green_in_recovery_task_count": 13,
+      "used_before_first_green_in_recovery_task_ids": [
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB012",
+        "AB013",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB025"
+      ],
+      "used_task_count": 30,
+      "used_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB026",
+        "AB027",
+        "AB028",
+        "AB029",
+        "AB030"
+      ]
+    },
+    "moss calls": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 1,
+      "later_green_count": 1,
+      "successful_invocation_task_count": 1,
+      "successful_invocation_task_ids": [
+        "AB009"
+      ],
+      "tasks_with_later_green_command": [
+        "AB009"
+      ],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB009"
+      ]
+    },
+    "moss check": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB015",
+        "AB021"
+      ],
+      "invocation_count": 48,
+      "later_green_count": 27,
+      "successful_invocation_task_count": 27,
+      "successful_invocation_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB027",
+        "AB028"
+      ],
+      "tasks_with_later_green_command": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB027",
+        "AB028"
+      ],
+      "used_before_first_green_in_recovery_task_count": 13,
+      "used_before_first_green_in_recovery_task_ids": [
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB012",
+        "AB013",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB025"
+      ],
+      "used_task_count": 27,
+      "used_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB025",
+        "AB027",
+        "AB028"
+      ]
+    },
+    "moss debug": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB015",
+        "AB027"
+      ],
+      "invocation_count": 0,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 0,
+      "successful_invocation_task_ids": [],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 0,
+      "used_task_ids": []
+    },
+    "moss effects": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB015",
+        "AB022"
+      ],
+      "invocation_count": 9,
+      "later_green_count": 4,
+      "successful_invocation_task_count": 4,
+      "successful_invocation_task_ids": [
+        "AB011",
+        "AB014",
+        "AB015",
+        "AB022"
+      ],
+      "tasks_with_later_green_command": [
+        "AB011",
+        "AB014",
+        "AB015",
+        "AB022"
+      ],
+      "used_before_first_green_in_recovery_task_count": 1,
+      "used_before_first_green_in_recovery_task_ids": [
+        "AB022"
+      ],
+      "used_task_count": 4,
+      "used_task_ids": [
+        "AB011",
+        "AB014",
+        "AB015",
+        "AB022"
+      ]
+    },
+    "moss fmt": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 27,
+      "later_green_count": 13,
+      "successful_invocation_task_count": 20,
+      "successful_invocation_task_ids": [
+        "AB002",
+        "AB004",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB020",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB027",
+        "AB028"
+      ],
+      "tasks_with_later_green_command": [
+        "AB002",
+        "AB006",
+        "AB008",
+        "AB010",
+        "AB013",
+        "AB014",
+        "AB016",
+        "AB017",
+        "AB020",
+        "AB022",
+        "AB024",
+        "AB027",
+        "AB028"
+      ],
+      "used_before_first_green_in_recovery_task_count": 3,
+      "used_before_first_green_in_recovery_task_ids": [
+        "AB008",
+        "AB010",
+        "AB020"
+      ],
+      "used_task_count": 20,
+      "used_task_ids": [
+        "AB002",
+        "AB004",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB020",
+        "AB022",
+        "AB023",
+        "AB024",
+        "AB027",
+        "AB028"
+      ]
+    },
+    "moss help": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 1,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 1,
+      "successful_invocation_task_ids": [
+        "AB014"
+      ],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB014"
+      ]
+    },
+    "moss inspect": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 2,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 2,
+      "successful_invocation_task_ids": [
+        "AB008",
+        "AB010"
+      ],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 2,
+      "used_task_ids": [
+        "AB008",
+        "AB010"
+      ]
+    },
+    "moss ownership": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 1,
+      "explicitly_relevant_task_ids": [
+        "AB022"
+      ],
+      "invocation_count": 2,
+      "later_green_count": 1,
+      "successful_invocation_task_count": 1,
+      "successful_invocation_task_ids": [
+        "AB022"
+      ],
+      "tasks_with_later_green_command": [
+        "AB022"
+      ],
+      "used_before_first_green_in_recovery_task_count": 1,
+      "used_before_first_green_in_recovery_task_ids": [
+        "AB022"
+      ],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB022"
+      ]
+    },
+    "moss run": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 1,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 0,
+      "successful_invocation_task_ids": [],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 1,
+      "used_task_ids": [
+        "AB014"
+      ]
+    },
+    "moss run --interp": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 2,
+      "explicitly_relevant_task_ids": [
+        "AB015",
+        "AB027"
+      ],
+      "invocation_count": 25,
+      "later_green_count": 7,
+      "successful_invocation_task_count": 23,
+      "successful_invocation_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023"
+      ],
+      "tasks_with_later_green_command": [
+        "AB010",
+        "AB012",
+        "AB013",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB021"
+      ],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 23,
+      "used_task_ids": [
+        "AB001",
+        "AB002",
+        "AB003",
+        "AB004",
+        "AB005",
+        "AB006",
+        "AB007",
+        "AB008",
+        "AB009",
+        "AB010",
+        "AB011",
+        "AB012",
+        "AB013",
+        "AB014",
+        "AB015",
+        "AB016",
+        "AB017",
+        "AB018",
+        "AB019",
+        "AB020",
+        "AB021",
+        "AB022",
+        "AB023"
+      ]
+    },
+    "moss type": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 0,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 0,
+      "successful_invocation_task_ids": [],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 0,
+      "used_task_ids": []
+    },
+    "moss why": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 0,
+      "explicitly_relevant_task_ids": [],
+      "invocation_count": 0,
+      "later_green_count": 0,
+      "successful_invocation_task_count": 0,
+      "successful_invocation_task_ids": [],
+      "tasks_with_later_green_command": [],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 0,
+      "used_task_ids": []
+    },
+    "trace": {
+      "available_task_count": 30,
+      "explicitly_relevant_task_count": 3,
+      "explicitly_relevant_task_ids": [
+        "AB015",
+        "AB027",
+        "AB028"
+      ],
+      "invocation_count": 4,
+      "later_green_count": 2,
+      "successful_invocation_task_count": 2,
+      "successful_invocation_task_ids": [
+        "AB027",
+        "AB028"
+      ],
+      "tasks_with_later_green_command": [
+        "AB027",
+        "AB028"
+      ],
+      "used_before_first_green_in_recovery_task_count": 0,
+      "used_before_first_green_in_recovery_task_ids": [],
+      "used_task_count": 2,
+      "used_task_ids": [
+        "AB027",
+        "AB028"
+      ]
+    }
+  },
+  "valid_task_count": 30,
+  "workflow_compliance": [
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 3,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "moss check"
+          ],
+          "observed": [
+            "moss check"
+          ],
+          "requirement": "structured check",
+          "satisfied": true
+        },
+        {
+          "alternatives": [
+            "moss effects"
+          ],
+          "observed": [
+            "moss effects"
+          ],
+          "requirement": "effects query",
+          "satisfied": true
+        },
+        {
+          "alternatives": [
+            "moss debug",
+            "moss run --interp",
+            "trace"
+          ],
+          "observed": [
+            "moss run --interp"
+          ],
+          "requirement": "program execution",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB015"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "moss check"
+          ],
+          "observed": [
+            "moss check"
+          ],
+          "requirement": "structured compiler diagnostic",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB021"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 2,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "moss effects"
+          ],
+          "observed": [
+            "moss effects"
+          ],
+          "requirement": "effects feedback",
+          "satisfied": true
+        },
+        {
+          "alternatives": [
+            "moss ownership"
+          ],
+          "observed": [
+            "moss ownership"
+          ],
+          "requirement": "ownership feedback",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB022"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": null,
+      "explicit_tool_requirement_count": 0,
+      "final_status": "pass",
+      "requirements": [],
+      "task_id": "AB023"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "margo run"
+          ],
+          "observed": [
+            "margo run"
+          ],
+          "requirement": "Margo run",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB025"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "margo run"
+          ],
+          "observed": [
+            "margo run"
+          ],
+          "requirement": "Margo run",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB026"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "moss debug",
+            "moss run --interp",
+            "trace"
+          ],
+          "observed": [
+            "trace"
+          ],
+          "requirement": "debug or interpreter",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB027"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "trace"
+          ],
+          "observed": [
+            "trace"
+          ],
+          "requirement": "structured trace",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB028"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 3,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "moss agent bootstrap"
+          ],
+          "observed": [
+            "moss agent bootstrap"
+          ],
+          "requirement": "bootstrap",
+          "satisfied": true
+        },
+        {
+          "alternatives": [
+            "margo build"
+          ],
+          "observed": [
+            "margo build"
+          ],
+          "requirement": "Margo build",
+          "satisfied": true
+        },
+        {
+          "alternatives": [
+            "margo test"
+          ],
+          "observed": [
+            "margo test"
+          ],
+          "requirement": "Margo test",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB029"
+    },
+    {
+      "all_explicit_tool_requirements_satisfied": true,
+      "explicit_tool_requirement_count": 1,
+      "final_status": "pass",
+      "requirements": [
+        {
+          "alternatives": [
+            "margo test"
+          ],
+          "observed": [
+            "margo test"
+          ],
+          "requirement": "Margo test",
+          "satisfied": true
+        }
+      ],
+      "task_id": "AB030"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+domain Source:
+  fn Read() -> Int:
+    reply 21
+
+domain Doubler:
+  domainroutes(source: Source)
+
+  fn Run() -> Int:
+    value = message source.Read()
+    reply value * 2
+
+fn main():
+  source = Source()
+  doubler = Doubler(source: source)
+  echo message doubler.Run()

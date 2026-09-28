@@ -1,0 +1,11 @@
+type Box:
+  value: Int
+
+fn update_and_read(target: Box, source: Box) -> Int:
+  target.value = target.value + 1
+  return target.value + source.value
+
+fn main():
+  target = Box(value = 20)
+  source = Box(value = 21)
+  echo update_and_read(target, source)

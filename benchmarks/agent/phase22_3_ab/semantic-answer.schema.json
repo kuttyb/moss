@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moss.invalid/schemas/phase22-3-semantic-answer-1.json",
+  "title": "Phase 22.3 A/B semantic answer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "facts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string", "pattern": "^P223[0-9]{3}$"},
+    "facts": {"type": "object"},
+    "reason": {"type": "string"}
+  }
+}

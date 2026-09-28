@@ -1,0 +1,8 @@
+fn classify(value: Int) -> String:
+  if value > 0:
+    return "positive"
+  else:
+    return "non-positive"
+
+fn main():
+  echo classify(3)

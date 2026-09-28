@@ -1,0 +1,99 @@
+{
+  "command": "agent benchmark run",
+  "ok": true,
+  "result": {
+    "agent": null,
+    "attempts": null,
+    "changed_paths": [
+      "main.moss"
+    ],
+    "diagnostics": [],
+    "outside_allowed_paths": [],
+    "status": "fail",
+    "task_id": "AB017",
+    "tool_calls": null,
+    "validation": [
+      {
+        "command": [
+          "$MOSS",
+          "check",
+          "main.moss",
+          "--json"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [],
+        "index": 0,
+        "status": "pass",
+        "stderr": "",
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/agent-benchmark/AB017-_c3paejb/work/main.moss\", \"diagnostics\": []}\n}\n"
+      },
+      {
+        "command": [
+          "$MOSS",
+          "run",
+          "--interp",
+          "main.moss"
+        ],
+        "cwd": ".",
+        "exit_code": 0,
+        "expected_exit_code": 0,
+        "failures": [
+          "stdout did not match exactly"
+        ],
+        "index": 1,
+        "status": "fail",
+        "stderr": "",
+        "stdout": "42\n3\n"
+      },
+      {
+        "assertion": {
+          "matches": "(?m)^fn\\s+add\\s*\\(",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 2,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\|>\\s*reduce\\s*\\(\\s*0\\s*,\\s*add\\s*\\)",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 3,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      },
+      {
+        "assertion": {
+          "matches": "\\|>\\s*count\\b",
+          "path": "main.moss"
+        },
+        "command": null,
+        "cwd": ".",
+        "exit_code": null,
+        "expected_exit_code": null,
+        "failures": [],
+        "index": 4,
+        "status": "pass",
+        "stderr": "",
+        "stdout": ""
+      }
+    ],
+    "wall_time_ms": null
+  },
+  "schema_version": "moss-agent-benchmark-1"
+}

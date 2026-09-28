@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss/task/main.moss). It passes the same `Box` to both helper parameters; the compiler confirms both are `READ`, and running it prints `42`.

@@ -1,0 +1,8 @@
+fn announce(value: Int) -> Int:
+  echo value
+  return value + 1
+
+fn main():
+  values = [1, 2]
+  changed = values |> map(announce)
+  echo changed |> sum
