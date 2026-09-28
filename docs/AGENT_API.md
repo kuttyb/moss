@@ -370,6 +370,66 @@ instance/specialization/source identities. Fast Debug uses one deterministic
 logical schedule; production lock events and contention remain separate runtime
 validation concerns. See [Fast Debug](FAST_DEBUG.md).
 
+## Structured Debug Queries (22.4)
+
+Phase 22.4 adds dynamic execution visibility through the existing
+`moss-agent-1` envelope:
+
+```sh
+moss debug-query <operation> [selector] --source <source-or-project-entry> --json
+```
+
+The command executes the checked program once under Fast Debug, records the same
+structured semantic trace used by `--trace`, and returns a bounded slice. It does
+not start an interactive debugger or inspect generated Rust. `--json` is
+required; accepting that flag is the command's explicit protocol selection.
+
+Operations:
+
+- `event`: return an event selected by `event:<id>` or semantic selector.
+- `semantic`: return runtime events associated with an `entity-v1` or source identity.
+- `subtree`: return the execution subtree rooted at a selected event.
+- `message-subtree`: return the synchronous message/handler/reply subtree.
+- `control-flow`: return enclosing branch and loop decisions for an event.
+- `writes`: return recent `LocalWrite`, `state_write`, or `state_consume` events for a local or state path before a selected event.
+- `failure-slice`: return a bounded lead-up slice around an assertion/interpreter failure, plus relevant control decisions when present.
+
+Bounds are explicit: `--max-events`, `--max-depth`, `--before`, `--after`, and
+`--before-event`. Results include `truncated`, `returned_events`, and
+`available_more`; truncation is never silent and is true only when an actual
+candidate was omitted by an event or depth bound. Positive-only bounds reject
+zero, negative, malformed, and overflowing values through the structured error
+envelope.
+
+`writes local:<binding>` selects local writes only when the matching writes
+belong to one callable semantic scope. A bare state path selects state writes
+only when one concrete domain instance is dynamically relevant; otherwise use
+`<concrete-instance-id>.<path>`. Ambiguous selectors fail with
+`DEBUG_QUERY_SELECTOR_AMBIGUOUS` rather than combining unrelated histories.
+
+Trace events now expose execution-local `event_id`, `parent_event_id`,
+`call_event_id`, `message_event_id`, `handler_event_id`, `control_event_id`, and
+`depth` fields. These IDs are deterministic for a single Fast Debug execution and
+are intended to connect dynamic events to Phase 22.3 semantic identities, not to
+serve as permanent runtime object identities.
+
+Stable debug-query errors include `DEBUG_QUERY_EVENT_NOT_FOUND`,
+`DEBUG_QUERY_SELECTOR_INVALID`, `DEBUG_QUERY_TARGET_NOT_FOUND`,
+`DEBUG_QUERY_NOT_EXECUTED`, `DEBUG_QUERY_NO_FAILURE`, and
+`DEBUG_QUERY_UNSUPPORTED_OPERATION`. Argument and invocation failures use
+`DEBUG_QUERY_ARGUMENT_INVALID`, `DEBUG_QUERY_OPERATION_REQUIRED`,
+`DEBUG_QUERY_SOURCE_REQUIRED`, `DEBUG_QUERY_SELECTOR_REQUIRED`, and
+`DEBUG_QUERY_SELECTOR_AMBIGUOUS` as applicable.
+
+The command uses standalone or same-project source analysis and does not resolve
+Margo path/Git dependencies. Package-aware `margo debug [--trace]` supplies the
+resolved source closure for full Fast Debug execution, but there is deliberately
+no separate Margo-side query engine in Phase 22.4.
+
+The agent discovery commands advertise the feature as
+`structured_debug_query` and list the supported operations, selectors, bounds,
+and schema fields.
+
 The v0.1 diagnostic projection additionally exposes `handler_order`,
 `conflict_matrix`, `class_opportunities`, and `class_splits`. Summary metrics include
 state/protected leaves, classes, compression, handler acquisition counts, read-only

@@ -29,6 +29,13 @@ namespace moss {
 class FastInterpreter {
  public:
   struct TraceEvent {
+    int event_id = 0;
+    int parent_event_id = 0;
+    int call_event_id = 0;
+    int message_event_id = 0;
+    int handler_event_id = 0;
+    int control_event_id = 0;
+    int depth = 0;
     std::string kind;
     std::string function;
     std::string source_file;
@@ -62,12 +69,24 @@ class FastInterpreter {
 
   void write_trace(std::ostream& out) const {
     for (const auto& event : trace_) {
-      out << "{\"event\":\"" << escape(event.kind)
+      out << "{\"event_id\":" << event.event_id
+          << ",\"event\":\"" << escape(event.kind)
           << "\",\"function\":\"" << escape(event.function)
           << "\",\"source_file\":\"" << escape(event.source_file)
           << "\",\"semantic_identity\":\""
           << escape(event.semantic_identity)
           << "\",\"line\":" << event.line;
+      if (event.parent_event_id)
+        out << ",\"parent_event_id\":" << event.parent_event_id;
+      if (event.call_event_id)
+        out << ",\"call_event_id\":" << event.call_event_id;
+      if (event.message_event_id)
+        out << ",\"message_event_id\":" << event.message_event_id;
+      if (event.handler_event_id)
+        out << ",\"handler_event_id\":" << event.handler_event_id;
+      if (event.control_event_id)
+        out << ",\"control_event_id\":" << event.control_event_id;
+      out << ",\"depth\":" << event.depth;
       if (!event.detail.empty())
         out << ",\"detail\":\"" << escape(event.detail) << "\"";
       for (const auto& field : {std::make_pair("instance", event.instance),
@@ -174,6 +193,7 @@ class FastInterpreter {
     std::string functional_context;
     std::string source_file;
     std::string semantic_identity;
+    std::string specialization_identity;
     std::unordered_map<std::string, Value> locals;
     std::unordered_map<std::string, std::string> local_types;
     std::unordered_map<std::string, Place> aliases;
@@ -190,6 +210,11 @@ class FastInterpreter {
   const Program& program_;
   Options options_;
   std::vector<TraceEvent> trace_;
+  std::vector<int> event_stack_;
+  std::vector<int> call_stack_;
+  std::vector<int> message_stack_;
+  std::vector<int> handler_stack_;
+  std::vector<int> control_stack_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
 
   static std::string checked_binding_type(const Stmt& statement,
@@ -211,16 +236,68 @@ class FastInterpreter {
     return result;
   }
 
-  void emit(const std::string& kind, const Frame& frame, int line,
+  int emit(const std::string& kind, const Frame& frame, int line,
             std::string detail = {}) {
-    if (!options_.trace) return;
+    if (!options_.trace) return 0;
     TraceEvent event;
+    event.event_id = static_cast<int>(trace_.size()) + 1;
+    event.parent_event_id = event_stack_.empty() ? 0 : event_stack_.back();
+    event.call_event_id = call_stack_.empty() ? 0 : call_stack_.back();
+    event.message_event_id = message_stack_.empty() ? 0 : message_stack_.back();
+    event.handler_event_id = handler_stack_.empty() ? 0 : handler_stack_.back();
+    event.control_event_id = control_stack_.empty() ? 0 : control_stack_.back();
+    event.depth = static_cast<int>(event_stack_.size());
     event.kind = kind; event.function = frame.function; event.source_file = frame.source_file.empty() ? options_.source_file : frame.source_file;
-    event.semantic_identity = frame.semantic_identity; event.line = line;
+    event.semantic_identity = frame.semantic_identity;
+    event.specialization = frame.specialization_identity;
+    event.line = line;
     event.detail = detail.substr(0, 256);
     if (frame.domain) { event.instance = frame.domain->concrete->identity;
       event.specialization = frame.domain->concrete->specialization; event.handler = frame.handler; }
     trace_.push_back(std::move(event));
+    return trace_.back().event_id;
+  }
+
+  struct EventScope {
+    FastInterpreter& interpreter;
+    int event_id = 0;
+    bool call = false;
+    bool handler = false;
+    bool control = false;
+    explicit EventScope(FastInterpreter& owner, int id, bool call_scope = false,
+                        bool handler_scope = false, bool control_scope = false)
+        : interpreter(owner), event_id(id), call(call_scope),
+          handler(handler_scope), control(control_scope) {
+      if (!event_id) return;
+      interpreter.event_stack_.push_back(event_id);
+      if (call) interpreter.call_stack_.push_back(event_id);
+      if (handler) interpreter.handler_stack_.push_back(event_id);
+      if (control) interpreter.control_stack_.push_back(event_id);
+    }
+    ~EventScope() {
+      if (!event_id) return;
+      if (control) interpreter.control_stack_.pop_back();
+      if (handler) interpreter.handler_stack_.pop_back();
+      if (call) interpreter.call_stack_.pop_back();
+      interpreter.event_stack_.pop_back();
+    }
+  };
+
+  struct MessageScope {
+    FastInterpreter& interpreter;
+    int event_id = 0;
+    explicit MessageScope(FastInterpreter& owner, int id)
+        : interpreter(owner), event_id(id) {
+      if (event_id) interpreter.message_stack_.push_back(event_id);
+    }
+    ~MessageScope() {
+      if (event_id) interpreter.message_stack_.pop_back();
+    }
+  };
+
+  void annotate_last_handler(int handler_event_id) {
+    if (options_.trace && !trace_.empty())
+      trace_.back().handler_event_id = handler_event_id;
   }
 
   static std::string trim_copy(std::string value) {
@@ -1036,9 +1113,13 @@ class FastInterpreter {
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
+    if (specialization)
+      frame.specialization_identity = frame.functional_context + "@" +
+          std::to_string(target.line);
     bind_parameters(target.params, target.parameter_effects, arguments, caller, frame,
                     line, output, specialization ? &specialization->parameter_types : nullptr);
-    emit("FunctionEnter", frame, target.line);
+    int enter_id = emit("FunctionEnter", frame, target.line);
+    EventScope function_scope(*this, enter_id, true);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
         (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
@@ -1069,7 +1150,8 @@ class FastInterpreter {
       *origin.value = Value::unit();
     }
     bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
-    emit("MethodEnter", frame, target.line);
+    int enter_id = emit("MethodEnter", frame, target.line);
+    EventScope method_scope(*this, enter_id, true);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
         (target.result_expression ? eval(*target.result_expression, frame, target.result_line, output) : Value::unit());
@@ -1100,9 +1182,18 @@ class FastInterpreter {
       std::string before = summary(*place.value);
       *place.value = std::move(value);
       if (place.domain) state_event("state_write", frame, line, place, before, summary(*place.value));
-      else emit("LocalWrite", frame, line, name);
+      else {
+        int event_id = emit("LocalWrite", frame, line, name);
+        if (event_id) {
+          trace_.back().before = before;
+          trace_.back().after = summary(*place.value);
+        }
+      }
     } else if (identifier(name)) {
-      frame.locals[name] = std::move(value); emit("LocalWrite", frame, line, name);
+      std::string after = summary(value);
+      frame.locals[name] = std::move(value);
+      int event_id = emit("LocalWrite", frame, line, name);
+      if (event_id) trace_.back().after = after;
     } else throw RuntimeError(line, "unsupported assignment target '" + name + "'");
   }
 
@@ -1197,10 +1288,15 @@ class FastInterpreter {
           after = else_end;
         }
         bool condition = eval(statement.a, frame, statement.line, output).truthy();
-        emit("BranchTaken", frame, statement.line, condition ? "then" : "else");
-        Flow flow = condition
-            ? execute(statements, frame, output, index + 1, body_end)
-            : (after != body_end ? execute(statements, frame, output, body_end + 1, else_end) : Flow{});
+        int branch_id = emit("BranchTaken", frame, statement.line,
+                             condition ? "then" : "else");
+        Flow flow;
+        {
+          EventScope branch_scope(*this, branch_id, false, false, true);
+          flow = condition
+              ? execute(statements, frame, output, index + 1, body_end)
+              : (after != body_end ? execute(statements, frame, output, body_end + 1, else_end) : Flow{});
+        }
         if (flow.returned) return flow;
         index = after;
         continue;
@@ -1212,8 +1308,12 @@ class FastInterpreter {
         size_t iterations = 0;
         while (eval(statement.a, frame, statement.line, output).truthy()) {
           if (++iterations > 10000000) throw RuntimeError(statement.line, "interpreter loop exceeded safety limit");
-          emit("LoopIteration", frame, statement.line, std::to_string(iterations));
-          Flow flow = execute(statements, frame, output, index + 1, body_end);
+          int loop_id = emit("LoopIteration", frame, statement.line, std::to_string(iterations));
+          Flow flow;
+          {
+            EventScope loop_scope(*this, loop_id, false, false, true);
+            flow = execute(statements, frame, output, index + 1, body_end);
+          }
           if (flow.returned) return flow;
         }
         index = body_end;
@@ -1226,7 +1326,8 @@ class FastInterpreter {
         case Stmt::Kind::Var:
           frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
           frame.local_types[statement.a] = checked_binding_type(statement, frame);
-          emit("LocalWrite", frame, statement.line, statement.a);
+          if (emit("LocalWrite", frame, statement.line, statement.a))
+            trace_.back().after = summary(frame.locals.at(statement.a));
           break;
         case Stmt::Kind::Assign:
           assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);

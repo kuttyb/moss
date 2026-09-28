@@ -1,0 +1,6 @@
+module App
+import Math
+
+fn main():
+  result = Math.normalize(5)
+  assertEqual(result, 12)

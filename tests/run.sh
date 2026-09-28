@@ -1445,6 +1445,10 @@ if command -v python3 >/dev/null 2>&1; then
   PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_module_provider_ambiguity.py "$compiler"
   python3 tests/tooling/check_phase10_fast_debug_project.py "$compiler" ||
     fail 'fast interpreter did not execute the complete project source closure'
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase224_debug_query.py "$compiler" ||
+    fail 'structured debug-query trace slicing regressed'
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase224_native.py "$compiler" ||
+    fail 'Phase 22.4 native/rustc or Margo parity regressed'
 fi
 
 # Incoming payloads remain immutable semantic values. Phase 15.1 may represent

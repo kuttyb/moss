@@ -1,0 +1,17 @@
+fn adjust(limit: Int) -> Int:
+  var remaining = 3
+  var total = 0
+  while remaining > 0:
+    if remaining == 2:
+      total = total + limit
+    else:
+      total = total + remaining
+    remaining = remaining - 1
+  return total
+
+fn unused_value() -> Int:
+  return 1
+
+fn main():
+  value = adjust(4)
+  assertEqual(value, 5)

@@ -70,7 +70,7 @@ if "semantic_inspection" not in capabilities["result"]["capabilities"]:
 for capability in ("impact_analysis", "formatter", "semantic_edits",
                     "repair_actions", "static_cost_facts", "package_project_driver",
                     "package_dependencies", "package_lockfile", "tool_invocation", "language_surface",
-                    "fast_debug"):
+                    "fast_debug", "structured_debug_query"):
     if capability not in capabilities["result"]["capabilities"]:
         fail(f"capability discovery omitted {capability}")
 if not schema["result"]["schema"]["diagnostic_codes_are_stable"]:
@@ -143,6 +143,8 @@ if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
     fail("language surface discovery lacks its bootstrap entrypoint")
 if catalog["tool_invocation"]["entrypoint"] != "moss agent bootstrap --json":
     fail("tool invocation discovery lacks its bootstrap entrypoint")
+if not catalog["structured_debug_query"]["entrypoint"].startswith("moss debug-query"):
+    fail("structured debug query discovery lacks its debug-query entrypoint")
 surface = bootstrap["result"].get("source_surface", {})
 if surface.get("operators", {}).get("boolean_negation") != "not expression":
     fail("bootstrap source surface omitted boolean negation")
@@ -205,6 +207,11 @@ if "for traversal is not currently supported" not in debug_features["fast_debug"
     fail("Fast Debug discovery omitted its verified for traversal limitation")
 if "container methods reached through object fields are not currently supported" in debug_features["fast_debug"].get("limitations", []):
     fail("Fast Debug discovery retained a repaired container-field limitation")
+debug_query = debug_features.get("structured_debug_query", {})
+if "failure-slice" not in debug_query.get("operations", []):
+    fail("structured debug query discovery omitted failure-slice")
+if "--max-events" not in debug_query.get("bounds", []):
+    fail("structured debug query discovery omitted bounded result controls")
 actions = {item["name"]: item for item in bootstrap["result"]["actions"]}
 for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
     if action not in actions or not actions[action]["command"].startswith("margo "):
@@ -233,6 +240,8 @@ if "package_project_driver" not in schema_names:
     fail("agent schema omitted the Margo package/project contract")
 if "tool_invocation" not in schema_names:
     fail("agent schema omitted repository-local tool invocation")
+if "structured_debug_query" not in schema_names:
+    fail("agent schema omitted structured debug query contract")
 
 checked, checked_bytes = invoke("check", str(source), "--json")
 _, repeated_check = invoke("check", str(source), "--json")

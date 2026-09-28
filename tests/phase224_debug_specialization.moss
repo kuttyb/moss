@@ -1,0 +1,8 @@
+fn identity(value):
+  return value
+
+fn main():
+  first = identity(7)
+  second = identity(true)
+  assertEqual(first, 7)
+  assertEqual(second, true)

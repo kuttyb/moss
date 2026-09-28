@@ -1,0 +1,42 @@
+fn leaf(value: Int) -> Int:
+  scratch = value + 1
+  return scratch
+
+fn middle(value: Int) -> Int:
+  scratch = value * 2
+  return leaf(scratch)
+
+fn unused_nested() -> Int:
+  return 99
+
+domain Sink:
+  total = 0
+
+  fn Add(value: Int) -> Int:
+    total = total + value
+    reply total
+
+domain Relay:
+  domainroutes(sink: Sink)
+
+  fn Forward(value: Int) -> Int:
+    result = message sink.Add(value)
+    reply result
+
+domain Outer:
+  domainroutes(relay: Relay)
+
+  fn Run(value: Int) -> Int:
+    result = message relay.Forward(value)
+    reply result
+
+fn main():
+  left = Sink()
+  right = Sink()
+  relay = Relay(sink: left)
+  outer = Outer(relay: relay)
+  calculated = middle(2)
+  nested = message outer.Run(calculated)
+  other = message right.Add(1)
+  assertEqual(nested, 5)
+  assertEqual(other, 1)
