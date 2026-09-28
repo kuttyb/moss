@@ -89,6 +89,65 @@ def paired_metric(legacy: list[dict[str, Any]], treatment: list[dict[str, Any]],
     }
 
 
+def paired_fact_accuracy(legacy: list[dict[str, Any]], treatment: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pair trials, but compute the specified pooled correct/requested ratio."""
+    left = {(item["task_id"], item["trial_id"]): item for item in legacy}
+    right = {(item["task_id"], item["trial_id"]): item for item in treatment}
+    if set(left) != set(right):
+        raise RuntimeError("profile task/trial identities differ")
+    pairs = []
+    for identity in sorted(left):
+        before, after = left[identity], right[identity]
+        before_requested = before.get("semantic_facts_requested")
+        after_requested = after.get("semantic_facts_requested")
+        if not isinstance(before_requested, int) or before_requested < 1 or before_requested != after_requested:
+            continue
+        pairs.append((
+            identity, before.get("semantic_facts_correct", 0),
+            after.get("semantic_facts_correct", 0), before_requested,
+        ))
+    before_requested = sum(item[3] for item in pairs)
+    before_ratio = sum(item[1] for item in pairs) / before_requested if before_requested else None
+    after_ratio = sum(item[2] for item in pairs) / before_requested if before_requested else None
+    delta = after_ratio - before_ratio if before_ratio is not None and after_ratio is not None else None
+    trial_before = [item[1] / item[3] for item in pairs]
+    trial_after = [item[2] / item[3] for item in pairs]
+    by_task: dict[str, list[tuple[int, int, int]]] = {}
+    for (task_id, _), before, after, requested in pairs:
+        by_task.setdefault(task_id, []).append((before, after, requested))
+    per_task = {}
+    for task_id, values in sorted(by_task.items()):
+        requested = sum(item[2] for item in values)
+        per_task[task_id] = round(
+            sum(item[1] for item in values) / requested - sum(item[0] for item in values) / requested,
+            6,
+        )
+    interval = None
+    if pairs:
+        rng = random.Random(223)
+        bootstrap = []
+        for _ in range(5000):
+            sample = rng.choices(pairs, k=len(pairs))
+            requested = sum(item[3] for item in sample)
+            bootstrap.append(
+                sum(item[2] for item in sample) / requested
+                - sum(item[1] for item in sample) / requested
+            )
+        bootstrap.sort()
+        interval = [round(bootstrap[125], 6), round(bootstrap[4875], 6)]
+    return {
+        "paired_observations": len(pairs),
+        "legacy_mean": round(before_ratio, 6) if before_ratio is not None else None,
+        "phase22_3_mean": round(after_ratio, 6) if after_ratio is not None else None,
+        "absolute_delta": round(delta, 6) if delta is not None else None,
+        "percentage_delta": percent(delta, before_ratio) if delta is not None else None,
+        "legacy_median": round(statistics.median(trial_before), 6) if trial_before else None,
+        "phase22_3_median": round(statistics.median(trial_after), 6) if trial_after else None,
+        "paired_delta_bootstrap_95ci": interval,
+        "per_task_paired_delta": per_task,
+    }
+
+
 def verify_integrity(legacy: dict[str, Any], treatment: dict[str, Any]) -> None:
     lp, tp = legacy["protocol"], treatment["protocol"]
     for key in ("compiler_commit", "benchmark_commit", "compiler_binary_sha256", "agent", "limits", "task_ids", "trials_per_task"):
@@ -129,12 +188,13 @@ def build_comparison(runs_root: Path) -> dict[str, Any]:
     treatment = build_aggregate(runs_root, "phase22_3")
     verify_integrity(legacy, treatment)
     metrics = {name: paired_metric(legacy["trials"], treatment["trials"], extractor) for name, extractor in PRIMARY.items()}
+    metrics["semantic_fact_accuracy"] = paired_fact_accuracy(legacy["trials"], treatment["trials"])
     categories = {}
     for category in legacy["categories"]:
         left = [item for item in legacy["trials"] if item["category"] == category]
         right = [item for item in treatment["trials"] if item["category"] == category]
         categories[category] = {
-            "semantic_fact_accuracy": paired_metric(left, right, PRIMARY["semantic_fact_accuracy"]),
+            "semantic_fact_accuracy": paired_fact_accuracy(left, right),
             "final_task_pass_rate": paired_metric(left, right, PRIMARY["final_task_pass_rate"]),
             "semantic_detour_cost": paired_metric(left, right, PRIMARY["semantic_detour_cost"]),
         }
@@ -217,10 +277,18 @@ def report(document: dict[str, Any]) -> str:
     detour = metrics["semantic_detour_cost"]["absolute_delta"]
     completion = metrics["final_task_pass_rate"]["absolute_delta"]
     lines.extend(["", "## Interpretation", ""])
-    lines.append(f"Under the controlled query-surface intervention, Phase 22.3 changed mean semantic accuracy by {fmt(accuracy, True)}, semantic detour cost by {fmt(detour)}, and final completion by {fmt(completion, True)}. These deltas concern agent semantic observability and workflow efficiency; they do not imply any change to Moss language semantics.")
+    lines.append(f"Under the controlled query-surface intervention, Phase 22.3 changed pooled semantic fact accuracy by {fmt(accuracy, True)}, mean semantic detour cost by {fmt(detour)}, and final completion by {fmt(completion, True)}. These deltas concern agent semantic observability and workflow efficiency; they do not imply any change to Moss language semantics.")
     if adoption["phase22_3"]["semantic_query_adoption"] is not None and adoption["phase22_3"]["semantic_query_adoption"] < 1:
         lines.append("\nPhase 22.3 improves semantic retrieval when agents use it, while discovery/adoption remains a separate agent-workflow problem.")
-    lines.extend(["", "## Remaining work", "", "Only infrastructure failures or missing per-trial evidence listed in the machine-readable comparison remain measurement gaps.", ""])
+    failures = sum(
+        summary.get("infrastructure_failures", 0)
+        for summary in document["profile_summaries"].values()
+    )
+    remaining = (
+        f"{failures} infrastructure-failed trials remain a measurement gap."
+        if failures else "None. All planned trials completed with the required raw evidence."
+    )
+    lines.extend(["", "## Remaining work", "", remaining, ""])
     return "\n".join(lines)
 
 

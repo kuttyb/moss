@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 22.3 quantitative A/B benchmark — implementation checkpoint (2026-09-28)
+## Phase 22.3 quantitative A/B benchmark — COMPLETE (2026-09-28)
 
 A separate controlled semantic-query benchmark now lives under
 `benchmarks/agent/phase22_3_ab/`. It contains 20 deterministic `P223NNN` tasks:
@@ -31,9 +31,32 @@ existing agent benchmark, baseline, and baseline-analysis checks. A required
 six-run smoke matrix (two semantic-heavy tasks and one control, both profiles)
 completed with six validator passes and 14/14 exact requested facts; it also
 confirmed treatment `resolve` adoption, control isolation, source-read
-telemetry, deterministic aggregation, and comparison regeneration. The
-canonical 200-run experiment remains intentionally pending until this benchmark
-framework and corpus are committed as one frozen implementation checkpoint.
+telemetry, deterministic aggregation, and comparison regeneration.
+
+The framework and corpus were frozen in implementation commit
+`6c8cd5b7ce249fb59d95231cfa52e4caf0470104`; the same SHA and compiler binary
+were used by both conditions. The canonical 200-run experiment completed all
+trials with no infrastructure failures, timeouts, or validator failures.
+
+Phase 22.3 changed pooled semantic fact accuracy from 241/260 (92.7%) to
+250/260 (96.2%), a +3.5 percentage-point delta. Mean semantic detour cost fell
+from 3.125 to 2.975 while the median remained 3. Source inspections rose
+slightly from 1.23 to 1.29 per run, with zero generated-Rust inspections in
+either condition. Queries per correct fact fell from 0.969 to 0.849; agent tool
+calls from 14.94 to 14.65; Moss/Margo calls from 6.01 to 5.77; mean wall time
+from 44.52s to 43.40s; and mean input tokens from 258,364 to 236,486. Final,
+semantic-heavy, and control pass rates were all 100% in both conditions, as were
+the paired first-validation and attempts-to-green results (85% and 1.15 mean).
+Semantic-query adoption was 87.5% in both profiles and treatment `resolve`
+adoption was 68.8%, so discoverability remains a separate limitation.
+
+The deterministic aggregates, paired bootstrap intervals, comparison, and
+human report regenerate cleanly. Canonical raw artifacts are under
+`benchmarks/agent/phase22_3_ab/runs/`; the tracked deliverables are
+`comparison.json` and `REPORT.md`. The benchmark supports a modest semantic
+accuracy and efficiency improvement concentrated in effects/calls and
+type/ownership, but no end-to-end completion improvement and no source-reading
+reduction. No Phase 22.3 compiler behavior was changed.
 
 ## Phase 22.3 — COMPLETE (2026-09-28)
 

@@ -141,6 +141,18 @@ second = compare.paired_metric(legacy_trials, treatment_trials, compare.PRIMARY[
 if first != second or first["absolute_delta"] != 1.0:
     fail("deterministic paired comparison failed")
 
+weighted_legacy = [
+    {"task_id":"P223001","trial_id":"trial-001","semantic_facts_correct":1,"semantic_facts_requested":1},
+    {"task_id":"P223002","trial_id":"trial-001","semantic_facts_correct":0,"semantic_facts_requested":3},
+]
+weighted_treatment = [
+    {"task_id":"P223001","trial_id":"trial-001","semantic_facts_correct":1,"semantic_facts_requested":1},
+    {"task_id":"P223002","trial_id":"trial-001","semantic_facts_correct":3,"semantic_facts_requested":3},
+]
+weighted = compare.paired_fact_accuracy(weighted_legacy, weighted_treatment)
+if weighted["legacy_mean"] != 0.25 or weighted["phase22_3_mean"] != 1.0 or weighted["absolute_delta"] != 0.75:
+    fail("semantic fact accuracy was not pooled as correct/requested")
+
 protocol = {"compiler_commit": "a", "benchmark_commit": "a", "compiler_binary_sha256": "b", "agent": {}, "limits": {}, "task_ids": ["P223001"], "trials_per_task": 1}
 trial = {"task_id":"P223001","trial_id":"trial-001","compiler_commit":"a","compiler_binary_sha256":"b","prompt_sha256":"p","prompt_wrapper_sha256":"w","starter_tree_sha256":"s","task_metadata_sha256":"m","validator_sha256":"v","agent":{}}
 left = {"protocol": protocol, "trials": [trial]}
