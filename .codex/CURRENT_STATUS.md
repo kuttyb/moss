@@ -1,5 +1,60 @@
 # Moss current status
 
+## Phase 22.3 — COMPLETE (2026-09-28)
+
+Phase 22.3 native validation and final closeout completed on the integrated
+implementation head `89cc354936f6b1bc9188c0878d5709cebc44aea6`. The
+current-main integration commit is
+`cc5846602a2bfdfa45fbf679e46b26492b52b460` (main parent
+`27b343def76897d4955d40cc0fb3ff2ad85d3913`). This closeout changes no Moss
+compiler, language, runtime, or query implementation.
+
+Rust-backed validation used `rustc 1.98.1 (48a229cea 2026-09-01)` and
+`cargo 1.98.1 (797e8a9bc 2026-08-05)`. The strict compiler rebuild passed
+with C++17 `-O2 -Wall -Wextra -pedantic -Werror`. The Phase 22.3 semantic-query
+suite passed, including source-scoped locations, project-wide durable
+`entity-v1` IDs, deterministic ambiguity, `--kind`, `--enclosing`, and
+structured missing resolution. Live bootstrap/schema discovery reports
+`moss-0.1`, `moss-agent-1`, `resolve`, `semantic_query_expansion`, and
+`resolved / ambiguous / missing` states.
+
+All closure gates passed: agent API, teaching diagnostics, agent
+skills/bootstrap, baseline analysis, the complete `make check` run, and
+`make examples`. Dedicated native Margo/module coverage passed build, run,
+test, path/Git dependency, multi-module, source-free `.mossi`/rlib, and
+provider-resolution cases. Cross-package specialization, enum/match native and
+Fast Debug cases, domain/message production/interpreter parity, project-wide
+interpreted tests, and path-dependency Fast Debug all passed. Synchronization
+validation passed the compiler-owned `SynchronizationPlan`, READ/WRITE/CONSUME
+footprint, protected-read, lock-class/rank, conflict-witness, strict C++
+normalization/lowering, generated-Rust native 2PL, source-free ABI, and
+synchronous-message coverage. The current static specialization coverage passed
+for untyped functions, concrete collections, callables, modules, packages, and
+enum matching.
+
+Benchmark infrastructure, baseline validation, and aggregate reproducibility
+passed. The frozen post-22.3 evidence was not rerun or rewritten and remains
+tied to compiler commit `ddf927ca490d092b776168c45d330c439d220268`:
+final passes `28 -> 28`, first-validation successes `16 -> 18`, mean
+attempts-to-green `1.467 -> 1.400`, agent tool calls `422 -> 367`, Moss/Margo
+calls `156 -> 134`, 10 semantic-query calls, 8 successful semantic queries,
+2 blocked by program diagnostics, 8/8 resolved queried targets, and zero
+fresh-agent `resolve` uses. These measurements do not establish causality or
+improved final completion, and the corpus did not record source-read telemetry.
+
+Final hygiene passed: `sh -n tests/run.sh`, `git diff --check`, and a clean
+post-closeout `git status --short`. No integration regression required a code
+fix. Phase 22.3 is complete.
+
+Deliberate limitations retained for later phases:
+
+- direct callable effects are not retained separately;
+- per-use move provenance is not retained;
+- source provenance is line-oriented;
+- some nested message expressions do not become semantic call edges;
+- trace slicing is Phase 22.4;
+- repair/workflow automation is Phase 22.5.
+
 ## 2026-09-28 — Phase 15.15 EXPRESS-005 corrective closeout
 
 The in-progress `f378def` checkpoint entry below is superseded. The existing
