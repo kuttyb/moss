@@ -1,6 +1,6 @@
 domain Worker:
   fn Read() -> Int:
-    reply missing
+    reply []
 
 fn main():
   worker = Worker()
