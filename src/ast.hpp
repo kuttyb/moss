@@ -14,6 +14,21 @@ namespace moss {
 using std::string;
 using std::vector;
 
+// The checked ownership rule shared by the checker, native lowering, and
+// Fast Debug. Callers may pass canonical names or source primitive spellings.
+inline bool copy_type_name(string type) {
+  auto first = type.find_first_not_of(" \t\n\r");
+  if (first == string::npos) return false;
+  auto last = type.find_last_not_of(" \t\n\r");
+  type = type.substr(first, last - first + 1);
+  if (type == "int" || type == "Int" || type == "float" ||
+      type == "Float" || type == "bool" || type == "Bool") return true;
+  if (type.size() > 8 && type.compare(0, 7, "option[") == 0 &&
+      type.back() == ']')
+    return copy_type_name(type.substr(7, type.size() - 8));
+  return false;
+}
+
 struct Line {
   int no = 0;
   int indent = 0;
@@ -47,6 +62,9 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
+  // A generic body can be checked at several concrete call sites. Preserve
+  // the inferred binding type for each checked specialization.
+  std::unordered_map<string,string> semantic_types_by_context;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.

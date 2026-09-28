@@ -8,11 +8,12 @@ patches or resetting workspace changes. F1–F13 are fixed and the authoritative
 D1–D13 decisions are implemented; see
 `docs/PHASE_15_15_EXPRESS_005_REVIEW.md` for the individual dispositions.
 
-The 125-probe peer registry remains primary. It now contains 59 permanent
+The 125-probe peer registry remains primary. It now contains 61 permanent
 case records covering the original breadth plus direct `replace`, reply,
-owned-rvalue match, non-enum specialization rejection, and loop restoration.
+owned-rvalue match, non-enum specialization rejection, loop restoration, and
+Int/Bool replacement copy semantics.
 `python3 tests/tooling/check_phase15_15_express005_followups.py --expect-fixed`
-passed all 59. `make check`, `make examples`, and `git diff HEAD --check`
+passed all 61. `make check`, `make examples`, and `git diff HEAD --check`
 passed after the compiler and fixture edits. Standalone source-free `.mossi`
 provider validation, the agent skills/bootstrap contract, and swarm issue and
 feedback validators passed. Native peer cases compile generated Rust with
@@ -21,7 +22,9 @@ feedback validators passed. Native peer cases compile generated Rust with
 Key semantics: `match consume` accepts whole owned enum values and rvalues;
 interior places remain non-consumable. `replace(place, replacement)` requires
 writable storage and the same static type, installs replacement, consumes an
-owned replacement binding normally, and returns the old whole value as owned.
+owned nontrivial replacement binding normally, and returns the old whole value
+as owned. Copy/trivial replacement bindings remain usable; Fast Debug now uses
+checked binding types to agree with native on this rule.
 READ enum views can cross message/reply value boundaries and can feed independent
 computed results. Whole-match READ lifetime remains. A consumed `var` may be
 reinitialized by whole-value assignment; all reaching paths and loop back edges
@@ -29,9 +32,9 @@ must restore it before read. Untyped ordinary match parameters specialize at
 concrete calls. `pass` is a reserved no-op. Legacy lowercase `option[T]` remains
 for Phase 21 convergence with Result/error semantics.
 
-No known EXPRESS-005 blocker remains after the listed full gates. The branch is
-local and has not been pushed. The older main closeout and checkpoint sections
-below are historical.
+No known EXPRESS-005 blocker remains after the listed full gates. The hardening
+branch is ready for merge after final validation. The older main closeout and
+checkpoint sections below are historical.
 
 ## 2026-09-27 — EXPRESS-005 corrective hardening checkpoint (in progress)
 

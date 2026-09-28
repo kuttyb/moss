@@ -750,6 +750,28 @@ fn main():
   machine = Machine()
   echo message machine.Step(Box.Empty)
 """, check="reject", needle="cannot WRITE incoming message payload"),
+    Case("D4g", "control", "Int replacement remains usable after replace",
+         """fn main():
+  var x = 1
+  let y = 2
+
+  let old = replace(x, y)
+
+  echo old
+  echo x
+  echo y
+""", output="1\n2\n2"),
+    Case("D4h", "control", "Bool replacement remains usable after replace",
+         """fn main():
+  var current = false
+  let replacement = true
+
+  let old = replace(current, replacement)
+
+  echo old
+  echo current
+  echo replacement
+""", output="false\ntrue\ntrue"),
     Case("D6b", "control", "incompatible non-enum specialization is rejected",
          """enum Status:
   Ready

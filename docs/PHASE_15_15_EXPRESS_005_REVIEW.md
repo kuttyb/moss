@@ -41,9 +41,10 @@ applicable native, Fast Debug, Margo, effects, or synchronization path.
 | D12 | Tag-only declaration, construction, and pattern use bare `Tag`; `Tag()` is rejected. |
 | D13 | Enums remain functions-only; enum methods receive a targeted diagnostic. |
 
-`replace` evaluates its replacement under ordinary ownership/effect rules,
-consumes a nontrivial replacement binding, installs the replacement without an
-observable uninitialized state, and returns the old whole value. It does not
+`replace` evaluates its replacement under ordinary ownership/effect rules.
+A nontrivial replacement binding is consumed; copy/trivial replacement bindings
+remain usable under ordinary Moss copy semantics. It installs the replacement
+without an observable uninitialized state and returns the old whole value. It does not
 permit partial moves, shared ownership, `take`, or `swap`. A domain state
 machine can use `old = replace(phase, Phase.Idle)` followed by
 `match consume old:` to transfer a payload into its next state. A normal READ

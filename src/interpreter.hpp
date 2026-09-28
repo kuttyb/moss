@@ -175,6 +175,7 @@ class FastInterpreter {
     std::string source_file;
     std::string semantic_identity;
     std::unordered_map<std::string, Value> locals;
+    std::unordered_map<std::string, std::string> local_types;
     std::unordered_map<std::string, Place> aliases;
     DomainValue* domain = nullptr;
     std::string handler;
@@ -190,6 +191,13 @@ class FastInterpreter {
   Options options_;
   std::vector<TraceEvent> trace_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
+
+  static std::string checked_binding_type(const Stmt& statement,
+                                          const Frame& frame) {
+    auto specialized = statement.semantic_types_by_context.find(frame.functional_context);
+    return specialized == statement.semantic_types_by_context.end()
+        ? statement.semantic_type : specialized->second;
+  }
 
   static std::string escape(const std::string& value) {
     std::string result;
@@ -659,7 +667,13 @@ class FastInterpreter {
       if (callee.find('.') == std::string::npos) {
         if (callee == "replace" && args.size() == 2) {
           Value replacement = eval(args[1], frame, line, output);
-          if (identifier(trim_copy(args[1]))) frame.locals.erase(trim_copy(args[1]));
+          const auto source = trim_copy(args[1]);
+          if (identifier(source) && frame.locals.count(source)) {
+            auto type = frame.local_types.find(source);
+            if (type == frame.local_types.end() || type->second.empty())
+              throw RuntimeError(line, "internal error: replace replacement lacks a checked type");
+            if (!copy_type_name(type->second)) frame.locals.erase(source);
+          }
           auto place = locate(args[0], frame, line, output);
           if (!place.value)
             throw RuntimeError(line, "replace requires an assignable place");
@@ -1017,12 +1031,13 @@ class FastInterpreter {
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
     Frame frame;
     frame.function = target.name;
-    frame.functional_context = functional_function_context(
-        target, specialization_for_call(target, caller, line));
+    const auto* specialization = specialization_for_call(target, caller, line);
+    frame.functional_context = functional_function_context(target, specialization);
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
-    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
+    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame,
+                    line, output, specialization ? &specialization->parameter_types : nullptr);
     emit("FunctionEnter", frame, target.line);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
@@ -1119,6 +1134,7 @@ class FastInterpreter {
             taken = true;
             emit("BranchTaken", frame, arm.line, arm.a);
             std::unordered_map<std::string,std::optional<Value>> saved_locals;
+            std::unordered_map<std::string,std::optional<std::string>> saved_local_types;
             std::unordered_map<std::string,std::optional<Place>> saved_aliases;
             const EnumCase* item = nullptr;
             for (const auto& candidate : declaration->cases)
@@ -1129,10 +1145,14 @@ class FastInterpreter {
               auto prior_local = frame.locals.find(binding);
               saved_locals[binding] = prior_local == frame.locals.end()
                   ? std::nullopt : std::optional<Value>(prior_local->second);
+              auto prior_type = frame.local_types.find(binding);
+              saved_local_types[binding] = prior_type == frame.local_types.end()
+                  ? std::nullopt : std::optional<std::string>(prior_type->second);
               auto prior_alias = frame.aliases.find(binding);
               saved_aliases[binding] = prior_alias == frame.aliases.end()
                   ? std::nullopt : std::optional<Place>(prior_alias->second);
               frame.locals.erase(binding);
+              frame.local_types.erase(binding);
               frame.aliases.erase(binding);
               auto field = selected.object->fields.find(item->fields[field_index].name);
               if (field == selected.object->fields.end())
@@ -1144,13 +1164,17 @@ class FastInterpreter {
                 frame.locals[arm.args[field_index]] = field->second;
               else
                 frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
+              frame.local_types[binding] = item->fields[field_index].type;
             }
             flow = execute(statements, frame, output, cursor + 1, arm_end);
             for (const auto& binding : arm.args) {
               frame.locals.erase(binding);
+              frame.local_types.erase(binding);
               frame.aliases.erase(binding);
               if (saved_locals.at(binding))
                 frame.locals[binding] = *saved_locals.at(binding);
+              if (saved_local_types.at(binding))
+                frame.local_types[binding] = *saved_local_types.at(binding);
               if (saved_aliases.at(binding))
                 frame.aliases[binding] = *saved_aliases.at(binding);
             }
@@ -1201,10 +1225,13 @@ class FastInterpreter {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
           frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
+          frame.local_types[statement.a] = checked_binding_type(statement, frame);
           emit("LocalWrite", frame, statement.line, statement.a);
           break;
         case Stmt::Kind::Assign:
           assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
+          if (identifier(statement.a))
+            frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
@@ -1229,7 +1256,10 @@ class FastInterpreter {
           std::string invocation = statement.a + "." + statement.b + "(";
           for (size_t i = 0; i < statement.args.size(); ++i) { if (i) invocation += ", "; invocation += statement.args[i]; }
           Value result = message(invocation + ")", frame, statement.line, output);
-          if (!statement.message_result.empty()) assign(statement.message_result, std::move(result), frame, statement.line, output);
+          if (!statement.message_result.empty()) {
+            assign(statement.message_result, std::move(result), frame, statement.line, output);
+            frame.local_types[statement.message_result] = checked_binding_type(statement, frame);
+          }
           break;
         }
         case Stmt::Kind::Reply:

@@ -2894,11 +2894,7 @@ class Checker {
   }
 
   bool copy_type(const string& type) const {
-    string t = canonical_type_name(type);
-    if (t == "int" || t == "float" || t == "bool") return true;
-    if (starts_with(t, "option[") && ends_with(t, "]"))
-      return copy_type(trim(t.substr(7, t.size() - 8)));
-    return false;
+    return copy_type_name(canonical_type_name(type));
   }
 
   bool transfer_type(const string& type) const {
@@ -3505,8 +3501,12 @@ class Checker {
         auto domain = domains_.find(canonical_type_name(receiver->second));
         if (domain != domains_.end())
           if (const Handler* handler = find_handler(*domain->second, statement.b))
-            if (handler->reply_type)
+            if (handler->reply_type) {
               env[statement.message_result] = *handler->reply_type;
+              if (record_semantic_types)
+                const_cast<Stmt&>(statement).semantic_type =
+                    canonical_type_name(*handler->reply_type);
+            }
       }
       return;
     }
@@ -3707,6 +3707,10 @@ class Checker {
 
       visitor(statement, env);
       advance_type_environment(statement, env, statements, record_semantic_types);
+      if (record_semantic_types && !join_context.empty() &&
+          !statement.semantic_type.empty())
+        const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
+            statement.semantic_type;
       ++index;
     }
   }
@@ -11189,11 +11193,7 @@ class Generator {
   }
 
   bool copy_type(const string& type) const {
-    string t = canonical_type_name(type);
-    if (t == "int" || t == "float" || t == "bool") return true;
-    if (starts_with(t, "option[") && ends_with(t, "]"))
-      return copy_type(trim(t.substr(7, t.size() - 8)));
-    return false;
+    return copy_type_name(canonical_type_name(type));
   }
 
   bool borrowable_type(const string& type) const {
