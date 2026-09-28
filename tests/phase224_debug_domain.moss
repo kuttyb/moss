@@ -1,0 +1,20 @@
+domain Ledger:
+  balance = 0
+
+  fn Deposit(amount: Int) -> Int:
+    balance = balance + amount
+    reply balance
+
+domain Service:
+  domainroutes(ledger: Ledger)
+
+  fn Run() -> Int:
+    first = message ledger.Deposit(3)
+    second = message ledger.Deposit(4)
+    reply second
+
+fn main():
+  ledger = Ledger()
+  service = Service(ledger: ledger)
+  result = message service.Run()
+  assertEqual(result, 6)

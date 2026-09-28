@@ -1,0 +1,6 @@
+[project]
+name = "phase224_debug_multimodule"
+version = "0.1.0"
+
+[build]
+source = "src"

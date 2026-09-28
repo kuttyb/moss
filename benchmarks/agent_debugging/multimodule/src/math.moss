@@ -1,0 +1,5 @@
+module Math
+
+export fn normalize(value: Int) -> Int:
+  shifted = value + 2
+  return shifted * 2

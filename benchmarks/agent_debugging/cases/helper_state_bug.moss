@@ -1,0 +1,16 @@
+fn bump_twice(value: Int) -> Int:
+  current = value + 1
+  return current + 1
+
+domain Counter:
+  total = 0
+
+  fn Step(amount: Int) -> Int:
+    total = total + bump_twice(amount)
+    reply total
+
+fn main():
+  counter = Counter()
+  first = message counter.Step(2)
+  second = message counter.Step(3)
+  assertEqual(second, 7)

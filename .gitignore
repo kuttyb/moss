@@ -22,3 +22,5 @@ examples/projects/*/build/
 examples/projects/*/.moss/
 
 .aider*
+.cargo/
+.rustup/

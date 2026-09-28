@@ -201,7 +201,8 @@
     frame.function = instance.definition->name + "." + target->name;
     frame.functional_context = functional_handler_context(*instance.definition, *target);
     frame.source_file = instance.definition->source_file;
-    frame.semantic_identity = "handler:" + instance.definition->name + "." + target->name;
+    frame.semantic_identity = "handler:" + instance.definition->name + "." +
+        target->name + "@" + std::to_string(target->line);
     std::string payload;
     for (size_t i = 0; i < arguments.size(); ++i) {
       Value value = independent(eval(arguments[i], caller, line, output));
@@ -210,13 +211,21 @@
       frame.locals[target->params[i].name] = std::move(value);
     }
     Frame call_event = caller; call_event.domain = &instance; call_event.handler = target->name;
-    emit("message_call", call_event, line, payload);
-    emit("handler_enter", frame, target->line);
-    Flow flow = execute(target->body, frame, output);
-    const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
-    bool needs_reply = target->reply_type.has_value() || specialization.handler_reply_types.count(target->name);
-    if (needs_reply && !flow.returned) throw RuntimeError(line, "handler completed without its required reply");
-    emit("handler_exit", frame, target->line);
+    int message_id = emit("message_call", call_event, line, payload);
+    MessageScope message_scope(*this, message_id);
+    EventScope message_event_scope(*this, message_id);
+    int handler_id = emit("handler_enter", frame, target->line);
+    Flow flow;
+    {
+      EventScope handler_scope(*this, handler_id, true, true);
+      flow = execute(target->body, frame, output);
+      const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
+      bool needs_reply = target->reply_type.has_value() || specialization.handler_reply_types.count(target->name);
+      if (needs_reply && !flow.returned) throw RuntimeError(line, "handler completed without its required reply");
+      emit("handler_exit", frame, target->line);
+      annotate_last_handler(handler_id);
+    }
     emit("message_return", call_event, line, summary(flow.value));
+    annotate_last_handler(handler_id);
     return flow.value;
   }
