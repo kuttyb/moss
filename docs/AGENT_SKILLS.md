@@ -8,6 +8,12 @@ Codex session does not notice a newly checked-out skill.
 
 The canonical checked-in bodies are:
 
+The current language skill covers Phase 15.15 closed enums: exact named
+patterns, whole-match READ borrows, owned-rvalue consuming matches, `replace`,
+`pass`, and definite reinitialization of consumed mutable bindings. Bootstrap
+`source_surface` is the live spelling contract; the peer regression registry
+is `tests/tooling/check_phase15_15_express005_followups.py`.
+
 - [`moss-language`](../.agents/skills/moss-language/SKILL.md) — current Moss v0.1
   source rules, domain/routing model, ownership/effects, traits, functional code,
   modules, and the most important rejected patterns.

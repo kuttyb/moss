@@ -134,16 +134,28 @@ the enum for all arms. Any statically typed enum expression allowed by ordinary
 Moss READ semantics may be used, including a field of an aggregate; its source
 storage remains borrowed for the match, without an enum-specific copy. A
 nontrivial payload binding is a temporary READ
-view, subject to the ordinary borrow lifetime and forbidden from consuming,
-mutating, or escaping across a by-value boundary. Copy scalars retain their
-ordinary rules. The source enum remains live at the join. In contrast,
-`match consume value` requires an owning named enum binding and consumes the
-whole enum before branch selection. It does not partially move enum fields
-from aggregates or consume arbitrary enum-valued expressions. The
+view, subject to the whole-match READ borrow. It may feed independent
+computations or cross a `message`/`reply` semantic value boundary, but cannot
+be consumed, mutated, or moved into ordinary owned storage. Copy scalars retain
+their ordinary rules. The source enum remains live at the join. In contrast,
+`match consume value` accepts an owned binding or owned enum rvalue and consumes
+the whole enum before branch selection. It does not partially move enum fields
+from aggregates. The
 selected case's payload fields become owned branch locals; the original enum
 is dead on every branch and after the join. No partial-move state exists.
 Incoming immutable handler payloads cannot enter a consuming match. Recursive
 enum layouts are rejected in this first implementation.
+
+Pattern payload names match declared field names in declaration order. Tag-only
+cases use bare names in declarations and patterns. `replace(place, replacement)`
+is the narrow whole-value state transition primitive: a writable place receives
+an equal-typed replacement while the old value becomes owned. Consumed mutable
+bindings can be reinitialized by whole-value assignment; definite initialization
+is checked at branches and loop back edges. `pass` is an effect-free no-op
+statement. Ordinary untyped functions can match after static specialization
+supplies a concrete enum type; each specialization is checked separately.
+Legacy lowercase `option[T]` remains distinct from matchable user enums while
+Phase 21 considers convergence with Result/error semantics.
 
 ### 4 Functional/dataflow code without general closure objects
 

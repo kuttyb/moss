@@ -35,9 +35,9 @@ The `tests/` directory itself is optional.
 
 ### Temporary uber-module compilation
 
-Moss does not yet have a module or import system. For `moss test`, all
-application files and all recursively discovered test files are parsed as one
-logical global compilation unit:
+For legacy projects without explicit `module` declarations, `moss test`
+parses application files and recursively discovered test files as one logical
+compilation unit:
 
 ```text
 src/**/*.moss + tests/**/*.moss

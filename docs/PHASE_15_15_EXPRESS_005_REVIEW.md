@@ -1,5 +1,58 @@
 # Phase 15.15 EXPRESS-005 review: closed enums and exhaustive match
 
+## Corrective closeout (2026-09-28)
+
+The table below supersedes the historical peer-review verdict and open-question
+text retained later in this document. The 125-probe registry remains
+[`check_phase15_15_express005_followups.py`](../tests/tooling/check_phase15_15_express005_followups.py);
+fixed F and decided D cases are permanent `control` cases. Run it with
+`--expect-fixed` to require all cases to pass through the checker and the
+applicable native, Fast Debug, Margo, effects, or synchronization path.
+
+| Finding | Regression | Final disposition |
+| --- | --- | --- |
+| F1 | F1a–F1c | Fixed: payload enum construction has pure observable effects. |
+| F2 | F2 | Fixed: inferred domain state types reach handler match checking. |
+| F3 | F3 | Fixed: inferred Queue element types reach `pop()` and match. |
+| F4 | F4a–F4e | Fixed: READ-view ownership checks decompose expressions; derived independent values are legal. |
+| F5 | F5 | Fixed: `_` pattern binding is rejected. |
+| F6 | F6 | Fixed: payload pattern bindings are immutable. |
+| F7 | F7 | Fixed: enum Map keys are rejected. |
+| F8 | F8 | Fixed: enum field projection is rejected; use match. |
+| F9 | F9 | Fixed: trait-typed enum payload storage is rejected. |
+| F10 | F10 | Fixed: payload construction requires `field: value`. |
+| F11 | F11a–F11d | Fixed: loop back edges reject outer values consumed without definite restoration. |
+| F12 | F12a–F12b | Fixed: generated Rust allows `unused_assignments` under `-D warnings`. |
+| F13 | F13 | Fixed: unknown bare identifier statements are rejected; `pass` is supported. |
+
+| Decision | Final rule |
+| --- | --- |
+| D1 | Patterns bind exact declared field names in declaration order; positional renaming is rejected. |
+| D2 | `match consume` accepts owned enum bindings and rvalues; interior places still cannot be partially moved. |
+| D3 | A READ match borrows its source for the whole match statement. |
+| D4 | `replace(place, replacement)` installs an equal-typed value in writable storage and returns the old whole value as owned. |
+| D5 | READ enum views may cross `message` and `reply` semantic value boundaries. |
+| D6 | Untyped ordinary parameters participate in static enum match specialization; each concrete call is checked. |
+| D7 | A consumed `var` may be reinitialized by whole-value assignment; joins and loop back edges require definite initialization. |
+| D8 | Enum payload field types remain explicit. |
+| D9 | Lowercase legacy `option[T]` remains separate from matchable enums; convergence is a Phase 21 input. |
+| D10 | No `Option[T]` alias is added; the iterator contract retains `option[T]`. |
+| D11 | `pass` is a reserved, effect-free no-op statement in normal blocks. |
+| D12 | Tag-only declaration, construction, and pattern use bare `Tag`; `Tag()` is rejected. |
+| D13 | Enums remain functions-only; enum methods receive a targeted diagnostic. |
+
+`replace` evaluates its replacement under ordinary ownership/effect rules,
+consumes a nontrivial replacement binding, installs the replacement without an
+observable uninitialized state, and returns the old whole value. It does not
+permit partial moves, shared ownership, `take`, or `swap`. A domain state
+machine can use `old = replace(phase, Phase.Idle)` followed by
+`match consume old:` to transfer a payload into its next state. A normal READ
+match still holds its borrow for the entire match. An owned-rvalue consuming
+match consumes the complete value before branch selection.
+
+Historical findings and open questions below record the initial peer review;
+their “actual” and “open” statements are superseded by this section.
+
 **Reviewed:** `badceae` (closed enums and exhaustive matching) and `2e96565`
 (READ matches on expressions), `main` at `2e96565`, 2026-09-27.
 **Method:** 125 minimal probes, plus the existing 32-case rejection matrix, run
@@ -10,7 +63,8 @@ through `moss check --json`, native lowering compiled with `rustc -D warnings`
 
 ## Verdict
 
-Approve the design. Do not treat EXPRESS-005 as blocker-free.
+Historical peer verdict at the reviewed commits: design approved, with the
+corrective blockers listed below. The corrective disposition above supersedes it.
 
 The documented surface works, and native and Fast Debug agree on it:
 construction, exhaustive checking, READ and consuming matches, nesting, messages,
@@ -30,13 +84,13 @@ Four problems block ordinary use:
 4. **Valid programs fail the native build** under `-D warnings` (F12). Exhaustive
    matches make the triggering pattern common.
 
-Thirteen open design questions (D1–D13) are listed for the author. None is
-decided here.
+Thirteen design questions (D1–D13) were listed for the author at review time;
+the corrective closeout above records their decisions.
 
 ## Running the cases
 
 ```sh
-python3 tests/tooling/check_phase15_15_express005_followups.py           # strict-xfail
+python3 tests/tooling/check_phase15_15_express005_followups.py
 python3 tests/tooling/check_phase15_15_express005_followups.py --expect-fixed
 python3 tests/tooling/check_phase15_15_express005_followups.py --only F4a,C2
 python3 tests/tooling/check_phase15_15_express005_followups.py --list
@@ -44,15 +98,14 @@ python3 tests/tooling/check_phase15_15_express005_followups.py --list
 
 | Kind | Meaning in the default mode |
 |---|---|
-| `bug` (F*) | Must still fail today. A bug case that starts passing reports **XPASS** and fails the run, so a fix is promoted to a permanent regression and the finding is marked fixed here. |
-| `open` (D*) | Pins today's behavior. A design change flips the case; update the case and this review together. |
-| `control` (C*) | Documented idioms and workarounds that must keep working. |
+| `control` (F*, D*, C*) | Corrected findings, decided rules, and documented idioms that must keep working. |
+| `bug` / `open` | Reserved by the harness for any future unresolved finding. |
 
-`--expect-fixed` makes every bug case required-correct; use it as a fix's target.
-The script runs inside `make check` (`tests/run.sh`) in the default mode.
+`--expect-fixed` requires every case to be correct; use it as the closeout gate.
+The script runs inside `make check` (`tests/run.sh`) with `--expect-fixed`.
 Each case's source is kept under `tmp/express005_followups/<ID>/` after a run.
 
-## Findings
+## Historical findings at the reviewed commit
 
 Severity: **High** blocks documented use or breaks a stated invariant.
 **Medium** is a false acceptance or an engine divergence on an edge. **Low** is
@@ -207,7 +260,10 @@ every arm, as the documented idiom does (C1), avoids the problem today.
 An arm body of `pass` (or any unknown name) passes the checker, and rustc
 fails. This is general, but enums invite it: see D11.
 
-## Diagnostics and tooling nits (no cases)
+## Historical diagnostics and tooling observations
+
+These observations describe the reviewed commit. The corrective pass updated
+the diagnostics, bootstrap, `.mossmap`, and standalone source-free test.
 
 - **`BORROWED_ENUM_PAYLOAD_*`:** the guidance recommends `match consume x:`
   even when `x` cannot be consumed.
@@ -226,10 +282,10 @@ fails. This is general, but enums invite it: see D11.
 - **`check_enum_source_free.py`:** it needs `margo run` to have built the
   fixture first. That holds in `run.sh`, but the script fails standalone.
 
-## Open design questions
+## Historical design questions (all resolved above)
 
-These are recorded for the author, not decided. Each is pinned at today's
-behavior by its D-case.
+The options below are the peer's original questions. The corrective closeout
+table records the binding decision for each D case.
 
 **D1. Named construction, positional patterns.** `case Range(hi, lo)` binds
 `hi` to the `lo` field silently; the case prints −8. Construction requires
@@ -337,9 +393,10 @@ allow methods, or keep functions-only. Fix the diagnostic either way.
 
 ## Documentation corrected in the same series
 
-The first commit of this review series aligned the canonical docs, the language
-skill, and the issue ledger with the implemented enums. It covers positional
-binding, the all-arms READ borrow and the transition idiom, no enum
+The earlier peer patch proposed aligning the canonical docs, the language
+skill, and the issue ledger with implemented enums. The corrective pass retained
+its valid corrections and replaced positional binding with exact-name patterns.
+The docs now cover the whole-match READ borrow and the transition idiom, no enum
 equality/`echo`/`Map` keys/methods/projection, required payload types, and
 `export enum`. It also fixed stale claims:
 

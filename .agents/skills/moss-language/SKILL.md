@@ -112,11 +112,24 @@ and `Cancelled` is constructed as `Result.Ok(value: 42)` or
 `Result.Cancelled` (not `Result.Cancelled()`). A statement `match result:` needs
 one `case` per variant. A READ match may use a known enum expression such as
 `match envelope.result:` and READ-borrows that enum; nontrivial payload bindings are
-temporary READ views. `match consume result:` consumes the whole enum before
+temporary READ views. `match consume result:` consumes the whole owned enum before
 branch selection and gives the selected case owned branch-local payloads. It
-requires an owning named enum binding, not an aggregate field expression.
+also accepts owned enum rvalues, including fresh constructors and function
+results, but not an aggregate field expression.
 Patterns never spell `move` or `ref`. Wildcards, guards, nested patterns,
 and match expressions are unsupported.
+
+Pattern payload names must exactly match declared field names in declaration
+order; positional renaming is rejected. Tag-only cases use bare `Tag` in
+declarations and patterns. A READ borrow lasts for the complete match. READ
+payload views may feed computations and cross `message`/`reply` value
+boundaries, but cannot be moved to ordinary owned storage. Use
+`replace(place, replacement)` to install an equal-typed value in writable
+storage and obtain the old whole value as owned. A consumed `var` can be
+reinitialized by whole-value assignment before any later read, including at
+loop back edges. `pass` is the reserved, effect-free no-op statement in any
+normal block. Enum methods are unsupported; ordinary functions can match
+enums, including untyped parameters specialized at concrete calls.
 
 ### Closed operator surface
 

@@ -437,17 +437,26 @@ fn describe(job: Job):
 ```
 
 Construct a case with its type name, such as `Job.Done(value: 42)` or
-`Job.Waiting`. A match must cover every case exactly once. The names in each
-arm bind the case fields in their declared order.
+`Job.Waiting`. A match must cover every case exactly once. Pattern names
+must equal the declared field names in their declared order.
 
 `match job` reads the enum and leaves `job` usable afterward. A READ match
 may also use a statically known enum expression such as `envelope.job`; it
 borrows the containing value for the arm without copying the enum. A nontrivial
 payload such as `String` is only borrowed inside that arm. If an arm needs to
 transfer ownership of such a payload, write `match consume job:` instead;
-that consumes the entire `job` on every path. A consuming match requires an
-owning named enum binding; it cannot partially move `envelope.job` out of an
-aggregate. No `move` or `ref` annotation is written in the pattern.
+that consumes the entire `job` on every path. An owned function result or fresh
+enum construction can also be consumed. An interior place such as
+`envelope.job` cannot be partially moved. A READ payload can still feed a
+calculation or cross a `message`/`reply` value boundary. The READ borrow lasts
+through the whole match. No `move` or `ref` annotation is written in the pattern.
+
+Use `old = replace(phase, Phase.Idle)` to install an equal-typed fallback in
+writable state and receive the old whole enum as owned. Then `match consume old:`
+can transfer its payload into the next state. A consumed `var` may be assigned
+a new whole value before its next read; every path through a loop must restore
+it before the next iteration. `pass` is the no-op statement for an arm or any
+other normal block. Tag-only cases use `Waiting`, never `Waiting()`.
 
 ## 5. Collections
 

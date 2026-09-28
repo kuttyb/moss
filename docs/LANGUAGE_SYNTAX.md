@@ -189,7 +189,8 @@ compile-time errors. Recursive enum layouts, including cycles through ordinary
 aggregate fields, are unsupported.
 
 `match` is a statement with one arm for every case of the scrutinee's statically
-known enum type. The names in an arm bind the case's fields in declaration order.
+known enum type. Pattern payload names must exactly match the declared field names
+in declaration order; positional renaming is rejected.
 Duplicate, unknown, foreign, or missing cases are errors.
 
 ```moss
@@ -206,17 +207,44 @@ Patterns discriminate and bind; they never specify ownership. A READ match
 accepts a statically known enum expression, including `match envelope.result:`.
 It READ-borrows the enum for the match, following ordinary Moss access rules
 for the expression and its containing storage. Nontrivial payload bindings are
-temporary READ views: they cannot be mutated, consumed, returned, stored, or
-sent across a by-value boundary. Trivial scalar fields follow ordinary copy
-rules. The original enum remains usable after a READ match.
+temporary READ views: they cannot be mutated, consumed, or moved into ordinary
+owned local or storage contexts. They may be read to compute an independent
+result, and may cross `message` and `reply` semantic value boundaries. Trivial
+scalar fields follow ordinary copy rules. The READ borrow lasts for the whole
+match statement; the original enum remains usable afterward.
 
-`match consume result` requires an owning named enum binding and consumes the
-entire enum before selecting an arm. It cannot partially move an enum field out
-of an aggregate with `match consume envelope.result:`. Its
+`match consume result` accepts an owned enum binding or owned enum rvalue,
+including a function result or fresh construction, and consumes the entire value
+before selecting an arm. It cannot partially move an enum field out of an
+aggregate with `match consume envelope.result:`. Its
 payload bindings are ordinary branch-local values, including owned values that
 may be transferred. The original enum is dead on every path after the match;
 there is no partial-move state. An immutable incoming handler payload cannot
 be consumed this way.
+
+`replace(place, replacement)` requires writable storage and an equal static
+type. It installs the replacement and returns the old whole value as an owned
+value. A nontrivial replacement binding is consumed. This lets a domain
+transition move an owned payload without leaving state uninitialized:
+
+```moss
+old = replace(phase, Phase.Idle)
+match consume old:
+  case Running(name):
+    phase = Phase.Done(name: name)
+  case Idle:
+    pass
+  case Done(name):
+    phase = Phase.Done(name: name)
+```
+
+A consumed `var` may be assigned a new whole value; it must be initialized on
+every path before its next read, including a loop's next iteration. `let` stays
+immutable. `pass` is a reserved, effect-free no-op statement in any statement
+block. Tag-only cases use `Idle` in declarations and patterns, never `Idle()`.
+Enums remain functions-only and cannot declare methods. An untyped ordinary
+function parameter may be matched after static specialization supplies a
+concrete enum type; each specialization is checked independently.
 
 Wildcards, guards, nested patterns, alternate patterns, pattern-level
 `move`/`ref`, and match expressions are not part of this construct.
@@ -569,7 +597,7 @@ are historical and superseded.
 
 `for` is the statically resolved iteration form. Its source is resolved at compile
 time to a compiler-native traversal for `Vector` and `range`, or to a concrete
-`Iterator` shape with `next() -> Option[element]`:
+`Iterator` shape with `next() -> option[element]`:
 
 ```moss
 for value in values:
