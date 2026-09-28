@@ -84,9 +84,68 @@ Events carry source file/line and semantic identity. Domain events also identify
 the concrete instance, specialization, and handler. State events carry access
 paths, including paths reached through helpers and methods. Writes include
 bounded before/after summaries. Details are limited to 256 characters and
-aggregate summaries avoid dumping entire collections. These stable identities
-allow future instance/handler/message-subtree trace slicing. No runtime addresses,
-class ranks, lock events, or simulated interleavings appear in this trace.
+aggregate summaries avoid dumping entire collections.
+
+Phase 22.4 adds deterministic execution-local event identities and causal links
+to every trace event:
+
+```json
+{
+  "event_id": 12,
+  "parent_event_id": 9,
+  "call_event_id": 8,
+  "message_event_id": 10,
+  "handler_event_id": 11,
+  "control_event_id": 7,
+  "depth": 3
+}
+```
+
+These IDs are stable for one deterministic Fast Debug execution with the same
+inputs. They are not global runtime identities. They connect trace events back to
+compiler-owned source/semantic identities and preserve the interpreter's real
+nested structure for function calls, method calls, branch/loop bodies, and
+synchronous `message` handler execution. No runtime addresses, class ranks, lock
+events, or simulated interleavings appear in this trace. When traced execution
+fails, Fast Debug still flushes the structured events recorded before the error.
+
+## Structured debug queries
+
+`moss debug-query` executes the checked program once under Fast Debug and returns
+a bounded JSON slice of that execution:
+
+```sh
+moss debug-query failure-slice --source app.moss --json
+moss debug-query event event:42 --source app.moss --json --before 3 --after 3
+moss debug-query semantic entity-v1:function:normalize --source app.moss --json
+moss debug-query message-subtree handler:Service.Run --source app.moss --json
+moss debug-query writes Account.balance --source app.moss --json --before-event 84
+moss debug-query control-flow event:84 --source app.moss --json
+```
+
+Supported operations are `event`, `semantic`, `subtree`, `message-subtree`,
+`control-flow`, `writes`, and `failure-slice`. Selectors include `event:<id>`,
+compiler semantic identities such as `entity-v1:function:normalize`, source
+identities such as `fn:normalize@12`, `handler:Domain.Name`,
+`instance:<concrete-instance-id>`, `local:<binding>`, and domain state paths.
+
+Every result reports its bounds and truncation status:
+
+```json
+{
+  "truncated": true,
+  "returned_events": 20,
+  "available_more": true,
+  "bounds": {"max_events": 20, "max_depth": 8}
+}
+```
+
+The query interface deliberately provides recent Moss-visible writes, not full
+dynamic taint provenance or heap snapshots. If a semantic entity exists but did
+not execute, the command reports `DEBUG_QUERY_NOT_EXECUTED`; unknown events and
+malformed selectors use stable `DEBUG_QUERY_*` error codes. This is not an
+interactive debugger: there are no `step`, `next`, `continue`, breakpoint, or
+watchpoint commands.
 
 ## Remaining interpreter limits
 
