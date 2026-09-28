@@ -1,0 +1,20 @@
+domain Store:
+  balance = 0
+
+  fn Add(amount: Int) -> Int:
+    balance = balance + amount
+    reply balance
+
+domain Coordinator:
+  domainroutes(store: Store)
+
+  fn Run() -> Int:
+    first = message store.Add(4)
+    second = message store.Add(5)
+    reply second
+
+fn main():
+  store = Store()
+  coordinator = Coordinator(store: store)
+  result = message coordinator.Run()
+  assertEqual(result, 8)

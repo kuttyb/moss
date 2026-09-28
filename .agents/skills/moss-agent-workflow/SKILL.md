@@ -70,6 +70,7 @@ moss_workflow_contract:
   generated_rust: implementation-artifact
   fast_debug: checked-moss-interpreter
   trace: newline-delimited-json
+  structured_debug_query: bounded-fast-debug-slices
   fresh_agent_bootstrap: required
   capability_discovery: agent-capabilities-and-schema
   synchronization_introspection: inspect-effects-why
@@ -186,8 +187,15 @@ language-discovery surface for a Moss programmer or fresh agent.
    `moss check path/to/file.moss --json`. In a project, use the source path that
    identifies the physical file you are investigating.
 5. Read structured diagnostics before guessing at a repair. Diagnostics include a
-   stable code, source span, identities where known, and only high-confidence
-   mechanical fixes. `legal_alternatives` describes choices whose intent remains yours.
+   stable code and source span. Specialized teaching diagnostics additionally expose
+   `rule`, `cause.entities`, `related` locations, and compiler-owned `guidance`; entity
+   facts may include an exact expression, argument index, semantic identity, and
+   inferred `READ`/`WRITE`/`CONSUME` access. Missing teaching fields are deliberately
+   `null` or empty—do not invent a repair. `fixes` remain uniquely mechanical actions,
+   while `legal_alternatives` describe choices whose intent remains yours.
+   A cause entity's `semantic_identity` is the compiler's actual resolved identity or
+   `null`; canonical selectors stay in `name`, and durable `entity-v1` identifiers use
+   their own API fields.
 
 ## Ask the compiler semantic questions
 
@@ -196,6 +204,7 @@ type, call target, ownership mode, optimization barrier, route, or synchronizati
 fact:
 
 ```sh
+moss resolve <target> --source <source> [--kind <kind>] [--enclosing <target>] --json
 moss inspect <target> --source <source> --json
 moss type <target> --source <source> --json
 moss effects <target> --source <source> --json
@@ -209,7 +218,10 @@ moss impact <target> --source <source> --json
 `inspect main --source <source> --json` includes the checked concrete-domain graph.
 Query output is the common `moss-agent-1` envelope, including protocol/schema/compiler
 versions, `ok`, and either `result` or structured `error`. Target selectors must resolve
-exactly; Moss does not guess a nearby source entity.
+exactly; Moss does not guess a nearby source entity. Use `resolve` for a name, stable
+ID, `line:N`, or `at:N:C` location. Ambiguity returns deterministic candidates in
+`error.details.resolution`; select a candidate ID or narrow it with `--kind` and
+`--enclosing`.
 
 `entity-v1` IDs are durable semantic identities for exact edits and incremental work.
 They are distinct from build/source-layout provenance in `.mossmap`; do not use a debug
@@ -226,16 +238,18 @@ The requested physical path still disambiguates a result.
 
 | Question | Use |
 | --- | --- |
+| Which exact compiler entity is at this name or location? | `resolve` |
 | What is this symbol, construct, route, or concrete instance? | `inspect` |
 | What type or specialization did it resolve to? | `type` |
 | What does it READ / WRITE / CONSUME, and what observable effects occur? | `effects` |
 | What capability does this parameter or call require? | `ownership` |
-| What direct callers/callees are statically known? | `calls` |
+| What direct/transitive callers, callees, specializations, or messages are known? | `calls` |
 | Why did a semantic, fusion, backend, or synchronization choice occur? | `why` |
 | What static work/copy/materialization/backend facts are known? | `cost` |
 | What could this edit invalidate or which tests could it affect? | `impact` then `test --affected` |
 | What topology, classes, ranks, modes, or conflict witnesses are derived? | `inspect`, `effects`, or `why` → `synchronization_plan` |
 | What happened during checked execution? | Fast Debug with `--trace` |
+| What bounded dynamic slice explains an event, message, branch, failure, or write? | `debug-query` |
 
 Use `moss agent schema --json` when a route's inputs or result shape are unclear.
 
@@ -243,7 +257,8 @@ Use `moss agent schema --json` when a route's inputs or result shape are unclear
 
 Never reconstruct Moss synchronization by reading generated Rust if the compiler can
 expose the synchronization plan directly. `inspect`, `effects`, and `why` include
-`synchronization_plan` and `synchronization_dump`. The structured plan contains the
+target-specific `synchronization`, plus the compatible complete
+`synchronization_plan` and `synchronization_dump`. The structured facts contain the
 concrete domain instance and specialization identity, `domain_rank`, handler R/W/C,
 X*, `ProtectedRead`, `LockSet`, class membership/`ClassSet`, SHARED/EXCLUSIVE mode,
 `class_rank`, and conflict matrix/witness facts. These are compiler-owned plan facts;
@@ -295,6 +310,8 @@ moss run --interp path/to/file.moss
 moss run --interp --trace path/to/file.moss
 moss debug <project-or-source>
 moss debug <project-or-source> --trace
+moss debug-query failure-slice --source <source> --json
+moss debug-query semantic <entity-v1-id> --source <source> --json
 ```
 
 All reachable Moss source in that run uses the interpreter; it does not dynamically mix
@@ -315,11 +332,13 @@ operations reached through object fields and the current eager functional pipeli
 surface execute in Fast Debug; use native validation as well when checking parity.
 
 With `--trace`, Fast Debug writes newline-delimited JSON events to standard error.
-Use a bounded trace to diagnose logical behavior: reproduce, inspect the relevant
-function/handler entry and exit, local/state access, branch, return, assertion, and
-message/reply events, patch, then replay. Existing traces carry source and semantic
-identity; they are not a physical lock, contention, or schedule simulator. Do not claim
-trace slicing/query features that the compiler has not exposed.
+`moss debug-query event|semantic|subtree|message-subtree|control-flow|writes|failure-slice`
+executes one checked Fast Debug run and returns a bounded JSON slice. Durable Phase
+22.3 `entity-v1` targets resolve through the same compiler target layer and correlate
+with runtime source identities. Queries expose causal event/message/handler/control
+links and bounded recent-write history; they are not dynamic taint, physical lock,
+contention, or schedule analysis. Use `moss agent schema --json` for selectors, bounds,
+and stable errors.
 
 ## Packages/projects versus semantic/compiler operations
 
@@ -347,12 +366,13 @@ Use **Moss** directly for semantic/compiler work:
 
 ```sh
 moss check path/to/file.moss --json
-moss inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json
+moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json
 moss impact <target> --source <source> --json
 moss edit rename|replace-expression|change-argument ... --json
 moss fmt
 moss test --affected --json
 moss debug <project-or-source> --trace
+moss debug-query <operation> [selector] --source <source> --json
 ```
 
 Generated Rust is useful for compiler/backend work and native debugging, but it is an
@@ -368,11 +388,22 @@ performance verdict.
 
 - Retired `await` → use a synchronous `message` result directly.
 - Retired `spawn` → construct a domain in `main`'s composition prefix.
-- Self-send or same-domain handler message → extract an ordinary helper.
+- `DOMAIN_SELF_MESSAGE` or `DOMAIN_SAME_INSTANCE_MESSAGE` → extract an ordinary helper.
+- `DOMAIN_HANDLER_REQUIRES_MESSAGE` → use a synchronous `message`; do not extract a
+  local helper for a real cross-domain call.
+- `DOMAIN_ROUTE_NOT_DECLARED` / `DOMAIN_ROUTE_NOT_BOUND` → declare the static route
+  and bind it during construction, respectively.
 - Domain handle in a payload/parameter/reply/collection → declare a static
   `domainroutes` dependency instead.
-- Ownership conflict → inspect `ownership`/`effects`, then choose intent; do not
+- `OWNERSHIP_CONFLICTING_ACCESS` → first read the reported actual expressions,
+  argument indexes, and access modes. Overlap is legal only for `READ + READ`; do not
   invent implicit copies or source-level mode annotations.
+- Functional callable-form/capture diagnostics distinguish supported `_` placeholders,
+  named callable identities, and effectful captured state; follow the reported rule
+  rather than generically rewriting the whole pipeline.
+- `QUERY_TARGET_NOT_FOUND` may carry `details.resolution.status = ambiguous` and
+  deterministic candidate IDs such as `entity-v1:handler:Store.Read`; these come
+  from checked symbols, not fuzzy matching.
 - Pipeline/fusion surprise → use `why` and `effects`; an observable message or a
   callback that may fail/diverge is a real semantic boundary.
 
@@ -386,5 +417,5 @@ improvement. This is local dogfooding, not telemetry.
 
 The skill is operational guidance, not a substitute for the compiler or a new language
 specification. If it drifts, correct the skill/docs and retain current compiler
-semantics. Broader measured agent evaluation, richer trace slicing, and advanced repair
-work remain future Phase 22 work.
+semantics. Phase 22.4 provides bounded structured trace queries; broader measured agent
+evaluation and advanced repair work remain future work.

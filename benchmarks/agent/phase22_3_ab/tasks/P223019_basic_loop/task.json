@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223019","name":"basic-loop","category":"control",
+  "prompt":"Fix the loop bound so the program sums the integers 1 through 5 and prints 15. Record iterations with numeric value 5 in semantic-answer.json. No semantic query is needed.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"15\n"}}],
+  "semantic_heavy":false,"relevant_capability":"negative control: basic loop","requested_facts":["iterations"]
+}

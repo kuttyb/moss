@@ -1,0 +1,10 @@
+fn compute(value: Int) -> Int:
+  return value * 2
+
+domain Service:
+  fn Run() -> Int:
+    reply compute(21)
+
+fn main():
+  service = Service()
+  echo message service.Run()

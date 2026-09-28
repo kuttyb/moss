@@ -567,3 +567,18 @@ Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision,
 Phase 22 Agent Agency Tooling, Phase 23 Static Compiler Optimizations, and
 Phase 24 TileIR Integration (Dynamic Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
 restrictions and the future scoped-domain breadcrumb.
+
+Phase 22.2A and 22.2B provide a hardened, frozen 30-task
+[fresh-agent benchmark](benchmarks/agent/README.md) and the isolated
+`moss agent benchmark list|show|validate|run` interface. Phase 22.2C's canonical
+pre-22.1 fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded.
+Phase 22.1's teaching diagnostics and post-change comparison are complete. Phase
+22.3 adds robust semantic target resolution plus compiler-owned type, ownership,
+effect, call/message, domain, synchronization, and structured why facts. Its fixed
+post-22.3 benchmark remains flat at 28/30 final passes while showing lower tool-call
+counts in one stochastic trial; see
+[`docs/PHASE_22_3_QUERY_MAPPING.md`](docs/PHASE_22_3_QUERY_MAPPING.md) and the
+[`post-22.3 report`](benchmarks/agent/baselines/post-22.3/REPORT.md). Phase 22.4
+adds bounded structured Fast Debug queries for events, semantic targets, causal
+subtrees, messages, control flow, writes, and failure slices. Phase 22.5 remains
+repair/workflow automation and is not part of this completed consolidation.

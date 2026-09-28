@@ -1,0 +1,10 @@
+fn compute(seed: Int) -> Int:
+  var value = seed
+  value = value + 4
+  value = value * 2
+  value = value - 1
+  return value
+
+fn main():
+  result = compute(3)
+  assertEqual(result, 12)

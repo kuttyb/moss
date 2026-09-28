@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "phase22_3",
+  "query_profile": "phase22_3",
+  "documentation_source_commit": "WORKTREE",
+  "description": "Full current Phase 22.3 discovery and semantic-query contract."
+}

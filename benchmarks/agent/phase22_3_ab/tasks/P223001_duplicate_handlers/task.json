@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "P223001",
+  "name": "duplicate-handlers",
+  "category": "resolution",
+  "prompt": "Two domains expose handlers with the same short name. Identify the exact semantic call entity on the message line in main and the exact handler it targets. The program is already correct; do not change main.moss. Record entity_id, kind, and callee in semantic-answer.json, then validate the program.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": ["main.moss"],
+  "allowed_paths": ["semantic-answer.json"],
+  "validation": [{"command": ["$MOSS", "check", "main.moss", "--json"]}, {"command": ["$MOSS", "run", "--interp", "main.moss"], "expect": {"stdout": "10\n"}}],
+  "semantic_heavy": true,
+  "relevant_capability": "robust target resolution for duplicate short names",
+  "requested_facts": ["entity_id", "kind", "callee"]
+}

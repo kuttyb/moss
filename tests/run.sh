@@ -12,6 +12,12 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 python3 tests/tooling/check_agent_skills.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_issues.py --self-test
+python3 tests/tooling/check_agent_benchmark.py "$compiler"
+python3 tests/tooling/check_agent_baseline.py "$compiler"
+python3 tests/tooling/check_agent_baseline_analysis.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase22_3_ab.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_032_formatter_parentheses.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"
@@ -177,7 +183,8 @@ reject_source() {
   if "$compiler" --check "$source" >"$stdout" 2>"$stderr"; then
     fail "$name unexpectedly passed"
   fi
-  grep -Eq '^moss:[0-9]+: error:' "$stderr" || fail "$name did not produce a line-numbered diagnostic"
+  grep -Eq '^(moss:[0-9]+: error:|error\[[A-Z0-9_]+\]:)' "$stderr" ||
+    fail "$name did not produce a line-numbered diagnostic"
   grep -F "$expected" "$stderr" >/dev/null || {
     echo "test failure: $name diagnostic did not contain: $expected" >&2
     sed -n '1,20p' "$stderr" >&2
@@ -232,7 +239,8 @@ grep -F 'let __moss_call_argument_' "$test_build/swarm_011_sibling_field_borrow.
   fail 'swarm_011 did not pre-evaluate sibling READ before WRITE borrow'
 grep -F 'let __moss_index_' "$test_build/swarm_011_sibling_field_borrow.rs" >/dev/null ||
   fail 'swarm_011 did not pre-evaluate sibling index before WRITE borrow'
-reject_case swarm_011_overlapping_access 'conflicting access'
+reject_case swarm_011_overlapping_access \
+  "'values' is passed to 'overwrite_from' through overlapping WRITE and READ accesses"
 run_case swarm_012_not_bool tests/swarm_012_not_bool.moss '1'
 reject_case swarm_012_not_int "not operand must have type 'Bool'"
 reject_case swarm_012_not_float "not operand must have type 'Bool'"
@@ -1220,7 +1228,7 @@ fi
 
 reject_source use_after_transfer examples/use_after_transfer.moss \
   "value 'original' was transferred to 'destination' at line 10"
-reject_case naked_cross_domain_call "naked cross-domain call 'worker.Ping' requires 'message'"
+reject_case naked_cross_domain_call "domain handler 'Worker.Ping' must be called with message"
 reject_case unresolved_field "cannot infer type for field 'Unresolved.field'"
 reject_case unresolved_state "cannot infer type for state field 'Worker.value'"
 reject_case state_annotation_mismatch "state field 'Counter.value' is annotated 'int' but its initializer has type 'float'"
@@ -1390,7 +1398,8 @@ next
 run_case phase106_reply_control tests/phase106_reply_control.moss 'after'
 run_case message_unit_result tests/message_unit_result.moss 'notified'
 run_case payload_reply_example examples/message_payload_reply.moss '7 7 9'
-reject_case message_unknown_receiver "message target 'missing' is not a concrete composition binding"
+reject_case message_unknown_receiver \
+  "message target 'missing' is not a static domain instance or declared route"
 reject_case message_unknown_handler "domain Worker has no message handler 'Missing'"
 reject_case message_wrong_arity "message Worker.Work expects 1 arguments, got 0"
 reject_case message_argument_type "argument 1 to message Worker.Work has type 'string', expected 'int'"
@@ -1436,6 +1445,10 @@ if command -v python3 >/dev/null 2>&1; then
   PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_module_provider_ambiguity.py "$compiler"
   python3 tests/tooling/check_phase10_fast_debug_project.py "$compiler" ||
     fail 'fast interpreter did not execute the complete project source closure'
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase224_debug_query.py "$compiler" ||
+    fail 'structured debug-query trace slicing regressed'
+  PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase224_native.py "$compiler" ||
+    fail 'Phase 22.4 native/rustc or Margo parity regressed'
 fi
 
 # Incoming payloads remain immutable semantic values. Phase 15.1 may represent
@@ -1489,17 +1502,17 @@ reject_case branch_divergent_domain_types \
   "domain handles cannot be used as ordinary values or payloads"
 reject_case recursive_function "recursive local call cycle: recurse -> recurse"
 reject_case mutually_recursive_functions "recursive local call cycle: first -> second -> first"
-reject_case write_read_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
-reject_case write_write_alias "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with mutation"
-reject_case consume_read_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with read"
-reject_case consume_write_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with mutation"
-reject_case double_consume_alias "conflicting accesses to value 'item' in call to 'conflict': transfer overlaps with transfer"
+reject_case write_read_alias "'item' is passed to 'conflict' through overlapping WRITE and READ accesses"
+reject_case write_write_alias "'item' is passed to 'conflict' through overlapping WRITE and WRITE accesses"
+reject_case consume_read_alias "'item' is passed to 'conflict' through overlapping CONSUME and READ accesses"
+reject_case consume_write_alias "'item' is passed to 'conflict' through overlapping CONSUME and WRITE accesses"
+reject_case double_consume_alias "'item' is passed to 'conflict' through overlapping CONSUME and CONSUME accesses"
 reject_case nontrivial_field_move "value 'packet' was transferred"
 reject_case branch_join_consume "value 'item' was transferred"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \
-  "conflicting accesses to value 'counter' in call to 'increment_from': mutation overlaps with read"
+  "'counter' is passed to 'increment_from' through overlapping WRITE and READ accesses"
 
 compile_case non_reentrant tests/non_reentrant.moss
 iteration=1
@@ -1526,7 +1539,7 @@ reject_source fallthrough tests/fallthrough.moss \
 reject_case phase106_missing_reply \
   "must reply on every normal control-flow path"
 reject_case same_domain_handler_message \
-  "same-domain handler chaining is not allowed"
+  "handler 'D.B' cannot be entered on the same domain instance"
 reject_case domain_route_cycle \
   "concrete domain route cycle detected"
 reject_case phase106b_impure_state_initializer \
@@ -1534,7 +1547,7 @@ reject_case phase106b_impure_state_initializer \
 reject_case phase106b_route_reassign \
   "domain route 'worker' is immutable"
 reject_case reply_main "reply is only valid in a handler declaring '-> Type'"
-reject_case self_send_rejected "self-send is not allowed"
+reject_case self_send_rejected "handler 'Worker.Work' cannot be messaged through self"
 reject_case duck_missing_method "missing required method 'describe'"
 reject_case duck_wrong_method_arity "wrong arity for required method 'describe'"
 reject_case duck_incompatible_method_argument "method 'draw' is incompatible with argument types (string)"
@@ -1570,7 +1583,7 @@ reject_case functional_reduce_initial_reuse \
 reject_case functional_consume_element \
   "functional callable 'take' requires CONSUME access to an element"
 reject_case functional_mutable_capture \
-  "functional placeholder cannot mutate captured binding 'captured'"
+  "callback 'captured.push(_)' for map writes captured binding 'captured'"
 reject_case functional_mutating_bound_method \
   "functional bound method 'accumulator.add' cannot mutate or consume captured binding 'accumulator'"
 reject_case functional_consume_capture \
@@ -1586,7 +1599,7 @@ reject_case functional_recursion \
 reject_case functional_hof_recursion \
   "recursive local call cycle: recurse -> recurse"
 reject_case functional_callback_alias \
-  "conflicting accesses to value 'item' in call to 'conflict': mutation overlaps with read"
+  "'item' is passed to 'conflict' through overlapping WRITE and READ accesses"
 reject_case functional_placeholder_noncopy_identity \
   "functional map result aliases nontrivial source storage through '_'"
 reject_case functional_placeholder_noncopy_field \

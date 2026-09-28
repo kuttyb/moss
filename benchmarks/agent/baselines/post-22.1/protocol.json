@@ -1,0 +1,82 @@
+{
+  "agent": {
+    "configuration": "ephemeral, ignore user config/rules, no approvals, workspace-write",
+    "disabled_features": [
+      "apps",
+      "plugins",
+      "browser_use",
+      "browser_use_external",
+      "browser_use_full_cdp_access",
+      "in_app_browser",
+      "computer_use",
+      "image_generation",
+      "recommended_plugins",
+      "memories",
+      "multi_agent"
+    ],
+    "implementation": "OpenAI Codex CLI",
+    "model": "gpt-6-sol",
+    "reasoning_effort": "medium",
+    "runtime_version": "codex-cli 0.156.0"
+  },
+  "baseline_id": "post-22.1",
+  "compiler_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "corpus_commit": "b187009f6ef06738c52216d34490342d76d7ab4c",
+  "execution": {
+    "host": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "jobs": 3,
+    "python": "3.12.3",
+    "resolved_rustc": "/home/owner/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc"
+  },
+  "fresh_context": "one ephemeral Codex exec session per task; no resume or retry",
+  "isolation": {
+    "expected_trees_visible": false,
+    "external_web_lookup": false,
+    "git_history_visible": false,
+    "mount_namespace": "sanitized tree bind-mounted over source repository",
+    "shell_network_access": false,
+    "staging": "Git-free starter-only task plus whitelisted local tools and docs"
+  },
+  "limits": {
+    "agent_interaction_budget": null,
+    "canonical_trials": 1,
+    "retry_failed_task": false,
+    "wall_time_seconds": 900
+  },
+  "metrics": {
+    "final_pass": "authoritative moss agent benchmark run outside the agent namespace",
+    "first_validation_success": "exit status of the first direct meaningful validation command",
+    "meaningful_validation": {
+      "excluded": [
+        "bootstrap",
+        "inspect",
+        "type",
+        "effects",
+        "ownership",
+        "calls",
+        "why",
+        "cost"
+      ],
+      "margo": [
+        "build",
+        "test",
+        "run"
+      ],
+      "moss": [
+        "check",
+        "--check",
+        "build",
+        "test",
+        "debug",
+        "run --interp"
+      ]
+    },
+    "validation_attempts_to_green": "1-based direct meaningful validation attempt ending at first exit 0; null if none"
+  },
+  "orchestration_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "prompt_wrapper_sha256": "a3ddf0a048d7b36fa502718151f3639f0c2a522f2f318356c8f725547bdd03ea",
+  "protocol_version": "phase-22.2c-v1",
+  "schema_version": "moss-agent-baseline-1",
+  "task_count": 30,
+  "trials_per_task": 1
+}

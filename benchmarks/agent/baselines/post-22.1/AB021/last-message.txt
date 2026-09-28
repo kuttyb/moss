@@ -1,0 +1,1 @@
+Changed [task/main.moss](/home/owner/daji/code/moss/task/main.moss:7) to call `Worker.Read` with `message`, as the structured diagnostic required. The static topology is unchanged. The compiler check passes, and the program prints `42`.

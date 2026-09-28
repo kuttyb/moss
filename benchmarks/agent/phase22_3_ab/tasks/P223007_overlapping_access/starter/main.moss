@@ -1,0 +1,8 @@
+fn mutate(left: Vector[Int], right: Vector[Int]):
+  left.push(9)
+  return right |> count
+
+fn main():
+  item = [1, 2]
+  result = mutate(item, item)
+  echo result

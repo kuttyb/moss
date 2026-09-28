@@ -1,0 +1,1 @@
+The existing program is valid and unchanged. Structured check reported no diagnostics. The effects query shows `Store.Read` reads `payload.values` and sends a message; `Reader.Accept` and `total` read their payload without mutating it. Running the program printed `42`.

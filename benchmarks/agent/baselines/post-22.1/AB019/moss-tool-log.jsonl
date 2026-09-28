@@ -1,0 +1,8 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["check","task/main.moss","--json"],"cwd":".","diagnostic_codes":["FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED"],"duration_ms":1,"exit_code":1,"origin":"agent","sequence":2,"tool":"moss"}
+{"argv":["check","task/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":3,"tool":"moss"}
+{"argv":["fmt","task/main.moss","--check","--json"],"cwd":".","diagnostic_codes":["FORMAT_CHECK_FAILED"],"duration_ms":2,"exit_code":1,"origin":"agent","sequence":4,"tool":"moss"}
+{"argv":["fmt","task/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":5,"tool":"moss"}
+{"argv":["check","task/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":6,"tool":"moss"}
+{"argv":["run","--interp","task/main.moss"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":7,"tool":"moss"}
+{"argv":["fmt","task/main.moss","--check","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":2,"exit_code":0,"origin":"agent","sequence":8,"tool":"moss"}

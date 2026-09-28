@@ -1,0 +1,3 @@
+fn main():
+  values = [20, 20]
+  echo values |> map(it + 1) |> sum

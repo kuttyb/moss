@@ -1,0 +1,1 @@
+Created [task/main.moss](/home/owner/daji/code/moss2/task/main.moss). It initializes `Counter.value` to 0, adds 5 through `Increment`, and prints the returned value. The Moss check passed, and execution printed `5`.

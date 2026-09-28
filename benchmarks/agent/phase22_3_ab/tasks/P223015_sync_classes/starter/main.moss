@@ -1,0 +1,14 @@
+domain Account:
+  balance = 0
+  fee = 1
+
+  fn Deposit(amount: Int) -> Int:
+    balance = balance + amount
+    reply balance - fee
+
+  fn SetFee(amount: Int):
+    fee = amount
+
+fn main():
+  account = Account()
+  echo message account.Deposit(5)

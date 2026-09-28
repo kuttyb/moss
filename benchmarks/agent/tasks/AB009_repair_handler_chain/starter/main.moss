@@ -1,0 +1,10 @@
+domain Calculator:
+  fn Run(value: Int) -> Int:
+    reply message self.Twice(value)
+
+  fn Twice(value: Int) -> Int:
+    reply value * 2
+
+fn main():
+  calculator = Calculator()
+  echo message calculator.Run(21)

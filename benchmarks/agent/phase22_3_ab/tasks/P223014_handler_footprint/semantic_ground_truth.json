@@ -1,0 +1,1 @@
+{"schema_version":1,"task_id":"P223014","facts":{"handler_identity":"domain-specialization:Store:store::handler:Touch","read_set":["a","b"],"write_set":["b"],"consume_set":[]}}

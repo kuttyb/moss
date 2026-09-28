@@ -1,0 +1,1 @@
+Added `Provider = { path = "../provider" }` to [task/app/Moss.toml](/home/owner/daji/code/moss/task/app/Moss.toml). Running `../../margo run` from `task/app` succeeds and prints `42`.

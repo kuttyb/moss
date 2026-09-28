@@ -1,0 +1,4 @@
+{"argv":["agent","bootstrap","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":1,"tool":"moss"}
+{"argv":["check","task/src/main.moss","--json"],"cwd":".","diagnostic_codes":[],"duration_ms":1,"exit_code":0,"origin":"agent","sequence":2,"tool":"moss"}
+{"argv":["build","--json"],"cwd":"task","diagnostic_codes":[],"duration_ms":101,"exit_code":0,"origin":"margo-internal","sequence":4,"tool":"moss"}
+{"argv":["run"],"cwd":"task","diagnostic_codes":[],"duration_ms":150,"exit_code":0,"origin":"agent","sequence":3,"tool":"margo"}

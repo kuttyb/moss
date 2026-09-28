@@ -1,0 +1,20 @@
+# Repository-local Codex permissions. Codex loads this file only when this
+# repository is trusted.
+approval_policy = "never"
+default_permissions = "moss-repository"
+
+[permissions.moss-repository]
+description = "Unattended local development inside the Moss repository."
+
+[permissions.moss-repository.filesystem]
+# Permit access to the runtime files needed by Git, Python, compilers, and test
+# runners, while keeping repository writes confined to the active workspace.
+":minimal" = "read"
+":tmpdir" = "deny"
+":slash_tmp" = "deny"
+
+[permissions.moss-repository.filesystem.":workspace_roots"]
+"." = "write"
+
+[permissions.moss-repository.network]
+enabled = false

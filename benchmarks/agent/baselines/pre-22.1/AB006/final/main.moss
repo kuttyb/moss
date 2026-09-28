@@ -1,0 +1,11 @@
+domain Counter:
+  value = 0
+
+  fn Increment(amount: Int) -> Int:
+    value = value + amount
+    reply value
+
+fn main():
+  counter = Counter()
+  result = message counter.Increment(5)
+  echo result

@@ -1,0 +1,7 @@
+fn zero() -> Int:
+  return 0
+
+fn main():
+  values = [1, 2]
+  result = values |> map(zero())
+  echo result |> count

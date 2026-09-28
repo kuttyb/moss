@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "P223002",
+  "name": "same-line-entities",
+  "category": "resolution",
+  "prompt": "The assignment line in main retains both a binding and a call semantic entity. Identify the call entity specifically. The program is already correct; do not change main.moss. Record entity_id, kind, and source_line in semantic-answer.json.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": ["main.moss"],
+  "allowed_paths": ["semantic-answer.json"],
+  "validation": [{"command": ["$MOSS", "check", "main.moss", "--json"]}, {"command": ["$MOSS", "run", "--interp", "main.moss"], "expect": {"stdout": "5\n"}}],
+  "semantic_heavy": true,
+  "relevant_capability": "source-position and kind target narrowing",
+  "requested_facts": ["entity_id", "kind", "source_line"]
+}

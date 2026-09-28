@@ -1,0 +1,1 @@
+Updated [task/workflow.txt](/home/owner/daji/code/moss2/task/workflow.txt) to contain exactly `./margo test` followed by a newline. The included project tests passed through Margo: 1 passed, 0 failed.

@@ -1,0 +1,3 @@
+Created the Moss project in `task/`: [Math](/home/owner/daji/code/moss2/task/src/math.moss) exports `answer()` returning `42`, and [App](/home/owner/daji/code/moss2/task/src/app.moss) imports it and prints the result from `main`. The project uses a minimal [Moss.toml](/home/owner/daji/code/moss2/task/Moss.toml).
+
+Moss checking and formatting passed. `margo run` printed `42`.

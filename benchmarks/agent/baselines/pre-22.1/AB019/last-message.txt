@@ -1,0 +1,1 @@
+Changed [task/main.moss](/home/owner/daji/code/moss/task/main.moss:6) to pass `double` to `map`. The Moss check passes, and the program prints `42`.

@@ -70,11 +70,68 @@ if "semantic_inspection" not in capabilities["result"]["capabilities"]:
 for capability in ("impact_analysis", "formatter", "semantic_edits",
                     "repair_actions", "static_cost_facts", "package_project_driver",
                     "package_dependencies", "package_lockfile", "tool_invocation", "language_surface",
-                    "fast_debug"):
+                    "fast_debug", "structured_debug_query"):
     if capability not in capabilities["result"]["capabilities"]:
         fail(f"capability discovery omitted {capability}")
 if not schema["result"]["schema"]["diagnostic_codes_are_stable"]:
     fail("schema discovery did not promise stable diagnostic codes")
+teaching_fields = bootstrap["result"].get("diagnostic_contract", {}).get(
+    "additive_teaching_fields"
+)
+if teaching_fields != ["source", "rule", "cause", "related", "guidance"]:
+    fail("bootstrap omitted the additive teaching-diagnostic contract")
+semantic_identity_contract = bootstrap["result"]["diagnostic_contract"].get(
+    "cause_entity_semantic_identity", ""
+)
+if ("actual compiler semantic identity" not in semantic_identity_contract
+        or "otherwise null" not in semantic_identity_contract):
+    fail("bootstrap omitted the diagnostic entity identity contract")
+guidance_kinds = bootstrap["result"]["diagnostic_contract"].get("guidance_kinds", [])
+for guidance_kind in (
+    "local-helper", "use-message", "declare-domain-route", "bind-domain-route",
+    "use-static-domain-route", "separate-conflicting-access",
+    "supported-pipeline-placeholder", "named-pipeline-callable",
+    "pure-pipeline-callback", "qualify-query-target",
+    "use-statically-typed-expression", "use-statically-typed-callable",
+):
+    if guidance_kind not in guidance_kinds:
+        fail(f"bootstrap omitted teaching guidance kind {guidance_kind}")
+repair_fields = schema["result"]["schema"].get("diagnostic_repair_fields", [])
+for field in ("source", "rule", "cause", "related", "guidance"):
+    if field not in repair_fields:
+        fail(f"agent schema omitted teaching diagnostic field {field}")
+identity_contract = schema["result"]["schema"].get("identity_contracts", {}).get(
+    "diagnostic_cause_entity", ""
+)
+if ("actual compiler identity" not in identity_contract
+        or "or null" not in identity_contract
+        or "entity-v1" not in identity_contract):
+    fail("agent schema omitted the diagnostic entity identity contract")
+command_schemas = {
+    item["name"]: item
+    for item in schema["result"]["schema"].get("command_schemas", [])
+}
+check_schema = command_schemas.get("check")
+if check_schema is None:
+    fail("agent schema omitted the check command")
+if check_schema.get("failure_modes_scope") != "representative, not exhaustive":
+    fail("check failure-mode discovery did not define its scope")
+phase221_failures = {
+    "DOMAIN_SELF_MESSAGE",
+    "DOMAIN_SAME_INSTANCE_MESSAGE",
+    "DOMAIN_HANDLER_REQUIRES_MESSAGE",
+    "DOMAIN_ROUTE_NOT_DECLARED",
+    "DOMAIN_ROUTE_NOT_BOUND",
+    "DOMAIN_MESSAGE_TARGET_INVALID",
+    "OWNERSHIP_CONFLICTING_ACCESS",
+    "FUNCTIONAL_PLACEHOLDER_REQUIRED",
+    "FUNCTIONAL_CALLABLE_INVOCATION_UNSUPPORTED",
+    "FUNCTIONAL_CAPTURE_MUTATION",
+    "TYPE_INFERENCE_FAILED",
+}
+missing_failures = phase221_failures - set(check_schema.get("common_failure_modes", []))
+if missing_failures:
+    fail(f"check failure-mode discovery omitted {sorted(missing_failures)}")
 if "impact" not in schema["result"]["schema"]["project_result_kinds"]:
     fail("schema discovery omitted impact result kind")
 if "Do not edit generated Rust." not in bootstrap["result"]["safety_rules"]:
@@ -86,6 +143,8 @@ if catalog["language_surface"]["entrypoint"] != "moss agent bootstrap --json":
     fail("language surface discovery lacks its bootstrap entrypoint")
 if catalog["tool_invocation"]["entrypoint"] != "moss agent bootstrap --json":
     fail("tool invocation discovery lacks its bootstrap entrypoint")
+if not catalog["structured_debug_query"]["entrypoint"].startswith("moss debug-query"):
+    fail("structured debug query discovery lacks its debug-query entrypoint")
 surface = bootstrap["result"].get("source_surface", {})
 if surface.get("operators", {}).get("boolean_negation") != "not expression":
     fail("bootstrap source surface omitted boolean negation")
@@ -148,6 +207,11 @@ if "for traversal is not currently supported" not in debug_features["fast_debug"
     fail("Fast Debug discovery omitted its verified for traversal limitation")
 if "container methods reached through object fields are not currently supported" in debug_features["fast_debug"].get("limitations", []):
     fail("Fast Debug discovery retained a repaired container-field limitation")
+debug_query = debug_features.get("structured_debug_query", {})
+if "failure-slice" not in debug_query.get("operations", []):
+    fail("structured debug query discovery omitted failure-slice")
+if "--max-events" not in debug_query.get("bounds", []):
+    fail("structured debug query discovery omitted bounded result controls")
 actions = {item["name"]: item for item in bootstrap["result"]["actions"]}
 for action in ("package_build", "package_run", "package_test", "package_bench", "package_clean"):
     if action not in actions or not actions[action]["command"].startswith("margo "):
@@ -176,6 +240,8 @@ if "package_project_driver" not in schema_names:
     fail("agent schema omitted the Margo package/project contract")
 if "tool_invocation" not in schema_names:
     fail("agent schema omitted repository-local tool invocation")
+if "structured_debug_query" not in schema_names:
+    fail("agent schema omitted structured debug query contract")
 
 checked, checked_bytes = invoke("check", str(source), "--json")
 _, repeated_check = invoke("check", str(source), "--json")

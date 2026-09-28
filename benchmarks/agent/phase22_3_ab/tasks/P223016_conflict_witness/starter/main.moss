@@ -1,0 +1,14 @@
+domain Store:
+  value = 0
+
+  fn Read() -> Int:
+    reply value
+
+  fn Write(next: Int) -> Int:
+    value = next
+    reply value
+
+fn main():
+  store = Store()
+  echo message store.Read()
+  echo message store.Write(1)

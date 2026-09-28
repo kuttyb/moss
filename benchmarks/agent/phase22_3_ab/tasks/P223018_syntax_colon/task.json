@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223018","name":"syntax-colon","category":"control",
+  "prompt":"Repair the straightforward missing punctuation in the conditional so the program prints 1. Record repair with string value colon in semantic-answer.json. No semantic query is needed.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"1\n"}}],
+  "semantic_heavy":false,"relevant_capability":"negative control: syntax repair","requested_facts":["repair"]
+}

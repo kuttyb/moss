@@ -1,0 +1,10 @@
+fn classify(score: Int, penalty: Int) -> Int:
+  adjusted = score - penalty
+  if adjusted > 10:
+    return 1
+  else:
+    return 0
+
+fn main():
+  result = classify(12, 3)
+  assertEqual(result, 1)

@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223011","name":"resolved-callee","category":"effects-calls",
+  "prompt":"Two helpers have the same shape. Identify the exact call entity and statically resolved callee used for result in main. The program is already correct; do not change main.moss. Record call_entity_id, callee_entity_id, and boundary in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"8\n"}}],
+  "semantic_heavy":true,"relevant_capability":"expanded exact call and callee facts","requested_facts":["call_entity_id","callee_entity_id","boundary"]
+}

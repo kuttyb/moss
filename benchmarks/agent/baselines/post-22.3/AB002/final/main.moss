@@ -1,0 +1,8 @@
+fn add(a, b):
+  return a + b
+
+fn square(value):
+  return value * value
+
+fn main():
+  echo square(add(3, 4))

@@ -1,0 +1,1 @@
+Ran `./moss agent bootstrap --json` and confirmed `moss-0.1`. The project in `task/` built successfully with Margo, and its one test passed. No source edits were needed.

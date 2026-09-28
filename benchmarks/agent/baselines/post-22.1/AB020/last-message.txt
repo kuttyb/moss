@@ -1,0 +1,1 @@
+Replaced the state-mutating callback with a pure `map` stage in [task/main.moss](/home/owner/daji/code/moss/task/main.moss). Moss check and formatting check pass, and interpreted execution prints `42`.

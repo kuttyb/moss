@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "P223003",
+  "name": "diagnostic-identity",
+  "category": "resolution",
+  "prompt": "Repair the illegal naked cross-domain handler call in main.moss. Before repairing it, identify the diagnostic's exact implicated handler semantic identity and stable diagnostic code. Record semantic_identity and diagnostic_code in semantic-answer.json. The finished program must print 7.",
+  "starter": "starter",
+  "expected": "expected",
+  "starter_files": ["main.moss"],
+  "allowed_paths": ["main.moss", "semantic-answer.json"],
+  "validation": [{"command": ["$MOSS", "check", "main.moss", "--json"]}, {"command": ["$MOSS", "run", "--interp", "main.moss"], "expect": {"stdout": "7\n"}}],
+  "semantic_heavy": true,
+  "relevant_capability": "diagnostic semantic identity as an exact query target",
+  "requested_facts": ["semantic_identity", "diagnostic_code"]
+}
