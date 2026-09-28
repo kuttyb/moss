@@ -1,0 +1,10 @@
+domain Receiver:
+  fn Increment(payload: Int) -> Int:
+    current = payload
+    current = current + 1
+    reply current
+
+fn main():
+  receiver = Receiver()
+  result = message receiver.Increment(7)
+  echo result

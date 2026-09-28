@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223016","name":"conflict-witness","category":"domain-synchronization",
+  "prompt":"Determine whether Store.Read and Store.Write conflict, and identify the exact synchronization class and state leaf witnessing the decision. The program is already correct; do not change main.moss. Record conflicts, class_id, and witness_leaves in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"0\n1\n"}}],
+  "semantic_heavy":true,"relevant_capability":"compiler-owned synchronization conflict witnesses","requested_facts":["conflicts","class_id","witness_leaves"]
+}

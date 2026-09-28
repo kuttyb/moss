@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223012","name":"message-edge","category":"effects-calls",
+  "prompt":"Worker.Run sends one synchronous message through its audit route. Identify the sender callable, exact concrete receiver, target handler entity, and call boundary. The program is already correct; do not change main.moss. Record sender, receiver, target_handler, and boundary in semantic-answer.json.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"3\n3\n"}}],
+  "semantic_heavy":true,"relevant_capability":"expanded synchronous message call-edge facts","requested_facts":["sender","receiver","target_handler","boundary"]
+}

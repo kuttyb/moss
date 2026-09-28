@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223015","name":"sync-classes","category":"domain-synchronization",
+  "prompt":"Determine the exact synchronization classes and acquisition modes required by Account.Deposit. The program is already correct; do not change main.moss. Record handler_identity, class_set, and class_modes in semantic-answer.json using the compiler's exact class IDs.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"4\n"}}],
+  "semantic_heavy":true,"relevant_capability":"target-specific synchronization class projection","requested_facts":["handler_identity","class_set","class_modes"]
+}

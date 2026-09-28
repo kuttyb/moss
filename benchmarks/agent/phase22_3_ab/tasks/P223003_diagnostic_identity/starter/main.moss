@@ -1,0 +1,10 @@
+domain Store:
+  value = 7
+
+  fn Get() -> Int:
+    reply value
+
+fn main():
+  store = Store()
+  value = store.Get()
+  echo value

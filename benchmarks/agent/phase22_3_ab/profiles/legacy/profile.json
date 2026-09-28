@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "legacy",
+  "query_profile": "legacy",
+  "documentation_source_commit": "bb388d4aeb1df7f6dac682b427d666a44a748bf4",
+  "description": "Post-22.1 agent discovery and semantic-query contract projected by the benchmark-only proxy."
+}

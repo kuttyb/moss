@@ -1,0 +1,8 @@
+fn identity(value):
+  return value
+
+fn main():
+  number = identity(7)
+  text = identity("moss")
+  echo number
+  echo text

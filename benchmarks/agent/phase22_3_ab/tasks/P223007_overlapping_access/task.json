@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223007","name":"overlapping-access","category":"type-ownership",
+  "prompt":"Repair the overlapping-argument ownership error without changing mutate's behavior. Use the diagnostic's actual inferred access modes rather than assuming copies. Record diagnostic_code, argument_1_mode, and argument_2_mode in semantic-answer.json. The fixed program must print 2.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"2\n"}}],
+  "semantic_heavy":true,"relevant_capability":"structured overlapping-access ownership evidence","requested_facts":["diagnostic_code","argument_1_mode","argument_2_mode"]
+}

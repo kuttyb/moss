@@ -1,0 +1,1 @@
+{"schema_version":1,"task_id":"P223008","facts":{"boundary":"synchronous_message_by_value","payload_mode":"by_value_immutable_snapshot","diagnostic_code":"MOSS_COMPILE_ERROR"}}

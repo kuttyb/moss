@@ -1,0 +1,10 @@
+fn emit(value: Int) -> Int:
+  echo value
+  return value
+
+fn wrapper(value: Int) -> Int:
+  return emit(value)
+
+fn main():
+  result = wrapper(4)
+  echo result

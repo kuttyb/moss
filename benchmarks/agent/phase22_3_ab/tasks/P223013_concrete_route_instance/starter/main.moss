@@ -1,0 +1,17 @@
+domain Worker:
+  value = 0
+
+  fn Get() -> Int:
+    reply value
+
+domain Router:
+  domainroutes(target: Worker)
+
+  fn Fetch() -> Int:
+    reply message target.Get()
+
+fn main():
+  left = Worker()
+  right = Worker()
+  router = Router(target: right)
+  echo message router.Fetch()

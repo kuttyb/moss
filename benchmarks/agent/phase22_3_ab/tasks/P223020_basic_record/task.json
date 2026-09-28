@@ -1,0 +1,7 @@
+{
+  "schema_version":1,"id":"P223020","name":"basic-record","category":"control",
+  "prompt":"Complete the simple Point construction and print its x field, producing 2. Record field with string value x in semantic-answer.json. No semantic query is needed.",
+  "starter":"starter","expected":"expected","starter_files":["main.moss"],"allowed_paths":["main.moss","semantic-answer.json"],
+  "validation":[{"command":["$MOSS","check","main.moss","--json"]},{"command":["$MOSS","run","--interp","main.moss"],"expect":{"stdout":"2\n"}}],
+  "semantic_heavy":false,"relevant_capability":"negative control: basic record construction","requested_facts":["field"]
+}

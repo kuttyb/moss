@@ -1,0 +1,7 @@
+Work only in the supplied repository workspace. Read AGENTS.md and follow its startup instructions before changing Moss source. Complete the task under task/. You may modify only the paths named by the task prompt.
+
+In addition to any source repair, create task/semantic-answer.json with this exact outer shape:
+
+{"schema_version":1,"task_id":"P223NNN","facts":{},"reason":"optional short explanation"}
+
+Put exactly the requested machine-scoreable fact keys inside facts. Do not add guessed fact keys. The reason is retained for review but is not scored. Validate the finished task with the available Moss or Margo tools.

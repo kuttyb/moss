@@ -1,5 +1,40 @@
 # Moss current status
 
+## Phase 22.3 quantitative A/B benchmark — implementation checkpoint (2026-09-28)
+
+A separate controlled semantic-query benchmark now lives under
+`benchmarks/agent/phase22_3_ab/`. It contains 20 deterministic `P223NNN` tasks:
+16 semantic-heavy tasks split evenly across target resolution, type/ownership,
+effects/calls, and domain/synchronization, plus four negative controls. The
+existing `AB001`–`AB030` corpus and `baselines/post-22.3/` evidence remain
+unchanged.
+
+Both conditions execute the same checked-out compiler binary. A benchmark-only
+proxy presents either the full Phase 22.3 query/discovery contract or the
+post-22.1 contract and frozen documentation from
+`bb388d4aeb1df7f6dac682b427d666a44a748bf4`; it does not gate checking,
+lowering, Fast Debug, native execution, or Margo. Fresh trials use an ephemeral
+Codex context, an isolated task copy, empty Git metadata, no expected tree or
+other run artifacts, disabled plugins/browser/memory/multi-agent facilities,
+and disabled shell network access.
+
+The framework records exact semantic answers, semantic detour cost, source and
+documentation reads, query status/type/adoption, validation cycles, diagnostics,
+tool and Moss/Margo calls, wall time, and token usage. Deterministic aggregation
+and paired comparison produce per-task/category summaries and bootstrap 95%
+confidence intervals. Raw trial artifacts include prompts, manifests, tool and
+agent logs, answers, final trees, validator results, and last messages.
+
+All 20 reviewed expected solutions and ground-truth records validate. The
+dedicated profile/scoring/telemetry/integrity/resume regression passes, as do the
+existing agent benchmark, baseline, and baseline-analysis checks. A required
+six-run smoke matrix (two semantic-heavy tasks and one control, both profiles)
+completed with six validator passes and 14/14 exact requested facts; it also
+confirmed treatment `resolve` adoption, control isolation, source-read
+telemetry, deterministic aggregation, and comparison regeneration. The
+canonical 200-run experiment remains intentionally pending until this benchmark
+framework and corpus are committed as one frozen implementation checkpoint.
+
 ## Phase 22.3 — COMPLETE (2026-09-28)
 
 Phase 22.3 native validation and final closeout completed on the integrated

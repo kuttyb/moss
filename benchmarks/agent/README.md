@@ -163,6 +163,13 @@ diagnostics and honest post-run comparison are recorded under
 evidence are recorded under `baselines/post-22.3/`; it compares directly with
 post-22.1 rather than replacing either earlier frozen run.
 
+The controlled Phase 22.3 semantic-query A/B experiment lives separately in
+`phase22_3_ab/`. It uses one compiler commit for both conditions, stages frozen
+post-22.1 agent documentation for the `legacy` profile, exposes current query
+discovery for the `phase22_3` profile, and measures 20 dedicated `P223NNN`
+tasks without modifying the canonical `AB001`–`AB030` corpus. See
+`phase22_3_ab/README.md` for validation, smoke, execution, and analysis commands.
+
 Benchmark tasks must not be changed merely because later compiler diagnostics improve. The same task corpus should be reusable to measure whether agent-facing improvements actually help.
 
 Tasks may be corrected when they are objectively invalid or rely on unsupported

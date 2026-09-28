@@ -1,0 +1,9 @@
+fn mutate(left, right):
+  left = left + 1
+  return right
+
+fn main():
+  first = 5
+  second = 9
+  result = mutate(first, second)
+  echo result
