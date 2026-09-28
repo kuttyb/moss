@@ -7,6 +7,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 
 
 def fail(message: str) -> None:
@@ -92,6 +93,111 @@ missing = invoke(
 )["error"]
 if missing["details"]["resolution"] != {"status": "missing", "candidates": []}:
     fail("missing target did not return stable structured resolution")
+
+# Source hints constrain physical locations only. Exact semantic identities
+# remain project-wide, while name lookups retain explicit ambiguity across the
+# complete project context. Keep this fixture multi-file so regressions cannot
+# accidentally pass through single-source traversal order.
+scratch = root / "tmp"
+scratch.mkdir(exist_ok=True)
+with tempfile.TemporaryDirectory(
+    prefix="phase22-3-source-resolution-", dir=scratch
+) as temporary:
+    project = pathlib.Path(temporary)
+    project_source = project / "src"
+    project_source.mkdir()
+    (project / "Moss.toml").write_text(
+        '[project]\nname = "source-resolution"\nversion = "0.1.0"\n\n'
+        '[build]\nsource = "src"\n',
+        encoding="utf-8",
+    )
+    file_a = project_source / "a.moss"
+    file_b = project_source / "b.moss"
+    file_a.write_text(
+        "type Alpha:\n"
+        "  shared: Int\n"
+        "\n"
+        "  fn ping() -> Int:\n"
+        "    return shared\n"
+        "\n"
+        "\n"
+        "fn main():\n"
+        "  echo 0\n",
+        encoding="utf-8",
+    )
+    file_b.write_text(
+        "type Beta:\n"
+        "  value: Int\n"
+        "\n"
+        "  fn ping() -> Int:\n"
+        "    return value\n"
+        "\n"
+        "  fn shared() -> Int:\n"
+        "    return value\n",
+        encoding="utf-8",
+    )
+
+    located = query("resolve", "line:4", source_file=file_a)
+    if (located["target"]["name"] != "Alpha.ping"
+            or pathlib.Path(located["target"]["source"]["file"]) != file_a):
+        fail("source hint did not constrain a same-line location to file_a")
+
+    project_id = located["target"]["id"]
+    identity = query("resolve", project_id, source_file=file_b)
+    if (identity["target"]["id"] != project_id
+            or pathlib.Path(identity["target"]["source"]["file"]) != file_a):
+        fail("exact durable ID was incorrectly rejected by a different source hint")
+
+    ping_error = invoke(
+        "resolve", "ping", "--source", str(file_a), "--json", expect=1
+    )["error"]
+    ping_resolution = ping_error["details"]["resolution"]
+    ping_candidates = ping_resolution["candidates"]
+    ping_order = [item["source"]["file"] for item in ping_candidates]
+    if (ping_resolution["status"] != "ambiguous"
+            or [item["name"] for item in ping_candidates]
+               != ["Alpha.ping", "Beta.ping"]
+            or ping_order != sorted(ping_order)):
+        fail("duplicate method names were not reported in deterministic order")
+    repeated = invoke(
+        "resolve", "ping", "--source", str(file_a), "--json", expect=1
+    )["error"]["details"]["resolution"]["candidates"]
+    if [item["id"] for item in repeated] != [item["id"] for item in ping_candidates]:
+        fail("duplicate-name candidate order changed between identical queries")
+
+    kind_error = invoke(
+        "resolve", "ping", "--source", str(file_a), "--kind", "method",
+        "--json", expect=1,
+    )["error"]
+    if kind_error["details"]["resolution"]["status"] != "ambiguous":
+        fail("--kind silently chose between same-kind duplicate names")
+    enclosed = query(
+        "resolve", "ping", source_file=file_a,
+        extra=("--enclosing", "method:Alpha.ping"),
+    )
+    if enclosed["target"]["name"] != "Alpha.ping":
+        fail("--enclosing did not narrow to its documented semantic context")
+
+    shared_error = invoke(
+        "resolve", "shared", "--source", str(file_a), "--json", expect=1
+    )["error"]
+    if shared_error["details"]["resolution"]["status"] != "ambiguous":
+        fail("same bare name across kinds was not explicit ambiguity")
+    shared_field = query(
+        "resolve", "shared", source_file=file_a, extra=("--kind", "field")
+    )
+    shared_method = query(
+        "resolve", "shared", source_file=file_a, extra=("--kind", "method")
+    )
+    if (shared_field["target"]["name"] != "Alpha.shared"
+            or shared_method["target"]["name"] != "Beta.shared"):
+        fail("--kind did not narrow duplicate names by compiler entity kind")
+
+    wrong_source = invoke(
+        "resolve", "line:7", "--source", str(file_a), "--json", expect=1
+    )["error"]["details"]["resolution"]
+    if wrong_source != {"status": "missing", "candidates": []}:
+        fail("missing source location leaked a candidate from another file")
 
 # Types: explicit, inferred, specialization, and unsupported/no-value facts.
 explicit_type = query("type", "Sample.value")

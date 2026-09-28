@@ -68,11 +68,11 @@ or range-only optimized locations are not presented as precise Moss steps."
   :type '(choice (const :tag "Find automatically" nil) file))
 
 (defconst moss--declaration-keywords
-  '("fn" "proc" "type" "trait" "domain" "on" "test" "bench"
+  '("fn" "proc" "type" "enum" "trait" "domain" "on" "test" "bench"
     "let" "var"))
 
 (defconst moss--control-keywords
-  '("if" "else" "while" "return" "and" "or" "not"))
+  '("if" "else" "while" "match" "case" "consume" "return" "pass" "and" "or" "not"))
 
 (defconst moss--domain-keywords
   '("message" "reply" "domainroutes"))
@@ -185,7 +185,7 @@ Return non-nil when such a line exists."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              "^\\([ ]*\\)\\(type\\|trait\\|domain\\|fn\\|proc\\|on\\)[ ]+\\([[:word:]_]+\\)"
+              "^\\([ ]*\\)\\(type\\|enum\\|trait\\|domain\\|fn\\|proc\\|on\\)[ ]+\\([[:word:]_]+\\)"
               nil t)
         (let* ((indent (length (match-string-no-properties 1)))
                (kind (match-string-no-properties 2))
@@ -194,7 +194,7 @@ Return non-nil when such a line exists."
           (while (and containers (>= (caar containers) indent))
             (pop containers))
           (pcase kind
-            ((or "type" "trait")
+            ((or "type" "enum" "trait")
              (moss--imenu-add table "Types and Traits" name position)
              (push (list indent kind name) containers))
             ("domain"

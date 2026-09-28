@@ -1,6 +1,537 @@
 # Moss current status
 
-Updated: 2026-09-23
+## 2026-09-28 — Phase 15.15 EXPRESS-005 corrective closeout
+
+The in-progress `f378def` checkpoint entry below is superseded. The existing
+`phase-15.15-express-005-hardening` branch was continued without replaying peer
+patches or resetting workspace changes. F1–F13 are fixed and the authoritative
+D1–D13 decisions are implemented; see
+`docs/PHASE_15_15_EXPRESS_005_REVIEW.md` for the individual dispositions.
+
+The 125-probe peer registry remains primary. It now contains 61 permanent
+case records covering the original breadth plus direct `replace`, reply,
+owned-rvalue match, non-enum specialization rejection, loop restoration, and
+Int/Bool replacement copy semantics.
+`python3 tests/tooling/check_phase15_15_express005_followups.py --expect-fixed`
+passed all 61. `make check`, `make examples`, and `git diff HEAD --check`
+passed after the compiler and fixture edits. Standalone source-free `.mossi`
+provider validation, the agent skills/bootstrap contract, and swarm issue and
+feedback validators passed. Native peer cases compile generated Rust with
+`rustc -D warnings`; Fast Debug and Margo runs are covered by the registry.
+
+Key semantics: `match consume` accepts whole owned enum values and rvalues;
+interior places remain non-consumable. `replace(place, replacement)` requires
+writable storage and the same static type, installs replacement, consumes an
+owned nontrivial replacement binding normally, and returns the old whole value
+as owned. Copy/trivial replacement bindings remain usable; Fast Debug now uses
+checked binding types to agree with native on this rule.
+READ enum views can cross message/reply value boundaries and can feed independent
+computed results. Whole-match READ lifetime remains. A consumed `var` may be
+reinitialized by whole-value assignment; all reaching paths and loop back edges
+must restore it before read. Untyped ordinary match parameters specialize at
+concrete calls. `pass` is a reserved no-op. Legacy lowercase `option[T]` remains
+for Phase 21 convergence with Result/error semantics.
+
+No known EXPRESS-005 blocker remains after the listed full gates. The corrective
+hardening is merged into `main` at `6a371f975dd2bf908efe7ff4d717df8d8a9ab01d`;
+EXPRESS-005 is fixed. The older closeout and checkpoint sections below are historical.
+
+## 2026-09-27 — EXPRESS-005 corrective hardening checkpoint (in progress)
+
+Branch `phase-15.15-express-005-hardening` starts at current `main`
+`4b1e364c22f78b27c32caad71804103e139f6d9c`. The prior “no known blockers”
+closeout below is superseded by the peer review and the user's corrective task.
+EXPRESS-005 must not be described as blocker-free until F1–F13 and the updated
+D1–D13 regressions pass.
+
+Startup completed: read `AGENTS.md`, both repository Moss skills, and this
+status file; `./moss agent bootstrap --json` reports `moss-0.1`. The two peer
+patches are in `tmp/`. They were inspected, not applied wholesale. The review
+document and 125-probe harness were imported from patch 2, and the harness was
+wired into `tests/run.sh`. Patch 1 remains source material for later doc edits.
+
+Compiler edits made so far: F1 constructor observable effects; D1 exact field
+names in patterns; F5 wildcard binding rejection; F6 immutable pattern bindings;
+F9 trait payload rejection; F10 colon-only enum constructor fields; F12 native
+`unused_assignments` allowance; D12 tag-only parentheses rejection in declaration
+and pattern; D13 enum-method diagnostic; F7 enum Map key rejection; F8 enum
+field-projection rejection; and a first pass at `pass` and bare-identifier
+statement rejection. These later edits require a completed rebuild and focused
+validation. `pass` is currently represented as a special Raw statement and
+needs a review for all semantic, formatter, editor, and discovery paths.
+
+Validation completed before the later edits: the initial `--expect-fixed` peer
+harness passed F1a–F1c and reported the other 18 F bug cases failing as expected.
+The D cases still assert prior behavior and **must** be rewritten to the user's
+decisions. The first `make -j4` after frontend edits failed because an `err`
+overload was called with four arguments; that source error was fixed, but the
+subsequent rebuild was still running at checkpoint time. No `make check`,
+`make examples`, source-free validation, or final `--expect-fixed` result is
+claimed. Both staged and unstaged diffs passed `git diff --check` at checkpoint.
+
+Restart from this branch. First run `git status --short`, then read this entry,
+the user's task, and `docs/PHASE_15_15_EXPRESS_005_REVIEW.md`. Follow the
+mandatory Moss startup again, including skills and `./moss agent bootstrap
+--json`. Finish the build, run the peer harness with `--list` and
+`--expect-fixed`, and continue F2–F13 plus D1–D13. Pay particular attention
+to D2/D4 `replace` and owned-rvalue consuming match, D5 READ views at
+message/reply, D6 specialization, D7 and F11 loop ownership. Reconcile patch 1
+docs manually, update issue ledger and this status, then run all required gates.
+Do not push. All work so far is local and incomplete.
+
+## Phase 15.15 — COMPLETE (2026-09-27)
+
+Implemented and validated on `main`: SWARM-043 rejects untyped parameter field
+access while preserving typed access and static untyped-method specialization;
+SWARM-044 specializes built-in Vector/Map indexing per concrete call;
+EXPRESS-003 supplies the core Unicode String API; EXPRESS-004 supplies
+`Map.delete(...)`; and EXPRESS-005 supplies closed enums/tagged unions with
+exhaustive matching (commits `badceae` and `2e96565`). String/Map native repair
+and validation landed in `580c361` and `6245c35`. Native execution, Fast
+Debug, and the relevant full repository gates passed.
+
+Rejected by explicit language-design decision: EXPRESS-002 general explicit
+copying, EXPRESS-006 static `Self`/covariant trait returns, and EXPRESS-008
+user-defined indexing. For EXPRESS-008, built-in indexing and SWARM-044's
+per-call specialization remain; adding opt-in `x[i]` customization would
+expand Moss toward operator-like overloading without compelling workload
+evidence. Ordinary statically resolved methods/functions cover custom access.
+The historical indexing proposal is preserved for reference.
+
+Deferred outside Phase 15.15: SWARM-040, EXPRESS-007, and EXPRESS-009 target
+Phase 21 — Error Propagation & Supervision. Phase 15.15 has no remaining open
+work. Error-propagation and parsing issues previously discovered during
+dogfooding are intentionally carried into Phase 21 and do not block Phase
+15.15 closure. EXPRESS-001 was already fixed in earlier dogfooding work.
+
+This administrative closeout changed no compiler/runtime code. The issue and
+feedback ledger validators, agent-skill/bootstrap and agent-API consistency
+checks, and `git diff HEAD --check` passed. GitHub issue #1 (EXPRESS-005) was
+closed with a completion comment referencing `badceae` and `2e96565`; no other
+GitHub issues in this repository remain open. The compiler-first skills and
+live bootstrap confirmed that no language-surface change was needed;
+impact-selected tests were not relevant to this documentation-only
+reconciliation.
+
+## Phase 15.15 EXPRESS-005 — closed on main (2026-09-27)
+
+Main includes `badceae` and its corrective follow-up. Moss has closed enums with zero-or-more
+named typed fields per case, type-qualified construction, and exhaustive
+statement `match`. A plain match accepts any statically typed enum expression
+allowed by ordinary READ semantics, including aggregate fields and enum-valued
+helper results. It READ-borrows the matched enum place and exposes
+temporary READ payload views; `match consume` consumes the whole scrutinee
+before branch selection and transfers selected payload fields as branch-local
+values. A consuming match requires an owning named enum binding; it cannot
+partially move an enum out of an aggregate. Tag-only cases use `Enum.Tag`, not
+`Enum.Tag()`. There is no partial-move state or pattern-level ownership syntax.
+Parser, checking, ownership/effects, native lowering, Fast Debug, formatter,
+module interfaces, agent discovery, editor surface, and canonical docs were
+updated together. Focused regressions cover native/Fast Debug parity, message
+boundaries, exported and source-free modules, and 32 rejected forms.
+
+The corrective follow-up passed `make check`, `make examples`, and
+`git diff HEAD --check`. Focused check, native Rust (`-D warnings`), Fast Debug,
+Margo native/debug module runs, source-free provider, formatter, and all 32
+negative diagnostic cases passed.
+The full suite includes the ownership, borrowed-value, message, native,
+interpreter, and agent/bootstrap coverage. Optional live LLDB CLI and
+lldb-dap checks were skipped because process tracing is unavailable in this
+environment; this is not an enum product failure. No known EXPRESS-005
+semantic blocker remains. EXPRESS-005 is closed on `main`; no push was performed
+by this session. Compiler-first bootstrap and structured diagnostics made the
+READ-versus-CONSUME distinction clear; focused tests found the field-borrow
+overlap issue before the full suite. Impact/affected-test selection was not
+used because full validation was required. A useful future agent improvement
+would be a direct semantic query for active borrow overlap at a match arm.
+
+## Roadmap direction (2026-09-26; historical snapshot)
+
+The following dated roadmap records what remained at the time. The Phase
+15.15 disposition above supersedes its EXPRESS-005/008 work list.
+
+Finish the remaining Phase 15.15 designs: EXPRESS-005 closed enums/tagged unions
+and exhaustive matching, EXPRESS-008 explicit user-defined indexing, and the
+open questions in the Phase 20 Rust interoperability proposal. Once those
+contracts are settled, start Phase 21 Error Propagation & Supervision with a
+clean-slate design discussion; SWARM-040, EXPRESS-007, and EXPRESS-009 are
+inputs, not predetermined solutions. Phase 22 Agent Agency Tooling has work in
+progress with separate agents and awaits their review; it is not closed.
+Phase 23 is **Static Compiler Optimizations**, with LLM-proposed,
+compiler-verified optimizations as one possible technique. Phase 24 is
+**TileIR Integration (Dynamic Optimizations)**. Both are future design work;
+this roadmap update does not reinstate TileIR in the v0.1 compiler.
+
+## Phase 15.15 String / Map native validation repair (2026-09-26)
+
+On `phase-15.15-string-api`, full native validation with rustc exposed two
+Phase-15.15 integration defects. `check_agent_api.py` still asserted the
+pre-Map.delete bootstrap contract even though the compiler correctly exposed
+the new API; it now expects `delete(key, fallback, found)` and deletion support.
+The first valid native `Map.delete` program then failed `rustc -D warnings`:
+the required initialized writable Bool flag was overwritten before Rust read its
+initial value. Lowering now borrows that Bool place before assigning its presence
+result, retaining eager fallback evaluation/consumption and the existing owned
+removed-value behavior without adding copying or shared ownership. The existing
+Unicode String/Map regression is now a native `run_case` as well as its focused
+Fast Debug coverage. `make check`, `make examples`, both swarm validators, and
+`git diff --check` passed; no EXPRESS or swarm issue status was changed.
+
+## Phase 15.15 EXPRESS-002/003/004 (2026-09-26 historical pre-validation checkpoint)
+
+The native-validation limitation described below applied only to that
+checkout. It was resolved by the later String/Map native repair and completed
+validation recorded above.
+
+EXPRESS-002 was closed by user decision at `b09392c`: move and temporary
+READ/WRITE borrowing remain the ownership model. The tracker has no linked
+swarm program that establishes a need for independent copying; reconsider only
+with a concrete compelling workload. No general copy or shared ownership was
+added.
+
+EXPRESS-003 String methods `length`, `char_at`, `chars`, `split`, and `join` use
+zero-based Unicode code-point positions. EXPRESS-004 Map deletion uses
+`map.delete(key, fallback, found)`, returns the removed owned value or the
+eager fallback, and writes a Bool flag. Nontrivial fallback bindings are
+consumed. Initial native lowering was generated and inspected, but rustc is
+absent in this workspace; full `make check` and `make examples` require the
+user's local native toolchain before these workstreams are green. Focused
+Fast Debug checks and issue validation pass. EXPRESS-009 explicitly tracks
+numeric String parsing and recoverable parse errors under Phase 21, without
+an interim Option type. EXPRESS-006 is closed by user decision: unannotated
+trait returns are inferred and checked at concrete uses; no `Self` return
+constraint or wider concepts/where-clause system is added. EXPRESS-005 remains
+for design.
+
+## Phase 15.15 SWARM-043/044 closeout — COMPLETE (2026-09-26)
+
+The combined implementation and native repair are on `main` at `418dd20` and
+`f727895`. SWARM-043 rejects untyped parameter field access while preserving
+untyped method specialization; SWARM-044 specializes existing Vector and Map
+indexing by concrete call. Both are marked fixed in the canonical issue tracker.
+
+The user reports that `make check` and `make examples` both passed locally on
+`f727895` with `rustc` available, completing the full validation that was
+pending in the checkpoint below. This result is user-reported rather than
+independently rerun in this workspace, which has no `rustc`. The SWARM-043/044
+workstream is green. Phase 15.15 remains open for EXPRESS-002 through 006 and
+the separate EXPRESS-008 user-defined indexing design and implementation.
+SWARM-040 remains deferred to Phase 21.
+
+## Phase 15.15 SWARM-043/044 native validation repair (2026-09-26)
+
+The combined commit `418dd20` was validated with rustc available. The first
+actual Rust failure was the valid SWARM-043 positive control: native view
+lowering called an owned method through a field-only access trait and through a
+borrowed object parameter. Native lowering now materializes an access view or
+clones that borrowed owned value only when invoking a consuming concrete method.
+
+The next native failure was SWARM-044-relevant typed String Map indexing:
+`HashMap<String, _>[&(key)]` passed `&&String` to Rust. String map-key reads
+now lower through `.as_str()`, while non-String keys retain their reference.
+The focused SWARM-043 native/Fast Debug regression and SWARM-044 Vector/Map
+read/write native/Fast Debug regression pass. `make examples` passes.
+The full `make check` run progressed through the new SWARM-043 test and then
+exposed/fixed the String-key error; it must be rerun to completion after this
+last compiler edit. SWARM-044 is fixed; EXPRESS-008 remains separate.
+
+## Phase 15.15 SWARM-043/044 combined integration (2026-09-26)
+
+The isolated SWARM-043 and SWARM-044 implementation commits were cherry-picked
+into this integration checkout. The conflict in status and issue tracking was
+reconciled: SWARM-043 is fixed by its early field diagnostic; SWARM-044 remains
+open until native validation. Combined `make` compilation, issue/feedback
+validators, focused Moss check, both Fast Debug positive programs, all five
+negative diagnostics, and `git diff --check` passed. `make check` stops at the
+agent-skill prerequisite because `rustc` is not installed in this environment;
+`make examples` and native execution remain unverified. EXPRESS-008 is separate.
+
+
+## Phase 15.15 SWARM-043 implementation (2026-09-26)
+
+SWARM-043 now rejects member field access through an untyped ordinary-function
+parameter or alias at the source expression with `UNTYPED_FIELD_ACCESS`. Concrete
+typed fields and inferred untyped member-method calls remain accepted. Focused
+negative fixtures, a positive native/Fast Debug fixture, documentation, and the
+canonical issue/finding ledger were updated. SWARM-044 and EXPRESS-008 remain
+separate open workstreams.
+
+Validation after the final source edit: strict C++ build via `make all`, focused
+`moss check --json` negatives, and Fast Debug positive A/A/B output; issue and
+feedback validators and `git diff --check` passed. Native Rust and full gates
+could not complete because `rustc` is absent: `make examples` and the skill
+drift test stop on that tool requirement. Run `make check` and `make examples`
+in a Rust-equipped environment before integrating this branch.
+## Phase 15.15 SWARM-044 implementation checkpoint (2026-09-26)
+
+The isolated `phase-15.15-swarm-044` branch implements per-call concrete
+specialization for existing built-in indexing, checks indexed write value
+types, and adds positive and negative regressions. Focused Moss checker and
+Fast Debug runs pass for Vector and Map across distinct key/value types;
+generated Rust has distinct concrete functions. Native compilation and the
+full `make check` gate have not passed in this environment because `rustc`
+is unavailable. SWARM-044 remains open pending that gate and integration.
+EXPRESS-008 remains separate and unimplemented.
+
+## Phase 15.15 SWARM-043/044 implementation plan (2026-09-26)
+
+The approved semantic direction and executable regression/validation plan are in
+`docs/PHASE_15_15_SWARM_043_044_PLAN.md`. SWARM-043 rejects field access on an
+untyped parameter while preserving inferred method requirements. SWARM-044
+specializes existing built-in indexing independently for each concrete call.
+Neither compiler fix has been implemented by this planning commit. EXPRESS-008
+remains a separate user-defined indexing workstream.
+
+## Phase 15.15 indexing design handoff (2026-09-26)
+
+The proposed per-call static indexing rule and implementation handoff are in
+`docs/PHASE_15_15_INDEXING_PROPOSAL.md`. SWARM-044 covers built-in indexing
+inference; EXPRESS-008 separately tracks explicit user-defined indexing in this
+phase. The user-defined opt-in spelling remains a design checkpoint before coding.
+Neither item is implemented or marked fixed by this proposal. SWARM-043 remains
+separate, and SWARM-040 is deferred to Phase 21.
+
+Updated: 2026-09-25
+
+## Phase 15.14 — SWARM-059 inference provenance hardening — COMPLETE (2026-09-25)
+
+Inference and finalization diagnostics now retain authoritative physical source
+provenance while processing function signatures, domain state, and handler replies.
+Adjacent object-field and function-signature inference traversals establish the
+enclosing function, field, handler, main, test, or benchmark source before helper
+diagnostics can run. Focused multi-file regressions cover non-root function
+finalization, unresolved domain state, and conflicting handler replies in both human
+and JSON diagnostics. Canonical tracker counts and language semantics are unchanged.
+
+## Phase 15.14 — Agent B reconciliation follow-up — COMPLETE (2026-09-25)
+
+Agent B's pre-integration SWARM-039/SWARM-060 work was preserved on
+`agent-b-wip-preserved` and reconciled against integrated commit `a863941`.
+The integrated project test runner, result reporting, filtering, tracing, and
+qualified semantic-identity rename implementation superseded the older parallel
+implementations. No older semantic-edit code was replayed, including the
+same-module/multi-file rename hardening separately assigned to Agent C.
+
+One SWARM-039 improvement remained material: project-wide interpreted tests now
+use the canonical Fast Debug source-closure walker in test mode, treating every
+root-project module as a closure root and consuming the exact dependency source
+roots resolved by Margo. A focused path-dependency regression proves
+`margo test --interp` executes dependency-backed tests with `rustc` deliberately
+unavailable. Source-free dependency diagnostics now direct test users to
+`margo test --interp` rather than `margo debug`.
+
+Validated after the reconciliation: focused SWARM-039 and SWARM-060 tooling
+checks; `make check`; `make examples`; `make all`; swarm issue and feedback
+validators; `git diff --check`; and agent bootstrap reporting `moss-0.1`.
+Canonical swarm counts remain 61 fixed, 2 open, 1 deferred, 1 agent misunderstanding, and
+65 total. SWARM-043 and SWARM-044 remain in Phase 15.15; SWARM-040 moves to Phase 21.
+
+## Phase 15.14 — Agent A reconciliation — COMPLETE (2026-09-25)
+
+Agent A rebased its preserved SWARM-032 / SWARM-059 work onto the Phase 15.14
+closeout at `a863941`. The formatter implementation and older formatter regression
+were fully superseded by main's canonical SWARM-032 fix and
+`check_swarm_032_formatter_parentheses.py`, so they were not retained.
+
+The remaining useful SWARM-059 delta scopes `current_source_file_` while each
+function is processed by signature inference. This preserves the physical provider
+file for diagnostics emitted before ordinary function body checking, including a
+non-root annotated-return mismatch. The additional project regression also covers
+unknown local calls and missing object methods in a non-root module. Agent C's
+separately assigned trait/object declaration-level provenance hardening was left
+untouched, and no tracker counts or Phase 15.15 semantics changed.
+
+Validation passed: the canonical SWARM-032 and SWARM-059 focused tests, the new
+function-inference provenance regression, `make check`, `make examples`, `make all`,
+both swarm validators, `git diff --check`, and the `moss-0.1` bootstrap contract.
+
+## Phase 15.14 — Final Stabilization Closeout — COMPLETE (2026-09-25)
+
+Phase 15.14 completes all remaining implementation and tooling stabilization work across the compiler, runtime/Fast Debug, formatter, and semantic tooling before Phase 15.15. No implementation/tooling defect remains open from the canonical swarm ledger.
+
+1. **SWARM-051 (Control-flow join correction in module namespace rewriting)**:
+   - Aligned `rewrite_module_program` with authoritative checker control-flow join semantics for module-local name visibility across `if`/`else` branches.
+   - Bindings introduced on all branches survive the join and remain visible as locals after the `if` block, preventing unwanted sibling function rewriting.
+   - Bindings introduced on only one branch do not survive the join, restoring visibility to sibling module callables.
+   - Pre-existing outer bindings remain visible; nested branch-only and loop-local induction bindings do not leak.
+   - Statically known callable references passed across explicit module boundaries retain their canonical resolved identity.
+
+2. **Phase 15.14 for-loop local binding false-acceptance/control-flow correction**:
+   - Fixed type-environment walker and ownership tracking so locals first introduced inside a `for` body and loop induction variables do not leak into the enclosing environment after the loop.
+   - Definite-initialization and child-environment semantics align with native lowering and module namespace rewriting (since loops may execute zero times).
+   - Pre-existing mutable locals updated inside `for` loops remain legal and available afterward.
+   - Direct references to unpromoted loop locals or induction variables after the loop are rejected at Moss checking with structured `unknown identifier` diagnostics rather than leaking to rustc.
+   - In explicit-module contexts, sibling functions shadowed by loop-local names become visible again after the loop.
+
+3. **SWARM-038 (effects reports pure loop helper as divergent/unresolved while accepted as domain initializer)**:
+   - Observable effect analysis enforces a conservative bounded-loop proof: the bound expression must be invariant and side-effect-free, there must be no induction-variable dependency in the bound, and no statement in the loop body may mutate variables used by the bound.
+   - Collection mutation operations `pop` and `pop_front` are marked as `may_fail: true`.
+   - Domain state field initializers (`field.init`) authoritatively enforce side-effect-freedom during domain checking using the same observable effect analysis.
+   - Negative regressions added and verified: infinite monotonic-looking loop with mutated bound (`tests/negative/swarm_038_divergent_loop_state_init.moss`) and empty-pop initializer (`tests/negative/swarm_038_empty_pop_state_init.moss`).
+
+4. **SWARM-066 — for/range lowering closeout**:
+   - Materializes range bounds into typed let-bindings before emitting the Rust `for` loop header, avoiding ambiguity with block expressions (such as pipelines).
+   - Added regression for three-argument stepped range (`range(1, 8, 2)` -> `16`) in `tests/swarm_066_for_range_lowering.moss`.
+   - Status wording corrected: native checking/compilation/execution passed; existing Fast Debug `for` limitation is unchanged and tracked separately.
+
+5. **SWARM-032 — Formatter parity for parenthesized expressions**:
+   - Formatter (`moss fmt`) now accepts statements starting with `(` (grouped arithmetic, grouped comparisons, nested groupings, parenthesized calls, and pipeline operands) without misparsing keywords as function calls or jumping block levels.
+   - Fixed `canonicalize_code_spacing` in `src/moss.cpp` to respect space-separated keywords before `(`.
+   - Idempotence (`format(input) == format(format(input))`) and negative malformed grouping coverage added in `tests/tooling/check_swarm_032_formatter_parentheses.py`.
+
+6. **SWARM-039 — Project-wide Fast Debug test discovery & orchestration**:
+   - Enabled project-wide test execution under Fast Debug via `moss test --interp` and `margo test --interp [--trace]`.
+   - Discovers and executes tests across multiple source files and modules without requiring Rust compilation or toolchain.
+   - Supports test filtering by name/identity, trace generation (`--trace`), and pass/fail summary and exit codes.
+   - Validated with `tests/tooling/check_swarm_039_project_fast_debug_tests.py`.
+
+7. **SWARM-059 — Multi-file diagnostic source provenance**:
+   - Preserved physical source file provenance through parsing, module composition, declaration validation (object field types, object method signatures, trait method signatures), semantic checking, specialization, and structured JSON diagnostics.
+   - Declaration-level and body-level diagnostics identify the exact physical source file containing the error rather than misattributing it to the root module file.
+   - Validated with human-readable and structured JSON tests covering body-level semantic errors, parse errors, object field declarations, object method declarations, and trait method declarations in `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
+
+8. **SWARM-060 — Semantic rename of module-qualified entities & multi-file modules**:
+   - `moss edit rename` resolves module-qualified entity selectors (e.g. `mod.fn`, `entity-v1:function:mod__fn`) using compiler-owned canonical identity without declaring ambiguity.
+   - Renames only the selected entity and its semantic references across declarations and call sites without `EDIT_TARGET_AMBIGUOUS`.
+   - Supports semantic rename across multiple physical files belonging to the same explicit module, rewriting unqualified same-module call sites while preserving same-named functions and calls in other modules.
+   - Genuinely ambiguous unqualified requests continue to fail with `EDIT_TARGET_AMBIGUOUS`.
+   - Validated with `tests/tooling/check_swarm_060_qualified_rename.py`.
+
+9. **Canonical tracker reconciliation & final Phase 15.14 exit statement**:
+   - SWARM-059 now covers both body-level and declaration-level physical source provenance.
+   - SWARM-060 now supports semantic rename across multiple physical files belonging to the same explicit module.
+   - All focused and repository-wide validation gates pass (`make check`, `make examples`, `make all`, tracker validators, `git diff --check`, bootstrap discovery).
+   - No known implementation, lowering, Fast Debug, formatter, diagnostic, or semantic-tooling defects remain in Phase 15.14. Phase 15.14 is fully closed.
+   - Recomputed detailed counts in `examples/swarm/FINDINGS.md` and updated `examples/swarm/ISSUES.jsonl`:
+     - 61 Fixed
+     - 2 Open (Phase 15.15 ambiguous-spec items: SWARM-043, SWARM-044)
+     - 1 Deferred (SWARM-040, Phase 21)
+     - 1 Agent misunderstanding
+     - 65 Total recorded findings
+   - Verified with `python3 tools/check_swarm_issues.py` and `python3 tools/check_swarm_feedback.py`.
+
+### Next: Phase 15.15 — Language Semantics & Missing Expressiveness
+- Scheduled language-design and expressiveness items: SWARM-043, SWARM-044, and EXPRESS-002 through EXPRESS-006.
+- SWARM-040 failure/precondition semantics are deferred to Phase 21.
+- EXPRESS-007 remains deferred to Phase 21.
+
+## Phase 15.14 — SWARM-047 / SWARM-050 corrective follow-up — COMPLETE (2026-09-25)
+
+SWARM-047 remains fixed. Effect inference now retains each parameter's checked
+WRITE observation alongside the joined READ/WRITE/CONSUME effect. Native
+lowering uses it when a consumed owned parameter needs a mutable binding.
+Regressions cover Map index mutation inside `if` and `while` and through a
+normal helper. The functional IR assertion and Map read effect handling remain
+intact; no ownership contract or reduce semantics changed.
+
+SWARM-050 remains fixed. Control-flow join environments are recorded by exact
+static specialization context, and native generation requires the matching
+context for branch-created bindings. The focused regression exercises First
+and Second in both discovery orders and checks each outer-to-inner native
+call pair. No dynamic dispatch or trait object was introduced.
+
+Focused native and Fast Debug parity passed for the new tests and original
+committed reproducers. `make check`, `make examples`, `make all`, Moss format
+checking, the swarm feedback/issue validators, and `git diff --check` passed
+after compiler edits. At the follow-up closeout, FINDINGS had 54 fixed, 10
+open, and 1 agent misunderstanding across 65 detailed entries; after rebasing
+onto the concurrent SWARM-051/038 closeout, the recomputed totals are 56 fixed,
+8 open, and 1 agent misunderstanding. No remaining
+work is known for these two findings. The agent bootstrap matched `moss-0.1`;
+the structured ownership/effects output helped distinguish the consumed Map
+parameter from its hidden WRITE observation. One edit/check cycle fixed each
+root cause; impact-selected testing was not used for compiler-wide changes.
+
+## Phase 15.14 — SWARM-066 for/range native lowering fix — COMPLETE (2026-09-25)
+
+SWARM-066 fixes `for i in range(...)` native lowering: range bounds are now always
+materialized into typed `let __moss_range_start_<line>: i64` and `let __moss_range_end_<line>: i64`
+(and `__moss_range_step_<line>` for three-argument forms) before the for-loop header.
+This eliminates the precedence ambiguity in Rust lowering where functional pipeline
+expressions (e.g. `values |> count` lowered as `{ … }`) were misparsed by rustc as
+the loop body rather than the upper bound. The regression `tests/swarm_066_for_range_lowering.moss`
+covers induction variable readability, nonzero start, computed end, pipeline as end bound,
+accumulator mutation, and nested for/range in an ordinary function.
+
+Focused native checking, compilation, and execution passed for the new regression
+and the committed reproducer. `make check`, `make examples`, `make all`, Moss format checking,
+and swarm tracker validation passed after compiler edits. The existing Fast Debug `for`
+limitation is unchanged and tracked separately; SWARM-066 itself was a native-lowering defect.
+SWARM-066 is closed. The agent skills and compiler bootstrap agreed on `moss-0.1`.
+
+
+## Post-rebase Make health — GREEN (2026-09-25)
+
+`make check` and `make examples` both complete successfully on the checked-out
+`main` after the temporary-branch rebase. The compiler again emits the additive
+`boolean_negation` bootstrap field expected by the agent contract checks. Generic
+functional pipelines retain a result placeholder until static specialization,
+while concrete pipelines still infer their terminal result. Direct calls through
+statically known callable parameters now check and lower to their resolved target,
+including an annotated return and a parameter sharing its target's name. The
+SWARM-048 regression covers that case. The frontend syntax regression assertion
+was aligned with equivalent parenthesized Rust lowering.
+
+Final validation after the last compiler edit: `make check` passed the full Moss
+v0.1 suite and `make examples` built all intended-positive examples. The optional
+live LLDB tests were skipped because process tracing is unavailable. No Moss source
+files changed, and no requested work remains. Bootstrap discovery and structured
+diagnostics identified the failing contracts; targeted native compilations verified
+the callable and generic-pipeline repairs before the full rerun. This took five
+significant edit/check cycles; impact-selected testing was not used for this
+compiler-wide change. A single Make health target that checks the bootstrap
+contract and all examples would have exposed the rebase drift sooner.
+
+## Phase 15.13 — Swarm Stabilization / Quasi-Stable Language Checkpoint — COMPLETE (2026-09-25)
+
+Phase 15.13 records the corrective swarm work developed on the temporary branch,
+rebased into `main`, and stabilized as the new quasi-stable Moss baseline. The
+corrective sequence beginning with `c310b978` and ending with `4c6ab944`, followed
+by post-rebase health commit `4b4598b`, closes the recent frontend leaks, Boolean
+and String surface mismatches, parenthesized/native lowering faults, callable
+parameter/interpreter parity gaps, module-closure preservation defects, nested
+statement-call sequencing issue, and trait-effect projection failure that were
+addressed in that stabilization run.
+
+The Phase 15.13 baseline is green: `make check`, `make examples`, and `make all`
+pass on the stabilized `main` baseline. The canonical swarm trackers are reconciled
+with the landed fixes: SWARM-036 and SWARM-052 are fixed rather than open, and
+EXPRESS-001 (static callable parameters for ordinary functions) is closed by the
+stabilized callable-parameter path covered by `tests/swarm_048_callable_argument.moss`.
+The remaining cross-module callable identity defect is SWARM-051 and remains open.
+
+Outstanding semantic stabilization debt after this checkpoint is intentionally small:
+SWARM-043 and SWARM-044 require language/spec decisions; SWARM-047, SWARM-050,
+SWARM-051, and SWARM-066 are accepted-program semantic-preservation/compiler defects.
+SWARM-040 remains an error/precondition specification question adjacent to the
+deferred Phase 21 error-handling work. Missing expressiveness remains tracked
+separately as EXPRESS-002 through EXPRESS-006, and tooling-only defects remain
+SWARM-032, SWARM-038, SWARM-039, SWARM-059, and SWARM-060.
+
+### Next: Phase 15.14 — Full Stabilization Closeout
+
+Phase 15.14 closes implementation/tooling defects without reopening language design.
+The parallel lost-semantics batch owns SWARM-047, SWARM-050, SWARM-051, and SWARM-066;
+SWARM-038 travels with that batch because it is a semantic-analysis consistency defect.
+The remaining tooling batch owns SWARM-032, SWARM-039, SWARM-059, and SWARM-060.
+
+The Phase 15.14 exit criterion is: no known implementation, lowering, interpreter,
+formatter, diagnostic-attribution, semantic-query-consistency, or semantic-edit defect
+remains from the Phase 15 swarm ledger. Ambiguous language semantics are deliberately
+not resolved inside this implementation-stabilization phase.
+
+### Then: Phase 15.15 — Language Semantics & Missing Expressiveness
+
+Phase 15.15 is the deliberate language-rethink phase. It owns the ambiguous semantic
+questions SWARM-040, SWARM-043, and SWARM-044 together with the remaining expressiveness
+work: EXPRESS-002 (explicit copy for nontrivial values), EXPRESS-003 (core String
+manipulation), EXPRESS-004 (Map deletion), EXPRESS-005 (enums/tagged unions), and
+EXPRESS-006 (static Self/covariant trait return). These items may change or extend the
+language contract, so they follow stabilization rather than being mixed into compiler
+repair work.
+
+EXPRESS-007 remains explicitly deferred to Phase 21 — Error Propagation & Supervision
+because recoverable errors belong to that larger semantics design.
 
 ## Phase 22.3 — Semantic Query Expansion (closeout validation in progress)
 

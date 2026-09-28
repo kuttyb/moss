@@ -1,0 +1,7 @@
+fn test_loop_induction():
+  for i in [1, 2]:
+    echo i
+  echo i
+
+fn main():
+  test_loop_induction()

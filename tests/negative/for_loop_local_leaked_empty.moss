@@ -1,0 +1,8 @@
+fn test_loop_empty():
+  let items = Vector[Int]()
+  for i in items:
+    let y = 10
+  echo y
+
+fn main():
+  test_loop_empty()

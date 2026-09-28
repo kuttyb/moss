@@ -1,0 +1,10 @@
+fn empty_pop_helper() -> Int:
+  var v = Vector[Int]()
+  v.pop()
+  return 0
+
+domain EmptyPopDomain:
+  val: Int = empty_pop_helper()
+
+fn main():
+  d = EmptyPopDomain()

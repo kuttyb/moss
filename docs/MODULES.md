@@ -21,8 +21,11 @@ fn main():
   value = pricing.notional(21)
 ```
 
-Declarations are private by default. `export fn`, `export type`, `export
-trait`, and `export domain` form the public surface. Wildcard imports, aliases,
+Declarations are private by default. `export fn`, `export type`, `export enum`,
+`export trait`, and `export domain` form the public surface. Exported enum
+cases retain exact named payload fields in `.mossi`; source-free consumers can
+construct and match them. An exported untyped function with a `match` is
+specialized and checked for each concrete enum supplied by a call. Wildcard imports, aliases,
 namespace merging, and multiple providers for one module are intentionally not
 part of Phase 8.
 

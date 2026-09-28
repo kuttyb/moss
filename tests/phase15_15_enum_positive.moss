@@ -1,0 +1,70 @@
+enum Outcome:
+  Ready
+  Number(value: Int)
+  Failure(code: Int, message: String)
+
+type Envelope:
+  result: Outcome
+  counter: Int
+
+fn size(text: String) -> Int:
+  return text.length()
+
+fn inspect(value: Outcome) -> Int:
+  match value:
+    case Ready:
+      return 0
+    case Number(value):
+      return value
+    case Failure(code, message):
+      echo size(message)
+      return code
+
+fn identity(value: Outcome) -> Outcome:
+  return value
+
+fn take_message(value: Outcome) -> String:
+  match consume value:
+    case Ready:
+      return "ready"
+    case Number(value):
+      return "number"
+    case Failure(code, message):
+      return message
+
+fn main():
+  let first = Outcome.Number(value: 42)
+  echo inspect(first)
+  let roundtrip = identity(Outcome.Ready)
+  echo inspect(roundtrip)
+  echo take_message(Outcome.Failure(code: 8, message: "helper"))
+  var wrapped = Envelope(result: Outcome.Failure(code: 7, message: "bad"), counter: 0)
+  match wrapped.result:
+    case Ready:
+      echo "ready"
+    case Number(value):
+      echo value
+    case Failure(code, message):
+      echo message
+      wrapped.counter = code
+  echo wrapped.counter
+  echo inspect(wrapped.result)
+  let kept = wrapped
+  echo inspect(kept.result)
+  match identity(Outcome.Number(value: 11)):
+    case Ready:
+      echo "ready"
+    case Number(value):
+      echo value
+    case Failure(code, message):
+      echo message
+  echo inspect(first)
+  let last = Outcome.Failure(code: 9, message: "owned")
+  match consume last:
+    case Ready:
+      echo "ready"
+    case Number(value):
+      echo value
+    case Failure(code, message):
+      let transferred = message
+      echo transferred

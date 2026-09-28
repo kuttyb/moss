@@ -103,6 +103,21 @@ static string tooling_native_symbol(const string& kind, const string& name,
       stable_hash(semantic_identity);
 }
 
+static bool rust_reserved_identifier(const string& value) {
+  static const std::set<string> reserved = {
+      "as","async","await","become","box","break","const","continue","crate",
+      "do","dyn","else","enum","extern","false","final","fn","for","if","impl",
+      "in","let","loop","macro","match","mod","move","override","priv","pub",
+      "ref","return","static","struct","super","trait","true","try","type",
+      "typeof","union","unsafe","unsized","use","virtual","where","while","yield"
+  };
+  return reserved.count(value) != 0;
+}
+
+static string rust_identifier(const string& value) {
+  return rust_reserved_identifier(value) ? "r#" + value : value;
+}
+
 static vector<string> split_top_level(const string& s, char delim) {
   vector<string> out;
   int par = 0, br = 0, sq = 0;
@@ -253,6 +268,20 @@ static bool parse_member_call(const string& text, string& receiver, string& hand
   args.clear();
   if (!trim(inside).empty()) args = split_top_level(inside, ',');
   return true;
+}
+
+static bool parse_enum_case_expression(const string& expression, string& enum_name,
+                                       string& case_name, vector<string>& fields,
+                                       bool& called) {
+  string value = trim(expression);
+  called = parse_member_call(value, enum_name, case_name, fields);
+  if (called) return plain_identifier(enum_name) && plain_identifier(case_name);
+  auto dot = value.find('.');
+  if (dot == string::npos || value.find('.', dot + 1) != string::npos) return false;
+  enum_name = trim(value.substr(0, dot));
+  case_name = trim(value.substr(dot + 1));
+  fields.clear();
+  return plain_identifier(enum_name) && plain_identifier(case_name);
 }
 
 // A bare `receiver.method` is a callable only inside a functional stage.  It
@@ -544,6 +573,7 @@ class Parser {
         }
         if (starts_with(declaration, "domain ")) p.domains.push_back(parse_domain(exported));
         else if (starts_with(declaration, "type ")) p.objects.push_back(parse_object(exported));
+        else if (starts_with(declaration, "enum ")) p.enums.push_back(parse_enum(exported));
         else if (starts_with(declaration, "trait ")) p.traits.push_back(parse_trait(exported));
         else if (starts_with(declaration, "fn ")) {
           auto function = parse_function(exported);
@@ -590,7 +620,7 @@ class Parser {
           if (p.main) fail(L, "duplicate proc main()");
           p.main = parse_main();
         } else {
-          fail(L, "expected 'module', 'import', 'domain', 'type Name:', 'trait', 'fn', 'export', 'test', 'bench', or 'proc main()'");
+          fail(L, "expected 'module', 'import', 'domain', 'type Name:', 'enum Name:', 'trait', 'fn', 'export', 'test', 'bench', or 'proc main()'");
         }
       }
     }
@@ -713,6 +743,56 @@ class Parser {
       o.fields.push_back(std::move(f));
     }
     return o;
+  }
+
+  EnumType parse_enum(bool exported = false) {
+    Line head = lines_[i_++];
+    if (starts_with(head.text, "export ")) head.text = trim(head.text.substr(7));
+    if (!ends_with(head.text, ":")) fail(head, "enum declaration must end with ':'");
+    EnumType result;
+    result.name = trim(head.text.substr(5, head.text.size() - 6));
+    if (!identifier(result.name)) fail(head, "invalid enum name '" + result.name + "'");
+    result.header = head.text;
+    result.line = head.no;
+    result.source_file = head.source_file;
+    result.exported = exported;
+    while (i_ < lines_.size() && lines_[i_].indent > head.indent) {
+      Line line = lines_[i_++];
+      if (line.indent != head.indent + indent_unit_)
+        fail(line, "enum cases must use one indentation level");
+      if (starts_with(line.text, "fn "))
+        fail(line, "enum methods are not supported; use an ordinary function and match on the enum");
+      EnumCase item;
+      item.line = line.no;
+      item.source_file = line.source_file;
+      auto lp = line.text.find('(');
+      if (lp == string::npos) item.name = trim(line.text);
+      else {
+        auto rp = matching_paren(line.text, lp);
+        if (rp == string::npos || rp + 1 != line.text.size())
+          fail(line, "enum case fields must be named and typed");
+        if (rp == lp + 1)
+          fail(line, "tag-only enum cases are declared without parentheses");
+        item.name = trim(line.text.substr(0, lp));
+        for (const auto& param : parse_params(line, line.text.substr(lp + 1, rp - lp - 1))) {
+          if (param.type.empty()) fail(line, "enum case field '" + param.name + "' requires a type");
+          for (const auto& prior : item.fields)
+            if (prior.name == param.name) fail(line, "duplicate enum case field '" + param.name + "'");
+          Field field;
+          field.name = param.name;
+          field.type = param.type;
+          field.line = line.no;
+          field.source_file = line.source_file;
+          item.fields.push_back(std::move(field));
+        }
+      }
+      if (!identifier(item.name)) fail(line, "invalid enum case name '" + item.name + "'");
+      for (const auto& prior : result.cases)
+        if (prior.name == item.name) fail(line, "duplicate enum case '" + item.name + "'");
+      result.cases.push_back(std::move(item));
+    }
+    if (result.cases.empty()) fail(head, "enum must declare at least one case");
+    return result;
   }
 
   Trait parse_trait(bool exported = false) {
@@ -1006,6 +1086,7 @@ class Parser {
 
     static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
     for (const auto& k : forbidden) if (starts_with(L.text, k)) fail(L, "'" + trim(k) + "' is not part of Moss's concurrency model");
+    if (L.text == "pass") { s.kind = Stmt::Kind::Pass; return s; }
 
     if (starts_with(L.text, "echo ")) {
       s.kind = Stmt::Kind::Echo;
@@ -1016,6 +1097,49 @@ class Parser {
       s.kind = Stmt::Kind::If;
       s.a = trim(L.text.substr(3));
       if (ends_with(s.a, ":")) s.a = trim(s.a.substr(0, s.a.size() - 1));
+      return s;
+    }
+    if (starts_with(L.text, "match ")) {
+      if (!ends_with(L.text, ":")) fail(L, "match statement must end with ':'");
+      s.a = trim(L.text.substr(6, L.text.size() - 7));
+      if (starts_with(s.a, "consume ")) {
+        s.a = trim(s.a.substr(8));
+        s.b = "consume";
+      }
+      if (s.a.empty()) fail(L, "match requires an enum scrutinee");
+      s.kind = Stmt::Kind::Match;
+      return s;
+    }
+    if (starts_with(L.text, "case ")) {
+      if (!ends_with(L.text, ":")) fail(L, "case statement must end with ':'; guards are unsupported");
+      string pattern = trim(L.text.substr(5, L.text.size() - 6));
+      if (pattern == "_")
+        fail(L, "wildcard enum patterns are unsupported; list every case explicitly");
+      auto lp = pattern.find('(');
+      if (lp == string::npos) s.a = pattern;
+      else {
+        auto rp = matching_paren(pattern, lp);
+        if (rp == string::npos || rp + 1 != pattern.size())
+          fail(L, "enum patterns support only a case and plain field bindings");
+        if (rp == lp + 1)
+          fail(L, "tag-only enum patterns are written without parentheses");
+        s.a = trim(pattern.substr(0, lp));
+        string inside = pattern.substr(lp + 1, rp - lp - 1);
+        if (!trim(inside).empty()) for (auto binding : split_top_level(inside, ',')) {
+          binding = trim(binding);
+          if (binding == "_")
+            fail(L, "wildcard enum patterns are not supported");
+          if (!identifier(binding)) {
+            if (starts_with(binding, "move ") || starts_with(binding, "ref "))
+              fail(L, "ownership modifiers are not allowed in enum patterns; use 'match value:' to READ-borrow or 'match consume value:' to consume the whole enum");
+            fail(L, "enum patterns support only plain field bindings; wildcard and nested patterns are unsupported");
+          }
+          s.args.push_back(binding);
+        }
+      }
+      if (!identifier(s.a))
+        fail(L, "enum patterns require an unqualified case name; wildcard and guards are unsupported");
+      s.kind = Stmt::Kind::Case;
       return s;
     }
     if (L.text == "else" || L.text == "else:") { s.kind = Stmt::Kind::Else; return s; }
@@ -1235,6 +1359,19 @@ static const Method* resolve_object_method(
   return found;
 }
 
+class SourceFileScope {
+ public:
+  SourceFileScope(string& current, const string& source_file)
+      : current_(current), previous_(current) {
+    if (!source_file.empty()) current_ = source_file;
+  }
+  ~SourceFileScope() { current_ = std::move(previous_); }
+
+ private:
+  string& current_;
+  string previous_;
+};
+
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
@@ -1253,6 +1390,11 @@ class Checker {
       if (!objects_.emplace(o.name, &o).second)
         err(o.source_file, o.line, "duplicate object type: " + o.name);
     }
+    for (auto& e : p_.enums) {
+      if (!enums_.emplace(e.name, &e).second || objects_.count(e.name) ||
+          domains_.count(e.name))
+        err(e.source_file, e.line, "duplicate enum type: " + e.name);
+    }
     for (auto& t : p_.traits) {
       if (!traits_.emplace(t.name, &t).second)
         err(t.source_file, t.line, "duplicate trait: " + t.name);
@@ -1269,10 +1411,12 @@ class Checker {
   }
 
   void run() {
+    check_enums();
     check_domain_handle_declarations();
     // Seed internal structural/generic parameter relations before cross-reference inference.
     infer_function_signatures(false);
     infer_object_fields();
+    check_enums();
     check_traits();
     check_objects();
     // Function results and handler replies can constrain each other through an
@@ -1317,6 +1461,7 @@ class Checker {
   std::unordered_map<string, Function*> functions_;
   std::unordered_map<string, Domain*> domains_;
   std::unordered_map<string, ObjectType*> objects_;
+  std::unordered_map<string, EnumType*> enums_;
   std::unordered_map<string, Trait*> traits_;
   Trait iterator_trait_;
   const ObjectType* current_object_ = nullptr;
@@ -1324,24 +1469,30 @@ class Checker {
   // encountered through this path have concrete types, unlike the generic
   // call edges retained for recursion/effect analysis.
   FunctionSpecialization* checking_specialization_ = nullptr;
+  mutable vector<bool>* parameter_mutation_capture_ = nullptr;
+  mutable string current_source_file_;
   vector<Warning> warnings_;
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
   [[noreturn]] void err(int line, const string& msg) const {
-    throw CompileError(line, msg);
+    CompileError error(line, msg);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    throw error;
   }
 
   [[noreturn]] void err(int line, const string& msg,
                         const string& diagnostic_code) const {
-    throw CompileError(line, msg, diagnostic_code);
+    CompileError error(line, msg, diagnostic_code);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
+    throw error;
   }
 
   [[noreturn]] void err(const string& source_file, int line,
                         const string& msg) const {
     CompileError error(line, msg);
-    error.source_file = source_file;
+    error.source_file = !source_file.empty() ? source_file : current_source_file_;
     throw error;
   }
 
@@ -1352,6 +1503,7 @@ class Checker {
       const string& guidance_kind, const string& guidance_summary,
       vector<DiagnosticRelated> related = {}) const {
     CompileError error(line, message, code);
+    if (!current_source_file_.empty()) error.source_file = current_source_file_;
     error.teaching.rule_id = rule_id;
     error.teaching.rule_summary = rule_summary;
     error.teaching.cause_kind = cause_kind;
@@ -1362,24 +1514,66 @@ class Checker {
     throw error;
   }
 
+  bool contains_trait_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (traits_.count(type)) return true;
+    if ((starts_with(type, "vector[") || starts_with(type, "queue[") ||
+         starts_with(type, "seq[") || starts_with(type, "option[")) &&
+        ends_with(type, "]")) {
+      size_t open = type.find('[');
+      return contains_trait_type(
+          trim(type.substr(open + 1, type.size() - open - 2)));
+    }
+    if ((starts_with(type, "map[") || starts_with(type, "table[")) &&
+        ends_with(type, "]")) {
+      size_t open = type.find('[');
+      auto parts =
+          split_top_level(type.substr(open + 1, type.size() - open - 2), ',');
+      return parts.size() == 2 &&
+          (contains_trait_type(parts[0]) || contains_trait_type(parts[1]));
+    }
+    return false;
+  }
+
+  bool contains_enum_type(const string& t) const {
+    string type = canonical_type_name(t);
+    if (enums_.count(type)) return true;
+    auto bracket = type.find('[');
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        if (contains_enum_type(argument)) return true;
+    return false;
+  }
+
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
-    if (domains_.count(type) || objects_.count(type)) return true;
+    if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
     if (traits_.count(type) || type == "vector" || type == "map" || type == "queue") return true;
-    if (starts_with(type, "vector[") && ends_with(type, "]")) return valid_type(trim(type.substr(7, type.size()-8)));
-    if (starts_with(type, "queue[") && ends_with(type, "]")) return valid_type(trim(type.substr(6, type.size()-7)));
+    if (starts_with(type, "vector[") && ends_with(type, "]")) {
+      string element = trim(type.substr(7, type.size() - 8));
+      return !contains_trait_type(element) && valid_type(element);
+    }
+    if (starts_with(type, "queue[") && ends_with(type, "]")) {
+      string element = trim(type.substr(6, type.size() - 7));
+      return !contains_trait_type(element) && valid_type(element);
+    }
     if (starts_with(type, "map[") && ends_with(type, "]")) {
       auto ps = split_top_level(type.substr(4, type.size()-5), ',');
-      return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
+      return ps.size() == 2 &&
+          !contains_trait_type(ps[0]) && !contains_trait_type(ps[1]) &&
+          !contains_enum_type(ps[0]) &&
+          valid_type(ps[0]) && valid_type(ps[1]);
     }
     if ((starts_with(type, "seq[") || starts_with(type, "option[")) && ends_with(type, "]"))
       return valid_type(trim(type.substr(type.find('[')+1, type.size()-type.find('[')-2)));
     if (starts_with(type, "table[") && ends_with(type, "]")) {
       auto inside = type.substr(6, type.size()-7);
       auto ps = split_top_level(inside, ',');
-      return ps.size() == 2 && valid_type(ps[0]) && valid_type(ps[1]);
+      return ps.size() == 2 && !contains_enum_type(ps[0]) &&
+          valid_type(ps[0]) && valid_type(ps[1]);
     }
     return false;
   }
@@ -1530,13 +1724,40 @@ class Checker {
           }
         }
       }
-      if (expected_result == "$function_result" &&
+      // A generic pipeline needs a result placeholder until its source and
+      // callable parameters are specialized. Concrete pipelines can use the
+      // typed inference pass below to derive their terminal type.
+      if (function.generic && expected_result == "$function_result" &&
           (!function.return_type || starts_with(*function.return_type, "_")))
         function.return_type = "_functional_result:" + function.name;
       return;
     }
     string e = normalize_pipeline(std::move(original));
     if (e.empty()) return;
+    auto constrain_boolean_operand = [&](const string& operand) {
+      string candidate = strip_redundant_outer_parentheses(trim(operand));
+      for (auto& parameter : function.params)
+        if (parameter.type.empty() && candidate == parameter.name)
+          parameter.type = "bool";
+      derive_expression_constraints(function, operand, "bool");
+    };
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(e, {op})) {
+        constrain_boolean_operand(binary->first);
+        constrain_boolean_operand(binary->second);
+        if (expected_result == "$function_result" &&
+            (!function.return_type || starts_with(*function.return_type, "_")))
+          function.return_type = "bool";
+        return;
+      }
+    }
+    if (starts_with(e, "not ")) {
+      constrain_boolean_operand(trim(e.substr(4)));
+      if (expected_result == "$function_result" &&
+          (!function.return_type || starts_with(*function.return_type, "_")))
+        function.return_type = "bool";
+      return;
+    }
     string receiver, method;
     vector<string> member_args;
     bool member_call = parse_member_call(e, receiver, method, member_args);
@@ -1573,13 +1794,6 @@ class Checker {
           derive_expression_constraints(function, member_args[index], expected);
         }
       }
-      if (!parameter.type.empty()) continue;
-      auto dot = e.find('.');
-      if (dot != string::npos && trim(e.substr(0, dot)) == parameter.name && e.find('(', dot) == string::npos) {
-        string field = trim(e.substr(dot + 1));
-        if (!field.empty() && !has_structural_requirement(function, parameter.name, ConstraintKind::Field, field))
-          function.constraints.push_back({ConstraintKind::Field, parameter.name, field, ""});
-      }
     }
     string ib, ii;
     if (parse_index(e, ib, ii)) {
@@ -1587,6 +1801,7 @@ class Checker {
         if (!has_structural_requirement(function, p.name, ConstraintKind::Indexable, "index"))
           function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", ""});
         function.generic = true;
+        function.static_dispatch = true;
       }
       derive_expression_constraints(function, ii);
     }
@@ -1606,6 +1821,16 @@ class Checker {
       }
     string callee; vector<string> call_args;
     if (parse_simple_call(e, callee, call_args) && !member_call) {
+      for (const auto& parameter : function.params)
+        if (callee == parameter.name && parameter.type.empty()) {
+          if (!has_structural_requirement(function, parameter.name,
+                                          ConstraintKind::Callable,
+                                          "static callable"))
+            function.constraints.push_back({ConstraintKind::Callable,
+                                            parameter.name, "static callable", ""});
+          function.generic = true;
+          function.static_dispatch = true;
+        }
       const Function* called = functions_.count(callee) ? functions_.at(callee) : nullptr;
       for (size_t index = 0; index < call_args.size(); ++index) {
         string expected;
@@ -1680,20 +1905,22 @@ class Checker {
 
   void check_traits() {
     for (const auto& trait : p_.traits) {
+      current_source_file_ = trait.source_file;
       std::set<string> signatures;
       for (const auto& method : trait.methods) {
+        string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         string signature = method.name + "/" + std::to_string(method.params.size());
         for (const auto& parameter : method.params) {
           if (!parameter.type.empty() && !valid_type(parameter.type))
-            err(method.line, "unknown parameter type '" + parameter.type +
+            err(method_source, method.line, "unknown parameter type '" + parameter.type +
                 "' in trait method '" + trait.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(parameter.type);
         }
         if (!signatures.insert(signature).second)
-          err(method.line, "duplicate trait method signature '" + trait.name + "." +
+          err(method_source, method.line, "duplicate trait method signature '" + trait.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
-          err(method.line, "unknown result type '" + *method.return_type +
+          err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in trait method '" + trait.name + "." + method.name + "'");
       }
     }
@@ -1701,34 +1928,38 @@ class Checker {
 
   void check_objects() {
     for (const auto& object : p_.objects) {
+      current_source_file_ = object.source_file;
       std::set<string> field_names;
       std::set<string> method_signatures;
       for (const auto& field : object.fields) {
-        if (!valid_type(field.type)) err(field.line, "unknown field type '" + field.type + "'");
+        string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+        if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
-          err(field.line, "duplicate object field '" + field.name + "' in " + object.name);
+          err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
+        string method_source = method.source_file.empty() ? object.source_file : method.source_file;
+        current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
         std::unordered_map<string,string> env;
         env["self"] = object.name;
         for (const auto& field : object.fields) env[field.name] = field.type;
         for (const auto& param : method.params) {
           if (param.type.empty())
-            err(method.line, "cannot infer type for parameter '" + param.name +
+            err(method_source, method.line, "cannot infer type for parameter '" + param.name +
                 "' in method '" + object.name + "." + method.name + "'");
           if (!valid_type(param.type))
-            err(method.line, "unknown parameter type '" + param.type +
+            err(method_source, method.line, "unknown parameter type '" + param.type +
                 "' in method '" + object.name + "." + method.name + "'");
           signature += ":" + canonical_type_name(param.type);
           env[param.name] = param.type;
         }
         if (!method_signatures.insert(signature).second)
-          err(method.line, "duplicate method signature '" + object.name + "." +
+          err(method_source, method.line, "duplicate method signature '" + object.name + "." +
               method.name + "'");
         if (method.return_type && !valid_type(*method.return_type))
-          err(method.line, "unknown result type '" + *method.return_type +
+          err(method_source, method.line, "unknown result type '" + *method.return_type +
               "' in method '" + object.name + "." + method.name + "'");
         TypeEnv entry_env = env;
         TypeEnv inferred_env = env;
@@ -1739,9 +1970,11 @@ class Checker {
             if (result) {
               if (!method.return_type) method.return_type = *result;
               else if (!option_none_compatible(*result, *method.return_type) &&
-                       !same_type(*method.return_type, *result))
-                err(s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
+                       !same_type(*method.return_type, *result)) {
+                string stmt_source = s.source_file.empty() ? method_source : s.source_file;
+                err(stmt_source, s.line, "method '" + object.name + "." + method.name + "' returns '" + *result +
                     "' but another return path has type '" + *method.return_type + "'");
+              }
             }
           }
         }
@@ -1751,7 +1984,7 @@ class Checker {
             if (!method.return_type) method.return_type = *result;
             else if (!option_none_compatible(*result, *method.return_type) &&
                      !same_type(*method.return_type, *result))
-              err(method.result_line ? method.result_line : method.line,
+              err(method_source, method.result_line ? method.result_line : method.line,
                   "method '" + object.name + "." + method.name + "' returns '" + *result +
                   "' but is annotated/inferred as '" + *method.return_type + "'");
           }
@@ -1762,13 +1995,14 @@ class Checker {
             });
         if (!method.return_type && !has_value_return) method.return_type = "unit";
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.return_type = method.return_type;
+        method_function.source_file = method_source;
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
         if (method.result_expression)
           check_expression(method.result_line ? method.result_line : method.line,
                            *method.result_expression, final_env);
         if (!method.return_type && has_value_return)
-          err(method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
+          err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
       current_object_ = nullptr;
     }
@@ -1800,6 +2034,23 @@ class Checker {
         if (then_replies && else_replies) return true;
         continue;
       }
+      if (statement.kind == Stmt::Kind::Match) {
+        ++index;
+        bool all_reply = true;
+        bool any_case = false;
+        while (index < statements.size() &&
+               statements[index].indent == level + 1 &&
+               statements[index].kind == Stmt::Kind::Case) {
+          any_case = true;
+          size_t body = index + 1;
+          all_reply &= every_handler_path_replies(statements, body, level + 2);
+          index = body;
+          while (index < statements.size() && statements[index].indent > level + 1)
+            ++index;
+        }
+        if (any_case && all_reply) return true;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::While || statement.kind == Stmt::Kind::For) {
         ++index;
         (void)every_handler_path_replies(statements, index, level + 1);
@@ -1815,12 +2066,67 @@ class Checker {
   bool contains_domain_handle(const string& type) const {
     string value = canonical_type_name(type);
     if (domains_.count(value)) return true;
+    auto enum_type = enums_.find(value);
+    if (enum_type != enums_.end())
+      for (const auto& item : enum_type->second->cases)
+        for (const auto& field : item.fields)
+          if (contains_domain_handle(field.type)) return true;
     auto bracket = value.find('[');
     if (bracket != string::npos && value.back() == ']')
       for (const auto& argument : split_top_level(
                value.substr(bracket + 1, value.size() - bracket - 2), ','))
         if (contains_domain_handle(trim(argument))) return true;
     return false;
+  }
+
+  void check_enums() const {
+    std::set<string> visiting, visited;
+    std::function<void(const string&, const string&, int)> visit_type;
+    std::function<void(const string&, const string&, int)> visit =
+        [&](const string& type, const string& file, int line) {
+      string name = canonical_type_name(type);
+      if (visited.count(name)) return;
+      if (!visiting.insert(name).second)
+        err(file, line, "recursive enum or aggregate layout involving '" + name + "' is unsupported");
+      auto enumeration = enums_.find(name);
+      if (enumeration != enums_.end()) {
+        for (const auto& item : enumeration->second->cases)
+          for (const auto& field : item.fields)
+            visit_type(field.type, field.source_file, field.line);
+      }
+      auto object = objects_.find(name);
+      if (object != objects_.end()) {
+        for (const auto& field : object->second->fields)
+          visit_type(field.type, field.source_file, field.line);
+      }
+      visiting.erase(name);
+      visited.insert(name);
+    };
+    visit_type = [&](const string& type, const string& file, int line) {
+      string name = canonical_type_name(type);
+      if (enums_.count(name) || objects_.count(name)) {
+        visit(name, file, line);
+        return;
+      }
+      auto bracket = name.find('[');
+      if (bracket != string::npos && ends_with(name, "]"))
+        for (const auto& argument : split_top_level(
+                 name.substr(bracket + 1, name.size() - bracket - 2), ','))
+          visit_type(argument, file, line);
+    };
+    for (const auto& enumeration : p_.enums)
+      visit(enumeration.name, enumeration.source_file, enumeration.line);
+    for (const auto& declaration : p_.enums)
+      for (const auto& item : declaration.cases)
+        for (const auto& field : item.fields) {
+          if (!valid_type(field.type))
+            err(field.source_file, field.line, "unknown enum field type '" + field.type + "'");
+          if (contains_domain_handle(field.type))
+            err(field.source_file, field.line, "domain handles cannot be stored in enum payloads");
+          if (contains_trait_type(field.type))
+            err(field.source_file, field.line,
+                "trait types are static structural constraints and cannot be stored in enum payloads");
+        }
   }
 
   void check_domain_handle_declarations() {
@@ -1832,12 +2138,13 @@ class Checker {
     };
     for (const auto& domain : p_.domains) {
       for (const auto& field : domain.state)
-        reject(field.type, domain.source_file, field.line, "stored as ordinary state");
+        reject(field.type, field.source_file.empty() ? domain.source_file : field.source_file, field.line, "stored as ordinary state");
       for (const auto& handler : domain.handlers) {
+        string handler_source = handler.source_file.empty() ? domain.source_file : handler.source_file;
         for (const auto& parameter : handler.params)
-          reject(parameter.type, handler.source_file, handler.line, "passed as handler payloads");
+          reject(parameter.type, handler_source, handler.line, "passed as handler payloads");
         if (handler.reply_type)
-          reject(*handler.reply_type, handler.source_file, handler.line, "returned through reply");
+          reject(*handler.reply_type, handler_source, handler.line, "returned through reply");
       }
     }
     for (const auto& function : p_.functions) {
@@ -1848,20 +2155,22 @@ class Checker {
     }
     for (const auto& object : p_.objects) {
       for (const auto& field : object.fields)
-        reject(field.type, object.source_file, field.line, "stored in aggregates");
+        reject(field.type, field.source_file.empty() ? object.source_file : field.source_file, field.line, "stored in aggregates");
       for (const auto& method : object.methods) {
+        string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         for (const auto& parameter : method.params)
-          reject(parameter.type, method.source_file, method.line, "passed as ordinary method parameters");
+          reject(parameter.type, method_source, method.line, "passed as ordinary method parameters");
         if (method.return_type)
-          reject(*method.return_type, method.source_file, method.line, "returned as ordinary values");
+          reject(*method.return_type, method_source, method.line, "returned as ordinary values");
       }
     }
     for (const auto& trait : p_.traits)
       for (const auto& method : trait.methods) {
+        string method_source = method.source_file.empty() ? trait.source_file : method.source_file;
         for (const auto& parameter : method.params)
-          reject(parameter.type, trait.source_file, trait.line, "passed as ordinary trait parameters");
+          reject(parameter.type, method_source, trait.line, "passed as ordinary trait parameters");
         if (method.return_type)
-          reject(*method.return_type, trait.source_file, trait.line, "returned as ordinary values");
+          reject(*method.return_type, method_source, trait.line, "returned as ordinary values");
       }
   }
 
@@ -1944,10 +2253,24 @@ class Checker {
   }
 
   void check_domain(const Domain& d) {
+    current_source_file_ = d.source_file;
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
-      if (!valid_type(f.type)) err(f.line, "unknown state type '" + f.type + "'");
-      if (!state_names.insert(f.name).second) err(f.line, "duplicate state field '" + f.name + "'");
+      string f_source = f.source_file.empty() ? d.source_file : f.source_file;
+      if (!valid_type(f.type)) err(f_source, f.line, "unknown state type '" + f.type + "'");
+      if (!state_names.insert(f.name).second) err(f_source, f.line, "duplicate state field '" + f.name + "'");
+      if (!f.init.empty()) {
+        ObservableEffects initializer_effects =
+            observable_expression_effects(f.init, {});
+        if (initializer_effects.message ||
+            initializer_effects.domain_read || initializer_effects.domain_write ||
+            initializer_effects.local_mutation || initializer_effects.external_io ||
+            initializer_effects.may_fail || initializer_effects.may_diverge ||
+            initializer_effects.unresolved) {
+          err(f_source, f.line,
+              "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
+        }
+      }
     }
     std::set<string> route_names;
     for (const auto& route : d.routes) {
@@ -1962,32 +2285,34 @@ class Checker {
             "duplicate domain member '" + route.name + "' (state and route share one namespace)");
     }
     for (const auto& h : d.handlers) {
-      if (!handler_names.insert(h.name).second) err(h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
-      if (h.reply_type && !valid_type(*h.reply_type)) err(h.line, "unknown reply type '" + *h.reply_type + "'");
+      string h_source = h.source_file.empty() ? d.source_file : h.source_file;
+      current_source_file_ = h_source;
+      if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
+      if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
         return s.kind == Stmt::Kind::Reply;
       });
       if (has_reply && !h.reply_type)
-        err(h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
+        err(h_source, h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
             "'; add an annotation or use a statically typed reply expression");
       if (h.reply_type && !has_reply)
-        err(h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
+        err(h_source, h.line, "reply handler '" + d.name + "." + h.name + "' must contain at least one reply statement");
       if (h.reply_type) {
         size_t reply_index = 0;
         if (!every_handler_path_replies(h.body, reply_index, 0))
-          err(h.line, "reply handler '" + d.name + "." + h.name +
+          err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
               "' must reply on every normal control-flow path");
       }
       std::unordered_map<string,string> env;
       env["self"] = d.name;
       for (const auto& p : h.params) {
         if (p.type.empty())
-          err(h.line, "cannot infer type for parameter '" + p.name +
+          err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
-        if (!valid_type(p.type)) err(h.line, "unknown parameter type '" + p.type + "'");
-        if (env.count(p.name)) err(h.line, "duplicate parameter '" + p.name + "'");
+        if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (env.count(p.name)) err(h_source, h.line, "duplicate parameter '" + p.name + "'");
         if (route_names.count(p.name))
-          err(h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
+          err(h_source, h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
         env[p.name] = p.type;
       }
       for (const auto& f : d.state) env[f.name] = f.type;
@@ -2003,6 +2328,7 @@ class Checker {
   }
 
   void check_main(const MainProc& m) {
+    current_source_file_ = m.source_file;
     std::unordered_map<string,string> env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr);
     OwnershipEnv ownership;
@@ -2293,26 +2619,33 @@ class Checker {
   }
 
   void check_function(const Function& f) {
+    current_source_file_ = f.source_file;
     std::unordered_map<string,string> env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
-      err(f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
+      err(f.source_file, f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
-        err(f.line, "cannot infer type for parameter '" + param.name +
+        err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.line, "unknown parameter type '" + param.type + "'");
-      if (!names.insert(param.name).second) err(f.line, "duplicate parameter: " + param.name);
+      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+      if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
     infer_statement_expressions(f.body, inferred_env);
     env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
+    bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
+      if (statement.kind != Stmt::Kind::Match) return false;
+      return std::any_of(f.params.begin(), f.params.end(), [&](const Param& parameter) {
+        return parameter.type.empty() && trim(statement.a) == parameter.name;
+      });
+    });
     OwnershipEnv ownership;
     ownership.types = std::move(entry_env);
-    OwnershipEnv final_ownership = check_ownership(
-        f.body, std::move(ownership), nullptr, nullptr);
+    OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
+        check_ownership(f.body, std::move(ownership), nullptr, nullptr);
     if (f.result_expression) {
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
@@ -2328,6 +2661,7 @@ class Checker {
         const_cast<Function&>(f).return_type = *actual;
       } else if (!starts_with(*f.return_type, "_") &&
                  !starts_with(*actual, "_method_") &&
+                  !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
                  canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
         err(f.result_line ? f.result_line : f.line,
@@ -2561,6 +2895,8 @@ class Checker {
 
   struct OwnershipEnv {
     std::unordered_map<string,string> types;
+    // Only fallthrough paths reach a join or a loop back edge.
+    bool can_continue = true;
     std::set<string> state_fields;
     // `let` is an explicit source-level immutability declaration.  Keep this
     // beside the ownership environment so invalid source is rejected before
@@ -2574,6 +2910,7 @@ class Checker {
     // a compile-time borrow marker used to reject structural mutation of the
     // traversed collection.
     std::set<string> active_read_traversals;
+    std::unordered_map<string,string> borrowed_enum_payloads;
     std::map<string,MoveInfo> moved;
   };
 
@@ -2619,11 +2956,7 @@ class Checker {
   }
 
   bool copy_type(const string& type) const {
-    string t = canonical_type_name(type);
-    if (t == "int" || t == "float" || t == "bool") return true;
-    if (starts_with(t, "option[") && ends_with(t, "]"))
-      return copy_type(trim(t.substr(7, t.size() - 8)));
-    return false;
+    return copy_type_name(canonical_type_name(type));
   }
 
   bool transfer_type(const string& type) const {
@@ -2672,6 +3005,21 @@ class Checker {
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
+          arguments.size() == 2)
+        return inferred_expr_type(arguments[0], env);
+    }
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(original, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name))
+        return enum_name;
+    }
     if (starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> args;
@@ -2688,6 +3036,16 @@ class Checker {
     if (auto functional = inferred_functional_pipeline_type(original, env))
       return functional;
     string e = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(e, {op})) {
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        return left && right &&
+                canonical_type_name(*left) == "bool" &&
+                canonical_type_name(*right) == "bool"
+            ? std::optional<string>("bool") : std::nullopt;
+      }
+    }
     if (starts_with(e, "not ")) {
       auto operand = inferred_expr_type(trim(e.substr(4)), env);
       return operand && canonical_type_name(*operand) == "bool"
@@ -2765,7 +3123,15 @@ class Checker {
       }
       if (callee == "range" && (args.size() == 2 || args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(callee);
+      string target = callee;
+      auto binding = env.find(callee);
+      if (binding != env.end()) {
+        if (starts_with(binding->second, "callable:"))
+          target = binding->second.substr(9);
+        else if (starts_with(binding->second, "_generic:"))
+          return "_functional_callable_result:" + callee;
+      }
+      auto function = functions_.find(target);
       if (function == functions_.end() && current_object_) {
         vector<string> argument_types;
         for (const auto& argument : args)
@@ -2841,8 +3207,29 @@ class Checker {
     if (parse_member_call(e, method_receiver, method_name, method_args)) {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
+        string concrete_base = canonical_type_name(*base);
+        if (concrete_base == "string") {
+          if (method_name == "length" && method_args.empty()) return string("int");
+          if (method_name == "char_at" && method_args.size() == 1) return string("string");
+          if ((method_name == "chars" && method_args.empty()) ||
+              (method_name == "split" && method_args.size() == 1))
+            return string("vector[string]");
+          if (method_name == "join" && method_args.size() == 1) return string("string");
+        }
+        if ((concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
+             concrete_base == "queue" || starts_with(concrete_base, "queue["))) {
+          if (method_name == "push" && method_args.size() == 1)
+            return string("unit");
+          if (method_name == "pop" && method_args.empty()) {
+            size_t open = concrete_base.find('[');
+            if (open != string::npos && ends_with(concrete_base, "]"))
+              return trim(concrete_base.substr(open + 1, concrete_base.size() - open - 2));
+          }
+        }
         if (auto map_types = map_key_value_types(*base)) {
           if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "delete" && method_args.size() == 3)
             return map_types->second;
           if (method_name == "keys" && method_args.empty())
             return "vector[" + map_types->first + "]";
@@ -3176,8 +3563,12 @@ class Checker {
         auto domain = domains_.find(canonical_type_name(receiver->second));
         if (domain != domains_.end())
           if (const Handler* handler = find_handler(*domain->second, statement.b))
-            if (handler->reply_type)
+            if (handler->reply_type) {
               env[statement.message_result] = *handler->reply_type;
+              if (record_semantic_types)
+                const_cast<Stmt&>(statement).semantic_type =
+                    canonical_type_name(*handler->reply_type);
+            }
       }
       return;
     }
@@ -3197,13 +3588,103 @@ class Checker {
                                    const TypeEnvVisitor& visitor,
                                    bool reject_conflicts,
                                    bool record_join_types,
-                                   bool record_semantic_types) const {
+                                   bool record_semantic_types,
+                                   const string& join_context) const {
     while (index < statements.size()) {
       const Stmt& statement = statements[index];
       if (statement.indent < level) return;
       if (statement.indent > level)
         err(statement.line, "indentation jumps more than one block level");
       if (statement.kind == Stmt::Kind::Else) return;
+
+      if (statement.kind == Stmt::Kind::Match) {
+        visitor(statement, env);
+        auto scrutinee_type = inferred_expr_type(statement.a, env);
+        bool deferred = (scrutinee_type && starts_with(*scrutinee_type, "_generic:")) ||
+            (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
+        if (!deferred && (!scrutinee_type ||
+            !enums_.count(canonical_type_name(*scrutinee_type))))
+          err(statement.line, scrutinee_type && !starts_with(*scrutinee_type, "_")
+                  ? "match requires an enum scrutinee; found " + *scrutinee_type
+                  : "match scrutinee has an unknown or unresolved enum type",
+              "MATCH_REQUIRES_ENUM");
+        if (record_semantic_types)
+          const_cast<Stmt&>(statement).semantic_type =
+              deferred ? (scrutinee_type ? *scrutinee_type : "_generic:" + statement.a)
+                       : canonical_type_name(*scrutinee_type);
+        const EnumType* declaration = deferred ? nullptr :
+            enums_.at(canonical_type_name(*scrutinee_type));
+        std::set<string> seen;
+        vector<TypeEnv> paths;
+        ++index;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          if (arm.kind != Stmt::Kind::Case)
+            err(arm.line, "match body requires case arms", "MATCH_REQUIRES_CASE");
+          auto item = declaration ? std::find_if(declaration->cases.begin(), declaration->cases.end(),
+              [&](const EnumCase& candidate) { return candidate.name == arm.a; }) :
+              vector<EnumCase>::const_iterator{};
+          if (declaration && item == declaration->cases.end()) {
+            bool other_enum = false;
+            for (const auto& candidate : p_.enums)
+              if (candidate.name != declaration->name)
+                for (const auto& candidate_case : candidate.cases)
+                  other_enum |= candidate_case.name == arm.a;
+            err(arm.line, (other_enum ? "case belongs to another enum: " :
+                           "unknown enum case: ") + arm.a,
+                other_enum ? "WRONG_ENUM_CASE" : "UNKNOWN_ENUM_CASE");
+          }
+          if (!seen.insert(arm.a).second)
+            err(arm.line, "duplicate match case '" + arm.a + "'", "DUPLICATE_MATCH_CASE");
+          if (declaration && arm.args.size() != item->fields.size())
+            err(arm.line, "case '" + arm.a + "' must bind all " +
+                std::to_string(item->fields.size()) + " field(s)", "MATCH_BINDING_COUNT");
+          TypeEnv branch = env;
+          std::set<string> pattern_names;
+          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+            if (declaration && arm.args[field_index] != item->fields[field_index].name)
+              err(arm.line, "case '" + arm.a + "' requires payload field '" +
+                  item->fields[field_index].name + "' in declaration order",
+                  "MATCH_FIELD_NAME_MISMATCH");
+            if (!pattern_names.insert(arm.args[field_index]).second)
+              err(arm.line, "duplicate enum pattern binding: " +
+                  arm.args[field_index], "DUPLICATE_PATTERN_BINDING");
+            branch[arm.args[field_index]] = declaration
+                ? item->fields[field_index].type : "_generic:" + arm.args[field_index];
+          }
+          ++index;
+          if (index >= statements.size() || statements[index].indent != level + 2)
+            err(arm.line, "enum case requires a statement body", "EMPTY_MATCH_CASE");
+          walk_type_environment_block(statements, index, level + 2, branch,
+                                      visitor, reject_conflicts, record_join_types,
+                                      record_semantic_types, join_context);
+          for (const auto& name : arm.args) {
+            auto prior = env.find(name);
+            if (prior == env.end()) branch.erase(name);
+            else branch[name] = prior->second;
+          }
+          paths.push_back(std::move(branch));
+        }
+        if (declaration && seen.size() != declaration->cases.size()) {
+          string missing;
+          for (const auto& item : declaration->cases)
+            if (!seen.count(item.name)) {
+              if (!missing.empty()) missing += ", ";
+              missing += item.name;
+            }
+          err(statement.line, "non-exhaustive match; missing: " + missing,
+              "NON_EXHAUSTIVE_MATCH");
+        }
+        env = merge_type_environments(paths, statement.line, reject_conflicts);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Case)
+        err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
       if (statement.kind == Stmt::Kind::If) {
         visitor(statement, env);
@@ -3212,7 +3693,7 @@ class Checker {
         TypeEnv then_env = incoming;
         walk_type_environment_block(statements, index, level + 1, then_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
 
         vector<TypeEnv> paths;
         paths.push_back(std::move(then_env));
@@ -3222,14 +3703,17 @@ class Checker {
           TypeEnv else_env = incoming;
           walk_type_environment_block(statements, index, level + 1, else_env,
                                       visitor, reject_conflicts, record_join_types,
-                                      record_semantic_types);
+                                      record_semantic_types, join_context);
           paths.push_back(std::move(else_env));
         } else {
           paths.push_back(std::move(incoming));
         }
         env = merge_type_environments(paths, statement.line, reject_conflicts);
-        if (record_join_types)
+        if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
@@ -3240,11 +3724,14 @@ class Checker {
         TypeEnv body_env = incoming;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
         env = merge_type_environments({incoming, body_env}, statement.line,
                                       reject_conflicts);
-        if (record_join_types)
+        if (record_join_types) {
           const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
@@ -3260,14 +3747,32 @@ class Checker {
           const_cast<Stmt&>(statement).semantic_type = element_type;
         walk_type_environment_block(statements, index, level + 1, body_env,
                                     visitor, reject_conflicts, record_join_types,
-                                    record_semantic_types);
+                                    record_semantic_types, join_context);
         body_env.erase(statement.a);
-        env = std::move(body_env);
+        TypeEnv joined;
+        for (const auto& entry : incoming) {
+          auto found = body_env.find(entry.first);
+          if (found != body_env.end()) {
+            joined[entry.first] = found->second;
+          } else {
+            joined[entry.first] = entry.second;
+          }
+        }
+        env = std::move(joined);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement).joined_types_by_context[join_context] = env;
+        }
         continue;
       }
 
       visitor(statement, env);
       advance_type_environment(statement, env, statements, record_semantic_types);
+      if (record_semantic_types && !join_context.empty() &&
+          !statement.semantic_type.empty())
+        const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
+            statement.semantic_type;
       ++index;
     }
   }
@@ -3276,11 +3781,12 @@ class Checker {
                                 const TypeEnvVisitor& visitor,
                                 bool reject_conflicts,
                                 bool record_join_types = false,
-                                bool record_semantic_types = false) const {
+                                bool record_semantic_types = false,
+                                const string& join_context = {}) const {
     size_t index = 0;
     walk_type_environment_block(statements, index, 0, env, visitor,
                                 reject_conflicts, record_join_types,
-                                record_semantic_types);
+                                record_semantic_types, join_context);
     if (index != statements.size())
       err(statements[index].line, "unexpected 'else' without matching 'if'");
     return env;
@@ -3292,7 +3798,10 @@ class Checker {
       switch (statement.kind) {
         case Stmt::Kind::If:
         case Stmt::Kind::While:
+        case Stmt::Kind::Match:
           constrain_constructor_fields(statement.line, statement.a, current_env);
+          break;
+        case Stmt::Kind::Case:
           break;
         case Stmt::Kind::For:
           constrain_constructor_fields(statement.line, statement.b, current_env);
@@ -3377,6 +3886,7 @@ class Checker {
         case Stmt::Kind::Raw:
           constrain_constructor_fields(statement.line, statement.text, current_env);
           break;
+        case Stmt::Kind::Pass:
         case Stmt::Kind::Else:
           break;
       }
@@ -3388,44 +3898,64 @@ class Checker {
     for (size_t round = 0;
          round <= p_.objects.size() + p_.functions.size() + p_.domains.size() + 2; ++round) {
       for (const auto& function : p_.functions) {
+        SourceFileScope function_source(current_source_file_, function.source_file);
         std::unordered_map<string,string> env;
-        for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
+        for (const auto& parameter : function.params)
+          env[parameter.name] = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
         infer_statement_expressions(function.body, env);
         if (function.result_expression)
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
       }
       for (auto& domain : p_.domains) {
+        SourceFileScope domain_source(current_source_file_, domain.source_file);
         for (const auto& field : domain.state) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          SourceFileScope field_scope(current_source_file_, field_source);
           if (!field.init.empty())
             constrain_constructor_fields(field.line, field.init, {});
         }
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
-          for (const auto& field : domain.state) env[field.name] = field.type;
+          // This pass precedes finalized domain-state inference. Seed each
+          // handler from the initializer when the declared type is absent,
+          // using the same expression inference that resolves the final field.
+          for (const auto& field : domain.state)
+            env[field.name] = field.type.empty() && !field.init.empty()
+                ? inferred_expr_type(field.init, env).value_or("") : field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
         }
       }
       if (p_.main) {
+        SourceFileScope main_source(current_source_file_, p_.main->source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
+        SourceFileScope test_source(current_source_file_, test.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
+        SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
     for (const auto& object : p_.objects) {
       for (const auto& field : object.fields) {
-        if (field.type.empty())
-          err(field.line, "cannot infer type for field '" + object.name + "." + field.name +
+        if (field.type.empty()) {
+          string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+          err(field_source, field.line, "cannot infer type for field '" + object.name + "." + field.name +
               "'; add an annotation or a constructor constraint");
+        }
       }
     }
   }
@@ -3656,12 +4186,16 @@ class Checker {
     for (size_t round = 0;
          round <= p_.domains.size() * 3 + p_.objects.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
+        SourceFileScope domain_source(current_source_file_, domain.source_file);
         std::unordered_map<string,string> initializer_env;
         initializer_env["self"] = domain.name;
         for (const auto& field : domain.state) {
           if (!field.type.empty()) initializer_env[field.name] = field.type;
         }
         for (auto& field : domain.state) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          SourceFileScope field_scope(current_source_file_, field_source);
           if (!field.init.empty()) {
             constrain_constructor_fields(field.line, field.init, initializer_env);
             if (auto actual = inferred_expr_type(field.init, initializer_env)) {
@@ -3673,7 +4207,7 @@ class Checker {
                 field.inferred = field.init.empty();
               }
               else if (!same_type(field.type, *actual))
-                err(field.line, "state field '" + domain.name + "." + field.name +
+                err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                     "' is annotated '" + field.type + "' but its initializer has type '" +
                     *actual + "'");
             }
@@ -3682,6 +4216,9 @@ class Checker {
         }
 
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
@@ -3694,10 +4231,13 @@ class Checker {
             if (field.type.empty()) {
               field.type = inferred->second;
               field.inferred = true;
-            } else if (!field.inferred && !same_type(field.type, inferred->second))
-              err(field.line, "state field '" + domain.name + "." + field.name +
+            } else if (!field.inferred && !same_type(field.type, inferred->second)) {
+              string field_source = field.source_file.empty()
+                  ? domain.source_file : field.source_file;
+              err(field_source, field.line, "state field '" + domain.name + "." + field.name +
                   "' has conflicting inferred types '" + field.type + "' and '" +
                   inferred->second + "'");
+            }
           }
         }
       }
@@ -3705,9 +4245,12 @@ class Checker {
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& field : domain.state) {
-        if (field.type.empty())
-          err(field.line, "cannot infer type for state field '" + domain.name + "." +
+        if (field.type.empty()) {
+          string field_source = field.source_file.empty()
+              ? domain.source_file : field.source_file;
+          err(field_source, field.line, "cannot infer type for state field '" + domain.name + "." +
               field.name + "'; add an annotation or initializer");
+        }
       }
     }
   }
@@ -3717,10 +4260,15 @@ class Checker {
          round <= p_.domains.size() * 3 + p_.functions.size() + 3; ++round) {
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
-          for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& field : domain.state)
+            env[field.name] = field.type.empty() && !field.init.empty()
+                ? inferred_expr_type(field.init, env).value_or("") : field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
           for (const auto& statement : handler.body) {
@@ -3730,7 +4278,9 @@ class Checker {
             if (!handler.reply_type) {
               handler.reply_type = *actual;
             } else if (!same_type(*handler.reply_type, *actual)) {
-              err(statement.line, "conflicting reply types in handler '" + domain.name +
+              string statement_source = statement.source_file.empty()
+                  ? handler_source : statement.source_file;
+              err(statement_source, statement.line, "conflicting reply types in handler '" + domain.name +
                   "." + handler.name + "': expected '" + *handler.reply_type +
                   "' but this reply has type '" + *actual + "'");
             }
@@ -3741,12 +4291,14 @@ class Checker {
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& handler : domain.handlers) {
+        string handler_source = handler.source_file.empty()
+            ? domain.source_file : handler.source_file;
         bool has_reply = std::any_of(handler.body.begin(), handler.body.end(),
                                      [](const Stmt& statement) {
                                        return statement.kind == Stmt::Kind::Reply;
                                      });
         if (has_reply && !handler.reply_type)
-          err(handler.line, "cannot infer reply type for handler '" + domain.name +
+          err(handler_source, handler.line, "cannot infer reply type for handler '" + domain.name +
               "." + handler.name + "'; add an annotation or use a statically typed reply expression");
       }
     }
@@ -3754,6 +4306,79 @@ class Checker {
 
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
+      SourceFileScope function_source(current_source_file_, function.source_file);
+      for (const auto& statement : function.body)
+        if (statement.kind == Stmt::Kind::Match)
+          for (const auto& parameter : function.params)
+            if (parameter.type.empty() && trim(statement.a) == parameter.name) {
+              function.generic = true;
+              function.static_dispatch = true;
+            }
+      // Field requirements are not part of Moss's inferred method-only static
+      // duck typing. Check before calls can infer a first concrete parameter.
+      TypeEnv field_env;
+      for (const auto& parameter : function.params)
+        field_env[parameter.name] = parameter.type.empty()
+            ? "_generic:" + parameter.name : parameter.type;
+      auto reject_untyped_fields = [&](int line, const string& expression,
+                                       const TypeEnv& env) {
+        bool quoted = false;
+        bool escaped = false;
+        for (size_t i = 0; i < expression.size();) {
+          char ch = expression[i];
+          if (quoted) {
+            if (escaped) escaped = false;
+            else if (ch == '\\') escaped = true;
+            else if (ch == '"') quoted = false;
+            ++i;
+            continue;
+          }
+          if (ch == '"') { quoted = true; ++i; continue; }
+          if (!std::isalpha(static_cast<unsigned char>(ch)) && ch != '_') {
+            ++i;
+            continue;
+          }
+          size_t start = i++;
+          while (i < expression.size() &&
+                 (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+                  expression[i] == '_')) ++i;
+          string receiver = expression.substr(start, i - start);
+          size_t dot = i;
+          while (dot < expression.size() && std::isspace(static_cast<unsigned char>(expression[dot]))) ++dot;
+          if (dot >= expression.size() || expression[dot] != '.') continue;
+          size_t member = dot + 1;
+          while (member < expression.size() && std::isspace(static_cast<unsigned char>(expression[member]))) ++member;
+          if (member >= expression.size() ||
+              (!std::isalpha(static_cast<unsigned char>(expression[member])) &&
+               expression[member] != '_')) continue;
+          size_t end = member + 1;
+          while (end < expression.size() &&
+                 (std::isalnum(static_cast<unsigned char>(expression[end])) ||
+                  expression[end] == '_')) ++end;
+          size_t next = end;
+          while (next < expression.size() && std::isspace(static_cast<unsigned char>(expression[next]))) ++next;
+          auto binding = env.find(receiver);
+          if (binding != env.end() && starts_with(binding->second, "_generic:") &&
+              (next >= expression.size() || expression[next] != '('))
+            err(line, "field access '" + receiver + "." +
+                expression.substr(member, end - member) +
+                "' requires a concrete receiver type; annotate the parameter or "
+                "expose the behavior through a method/trait", "UNTYPED_FIELD_ACCESS");
+        }
+      };
+      TypeEnvVisitor check_field = [&](const Stmt& statement, const TypeEnv& env) {
+        if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
+        reject_untyped_fields(statement.line, statement.a, env);
+        reject_untyped_fields(statement.line, statement.b, env);
+        for (const auto& argument : statement.args)
+          reject_untyped_fields(statement.line, argument, env);
+        if (statement.kind == Stmt::Kind::Raw || statement.kind == Stmt::Kind::Call)
+          reject_untyped_fields(statement.line, statement.text, env);
+      };
+      walk_type_environment(function.body, field_env, check_field, false);
+      if (function.result_expression)
+        reject_untyped_fields(function.result_line ? function.result_line : function.line,
+                              *function.result_expression, field_env);
       // An untyped identity helper is a statically specialized generic.  It
       // must be recognized before domain inference reaches its first call;
       // otherwise the first domain instance would permanently type the
@@ -3811,6 +4436,7 @@ class Checker {
           if (parse_index(expression, base, idx)) {
             for (const auto& p : function.params) if (trim(base) == p.name) {
               function.generic = true;
+              function.static_dispatch = true;
               function.constraints.push_back({ConstraintKind::Indexable, p.name, "index", "element:" + p.name});
               function.generic_results["element:" + p.name] = p.name;
             }
@@ -3876,8 +4502,11 @@ class Checker {
     }
     for (size_t round = 0; round <= p_.functions.size() * 3 + 3; ++round) {
       for (auto& function : p_.functions) {
+        SourceFileScope function_source(current_source_file_, function.source_file);
         std::unordered_map<string,string> env;
-        for (const auto& parameter : function.params) env[parameter.name] = parameter.type;
+        for (const auto& parameter : function.params)
+          env[parameter.name] = parameter.type.empty()
+              ? "_generic:" + parameter.name : parameter.type;
         infer_statement_expressions(function.body, env);
         if (function.return_type && starts_with(*function.return_type, "_field:") && function.result_expression) {
           if (auto resolved = inferred_expr_type(*function.result_expression, env)) function.return_type = *resolved;
@@ -3888,6 +4517,7 @@ class Checker {
             if (!function.return_type) function.return_type = *result;
             else if (!starts_with(*function.return_type, "_") &&
                      !starts_with(*result, "_method_") &&
+                      !starts_with(*result, "_functional_callable_result:") &&
                      !same_type(*function.return_type, *result))
               err(function.result_line, "function '" + function.name + "' returns '" + *result +
                   "' but is annotated '" + *function.return_type + "'");
@@ -3908,29 +4538,38 @@ class Checker {
       }
       for (auto& domain : p_.domains) {
         for (auto& handler : domain.handlers) {
+          string handler_source = handler.source_file.empty()
+              ? domain.source_file : handler.source_file;
+          SourceFileScope handler_scope(current_source_file_, handler_source);
           std::unordered_map<string,string> env;
           env["self"] = domain.name;
           for (const auto& parameter : handler.params) env[parameter.name] = parameter.type;
-          for (const auto& field : domain.state) env[field.name] = field.type;
+          for (const auto& field : domain.state)
+            env[field.name] = field.type.empty() && !field.init.empty()
+                ? inferred_expr_type(field.init, env).value_or("") : field.type;
           for (const auto& route : domain.routes) env[route.name] = route.type;
           infer_statement_expressions(handler.body, env);
         }
       }
       if (p_.main) {
+        SourceFileScope main_source(current_source_file_, p_.main->source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(p_.main->body, env);
       }
       for (const auto& test : p_.tests) {
+        SourceFileScope test_source(current_source_file_, test.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(test.body, env);
       }
       for (const auto& benchmark : p_.benchmarks) {
+        SourceFileScope benchmark_source(current_source_file_, benchmark.source_file);
         std::unordered_map<string,string> env;
         infer_statement_expressions(benchmark.body, env);
       }
     }
     if (!finalize) return;
     for (auto& function : p_.functions) {
+      SourceFileScope function_source(current_source_file_, function.source_file);
       if (function.generic && std::all_of(function.params.begin(), function.params.end(), [](const Param& p) { return !p.type.empty(); }))
         function.generic = false;
       if (!function.generic && function.result_expression) {
@@ -4582,6 +5221,9 @@ class Checker {
     if (parameter != params.end()) {
       size_t index = static_cast<size_t>(parameter - params.begin());
       if (index >= parameter_effects.size()) parameter_effects.resize(params.size(), Effect::Read);
+      if (parameter_mutation_capture_ && effect == Effect::Write &&
+          index < parameter_mutation_capture_->size())
+        (*parameter_mutation_capture_)[index] = true;
       parameter_effects[index] = join_effect(parameter_effects[index], effect);
       return;
     }
@@ -4670,20 +5312,70 @@ class Checker {
                                     receiver_effect, receiver_fields, Effect::Read);
         return;
       }
+      for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+        if (auto binary = split_binary(value, {op})) {
+          analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
+      }
+      for (const auto& operators :
+           vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+                                  {"+", "-", "*", "/", "%"}}) {
+        if (auto binary = split_binary(value, operators)) {
+          analyze_effect_expression(binary->first, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          analyze_effect_expression(binary->second, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
+      }
       if (starts_with(value, "not ")) {
         analyze_effect_expression(value.substr(4), env, params, parameter_effects,
                                   receiver_effect, receiver_fields, Effect::Read);
         return;
       }
-      if (auto binary = split_binary(value, {" and ", " or "})) {
-        analyze_effect_expression(binary->first, env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
-        analyze_effect_expression(binary->second, env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
+    }
+
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(value, callee, arguments) && callee == "replace" &&
+          arguments.size() == 2) {
+        analyze_effect_expression(arguments[0], env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Write);
+        auto replacement_type = inferred_expr_type(arguments[1], env);
+        analyze_effect_expression(arguments[1], env, params, parameter_effects,
+                                  receiver_effect, receiver_fields,
+                                  replacement_type && transfer_type(*replacement_type)
+                                      ? Effect::Consume : Effect::Read);
         return;
       }
     }
-
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item != declaration.cases.end()) for (const auto& argument : fields) {
+          string name, field_value;
+          if (!parse_named_argument(argument, name, field_value)) continue;
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field != item->fields.end())
+            analyze_effect_expression(field_value, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields,
+                                      transfer_type(field->type) ? Effect::Consume : Effect::Read);
+        }
+        return;
+      }
+    }
     if (starts_with(value, "message ")) {
       string receiver, handler;
       vector<string> arguments;
@@ -4713,18 +5405,30 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
+        if (canonical_type_name(*receiver_type) == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : arguments)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
         string concrete = canonical_type_name(*receiver_type);
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
-          Effect receiver_use = (method == "push" || method == "pop")
+          Effect receiver_use = (method == "push" || method == "pop" || method == "delete")
               ? Effect::Write : Effect::Read;
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, receiver_use);
           for (size_t index = 0; index < arguments.size(); ++index)
             analyze_effect_expression(arguments[index], env, params, parameter_effects,
                                       receiver_effect, receiver_fields,
+                                      method == "delete" && index == 2 ? Effect::Write :
+                                      method == "delete" && index == 1 ? Effect::Consume :
                                       method == "push" && index == 0
                                           ? Effect::Consume : Effect::Read);
           return;
@@ -4751,7 +5455,6 @@ class Checker {
           return;
         }
       }
-      synchronization_require(!leaf_effect_capture_, "unresolved concrete method effect target");
       Effect possible_receiver = Effect::Read;
       vector<Effect> possible_parameters;
       if (receiver_type && possible_method_effects(*receiver_type, method,
@@ -4767,6 +5470,23 @@ class Checker {
                                     receiver_fields, possible_parameters[index]);
         return;
       }
+      if (leaf_effect_capture_ && receiver_type &&
+          traits_.count(canonical_type_name(*receiver_type))) {
+        // A trait parameter has a valid static effect summary but no concrete
+        // storage layout. Record the ordinary parameter READ without asking
+        // leaf-state capture to decompose an abstract trait into state leaves.
+        {
+          LeafCaptureScope no_trait_leaf_capture(leaf_effect_capture_, nullptr);
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        }
+        for (const auto& argument : arguments)
+          analyze_effect_expression(argument, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+      synchronization_require(!leaf_effect_capture_,
+                              "unresolved concrete method effect target");
       // An unresolved call with no bounded concrete candidate is diagnosed by
       // ordinary static dispatch checking; keep the effect walk conservative.
       analyze_effect_expression(receiver, env, params, parameter_effects,
@@ -4859,7 +5579,8 @@ class Checker {
       return;
     }
 
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -4889,7 +5610,8 @@ class Checker {
       return;
     }
 
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -4923,6 +5645,39 @@ class Checker {
       const Stmt& statement = statements[index];
       if (statement.indent < level || statement.indent > level) return;
       if (statement.kind == Stmt::Kind::Else) return;
+      if (statement.kind == Stmt::Kind::Match) {
+        analyze_effect_expression(statement.a, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields,
+                                  statement.b == "consume" ? Effect::Consume : Effect::Read);
+        auto type = inferred_expr_type(statement.a, env);
+        const EnumType* declaration = type && enums_.count(canonical_type_name(*type))
+            ? enums_.at(canonical_type_name(*type)) : nullptr;
+        ++index;
+        vector<TypeEnv> paths;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          auto branch = env;
+          if (declaration) {
+            auto item = std::find_if(declaration->cases.begin(), declaration->cases.end(),
+                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+            if (item != declaration->cases.end())
+              for (size_t field_index = 0;
+                   field_index < arm.args.size() && field_index < item->fields.size();
+                   ++field_index)
+                branch[arm.args[field_index]] = item->fields[field_index].type;
+          }
+          ++index;
+          analyze_effect_block(statements, index, level + 2, branch, params,
+                               parameter_effects, receiver_effect, receiver_fields);
+          for (const auto& binding : arm.args) branch.erase(binding);
+          paths.push_back(std::move(branch));
+        }
+        if (leaf_effect_capture_ && !paths.empty())
+          env = merge_type_environments(paths, statement.line, false);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Case)
+        err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For) {
         Effect iteration_effect = Effect::Read;
@@ -5071,10 +5826,15 @@ class Checker {
                                     receiver_effect, receiver_fields, Effect::Read);
           ++index;
           break;
+        case Stmt::Kind::Pass:
+          ++index;
+          break;
         case Stmt::Kind::Else:
         case Stmt::Kind::If:
         case Stmt::Kind::While:
         case Stmt::Kind::For:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           return;
       }
     }
@@ -5242,7 +6002,11 @@ class Checker {
           if (!has_structural_requirement(*function->second,
                                           function->second->params[index].name,
                                           ConstraintKind::Callable,
-                                          "functional callable"))
+                                          "functional callable") &&
+              !has_structural_requirement(*function->second,
+                                          function->second->params[index].name,
+                                          ConstraintKind::Callable,
+                                          "static callable"))
             continue;
           string identity = trim(call_arguments[index]);
           if (functions_.count(identity))
@@ -5271,7 +6035,8 @@ class Checker {
       collect_local_call_sites(line, index, env, implicit_owner, calls);
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}})
       if (auto binary = split_binary(value, operators)) {
         collect_local_call_sites(line, binary->first, env, implicit_owner, calls);
@@ -5294,7 +6059,9 @@ class Checker {
       case Stmt::Kind::Call:
         expressions.push_back(!statement.text.empty()
             ? statement.text
-            : statement.a + "(" + join_arguments(statement.args) + ")");
+            : !statement.b.empty()
+                ? statement.a + "." + statement.b + "(" + join_arguments(statement.args) + ")"
+                : statement.a + "(" + join_arguments(statement.args) + ")");
         break;
       case Stmt::Kind::Message:
         expressions.insert(expressions.end(), statement.args.begin(), statement.args.end());
@@ -5304,7 +6071,10 @@ class Checker {
         break;
       case Stmt::Kind::If:
       case Stmt::Kind::While:
+      case Stmt::Kind::Match:
         expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Case:
         break;
       case Stmt::Kind::For:
         expressions.push_back(statement.b);
@@ -5316,6 +6086,7 @@ class Checker {
       case Stmt::Kind::Raw:
         expressions.push_back(statement.text);
         break;
+      case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
         break;
     }
@@ -5341,7 +6112,10 @@ class Checker {
         break;
       case Stmt::Kind::If:
       case Stmt::Kind::While:
+      case Stmt::Kind::Match:
         expressions.push_back(statement.a);
+        break;
+      case Stmt::Kind::Case:
         break;
       case Stmt::Kind::For:
         expressions.push_back(statement.b);
@@ -5353,6 +6127,7 @@ class Checker {
       case Stmt::Kind::Raw:
         expressions.push_back(statement.text);
         break;
+      case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
         break;
     }
@@ -5581,6 +6356,9 @@ class Checker {
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
         auto inferred = function.parameter_effects;
+        vector<bool> mutations(function.params.size(), false);
+        auto* previous_mutation_capture = parameter_mutation_capture_;
+        parameter_mutation_capture_ = &mutations;
         Effect receiver = Effect::Read;
         std::set<string> no_fields;
         size_t index = 0;
@@ -5589,6 +6367,7 @@ class Checker {
         if (function.result_expression)
           analyze_effect_expression(*function.result_expression, env, function.params,
                                     inferred, receiver, no_fields, Effect::Consume);
+        parameter_mutation_capture_ = previous_mutation_capture;
         for (const auto& constraint : function.constraints) {
           if (constraint.kind != ConstraintKind::Iterable ||
               constraint.detail != "static iterator")
@@ -5608,6 +6387,10 @@ class Checker {
         }
         if (inferred != function.parameter_effects) {
           function.parameter_effects = std::move(inferred);
+          changed = true;
+        }
+        if (mutations != function.parameter_mutations) {
+          function.parameter_mutations = std::move(mutations);
           changed = true;
         }
       }
@@ -5662,7 +6445,8 @@ class Checker {
   ObservableEffects observable_expression_effects(
       const string& expression, const TypeEnv& env,
       const std::set<string>& domain_fields = {},
-      const ObjectType* implicit_object = nullptr) const {
+      const ObjectType* implicit_object = nullptr,
+      const std::set<string>& parameters = {}) const {
     ObservableEffects effects = no_observable_effects();
     string original = trim(expression);
     if (original.empty()) return effects;
@@ -5759,7 +6543,7 @@ class Checker {
 
     string value = normalize_pipeline(original);
     for (const auto& operators :
-         vector<vector<string>>{{" or ", " and "},
+         vector<vector<string>>{{" or "}, {" xor "}, {" and "},
                                 {"==", "!=", "<=", ">=", "<", ">"},
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
@@ -5784,14 +6568,53 @@ class Checker {
     }
     string receiver, method;
     vector<string> arguments;
+    // A constructor is pure apart from evaluation of its supplied payloads.
+    // Recognize it before the general member-call path, which would otherwise
+    // report the case as an unresolved method.
+    {
+      string enum_name, case_name;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, arguments, called) &&
+          enums_.count(enum_name)) {
+        for (const auto& argument : arguments) {
+          string field, field_value;
+          effects.merge(observable_expression_effects(
+              parse_named_argument(argument, field, field_value) ? field_value : argument,
+              env, domain_fields, implicit_object, parameters));
+        }
+        return effects;
+      }
+    }
     if (parse_member_call(value, receiver, method, arguments)) {
       effects.merge(observable_expression_effects(
-          receiver, env, domain_fields, implicit_object));
+          receiver, env, domain_fields, implicit_object, parameters));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
-            argument, env, domain_fields, implicit_object));
+            argument, env, domain_fields, implicit_object, parameters));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
+        // Built-in Map reads are resolved by the type checker without an
+        // ObjectType method. Their arguments were evaluated above, including
+        // the eager default passed to get.
+        if (canonical_type_name(*receiver_type) == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          if (method == "char_at" || method == "split") effects.may_fail = true;
+          return effects;
+        }
+        if (auto map_types = map_key_value_types(*receiver_type)) {
+          if ((method == "get" && arguments.size() == 2) ||
+              ((method == "keys" || method == "values") && arguments.empty()))
+            return effects;
+          if (method == "delete" && arguments.size() == 3) {
+            auto flag_location = storage_location(arguments[2], env);
+            if (domain_fields.count(receiver) ||
+                (flag_location && domain_fields.count(flag_location->root)))
+              effects.domain_write = true;
+            else effects.local_mutation = true;
+            return effects;
+          }
+        }
         vector<string> argument_types;
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -5805,6 +6628,31 @@ class Checker {
           effects.domain_read = true;
           return effects;
         }
+        string concrete = canonical_type_name(*receiver_type);
+        if (starts_with(concrete, "vector") ||
+            starts_with(concrete, "queue") ||
+            starts_with(concrete, "map")) {
+          bool mutating = method == "push" || method == "pop" || method == "pop_front" || method == "delete";
+          bool query = method == "get" || method == "keys" || method == "values";
+          if (mutating || query) {
+            if (method == "pop" || method == "pop_front") {
+              effects.may_fail = true;
+            }
+            if (domain_fields.count(receiver)) {
+              if (mutating) effects.domain_write = true;
+              else effects.domain_read = true;
+            } else if (parameters.count(receiver) ||
+                       (implicit_object && (receiver == "self" ||
+                        std::any_of(implicit_object->fields.begin(),
+                                    implicit_object->fields.end(),
+                                    [&](const Field& field) {
+                                      return field.name == receiver;
+                                    })))) {
+              if (mutating) effects.local_mutation = true;
+            }
+            return effects;
+          }
+        }
       }
       effects.unresolved = true;
       return effects;
@@ -5812,6 +6660,14 @@ class Checker {
     string callee;
     vector<string> arguments_call;
     if (parse_simple_call(value, callee, arguments_call)) {
+      if (callee == "replace" && arguments_call.size() == 2) {
+        auto place = storage_location(arguments_call[0], env);
+        if (place && domain_fields.count(place->root)) effects.domain_write = true;
+        else effects.local_mutation = true;
+        effects.merge(observable_expression_effects(
+            arguments_call[1], env, domain_fields, implicit_object, parameters));
+        return effects;
+      }
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
@@ -5848,6 +6704,128 @@ class Checker {
     return effects;
   }
 
+  static bool is_positive_integer_literal(const string& text) {
+    string s = trim(text);
+    if (s.empty()) return false;
+    size_t start = (s.front() == '+') ? 1 : 0;
+    if (start >= s.size()) return false;
+    for (size_t i = start; i < s.size(); ++i) {
+      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    try {
+      return std::stoll(s) > 0;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  static std::set<string> extract_expression_identifiers(const string& expr) {
+    std::set<string> ids;
+    size_t i = 0;
+    while (i < expr.size()) {
+      if (std::isalpha(static_cast<unsigned char>(expr[i])) || expr[i] == '_') {
+        size_t start = i;
+        while (i < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[i])) || expr[i] == '_')) {
+          ++i;
+        }
+        ids.insert(expr.substr(start, i - start));
+      } else {
+        ++i;
+      }
+    }
+    return ids;
+  }
+
+  static string extract_root_identifier(const string& target) {
+    string root = trim(target);
+    auto dot = root.find('.');
+    auto bracket = root.find('[');
+    size_t end = std::min(dot == string::npos ? root.size() : dot,
+                          bracket == string::npos ? root.size() : bracket);
+    return trim(root.substr(0, end));
+  }
+
+  bool is_bounded_while_loop(
+      const vector<Stmt>& body, size_t while_index, const TypeEnv& env) const {
+    const Stmt& while_stmt = body[while_index];
+    string condition = trim(while_stmt.a);
+    auto cmp_less = split_binary(condition, {"<=", "<"});
+    auto cmp_greater = split_binary(condition, {">=", ">"});
+    if (!cmp_less && !cmp_greater) return false;
+
+    bool is_less = cmp_less.has_value();
+    string var_name = trim(is_less ? cmp_less->first : cmp_greater->first);
+    string bound_expr = trim(is_less ? cmp_less->second : cmp_greater->second);
+
+    if (!plain_identifier(var_name)) return false;
+    auto var_type = env.find(var_name);
+    if (var_type == env.end() || canonical_type_name(var_type->second) != "int")
+      return false;
+
+    // No induction-variable dependency in bound
+    auto bound_vars = extract_expression_identifiers(bound_expr);
+    if (bound_vars.count(var_name)) return false;
+
+    // Bound must be invariant and side-effect-free
+    ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
+    if (bound_effects.may_diverge || bound_effects.may_fail ||
+        bound_effects.message || bound_effects.external_io ||
+        bound_effects.domain_write || bound_effects.local_mutation ||
+        bound_effects.unresolved)
+      return false;
+
+    size_t body_start = while_index + 1;
+    size_t body_end = body_start;
+    while (body_end < body.size() && body[body_end].indent > while_stmt.indent)
+      ++body_end;
+    if (body_start >= body_end) return false;
+
+    int progress_steps = 0;
+    int loop_body_indent = body[body_start].indent;
+
+    for (size_t i = body_start; i < body_end; ++i) {
+      const auto& s = body[i];
+      if (s.kind == Stmt::Kind::While) return false;
+
+      if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let || s.kind == Stmt::Kind::Var) {
+        string root = extract_root_identifier(s.a);
+        if (bound_vars.count(root)) return false;
+        if (root == var_name) {
+          if (trim(s.a) != var_name || s.indent != loop_body_indent)
+            return false;
+          if (is_less) {
+            auto add = split_binary(trim(s.b), {"+"});
+            if (!add) return false;
+            string left = trim(add->first);
+            string right = trim(add->second);
+            string step_str;
+            if (left == var_name) step_str = right;
+            else if (right == var_name) step_str = left;
+            else return false;
+            if (!is_positive_integer_literal(step_str)) return false;
+            ++progress_steps;
+          } else {
+            auto sub = split_binary(trim(s.b), {"-"});
+            if (!sub) return false;
+            string left = trim(sub->first);
+            string right = trim(sub->second);
+            if (left != var_name) return false;
+            if (!is_positive_integer_literal(right)) return false;
+            ++progress_steps;
+          }
+        }
+      } else if (s.kind == Stmt::Kind::For) {
+        string target = trim(s.a);
+        if (bound_vars.count(target) || target == var_name) return false;
+      } else if (s.kind == Stmt::Kind::Call && !s.b.empty()) {
+        string root = trim(s.a);
+        bool mutating = s.b == "push" || s.b == "pop" || s.b == "pop_front";
+        if (mutating && (bound_vars.count(root) || root == var_name)) return false;
+      }
+    }
+    return progress_steps == 1;
+  }
+
   ObservableEffects observable_body_effects(
       const vector<Stmt>& body, TypeEnv env,
       const std::set<string>& parameters,
@@ -5855,15 +6833,32 @@ class Checker {
       const ObjectType* implicit_object = nullptr) const {
     ObservableEffects effects = no_observable_effects();
     std::set<string> locals = parameters;
-    for (const auto& statement : body) {
-      // Moss does not attempt a termination proof. A syntactic while is a
-      // conservative divergence seed, including when nested in control flow.
-      if (statement.kind == Stmt::Kind::While) effects.may_diverge = true;
-      if (statement.kind == Stmt::Kind::For &&
-          !(starts_with(trim(statement.b), "range(") ||
-            (starts_with(trim(statement.b), "[") &&
-             ends_with(trim(statement.b), "]"))))
-        effects.may_diverge = true;
+    for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
+      const auto& statement = body[stmt_idx];
+      if (statement.kind == Stmt::Kind::While) {
+        if (!is_bounded_while_loop(body, stmt_idx, env))
+          effects.may_diverge = true;
+      }
+      if (statement.kind == Stmt::Kind::For) {
+        bool bounded = false;
+        string iter_expr = trim(statement.b);
+        if (starts_with(iter_expr, "range(") ||
+            (starts_with(iter_expr, "[") && ends_with(iter_expr, "]"))) {
+          bounded = true;
+        } else {
+          auto collection_type = inferred_expr_type(iter_expr, env);
+          if (collection_type) {
+            string concrete = canonical_type_name(*collection_type);
+            if (starts_with(concrete, "vector") ||
+                starts_with(concrete, "queue") ||
+                starts_with(concrete, "map") ||
+                starts_with(concrete, "range")) {
+              bounded = true;
+            }
+          }
+        }
+        if (!bounded) effects.may_diverge = true;
+      }
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
       if (statement.kind == Stmt::Kind::Assign ||
@@ -5886,9 +6881,27 @@ class Checker {
           effects.local_mutation = true;
         locals.insert(statement.a);
       }
+      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+        string root = trim(statement.a);
+        bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
+        if (statement.b == "pop" || statement.b == "pop_front") {
+          effects.may_fail = true;
+        }
+        if (mutating) {
+          if (domain_fields.count(root)) effects.domain_write = true;
+          else if (parameters.count(root) ||
+                   (implicit_object && (root == "self" ||
+                    std::any_of(implicit_object->fields.begin(),
+                                implicit_object->fields.end(),
+                                [&](const Field& field) {
+                                  return field.name == root;
+                                }))))
+            effects.local_mutation = true;
+        }
+      }
       for (const auto& expression_value : statement_expressions(statement))
         effects.merge(observable_expression_effects(
-            expression_value, env, domain_fields, implicit_object));
+            expression_value, env, domain_fields, implicit_object, parameters));
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -6472,20 +7485,53 @@ class Checker {
       if (expression_uses(expression, entry.first)) {
         err(line, "value '" + entry.first + "' was transferred to '" +
             entry.second.destination + "' at line " + std::to_string(entry.second.line) +
-            " (the value was consumed). Create an explicit deep copy if both values must remain independently usable.");
+            " (the value was consumed). Reinitialize a mutable binding or construct a new owned value.");
       }
     }
   }
 
+  std::optional<string> active_read_overlap(const string& expression,
+                                            const OwnershipEnv& env) const {
+    auto location = storage_location(expression, env.types);
+    if (!location) return std::nullopt;
+    for (const auto& source : env.active_read_traversals) {
+      auto borrowed = storage_location(source, env.types);
+      if (borrowed && storage_locations_overlap(*location, *borrowed))
+        return source;
+    }
+    return std::nullopt;
+  }
+
+  static string enum_payload_transfer_guidance(const string& source,
+                                               const OwnershipEnv& env) {
+    if (env.state_fields.count(source))
+      return "use replace(" + source + ", replacement) to obtain an owned enum before matching";
+    if (env.message_payloads.count(source))
+      return "incoming payloads are immutable; compute an independent value from this READ view";
+    return simple_identifier(source)
+        ? "use 'match consume " + source + ":'"
+        : "obtain an owned enum value with replace before a consuming match";
+  }
+
   void consume_binding(int line, const string& name, const OwnershipEnv& env,
                        const string& destination) const {
+    auto type = env.types.find(name);
+    if (type == env.types.end() || !transfer_type(type->second)) return;
+    if (auto source = active_read_overlap(name, env))
+      err(line, "cannot consume '" + name + "' while '" + *source +
+          "' is READ-borrowed by a match or traversal",
+          "MATCH_READ_BORROW_ACTIVE");
+    auto borrowed = env.borrowed_enum_payloads.find(name);
+    if (borrowed != env.borrowed_enum_payloads.end())
+      err(line, "payload '" + name + "' is borrowed from '" + borrowed->second +
+          "'; " + enum_payload_transfer_guidance(borrowed->second, env) +
+          " to transfer it",
+          "BORROWED_ENUM_PAYLOAD_CONSUME");
     if (env.message_payloads.count(name)) {
       err(line, "cannot CONSUME incoming message payload '" + name +
           "'; message payloads may only be read or forwarded");
       return;
     }
-    auto type = env.types.find(name);
-    if (type == env.types.end() || !transfer_type(type->second)) return;
     if (env.state_fields.count(name))
       err(line, "domain state '" + name + "' cannot be consumed into '" + destination + "'");
     const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
@@ -6638,17 +7684,40 @@ class Checker {
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
+    auto requested_type = inferred_expr_type(value, env.types);
+    if (requested == Effect::Write ||
+        (requested == Effect::Consume && requested_type &&
+         transfer_type(*requested_type))) {
+      if (auto source = active_read_overlap(value, env))
+        err(line, "cannot " + string(requested == Effect::Write ? "write" : "consume") +
+            " '" + value + "' while '" + *source +
+            "' is READ-borrowed by a match or traversal",
+            "MATCH_READ_BORROW_ACTIVE");
+    }
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_ownership_expression(line, binary->first, env, Effect::Read);
+        check_ownership_expression(line, binary->second, env, Effect::Read);
+        return;
+      }
+    }
     if (starts_with(value, "not ")) {
       check_ownership_expression(line, trim(value.substr(4)), env, Effect::Read);
       return;
     }
     if (auto typed_vector = typed_empty_vector_constructor(value)) {
+      if (contains_trait_type(*typed_vector))
+        err(line,
+            "trait types are static structural constraints and cannot be stored "
+            "in concrete collections",
+            "TRAIT_COLLECTION_ELEMENT_UNSUPPORTED");
       if (!valid_type(*typed_vector))
         err(line, "invalid typed Vector constructor '" + value + "'",
             "INVALID_TYPED_VECTOR_CONSTRUCTOR");
       return;
     }
-    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{" or "}, {" xor "}, {" and "},
+                                                         {"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         check_ownership_expression(line, binary->first, env, Effect::Read);
@@ -6658,6 +7727,13 @@ class Checker {
     }
     if (requested != Effect::Read) {
       auto location = storage_location(value, env.types);
+      if (location) {
+        auto borrowed = env.borrowed_enum_payloads.find(location->root);
+        if (borrowed != env.borrowed_enum_payloads.end())
+          err(line, "payload '" + location->root + "' is a READ view of '" +
+              borrowed->second + "' and cannot be written or transferred",
+              "BORROWED_ENUM_PAYLOAD_ACCESS");
+      }
       if (requested == Effect::Write && location &&
           env.immutable_locals.count(location->root))
         err(line, "cannot mutate immutable local '" + location->root +
@@ -6673,10 +7749,34 @@ class Checker {
         return;
       }
     }
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item != declaration.cases.end()) for (const auto& argument : fields) {
+          string name, expression;
+          if (!parse_named_argument(argument, name, expression)) continue;
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field != item->fields.end())
+            check_ownership_expression(line, expression, env,
+                transfer_type(field->type) ? Effect::Consume : Effect::Read);
+        }
+        return;
+      }
+    }
     if (simple_identifier(value)) {
       if (functions_.count(value)) return;  // Statically closed callable identity.
       auto location = storage_location(value, env.types);
       string binding = location ? location->root : value;
+      if (requested == Effect::Write && env.moved.count(binding) &&
+          !env.immutable_locals.count(binding))
+        return;  // Reinitialize a consumed whole var binding.
       require_available(line, binding, env);
       if (requested == Effect::Consume)
         consume_binding(line, binding, env,
@@ -6690,29 +7790,41 @@ class Checker {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "string" &&
+            (((method == "length" || method == "chars") && arguments.empty()) ||
+             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
+          check_ownership_expression(line, receiver, env, Effect::Read);
+          for (const auto& argument : arguments)
+            check_ownership_expression(line, argument, env, Effect::Read);
+          return;
+        }
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection) {
           auto location = storage_location(receiver, env.types);
-          if ((method == "push" || method == "pop") && location &&
-              env.active_read_traversals.count(location->root))
+          if ((method == "push" || method == "pop" || method == "delete") && location &&
+              active_read_overlap(receiver, env))
             err(line, "cannot structurally mutate collection '" + location->root +
                 "' during an active READ traversal");
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{
-              (method == "push" || method == "pop") ? Effect::Write : Effect::Read};
+              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read};
           for (size_t index = 0; index < arguments.size(); ++index) {
             access_expressions.push_back(arguments[index]);
-            access_effects.push_back(method == "push" && index == 0
+            access_effects.push_back(method == "delete" && index == 2 ? Effect::Write :
+                method == "delete" && index == 1 ? Effect::Consume :
+                method == "push" && index == 0
                 ? Effect::Consume : Effect::Read);
           }
           check_conflicting_call_accesses(line, method, access_expressions,
                                           access_effects, env);
           check_ownership_expression(line, receiver, env,
-              (method == "push" || method == "pop") ? Effect::Write : Effect::Read);
+              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
+                method == "delete" && index == 2 ? Effect::Write :
+                method == "delete" && index == 1 ? Effect::Consume :
                 method == "push" && index == 0 ? Effect::Consume : Effect::Read);
           return;
         }
@@ -6764,6 +7876,16 @@ class Checker {
     string callee;
     vector<string> call_arguments;
     if (parse_simple_call(value, callee, call_arguments)) {
+      if (callee == "replace" && call_arguments.size() == 2) {
+        auto replacement_type = inferred_expr_type(call_arguments[1], env.types);
+        Effect replacement_effect = replacement_type && transfer_type(*replacement_type)
+            ? Effect::Consume : Effect::Read;
+        check_conflicting_call_accesses(line, "replace", call_arguments,
+            {Effect::Write, replacement_effect}, env);
+        check_ownership_expression(line, call_arguments[0], env, Effect::Write);
+        check_ownership_expression(line, call_arguments[1], env, replacement_effect);
+        return;
+      }
       if (objects_.count(callee)) {
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
@@ -6828,8 +7950,9 @@ class Checker {
 
     string base, index;
     if (parse_index(value, base, index)) {
-      check_ownership_expression(line, base, env,
-                                 projection_effect(value, requested, env.types));
+      // Indexed reads materialize an element; they do not move the whole
+      // collection. Only an explicit whole-place operation may consume it.
+      check_ownership_expression(line, base, env, Effect::Read);
       check_ownership_expression(line, index, env, Effect::Read);
       return;
     }
@@ -6837,6 +7960,7 @@ class Checker {
     auto dot = value.rfind('.');
     if (dot != string::npos && value.find('(', dot) == string::npos) {
       check_ownership_expression(line, value.substr(0, dot), env,
+                                 requested == Effect::Write ? Effect::Read :
                                  projection_effect(value, requested, env.types));
       return;
     }
@@ -6880,8 +8004,85 @@ class Checker {
     while (index < statements.size()) {
       const Stmt& s = statements[index];
       if (s.indent < level) return;
-      if (s.indent > level) return;
       if (s.kind == Stmt::Kind::Else) return;
+      if (!env.can_continue) { ++index; continue; }
+      if (s.indent > level) return;
+
+      if (s.kind == Stmt::Kind::Match) {
+        auto type = inferred_expr_type(s.a, env.types);
+        if (!type || !enums_.count(canonical_type_name(*type)))
+          err(s.line, "match scrutinee must have a known enum type", "MATCH_REQUIRES_ENUM");
+        bool consuming = s.b == "consume";
+        if (consuming) {
+          if (storage_location(s.a, env.types) && !simple_identifier(s.a))
+            err(s.line, "consuming match cannot move an enum from an interior place; "
+                "use replace(place, replacement) to obtain an owned value",
+                "MATCH_CONSUME_INTERIOR_PLACE");
+          if (simple_identifier(s.a)) {
+            require_available(s.line, s.a, env);
+            consume_binding(s.line, s.a, env, "consuming match");
+          } else {
+            check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          }
+        } else {
+          check_ownership_expression(s.line, s.a, env, Effect::Read);
+        }
+        bool read_place = !consuming && storage_location(s.a, env.types).has_value();
+        bool prior_read = env.active_read_traversals.count(s.a);
+        const EnumType& declaration = *enums_.at(canonical_type_name(*type));
+        OwnershipEnv incoming = env;
+        vector<TypeEnv> path_types;
+        std::map<string,MoveInfo> merged_moves;
+        ++index;
+        while (index < statements.size() && statements[index].indent == level + 1) {
+          const Stmt& arm = statements[index];
+          auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+              [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+          if (item == declaration.cases.end())
+            err(arm.line, "unknown enum case '" + arm.a + "'", "UNKNOWN_ENUM_CASE");
+          OwnershipEnv branch = incoming;
+          if (read_place) branch.active_read_traversals.insert(s.a);
+          for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+            const string& name = arm.args[field_index];
+            const string& field_type = item->fields[field_index].type;
+            branch.types[name] = field_type;
+            branch.moved.erase(name);
+            branch.immutable_locals.insert(name);
+            branch.message_payloads.erase(name);
+            branch.borrowed_enum_payloads.erase(name);
+            if (!consuming && transfer_type(field_type))
+              branch.borrowed_enum_payloads[name] = s.a;
+          }
+          ++index;
+          check_ownership_block(statements, index, level + 2, branch,
+                                current_domain, current_handler);
+          for (const auto& name : arm.args) {
+            if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
+            else branch.types.erase(name);
+            if (incoming.moved.count(name)) branch.moved[name] = incoming.moved.at(name);
+            else branch.moved.erase(name);
+            if (incoming.borrowed_enum_payloads.count(name))
+              branch.borrowed_enum_payloads[name] =
+                  incoming.borrowed_enum_payloads.at(name);
+            else branch.borrowed_enum_payloads.erase(name);
+          }
+          if (read_place && !prior_read) branch.active_read_traversals.erase(s.a);
+          if (branch.can_continue) {
+            path_types.push_back(branch.types);
+            for (const auto& moved : branch.moved)
+              merged_moves.emplace(moved);
+          }
+        }
+        env = incoming;
+        env.can_continue = !path_types.empty();
+        if (env.can_continue) {
+          env.types = merge_type_environments(path_types, s.line, false);
+          env.moved = std::move(merged_moves);
+        }
+        continue;
+      }
+      if (s.kind == Stmt::Kind::Case)
+        err(s.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         require_available(s.line, s.a, env);
@@ -6890,6 +8091,12 @@ class Checker {
         ++index;
         OwnershipEnv body = incoming;
         check_ownership_block(statements, index, level + 1, body, current_domain, current_handler);
+        if (!is_if && body.can_continue)
+          for (const auto& moved : body.moved)
+            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
+              err(s.line, "loop may reach its next iteration with outer binding '" +
+                  moved.first + "' consumed; reinitialize a var on every continuing path",
+                  "LOOP_OUTER_BINDING_CONSUMED");
         if (is_if && index < statements.size() && statements[index].indent == level &&
             statements[index].kind == Stmt::Kind::Else) {
           ++index;
@@ -6897,15 +8104,26 @@ class Checker {
           check_ownership_block(statements, index, level + 1, alternative,
                                 current_domain, current_handler);
           env = incoming;
-          env.types = merge_type_environments(
-              {body.types, alternative.types}, s.line, false);
-          merge_moved(env, alternative);
+          env.can_continue = body.can_continue || alternative.can_continue;
+          if (body.can_continue && alternative.can_continue) {
+            env.types = merge_type_environments(
+                {body.types, alternative.types}, s.line, false);
+            env.moved.clear();
+            merge_moved(env, alternative);
+            merge_moved(env, body);
+          } else if (body.can_continue) {
+            env = body;
+          } else if (alternative.can_continue) {
+            env = alternative;
+          }
         } else {
           env = incoming;
-          env.types = merge_type_environments(
-              {incoming.types, body.types}, s.line, false);
+          if (body.can_continue) {
+            env.types = merge_type_environments(
+                {incoming.types, body.types}, s.line, false);
+            merge_moved(env, body);
+          }
         }
-        merge_moved(env, body);
         continue;
       }
 
@@ -6931,7 +8149,22 @@ class Checker {
                               current_domain, current_handler);
         body.types.erase(s.a);
         body.moved.erase(s.a);
-        env = std::move(body);
+        OwnershipEnv incoming = env;
+        if (body.can_continue)
+          for (const auto& moved : body.moved)
+            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
+              err(s.line, "loop may reach its next iteration with outer binding '" +
+                  moved.first + "' consumed; reinitialize a var on every continuing path",
+                  "LOOP_OUTER_BINDING_CONSUMED");
+        TypeEnv joined_types;
+        for (const auto& entry : incoming.types) {
+          auto found = body.types.find(entry.first);
+          if (found != body.types.end()) joined_types[entry.first] = found->second;
+          else joined_types[entry.first] = entry.second;
+        }
+        env = incoming;
+        env.types = std::move(joined_types);
+        if (body.can_continue) merge_moved(env, body);
         continue;
       }
 
@@ -6966,11 +8199,11 @@ class Checker {
         case Stmt::Kind::Assign: {
           string lhs_base, lhs_index;
           if (parse_index(s.a, lhs_base, lhs_index))
-            check_ownership_expression(s.line, lhs_base, env, Effect::Write);
+            check_ownership_expression(s.line, s.a, env, Effect::Write);
           else {
             auto dot = s.a.rfind('.');
             if (dot != string::npos)
-              check_ownership_expression(s.line, s.a.substr(0, dot), env, Effect::Write);
+              check_ownership_expression(s.line, s.a, env, Effect::Write);
             else if (simple_identifier(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
           }
@@ -7036,6 +8269,16 @@ class Checker {
           else
             check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
                                        env, Effect::Read);
+          // A fresh inferred Queue/Vector learns its element type at push.
+          // Keep the ownership walk in sync with the type-environment walk so
+          // a subsequent pop can be checked as the concrete enum value.
+          if (s.b == "push" && s.args.size() == 1) {
+            auto container = env.types.find(s.a);
+            auto element = inferred_expr_type(s.args.front(), env.types);
+            if (container != env.types.end() && element &&
+                (container->second == "queue" || container->second == "vector"))
+              container->second += "[" + *element + "]";
+          }
           ++index;
           break;
         case Stmt::Kind::Reply: {
@@ -7046,20 +8289,27 @@ class Checker {
           if (current_handler && current_handler->reply_type)
             warn_payload(s.line, *current_handler->reply_type);
           ++index;
+          env.can_continue = false;
           break;
         }
         case Stmt::Kind::Raw:
           check_ownership_expression(s.line, s.text, env, Effect::Read);
           ++index;
           break;
+        case Stmt::Kind::Pass:
+          ++index;
+          break;
         case Stmt::Kind::Return:
           if (!s.a.empty()) check_ownership_expression(s.line, s.a, env, Effect::Consume);
           ++index;
+          env.can_continue = false;
           break;
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
         case Stmt::Kind::For:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           return;
       }
     }
@@ -7182,6 +8432,10 @@ class Checker {
     checking_specialization_ = &function.specializations.back();
     infer_statement_expressions(function.body, specialized_env);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
+    OwnershipEnv specialized_ownership;
+    for (size_t index = 0; index < function.params.size(); ++index)
+      specialized_ownership.types[function.params[index].name] = canonical_types[index];
+    check_ownership(function.body, std::move(specialized_ownership), nullptr, nullptr);
     if (function.result_expression)
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
@@ -7243,7 +8497,14 @@ class Checker {
         err(line, "assertEqual currently supports scalar, string, and Vector values; compare a field for other values");
       return;
     }
-    auto function = functions_.find(name);
+    string target = name;
+    auto binding = env.find(name);
+    if (binding != env.end()) {
+      if (starts_with(binding->second, "_generic:")) return;
+      if (starts_with(binding->second, "callable:"))
+        target = binding->second.substr(9);
+    }
+    auto function = functions_.find(target);
     if (function == functions_.end()) {
       if (name == "sqrt" || name == "sum") return;
       if (current_object_) {
@@ -7626,6 +8887,55 @@ class Checker {
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env) {
     string original = trim(expression);
+    if (starts_with(original, "match "))
+      err(line, "match is a statement, not an expression",
+          "MATCH_EXPRESSION_UNSUPPORTED");
+    {
+      string enum_name, case_name;
+      vector<string> arguments;
+      bool called = false;
+      if (parse_enum_case_expression(original, enum_name, case_name, arguments, called) &&
+          enums_.count(enum_name)) {
+        const EnumType& declaration = *enums_.at(enum_name);
+        auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+            [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        if (item == declaration.cases.end())
+          err(line, "unknown enum case '" + enum_name + "." + case_name + "'", "UNKNOWN_ENUM_CASE");
+        if (item->fields.empty() && called && arguments.empty())
+          err(line, "tag-only enum case '" + enum_name + "." + case_name +
+              "' is constructed without parentheses", "ENUM_TAG_CALL_UNSUPPORTED");
+        if (item->fields.empty() && called && !arguments.empty())
+          err(line, "enum case '" + case_name + "' has no fields", "UNKNOWN_ENUM_FIELD");
+        if (!item->fields.empty() && !called)
+          err(line, "enum case '" + case_name + "' requires named fields", "MISSING_ENUM_FIELD");
+        std::set<string> supplied;
+        for (const auto& argument : arguments) {
+          string name, value;
+          size_t equal = top_level_assignment(argument);
+          size_t colon = top_level_colon(argument);
+          if (equal != string::npos && (colon == string::npos || equal < colon))
+            err(line, "enum constructor fields use ':' rather than '='",
+                "ENUM_FIELD_REQUIRES_COLON");
+          if (!parse_named_argument(argument, name, value))
+            err(line, "enum constructor fields must be named", "ENUM_FIELD_REQUIRES_NAME");
+          if (!supplied.insert(name).second)
+            err(line, "duplicate enum field '" + name + "'", "DUPLICATE_ENUM_FIELD");
+          auto field = std::find_if(item->fields.begin(), item->fields.end(),
+              [&](const Field& candidate) { return candidate.name == name; });
+          if (field == item->fields.end())
+            err(line, "unknown enum field '" + name + "'", "UNKNOWN_ENUM_FIELD");
+          check_expression(line, value, env);
+          auto actual = inferred_expr_type(value, env);
+          if (!actual || !same_type(*actual, field->type))
+            err(line, "enum field '" + name + "' expects '" + field->type + "'",
+                "ENUM_FIELD_TYPE_MISMATCH");
+        }
+        for (const auto& field : item->fields)
+          if (!supplied.count(field.name))
+            err(line, "missing enum field '" + field.name + "'", "MISSING_ENUM_FIELD");
+        return;
+      }
+    }
     if (domain_constructor(original))
       err(line, "domain construction is only allowed as a binding in main's composition prefix");
     if (starts_with(original, "message ")) {
@@ -7679,6 +8989,31 @@ class Checker {
     }
     if (check_functional_pipeline(line, original, env)) return;
     string value = normalize_pipeline(std::move(original));
+    if (auto binary = split_binary(value, {" in "})) {
+      err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
+          "UNSUPPORTED_EXPRESSION_OPERATOR");
+      return;
+    }
+    for (const auto& op :
+         vector<string>{"&&", "||", "<<", ">>", "&", "|", "^"}) {
+      if (split_binary(value, {op}))
+        err(line, "binary '" + op + "' expression is not supported",
+            "UNSUPPORTED_EXPRESSION_OPERATOR");
+    }
+    for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
+      if (auto binary = split_binary(value, {op})) {
+        check_expression(line, binary->first, env);
+        check_expression(line, binary->second, env);
+        auto left = inferred_expr_type(binary->first, env);
+        auto right = inferred_expr_type(binary->second, env);
+        if (!left || !right ||
+            canonical_type_name(*left) != "bool" ||
+            canonical_type_name(*right) != "bool")
+          err(line, "boolean '" + trim(op) +
+              "' operands must have type 'Bool'", "TYPE_MISMATCH");
+        return;
+      }
+    }
     if (starts_with(value, "not ")) {
       string operand = trim(value.substr(4));
       check_expression(line, operand, env);
@@ -7687,17 +9022,31 @@ class Checker {
         err(line, "not operand must have type 'Bool'", "TYPE_MISMATCH");
       return;
     }
-    if (auto binary = split_binary(value, {" in "})) {
-      err(line, "binary 'in' expression is not supported; use Map.get, key iteration, or an explicit search",
-          "UNSUPPORTED_EXPRESSION_OPERATOR");
-      return;
+    if (auto ordering = split_binary(value, {"<=", ">=", "<", ">"})) {
+      check_expression(line, ordering->first, env);
+      check_expression(line, ordering->second, env);
+      auto left = inferred_expr_type(ordering->first, env);
+      auto right = inferred_expr_type(ordering->second, env);
+      if ((left && canonical_type_name(*left) == "string") ||
+          (right && canonical_type_name(*right) == "string")) {
+        err(line,
+            "String ordering operators '<', '<=', '>', and '>=' are not supported; "
+            "String supports equality/inequality and built-in '+' concatenation only",
+            "UNSUPPORTED_STRING_ORDERING");
+        return;
+      }
     }
-    for (const auto& operators : vector<vector<string>>{{" and ", " or "},
-                                                         {"==", "!=", "<=", ">=", "<", ">"},
+    for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
         if (auto binary = split_binary(value, operators)) {
           check_expression(line, binary->first, env);
           check_expression(line, binary->second, env);
+          auto left_type = inferred_expr_type(binary->first, env);
+          auto right_type = inferred_expr_type(binary->second, env);
+          if ((left_type && contains_enum_type(*left_type)) ||
+              (right_type && contains_enum_type(*right_type)))
+            err(line, "enum equality and ordering are not supported; use an exhaustive match",
+                "ENUM_OPERATOR_UNSUPPORTED");
           if (binary->first.empty() || binary->second.empty())
             err(line, "invalid arithmetic expression");
           if (split_binary(value, {"%"})) {
@@ -7711,11 +9060,60 @@ class Checker {
           return;
         }
     }
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(value, callee, arguments) &&
+          callee == "assertEqual" && arguments.size() == 2) {
+        for (const auto& argument : arguments) {
+          auto type = inferred_expr_type(argument, env);
+          if (type && contains_enum_type(*type))
+            err(line, "automatic enum equality is not supported; match the cases explicitly",
+                "ENUM_OPERATOR_UNSUPPORTED");
+        }
+      }
+    }
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
+        if (canonical_type_name(*receiver_type) == "string") {
+          bool zero = handler == "length" || handler == "chars";
+          bool one = handler == "char_at" || handler == "split" || handler == "join";
+          if (!zero && !one) err(line, "unknown String method '" + handler + "'");
+          if (args.size() != (one ? 1u : 0u))
+            err(line, "String " + handler + " expects " + (one ? "one" : "no") + " argument(s)");
+          if (one) {
+            auto arg_type = inferred_expr_type(args[0], env);
+            string expected = handler == "char_at" ? "int" :
+                handler == "split" ? "string" : "vector[string]";
+            if (!arg_type || !same_type(*arg_type, expected))
+              err(line, "String " + handler + " expects " + expected, "TYPE_MISMATCH");
+          }
+          check_expression(line, receiver, env);
+          for (const auto& arg : args) check_expression(line, arg, env);
+          return;
+        }
         if (auto map_types = map_key_value_types(*receiver_type)) {
+          if (handler == "delete") {
+            if (args.size() != 3)
+              err(line, "map delete expects key, fallback, and writable Bool flag");
+            auto key_type = inferred_expr_type(args[0], env);
+            auto fallback_type = inferred_expr_type(args[1], env);
+            auto flag_type = inferred_expr_type(args[2], env);
+            if (!key_type || !same_type(map_types->first, *key_type))
+              err(line, "map delete key type mismatch", "TYPE_MISMATCH");
+            if (!fallback_type || !same_type(map_types->second, *fallback_type))
+              err(line, "map delete fallback type mismatch", "TYPE_MISMATCH");
+            if (!flag_type || !same_type(*flag_type, "bool"))
+              err(line, "map delete flag must be Bool", "TYPE_MISMATCH");
+            if (!storage_location(args[2], env))
+              err(line, "map delete flag must be a writable Bool location",
+                  "INVALID_WRITE_ARGUMENT");
+            check_expression(line, receiver, env);
+            for (const auto& arg : args) check_expression(line, arg, env);
+            return;
+          }
           if (handler == "get") {
             if (args.size() != 2)
               err(line, "map get expects key and default arguments");
@@ -7806,19 +9204,54 @@ class Checker {
       check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
+      // An untyped parameter carries an indexing requirement. Its key and
+      // element types are checked again in each concrete specialization.
+      if (starts_with(*bt, "_generic:")) return;
       if (starts_with(*bt, "vector[") || starts_with(*bt, "queue[") || *bt == "vector" || *bt == "queue") {
         auto it = inferred_expr_type(ii, env);
         if (!it || *it != "int") err(line, "vector and queue indices must be Int");
       } else if (starts_with(*bt, "map[")) {
         auto ps = split_top_level(bt->substr(4, bt->size()-5), ',');
+        if (ps.size() == 2 && enums_.count(canonical_type_name(ps[0])))
+          err(line, "enum values cannot be Map keys; enum equality and hashing are unsupported",
+              "ENUM_MAP_KEY_UNSUPPORTED");
         auto it = inferred_expr_type(ii, env);
         if (ps.size() != 2 || !it || !same_type(ps[0], *it)) err(line, "map key type mismatch");
       } else err(line, "value is not an indexable container");
       return;
     }
+    {
+      auto dot = value.rfind('.');
+      if (dot != string::npos && value.find('(', dot) == string::npos) {
+        auto receiver_type = inferred_expr_type(value.substr(0, dot), env);
+        if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
+          err(line, "enum payload fields require match; field projection is unsupported",
+              "ENUM_FIELD_PROJECTION_UNSUPPORTED");
+      }
+    }
     string callee;
     if (parse_simple_call(value, callee, args) && callee.find('.') == string::npos) {
+      if (callee == "replace" && args.size() == 2) {
+        auto place = storage_location(args[0], env);
+        if (!place)
+          err(line, "replace first argument must be an assignable storage location",
+              "REPLACE_REQUIRES_PLACE");
+        check_expression(line, args[0], env);
+        check_expression(line, args[1], env);
+        auto place_type = inferred_expr_type(args[0], env);
+        auto replacement_type = inferred_expr_type(args[1], env);
+        if (!place_type || !replacement_type ||
+            !same_type(*place_type, *replacement_type))
+          err(line, "replace requires the replacement to have the same static type as the place",
+              "REPLACE_TYPE_MISMATCH");
+        return;
+      }
       if (auto typed_vector = typed_empty_vector_constructor(value)) {
+        if (contains_trait_type(*typed_vector))
+          err(line,
+              "trait types are static structural constraints and cannot be stored "
+              "in concrete collections",
+              "TRAIT_COLLECTION_ELEMENT_UNSUPPORTED");
         if (!valid_type(*typed_vector))
           err(line, "invalid typed Vector constructor '" + value + "'",
               "INVALID_TYPED_VECTOR_CONSTRUCTOR");
@@ -7831,12 +9264,19 @@ class Checker {
         return;
       }
       if (objects_.count(callee)) {
+        std::set<string> supplied;
         for (const auto& arg : args) {
           string field_name, field_value;
           if (!parse_named_argument(arg, field_name, field_value))
             err(line, "object constructor fields must be named for '" + callee + "'");
+          supplied.insert(field_name);
           check_expression(line, field_value, env);
         }
+        for (const auto& field : objects_.at(callee)->fields)
+          if (enums_.count(canonical_type_name(field.type)) &&
+              !supplied.count(field.name) && field.init.empty())
+            err(line, "enum field '" + callee + "." + field.name +
+                "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
       } else {
         check_function_call(line, callee, args, env);
         for (const auto& arg : args) check_expression(line, arg, env);
@@ -7847,6 +9287,11 @@ class Checker {
       if (contains_domain_handle(env.at(binding)))
         err(line, "domain handle '" + binding +
             "' is not an ordinary value; use domainroutes and message targets only");
+    if (plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
+        !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
+        !traits_.count(value) && !env.count(value)) {
+      err(line, "unknown identifier '" + value + "'");
+    }
   }
 
   std::optional<string> iterator_element_type(int line, const string& source,
@@ -7922,6 +9367,7 @@ class Checker {
                       const Function* current_function = nullptr) {
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
+      if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         if (legacy_spawn_expression(statement.b))
@@ -7968,16 +9414,41 @@ class Checker {
             }
             auto container = current_env.find(base);
             auto value_type = inferred_expr_type(statement.b, current_env);
+            if (container != current_env.end() &&
+                (starts_with(container->second, "_generic:") ||
+                 container->second == "map")) {
+              // A generic is checked at its concrete call. A fresh Map()
+              // learns its key/value types from this first assignment.
+            } else {
+              check_expression(statement.line, statement.a, current_env);
+              auto element_type = inferred_expr_type(statement.a, current_env);
+              if (element_type && value_type &&
+                  !starts_with(*element_type, "_") &&
+                  !starts_with(*value_type, "_") &&
+                  !same_type(*element_type, *value_type))
+                err(statement.line, "indexed assignment requires value of type '" +
+                    canonical_type_name(*element_type) + "', found '" +
+                    canonical_type_name(*value_type) + "'");
+            }
             if (container != current_env.end() && value_type &&
                 container->second == "map" &&
                 !inferred_expr_type(index_expression, current_env))
               err(statement.line, "cannot infer map key type");
+            if (container != current_env.end() &&
+                (container->second == "map" || starts_with(container->second, "map["))) {
+              auto key_type = inferred_expr_type(index_expression, current_env);
+              if (key_type && enums_.count(canonical_type_name(*key_type)))
+                err(statement.line,
+                    "enum values cannot be Map keys; enum equality and hashing are unsupported",
+                    "ENUM_MAP_KEY_UNSUPPORTED");
+            }
           }
         }
         return;
       }
 
-      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While) {
+      if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::Match) {
         check_expression(statement.line, statement.a, current_env);
         return;
       }
@@ -8119,10 +9590,20 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Echo) {
-        for (const auto& argument : statement.args)
+        for (const auto& argument : statement.args) {
           check_expression(statement.line, argument, current_env);
+          auto type = inferred_expr_type(argument, current_env);
+          if (type && enums_.count(canonical_type_name(*type)))
+            err(statement.line, "echo cannot display an enum directly; match its cases",
+                "ENUM_DISPLAY_UNSUPPORTED");
+        }
         return;
       }
+
+      if (statement.kind == Stmt::Kind::Raw &&
+          plain_identifier(statement.text) && statement.text != "pass")
+        err(statement.line, "bare identifier is not a statement; use 'pass' for a no-op",
+            "INVALID_BARE_IDENTIFIER_STATEMENT");
 
       if (statement.kind == Stmt::Kind::Reply) {
         if (!current || !current_handler || !current_handler->reply_type)
@@ -8201,7 +9682,10 @@ class Checker {
             trait_conforms(*actual, *current_function->return_type);
         if (current_function->return_type &&
             !starts_with(*current_function->return_type, "_") &&
-            !starts_with(*actual, "_method_") && !trait_result_match &&
+            !starts_with(*actual, "_generic:") &&
+            !starts_with(*actual, "_method_") &&
+            !starts_with(*actual, "_functional_callable_result:") &&
+            !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
             !same_type(*actual, *current_function->return_type))
           err(statement.line, "function '" + current_function->name + "' returns '" +
@@ -8210,8 +9694,11 @@ class Checker {
       }
     };
 
+    string join_context = current_function && checking_specialization_
+        ? functional_function_context(*current_function, checking_specialization_)
+        : "";
     return walk_type_environment(statements, std::move(env), check_statement,
-                                 true, true, true);
+                                 true, true, true, join_context);
   }
 };
 
@@ -9648,12 +11135,15 @@ class Generator {
       domains_[d.name] = &d;
     }
     for (const auto& o : p.objects) objects_[o.name] = &o;
+    for (const auto& e : p.enums) enums_[e.name] = &e;
     for (const auto& f : p.functions) functions_[f.name] = &f;
     if (resolution_program) {
       for (const auto& d : resolution_program->domains)
         domains_.emplace(d.name, &d);
       for (const auto& o : resolution_program->objects)
         objects_.emplace(o.name, &o);
+      for (const auto& e : resolution_program->enums)
+        enums_.emplace(e.name, &e);
       for (const auto& f : resolution_program->functions)
         functions_.emplace(f.name, &f);
     }
@@ -9669,7 +11159,7 @@ class Generator {
     o << "// Synchronous domain calls enter compiler-planned handler-level 2PL.\n";
     for (const auto& domain : p_.domains) o << "// Moss backend plan: " << domain.name << " = Handler2PL.\n";
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
-    o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n\n";
+    o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n#![allow(unused_assignments)]\n\n";
     for (const auto& dependency : rust_dependencies_) {
       string crate = dependency == "__moss_specializations__"
           ? "moss_specializations" : tooling_name("moss_" + dependency);
@@ -9684,6 +11174,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
     for (const auto& entry : view_objects) {
@@ -9743,6 +11234,7 @@ class Generator {
   const Program& p_;
   const Program* semantic_program_ = nullptr;
   std::set<string> write_through_parameters_;
+  std::set<string> borrowed_function_parameters_;
   string construction_binding_;
   bool view_domain_ = false;
   bool view_domain_access_ = false;
@@ -9766,6 +11258,7 @@ class Generator {
   std::unordered_map<string,string> specialization_sources_;
   std::unordered_map<string,string> specialization_names_;
   std::unordered_map<string, const ObjectType*> objects_;
+  std::unordered_map<string, const EnumType*> enums_;
   std::unordered_map<string, const Function*> functions_;
   struct DomainInstanceBinding {
     // This is the semantic specialization key carried by a source binding;
@@ -9937,7 +11430,7 @@ class Generator {
     if (x == "unit") return "()";
     if (domains_.count(x))
       return has_domain_specializations(x) ? x + "Handle" : x + "Ref";
-    if (objects_.count(x)) return x;
+    if (objects_.count(x) || enums_.count(x)) return x;
     if (starts_with(x, "seq[") && ends_with(x, "]"))
       return "std::vec::Vec<" + rust_type(x.substr(4, x.size()-5)) + ">";
     if (starts_with(x, "vector[") && ends_with(x, "]")) return "std::vec::Vec<" + rust_type(x.substr(7, x.size()-8)) + ">";
@@ -9984,11 +11477,7 @@ class Generator {
   }
 
   bool copy_type(const string& type) const {
-    string t = canonical_type_name(type);
-    if (t == "int" || t == "float" || t == "bool") return true;
-    if (starts_with(t, "option[") && ends_with(t, "]"))
-      return copy_type(trim(t.substr(7, t.size() - 8)));
-    return false;
+    return copy_type_name(canonical_type_name(type));
   }
 
   bool borrowable_type(const string& type) const {
@@ -10318,6 +11807,13 @@ class Generator {
       const string& expression,
       const std::unordered_map<string,string>* types) const {
     string original = strip_redundant_outer_parentheses(expression);
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(original, callee, arguments) && callee == "replace" &&
+          arguments.size() == 2)
+        return generated_expr_type(arguments[0], types);
+    }
     if (types && starts_with(original, "message ")) {
       string receiver, handler;
       vector<string> arguments;
@@ -10335,6 +11831,14 @@ class Generator {
     if (auto pipeline = generated_functional_pipeline_type(original, types))
       return pipeline;
     string value = strip_redundant_outer_parentheses(normalize_pipeline(std::move(original)));
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(value, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name))
+        return enum_name;
+    }
     if (value == "true" || value == "false") return string("bool");
     if (value == "None") return string("_none");
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
@@ -10382,8 +11886,29 @@ class Generator {
     if (parse_member_call(value, receiver, method_name, method_args)) {
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
+        string concrete_receiver = canonical_type_name(*receiver_type);
+        if (concrete_receiver == "string") {
+          if (method_name == "length" && method_args.empty()) return string("int");
+          if (method_name == "char_at" && method_args.size() == 1) return string("string");
+          if ((method_name == "chars" && method_args.empty()) ||
+              (method_name == "split" && method_args.size() == 1)) return string("vector[string]");
+          if (method_name == "join" && method_args.size() == 1) return string("string");
+        }
+        if ((concrete_receiver == "vector" || starts_with(concrete_receiver, "vector[") ||
+             concrete_receiver == "queue" || starts_with(concrete_receiver, "queue["))) {
+          if (method_name == "push" && method_args.size() == 1)
+            return string("unit");
+          if (method_name == "pop" && method_args.empty()) {
+            size_t open = concrete_receiver.find('[');
+            if (open != string::npos && ends_with(concrete_receiver, "]"))
+              return trim(concrete_receiver.substr(open + 1,
+                  concrete_receiver.size() - open - 2));
+          }
+        }
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if (method_name == "get" && method_args.size() == 2)
+            return map_types->second;
+          if (method_name == "delete" && method_args.size() == 3)
             return map_types->second;
           if (method_name == "keys" && method_args.empty())
             return "vector[" + map_types->first + "]";
@@ -10411,7 +11936,7 @@ class Generator {
       }
       if (callee == "range" && (call_args.size() == 2 || call_args.size() == 3))
         return "range[int]";
-      auto function = functions_.find(callee);
+      auto function = functions_.find(resolved_callable_identity(callee, types));
       if (function != functions_.end() && function->second->return_type) {
         vector<string> argument_types;
         for (const auto& argument : call_args)
@@ -10467,6 +11992,7 @@ class Generator {
       }
     }
     if (generated_split_binary(value, {" or "}) ||
+        generated_split_binary(value, {" xor "}) ||
         generated_split_binary(value, {" and "}) ||
         generated_split_binary(value, {"==", "!=", "<=", ">=", "<", ">"}))
       return string("bool");
@@ -10616,7 +12142,8 @@ class Generator {
         });
     if (specialization == function->second->specializations.end())
       throw std::runtime_error("missing static specialization for function '" + name +
-                               "' with argument types (" + generated_type_list(argument_types) + ")");
+                               "' with argument types (" + generated_type_list(argument_types) +
+                               ") from " + (arguments.empty() ? string() : arguments.front()));
     return specialization->generated_name;
   }
 
@@ -11422,7 +12949,10 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
               const vector<size_t>* message_argument_plans = nullptr) const {
-    e = trim(std::move(e));
+    // Moss parentheses are grouping syntax, not an observable expression node.
+    // Remove only complete balanced outer groups before lowering. Nested groups
+    // still protect precedence until their recursive expr() call reaches them.
+    e = strip_redundant_outer_parentheses(std::move(e));
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
       return "*" + e;
@@ -11477,7 +13007,6 @@ class Generator {
     // Minimal surface rewrites.
     if (e == "true" || e == "false") return e;
     if (e == "None") return "None";
-    if (e.size() >= 2 && e.front() == '"' && e.back() == '"') return e + ".to_string()";
     if (generated_integer_literal(e)) {
       if (e.front() == '+') e.erase(e.begin());
       return e + "_i64";
@@ -11488,12 +13017,43 @@ class Generator {
     }
     if (e == "Map()") return "std::collections::HashMap::new()";
     if (e == "Queue()") return "std::collections::VecDeque::new()";
-    if (e.size() >= 2 && e.front() == '(' && e.back() == ')' &&
-        matching_paren(e, 0) == e.size() - 1)
-      return "(" + expr(e.substr(1, e.size() - 2), d, locals, types) + ")";
+    {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(e, callee, arguments) && callee == "replace" &&
+          arguments.size() == 2)
+        return "{ let __moss_replacement = " +
+            expr(arguments[1], d, locals, types) + "; std::mem::replace(&mut " +
+            write_call_place(arguments[0], d, locals, types) +
+            ", __moss_replacement) }";
+    }
+    {
+      string enum_name, case_name;
+      vector<string> fields;
+      bool called = false;
+      if (parse_enum_case_expression(e, enum_name, case_name, fields, called) &&
+          enums_.count(enum_name)) {
+        std::ostringstream rendered;
+        rendered << enum_name << "::" << rust_identifier(case_name);
+        if (!fields.empty()) {
+          rendered << " { ";
+          for (size_t index = 0; index < fields.size(); ++index) {
+            string name, value;
+            if (!parse_named_argument(fields[index], name, value))
+              throw std::runtime_error("unchecked enum constructor field");
+            if (index) rendered << ", ";
+            rendered << rust_identifier(name) << ": " << expr(value, d, locals, types);
+          }
+          rendered << " }";
+        }
+        return rendered.str();
+      }
+    }
 
     for (const auto& boolean_operator :
-         vector<std::pair<string, string>>{{" or ", "||"}, {" and ", "&&"}}) {
+         vector<std::pair<string, string>>{{" or ", "||"},
+                                                {" xor ", "^"},
+                                                {" and ", "&&"}}) {
       if (auto binary = generated_split_binary(e, {boolean_operator.first}))
         return "(" + expr(binary->left, d, locals, types) + ") " +
             boolean_operator.second + " (" +
@@ -11535,6 +13095,12 @@ class Generator {
       right = value_from_borrowed_message_parameter(binary->right, right, types);
       auto left_type = generated_expr_type(binary->left, types);
       auto right_type = generated_expr_type(binary->right, types);
+      bool string_concatenation = binary->op == "+" &&
+          left_type && right_type &&
+          canonical_type_name(*left_type) == "string" &&
+          canonical_type_name(*right_type) == "string";
+      if (string_concatenation)
+        return "format!(\"{}{}\", " + left + ", " + right + ")";
       bool integer_operation = left_type && right_type &&
           canonical_type_name(*left_type) == "int" &&
           canonical_type_name(*right_type) == "int";
@@ -11555,6 +13121,11 @@ class Generator {
         left = generated_integer_literal_as_float(binary->left);
       return "(" + left + ") " + binary->op + " (" + right + ")";
     }
+    // Only classify a quoted source form as a single literal after top-level
+    // operators have had a chance to split it. Expressions such as
+    // "a" + "b" and "a" == "b" also begin and end with quote characters.
+    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
+      return e + ".to_string()";
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size()-2), ',');
       std::ostringstream r; r << "vec![";
@@ -11577,8 +13148,41 @@ class Generator {
           (canonical_type_name(*base_type) == "map" ||
            starts_with(canonical_type_name(*base_type), "map["));
       if (!string_index && !map_index) ir = "(" + ir + ") as usize";
+      else if (map_index && !string_index) {
+        // HashMap<String, _> accepts `str` as a borrowed lookup key. This
+        // works for both an owned String and an already-borrowed &String,
+        // whereas another `&` would emit an invalid &&String lookup.
+        auto key_type = generated_expr_type(ii, types);
+        if (key_type && canonical_type_name(*key_type) == "string")
+          ir = "(" + ir + ").as_str()";
+        else if (!borrowed_function_parameters_.count(trim(ii)))
+          ir = "&(" + ir + ")";
+      }
       string indexed = "(" + expr(ib, d, locals, types) + ")[" + ir + "]";
       return borrowed_view_expression(ib, d, locals, types) ? indexed : "(" + indexed + ").clone()";
+    }
+
+    auto projection_dot = e.rfind('.');
+    if (projection_dot != string::npos &&
+        e.find('(', projection_dot) == string::npos) {
+      string projection_base = trim(e.substr(0, projection_dot));
+      string projection_field = trim(e.substr(projection_dot + 1));
+      if (plain_identifier(projection_field)) {
+        auto projection_type = generated_expr_type(projection_base, types);
+        if (projection_type) {
+          auto object = objects_.find(canonical_type_name(*projection_type));
+          if (object != objects_.end()) {
+            auto field = std::find_if(object->second->fields.begin(),
+                object->second->fields.end(), [&](const Field& candidate) {
+                  return candidate.name == projection_field;
+                });
+            if (field != object->second->fields.end()) {
+              string base_rendered = expr(projection_base, d, locals, types);
+              return "(" + base_rendered + ")." + rust_identifier(projection_field);
+            }
+          }
+        }
+      }
     }
 
     string member_receiver, member_name;
@@ -11589,7 +13193,34 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "string") {
+          string source = "(" + receiver_expression + ")";
+          if (member_name == "length" && member_arguments.empty())
+            return source + ".chars().count() as i64";
+          if (member_name == "chars" && member_arguments.empty())
+            return source + ".chars().map(|c| c.to_string()).collect::<std::vec::Vec<_>>()";
+          if (member_name == "char_at" && member_arguments.size() == 1)
+            return "{ let __moss_index = " + expr(member_arguments[0], d, locals, types) +
+                "; if __moss_index < 0 { std::process::abort(); } " + source +
+                ".chars().nth(__moss_index as usize).unwrap_or_else(|| std::process::abort()).to_string() }";
+          if (member_name == "split" && member_arguments.size() == 1)
+            return "{ let __moss_separator = " + expr(member_arguments[0], d, locals, types) +
+                "; if __moss_separator.is_empty() { std::process::abort(); } " + source +
+                ".split(__moss_separator.as_str()).map(|s| s.to_string()).collect::<std::vec::Vec<_>>() }";
+          if (member_name == "join" && member_arguments.size() == 1)
+            return "(" + expr(member_arguments[0], d, locals, types) + ").join(&" + source + ")";
+        }
         if (auto map_types = map_key_value_types(concrete)) {
+          if (member_name == "delete" && member_arguments.size() == 3) {
+            string key = expr(member_arguments[0], d, locals, types);
+            string fallback = expr(member_arguments[1], d, locals, types);
+            string flag = write_call_place(member_arguments[2], d, locals, types);
+            string lookup = map_types->first == "string" ? "__moss_key.as_str()" : "&__moss_key";
+            return "{ let __moss_key = " + key + "; let __moss_fallback = " + fallback +
+                "; let __moss_removed = (" + receiver_expression + ").remove(" + lookup +
+                "); let _ = &(" + flag + "); " + flag + " = __moss_removed.is_some(); " +
+                "__moss_removed.unwrap_or(__moss_fallback) }";
+          }
           if (member_name == "get" && member_arguments.size() == 2) {
             string key = expr(member_arguments[0], d, locals, types);
             if (map_types->first == "string")
@@ -11615,14 +13246,53 @@ class Generator {
                                                     result.push_back(generated_expr_type(argument, types).value_or(""));
                                                   return result;
                                                 }(), true, nullptr)) {
+          // A consuming concrete method cannot be invoked through either a
+          // field-only access view or an ordinary borrowed function parameter.
+          // The former has no method surface at all; the latter must retain
+          // Moss's READ helper contract. Materialize the checked object value
+          // at this native boundary before selecting the owned method.
+          if (method->receiver_effect == Effect::Consume) {
+            if (is_object_view(member_receiver, d, locals, types))
+              receiver_expression = "(" + receiver_expression + ").__moss_value()";
+            else if (borrowed_function_parameters_.count(trim(member_receiver)))
+              receiver_expression = "(*(" + receiver_expression + ")).clone()";
+          }
+          vector<string> argument_temporaries(member_arguments.size());
+          if (method->receiver_effect != Effect::Read) {
+            for (size_t index = 0; index < member_arguments.size(); ++index) {
+              string nested_receiver, nested_method;
+              vector<string> nested_arguments;
+              if (parse_member_call(member_arguments[index], nested_receiver,
+                                    nested_method, nested_arguments) &&
+                  trim(nested_receiver) == trim(member_receiver))
+                argument_temporaries[index] = "__moss_call_argument_" +
+                    std::to_string(call_argument_temp_++);
+            }
+          }
           std::ostringstream rendered;
           rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
-            rendered << method_call_argument(*method, index, member_arguments[index], d, locals, types);
+            rendered << method_call_argument(*method, index,
+                argument_temporaries[index].empty() ? member_arguments[index]
+                                                    : argument_temporaries[index],
+                d, locals, types);
           }
           rendered << ")";
           string result = rendered.str();
+          if (std::any_of(argument_temporaries.begin(),
+                          argument_temporaries.end(),
+                          [](const string& value) { return !value.empty(); })) {
+            std::ostringstream sequenced;
+            sequenced << "{ ";
+            for (size_t index = 0; index < member_arguments.size(); ++index)
+              if (!argument_temporaries[index].empty())
+                sequenced << "let " << argument_temporaries[index] << " = "
+                          << expr(member_arguments[index], d, locals, types)
+                          << "; ";
+            sequenced << result << " }";
+            result = sequenced.str();
+          }
           if ((concrete == "vector" || starts_with(concrete, "vector[") ||
                concrete == "queue" || starts_with(concrete, "queue[")) &&
               (member_name == "pop" || member_name == "pop_front"))
@@ -11706,13 +13376,14 @@ class Generator {
           string v = expr(vit->second, d, locals, types);
           if (!first) r << ", ";
           first = false;
-          r << f.name << ": " << v;
+          r << rust_identifier(f.name) << ": " << v;
         }
         r << " }";
         return r.str();
       }
       vector<string> call_args;
       if (parse_simple_call(e, head, call_args)) {
+        head = resolved_callable_identity(head, types);
         bool known_function = functions_.count(head);
         if (known_function)
           return render_known_function_call(*functions_.at(head), head, call_args,
@@ -11725,6 +13396,23 @@ class Generator {
                 argument, generated_expr_type(argument, types).value_or("")));
           sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
         }
+        vector<string> sibling_temporaries(call_args.size());
+        if (sibling_method && sibling_method->receiver_effect != Effect::Read) {
+          for (size_t i = 0; i < call_args.size(); ++i) {
+            string nested_name; vector<string> nested_args;
+            if (parse_simple_call(call_args[i], nested_name, nested_args) &&
+                objects_.count(d->name) &&
+                resolve_object_method(objects_, d->name, nested_name,
+                    [&]() {
+                      vector<string> result;
+                      for (const auto& argument : nested_args)
+                        result.push_back(generated_expr_type(argument, types).value_or(""));
+                      return result;
+                    }(), true, nullptr))
+              sibling_temporaries[i] = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+          }
+        }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
         r << viewed_function_name(head, call_args, d, locals, types) << "(";
         size_t emitted_arguments = 0;
@@ -11735,11 +13423,26 @@ class Generator {
           if (compile_time_callable) continue;
           if (emitted_arguments++) r << ", ";
           if (sibling_method)
-            r << method_call_argument(*sibling_method, i, call_args[i], d, locals, types);
+            r << method_call_argument(*sibling_method, i,
+                sibling_temporaries[i].empty() ? call_args[i]
+                                               : sibling_temporaries[i],
+                d, locals, types);
           else
             r << expr(call_args[i], d, locals, types);
         }
-        r << ")"; return r.str();
+        r << ")";
+        if (std::any_of(sibling_temporaries.begin(), sibling_temporaries.end(),
+                        [](const string& value) { return !value.empty(); })) {
+          std::ostringstream sequenced;
+          sequenced << "{ ";
+          for (size_t i = 0; i < call_args.size(); ++i)
+            if (!sibling_temporaries[i].empty())
+              sequenced << "let " << sibling_temporaries[i] << " = "
+                        << expr(call_args[i], d, locals, types) << "; ";
+          sequenced << r.str() << " }";
+          return sequenced.str();
+        }
+        return r.str();
       }
     }
 
@@ -11810,8 +13513,26 @@ class Generator {
       e = replace_unqualified_word(e, parameter, "(*" + parameter + ")");
     // Nim-ish boolean words.
     replace_word(e, "and", "&&");
+    replace_word(e, "xor", "^");
     replace_word(e, "or", "||");
     replace_word(e, "not", "!");
+    // Escape Rust-reserved member names without changing the Moss identifier.
+    for (size_t pos = 0; pos + 1 < e.size();) {
+      if (e[pos] != '.') { ++pos; continue; }
+      size_t begin = pos + 1, end = begin;
+      while (end < e.size() &&
+             (std::isalnum(static_cast<unsigned char>(e[end])) || e[end] == '_'))
+        ++end;
+      if (end > begin) {
+        string member = e.substr(begin, end - begin);
+        string escaped = rust_identifier(member);
+        if (escaped != member) {
+          e.replace(begin, member.size(), escaped);
+          end += escaped.size() - member.size();
+        }
+      }
+      pos = end;
+    }
     return e;
   }
 
@@ -11971,6 +13692,37 @@ class Generator {
     return rendered;
   }
 
+  void gen_enum(std::ostringstream& o, const EnumType& declaration) {
+    string enum_identity = "enum:" + declaration.name + "@" +
+        std::to_string(declaration.line);
+    tooling_begin(o, 0, "enum", enum_identity, declaration.name);
+    source_comment(o, 0, declaration.line, declaration.header);
+    o << "#[derive(Clone, Debug)]\n"
+      << ((declaration.exported || p_.explicit_module) ? "pub " : "")
+      << "enum " << declaration.name << " {\n";
+    for (const auto& item : declaration.cases) {
+      string case_identity = "enum_case:" + declaration.name + "." +
+          item.name + "@" + std::to_string(item.line);
+      tooling_begin(o, 4, "enum_case", case_identity,
+                    declaration.name + "::" + rust_identifier(item.name));
+      source_comment(o, 4, item.line, item.name);
+      o << "    " << rust_identifier(item.name);
+      if (!item.fields.empty()) {
+        o << " { ";
+        for (size_t index = 0; index < item.fields.size(); ++index) {
+          if (index) o << ", ";
+          o << rust_identifier(item.fields[index].name) << ": "
+            << rust_type(item.fields[index].type);
+        }
+        o << " }";
+      }
+      o << ",\n";
+      tooling_end(o, 4, case_identity);
+    }
+    o << "}\n\n";
+    tooling_end(o, 0, enum_identity);
+  }
+
   void gen_object(std::ostringstream& o, const ObjectType& t) {
     string type_identity = "type:" + t.name + "@" + std::to_string(t.line);
     tooling_begin(o, 0, "type", type_identity, t.name);
@@ -11980,7 +13732,8 @@ class Generator {
       << ((t.exported || p_.explicit_module) ? "pub " : "") << "struct " << t.name << " {\n";
     for (const auto& f : t.fields) {
       source_comment(o, 4, f.line, f.header.empty() ? f.name + ": " + f.type : f.header);
-      o << "    " << f.name << ": " << rust_type(f.type) << ",\n";
+      o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
+        << rust_identifier(f.name) << ": " << rust_type(f.type) << ",\n";
     }
     o << "}\n\n";
     tooling_end(o, 0, type_identity);
@@ -11989,7 +13742,7 @@ class Generator {
     o << "impl " << t.name << " {\n    " << ((t.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_into_parts(self) -> (";
     for (const auto& field : t.fields) o << rust_type(field.type) << ",";
     o << ") { (";
-    for (const auto& field : t.fields) o << "self." << field.name << ",";
+    for (const auto& field : t.fields) o << "self." << rust_identifier(field.name) << ",";
     o << ") }\n}\n";
     for (const auto& method : t.methods) for (bool view : {false, true}) {
       bool needs_view = false;
@@ -12007,7 +13760,8 @@ class Generator {
       source_comment(o, 4, method.line,
                      "fn " + method.name);
       debug_symbol_attributes(o, 4, native_symbol, !view);
-      o << "    fn " << method_name;
+      o << "    " << ((t.exported || p_.explicit_module) ? "pub " : "")
+        << "fn " << method_name;
       if (method.receiver_effect == Effect::Consume) o << "(self";
       else if (method.receiver_effect == Effect::Write) o << "(&mut self";
       else o << "(&self";
@@ -12062,6 +13816,7 @@ class Generator {
 
   void gen_function_instance(std::ostringstream& o, const Function& f,
                              const FunctionSpecialization* specialization, bool view = false) {
+    borrowed_function_parameters_.clear();
     bool container_generic = !specialization &&
         std::any_of(f.params.begin(), f.params.end(), [](const Param& p) {
           return p.type == "vector" || p.type == "queue" || p.type == "map";
@@ -12127,7 +13882,11 @@ class Generator {
           !ops.empty() && !ops.count("[]");
       bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
           borrowable_type(pt.empty() ? parameter_rust_type : pt));
-      o << (borrow && effect == Effect::Write ? "mut " : "")
+      if (borrow && !copy_type(pt))
+        borrowed_function_parameters_.insert(f.params[index].name);
+      bool mutates_owned_parameter = effect == Effect::Consume && !view &&
+          index < f.parameter_mutations.size() && f.parameter_mutations[index];
+      o << ((borrow && effect == Effect::Write) || mutates_owned_parameter ? "mut " : "")
         << f.params[index].name << ": "
         << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
         << parameter_rust_type;
@@ -12193,6 +13952,7 @@ class Generator {
     o << "}\n\n";
     tooling_end(o, 0, semantic_identity);
     write_through_parameters_.clear(); view_parameters_.clear();
+    borrowed_function_parameters_.clear();
     bool needs_view = false;
     for (size_t i = 0; i < f.params.size(); ++i)
       needs_view |= function_effect(f, i) != Effect::Consume &&
@@ -12619,14 +14379,113 @@ class Generator {
                 direct_functional->binding_materialization_reason);
 
       switch (s.kind) {
-        case Stmt::Kind::If: {
+        case Stmt::Kind::Match: {
+          auto scrutinee_type = generated_expr_type(s.a, &types);
+          if (!scrutinee_type || !enums_.count(canonical_type_name(*scrutinee_type)))
+            throw std::runtime_error("unchecked enum match");
+          const EnumType& declaration = *enums_.at(canonical_type_name(*scrutinee_type));
+          const auto exact_join = s.joined_types_by_context.find(functional_context);
+          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+              ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
-          for (const auto& entry : s.joined_types)
+          for (const auto& entry : joined_types)
             if (!types.count(entry.first) && !starts_with(entry.second, "_"))
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
-            const string& type = s.joined_types.at(binding);
+            o << indent(level) << "let mut " << binding << ": "
+              << rust_type(joined_types.at(binding)) << ";\n";
+            locals.insert(binding);
+            types[binding] = joined_types.at(binding);
+          }
+          string match_callee;
+          vector<string> match_arguments;
+          bool struct_literal = false;
+          if (s.b == "consume" && parse_simple_call(s.a, match_callee, match_arguments)) {
+            for (const auto& candidate : declaration.cases) {
+              const string suffix = declaration.name + "." + candidate.name;
+              if (!candidate.fields.empty() &&
+                  (match_callee == suffix ||
+                   (match_callee.size() > suffix.size() &&
+                    match_callee.compare(match_callee.size() - suffix.size(), suffix.size(), suffix) == 0 &&
+                    match_callee[match_callee.size() - suffix.size() - 1] == '.'))) {
+                struct_literal = true;
+                break;
+              }
+            }
+          }
+          o << indent(level) << "match ";
+          if (s.b != "consume") o << "&";
+          if (struct_literal) o << "(";
+          o << expr(s.a, d, locals, &types);
+          if (struct_literal) o << ")";
+          o << " {\n";
+          ++i;
+          while (i < ss.size() && ss[i].indent == level + 1) {
+            const Stmt& arm = ss[i];
+            auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
+                [&](const EnumCase& candidate) { return candidate.name == arm.a; });
+            if (item == declaration.cases.end())
+              throw std::runtime_error("unchecked enum case");
+            o << indent(level + 1) << declaration.name << "::"
+              << rust_identifier(arm.a);
+            if (!item->fields.empty()) {
+              o << " { ";
+              for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+                if (field_index) o << ", ";
+                string field_name = rust_identifier(item->fields[field_index].name);
+                if (field_name == arm.args[field_index])
+                  o << field_name;
+                else
+                  o << field_name << ": " << arm.args[field_index];
+              }
+              o << " }";
+            }
+            o << " => {\n";
+            auto branch_locals = locals;
+            auto branch_types = types;
+            auto saved_borrowed = borrowed_function_parameters_;
+            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+              const string& name = arm.args[field_index];
+              const string& type = item->fields[field_index].type;
+              branch_locals.insert(name);
+              branch_types[name] = type;
+              if (s.b != "consume") {
+                if (type == "int" || type == "bool" || type == "float")
+                  o << indent(level + 2) << "let " << name << " = *" << name << ";\n";
+                else borrowed_function_parameters_.insert(name);
+              }
+            }
+            ++i;
+            auto branch_join = join_assignments;
+            branch_join.insert(joined_bindings.begin(), joined_bindings.end());
+            gen_block(o, ss, i, level + 2, d, current_handler, reply_slot,
+                      branch_locals, branch_types, base, in_handler, in_function,
+                      branch_join, functional_context);
+            borrowed_function_parameters_ = std::move(saved_borrowed);
+            o << indent(level + 1) << "},\n";
+          }
+          o << indent(level) << "}\n";
+          break;
+        }
+        case Stmt::Kind::Case:
+          throw std::runtime_error("case outside checked match");
+        case Stmt::Kind::If: {
+          const auto exact_join = s.joined_types_by_context.find(functional_context);
+          if (functional_context.find('<') != string::npos &&
+              exact_join == s.joined_types_by_context.end())
+            throw std::runtime_error(
+                "internal error: missing checked control-flow join for " +
+                functional_context);
+          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+              ? s.joined_types : exact_join->second;
+          vector<string> joined_bindings;
+          for (const auto& entry : joined_types)
+            if (!types.count(entry.first) && !starts_with(entry.second, "_"))
+              joined_bindings.push_back(entry.first);
+          std::sort(joined_bindings.begin(), joined_bindings.end());
+          for (const auto& binding : joined_bindings) {
+            const string& type = joined_types.at(binding);
             backend_comment(o, (base + level) * 4,
                             "CONTROL-FLOW JOIN: binding has one definite static type on every path");
             o << indent(level) << "let mut " << binding << ": "
@@ -12662,10 +14521,8 @@ class Generator {
           } else {
             o << "\n";
           }
-          for (const auto& entry : s.joined_types) {
-            if (starts_with(entry.second, "_")) continue;
-            types[entry.first] = entry.second;
-          }
+          // Existing bindings keep their already established type in this
+          // instance; only new joined locals use this context's checked type.
           break;
         }
         case Stmt::Kind::While: {
@@ -12692,13 +14549,30 @@ class Generator {
           auto source_type = generated_expr_type(source, &types);
           string element_type = source_type ? canonical_type_name(*source_type) : "";
           if (is_range) {
-            o << indent(level) << "for " << s.a << " in "
-              << expr(range_args[0], d, locals, &types) << ".."
-              << expr(range_args[1], d, locals, &types);
-            if (range_args.size() == 3)
-              o << ".step_by((" << expr(range_args[2], d, locals, &types)
-                << ") as usize)";
-            o << " {\n";
+            // Materialize each range bound into a typed local before the
+            // for-loop.  An expression such as `values |> count` expands to a
+            // Rust block `{ … __moss_result }`.  When placed after `..` in
+            //   for index in start..{ block } { body }
+            // rustc parses `{ block }` as the for-body, not the upper bound,
+            // silently dropping the induction binding and the intended body.
+            // Binding the result first avoids this precedence ambiguity entirely.
+            string start_var = "__moss_range_start_" + std::to_string(s.line);
+            string end_var   = "__moss_range_end_"   + std::to_string(s.line);
+            o << indent(level) << "let " << start_var << ": i64 = "
+              << expr(range_args[0], d, locals, &types) << ";\n";
+            o << indent(level) << "let " << end_var << ": i64 = "
+              << expr(range_args[1], d, locals, &types) << ";\n";
+            if (range_args.size() == 3) {
+              string step_var = "__moss_range_step_" + std::to_string(s.line);
+              o << indent(level) << "let " << step_var << ": i64 = "
+                << expr(range_args[2], d, locals, &types) << ";\n";
+              o << indent(level) << "for " << s.a << " in ("
+                << start_var << ".." << end_var
+                << ").step_by(" << step_var << " as usize) {\n";
+            } else {
+              o << indent(level) << "for " << s.a << " in "
+                << start_var << ".." << end_var << " {\n";
+            }
             auto child_locals = locals;
             auto child_types = types;
             child_locals.insert(s.a);
@@ -12886,21 +14760,46 @@ class Generator {
               if (key_type && !copy_type(*key_type) &&
                   !(mi.size() >= 2 && mi.front() == '"' && mi.back() == '"'))
                 key = "(" + key + ").clone()";
+              string inserted = expr(s.b, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0));
+              if (borrowed_function_parameters_.count(trim(s.b)))
+                inserted = "(" + inserted + ").clone()";
               o << indent(level) << "(" << place_expr(mb, d, locals, &types)
                 << ").insert(" << key << ", "
-                << expr(s.b, d, locals, &types,
-                        statement_functional_pipeline_id(s, functional_context, 0))
+                << inserted
                 << ");\n";
             }
             else if (is_object_view(s.a, d, locals, &types))
               o << indent(level) << "(" << lhs << ").__moss_replace(" << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
-            else o << indent(level) << lhs << " = " << expr(s.b, d, locals, &types, statement_functional_pipeline_id(s, functional_context, 0)) << ";\n";
+            else {
+              string assigned = expr(s.b, d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context, 0));
+              if (map_assignment && borrowed_function_parameters_.count(trim(s.b)))
+                assigned = "(" + assigned + ").clone()";
+              o << indent(level) << lhs << " = " << assigned << ";\n";
+            }
             if (plain_identifier(s.a)) forget_domain_instance_binding(s.a);
           }
           ++i;
           break;
         }
         case Stmt::Kind::Call: {
+          string statement_receiver_type = !s.b.empty()
+              ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
+          if (!s.b.empty() &&
+              (statement_receiver_type == "string" ||
+               (s.b == "delete" && (statement_receiver_type == "map" ||
+                                    starts_with(statement_receiver_type, "map["))))) {
+            string call = s.a + "." + s.b + "(";
+            for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              if (argument) call += ", ";
+              call += s.args[argument];
+            }
+            call += ")";
+            o << indent(level) << expr(call, d, locals, &types) << ";\n";
+            ++i;
+            break;
+          }
           if (s.b.empty() && s.a == "assert") {
             o << indent(level) << "if !("
               << expr(s.args.front(), d, locals, &types,
@@ -12937,10 +14836,11 @@ class Generator {
             ++i;
             break;
           }
-          bool known_function = functions_.count(s.a);
+          string function_name = resolved_callable_identity(s.a, &types);
+          bool known_function = functions_.count(function_name);
           if (s.b.empty() && known_function && !benchmark_body_) {
             o << indent(level)
-              << render_known_function_call(*functions_.at(s.a), s.a, s.args,
+              << render_known_function_call(*functions_.at(function_name), function_name, s.args,
                                            d, locals, &types)
               << ";\n";
             ++i;
@@ -12948,11 +14848,64 @@ class Generator {
           }
           bool implicit_method = in_function && d && objects_.count(d->name) &&
               s.b.empty() && !known_function;
+          auto call_receiver_type = implicit_method
+              ? std::optional<string>(d->name)
+              : !s.b.empty() ? generated_expr_type(s.a, &types)
+                             : std::optional<string>{};
+          const Method* call_method = nullptr;
+          if (call_receiver_type && (!s.b.empty() || implicit_method))
+            call_method = resolve_object_method(
+                objects_, canonical_type_name(*call_receiver_type),
+                implicit_method ? s.a : s.b, [&]() {
+                  vector<string> result;
+                  for (const auto& argument : s.args)
+                    result.push_back(nominalized_generated_argument_type(
+                        argument, generated_expr_type(argument, &types).value_or("")));
+                  return result;
+                }(), true, nullptr);
+          vector<string> argument_temporaries(s.args.size());
+          if (call_method && call_method->receiver_effect != Effect::Read) {
+            for (size_t k = 0; k < s.args.size(); ++k) {
+              bool same_receiver_mutating_argument = false;
+              if (!s.b.empty()) {
+                string nested_receiver, nested_method;
+                vector<string> nested_args;
+                same_receiver_mutating_argument =
+                    parse_member_call(s.args[k], nested_receiver, nested_method,
+                                      nested_args) &&
+                    trim(nested_receiver) == trim(s.a);
+              } else if (implicit_method) {
+                string nested_name;
+                vector<string> nested_args;
+                if (parse_simple_call(s.args[k], nested_name, nested_args)) {
+                  vector<string> nested_types;
+                  for (const auto& argument : nested_args)
+                    nested_types.push_back(nominalized_generated_argument_type(
+                        argument, generated_expr_type(argument, &types).value_or("")));
+                  same_receiver_mutating_argument =
+                      resolve_object_method(objects_, d->name, nested_name,
+                                            nested_types, true, nullptr) != nullptr;
+                }
+              }
+              if (!same_receiver_mutating_argument) continue;
+              argument_temporaries[k] = "__moss_call_argument_" +
+                  std::to_string(call_argument_temp_++);
+              string temporary_type =
+                  generated_expr_type(s.args[k], &types).value_or("_value");
+              o << indent(level) << "let " << argument_temporaries[k] << " = "
+                << expr(s.args[k], d, locals, &types,
+                        statement_functional_pipeline_id(
+                            s, functional_context, k))
+                << ";\n";
+              locals.insert(argument_temporaries[k]);
+              types[argument_temporaries[k]] = temporary_type;
+            }
+          }
           o << indent(level);
           if (benchmark_body_) o << "std::hint::black_box(";
           o << (implicit_method ? "self." : "")
             << (s.b.empty() && known_function
-                    ? viewed_function_name(s.a, s.args, d, locals, &types)
+                    ? viewed_function_name(function_name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           if (!s.b.empty()) {
@@ -12970,32 +14923,21 @@ class Generator {
             if (compile_time_callable) continue;
             if (emitted_arguments++) o << ", ";
             if (benchmark_body_) o << "std::hint::black_box(";
+            string argument_expression = argument_temporaries[k].empty()
+                ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              o << function_call_argument(*functions_.at(s.a), k, s.args[k], d,
+              o << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k));
             } else if (!s.b.empty() || implicit_method) {
-              auto receiver_type = implicit_method
-                  ? std::optional<string>(d->name)
-                  : generated_expr_type(s.a, &types);
-              const Method* method = nullptr;
-              if (receiver_type)
-                method = resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                               implicit_method ? s.a : s.b, [&]() {
-                                                 vector<string> result;
-                                                 for (const auto& argument : s.args)
-                                                   result.push_back(nominalized_generated_argument_type(
-                                                       argument, generated_expr_type(argument, &types).value_or("")));
-                                                 return result;
-                                               }(), true, nullptr);
-              if (method)
+              if (call_method)
                 o << method_call_argument(
-                    *method, k, s.args[k], d, locals, &types,
+                    *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
               else
-                o << expr(s.args[k], d, locals, &types,
+                o << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
@@ -13119,6 +15061,10 @@ class Generator {
           }
           else
             o << indent(level) << (in_handler ? "break 'handler;" : "return;") << "\n";
+          ++i;
+          break;
+        case Stmt::Kind::Pass:
+          o << indent(level) << "let _ = ();\n";
           ++i;
           break;
         case Stmt::Kind::Raw:
@@ -13428,6 +15374,15 @@ static string debug_source_for_identity(const Program& program,
   for (const auto& trait : program.traits)
     if (identity == "trait:" + trait.name + "@" + std::to_string(trait.line))
       return trait.source_file.empty() ? fallback : trait.source_file;
+  for (const auto& declaration : program.enums) {
+    if (identity == "enum:" + declaration.name + "@" +
+            std::to_string(declaration.line))
+      return declaration.source_file.empty() ? fallback : declaration.source_file;
+    for (const auto& item : declaration.cases)
+      if (identity == "enum_case:" + declaration.name + "." + item.name +
+              "@" + std::to_string(item.line))
+        return item.source_file.empty() ? fallback : item.source_file;
+  }
   for (const auto& test : program.tests)
     if (identity == test.semantic_identity)
       return test.source_file.empty() ? fallback : test.source_file;
@@ -13727,6 +15682,8 @@ static string durable_identity_base(const SemanticTargetFact& fact) {
   if (fact.kind == "specialization")
     return prefix + "specialization:" + fact.context.substr(3);
   if (fact.kind == "type") return prefix + "type:" + fact.name;
+  if (fact.kind == "enum") return prefix + "enum:" + fact.name;
+  if (fact.kind == "enum_case") return prefix + "enum-case:" + fact.name;
   if (fact.kind == "field") return prefix + "field:" + fact.name;
   if (fact.kind == "method") return prefix + "method:" + fact.name;
   if (fact.kind == "trait") return prefix + "trait:" + fact.name;
@@ -13844,6 +15801,17 @@ static void finalize_semantic_target_facts(
                              << method.return_type.value_or("unit") << ":"
                              << method.params.size() << "\n";
       }
+    } else if (target.kind == "enum") {
+      auto enumeration = std::find_if(
+          program.enums.begin(), program.enums.end(),
+          [&](const EnumType& candidate) { return candidate.name == target.name; });
+      if (enumeration != program.enums.end())
+        for (const auto& item : enumeration->cases) {
+          interface_material << "case:" << item.name << "\n";
+          for (const auto& field : item.fields)
+            interface_material << "field:" << field.name << ":"
+                               << field.type << "\n";
+        }
     } else if (target.kind == "trait") {
       auto trait = std::find_if(
           program.traits.begin(), program.traits.end(),
@@ -13992,6 +15960,36 @@ static vector<SemanticTargetFact> semantic_target_facts(
       specialized.provenance = {specialized.semantic_identity,
                                 fact.semantic_identity};
       targets.push_back(std::move(specialized));
+    }
+  }
+
+  for (const auto& enumeration : program.enums) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "enum:" + enumeration.name + "@" +
+        std::to_string(enumeration.line);
+    fact.context = "enum:" + enumeration.name;
+    fact.kind = "enum";
+    fact.name = enumeration.name;
+    fact.type = enumeration.name;
+    fact.line = enumeration.line;
+    fact.module_identity = semantic_module_name(enumeration.name);
+    fact.export_visibility = enumeration.exported ? "exported" : "private";
+    fact.export_kind = enumeration.exported ? "nominal_type" : "private";
+    fact.provenance.push_back(fact.semantic_identity);
+    targets.push_back(std::move(fact));
+    for (const auto& item : enumeration.cases) {
+      SemanticTargetFact case_fact;
+      case_fact.semantic_identity = "enum_case:" + enumeration.name + "." +
+          item.name + "@" + std::to_string(item.line);
+      case_fact.context = "enum:" + enumeration.name;
+      case_fact.kind = "enum_case";
+      case_fact.name = enumeration.name + "." + item.name;
+      case_fact.type = enumeration.name;
+      case_fact.line = item.line;
+      case_fact.provenance.push_back(case_fact.semantic_identity);
+      for (const auto& field : item.fields)
+        case_fact.explanations.push_back("field " + field.name + ": " + field.type);
+      targets.push_back(std::move(case_fact));
     }
   }
 
@@ -15113,11 +17111,12 @@ static void write_bootstrap_json(std::ostream& out,
          "\"human_and_json_share_facts\": true}";
   out << ",\n    \"source_surface\": {"
          "\"locals\":{\"implicit_binding\":\"x = expression\",\"immutable\":\"let x = expression\",\"mutable\":\"var x = expression\"},"
-         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"]},"
-         "\"operators\":{\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"]},"
+         "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
+         "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
+         "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
-         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":false},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
   out << ",\n    \"project_surface\": {"
          "\"manifest\": \"Moss.toml\","
          "\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\","
@@ -16759,6 +18758,13 @@ static void annotate_program_source(Program& program, const string& source_file)
       for (auto& field : method.body) field.source_file = source_file;
     }
   }
+  for (auto& enumeration : program.enums) {
+    enumeration.source_file = source_file;
+    for (auto& item : enumeration.cases) {
+      item.source_file = source_file;
+      for (auto& field : item.fields) field.source_file = source_file;
+    }
+  }
   for (auto& trait : program.traits) {
     trait.source_file = source_file;
     for (auto& method : trait.methods) method.source_file = source_file;
@@ -16804,6 +18810,9 @@ static void merge_project_program(Program& destination, Program source,
   destination.objects.insert(destination.objects.end(),
                              std::make_move_iterator(source.objects.begin()),
                              std::make_move_iterator(source.objects.end()));
+  destination.enums.insert(destination.enums.end(),
+                           std::make_move_iterator(source.enums.begin()),
+                           std::make_move_iterator(source.enums.end()));
   destination.domains.insert(destination.domains.end(),
                              std::make_move_iterator(source.domains.begin()),
                              std::make_move_iterator(source.domains.end()));
@@ -16948,6 +18957,7 @@ static SemanticSnapshot make_semantic_snapshot(
         fact.kind == "method" || fact.kind == "handler" ||
         fact.kind == "test" || fact.kind == "benchmark" ||
         fact.kind == "main" || fact.kind == "type" ||
+        fact.kind == "enum" ||
         fact.kind == "trait" || fact.kind == "domain";
     if (!unit) continue;
     SemanticSnapshotUnit record;
@@ -17184,6 +19194,7 @@ static std::set<string> module_type_names(const ParsedModuleUnit& unit) {
   std::set<string> result;
   for (const auto& file : unit.files) {
     for (const auto& object : file.first.objects) result.insert(object.name);
+    for (const auto& enumeration : file.first.enums) result.insert(enumeration.name);
     for (const auto& domain : file.first.domains) result.insert(domain.name);
     for (const auto& trait : file.first.traits) result.insert(trait.name);
   }
@@ -17197,6 +19208,8 @@ static std::set<string> module_export_names(const ParsedModuleUnit& unit) {
       if (function.exported) result.insert(function.name);
     for (const auto& object : file.first.objects)
       if (object.exported) result.insert(object.name);
+    for (const auto& enumeration : file.first.enums)
+      if (enumeration.exported) result.insert(enumeration.name);
     for (const auto& domain : file.first.domains)
       if (domain.exported) result.insert(domain.name);
     for (const auto& trait : file.first.traits)
@@ -17263,7 +19276,9 @@ static string rewrite_module_type(string type, const string& module,
 static string rewrite_module_expression(
     string expression, const string& module,
     const std::map<string,ParsedModuleUnit>& modules,
-    const std::map<string,std::set<string>>& public_exports) {
+    const std::map<string,std::set<string>>& public_exports,
+    const std::set<string>* sibling_methods = nullptr,
+    const std::set<string>* locals = nullptr) {
   std::set<string> functions = module_function_names(modules.at(module));
   std::set<string> types = module_type_names(modules.at(module));
   string result;
@@ -17295,7 +19310,7 @@ static string rewrite_module_expression(
     if (token == "assert" || token == "assertEqual" ||
         functional_stage_kind(token).has_value() ||
         token == "Map" || token == "Queue" || token == "Vector" ||
-        token == "Some" || token == "sqrt") {
+        token == "Some" || token == "sqrt" || token == "range") {
       result += token;
       i = end;
       continue;
@@ -17309,6 +19324,13 @@ static string rewrite_module_expression(
       while (member_end < expression.size() &&
              (std::isalnum(static_cast<unsigned char>(expression[member_end])) || expression[member_end] == '_')) ++member_end;
       string name = expression.substr(member, member_end - member);
+      if (token == module) {
+        if (functions.count(name) || types.count(name)) {
+          result += module_symbol(module, name);
+          i = member_end;
+          continue;
+        }
+      }
       auto imported = public_exports.find(token);
       if (imported != public_exports.end() && imported->second.count(name)) {
         result += module_symbol(token, name);
@@ -17326,11 +19348,12 @@ static string rewrite_module_expression(
     size_t before = i;
     while (before > 0 && std::isspace(static_cast<unsigned char>(expression[before - 1]))) --before;
     bool member = before > 0 && expression[before - 1] == '.';
-    if (!member && token.find("__") == string::npos &&
-        (functions.count(token) || types.count(token) ||
-         (after < expression.size() && expression[after] == '(' &&
-          plain_identifier(token))) &&
-        after < expression.size() && expression[after] == '(')
+    if (!member && !(sibling_methods && sibling_methods->count(token)) &&
+        !(locals && locals->count(token)) &&
+        token.find("__") == string::npos &&
+        (functions.count(token) ||
+         (types.count(token) && after < expression.size() &&
+          (expression[after] == '(' || expression[after] == '.'))))
       result += module_symbol(module, token);
     else
       result += token;
@@ -17343,64 +19366,225 @@ static void rewrite_module_program(
     Program& program, const string& module,
     const std::map<string,ParsedModuleUnit>& modules,
     const std::map<string,std::set<string>>& public_exports) {
+  std::set<string> functions = module_function_names(modules.at(module));
+  std::set<string> types = module_type_names(modules.at(module));
   auto type = [&](string value) {
     return rewrite_module_type(std::move(value), module, modules, public_exports);
   };
-  auto expression = [&](string value) {
-    return rewrite_module_expression(std::move(value), module, modules, public_exports);
+  auto expression = [&](string value, const std::set<string>* locals = nullptr) {
+    return rewrite_module_expression(std::move(value), module, modules, public_exports, nullptr, locals);
   };
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.type = type(param.type);
   };
-  auto body = [&](vector<Stmt>& statements) {
-    for (auto& statement : statements) {
-      if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
-        auto imported = public_exports.find(statement.a);
-        if (imported != public_exports.end() && imported->second.count(statement.b)) {
-          statement.a = module_symbol(statement.a, statement.b);
-          statement.b.clear();
+  auto body = [&](vector<Stmt>& statements,
+                  const std::set<string>& initial_locals = {},
+                  const std::set<string>* sibling_methods = nullptr) -> std::set<string> {
+    std::function<void(size_t&, int, std::set<string>&)> walk_block =
+        [&](size_t& index, int level, std::set<string>& locals) {
+      while (index < statements.size()) {
+        Stmt& statement = statements[index];
+        if (statement.indent < level) return;
+        if (statement.indent > level) {
+          ++index;
+          continue;
         }
-      } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
-        string callee = trim(statement.a);
-        if (callee.find('.') == string::npos && plain_identifier(callee) &&
-            callee != "assert" && callee != "assertEqual" &&
-            !functional_stage_kind(callee).has_value() &&
-            callee != "Map" && callee != "Queue" && callee != "Vector" &&
-            callee != "Some" && callee != "sqrt" &&
-            !starts_with(callee, module + "__") &&
-            callee.find("__") == string::npos)
-          statement.a = module_symbol(module, callee);
-        else {
-          string rewritten = expression(callee + "()");
-          if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
-          statement.a = std::move(rewritten);
+        if (statement.kind == Stmt::Kind::Else) return;
+
+        if (statement.kind == Stmt::Kind::If) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> then_locals = incoming;
+          walk_block(index, level + 1, then_locals);
+
+          std::vector<std::set<string>> paths;
+          paths.push_back(std::move(then_locals));
+
+          if (index < statements.size() && statements[index].indent == level &&
+              statements[index].kind == Stmt::Kind::Else) {
+            ++index;
+            std::set<string> else_locals = incoming;
+            walk_block(index, level + 1, else_locals);
+            paths.push_back(std::move(else_locals));
+          } else {
+            paths.push_back(std::move(incoming));
+          }
+
+          std::set<string> joined;
+          for (const auto& binding : paths.front()) {
+            bool present_everywhere = true;
+            for (size_t p = 1; p < paths.size(); ++p) {
+              if (!paths[p].count(binding)) {
+                present_everywhere = false;
+                break;
+              }
+            }
+            if (present_everywhere) joined.insert(binding);
+          }
+          locals = std::move(joined);
+          continue;
         }
+
+        if (statement.kind == Stmt::Kind::Match) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          std::vector<std::set<string>> paths;
+          ++index;
+          while (index < statements.size() &&
+                 statements[index].indent == level + 1 &&
+                 statements[index].kind == Stmt::Kind::Case) {
+            const auto bindings = statements[index].args;
+            ++index;
+            auto branch_locals = incoming;
+            branch_locals.insert(bindings.begin(), bindings.end());
+            walk_block(index, level + 2, branch_locals);
+            for (const auto& binding : bindings)
+              if (!incoming.count(binding)) branch_locals.erase(binding);
+            paths.push_back(std::move(branch_locals));
+          }
+          if (!paths.empty()) {
+            std::set<string> joined;
+            for (const auto& binding : paths.front())
+              if (std::all_of(paths.begin() + 1, paths.end(),
+                              [&](const auto& path) { return path.count(binding); }))
+                joined.insert(binding);
+            locals = std::move(joined);
+          }
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::While) {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> body_locals = incoming;
+          walk_block(index, level + 1, body_locals);
+          locals = std::move(incoming);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::For) {
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+          std::set<string> incoming = locals;
+          ++index;
+          std::set<string> body_locals = incoming;
+          if (plain_identifier(statement.a)) {
+            body_locals.insert(statement.a);
+          }
+          walk_block(index, level + 1, body_locals);
+          locals = std::move(incoming);
+          continue;
+        }
+
+        if (statement.kind == Stmt::Kind::Call && !statement.b.empty()) {
+          if (statement.a == module) {
+            if (functions.count(statement.b) || types.count(statement.b)) {
+              statement.a = module_symbol(module, statement.b);
+              statement.b.clear();
+            }
+          } else {
+            auto imported = public_exports.find(statement.a);
+            if (imported != public_exports.end() && imported->second.count(statement.b)) {
+              statement.a = module_symbol(statement.a, statement.b);
+              statement.b.clear();
+            }
+          }
+        } else if (statement.kind == Stmt::Kind::Call && !statement.a.empty()) {
+          string callee = trim(statement.a);
+          if (callee.find('.') == string::npos && plain_identifier(callee) &&
+              !(sibling_methods && sibling_methods->count(callee)) &&
+              !locals.count(callee) &&
+              functions.count(callee) &&
+              callee != "assert" && callee != "assertEqual" &&
+              !functional_stage_kind(callee).has_value() &&
+              callee != "Map" && callee != "Queue" && callee != "Vector" &&
+              callee != "Some" && callee != "sqrt" && callee != "range" &&
+              !starts_with(callee, module + "__") &&
+              callee.find("__") == string::npos)
+            statement.a = module_symbol(module, callee);
+          else if (callee.find('.') != string::npos) {
+            string rewritten = rewrite_module_expression(
+                callee + "()", module, modules, public_exports, sibling_methods, &locals);
+            if (ends_with(rewritten, "()")) rewritten.resize(rewritten.size() - 2);
+            statement.a = std::move(rewritten);
+          }
+        }
+
+        if (statement.kind == Stmt::Kind::Let ||
+            statement.kind == Stmt::Kind::Var ||
+            (statement.kind == Stmt::Kind::Assign && plain_identifier(statement.a))) {
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+          if (plain_identifier(statement.a)) locals.insert(statement.a);
+        } else {
+          statement.a = rewrite_module_expression(
+              statement.a, module, modules, public_exports, sibling_methods, &locals);
+          statement.b = rewrite_module_expression(
+              statement.b, module, modules, public_exports, sibling_methods, &locals);
+        }
+
+        for (auto& argument : statement.args)
+          argument = rewrite_module_expression(
+              argument, module, modules, public_exports, sibling_methods, &locals);
+
+        if (!statement.text.empty() &&
+            (statement.kind == Stmt::Kind::Call || statement.kind == Stmt::Kind::Raw))
+          statement.text = rewrite_module_expression(
+              statement.text, module, modules, public_exports, sibling_methods, &locals);
+
+        ++index;
       }
-      statement.a = expression(statement.a);
-      statement.b = expression(statement.b);
-      for (auto& argument : statement.args) argument = expression(argument);
-      if (!statement.text.empty()) statement.text = expression(statement.text);
-    }
+    };
+
+    std::set<string> locals = initial_locals;
+    size_t index = 0;
+    walk_block(index, 0, locals);
+    return locals;
   };
   for (auto& function : program.functions) {
     string old = function.name;
     function.name = module_symbol(module, old);
     params(function.params);
     if (function.return_type) *function.return_type = type(*function.return_type);
-    body(function.body);
-    if (function.result_expression) *function.result_expression = expression(*function.result_expression);
+    std::set<string> initial_locals;
+    for (const auto& p : function.params) initial_locals.insert(p.name);
+    auto body_locals = body(function.body, initial_locals);
+    if (function.result_expression)
+      *function.result_expression = rewrite_module_expression(
+          *function.result_expression, module, modules, public_exports, nullptr, &body_locals);
   }
   for (auto& object : program.objects) {
     string old = object.name;
+    std::set<string> sibling_methods;
+    for (const auto& method : object.methods) sibling_methods.insert(method.name);
     object.name = module_symbol(module, old);
-    for (auto& field : object.fields) field.type = type(field.type);
+    for (auto& field : object.fields) {
+      field.type = type(field.type);
+      if (!field.init.empty()) field.init = expression(field.init);
+    }
     for (auto& method : object.methods) {
       method.owner = object.name;
       params(method.params);
       if (method.return_type) *method.return_type = type(*method.return_type);
-      body(method.body);
-      if (method.result_expression) *method.result_expression = expression(*method.result_expression);
+      std::set<string> initial_locals{"self"};
+      for (const auto& p : method.params) initial_locals.insert(p.name);
+      auto body_locals = body(method.body, initial_locals, &sibling_methods);
+      if (method.result_expression)
+        *method.result_expression = rewrite_module_expression(
+            *method.result_expression, module, modules, public_exports,
+            &sibling_methods, &body_locals);
     }
+  }
+  for (auto& enumeration : program.enums) {
+    enumeration.name = module_symbol(module, enumeration.name);
+    for (auto& item : enumeration.cases)
+      for (auto& field : item.fields)
+        field.type = type(field.type);
   }
   for (auto& trait : program.traits) {
     trait.name = module_symbol(module, trait.name);
@@ -17411,12 +19595,17 @@ static void rewrite_module_program(
   }
   for (auto& domain : program.domains) {
     domain.name = module_symbol(module, domain.name);
-    for (auto& field : domain.state) field.type = type(field.type);
+    for (auto& field : domain.state) {
+      field.type = type(field.type);
+      if (!field.init.empty()) field.init = expression(field.init);
+    }
     for (auto& route : domain.routes) route.type = type(route.type);
     for (auto& handler : domain.handlers) {
       params(handler.params);
       if (handler.reply_type) *handler.reply_type = type(*handler.reply_type);
-      body(handler.body);
+      std::set<string> initial_locals{"self"};
+      for (const auto& p : handler.params) initial_locals.insert(p.name);
+      body(handler.body, initial_locals);
     }
   }
   if (program.main) body(program.main->body);
@@ -17434,6 +19623,8 @@ static void validate_module_exports(const std::map<string,ParsedModuleUnit>& mod
         if (function.exported) ++export_counts[function.name];
       for (const auto& object : file.first.objects)
         if (object.exported) ++export_counts[object.name];
+      for (const auto& enumeration : file.first.enums)
+        if (enumeration.exported) ++export_counts[enumeration.name];
       for (const auto& trait : file.first.traits)
         if (trait.exported) ++export_counts[trait.name];
       for (const auto& domain : file.first.domains)
@@ -17674,6 +19865,7 @@ static ParsedModuleUnit load_module_interface(
   string line;
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
+  EnumType* current_enum = nullptr;
   Domain* current_domain = nullptr;
   Trait* current_trait = nullptr;
   bool in_semantic_exports = false;
@@ -17773,6 +19965,41 @@ static ParsedModuleUnit load_module_interface(
       current = nullptr;
       current_domain = nullptr;
       current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "export enum ")) {
+      std::istringstream header(line.substr(12));
+      string name;
+      header >> name;
+      EnumType enumeration;
+      enumeration.name = name;
+      enumeration.exported = true;
+      enumeration.source_file = file.string();
+      provider.enums.push_back(std::move(enumeration));
+      current_enum = &provider.enums.back();
+      current = nullptr;
+      current_object = nullptr;
+      current_domain = nullptr;
+      current_trait = nullptr;
+      continue;
+    }
+    if (starts_with(line, "enum_case ") && current_enum) {
+      std::istringstream fields(line.substr(10));
+      EnumCase item;
+      size_t field_count = 0;
+      fields >> std::quoted(item.name) >> field_count;
+      if (!fields)
+        throw CompileError(0, "invalid enum case in module interface");
+      item.source_file = file.string();
+      for (size_t index = 0; index < field_count; ++index) {
+        Field field;
+        fields >> std::quoted(field.name) >> std::quoted(field.type);
+        if (!fields)
+          throw CompileError(0, "invalid enum field in module interface");
+        field.source_file = file.string();
+        item.fields.push_back(std::move(field));
+      }
+      current_enum->cases.push_back(std::move(item));
       continue;
     }
     if (starts_with(line, "export domain ")) {
@@ -17888,6 +20115,40 @@ static ParsedModuleUnit load_module_interface(
       }
       if (method.name.empty()) throw CompileError(0, "invalid trait method in module interface");
       current_trait->methods.push_back(std::move(method));
+      continue;
+    }
+    if (starts_with(line, "object_method ") && current_object) {
+      std::istringstream method_line(line.substr(string("object_method ").size()));
+      Method method;
+      method_line >> method.name;
+      string rest;
+      std::getline(method_line, rest);
+      method.owner = current_object->name;
+      method.source_file = file.string();
+      string return_type = interface_field(rest, "return");
+      if (!return_type.empty() && return_type != "unit")
+        method.return_type = std::move(return_type);
+      string receiver = interface_field(rest, "receiver");
+      if (auto effect = interface_effect(receiver)) method.receiver_effect = *effect;
+      string count_text = interface_field(rest, "params");
+      size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
+      size_t parameters = rest.find("params=");
+      if (parameters != string::npos)
+        parameters = rest.find_first_of(" \t", parameters);
+      std::istringstream values(parameters == string::npos ? string() : rest.substr(parameters));
+      for (size_t index = 0; index < count; ++index) {
+        Param parameter;
+        string effect_name;
+        if (!(values >> std::quoted(parameter.name) >> std::quoted(parameter.type)
+                    >> effect_name))
+          throw CompileError(0, "incomplete object method in module interface");
+        method.params.push_back(std::move(parameter));
+        method.parameter_effects.push_back(
+            interface_effect(effect_name).value_or(Effect::Read));
+      }
+      if (method.name.empty())
+        throw CompileError(0, "invalid object method in module interface");
+      current_object->methods.push_back(std::move(method));
       continue;
     }
     if (starts_with(line, "public_representation field ") && current_object) {
@@ -18760,6 +21021,9 @@ static Program module_program(const Program& whole, const string& module,
   }
   for (const auto& object : whole.objects)
     if (belongs_to_module(object.name, module)) result.objects.push_back(object);
+  for (const auto& enumeration : whole.enums)
+    if (belongs_to_module(enumeration.name, module))
+      result.enums.push_back(enumeration);
   for (const auto& trait : whole.traits)
     if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
   for (const auto& domain : whole.domains)
@@ -18795,6 +21059,10 @@ static vector<string> module_names_for_program(const Program& program) {
     if (!module_name_from_symbol(object.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(object.name)))
       names.insert(module_name_from_symbol(object.name));
+  for (const auto& enumeration : program.enums)
+    if (!module_name_from_symbol(enumeration.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(enumeration.name)))
+      names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
     if (!module_name_from_symbol(domain.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(domain.name)))
@@ -18803,11 +21071,31 @@ static vector<string> module_names_for_program(const Program& program) {
   return vector<string>(names.begin(), names.end());
 }
 
-static vector<string> module_dependencies(const Program& program,
-                                          const string& module) {
+static vector<string> module_direct_dependencies(const Program& program,
+                                                 const string& module) {
   std::set<string> result;
   for (const auto& import : program.imports)
     if (import.owner_module == module) result.insert(import.name);
+  return vector<string>(result.begin(), result.end());
+}
+
+static vector<string> module_dependencies(const Program& program,
+                                          const string& module) {
+  std::set<string> result;
+  vector<string> pending = module_direct_dependencies(program, module);
+  // Test code is emitted into the root test crate even when the test source
+  // declares its own module. Root native projection therefore needs every
+  // import reachable from the checked test set, not only main's imports.
+  if (module == program.main_module && !program.tests.empty())
+    for (const auto& import : program.imports)
+      pending.push_back(import.name);
+  while (!pending.empty()) {
+    string current = pending.back();
+    pending.pop_back();
+    if (current == module || !result.insert(current).second) continue;
+    for (const auto& dependency : module_direct_dependencies(program, current))
+      pending.push_back(dependency);
+  }
   return vector<string>(result.begin(), result.end());
 }
 
@@ -18823,7 +21111,7 @@ static vector<string> module_topological_order(const Program& program) {
     if (state[module] == 1)
       throw ProjectError("MODULE_IMPORT_CYCLE", "module import cycle detected at '" + module + "'");
     state[module] = 1;
-    for (const auto& dependency : module_dependencies(program, module)) {
+    for (const auto& dependency : module_direct_dependencies(program, module)) {
       if (!known.count(dependency))
         throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
                            "no provider for imported module '" + dependency + "'");
@@ -18865,6 +21153,10 @@ static vector<std::filesystem::path> write_module_interfaces(
     if (!module_name_from_symbol(object.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
+  for (const auto& enumeration : program.enums)
+    if (!module_name_from_symbol(enumeration.name).empty() &&
+        !program.external_modules.count(module_name_from_symbol(enumeration.name)))
+      module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
     if (!module_name_from_symbol(domain.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(domain.name)))
@@ -19055,6 +21347,41 @@ static vector<std::filesystem::path> write_module_interfaces(
     out << "export type " << object.name.substr(module.size() + 2) << " nominal\n";
     for (const auto& field : object.fields)
       out << "  public_representation field " << field.name << " " << field.type << "\n";
+    for (const auto& method : object.methods) {
+      out << "  object_method " << method.name << " return="
+          << method.return_type.value_or("unit") << " receiver="
+          << ownership_effect_name(method.receiver_effect) << " params="
+          << method.params.size();
+      for (size_t index = 0; index < method.params.size(); ++index) {
+        Effect effect = index < method.parameter_effects.size()
+            ? method.parameter_effects[index] : Effect::Read;
+        out << " " << std::quoted(method.params[index].name)
+            << " " << std::quoted(method.params[index].type)
+            << " " << ownership_effect_name(effect);
+      }
+      out << "\n";
+    }
+  }
+  for (const auto& enumeration : program.enums) {
+    if (!enumeration.exported) continue;
+    string module = module_name_from_symbol(enumeration.name);
+    if (module.empty() || program.external_modules.count(module)) continue;
+    string name = enumeration.name.substr(module.size() + 2);
+    auto& out = contents[module];
+    out << "export enum " << name << "\n";
+    interface_contents[module] << "enum " << name << "\n";
+    for (const auto& item : enumeration.cases) {
+      out << "  enum_case " << std::quoted(item.name) << " "
+          << item.fields.size();
+      interface_contents[module] << "case " << item.name;
+      for (const auto& field : item.fields) {
+        out << " " << std::quoted(field.name) << " "
+            << std::quoted(field.type);
+        interface_contents[module] << " " << field.name << ":" << field.type;
+      }
+      out << "\n";
+      interface_contents[module] << "\n";
+    }
   }
   for (const auto& trait : program.traits) {
     if (!trait.exported) continue;
@@ -19573,14 +21900,17 @@ static SourceCompilationContext analyze_source_context(
 // decision only: the selected files still pass through check_project_sources
 // and therefore the ordinary Moss parser/checker remains authoritative.
 // When MOSS_FAST_DEBUG_SOURCE_ROOTS is set (colon-separated list of package
-// root directories, populated only by 'margo debug'), dependency source files are
+// root directories, populated by 'margo debug' and 'margo test --interp'),
+// dependency source files are
 // indexed alongside the root project's files so the transitive closure walk
 // can reach them. Providers are only disambiguated when an import makes a
 // module reachable; root project source has precedence over external source
 // providers, matching ordinary native module-provider selection.
 static vector<std::filesystem::path> fast_debug_source_closure(
     const SourceCompilationContext& context) {
-  if (!context.project || context.mode != ProgramGenerationMode::Application)
+  if (!context.project ||
+      (context.mode != ProgramGenerationMode::Application &&
+       context.mode != ProgramGenerationMode::Tests))
     return context.sources;
 
   struct ModuleSourceProvider {
@@ -19622,7 +21952,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     add_source(source, context.manifest.root, true);
 
   // Extend the module provider universe with explicitly supplied dependency
-  // source roots (set by Margo's 'margo debug' command via its exact,
+  // source roots (set by Margo's Fast Debug commands via their exact,
   // invocation-scoped MOSS_FAST_DEBUG_SOURCE_ROOTS handoff).
   // Dependency source files are indexed here and merged into the same
   // compilation unit; their module declarations make them self-identifying.
@@ -19665,7 +21995,7 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     }
   }
 
-  if (!has_explicit_modules || entry_module.empty()) return context.sources;
+  if (!has_explicit_modules) return context.sources;
 
   auto select_provider = [&](const string& module)
       -> const ModuleSourceProvider* {
@@ -19691,7 +22021,22 @@ static vector<std::filesystem::path> fast_debug_source_closure(
     result.insert(result.end(), provider->files.begin(), provider->files.end());
     for (const auto& imported : provider->imports) visit(imported);
   };
-  visit(entry_module);
+  if (context.mode == ProgramGenerationMode::Tests) {
+    // Every root-project module participates in project-wide test discovery.
+    // Treat each as a closure root so tests and application modules can reach
+    // source dependencies without pulling in unrelated dependency providers.
+    for (const auto& module : modules) {
+      for (const auto& provider : module.second) {
+        if (provider.second.root_project) {
+          visit(module.first);
+          break;
+        }
+      }
+    }
+  } else {
+    if (entry_module.empty()) return context.sources;
+    visit(entry_module);
+  }
 
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
@@ -20839,24 +23184,23 @@ static string canonicalize_code_spacing(const string& input) {
     bool unary_minus = unary_minus_at(index);
     bool previous_unary_minus = index > 0 && unary_minus_at(index - 1);
     bool space_before = !result.empty();
-    if (token.text == ")" || token.text == "]" || token.text == "}" ||
-        token.text == "," || token.text == ":" || token.text == "." ||
-        token.text == "(")
-      space_before = false;
-    // `not` is a word-form prefix operator, not a callable identifier. Keep
-    // its required separator before a grouped operand.
-    if (token.text == "(" && previous == "not") space_before = true;
     auto is_space_keyword = [](const string& word) {
       return word == "return" || word == "reply" || word == "echo" ||
              word == "in" || word == "not" || word == "and" || word == "or" ||
-             word == "case" || word == "yield" || word == "assert" ||
-             word == "assertEqual" || word == "if" || word == "else" ||
+             word == "case" || word == "yield" ||
+             word == "if" || word == "else" ||
              word == "while" || word == "for" || word == "let" ||
              word == "var" || word == "module" || word == "import" ||
              word == "export" || word == "domain" || word == "domainroutes" ||
              word == "trait" || word == "type" || word == "fn" ||
              word == "test" || word == "bench";
     };
+    if (token.text == ")" || token.text == "]" || token.text == "}" ||
+        token.text == "," || token.text == ":" || token.text == "." ||
+        token.text == "(")
+      space_before = false;
+    // Keywords and word-form prefix operators require a space before a grouped operand.
+    if (token.text == "(" && is_space_keyword(previous)) space_before = true;
     if (token.text == "[") {
       if (previous == "]" || previous == ")" ||
           (index > 0 && tokens[index - 1].word && !is_space_keyword(previous)))
@@ -21137,17 +23481,102 @@ static size_t replace_identifier_on_line(string& line, const string& old_name,
   return replacements;
 }
 
+static size_t replace_semantic_function_on_line(
+    string& line, const string& module, const string& old_name,
+    const string& new_name, bool is_same_module) {
+  if (module.empty()) {
+    return replace_identifier_on_line(line, old_name, new_name);
+  }
+  size_t replacements = 0;
+  string dot_prefix = module + ".";
+  string colon_prefix = module + "::";
+  size_t index = 0;
+  bool in_string = false;
+  bool escaped = false;
+  while (index < line.size()) {
+    char character = line[index];
+    if (in_string) {
+      if (escaped) escaped = false;
+      else if (character == '\\') escaped = true;
+      else if (character == '"') in_string = false;
+      ++index;
+      continue;
+    }
+    if (character == '"') {
+      in_string = true;
+      ++index;
+      continue;
+    }
+    if (character == '#') break;
+    bool left = index == 0 || !format_word_character(line[index - 1]);
+    if (left && line.compare(index, dot_prefix.size(), dot_prefix) == 0) {
+      size_t name_start = index + dot_prefix.size();
+      bool right = name_start + old_name.size() == line.size() ||
+          !format_word_character(line[name_start + old_name.size()]);
+      if (right && line.compare(name_start, old_name.size(), old_name) == 0) {
+        line.replace(name_start, old_name.size(), new_name);
+        index = name_start + new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    if (left && line.compare(index, colon_prefix.size(), colon_prefix) == 0) {
+      size_t name_start = index + colon_prefix.size();
+      bool right = name_start + old_name.size() == line.size() ||
+          !format_word_character(line[name_start + old_name.size()]);
+      if (right && line.compare(name_start, old_name.size(), old_name) == 0) {
+        line.replace(name_start, old_name.size(), new_name);
+        index = name_start + new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    if (is_same_module) {
+      bool right = index + old_name.size() == line.size() ||
+          !format_word_character(line[index + old_name.size()]);
+      if (left && right && line.compare(index, old_name.size(), old_name) == 0) {
+        line.replace(index, old_name.size(), new_name);
+        index += new_name.size();
+        ++replacements;
+        continue;
+      }
+    }
+    ++index;
+  }
+  return replacements;
+}
+
 static const SemanticTargetFact* resolve_edit_target(
     const vector<SemanticTargetFact>& facts, const string& selector) {
   vector<const SemanticTargetFact*> matches;
   bool exact_identity = starts_with(selector, "entity-v1:") ||
       selector.find('@') != string::npos;
   for (const auto& fact : facts) {
+    string simple_name = fact.name.find("__") != string::npos
+        ? fact.name.substr(fact.name.rfind("__") + 2) : fact.name;
+    string dot_name = !fact.module_identity.empty()
+        ? fact.module_identity + "." + simple_name : simple_name;
+    string colon_name = !fact.module_identity.empty()
+        ? fact.module_identity + "::" + simple_name : simple_name;
+    string mangled_name = !fact.module_identity.empty()
+        ? fact.module_identity + "__" + simple_name : simple_name;
+
     bool match = fact.durable_identity == selector ||
-        fact.semantic_identity == selector;
-    if (!exact_identity)
+        fact.semantic_identity == selector ||
+        ("entity-v1:" + fact.kind + ":" + dot_name) == selector ||
+        ("entity-v1:" + fact.kind + ":" + colon_name) == selector ||
+        ("entity-v1:" + fact.kind + ":" + mangled_name) == selector;
+    if (!exact_identity) {
       match = match || fact.context == selector || fact.name == selector ||
-          fact.kind + ":" + fact.name == selector;
+          fact.kind + ":" + fact.name == selector ||
+          dot_name == selector || colon_name == selector ||
+          mangled_name == selector ||
+          fact.kind + ":" + dot_name == selector ||
+          fact.kind + ":" + colon_name == selector ||
+          fact.kind + ":" + mangled_name == selector ||
+          simple_name == selector ||
+          fact.kind + ":" + simple_name == selector;
+    }
     if (match) matches.push_back(&fact);
   }
   if (matches.empty())
@@ -21326,8 +23755,11 @@ static int run_semantic_edit(
       throw ProjectError(
           "EDIT_KIND_UNSUPPORTED",
           "rename currently supports exact function entities only");
-    string old_name = target->name;
+    string simple_name = target->name.find("__") != string::npos
+        ? target->name.substr(target->name.rfind("__") + 2) : target->name;
+    string old_name = simple_name;
     string new_name = operands[0];
+    string module_name = target->module_identity;
     changed_line_numbers[target_source].insert(target->line);
     for (const auto& edge : unit.program.semantic_call_edges)
       if (edge.target == target->context && !edge.source_file.empty())
@@ -21342,6 +23774,57 @@ static int run_semantic_edit(
         changed_line_numbers[std::filesystem::absolute(pipeline.source_file)
                                  .lexically_normal()].insert(pipeline.line);
     }
+    std::map<std::filesystem::path, string> file_to_module;
+    for (const auto& file_pair : edited_lines) {
+      for (const auto& line : file_pair.second) {
+        string t = trim(line);
+        if (starts_with(t, "module ")) {
+          string mod = trim(t.substr(7));
+          if (!mod.empty()) {
+            file_to_module[file_pair.first] = mod;
+            break;
+          }
+        }
+      }
+    }
+    for (const auto& f : unit.program.functions) {
+      if (!f.source_file.empty()) {
+        auto norm = std::filesystem::absolute(f.source_file).lexically_normal();
+        string mod = module_name_from_symbol(f.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& obj : unit.program.objects) {
+      if (!obj.source_file.empty()) {
+        auto norm = std::filesystem::absolute(obj.source_file).lexically_normal();
+        string mod = module_name_from_symbol(obj.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& tr : unit.program.traits) {
+      if (!tr.source_file.empty()) {
+        auto norm = std::filesystem::absolute(tr.source_file).lexically_normal();
+        string mod = module_name_from_symbol(tr.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& dom : unit.program.domains) {
+      if (!dom.source_file.empty()) {
+        auto norm = std::filesystem::absolute(dom.source_file).lexically_normal();
+        string mod = module_name_from_symbol(dom.name);
+        if (!mod.empty()) file_to_module[norm] = mod;
+      }
+    }
+    for (const auto& imp : unit.program.imports) {
+      if (!imp.source_file.empty() && !imp.owner_module.empty()) {
+        auto norm = std::filesystem::absolute(imp.source_file).lexically_normal();
+        file_to_module[norm] = imp.owner_module;
+      }
+    }
+    if (unit.program.main && !unit.program.main->source_file.empty() && !unit.program.main_module.empty()) {
+      auto norm = std::filesystem::absolute(unit.program.main->source_file).lexically_normal();
+      file_to_module[norm] = unit.program.main_module;
+    }
     size_t replacements = 0;
     size_t expected = 0;
     for (const auto& file_lines : changed_line_numbers) {
@@ -21351,14 +23834,16 @@ static int run_semantic_edit(
                            "a resolved reference is outside the logical project context",
                            file_lines.first.string());
       expected += file_lines.second.size();
+      bool is_same_module = (!module_name.empty() && file_to_module[file_lines.first] == module_name) ||
+                            (file_lines.first == target_source);
       for (int line_number : file_lines.second) {
         if (line_number <= 0 || static_cast<size_t>(line_number) > file_it->second.size())
           throw ProjectError("EDIT_TARGET_STALE",
                              "a resolved reference has no exact source range",
                              file_lines.first.string(), line_number);
-        replacements += replace_identifier_on_line(
-            file_it->second[static_cast<size_t>(line_number - 1)], old_name,
-            new_name);
+        replacements += replace_semantic_function_on_line(
+            file_it->second[static_cast<size_t>(line_number - 1)], module_name,
+            old_name, new_name, is_same_module);
       }
     }
     if (replacements != expected)
@@ -21366,7 +23851,11 @@ static int run_semantic_edit(
           "EDIT_TARGET_AMBIGUOUS",
           "rename could not map every semantic reference to one exact token",
           source.string(), target->line);
-    resulting_selector = "entity-v1:function:" + new_name;
+    if (!module_name.empty()) {
+      resulting_selector = "entity-v1:function:" + module_name + "__" + new_name;
+    } else {
+      resulting_selector = "entity-v1:function:" + new_name;
+    }
   } else if (operation == "replace-expression") {
     if (operands.size() != 1)
       throw ProjectError("EDIT_ARGUMENT_INVALID",
@@ -21826,9 +24315,39 @@ static std::filesystem::path resolve_fast_debug_entry(const string& target) {
   return requested.lexically_normal();
 }
 
-static moss::Program load_checked_interpreter_program(const std::filesystem::path& input) {
+static std::filesystem::path resolve_fast_debug_test_entry(const string& target) {
+  std::filesystem::path requested(target);
+  std::error_code error;
+  if (!target.empty() && std::filesystem::is_regular_file(requested, error))
+    return requested.lexically_normal();
+  if (!target.empty() && std::filesystem::is_directory(requested, error) &&
+      (std::filesystem::is_regular_file(requested / "Moss.toml", error) ||
+       std::filesystem::is_regular_file(requested / "moss.toml", error))) {
+    auto manifest = moss::load_project_manifest(requested);
+    auto test_sources = moss::project_declaration_sources(manifest, "tests");
+    if (!test_sources.empty()) return test_sources.front();
+    return moss::project_source_file(manifest);
+  }
+  auto root = nearest_moss_project_root(std::filesystem::current_path());
+  if (root) {
+    moss::ProjectManifest manifest = moss::load_project_manifest(*root);
+    auto test_sources = moss::project_declaration_sources(manifest, "tests");
+    if (!test_sources.empty()) return test_sources.front();
+    return moss::project_source_file(manifest);
+  }
+  if (!target.empty()) return requested.lexically_normal();
+  return std::filesystem::path();
+}
+
+static moss::Program load_checked_interpreter_program(const std::filesystem::path& input, bool test_mode = false) {
   try {
     auto context = moss::analyze_source_context(input);
+    if (test_mode && context.project) {
+      context.mode = moss::ProgramGenerationMode::Tests;
+      context.sources = moss::project_declaration_sources(context.manifest, "tests");
+      if (context.sources.empty())
+        context.sources = moss::project_source_files(context.manifest);
+    }
     if (context.project) {
       auto sources = moss::fast_debug_source_closure(context);
       auto checked = moss::check_project_sources(
@@ -21839,7 +24358,9 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
             "FAST_DEBUG_NATIVE_DEPENDENCY",
             "Fast Debug requires source for all reachable Moss modules; "
             "module '" + missing + "' is available only as a compiled .mossi "
-            "provider. Use 'margo debug' so Margo can supply the resolved "
+            "provider. Use '" +
+                string(test_mode ? "margo test --interp" : "margo debug") +
+                "' so Margo can supply the resolved "
             "dependency source, or use native execution.",
             context.requested_source.string());
       }
@@ -21871,7 +24392,7 @@ static moss::Program load_checked_interpreter_program(const std::filesystem::pat
 
 static int run_fast_interpreter_source(const std::filesystem::path& input,
                                        bool trace) {
-  moss::Program program = load_checked_interpreter_program(input);
+  moss::Program program = load_checked_interpreter_program(input, false);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
@@ -21883,14 +24404,14 @@ static int run_fast_interpreter_source(const std::filesystem::path& input,
 
 static int run_fast_interpreter_tests(const std::filesystem::path& input,
                                       const string& filter, bool trace) {
-  moss::Program program = load_checked_interpreter_program(input);
+  moss::Program program = load_checked_interpreter_program(input, true);
   moss::FastInterpreter::Options options;
   options.trace = trace;
   options.source_file = std::filesystem::absolute(input).lexically_normal().string();
   moss::FastInterpreter interpreter(program, options);
-  interpreter.run_tests(std::cout, filter);
+  int status = interpreter.run_tests(std::cout, filter);
   if (trace) interpreter.write_trace(std::cerr);
-  return 0;
+  return status;
 }
 
 int main(int argc, char** argv) {
@@ -21940,20 +24461,19 @@ int main(int argc, char** argv) {
       }
     }
 
-    // A standalone test file can use the same checked interpreter backend;
-    // project test discovery remains on the compiled path until the domain
-    // scheduler checkpoint is complete.
+    // A standalone test file or multi-file project can use the checked interpreter backend.
     bool test_requests_interpreter = false;
     if (string(argv[1]) == "test") {
       for (int index = 2; index < argc; ++index)
-        if (string(argv[index]) == "--interp") test_requests_interpreter = true;
+        if (string(argv[index]) == "--interp" || string(argv[index]) == "--debug")
+          test_requests_interpreter = true;
     }
     if (test_requests_interpreter) {
       bool interpreter = false, trace = false;
       string input, filter;
       for (int index = 2; index < argc; ++index) {
         string argument = argv[index];
-        if (argument == "--interp") interpreter = true;
+        if (argument == "--interp" || argument == "--debug") interpreter = true;
         else if (argument == "--trace") trace = true;
         else if (argument == "--json") {
           std::cerr << "moss: test --interp does not yet support --json\n";
@@ -21966,16 +24486,22 @@ int main(int argc, char** argv) {
         }
       }
       if (interpreter) {
-        if (input.empty()) {
-          std::cerr << "moss: test --interp requires a standalone Moss source path\n";
+        std::error_code ec;
+        if (!input.empty() && !std::filesystem::exists(input, ec) && filter.empty() &&
+            nearest_moss_project_root(std::filesystem::current_path())) {
+          filter = input;
+          input.clear();
+        }
+        std::filesystem::path entry = resolve_fast_debug_test_entry(input);
+        if (entry.empty()) {
+          std::cerr << "moss: test --interp requires a Moss source path or project\n";
           return 2;
         }
         try {
-          return run_fast_interpreter_tests(
-              resolve_fast_debug_entry(input), filter, trace);
+          return run_fast_interpreter_tests(entry, filter, trace);
         } catch (const moss::FastInterpreter::RuntimeError& error) {
-          std::cerr << "moss:" << error.line() << ": interpreter error: "
-                    << error.what() << "\n";
+          std::cerr << "moss:" << (error.line() > 0 ? std::to_string(error.line()) + ": " : " ")
+                    << "interpreter error: " << error.what() << "\n";
           return 1;
         }
       }

@@ -5,6 +5,7 @@
     if (source.object) {
       result.object = std::make_shared<StructValue>();
       result.object->type = source.object->type;
+      result.object->case_name = source.object->case_name;
       for (const auto& field : source.object->fields)
         result.object->fields[field.first] = independent(field.second);
     }
@@ -102,11 +103,19 @@
   }
 
   void bind_parameters(const std::vector<Param>& parameters, const std::vector<Effect>& effects,
-      const std::vector<std::string>& arguments, Frame& caller, Frame& frame, int line, std::ostream& output) {
+      const std::vector<std::string>& arguments, Frame& caller, Frame& frame, int line,
+      std::ostream& output, const std::vector<std::string>* concrete_types = nullptr) {
     frame.domain = caller.domain; frame.handler = caller.handler;
     // Domain context is trace provenance only in helpers; state names remain
     // lexically resolved through explicit actual/formal bindings.
     for (size_t i = 0; i < arguments.size(); ++i) {
+      std::string type = concrete_types && i < concrete_types->size()
+          ? (*concrete_types)[i] : parameters[i].type;
+      if ((type.empty() || type.front() == '_') && identifier(trim_copy(arguments[i]))) {
+        auto caller_type = caller.local_types.find(trim_copy(arguments[i]));
+        if (caller_type != caller.local_types.end()) type = caller_type->second;
+      }
+      if (!type.empty()) frame.local_types[parameters[i].name] = type;
       Effect effect = i < effects.size() ? effects[i] : Effect::Read;
       auto place = locate(arguments[i], caller, line, output);
       if (effect != Effect::Consume && place.value) frame.aliases[parameters[i].name] = place;
@@ -202,18 +211,23 @@
     frame.functional_context = functional_handler_context(*instance.definition, *target);
     frame.source_file = instance.definition->source_file;
     frame.semantic_identity = "handler:" + instance.definition->name + "." + target->name;
+    const auto& specialization =
+        program_.domain_specializations.at(*instance.concrete->specialization_index);
+    auto parameter_types = specialization.handler_parameter_types.find(target->name);
     std::string payload;
     for (size_t i = 0; i < arguments.size(); ++i) {
       Value value = independent(eval(arguments[i], caller, line, output));
       if (i) payload += ", ";
       payload += summary(value);
       frame.locals[target->params[i].name] = std::move(value);
+      std::string type = parameter_types != specialization.handler_parameter_types.end() &&
+          i < parameter_types->second.size() ? parameter_types->second[i] : target->params[i].type;
+      if (!type.empty()) frame.local_types[target->params[i].name] = type;
     }
     Frame call_event = caller; call_event.domain = &instance; call_event.handler = target->name;
     emit("message_call", call_event, line, payload);
     emit("handler_enter", frame, target->line);
     Flow flow = execute(target->body, frame, output);
-    const auto& specialization = program_.domain_specializations.at(*instance.concrete->specialization_index);
     bool needs_reply = target->reply_type.has_value() || specialization.handler_reply_types.count(target->name);
     if (needs_reply && !flow.returned) throw RuntimeError(line, "handler completed without its required reply");
     emit("handler_exit", frame, target->line);

@@ -14,6 +14,21 @@ namespace moss {
 using std::string;
 using std::vector;
 
+// The checked ownership rule shared by the checker, native lowering, and
+// Fast Debug. Callers may pass canonical names or source primitive spellings.
+inline bool copy_type_name(string type) {
+  auto first = type.find_first_not_of(" \t\n\r");
+  if (first == string::npos) return false;
+  auto last = type.find_last_not_of(" \t\n\r");
+  type = type.substr(first, last - first + 1);
+  if (type == "int" || type == "Int" || type == "float" ||
+      type == "Float" || type == "bool" || type == "Bool") return true;
+  if (type.size() > 8 && type.compare(0, 7, "option[") == 0 &&
+      type.back() == ']')
+    return copy_type_name(type.substr(7, type.size() - 8));
+  return false;
+}
+
 struct Line {
   int no = 0;
   int indent = 0;
@@ -38,7 +53,7 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Let, Var, Reply, Return } kind = Kind::Raw;
+  enum class Kind { Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
@@ -47,10 +62,17 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
+  // A generic body can be checked at several concrete call sites. Preserve
+  // the inferred binding type for each checked specialization.
+  std::unordered_map<string,string> semantic_types_by_context;
   // Types that remain definite after this control-flow statement. Concrete
   // entries let the backend hoist bindings created on every incoming path.
   // This is checker-to-backend metadata, never Moss source syntax.
   std::unordered_map<string,string> joined_types;
+  // A generic function's shared source statement is checked once per
+  // concrete specialization. Keep each exact join environment separately.
+  std::unordered_map<string,std::unordered_map<string,string>>
+      joined_types_by_context;
   // Exact functional plans for the expression slots emitted by this
   // statement, keyed by the concrete semantic context.  A function body can
   // have several static specializations, so one AST statement can legitimately
@@ -94,6 +116,8 @@ struct DomainRoute {
 };
 struct Domain { string name, header; vector<Field> state; vector<DomainRoute> routes; vector<Handler> handlers; bool exported = false; int line = 0; string source_file; };
 struct ObjectType { string name, header; vector<Field> fields; vector<Method> methods; bool exported = false; int line = 0; string source_file; };
+struct EnumCase { string name; vector<Field> fields; int line = 0; string source_file; };
+struct EnumType { string name, header; vector<EnumCase> cases; bool exported = false; int line = 0; string source_file; };
 struct MainProc { vector<Stmt> body; int line = 0; string header; string source_file; };
 struct StaticSpecializationDependency {
   // Canonical Moss callable identity and concrete parameter types.  This is
@@ -143,6 +167,10 @@ struct Function {
   ObservableEffects observable_effects;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
+  // A parameter may be both written and consumed. The joined effect is
+  // CONSUME, while native lowering still needs the checked WRITE fact to
+  // declare its owned binding mutable.
+  vector<bool> parameter_mutations;
   std::optional<StateLeafEffects> parameter_leaf_effects;
   string source_file;
 };
@@ -237,6 +265,7 @@ struct Program {
   vector<Function> functions;
   vector<Trait> traits;
   vector<ObjectType> objects;
+  vector<EnumType> enums;
   vector<Domain> domains;
   vector<TestDecl> tests;
   vector<BenchDecl> benchmarks;

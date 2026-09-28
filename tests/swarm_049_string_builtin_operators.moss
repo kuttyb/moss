@@ -1,0 +1,4 @@
+fn main():
+  echo "apple" == "apple"
+  echo "apple" != "banana"
+  echo "a" + "b"

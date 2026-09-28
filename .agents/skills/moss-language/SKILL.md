@@ -94,6 +94,10 @@ if not ready:
   ...
 ```
 
+Boolean expressions use `not`, `and`, `xor`, and `or`. They are Bool-only.
+`and` and `or` short-circuit; `xor` evaluates both operands. Precedence from
+highest to lowest is `not`, `and`, `xor`, `or`.
+
 `let` cannot be reassigned or used as the writable receiver of a mutating
 operation; use `var` when mutation is intended. `Vector`, `Map`, and `Queue`
 are the current built-in collections. Ordinary functions use `fn` and return
@@ -101,6 +105,41 @@ with `return`; `message` crosses domains. Every `fn` declared directly inside a
 `domain` is a **handler**, so a value-returning handler uses `reply`, not an
 ordinary helper `return`. Reusable implementation logic belongs in an ordinary
 non-domain function.
+
+Closed `enum` declarations have tag-only or named, typed payload fields:
+`enum Result:` with cases `Ok(value: Int)`, `Error(code: Int, message: String)`,
+and `Cancelled` is constructed as `Result.Ok(value: 42)` or
+`Result.Cancelled` (not `Result.Cancelled()`). A statement `match result:` needs
+one `case` per variant. A READ match may use a known enum expression such as
+`match envelope.result:` and READ-borrows that enum; nontrivial payload bindings are
+temporary READ views. `match consume result:` consumes the whole owned enum before
+branch selection and gives the selected case owned branch-local payloads. It
+also accepts owned enum rvalues, including fresh constructors and function
+results, but not an aggregate field expression.
+Patterns never spell `move` or `ref`. Wildcards, guards, nested patterns,
+and match expressions are unsupported.
+
+Pattern payload names must exactly match declared field names in declaration
+order; positional renaming is rejected. Tag-only cases use bare `Tag` in
+declarations and patterns. A READ borrow lasts for the complete match. READ
+payload views may feed computations and cross `message`/`reply` value
+boundaries, but cannot be moved to ordinary owned storage. Use
+`replace(place, replacement)` to install an equal-typed value in writable
+storage and obtain the old whole value as owned. A consumed `var` can be
+reinitialized by whole-value assignment before any later read, including at
+loop back edges. `pass` is the reserved, effect-free no-op statement in any
+normal block. Enum methods are unsupported; ordinary functions can match
+enums, including untyped parameters specialized at concrete calls.
+
+### Closed operator surface
+
+Moss v0.1 does not support user-defined operator overloading. Operators and their
+accepted operand types are compiler-defined. `String` supports `+`
+concatenation and `==`/`!=` equality, but not `<`, `<=`, `>`, or
+`>=` ordering.
+Its read-only methods are `length()`, `char_at(index)`, `chars()`,
+`split(separator)`, and `join(parts)` on the separator. Positions count
+zero-based Unicode code points. Numeric parsing awaits Phase 21 error handling.
 
 ### Arithmetic and empty collections
 
@@ -157,7 +196,7 @@ views, and bare `Map` is not itself a `for` source.
 ### Collection operations reference
 
 - `Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`. Cardinality is `vec |> count` or manual tracking. Operations like `.len()`, `.size()`, `.remove()`, or `.clear()` do not exist.
-- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. Deletion/removal operations (`.remove()`, `.delete()`, `.clear()`) do not exist in v0.1.
+- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. `map.delete(key, fallback, found)` removes and returns a present owned value, writes `true` to the mutable Bool `found`, or returns the eager fallback and writes `false` when absent.
 - `Queue`: `queue.push(item)` and `queue.pop()`.
 
 For full examples, see `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.

@@ -1,0 +1,3 @@
+fn main():
+  i = 6
+  echo i & (0 - i)

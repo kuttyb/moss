@@ -1,0 +1,13 @@
+fn wrap(a: Int) -> Int:
+  return (a + 1)
+
+fn fenwick_step(i: Int, p: Int) -> Int:
+  return i % (p * 2)
+
+fn main():
+  a = 12
+  b = 2
+  c = a * (b + 2)
+  echo c
+  echo wrap(3)
+  echo fenwick_step(7, 2)

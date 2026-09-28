@@ -1,0 +1,7 @@
+fn test_loop_local():
+  for i in [1, 2]:
+    let y = 10
+  echo y
+
+fn main():
+  test_loop_local()

@@ -1,3 +1,16 @@
+## Phase 15.15 — closed
+
+The language-semantics and expressiveness phase is complete on `main`.
+SWARM-043/044 and EXPRESS-003/004/005 are fixed; EXPRESS-002/006/008 were
+rejected by design. SWARM-040 and EXPRESS-007/009 are deferred to Phase 21,
+not open Phase 15.15 work. See `.codex/CURRENT_STATUS.md` and the canonical
+issue ledger for the full disposition. The historical HashMap follow-up plan
+below is retained as an archive, not the current task.
+
+---
+
+## Archived HashMap follow-up plan (historical)
+
 Work from current repository HEAD.
 
 Current HashMap dogfooding experiment:
@@ -1219,4 +1232,3 @@ Programmers and agents should not need to know Rust backend imports, manufacture
 typed collections with dummy elements, or inspect compiler source merely to
 discover ordinary arithmetic syntax.
 ```
-

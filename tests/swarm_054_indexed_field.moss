@@ -1,0 +1,12 @@
+type Player:
+  score: Int
+
+type Team:
+  players: Vector[Player]
+
+  fn score_at(i: Int) -> Int:
+    return players[i].score
+
+fn main():
+  team = Team(players = [Player(score = 9)])
+  echo team.score_at(0)

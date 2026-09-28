@@ -1,0 +1,9 @@
+fn bad_helper() -> Int:
+  echo 1
+  return 1
+
+domain Bad:
+  buf: Int = bad_helper()
+
+fn main():
+  b = Bad()

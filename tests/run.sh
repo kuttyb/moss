@@ -18,10 +18,15 @@ python3 tests/tooling/check_agent_baseline_analysis.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_032_formatter_parentheses.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_project_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_7_formatter_convergence.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_8_cross_package_fast_debug.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_9_cross_package_specialization.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_039_project_fast_debug_tests.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_diagnostic_provenance.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_060_qualified_rename.py
 
 fail() {
   echo "test failure: $*" >&2
@@ -109,6 +114,18 @@ run_case_either_order() {
   fi
 }
 
+run_fast_debug_case() {
+  name=$1
+  source=$2
+  expected=$3
+  actual=$("$compiler" run --interp "$source")
+  if [ "$actual" != "$expected" ]; then
+    printf 'test failure: %s Fast Debug output\nexpected:\n%s\nactual:\n%s\n' \
+      "$name" "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
 run_shared_memory_case() {
   name=$1
   source=$2
@@ -191,6 +208,10 @@ run_case frontend_syntax examples/frontend_syntax.moss 'note: 4'
 run_case concrete_method tests/concrete_method.moss '12.56636'
 run_case concrete_method_body tests/concrete_method_body.moss "$(printf '12.566368\n0')"
 run_case duck_typed_methods tests/duck_typed_methods.moss "$(printf '6\n9')"
+run_case swarm_043_typed_field_and_method tests/swarm_043_typed_field_and_method.moss "$(printf 'A\nA\nB')"
+run_fast_debug_case swarm_043_typed_field_and_method tests/swarm_043_typed_field_and_method.moss "$(printf 'A\nA\nB')"
+reject_case swarm_043_untyped_field 'requires a concrete receiver type'
+reject_case swarm_043_alias_field 'requires a concrete receiver type'
 run_case static_trait_dispatch tests/static_trait_dispatch.moss "$(printf '18\n60')"
 run_case static_duck_typing_showcase examples/static_duck_typing.moss "$(printf '112\n45')"
 run_case traits_showcase examples/traits.moss "$(printf '27\n80')"
@@ -245,10 +266,62 @@ run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_id
 run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 run_case swarm_025_fast_debug_sibling_method tests/swarm_025_fast_debug_sibling_method.moss '25'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
+reject_case swarm_036_bitwise_and "binary '&' expression is not supported"
+reject_case swarm_036_bitwise_or "binary '|' expression is not supported"
+reject_case swarm_036_bitwise_xor "binary '^' expression is not supported"
+reject_case swarm_036_symbolic_and "binary '&&' expression is not supported"
+reject_case swarm_036_symbolic_or "binary '||' expression is not supported"
+reject_case swarm_036_shift_left "binary '<<' expression is not supported"
+reject_case swarm_036_shift_right "binary '>>' expression is not supported"
+reject_case swarm_036_parenthesized_rhs "binary '&' expression is not supported"
+run_case swarm_036_word_boolean_operators tests/swarm_036_word_boolean_operators.moss '1'
+run_case swarm_037_boolean_operators tests/swarm_037_boolean_operators.moss "$(printf 'true\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue')"
+reject_case swarm_049_string_lt "String ordering operators"
+reject_case swarm_049_string_le "String ordering operators"
+reject_case swarm_049_string_gt "String ordering operators"
+reject_case swarm_049_string_ge "String ordering operators"
+run_case swarm_049_string_builtin_operators tests/swarm_049_string_builtin_operators.moss "$(printf 'true\ntrue\nab')"
+reject_case swarm_037_and_non_bool "boolean 'and' operands must have type 'Bool'"
+reject_case swarm_037_or_non_bool "boolean 'or' operands must have type 'Bool'"
+reject_case swarm_037_xor_non_bool "boolean 'xor' operands must have type 'Bool'"
+reject_case swarm_052_vector_trait "trait types are static structural constraints"
+reject_case swarm_052_nested_vector_trait "trait types are static structural constraints"
+run_case swarm_052_concrete_vector_trait_parameter tests/swarm_052_concrete_vector_trait_parameter.moss "$(printf '0\n9')"
 run_case swarm_027_indexed_collection_method tests/swarm_027_indexed_collection_method.moss '10'
 run_case swarm_028_self_method_argument_borrow tests/swarm_028_self_method_argument_borrow.moss '100'
 reject_case swarm_029_nested_indexed_mutation 'nested indexed mutation is not supported'
 run_case swarm_030_string_comparison_borrowed tests/swarm_030_string_comparison_borrowed.moss '1'
+run_case swarm_031_parenthesized_lowering tests/swarm_031_parenthesized_lowering.moss "$(printf '48\n4\n3')"
+run_case swarm_034_tail_push_unit tests/swarm_034_tail_push_unit.moss "$(printf '1\n1')"
+run_case swarm_035_nested_mutating_calls tests/swarm_035_nested_mutating_calls.moss '1'
+run_case swarm_048_callable_argument tests/swarm_048_callable_argument.moss "$(printf '1\n3\ntrue')"
+run_case swarm_047_reduce_map tests/swarm_047_reduce_map.moss "$(printf '2\n1\n0')"
+run_case swarm_047_reduce_map_control_flow tests/swarm_047_reduce_map_control_flow.moss "$(printf '4\n4')"
+run_case swarm_050_nested_specialization tests/swarm_050_nested_specialization.moss "$(printf '4\n9')"
+python3 tests/tooling/check_swarm_050_targets.py \
+  "$test_build/swarm_050_nested_specialization.rs" outer inner First,Second
+run_case swarm_050_join_specialization tests/swarm_050_join_specialization.moss "$(printf '3\n8\n8\n3')"
+python3 tests/tooling/check_swarm_050_targets.py \
+  "$test_build/swarm_050_join_specialization.rs" outer inner First,Second
+python3 tests/tooling/check_swarm_050_targets.py \
+  "$test_build/swarm_050_join_specialization.rs" outer_reversed inner First,Second
+run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
+run_case swarm_044_index_specialization tests/swarm_044_index_specialization.moss "$(printf 'old\n1\n2\nnew\n3\nb\n5\nc')"
+run_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'
+run_fast_debug_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'
+reject_case swarm_044_nonindexable 'is not an indexable container'
+reject_case swarm_044_bad_key 'vector and queue indices must be Int'
+reject_case swarm_044_bad_write 'indexed assignment requires value of type'
+run_case swarm_064_rust_keyword_field tests/swarm_064_rust_keyword_field.moss '3'
+run_case swarm_065_pipeline_return tests/swarm_065_pipeline_return.moss "$(printf 'true\n2')"
+run_case swarm_038_effects_loop_helper tests/swarm_038_effects_loop_helper.moss '4'
+reject_case swarm_038_impure_state_init 'domain state initializers must be side-effect-free'
+reject_case swarm_038_divergent_loop_state_init 'domain state initializers must be side-effect-free'
+reject_case swarm_038_empty_pop_state_init 'domain state initializers must be side-effect-free'
+run_case for_loop_mutable_update tests/for_loop_mutable_update.moss '60'
+reject_case for_loop_local_leaked "unknown identifier 'y'"
+reject_case for_loop_local_leaked_empty "unknown identifier 'y'"
+reject_case for_loop_induction_leaked "unknown identifier 'i'"
 reject_case swarm_024_queue_constructor_arguments 'built-in Queue constructor takes no arguments'
 reject_case swarm_024_map_constructor_arguments 'built-in Map constructor takes no arguments'
 compile_case swarm_019_empty_pop tests/swarm_019_empty_pop.moss
@@ -966,7 +1039,7 @@ grep -F '// Moss line 10: fn square(x: Int) = x * x' "$test_build/frontend_synta
   fail "frontend syntax example omitted its function source annotation"
 grep -F 'fn square(x: i64) -> i64' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not infer its function signature"
-grep -F 'square(quote.size)' "$test_build/frontend_syntax.rs" >/dev/null ||
+grep -F 'square((quote).size)' "$test_build/frontend_syntax.rs" >/dev/null ||
   fail "frontend syntax example did not lower its pipeline"
 run_case inferred_frontend tests/inferred_frontend.moss '2 3 MOSS 12.5'
 grep -F 'fn Latest_shared(&self) -> Option<Quote>' \
@@ -1166,6 +1239,32 @@ run_case message_payload_copy tests/message_object_copy.moss '7'
 run_case reply_payload_copy tests/reply_payload_snapshot.moss '7'
 run_case nested_payload_copy tests/nested_payload_snapshot.moss '7'
 run_case string_payload_copy tests/string_payload_snapshot.moss 'fresh'
+# Phase 15.15: Unicode String methods and Map.delete must survive native lowering.
+run_case phase15_15_string_map tests/phase15_15_string_map.moss 'string/map ok'
+run_case phase15_15_enum_positive tests/phase15_15_enum_positive.moss "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')"
+grep -F '"construct_kind": "enum"' "$test_build/phase15_15_enum_positive.mossmap" >/dev/null ||
+  fail "enum declaration missing from debug map"
+grep -F '"construct_kind": "enum_case"' "$test_build/phase15_15_enum_positive.mossmap" >/dev/null ||
+  fail "enum case missing from debug map"
+run_case phase15_15_enum_message tests/phase15_15_enum_message.moss "$(printf '3\n3\nmessage\n3')"
+[ "$("$compiler" run --interp tests/phase15_15_enum_positive.moss)" = "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')" ] ||
+  fail "enum standalone Fast Debug parity"
+[ "$("$compiler" run --interp tests/phase15_15_enum_message.moss)" = "$(printf '3\n3\nmessage\n3')" ] ||
+  fail "enum message Fast Debug parity"
+python3 tests/tooling/check_enum_semantics.py || fail "enum semantic rejections"
+enum_module_native=$(cd tests/tooling/fixtures/enum_modules && ../../../../margo run)
+enum_module_debug=$(cd tests/tooling/fixtures/enum_modules && ../../../../margo debug)
+enum_module_expected=$(printf '4\n1')
+[ "$enum_module_native" = "$enum_module_expected" ] ||
+  fail "enum module native output"
+[ "$enum_module_debug" = "$enum_module_expected" ] ||
+  fail "enum module Fast Debug output"
+python3 tests/tooling/check_enum_source_free.py ||
+  fail "source-free enum module interface"
+# EXPRESS-005 review registry: every repaired F case and decided D case is
+# an ordinary permanent regression across checking, native, and Fast Debug.
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" --expect-fixed ||
+  fail "EXPRESS-005 follow-up registry"
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
 run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'
 phase47_element_effects_json="$test_build/phase47_element_effects.json"
@@ -1175,6 +1274,12 @@ phase47_element_effects_json="$test_build/phase47_element_effects.json"
 grep -F '"name": "payload", "type": "Payload", "effect": "WRITE"' \
   "$phase47_element_effects_json" >/dev/null ||
   fail 'for-loop effect analysis did not resolve the iterator element method effect'
+# SWARM-066: for/range native lowering preserves induction binding and loop body.
+# Tests: induction variable readable, nonzero start, computed end, pipeline end,
+# accumulator mutation, and nested for/range inside an ordinary function.
+run_case swarm_066_for_range_lowering \
+  tests/swarm_066_for_range_lowering.moss \
+  "$(printf '10\n18\n60\n7\n15\n18\n16')"
 
 # One source domain may be inferred independently for each declared instance.
 # These semantic facts are compiler-owned and keep the source free of explicit
@@ -1314,7 +1419,7 @@ interp_loop_output=$($compiler run --interp tests/phase10_interpreter_loop.moss)
 [ "$interp_loop_output" = '10' ] || fail 'fast interpreter loop execution differed'
 interp_remainder_output=$($compiler run --interp tests/swarm_014_integer_remainder.moss)
 [ "$interp_remainder_output" = '1' ] || fail 'fast interpreter integer remainder execution differed'
-for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types swarm_023_pipeline_context_identity swarm_023_pipeline_test_context swarm_025_fast_debug_sibling_method swarm_027_indexed_collection_method swarm_028_self_method_argument_borrow swarm_030_string_comparison_borrowed; do
+for interp_case in swarm_018_queue_context swarm_019_collection_pop swarm_020_typed_vector_factory swarm_021_field_collections swarm_021_map_value_semantics swarm_021_map_get_fallback_owned swarm_022_fast_debug_map_state swarm_023_fast_debug_pipelines swarm_023_eager_terminals swarm_023_empty_map_types swarm_023_pipeline_context_identity swarm_023_pipeline_test_context swarm_025_fast_debug_sibling_method swarm_027_indexed_collection_method swarm_028_self_method_argument_borrow swarm_030_string_comparison_borrowed swarm_038_effects_loop_helper; do
   native_output=$("$test_build/$interp_case")
   interp_output=$($compiler run --interp "tests/$interp_case.moss")
   [ "$interp_output" = "$native_output" ] || fail "fast interpreter $interp_case execution differed"
@@ -1731,6 +1836,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106f.py "$compiler" "
 if command -v python3 >/dev/null 2>&1; then
   python3 tests/tooling/check_phase106f1.py "$compiler" "$test_build/phase106f1" ||
     fail 'static typed synchronization lowering regression'
+  python3 tests/tooling/check_phase15_14_swarm_038_051.py "$compiler" "$test_build/phase15_14" ||
+    fail 'Phase 15.14 SWARM-038/SWARM-051 regression'
 fi
 
 echo 'all Moss v0.1 tests passed'

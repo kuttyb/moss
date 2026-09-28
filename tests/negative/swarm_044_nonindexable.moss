@@ -1,0 +1,4 @@
+fn first(items):
+  return items[0]
+fn main():
+  echo first(42)

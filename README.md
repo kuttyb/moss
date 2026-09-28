@@ -1,6 +1,6 @@
 # Moss v0.1
 
-Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 10.6F.1 has passed validation and awaits review and explicit release re-closure; Phase 15 has not begun. Start with the [v0.1 guide](docs/V0_1.md), [performance report](docs/PERFORMANCE_10_6F_1.md), and [ledger seed project](examples/projects/ledger/README.md).
+Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 15.15 adds closed enums, exhaustive matching, and the narrow `replace(place, replacement)` state transition operation. Start with the [v0.1 guide](docs/V0_1.md), [language syntax](docs/LANGUAGE_SYNTAX.md), and [ledger seed project](examples/projects/ledger/README.md).
 
 Domain routing is statically closed: declare dependencies with `domainroutes`,
 bind them in the initial `main` composition prefix, and invoke them with
@@ -33,7 +33,7 @@ not Rust iterator tricks or hardware-specific optimization.
 
 Phase 4.7 adds statically resolved `for` loops. Ranges and vectors receive native
 counted/indexed traversal, while user-defined iteration resolves to concrete
-`next() -> Option[element]` methods under the static `Iterator` contract. Iteration
+`next() -> option[element]` methods under the static `Iterator` contract. Iteration
 does not introduce runtime dispatch, vtables, boxing, or hidden copies; `while` remains
 the general arbitrary loop.
 
@@ -509,7 +509,7 @@ domain grouping would require a separate compiler correctness proof.
 
 ## Important status
 
-Moss v0.1 is the Phase 10 usable-language milestone. The next milestone is Phase 15 Dogfooding: write substantial Moss programs and use observed friction to guide refinement. It implements static duck-typed methods and named traits through concrete call-site specialization, Phase 4 typed functional/dataflow IR and conservative loop fusion, Phase 4.5 scope-level materialization/shared-traversal planning, and bounded Phase 4.6 semantic-space rewrites, without runtime trait or callable objects. It does not yet implement associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, arenas.
+Moss v0.1 reached its usable-language milestone in Phase 10. Phase 15 dogfooding and the Phase 15.15 language expressiveness work are complete; see the current status and EXPRESS-005 corrective review for validation details. Moss implements static duck-typed methods and named traits through concrete call-site specialization, typed functional/dataflow IR, conservative loop fusion, scope-level materialization/shared-traversal planning, and bounded semantic-space rewrites, without runtime trait or callable objects. Associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, and arenas remain future work.
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
@@ -563,8 +563,9 @@ For a minimal two-module project, see
 
 **Phase 15 — Dogfooding:** write substantial Moss programs, identify real friction,
 and let actual usage determine the next refinements. Later milestones are
-Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision, and
-Phase 22 Agent Agency Tooling. The [v0.1 roadmap](docs/V0_1.md) preserves current
+Phase 20 Rust Interoperability, Phase 21 Error Propagation & Supervision,
+Phase 22 Agent Agency Tooling, Phase 23 Static Compiler Optimizations, and
+Phase 24 TileIR Integration (Dynamic Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
 restrictions and the future scoped-domain breadcrumb.
 
 Phase 22.2A and 22.2B provide a hardened, frozen 30-task

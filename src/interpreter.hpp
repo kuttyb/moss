@@ -90,8 +90,10 @@ class FastInterpreter {
     execute(program_.main->body, frame, output);
   }
 
-  void run_tests(std::ostream& output, const std::string& filter = {}) {
+  int run_tests(std::ostream& output, const std::string& filter = {}) {
     size_t discovered = 0;
+    size_t passed = 0;
+    size_t failed = 0;
     for (const auto& test : program_.tests) {
       if (!filter.empty() && test.name.find(filter) == std::string::npos &&
           test.semantic_identity.find(filter) == std::string::npos)
@@ -102,13 +104,24 @@ class FastInterpreter {
       frame.functional_context = frame.function;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
-      execute(test.body, frame, output);
-      output << "PASS " << test.name << "\n";
+      try {
+        execute(test.body, frame, output);
+        output << "PASS " << test.name << "\n";
+        ++passed;
+      } catch (const RuntimeError& error) {
+        output << "FAIL " << test.name << ": " << error.what() << "\n";
+        ++failed;
+      }
     }
     if (!discovered)
       throw RuntimeError(0, filter.empty() ? "no Moss tests were found"
                                           : "no Moss tests matched filter '" + filter + "'");
-    output << discovered << " passed\n";
+    if (failed > 0) {
+      output << passed << " passed, " << failed << " failed\n";
+      return 1;
+    }
+    output << passed << " passed\n";
+    return 0;
   }
 
  private:
@@ -116,7 +129,7 @@ class FastInterpreter {
   struct DomainValue;
 
   struct Value {
-    enum class Kind { Unit, Bool, Int, Float, String, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
+    enum class Kind { Unit, Bool, Int, Float, String, Callable, Struct, Vector, Queue, Map, DomainHandle } kind = Kind::Unit;
     bool boolean = false;
     std::int64_t integer = 0;
     double floating = 0.0;
@@ -133,6 +146,7 @@ class FastInterpreter {
     static Value int_value(std::int64_t value);
     static Value float_value(double value);
     static Value string_value(std::string value);
+    static Value callable_value(std::string name);
     static Value struct_value(std::string type);
     static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value queue_value();
@@ -143,6 +157,7 @@ class FastInterpreter {
 
   struct StructValue {
     std::string type;
+    std::string case_name;
     std::unordered_map<std::string, Value> fields;
   };
 
@@ -160,6 +175,7 @@ class FastInterpreter {
     std::string source_file;
     std::string semantic_identity;
     std::unordered_map<std::string, Value> locals;
+    std::unordered_map<std::string, std::string> local_types;
     std::unordered_map<std::string, Place> aliases;
     DomainValue* domain = nullptr;
     std::string handler;
@@ -175,6 +191,13 @@ class FastInterpreter {
   Options options_;
   std::vector<TraceEvent> trace_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
+
+  static std::string checked_binding_type(const Stmt& statement,
+                                          const Frame& frame) {
+    auto specialized = statement.semantic_types_by_context.find(frame.functional_context);
+    return specialized == statement.semantic_types_by_context.end()
+        ? statement.semantic_type : specialized->second;
+  }
 
   static std::string escape(const std::string& value) {
     std::string result;
@@ -431,11 +454,15 @@ class FastInterpreter {
       callback.locals[name] = values[i]; names.push_back(name);
     }
     if (values.size() == 1) callback.locals["_"] = values.front();
-    if (auto fn = function(trim_copy(callable)))
+    std::string target_callable = trim_copy(callable);
+    auto local_it = callback.locals.find(target_callable);
+    if (local_it != callback.locals.end() && local_it->second.kind == Value::Kind::Callable)
+      target_callable = local_it->second.string;
+    if (auto fn = function(target_callable))
       return call(*fn, names, callback, line, output);
-    if (callable.find('_') != std::string::npos)
-      return eval(callable, callback, line, output);
-    std::string invocation = callable + "(";
+    if (target_callable.find('_') != std::string::npos)
+      return eval(target_callable, callback, line, output);
+    std::string invocation = target_callable + "(";
     for (size_t i = 0; i < names.size(); ++i) {
       if (i) invocation += ", ";
       invocation += names[i];
@@ -542,10 +569,50 @@ class FastInterpreter {
     if (auto stages = split_pipeline(e); !stages.empty())
       return eval_pipeline(stages, frame, line, output);
     if (e.rfind("message ", 0) == 0) return message(e.substr(8), frame, line, output);
+    if (auto binary = split_operator(e, {" or "})) {
+      Value left = eval(binary->first, frame, line, output);
+      if (left.truthy()) return Value::boolean_value(true);
+      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    }
+    if (auto binary = split_operator(e, {" xor "})) {
+      bool left = eval(binary->first, frame, line, output).truthy();
+      bool right = eval(binary->second, frame, line, output).truthy();
+      return Value::boolean_value(left != right);
+    }
+    if (auto binary = split_operator(e, {" and "})) {
+      Value left = eval(binary->first, frame, line, output);
+      if (!left.truthy()) return Value::boolean_value(false);
+      return Value::boolean_value(eval(binary->second, frame, line, output).truthy());
+    }
     if (auto place = locate(e, frame, line, output); place.value) {
       if (place.domain) state_event("state_read", frame, line, place);
       else emit("LocalRead", frame, line, e);
       return *place.value;
+    }
+    {
+      std::string qualified;
+      std::vector<std::string> arguments;
+      bool called = parse_call(e, qualified, arguments);
+      if (!called) qualified = e;
+      auto dot = qualified.find('.');
+      if (dot != std::string::npos && qualified.find('.', dot + 1) == std::string::npos) {
+        std::string enum_name = qualified.substr(0, dot);
+        std::string case_name = qualified.substr(dot + 1);
+        for (const auto& declaration : program_.enums)
+          if (declaration.name == enum_name) {
+            Value result = Value::struct_value(enum_name);
+            result.object->case_name = case_name;
+            for (const auto& argument : arguments) {
+              auto colon = argument.find(':');
+              if (colon == std::string::npos)
+                throw RuntimeError(line, "enum constructor requires named fields");
+              auto name = trim_copy(argument.substr(0, colon));
+              result.object->fields[name] =
+                  eval(argument.substr(colon + 1), frame, line, output);
+            }
+            return result;
+          }
+      }
     }
     if (frame.handler_scope && frame.domain && frame.domain->routes.count(e)) {
       Value value; value.kind = Value::Kind::DomainHandle; value.domain = frame.domain->routes.at(e); return value;
@@ -562,7 +629,6 @@ class FastInterpreter {
       }
       return Value::unit();
     }
-    if (e.front() == '"' && e.back() == '"') return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
 
     char* end = nullptr;
     const auto numeric = e.c_str();
@@ -585,6 +651,10 @@ class FastInterpreter {
       if (value.kind == Value::Kind::Int) return Value::int_value(wrapping_sub(0, value.integer));
       if (value.kind == Value::Kind::Float) return Value::float_value(-value.floating);
     }
+    // As in native lowering, quoted binary expressions must be split before
+    // falling back to a single String literal.
+    if (e.size() >= 2 && e.front() == '"' && e.back() == '"')
+      return Value::string_value(decode_string(e.substr(1, e.size() - 2)));
     if (e.front() == '[' && e.back() == ']') {
       std::vector<Value> values;
       auto inside = e.substr(1, e.size() - 2);
@@ -595,6 +665,26 @@ class FastInterpreter {
     std::string callee; std::vector<std::string> args;
     if (parse_call(e, callee, args)) {
       if (callee.find('.') == std::string::npos) {
+        if (callee == "replace" && args.size() == 2) {
+          Value replacement = eval(args[1], frame, line, output);
+          const auto source = trim_copy(args[1]);
+          if (identifier(source) && frame.locals.count(source)) {
+            auto type = frame.local_types.find(source);
+            if (type == frame.local_types.end() || type->second.empty())
+              throw RuntimeError(line, "internal error: replace replacement lacks a checked type");
+            if (!copy_type_name(type->second)) frame.locals.erase(source);
+          }
+          auto place = locate(args[0], frame, line, output);
+          if (!place.value)
+            throw RuntimeError(line, "replace requires an assignable place");
+          Value previous = std::move(*place.value);
+          *place.value = std::move(replacement);
+          if (place.domain)
+            state_event("state_write", frame, line, place, summary(previous),
+                        summary(*place.value));
+          else emit("LocalWrite", frame, line, args[0]);
+          return previous;
+        }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
@@ -625,6 +715,20 @@ class FastInterpreter {
           return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
         }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
+        auto callable_local = frame.locals.find(callee);
+        const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;
+        if (!callable_val) {
+          auto alias_it = frame.aliases.find(callee);
+          if (alias_it != frame.aliases.end() && alias_it->second.value) {
+            callable_val = alias_it->second.value;
+          }
+        }
+        if (callable_val && callable_val->kind == Value::Kind::Callable) {
+          if (auto fn = function(callable_val->string))
+            return call(*fn, args, frame, line, output);
+          throw RuntimeError(line, "unresolved callable identity '" +
+              callable_val->string + "'");
+        }
         if (auto object = object_type(callee)) return construct(*object, args, frame, line, output);
         auto self_it = frame.locals.find("self");
         if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
@@ -642,6 +746,70 @@ class FastInterpreter {
         std::string method_name; std::vector<std::string> method_args;
         if (parse_call(member->second, method_name, method_args)) {
           auto receiver = eval(member->first, frame, line, output);
+          if (receiver.kind == Value::Kind::String) {
+            auto characters = [&]() {
+              std::vector<std::string> result;
+              const std::string& s = receiver.string;
+              for (size_t i = 0; i < s.size();) {
+                unsigned char byte = static_cast<unsigned char>(s[i]);
+                size_t width = byte < 0x80 ? 1 : (byte & 0xe0) == 0xc0 ? 2 :
+                    (byte & 0xf0) == 0xe0 ? 3 : (byte & 0xf8) == 0xf0 ? 4 : 0;
+                if (!width || i + width > s.size())
+                  throw RuntimeError(line, "invalid UTF-8 String");
+                for (size_t j = 1; j < width; ++j)
+                  if ((static_cast<unsigned char>(s[i+j]) & 0xc0) != 0x80)
+                    throw RuntimeError(line, "invalid UTF-8 String");
+                result.push_back(s.substr(i, width));
+                i += width;
+              }
+              return result;
+            };
+            if (method_name == "length" && method_args.empty())
+              return Value::int_value(static_cast<int64_t>(characters().size()));
+            if (method_name == "char_at" && method_args.size() == 1) {
+              Value index = eval(method_args[0], frame, line, output);
+              auto chars = characters();
+              if (index.kind != Value::Kind::Int || index.integer < 0 ||
+                  static_cast<uint64_t>(index.integer) >= chars.size())
+                throw RuntimeError(line, "String character index out of bounds");
+              return Value::string_value(chars[static_cast<size_t>(index.integer)]);
+            }
+            if (method_name == "chars" && method_args.empty()) {
+              std::vector<Value> result;
+              for (const auto& c : characters()) result.push_back(Value::string_value(c));
+              return Value::vector_value(std::move(result));
+            }
+            if (method_name == "split" && method_args.size() == 1) {
+              Value separator = eval(method_args[0], frame, line, output);
+              if (separator.kind != Value::Kind::String || separator.string.empty())
+                throw RuntimeError(line, "String split requires a nonempty separator");
+              std::vector<Value> result;
+              size_t start = 0;
+              while (true) {
+                size_t at = receiver.string.find(separator.string, start);
+                if (at == std::string::npos) {
+                  result.push_back(Value::string_value(receiver.string.substr(start)));
+                  break;
+                }
+                result.push_back(Value::string_value(receiver.string.substr(start, at-start)));
+                start = at + separator.string.size();
+              }
+              return Value::vector_value(std::move(result));
+            }
+            if (method_name == "join" && method_args.size() == 1) {
+              Value parts = eval(method_args[0], frame, line, output);
+              if (parts.kind != Value::Kind::Vector)
+                throw RuntimeError(line, "String join requires Vector[String]");
+              std::string joined;
+              for (const auto& part : *parts.vector) {
+                if (part.kind != Value::Kind::String)
+                  throw RuntimeError(line, "String join requires Vector[String]");
+                if (!joined.empty() || &part != &parts.vector->front()) joined += receiver.string;
+                joined += part.string;
+              }
+              return Value::string_value(joined);
+            }
+          }
           if (receiver.kind == Value::Kind::Vector || receiver.kind == Value::Kind::Queue) {
             auto values = receiver.kind == Value::Kind::Vector ? receiver.vector : receiver.queue;
             if (method_name == "push" && method_args.size() == 1) {
@@ -657,6 +825,19 @@ class FastInterpreter {
             }
           }
           if (receiver.kind == Value::Kind::Map) {
+            if (method_name == "delete" && method_args.size() == 3) {
+              Value key = eval(method_args[0], frame, line, output);
+              Value fallback = eval(method_args[1], frame, line, output);
+              for (auto it = receiver.map->begin(); it != receiver.map->end(); ++it) {
+                if (!equal(it->first, key)) continue;
+                Value removed = independent(it->second);
+                receiver.map->erase(it);
+                assign(method_args[2], Value::boolean_value(true), frame, line, output);
+                return removed;
+              }
+              assign(method_args[2], Value::boolean_value(false), frame, line, output);
+              return independent(fallback);
+            }
             if (method_name == "get" && method_args.size() == 2) {
               Value key = eval(method_args[0], frame, line, output);
               Value fallback = eval(method_args[1], frame, line, output);
@@ -693,6 +874,7 @@ class FastInterpreter {
         emit("LocalRead", frame, line, e);
         return found->second;
       }
+      if (function(e)) return Value::callable_value(e);
       throw RuntimeError(line, "unknown local '" + e + "'");
     }
     throw RuntimeError(line, "unsupported expression '" + e + "'");
@@ -787,8 +969,10 @@ class FastInterpreter {
       case Value::Kind::Int: return left.integer == right.integer;
       case Value::Kind::Float: return left.floating == right.floating;
       case Value::Kind::String: return left.string == right.string;
+      case Value::Kind::Callable: return left.string == right.string;
       case Value::Kind::Struct:
         if (!left.object || !right.object || left.object->type != right.object->type ||
+            left.object->case_name != right.object->case_name ||
             left.object->fields.size() != right.object->fields.size()) return false;
         for (const auto& entry : left.object->fields) {
           auto other = right.object->fields.find(entry.first);
@@ -819,18 +1003,25 @@ class FastInterpreter {
   Value construct(const ObjectType& object, const std::vector<std::string>& args,
                   Frame& frame, int line, std::ostream& output) {
     Value result = Value::struct_value(object.name);
-    for (const auto& field : object.fields) {
-      if (!field.init.empty()) result.object->fields[field.name] = eval(field.init, frame, field.line, output);
-      else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
-    }
+    std::unordered_map<std::string,std::string> supplied;
     for (const auto& argument : args) {
       auto equal_sign = argument.find_first_of(":=");
-      if (equal_sign == std::string::npos) throw RuntimeError(line, "object constructors require named fields");
-      auto name = trim_copy(argument.substr(0, equal_sign));
-      auto field = result.object->fields.find(name);
-      if (field == result.object->fields.end()) throw RuntimeError(line, "unknown field '" + name + "'");
-      field->second = eval(argument.substr(equal_sign + 1), frame, line, output);
+      if (equal_sign == std::string::npos)
+        throw RuntimeError(line, "object constructors require named fields");
+      supplied[trim_copy(argument.substr(0, equal_sign))] =
+          argument.substr(equal_sign + 1);
     }
+    for (const auto& field : object.fields) {
+      auto found = supplied.find(field.name);
+      if (found != supplied.end())
+        result.object->fields[field.name] = eval(found->second, frame, line, output);
+      else if (!field.init.empty())
+        result.object->fields[field.name] = eval(field.init, frame, field.line, output);
+      else result.object->fields[field.name] = default_semantic_value(field.type, frame, line, output);
+    }
+    for (const auto& entry : supplied)
+      if (!result.object->fields.count(entry.first))
+        throw RuntimeError(line, "unknown field '" + entry.first + "'");
     return result;
   }
 
@@ -840,12 +1031,13 @@ class FastInterpreter {
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
     Frame frame;
     frame.function = target.name;
-    frame.functional_context = functional_function_context(
-        target, specialization_for_call(target, caller, line));
+    const auto* specialization = specialization_for_call(target, caller, line);
+    frame.functional_context = functional_function_context(target, specialization);
     frame.source_file = target.source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
-    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame, line, output);
+    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame,
+                    line, output, specialization ? &specialization->parameter_types : nullptr);
     emit("FunctionEnter", frame, target.line);
     Flow flow = execute(target.body, frame, output);
     Value result = flow.returned ? flow.value :
@@ -920,6 +1112,80 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      if (statement.kind == Stmt::Kind::Match) {
+        Value selected = eval(statement.a, frame, statement.line, output);
+        if (selected.kind != Value::Kind::Struct || !selected.object ||
+            selected.object->case_name.empty())
+          throw RuntimeError(statement.line, "match requires an enum value");
+        if (statement.b == "consume" && identifier(statement.a))
+          frame.locals.erase(statement.a);
+        const EnumType* declaration = nullptr;
+        for (const auto& candidate : program_.enums)
+          if (candidate.name == selected.object->type) declaration = &candidate;
+        if (!declaration) throw RuntimeError(statement.line, "unknown matched enum");
+        size_t cursor = index + 1;
+        bool taken = false;
+        Flow flow;
+        while (cursor < end && statements[cursor].indent == statement.indent + 1) {
+          const Stmt& arm = statements[cursor];
+          size_t arm_end = cursor + 1;
+          while (arm_end < end && statements[arm_end].indent > arm.indent) ++arm_end;
+          if (arm.a == selected.object->case_name) {
+            taken = true;
+            emit("BranchTaken", frame, arm.line, arm.a);
+            std::unordered_map<std::string,std::optional<Value>> saved_locals;
+            std::unordered_map<std::string,std::optional<std::string>> saved_local_types;
+            std::unordered_map<std::string,std::optional<Place>> saved_aliases;
+            const EnumCase* item = nullptr;
+            for (const auto& candidate : declaration->cases)
+              if (candidate.name == arm.a) item = &candidate;
+            if (!item) throw RuntimeError(arm.line, "unknown enum case");
+            for (size_t field_index = 0; field_index < arm.args.size(); ++field_index) {
+              const auto& binding = arm.args[field_index];
+              auto prior_local = frame.locals.find(binding);
+              saved_locals[binding] = prior_local == frame.locals.end()
+                  ? std::nullopt : std::optional<Value>(prior_local->second);
+              auto prior_type = frame.local_types.find(binding);
+              saved_local_types[binding] = prior_type == frame.local_types.end()
+                  ? std::nullopt : std::optional<std::string>(prior_type->second);
+              auto prior_alias = frame.aliases.find(binding);
+              saved_aliases[binding] = prior_alias == frame.aliases.end()
+                  ? std::nullopt : std::optional<Place>(prior_alias->second);
+              frame.locals.erase(binding);
+              frame.local_types.erase(binding);
+              frame.aliases.erase(binding);
+              auto field = selected.object->fields.find(item->fields[field_index].name);
+              if (field == selected.object->fields.end())
+                throw RuntimeError(arm.line, "missing enum payload");
+              if (statement.b == "consume" ||
+                  field->second.kind == Value::Kind::Int ||
+                  field->second.kind == Value::Kind::Bool ||
+                  field->second.kind == Value::Kind::Float)
+                frame.locals[arm.args[field_index]] = field->second;
+              else
+                frame.aliases[arm.args[field_index]] = Place{&field->second, nullptr, {}};
+              frame.local_types[binding] = item->fields[field_index].type;
+            }
+            flow = execute(statements, frame, output, cursor + 1, arm_end);
+            for (const auto& binding : arm.args) {
+              frame.locals.erase(binding);
+              frame.local_types.erase(binding);
+              frame.aliases.erase(binding);
+              if (saved_locals.at(binding))
+                frame.locals[binding] = *saved_locals.at(binding);
+              if (saved_local_types.at(binding))
+                frame.local_types[binding] = *saved_local_types.at(binding);
+              if (saved_aliases.at(binding))
+                frame.aliases[binding] = *saved_aliases.at(binding);
+            }
+          }
+          cursor = arm_end;
+        }
+        if (!taken) throw RuntimeError(statement.line, "non-exhaustive checked match");
+        if (flow.returned) return flow;
+        index = cursor;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::If) {
         size_t body_end = index + 1;
         while (body_end < end && statements[body_end].indent > statement.indent) ++body_end;
@@ -959,10 +1225,13 @@ class FastInterpreter {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
           frame.locals[statement.a] = eval(statement.b, frame, statement.line, output);
+          frame.local_types[statement.a] = checked_binding_type(statement, frame);
           emit("LocalWrite", frame, statement.line, statement.a);
           break;
         case Stmt::Kind::Assign:
           assign(statement.a, eval(statement.b, frame, statement.line, output), frame, statement.line, output);
+          if (identifier(statement.a))
+            frame.local_types[statement.a] = checked_binding_type(statement, frame);
           break;
         case Stmt::Kind::Echo:
           for (size_t i = 0; i < statement.args.size(); ++i) {
@@ -973,7 +1242,10 @@ class FastInterpreter {
           break;
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
-          if (!statement.text.empty()) eval(statement.text, frame, statement.line, output);
+          if (!statement.text.empty())
+            eval(statement.text, frame, statement.line, output);
+          break;
+        case Stmt::Kind::Pass:
           break;
         case Stmt::Kind::Return:
           flow.returned = true;
@@ -984,7 +1256,10 @@ class FastInterpreter {
           std::string invocation = statement.a + "." + statement.b + "(";
           for (size_t i = 0; i < statement.args.size(); ++i) { if (i) invocation += ", "; invocation += statement.args[i]; }
           Value result = message(invocation + ")", frame, statement.line, output);
-          if (!statement.message_result.empty()) assign(statement.message_result, std::move(result), frame, statement.line, output);
+          if (!statement.message_result.empty()) {
+            assign(statement.message_result, std::move(result), frame, statement.line, output);
+            frame.local_types[statement.message_result] = checked_binding_type(statement, frame);
+          }
           break;
         }
         case Stmt::Kind::Reply:
@@ -997,6 +1272,8 @@ class FastInterpreter {
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
+        case Stmt::Kind::Match:
+        case Stmt::Kind::Case:
           break;
       }
       ++index;
@@ -1017,6 +1294,9 @@ inline FastInterpreter::Value FastInterpreter::Value::float_value(double value) 
 }
 inline FastInterpreter::Value FastInterpreter::Value::string_value(std::string value) {
   Value result; result.kind = Kind::String; result.string = std::move(value); return result;
+}
+inline FastInterpreter::Value FastInterpreter::Value::callable_value(std::string name) {
+  Value result; result.kind = Kind::Callable; result.string = std::move(name); return result;
 }
 inline FastInterpreter::Value FastInterpreter::Value::struct_value(std::string type) {
   Value result; result.kind = Kind::Struct;
@@ -1060,7 +1340,10 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Int: return std::to_string(integer);
     case Kind::Float: out << std::setprecision(15) << floating; return out.str();
     case Kind::String: return string;
-    case Kind::Struct: return object ? object->type : "<struct>";
+    case Kind::Callable: return "<callable:" + string + ">";
+    case Kind::Struct:
+      return object ? object->type +
+          (object->case_name.empty() ? "" : "." + object->case_name) : "<struct>";
     case Kind::Vector:
       out << "[";
       if (vector) for (size_t i = 0; i < vector->size(); ++i) {

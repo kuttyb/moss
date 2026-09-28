@@ -83,7 +83,28 @@ fn render(x: Drawable, canvas: Canvas):
 
 A `Circle` satisfies `Drawable` because the required operations match. No `implements Drawable` declaration is needed. A type may therefore satisfy many traits without being coupled to their declarations.
 
-Moss v0.1 does not have runtime trait objects or general dynamic dispatch. Structural conformance is resolved during specialization. This is important to the larger thesis: the language can feel duck-typed locally while still closing statically before native code generation.
+Moss v0.1 does not have runtime trait objects or general dynamic dispatch. Structural conformance is resolved during specialization. This is important to the larger thesis: the language can feel duck-typed locally while still closing statically before native code generation. For the same reason a trait is not a storage type: a trait in a concrete collection element position, such as `Vector[Drawable]`, is rejected, because traits are static structural constraints rather than runtime types.
+
+Moss v0.1 does not support user-defined operator overloading. The operator set
+and each accepted operand-type combination are closed compiler-defined language
+rules. In particular, `String` supports built-in `+` concatenation and
+`==`/`!=` equality, but no relational ordering operators. Binary operators
+outside the set, including bitwise `&`, `|`, and `^`, shifts `<<` and `>>`, and
+symbolic `&&` and `||`, are rejected by the frontend rather than passed through
+to generated Rust.
+
+Boolean expressions use the word operators `not`, `and`, `xor`, and `or`.
+Operands are statically `Bool`; `and` and `or` short-circuit, while `xor`
+evaluates both operands and is true exactly when one operand is true. Their
+precedence from highest to lowest is `not`, `and`, `xor`, `or`.
+
+Local bindings respect control flow. A name first bound inside a `for` or
+`while` body, including a `for` induction variable, is not visible after the
+loop, which may execute zero times. A name first bound inside an `if` survives
+the join only when every branch binds it. Updating a binding that already exists
+outside the construct is ordinary mutation. The checker, native lowering, and
+module name resolution apply the same rule, so a confined local that shadows a
+module function stops shadowing it after the construct.
 
 ### 3 Ownership effects are inferred, not spelled with parameter modifiers
 
@@ -101,11 +122,46 @@ At a call site, the compiler checks capabilities. `read` requires readable stora
 
 This design keeps source lightweight while retaining static closure. It also makes synchronization derivation possible later: transitive writes through helpers are visible to the handler effect summary even when the handler body does not contain the mutation syntactically.
 
+Closed enums are tagged unions with a finite, declared case set. Cases have
+zero or more named typed fields, constructed with `Enum.Case(field: value)`;
+tag-only cases use `Enum.Case`. A statement `match` resolves arms against the
+scrutinee's concrete enum type and requires every case exactly once. There is
+no wildcard, guard, nested pattern, pattern-level ownership modifier, dynamic
+case extension, or match expression in v0.1.
+
+Pattern bindings never choose an ownership mode. `match expression` READ-borrows
+the enum for all arms. Any statically typed enum expression allowed by ordinary
+Moss READ semantics may be used, including a field of an aggregate; its source
+storage remains borrowed for the match, without an enum-specific copy. A
+nontrivial payload binding is a temporary READ
+view, subject to the whole-match READ borrow. It may feed independent
+computations or cross a `message`/`reply` semantic value boundary, but cannot
+be consumed, mutated, or moved into ordinary owned storage. Copy scalars retain
+their ordinary rules. The source enum remains live at the join. In contrast,
+`match consume value` accepts an owned binding or owned enum rvalue and consumes
+the whole enum before branch selection. It does not partially move enum fields
+from aggregates. The
+selected case's payload fields become owned branch locals; the original enum
+is dead on every branch and after the join. No partial-move state exists.
+Incoming immutable handler payloads cannot enter a consuming match. Recursive
+enum layouts are rejected in this first implementation.
+
+Pattern payload names match declared field names in declaration order. Tag-only
+cases use bare names in declarations and patterns. `replace(place, replacement)`
+is the narrow whole-value state transition primitive: a writable place receives
+an equal-typed replacement while the old value becomes owned. Consumed mutable
+bindings can be reinitialized by whole-value assignment; definite initialization
+is checked at branches and loop back edges. `pass` is an effect-free no-op
+statement. Ordinary untyped functions can match after static specialization
+supplies a concrete enum type; each specialization is checked separately.
+Legacy lowercase `option[T]` remains distinct from matchable user enums while
+Phase 21 considers convergence with Result/error semantics.
+
 ### 4 Functional/dataflow code without general closure objects
 
 Moss supports concise functional/dataflow forms such as map, filter, reduce, sum, count, any, and all, including restricted placeholder/capture forms. Static callable specialization occurs before effect derivation, and captures of domain state contribute to handler effects.
 
-Moss v0.1 does not provide general first-class closure values or runtime higher-order dispatch. A bound callable that participates in a functional pipeline is statically resolved. This distinction matters because the implementation can reason about a finite set of concrete callable bodies while still offering concise dataflow syntax.
+Moss v0.1 does not provide general first-class closure values or runtime higher-order dispatch. A bound callable that participates in a functional pipeline is statically resolved. An ordinary function may also accept a statically known named function as an argument and use it as a pipeline stage or, since Phase 15.13, invoke it directly (`f(x)`). Each call site closes the parameter to one function identity, the helper is specialized per identity, and unqualified sibling and module-qualified spellings resolve to the same identity. No function object, pointer, or runtime lookup exists. A callable parameter cannot be returned, stored in a field or collection, or cross `message`/`reply`. This distinction matters because the implementation can reason about a finite set of concrete callable bodies while still offering concise dataflow syntax.
 
 Ordinary recursion is also disallowed in v0.1, but not for the reason that synchronization-effect closure would be impossible. With a finite effect lattice, recursive call-graph SCCs can be solved by a least fixed point. The v0.1 restriction is instead an implementation/language-surface choice: recursion raises separate questions about specialization termination, inference ergonomics, diagnostics, and unbounded stack depth. The synchronization proof does not require ordinary recursion to remain forbidden. Domain-level recursive call structure is different: the concrete domain routing graph is required to be acyclic.
 
@@ -169,6 +225,8 @@ fn main():
 ```
 
 The number of concrete domain instances, their identities, and every route binding are statically enumerable. Initialization values may be computed at run time by side-effect-free expressions, including pure helper calls; topology may not depend on runtime control flow.
+
+The checker enforces side-effect freedom with the same observable-effect analysis that `moss effects` reports. The check applies to defaults written in the domain declaration and to constructor arguments in the composition prefix alike. An initializer may not message, access a domain, perform I/O, possibly fail, possibly diverge, or remain unresolved. Possible failure includes operations such as division, indexing, and `pop`. A helper loop counts as terminating only under a conservative bounded-loop proof, currently limited to simple counting `while` loops: the counter steps by a positive literal toward a bound that is invariant and side-effect-free, does not depend on the counter, and is not modified by the loop body. `for` traversal of a `Vector` is accepted as bounded.
 
 Domain handles cannot be passed as ordinary function parameters, handler payloads, reply values, collection elements, mutable state, or aliases. Every legal cross-domain message target is therefore attributable to the closed concrete domain graph.
 
@@ -737,6 +795,8 @@ Fast Debug interprets the already-checked program. It constructs logical concret
 
 For a package graph, Margo resolves path and Git dependencies and supplies the resolved dependency source roots to Moss. Moss then resolves the reachable module closure and performs the authoritative semantic check before Fast Debug executes it. Fast Debug remains source-only: a reachable compiled-only `.mossi`/rlib provider is rejected with `FAST_DEBUG_NATIVE_DEPENDENCY` rather than mixing interpreted and native Moss execution.
 
+The same source-closure path runs a project's test suite under Fast Debug (`margo test --interp`, optionally with `--trace`). It discovers tests in every root-project module, loads the resolved dependency sources those tests reach, and never invokes `rustc`. Tests therefore still run when a native lowering defect blocks `margo test`, and when both engines run, their results can be compared test by test.
+
 This creates a useful separation:
 
 | | Production | Fast Debug |
@@ -818,7 +878,7 @@ Phase 10 defines the Moss v0.1 usable-language milestone. The current post-v0.1 
 
 Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
-Outstanding Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. The expressiveness candidates recorded so far are statically known callable parameters for ordinary functions, an explicit copy of nontrivial values, core `String` operations, map deletion, enums or tagged unions, and a static `Self`-returning trait method; recoverable error propagation is deferred to Phase 21. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
+Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUES.jsonl`) that separates false acceptances, ambiguous-specification decisions, lost semantics, and missing expressiveness. Phases 15.13 and 15.14 were the corrective pass over the implementation, lowering, Fast Debug, formatter, diagnostic-attribution, and semantic-tooling defects recorded there. They also landed the first expressiveness item, statically known callable parameters for ordinary functions (Section 4). Phase 15.15 settled field access on an untyped parameter: it is rejected at the field expression, including through an alias. A concrete parameter type permits field access; untyped method calls retain inferred static requirements. SWARM-044 specializes built-in indexing. EXPRESS-002 general copying was rejected pending a compelling concrete use case. Phase 15.15 added core `String` methods, Map deletion, and the closed enums specified above, with native and Fast Debug validation. String numeric parsing and recoverable invalid-input semantics are explicitly deferred to Phase 21. Explicit user-defined indexing (EXPRESS-008) was considered and rejected: built-in indexing remains compiler-defined, while ordinary methods/functions cover custom access without introducing an operator-customization surface. A static `Self`-returning trait constraint was rejected pending a compelling concrete use case: unannotated returns are inferred per specialization and checked where used. Runtime dynamic dispatch, escaping closures, and recursion remain deliberate v0.1 differences, not expressiveness requests.
 
 ## Part IV - Related Work and Positioning
 
@@ -870,15 +930,17 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 
 | Area | v0.1 rule |
 |---|---|
-| Typing | Static specialization; untyped parameters are statically specialized duck typing |
+| Typing | Static specialization; untyped parameters are statically specialized duck typing. Built-in indexing requirements resolve independently for each concrete caller, including key, element, and write types; bounds and missing keys retain runtime behavior. |
 | Traits | Structural compile-time predicates; no nominal `implements` requirement |
-| Callable dispatch | Statically resolved; no runtime dynamic dispatch |
+| Callable dispatch | Statically resolved, including named functions passed to ordinary-function callable parameters; no runtime dynamic dispatch |
 | General closures | Not first-class in v0.1; restricted specialized functional captures exist |
+| Local bindings | A name first bound in a loop body (including a `for` loop variable), or in only some branches of an `if`, is not visible after that construct |
 | Ordinary recursion | Disallowed in v0.1 for implementation/specialization reasons, not the synchronization proof |
 | Ownership effects | `read`/`write`/`consume` inferred and call-site capability checked |
 | Domains | Static state-owning architectural/synchronization units |
 | Routes | Immutable `domainroutes`; concrete graph closed and acyclic |
 | Domain handles | Routing capabilities, not ordinary values |
+| Domain initialization | Declaration defaults and constructor arguments must be side-effect-free: no message, domain access, I/O, possible failure, possible divergence, or unresolved work |
 | Message | Synchronous, blocking, expression-valued |
 | Reply | Terminating, by-value semantic result |
 | Payloads | Incoming snapshots are semantically by value and immutable; eligible synchronous message payloads may lower to non-escaping Rust borrows/views; a guard backing protected borrowed storage remains held for the complete call; replies remain owned values |
@@ -933,10 +995,15 @@ The formal claims rely on the following conditions:
 | 15.9 | Artifact-local cross-package static specialization; source-free `.mossi` generic specialization closed |
 | 15.10 | Fresh-agent collection dogfood; no language-surface expansion |
 | 15.11 | Multi-domain swarm torture testing; no language-surface expansion |
-| 15.12 | Expression, control-flow, static-polymorphism, and module/package torture swarms; discovery only, corrective fixes pending |
-| Phase 20 | Rust interoperability |
-| Phase 21 | Error propagation and supervision |
-| Phase 22 | Agent agency tooling; Phase 22.2 benchmark/baseline complete; Phase 22.1 compiler-owned teaching diagnostics and fixed-protocol post comparison complete |
+| 15.12 | Expression, control-flow, static-polymorphism, and module/package torture swarms; discovery only, corrective fixes landed in 15.13–15.14 |
+| 15.13 | Swarm stabilization checkpoint: corrective fixes rebased into a quasi-stable baseline; static callable parameters for ordinary functions |
+| 15.14 | Full stabilization closeout: corrective pass over swarm-ledger implementation and tooling defects; control-flow-scoped local bindings; domain state initializer effect checks; project-wide Fast Debug tests |
+| 15.15 | Complete: SWARM-043/044 and EXPRESS-003/004/005 fixed; EXPRESS-002/006/008 rejected; SWARM-040 and EXPRESS-007/009 deferred to Phase 21 |
+| Phase 20 | Rust interoperability; proposal has open design questions to settle |
+| Phase 21 | Error propagation and supervision; clean-slate design after current contracts settle |
+| Phase 22 | Agent agency tooling; Phase 22.1 teaching diagnostics, Phase 22.2 benchmark/baseline, and Phase 22.3 semantic-query expansion complete |
+| Phase 23 | Static Compiler Optimizations; LLM proposals are one possible technique |
+| Phase 24 | TileIR Integration (Dynamic Optimizations); future design, not part of v0.1 |
 
 ## Appendix D - References
 

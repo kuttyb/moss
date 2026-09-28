@@ -1,0 +1,7 @@
+fn main():
+  a = true
+  b = false
+  if a or b:
+    echo 1
+  if a and b:
+    echo 2

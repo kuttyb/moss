@@ -19,8 +19,9 @@ Moss uses significant indentation. A file uses one indentation width throughout,
 set by its first indented line; `moss fmt` canonicalizes source to two spaces per
 block level, and the examples here use that form. Tabs are rejected. Comments begin
 with `#` outside a string. A trailing colon on a block header is optional and does
-not change the block's meaning, except that the `type Name:` declaration requires
-it; examples always write the colon. The frontend may retain compatibility spellings
+not change the block's meaning, except that `type Name:`, `enum Name:`,
+`match`, and `case` headers require it; examples always write the colon.
+The frontend may retain compatibility spellings
 while the syntax migration proceeds, but new examples should use the forms documented
 here.
 
@@ -82,6 +83,30 @@ receiver of a mutating operation. `var` is explicitly mutable. Local type
 annotations such as `var values: Vector[Int] = []` are not part of v0.1;
 ordinary locals are inferred instead.
 
+A name first bound inside a `for` or `while` body, including a `for` loop
+variable, is local to that loop: the loop may run zero times, so the name is not
+visible after it. A name first bound inside an `if` is visible after the `if`
+only when every branch, `if` and `else` alike, binds it; a branch-only binding
+stays inside its branch. Updating a name that already exists outside the loop or
+branch is ordinary mutation and remains visible afterward. When a confined local
+shadows a module function of the same name, the name refers to that function
+again after the construct. Referring to a confined name after its construct is a
+compile-time error, usually `unknown identifier`:
+
+```moss
+var total = 0
+for value in values:
+  doubled = value * 2
+  total = total + doubled
+# total is visible here; value and doubled are not
+
+if ready:
+  label = "go"
+else:
+  label = "wait"
+# label is visible here because both branches bind it
+```
+
 ## Value types
 
 The preferred type declaration is an indented block:
@@ -141,6 +166,91 @@ The older `Quote(symbol: "MOSS", price: 12.5, size: 100, ts: 1)` form remains ac
 during migration.
 The colon continues to mark type constraints in declarations and parameters.
 
+## Closed enums and exhaustive match
+
+An `enum` is a closed tagged union. Each case has zero or more named, typed
+fields. There is no separate `union` declaration.
+
+```moss
+enum Result:
+  Ok(value: Int)
+  Error(code: Int, message: String)
+  Cancelled
+
+let a = Result.Ok(value: 42)
+let b = Result.Error(code: 500, message: "bad")
+let c = Result.Cancelled
+```
+
+Payload construction requires field names and the declared field types. A
+tag-only case uses `Result.Cancelled`, not `Result.Cancelled()`. Unknown
+cases, unknown or duplicate fields, missing fields, and type mismatches are
+compile-time errors. Recursive enum layouts, including cycles through ordinary
+aggregate fields, are unsupported.
+
+`match` is a statement with one arm for every case of the scrutinee's statically
+known enum type. Pattern payload names must exactly match the declared field names
+in declaration order; positional renaming is rejected.
+Duplicate, unknown, foreign, or missing cases are errors.
+
+```moss
+match result:
+  case Ok(value):
+    echo value
+  case Error(code, message):
+    echo message
+  case Cancelled:
+    echo "cancelled"
+```
+
+Patterns discriminate and bind; they never specify ownership. A READ match
+accepts a statically known enum expression, including `match envelope.result:`.
+It READ-borrows the enum for the match, following ordinary Moss access rules
+for the expression and its containing storage. Nontrivial payload bindings are
+temporary READ views: they cannot be mutated, consumed, or moved into ordinary
+owned local or storage contexts. They may be read to compute an independent
+result, and may cross `message` and `reply` semantic value boundaries. Trivial
+scalar fields follow ordinary copy rules. The READ borrow lasts for the whole
+match statement; the original enum remains usable afterward.
+
+`match consume result` accepts an owned enum binding or owned enum rvalue,
+including a function result or fresh construction, and consumes the entire value
+before selecting an arm. It cannot partially move an enum field out of an
+aggregate with `match consume envelope.result:`. Its
+payload bindings are ordinary branch-local values, including owned values that
+may be transferred. The original enum is dead on every path after the match;
+there is no partial-move state. An immutable incoming handler payload cannot
+be consumed this way.
+
+`replace(place, replacement)` requires writable storage and an equal static
+type. It installs the replacement and returns the old whole value as an owned
+value. A nontrivial replacement binding is consumed. This lets a domain
+transition move an owned payload without leaving state uninitialized:
+
+```moss
+old = replace(phase, Phase.Idle)
+match consume old:
+  case Running(name):
+    phase = Phase.Done(name: name)
+  case Idle:
+    pass
+  case Done(name):
+    phase = Phase.Done(name: name)
+```
+
+A consumed `var` may be assigned a new whole value; it must be initialized on
+every path before its next read, including a loop's next iteration. `let` stays
+immutable. `pass` is a reserved, effect-free no-op statement in any statement
+block. Tag-only cases use `Idle` in declarations and patterns, never `Idle()`.
+Enums remain functions-only and cannot declare methods. An untyped ordinary
+function parameter may be matched after static specialization supplies a
+concrete enum type; each specialization is checked independently.
+
+Wildcards, guards, nested patterns, alternate patterns, pattern-level
+`move`/`ref`, and match expressions are not part of this construct.
+Enums do not automatically gain equality, ordering, hashing, or display
+operations; match their cases explicitly.
+
 ## Functions and expressions
 
 Top-level local functions use `fn` and can be written as an expression or an indented
@@ -188,19 +298,63 @@ application generation omits both. `assert` requires a boolean; `assertEqual` re
 compatible statically resolved values. See [unit testing](TESTING.md) and
 [benchmarking](BENCHMARKING.md).
 
+### Operators are closed, not overloadable
+
+Moss v0.1 has a closed compiler-defined operator set. A user-defined `type`
+cannot declare, overload, or replace the meaning of an operator. Accepted
+operator/type combinations are language rules rather than methods discovered on
+the operand types.
+
+`String` supports built-in `+` concatenation and `==`/`!=` equality.
+The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,
+`chars() -> Vector[String]`, `split(String) -> Vector[String]`, and
+`join(Vector[String]) -> String` (called on the separator). Character positions
+are zero-based Unicode code-point positions. `char_at` fails on an invalid
+position, and `split` fails on an empty separator. String numeric parsing and
+recoverable invalid-input behavior are deferred to Phase 21.
+Lexicographic ordering is intentionally not a v0.1 operator surface:
+`String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
+
+Binary operators outside the closed set are rejected by the frontend rather than
+passed through to generated Rust. v0.1 has no bitwise `&`, `|`, or `^`, no shifts
+`<<` or `>>`, and no symbolic `&&` or `||`; Boolean logic uses the word operators
+below.
+
+### Boolean operators
+
+Moss uses the word operators `not`, `and`, `xor`, and `or`. They are
+statically Bool-only; Moss does not use Python's operand-returning truthiness
+semantics. `and` and `or` short-circuit, while `xor` evaluates both operands
+and returns true exactly when one operand is true. Precedence from highest to
+lowest is:
+
+```text
+not
+and
+xor
+or
+```
+
+Parentheses may be used to override this order.
+
 ### Built-in collections
 
 The current built-in collection surface is intentionally small:
 
 ```text
 Vector:  push(item), pop(), vec[i], vec[i] = item
-Map:     map[key], map[key] = value, get(key, default), keys(), values()
+Map:     map[key], map[key] = value, get(key, default), keys(), values(), delete(key, fallback, found)
 Queue:   push(item), pop()
 ```
 
 `Map.get(key, default)` is the safe/defaulted lookup; `map[key]` is strict.
 `keys()` and `values()` return eager owned `Vector` snapshots in unspecified
 order. Cardinality is available through the `count` pipeline terminal.
+`Map.delete(key, fallback, found)` writes the Map and the caller's writable Bool
+`found`. It returns the removed value and sets `found` to true when present;
+otherwise it returns the eagerly evaluated fallback and sets `found` to false.
+The fallback is transferred by value; a nontrivial binding is consumed on either
+path.
 
 ### Functional pipelines
 
@@ -258,13 +412,29 @@ syntax.
 A stage callable may be a named function, a statically bound instance method such as
 `scaler.apply`, or a placeholder expression such as `_ > 0`, `_ * scale`, or
 `_.score()`. A bound method captures one concrete receiver and must only READ it;
-placeholder expressions may likewise read immutable surrounding locals. A higher-order
-helper can accept an untyped callable parameter and use it as a pipeline stage, but
-every call site must close that parameter to one statically known function identity.
-Invoking a callable parameter directly, as in `operation(value)`, is not part of v0.1.
-Moss emits a concrete specialization rather than a function object, function pointer,
-vtable, or runtime lookup. General lambdas and dynamically escaping callable values are
-not part of this source surface.
+placeholder expressions may likewise read immutable surrounding locals.
+
+An ordinary function can accept an untyped callable parameter and use it as a pipeline
+stage; since Phase 15.13 it can also invoke the parameter directly:
+
+```moss
+fn apply(operation, value: Int) -> Int:
+  operation(value)
+
+fn total_by(values: Vector[Int], f) -> Int:
+  values |> map(f) |> sum
+```
+
+Every call site must close the parameter to one statically known named function, as in
+`apply(double, 5)`; an unqualified sibling function and its module-qualified spelling
+name the same function. Moss emits one concrete specialization per function identity
+rather than a function object, function pointer, vtable, or runtime lookup. The passed
+function currently needs annotated parameter types, as a pipeline stage does. A
+callable parameter cannot be returned, stored in a field or collection, or passed
+across `message` or `reply`, and forwarding it into another helper's callable parameter
+is not currently supported. Placeholder expressions and bound methods such as
+`scaler.apply` remain pipeline-stage forms, not callable arguments. General lambdas and
+dynamically escaping callable values are not part of this source surface.
 
 Pipeline values are compiler structure, not lazy runtime iterators. A transformation
 pipeline whose result is still a collection cannot cross `message` or `reply`
@@ -340,9 +510,26 @@ domain App:
 
 `spawn` is retired and reports a migration diagnostic. Construction is statically
 enumerable from `main`; route topology is a concrete whole-program DAG with deterministic
-unique `domain_rank` values. Runtime state initializer expressions may still use ordinary
-values. Synchronization classes, ranks, and acquisition placement are compiler-owned
-facts rather than source syntax; Moss exposes no lock API.
+unique `domain_rank` values. Synchronization classes, ranks, and acquisition placement
+are compiler-owned facts rather than source syntax; Moss exposes no lock API.
+
+State initializers may compute ordinary runtime values, including through pure helper
+calls, but must be side-effect-free. The rule covers defaults written in the domain
+declaration and constructor arguments in `main` alike. Messages, domain access, I/O,
+possibly failing work (for example division, indexing, or `pop`), possibly divergent
+loops, and unresolved calls are rejected. A helper `while` loop counts as terminating
+only when the checker can prove it bounded. The accepted shape is a counting loop:
+
+- The condition compares the counter, written on the left, against a bound with `<`,
+  `<=`, `>`, or `>=`.
+- The bound is invariant and side-effect-free, does not depend on the counter, and is
+  not modified in the body.
+- The body steps the counter toward the bound exactly once per iteration,
+  unconditionally, by a positive integer literal.
+- The loop contains no nested `while`.
+
+`for` traversal of a `Vector` is accepted as bounded. `moss effects` reports the same
+`may_fail`, `may_diverge`, and `unresolved` facts the initializer check uses.
 
 ### Closed routing capabilities (Phase 10.6B.1)
 
@@ -410,7 +597,7 @@ are historical and superseded.
 
 `for` is the statically resolved iteration form. Its source is resolved at compile
 time to a compiler-native traversal for `Vector` and `range`, or to a concrete
-`Iterator` shape with `next() -> Option[element]`:
+`Iterator` shape with `next() -> option[element]`:
 
 ```moss
 for value in values:
@@ -425,7 +612,8 @@ uses `Int`. A three-argument form whose step is a positive non-zero `Int` litera
 also accepted. `while` remains the general arbitrary imperative loop. Moss does not
 create runtime iterator objects, vtables, boxing, or dynamic iterator dispatch.
 `Map` and `Queue` are not `for` sources; traverse a map through its `keys()` or
-`values()` snapshot.
+`values()` snapshot. The loop variable and any name first bound in the body are
+local to the loop (see [Local bindings](#local-bindings)).
 
 Ordinary collection traversal is READ traversal. Structural collection mutation,
 such as `values.push(x)`, is rejected while that traversal is active. A user-defined
@@ -509,6 +697,24 @@ call site is verified with the ordinary concrete-method resolver. A named trait
 uses that same resolver for every declared method. Method-constrained and
 trait-typed local functions are emitted as concrete call-site specializations;
 there is no runtime method search, trait object, vtable, or implicit `Any`.
+Direct field access through an untyped parameter or an alias of it is rejected
+at the field expression. Annotate the parameter with a concrete type to use its
+fields, or expose shared behavior through a method. Untyped method calls retain
+their inferred, unnamed static requirement; fields do not acquire one.
+Consequently a trait is not a storage type: `Vector[Shape]()`, nested forms such as
+`Vector[Vector[Shape]]`, and trait-typed collection fields are rejected. Keep each
+concrete type in its own collection.
+
+Indexing an untyped parameter with a built-in collection operation also
+specializes at each concrete call. `fn first(items): return items[0]` accepts
+both `Vector[Int]` and `Vector[String]` callers and returns the corresponding
+element type. For `items[key]`, the concrete Vector, Queue, or Map constrains
+the key; indexed assignment additionally constrains the assigned value and
+infers a WRITE effect. A non-indexable argument or incompatible key/value is
+rejected by Moss. These static checks do not prove bounds or Map key presence.
+User-defined indexing was considered and rejected for Moss v0.1 (EXPRESS-008).
+Use ordinary statically resolved methods/functions for custom access behavior;
+the built-in indexing operations above remain supported.
 
 The current implementation has begun separating semantic data (`src/ast.hpp`),
 inferred requirements (`src/constraints.hpp`), and diagnostics

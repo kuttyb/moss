@@ -30,6 +30,12 @@ result = values
 total = values |> reduce(0, add)
 ```
 
+An enum payload borrowed by a READ match can feed a pipeline terminal such as
+`reply values |> sum`: the terminal result is independent of the view. A
+nontrivial READ view still cannot be moved into ordinary owned storage. The
+READ borrow spans the whole match statement. Fast Debug executes the current
+eager pipeline surface as well as native lowering.
+
 The reference semantics are logically eager and ordered. The first `map` visits all
 source elements in order and logically produces its result collection, then `filter`
 does the same, and so on. A compiler optimization may remove those logical collections
@@ -328,7 +334,7 @@ for value in values:
 
 The compiler resolves iteration statically. `Vector` and `range(start, end)` use
 compiler-native Rust traversal; user-defined traversal resolves directly to a concrete
-`next() -> Option[element]` method. There is no runtime iterator dispatch or vtable.
+`next() -> option[element]` method. There is no runtime iterator dispatch or vtable.
 Pipelines remain the existing eager functional/dataflow form and are not silently
 converted into `for`-loop IR.
 

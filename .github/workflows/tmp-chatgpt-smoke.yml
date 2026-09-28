@@ -1,0 +1,209 @@
+name: Temporary Moss smoke test
+
+on:
+  push:
+    branches:
+      - tmp-chatgpt-codespace-doc-test-20260923
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Moss
+        run: make
+      - name: Verify Boolean language surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./moss agent bootstrap --json > build-bootstrap.json
+          grep -F '"boolean":["and","or","xor","not"]' build-bootstrap.json
+          grep -F '"boolean_precedence_high_to_low":["not","and","xor","or"]' build-bootstrap.json
+      - name: Check SWARM-037 negative cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          expect_reject() {
+            source="$1"; message="$2"
+            set +e
+            output="$(./moss check "$source" --json 2>&1)"
+            status=$?
+            set -e
+            test "$status" -ne 0
+            printf '%s\n' "$output" | grep -F '"code": "TYPE_MISMATCH"'
+            printf '%s\n' "$output" | grep -F "$message"
+          }
+          expect_reject tests/negative/swarm_037_and_non_bool.moss "boolean 'and' operands must have type 'Bool'"
+          expect_reject tests/negative/swarm_037_or_non_bool.moss "boolean 'or' operands must have type 'Bool'"
+          expect_reject tests/negative/swarm_037_xor_non_bool.moss "boolean 'xor' operands must have type 'Bool'"
+          set +e
+          output="$(./moss check tests/negative/swarm_012_not_int.moss --json 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep -F "not operand must have type 'Bool'"
+      - name: Native and Fast Debug parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(printf 'true\nfalse\ntrue\ntrue\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\ntrue')"
+          ./moss check tests/swarm_037_boolean_operators.moss --json
+          mkdir -p build/smoke
+          ./moss -Oshared-memory tests/swarm_037_boolean_operators.moss -o build/smoke/swarm_037.rs
+          rustc -D warnings build/smoke/swarm_037.rs -o build/smoke/swarm_037
+          native="$(build/smoke/swarm_037)"
+          interpreted="$(./moss run --interp tests/swarm_037_boolean_operators.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
+      - name: Check SWARM-031 parenthesized lowering
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./moss check tests/swarm_031_parenthesized_lowering.moss --json
+          mkdir -p build/smoke
+          ./moss -Oshared-memory tests/swarm_031_parenthesized_lowering.moss -o build/smoke/swarm_031.rs
+          rustc -D warnings build/smoke/swarm_031.rs -o build/smoke/swarm_031
+          expected="$(printf '48\n4\n3')"
+          native="$(build/smoke/swarm_031)"
+          interpreted="$(./moss run --interp tests/swarm_031_parenthesized_lowering.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
+      - name: Check SWARM-049 String operator surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in lt le gt ge; do
+            set +e
+            output="$(./moss check "tests/negative/swarm_049_string_$name.moss" --json 2>&1)"
+            status=$?
+            set -e
+            test "$status" -ne 0
+            printf '%s\n' "$output" | grep -F '"code": "UNSUPPORTED_STRING_ORDERING"'
+          done
+          ./moss agent bootstrap --json > build-bootstrap.json
+          grep -F '"overloading":false' build-bootstrap.json
+          grep -F '"string_builtin":{"concatenation":"+","equality":["==","!="],"ordering":[]}' build-bootstrap.json
+          ./moss check tests/swarm_049_string_builtin_operators.moss --json
+          mkdir -p build/smoke
+          ./moss -Oshared-memory tests/swarm_049_string_builtin_operators.moss -o build/smoke/swarm_049.rs
+          rustc -D warnings build/smoke/swarm_049.rs -o build/smoke/swarm_049
+          expected="$(printf 'true\ntrue\nab')"
+          native="$(build/smoke/swarm_049)"
+          interpreted="$(./moss run --interp tests/swarm_049_string_builtin_operators.moss)"
+          printf 'native:\n%s\ninterpreted:\n%s\n' "$native" "$interpreted"
+          test "$native" = "$expected"
+          test "$interpreted" = "$expected"
+      - name: Validate swarm tracking
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/check_swarm_feedback.py
+          python3 tools/check_swarm_issues.py
+      - name: Verify lost-semantics batch A
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          "$ROOT/moss" tests/swarm_034_tail_push_unit.moss -o /tmp/swarm034.rs
+          rustc -D warnings /tmp/swarm034.rs -o /tmp/swarm034
+          test "$(/tmp/swarm034)" = "$(printf '1\n1')"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/field_access/split" && "$ROOT/margo" build)
+          "$ROOT/moss" tests/swarm_054_indexed_field.moss -o /tmp/swarm054.rs
+          rustc -D warnings /tmp/swarm054.rs -o /tmp/swarm054
+          test "$(/tmp/swarm054)" = "9"
+          "$ROOT/moss" tests/swarm_064_rust_keyword_field.moss -o /tmp/swarm064.rs
+          rustc -D warnings /tmp/swarm064.rs -o /tmp/swarm064
+          test "$(/tmp/swarm064)" = "3"
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/rust_keyword_field/single" && "$ROOT/margo" build)
+          "$ROOT/moss" tests/swarm_065_pipeline_return.moss -o /tmp/swarm065.rs
+          rustc -D warnings /tmp/swarm065.rs -o /tmp/swarm065
+          test "$(/tmp/swarm065)" = "$(printf 'true\n2')"
+          (cd "$ROOT/examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/domain_torture/rich_payloads" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/domain_torture/dispatcher_fanout" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/string_plus_native/single" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/polymorphism/tree_serialization" && "$ROOT/margo" test)
+      - name: Verify lost-semantics batch B
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          "$ROOT/moss" tests/swarm_035_nested_mutating_calls.moss -o /tmp/swarm035.rs
+          rustc -D warnings /tmp/swarm035.rs -o /tmp/swarm035
+          test "$(/tmp/swarm035)" = "1"
+          test "$("$ROOT/moss" run --interp tests/swarm_035_nested_mutating_calls.moss)" = "1"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/trait_across/split" && "$ROOT/margo" build)
+          test "$("$ROOT/moss" run --interp tests/swarm_048_callable_argument.moss)" = "$(printf '1\n3')"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/sibling_method/split" && "$ROOT/margo" build)
+      - name: Verify lost-semantics module closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/dep_type_methods/two_packages/app" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/data_pipeline/repro/range_in_module/split" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/calc_interpreter/repro/test_imports_not_in_main" && "$ROOT/margo" test)
+          (cd "$ROOT/examples/swarm/modules/algo_chain/repro/generic_transitive_import/split" && "$ROOT/margo" build)
+          (cd "$ROOT/examples/swarm/modules/lib_and_app/repro/transitive_import_closure/split" && "$ROOT/margo" build)
+      - name: Baseline remaining lost semantics
+        shell: bash
+        run: |
+          set +e
+          ROOT="$GITHUB_WORKSPACE"
+          failures=0
+          run_file() {
+            id="$1"; file="$2"
+            rm -f /tmp/"$id".rs /tmp/"$id".bin
+            "$ROOT/moss" -Oshared-memory "$ROOT/$file" -o /tmp/"$id".rs >/tmp/"$id".log 2>&1 &&
+              rustc -D warnings /tmp/"$id".rs -o /tmp/"$id".bin >>/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -20 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_interp() {
+            id="$1"; file="$2"
+            "$ROOT/moss" run --interp "$ROOT/$file" >/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -20 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_project() {
+            id="$1"; path="$2"; cmd="$3"
+            (cd "$ROOT/$path" && "$ROOT/margo" "$cmd") >/tmp/"$id".log 2>&1
+            status=$?
+            if [ "$status" -eq 0 ]; then echo "BASELINE|$id|PASS"; else echo "BASELINE|$id|FAIL"; tail -30 /tmp/"$id".log; failures=$((failures+1)); fi
+          }
+          run_file SWARM-033 examples/swarm/polymorphism/sort_search/reproducers/moss_fmt_return_negative.moss
+          run_project SWARM-034 examples/swarm/modules/lib_and_app/repro/method_tail_push/single build
+          run_project SWARM-041 examples/swarm/domain_torture/rich_payloads build
+          run_project SWARM-042 examples/swarm/domain_torture/dispatcher_fanout build
+          run_project SWARM-045 examples/swarm/modules/data_pipeline/repro/field_access/split build
+          run_project SWARM-046 examples/swarm/modules/data_pipeline/repro/trait_across/split build
+          run_file SWARM-047 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_reduce_map_abort.moss
+          run_interp SWARM-048 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_fast_debug_callable_arg.moss
+          run_file SWARM-050 examples/swarm/polymorphism/sort_search/reproducers/nested_generic_specialization.moss
+          run_file SWARM-051 examples/swarm/polymorphism/collection_pipeline/reproducers/repro_unqualified_callable_arg.moss
+          run_project SWARM-053 examples/swarm/modules/lib_and_app/repro/string_plus_native/single build
+          run_file SWARM-054 examples/swarm/polymorphism/sort_search/reproducers/indexed_field_access_lowering.moss
+          run_project SWARM-055 examples/swarm/polymorphism/tree_serialization test
+          run_project SWARM-056 examples/swarm/modules/data_pipeline/repro/dep_type_methods/two_packages/app build
+          run_project SWARM-057 examples/swarm/modules/data_pipeline/repro/range_in_module/split build
+          run_project SWARM-058 examples/swarm/modules/data_pipeline/repro/sibling_method/split build
+          run_project SWARM-061 examples/swarm/modules/calc_interpreter/repro/test_imports_not_in_main test
+          run_project SWARM-062 examples/swarm/modules/algo_chain/repro/generic_transitive_import/split build
+          run_project SWARM-063 examples/swarm/modules/lib_and_app/repro/transitive_import_closure/split build
+          run_project SWARM-064 examples/swarm/modules/lib_and_app/repro/rust_keyword_field/single build
+          run_project SWARM-065 examples/swarm/expression_surface_2026/numerical_tool/failed_attempts/07_boolean_pipeline_native build
+          run_project SWARM-066 examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer build
+          echo "BASELINE|TOTAL_FAILURES|$failures"
+          exit 0
+      - name: Preserve SWARM-036 symbolic rejection
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          output="$(./moss check tests/negative/swarm_036_symbolic_and.moss --json 2>&1)"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          printf '%s\n' "$output" | grep -F UNSUPPORTED_EXPRESSION_OPERATOR

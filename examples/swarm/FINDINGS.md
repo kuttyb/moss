@@ -7,12 +7,15 @@ experiment READMEs retain their detailed local observations.
 ## Summary
 
 - Distinct findings: 65
-- Open: 36
-- Fixed: 28
+- Open: 0
+- Deferred to Phase 21: 1
+- Fixed: 63
 - Not-a-bug / agent misunderstanding: 1
 - Independently reproduced by multiple experiments: 26
 
-(Counts updated on 2026-09-23 incorporating SWARM-043–055 from Static Polymorphism, SWARM-056–064 from Module & Package Boundary Torture, and SWARM-065–066 from Expression/Control-Flow closeout cleanup; SWARM-016 was never allocated.)
+(Counts recomputed from the detailed per-finding statuses on 2026-09-27 after
+the Phase 15.15 SWARM-043/044 closeout. SWARM-040 is intentionally deferred
+to Phase 21 and does not block Phase 15.15.)
 
 Completed swarm experiments:
 
@@ -1004,11 +1007,14 @@ so condition branch comparisons lower properly.
 
 ## SWARM-031 — Parenthesized subexpression lowers to redundant Rust parentheses
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
+
+Regression: `tests/swarm_031_parenthesized_lowering.moss`, invoked by
+`tests/run.sh` and compiled under `rustc -D warnings`.
 
 ### Minimal reproducer
 
@@ -1027,40 +1033,39 @@ fn wrap(a: Int) -> Int:
 
 ### Observed behavior
 
-`moss check` accepts both, and `moss run --interp` prints `48` and `4`. Native
-builds (`margo build`, `margo test`) fail with `BUILD_BACKEND_ERROR`, because
-the generated Rust keeps the source parentheses around an already
-parenthesized method call, and rustc rejects them under `-D unused-parens`:
+`moss check` and Fast Debug accepted the legal grouped expressions, but native
+lowering re-emitted complete source parentheses around an already structured
+Rust expression. Arithmetic lowering then introduced its own method-call
+parentheses, producing `unused_parens` warnings that became native build
+failures under `-D warnings`.
 
-```text
-let mut c = (a).wrapping_mul(((b).wrapping_add(2_i64)));
-return ((a).wrapping_add(1_i64));
-```
+### Resolution
 
-The error contains raw rustc text with no Moss source line mapping.
+Native expression lowering now removes only complete balanced outer grouping
+parentheses at `expr()` entry using the existing quote-aware
+`strip_redundant_outer_parentheses` helper. It no longer re-emits those outer
+groups as Rust syntax. Parentheses nested inside a larger expression continue
+to protect Moss precedence until the recursive lowering call reaches that
+subexpression.
 
-### Workaround
+The regression covers `a * (b + 2)`, a parenthesized return value, and the
+Fenwick-style `i % (p * 2)` shape. Native compilation with
+`rustc -D warnings` and Fast Debug execution must both succeed with identical
+results.
 
-Bind the parenthesized subexpression to a local first:
-
-```moss
-next = b + 2
-c = a * next
-```
-
-### Notes
-
-Found independently by both experiments. Any parenthesized operand of an
-arithmetic call-style lowering, or a parenthesized `return` value, triggers
-it; Fenwick hit it in `i % (p * 2)`.
+---
 
 ## SWARM-032 — Formatter rejects valid statements whose expression begins with `(`
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / formatter
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
+
+### Resolution
+
+Fixed in Phase 15.14. `canonicalize_code_spacing` in `src/moss.cpp` now checks for keyword boundaries (`while`, `if`, `return`, `echo`, `not`) before `(`, preventing keyword-space stripping that caused the formatter to misparse statements as function calls or block level jumps. Verified with idempotence and malformed grouping tests in `tests/tooling/check_swarm_032_formatter_parentheses.py`.
 
 ### Minimal reproducer
 
@@ -1088,20 +1093,15 @@ fn wrap(a: Int, m: Int) -> Int:
 
 This appears to parse `keyword (` as a call to `keyword`.
 
-### Workaround
-
-Reorder so the expression does not start with `(` (for example
-`while i % (p * 2) == 0:`; beware SWARM-031), or bind to a local first.
-
 ### Notes
 
 A different construct from SWARM-003 (unary minus in assertion operands),
-though both are formatter/checker disagreements. The formatter should accept
-exactly what `moss check` accepts.
+though both are formatter/checker disagreements. The formatter accepts
+the same legal expression surface as `moss check`.
 
 ## SWARM-033 — Returning a unary-negated name fails type inference
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Multi-Domain Swarm / Linear Pipeline](domain_torture/linear_pipeline/),
@@ -1162,9 +1162,14 @@ Same family as SWARM-005 (return-expression inference), but a distinct
 construct. Negative literals (`-4`) in expressions are fine, but unary negation
 in `return` and `reply` positions triggers type inference failures during checking or formatting.
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-034 — No-value function ending in a collection `push` fails result inference
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / type inference
 - First observed: [Python / deque](Python/deque/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -1214,9 +1219,14 @@ fn put(values: Vector[Int], x: Int):
   return
 ```
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-035 — Nested mutating calls on the same receiver lower to a Rust double borrow
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Python / deque](Python/deque/)
 - Also observed: —
@@ -1267,9 +1277,14 @@ before the WRITE borrow. Here the argument is itself a WRITE call on the same
 receiver. Moss source order is well defined (argument first), so the lowering
 should hoist the argument call into a temporary in the same way.
 
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
+
 ## SWARM-036 — Unsupported binary operators pass checking
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / frontend validation
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: —
@@ -1312,14 +1327,22 @@ operator outside the supported surface with `UNSUPPORTED_EXPRESSION_OPERATOR`.
 Whether Moss v0.1 should gain bitwise operators is a separate language-design
 question and is not implied by this finding.
 
+### Resolution
+
+Fixed by `c310b9783d756a88360469f2f8f016ff866bff1c` (`Fix SWARM-036 and SWARM-052 frontend leaks`). Unsupported symbolic and bitwise binary operators are rejected during Moss frontend validation instead of leaking to Fast Debug or generated Rust. Focused negative regressions cover the rejected operator forms.
+
+
 ## SWARM-037 — Boolean `and`/`or` work natively but not in Fast Debug, and are undocumented
 
-- Status: Open (needs a language-surface decision)
+- Status: Fixed
 - Category: Language surface / Fast Debug parity
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Text Toolkit](modules/text_toolkit/)
 - Observation count: 3
+
+Regression: `tests/swarm_037_boolean_operators.moss` plus the
+`tests/negative/swarm_037_*_non_bool.moss` cases, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -1335,21 +1358,28 @@ fn main():
 
 ### Observed behavior
 
-`moss check` accepts it and native prints `2`. Fast Debug fails with
-`interpreter error: unsupported expression 'a and b'`. Neither bootstrap's
-`source_surface.operators` nor the Gentle Introduction mentions `and`/`or`
-(only `not`). Separately, `if not a or a:` is rejected with `not operand must
-have type 'Bool'`, which suggests `not` currently binds more loosely than `or`.
+`moss check` accepted `and`/`or` and native lowering executed them, while
+Fast Debug rejected the same checked expressions. The language surface and
+canonical docs mentioned only `not`. In addition, checker precedence parsed
+`not a or a` incorrectly.
 
-### Resolution needed
+### Resolution
 
-Decide whether short-circuit `and`/`or` are part of v0.1. If they are: add
-them to `source_surface` and the docs, implement them in Fast Debug, and fix
-`not` precedence. If not: reject them in the checker as SWARM-036 would.
+Moss v0.1 now has four Bool-only word operators: `not`, `and`, `xor`, and
+`or`. Precedence from highest to lowest is `not`, `and`, `xor`, `or`.
+`and` and `or` short-circuit; `xor` evaluates both operands and returns
+true exactly when one operand is true.
+
+Checker/type inference, ownership/effect traversal, native lowering, and Fast
+Debug now use the same Boolean expression structure. Untyped parameters used
+directly as Boolean operands are constrained to `Bool`. Non-Bool operands
+produce `TYPE_MISMATCH` before lowering. Bootstrap `source_surface`, the
+canonical language docs, and the Moss language agent skill document the same
+contract.
 
 ## SWARM-038 — `effects` reports a pure loop helper as divergent/unresolved yet it is accepted as a domain initializer
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / semantic query consistency
 - First observed: [Python / deque](Python/deque/)
 - Also observed: —
@@ -1384,50 +1414,43 @@ fn main():
 unresolved work is rejected in a domain state initializer, yet `moss check`
 accepts `buf = zeros(4)`, and it runs correctly (`4`) in Fast Debug.
 
-### Notes
+### Resolution
 
-Either the query is over-conservative for a bounded `while` loop, or the
-initializer check does not consult the same facts. Agents cannot tell which
-answer to trust. The accepted program matches the documented intent ("pure
-helper calls are accepted"), so the `effects` output is the likelier defect.
+Observable effect analysis now recognizes monotonic bounded counter loops (`while`)
+as non-divergent under a conservative proof: the bound must be invariant and
+side-effect-free, there must be no induction-variable dependency in the bound, and no
+statement in the loop body may mutate variables used by the bound. Mutating collection
+methods (`pop`, `pop_front`) are marked as `may_fail: true`. Furthermore, domain state field
+initializers (`field.init`) are authoritatively validated for side-effect-freedom during
+domain checking using the same observable effect analysis.
+
+Regressions: `tests/swarm_038_effects_loop_helper.moss`,
+`tests/negative/swarm_038_impure_state_init.moss`,
+`tests/negative/swarm_038_divergent_loop_state_init.moss`,
+`tests/negative/swarm_038_empty_pop_state_init.moss`, and
+`tests/tooling/check_phase15_14_swarm_038_051.py`.
 
 ## SWARM-039 — No project-wide Fast Debug test discovery/orchestration
 
-- Status: Open (narrowed 2026-09-23; original "cannot execute test blocks" claim superseded)
+- Status: Fixed
 - Category: Tooling / Fast Debug coverage
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
 - Observation count: 2
 
-### Original claim (superseded)
+### Resolution
 
-The original finding stated "Fast Debug cannot execute `test` blocks". That claim
-is superseded. Standalone test sources can run through `moss test --interp
-<test-file.moss>`, including the command's interpreted filtering of that source.
-`margo debug` is also a supported interpreted execution path for a project's
-application source closure. Test-bearing projects run natively under `margo test`,
-and the Phase 15.12 swarms used `margo debug` and `margo debug --trace` for Fast
-Debug parity checks across green application workloads.
+Fixed in Phase 15.14. `moss test --interp` and `margo test --interp` now provide project-wide Fast Debug test discovery and orchestration across multi-file and multi-module project test suites, supporting test filtering and trace emission (`--trace`) without requiring Rust compilation.
 
-### Actual remaining gap
-
-`margo test` provides project-wide native test discovery and orchestration, but
-there is no interpreted equivalent: `margo test --interp` and `margo debug --tests`
-are not supported. When a native lowering defect blocks `margo test`, an agent can
-still invoke individual standalone test sources manually with `moss test --interp`,
-but cannot ask Margo to discover the whole project test suite and execute all of
-those tests through Fast Debug in one project-level command.
+Regression: `tests/tooling/check_swarm_039_project_fast_debug_tests.py`.
 
 ### Notes
 
-A project-wide interpreted test mode would give test-level native/Fast Debug parity
-checks and a faster edit-test loop when native lowering defects (e.g. SWARM-031,
-SWARM-035) block `margo test`. The original workaround — rewriting test blocks as
-plain functions called from `main` — remains functional but is not ergonomic.
+Project-wide interpreted testing gives test-level native/Fast Debug parity checks and a faster edit-test loop without invoking rustc.
 
 ## SWARM-040 — Failure/precondition mechanism for user code is undocumented
 
-- Status: Open
+- Status: Deferred to Phase 21
 - Category: Documentation / discoverability
 - First observed: [Julia / FenwickTree](Julia/FenwickTree/)
 - Also observed: [Python / deque](Python/deque/)
@@ -1451,9 +1474,12 @@ If `assert` in ordinary code is the intended v0.1 failure primitive, say so in
 `source_surface`, `moss-language`, and the Gentle Introduction. An
 expected-failure test form is a separate, optional surface question.
 
+Phase 15.15 scope decision: defer this failure/precondition specification
+question to Phase 21 alongside recoverable error propagation and supervision.
+
 ## SWARM-041 — Collection method on struct field during handler effect analysis triggers internal invariant error
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / effect and synchronization analysis
 - First observed: [Multi-Domain Swarm / Rich Payloads](domain_torture/rich_payloads/)
 - Also observed: —
@@ -1504,9 +1530,14 @@ return (scores |> sum) + val
 
 The effect analyzer should reset `leaf_effect_capture_` after the pipeline stage finishes or treat built-in collection query methods on fields as pure/read effects during capture.
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-042 — Reassigning an initialized mutable local across all conditional branches triggers rustc `-D unused-assignments`
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Multi-Domain Swarm / Dispatcher Fan-out](domain_torture/dispatcher_fanout/)
 - Also observed: —
@@ -1561,9 +1592,14 @@ fn choose(flag: Bool) -> Int:
 
 Similar class of backend warning leakage as SWARM-031 (`-D unused-parens`). Native lowering emits `let mut res = initial_expr;` even when every control-flow path reassigns `res` before any read, triggering Rust's `-D unused-assignments`. Lowering could emit uninitialized bindings where valid, avoid emitting mut when unneeded, or handle branch convergence.
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-043 — Untyped parameter field access monomorphizes function to first caller type
 
-- Status: Open
+- Status: Fixed (Phase 15.15)
 - Category: Compiler / type inference & specialization
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1599,9 +1635,17 @@ Encapsulate the field behind a method (`item.get_name()`). Method calls on untyp
 
 ---
 
+
+### Phase 15.15 resolution
+
+Untyped parameters support inferred static method requirements, but not inferred
+field requirements. The checker rejects direct field access, including via an
+alias, with `UNTYPED_FIELD_ACCESS` at the function body. Annotate the parameter
+with a concrete type or expose shared behavior through a method/trait.
+
 ## SWARM-044 — Untyped collection indexing fails checking with container error
 
-- Status: Open
+- Status: Fixed (Phase 15.15)
 - Category: Compiler / type inference & specialization
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/), [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
@@ -1630,9 +1674,18 @@ Wrap container operations in structural traits with `fn get(i: Int)` / `fn set(i
 
 ---
 
+### Phase 15.15 resolution
+
+Existing built-in Vector and Map indexing now creates an independent static
+specialization at each concrete call, including indexed writes. Native lowering
+also preserves String map-key borrowing for typed parameters, avoiding an
+invalid `&&String` Rust lookup. The regression covers Vector and Map key/value
+variation in both source call orders. User-defined indexing was separately
+considered and rejected as EXPRESS-008; this built-in fix remains in place.
+
 ## SWARM-045 — Exported struct fields lower without pub modifier across modules
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module projection & native lowering
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/),
@@ -1672,9 +1725,14 @@ Provide explicit exported getter methods (`fn get_val() -> Int: return val`) or 
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-046 — Exported trait-annotated function crashes with internal synchronization invariant
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module interface projection
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
@@ -1723,9 +1781,14 @@ Leave the exported function parameter untyped (`export fn get_area(s) -> Int: re
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
+
 ## SWARM-047 — Compiler assertion abort on pipeline reduce with Map accumulator
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / functional pipeline lowering
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: —
@@ -1748,6 +1811,20 @@ fn main():
 Compiler terminates with SIGABRT:
 `Assertion '!node.effects.unresolved && !node.callable_identity.empty()' failed` at `src/moss.cpp:6054`.
 
+### Resolution
+
+The effect walker now recognizes checked built-in Map reads, including `get`,
+without marking the callback unresolved. Native lowering also binds a consumed
+Map parameter as mutable when its body assigns through an index. The assertion
+remains in place. The committed reproducer and `tests/swarm_047_reduce_map.moss`
+pass checking, native compilation/execution, and Fast Debug.
+
+Phase 15.14 follow-up: the checker now retains a parameter's WRITE observation
+separately when its final inferred effect is CONSUME. Native lowering uses that
+checked fact to declare the owned parameter mutable. The regression covers
+indexed Map mutation inside `if` and `while`, plus mutation through an ordinary
+helper, with native and Fast Debug result parity. SWARM-047 remains fixed.
+
 ### Workaround
 
 Use an explicit `while` loop to accumulate into the Map instead of `|> reduce`.
@@ -1756,7 +1833,7 @@ Use an explicit `while` loop to accumulate into the Map instead of `|> reduce`.
 
 ## SWARM-048 — Fast Debug interpreter fails to resolve function identifier passed as callable argument
 
-- Status: Open
+- Status: Fixed
 - Category: Fast Debug interpreter / name resolution
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1793,13 +1870,21 @@ Use direct inline logic, static pipeline lambdas (`_ > 0`), or execute natively 
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
+
 ## SWARM-049 — Fast Debug string relational comparison evaluates to false
 
-- Status: Open
-- Category: Fast Debug interpreter / operator evaluation
+- Status: Fixed
+- Category: Language surface / frontend validation
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
 - Observation count: 1
+
+Regression: `tests/negative/swarm_049_string_{lt,le,gt,ge}.moss` and
+`tests/swarm_049_string_builtin_operators.moss`, invoked by `tests/run.sh`.
 
 ### Minimal reproducer
 
@@ -1810,19 +1895,28 @@ fn main():
 
 ### Observed behavior
 
-Native execution correctly prints `true`.
-Fast Debug (`moss run --interp`) prints `false`.
-In `src/interpreter.hpp:739`, relational operators (`<`, `>`, `<=`, `>=`) only branch for integer types; for other types, they call `.as_float()`, which converts strings to `0.0`. Thus `"apple" < "banana"` computes `0.0 < 0.0 == false`.
+Native execution inherited Rust's String ordering and printed `true`, while
+Fast Debug coerced non-integer relational operands through its numeric path and
+printed `false`. The Moss language contract had not specified whether String
+ordering was legal.
 
-### Workaround
+### Resolution
 
-Test string comparison using native execution (`margo test`, `margo run`).
+Moss v0.1 has a closed compiler-defined operator set and does not support
+user-defined operator overloading. String ordering is not part of that set.
+The frontend now rejects String `<`, `<=`, `>`, and `>=` with stable
+diagnostic `UNSUPPORTED_STRING_ORDERING`, so backend behavior cannot define
+the language accidentally.
+
+String `+` remains a built-in concatenation operation, and String
+`==`/`!=` remain built-in equality operations. Native and Fast Debug
+regressions verify those supported operations agree.
 
 ---
 
 ## SWARM-050 — Nested generic specialization fails in Rust lowering backend
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & specialization
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
@@ -1862,7 +1956,26 @@ fn main():
 ### Observed behavior
 
 `moss check` succeeds.
-Native compilation fails in `rustc` with `E0308: mismatched types`: the compiler monomorphizes `quicksort` for both `TypeA` and `TypeB`, but only emits a single specialization of `partition` for `TypeA`, calling `partition_TypeA` inside `quicksort_TypeB`.
+Native compilation fails in `rustc` with `E0308: mismatched types`: the
+compiler emits concrete `quicksort` and `partition` specializations for both
+types, but the first `quicksort` specialization calls the second `partition`
+specialization.
+
+### Resolution
+
+Both inner specializations were emitted, but shared branch join metadata from
+the later checked outer specialization replaced the earlier outer parameter's
+concrete type during native generation. Lowering now retains the concrete type
+already established for each function instance. The committed reproducer and
+`tests/swarm_050_nested_specialization.moss` pass native compilation/execution
+and Fast Debug; the regression calls two concrete outer and inner pairs.
+
+Phase 15.14 follow-up: each checked static specialization now retains its own
+control-flow join environment. Native lowering requires the matching context
+for a branch-created local, so later specializations cannot replace its type.
+`tests/swarm_050_join_specialization.moss` checks both discovery orders, native
+and Fast Debug results, and the exact outer-to-inner generated call pairs.
+SWARM-050 remains fixed.
 
 ### Workaround
 
@@ -1872,7 +1985,7 @@ Inline helper logic into the outer generic function, or specialize the helper fu
 
 ## SWARM-051 — Unqualified sibling callable argument across modules fails native lowering
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module name resolution & lowering
 - First observed: [Polymorphism / Collection Pipeline](polymorphism/collection_pipeline/)
 - Also observed: —
@@ -1903,15 +2016,26 @@ fn main():
 Fails in native lowering with `missing static specialization with argument types (vector[int], unresolved)`.
 Module function name mangling renames `double_val` to `App__double_val`, but lowering looks up `"double_val"`.
 
-### Workaround
+### Resolution
 
-Explicitly qualify the sibling callable argument with the module name: `Tools.map_by(nums, App.double_val)`.
+Module expression rewriting now tracks in-scope local variables and parameters with
+lexical and control-flow aware scoping per indentation level, preventing parameter
+callables from being mangled with module prefixes while properly handling branch/loop
+locals that shadow sibling function names, as well as body-local names used by trailing
+result expressions. Unqualified sibling callable identifiers and explicitly module-qualified
+callable identifiers (`App.double_val`) both correctly rewrite to the canonical
+module symbol (`App__double_val`). Fast Debug and static native specialization
+now both recognize and execute static callables across module boundaries. Both
+unqualified sibling syntax and explicitly qualified syntax converge to the same
+canonical semantic target and native behavior, with explicit Fast Debug project coverage.
+
+Regression: `tests/tooling/check_phase15_14_swarm_038_051.py`.
 
 ---
 
 ## SWARM-052 — Vector[Trait]() passes frontend check but fails native compilation
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / frontend validation
 - First observed: [Polymorphism / Geometry Modules](polymorphism/geometry_modules/)
 - Also observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
@@ -1939,9 +2063,14 @@ Store concrete types in separate typed collections (`Vector[Circle]()`, `Vector[
 
 ---
 
+### Resolution
+
+Fixed by `c310b9783d756a88360469f2f8f016ff866bff1c` (`Fix SWARM-036 and SWARM-052 frontend leaks`). Trait types are rejected in concrete collection element positions, preserving the v0.1 rule that traits are static constraints rather than runtime trait objects.
+
+
 ## SWARM-053 — Binary string concatenation between owned String and literal fails rustc
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -1967,9 +2096,14 @@ Use a multi-statement accumulator helper (`var out = ""; out = out + s; out = ou
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-054 — Chained field access on indexed vector in method omits usize cast in backend
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Polymorphism / Sort & Search](polymorphism/sort_search/)
 - Also observed: —
@@ -1998,9 +2132,14 @@ Pass `items[i]` to a helper projection function (`fn item_score(it: Item) -> Int
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-055 — assertEqual with brace in string literal argument leaks unescaped brace into Rust format string
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / test lowering
 - First observed: [Polymorphism / Tree Serialization](polymorphism/tree_serialization/)
 - Also observed: —
@@ -2023,9 +2162,14 @@ Bind expected string to a local variable before asserting: `expected = "{hello}"
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-056 — Methods of exported types are omitted from compiled `.mossi` interface metadata
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module interface projection
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2081,9 +2225,14 @@ Specifically module/package-boundary-dependent: strictly a cross-package compile
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-057 — `for i in range(...)` fails type inference when enclosed in an explicit module
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module type inference
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2143,9 +2292,14 @@ Specifically module/package-boundary-dependent: introducing an explicit `module`
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-058 — Sibling method call within exported module type mis-mangles as module function
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module name resolution & lowering
 - First observed: [Modules / Data Pipeline](modules/data_pipeline/)
 - Also observed: [Modules / Lib and App](modules/lib_and_app/),
@@ -2189,15 +2343,26 @@ Specifically module/package-boundary-dependent: identical method structure passe
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics closeout pass with a focused regression preserving the checked source semantics across this compiler boundary.
+
+
 ## SWARM-059 — Multi-file project diagnostics misattribute error source file to root or first module
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / diagnostic source attribution
 - First observed: [Modules / Domain Services](modules/domain_services/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Lib and App](modules/lib_and_app/),
   [Modules / Calc Interpreter](modules/calc_interpreter/)
 - Observation count: 4
+
+### Resolution
+
+Fixed in Phase 15.14. Physical source file provenance is now preserved during parsing, whole-project module composition, type checking, and specialization. Diagnostics and structured JSON errors accurately report the physical source file containing the construct rather than falling back to the project root or first loaded file.
+
+Regression: `tests/tooling/check_swarm_059_diagnostic_provenance.py`.
 
 ### Minimal reproducer
 
@@ -2219,16 +2384,12 @@ export fn bad(x: Int) -> Int:
 
 Committed paired reproducer: `examples/swarm/modules/domain_services/repro/diag_file` (`split`).
 
-### Observed behavior
+### Observed behavior (before fix)
 
-`margo build` fails on the type mismatch in `beta.moss:6` (or `9`), but reports:
-`source_file: .../src/alpha.moss, line: 9`
+`margo build` fails on the type mismatch in `beta.moss`, but reported:
+`source_file: .../src/alpha.moss`
 even though `alpha.moss` has only 4 lines.
-During whole-project merged analysis, diagnostics retain the line and column offset within the originating module file, but overwrite or default the `source_file` path to the project root (`main.moss`) or the first source file loaded in the project.
-
-### Workaround
-
-Inspect the reported line and column against secondary module files, or run isolated `moss check <source> --json` directly on the suspected module file.
+During whole-project merged analysis, diagnostics retained the line offset within the originating module file, but defaulted the `source_file` path to the root module or the first source file loaded in the project.
 
 ### Notes
 
@@ -2238,13 +2399,19 @@ Specifically module/package-boundary-dependent: occurs only in multi-file projec
 
 ## SWARM-060 — `moss edit rename` fails on module-qualified entities with `EDIT_TARGET_AMBIGUOUS`
 
-- Status: Open
+- Status: Fixed
 - Category: Tooling / semantic edit
 - First observed: [Modules / Domain Services](modules/domain_services/)
 - Also observed: [Modules / Text Toolkit](modules/text_toolkit/),
   [Modules / Data Pipeline](modules/data_pipeline/),
   [Modules / Lib and App](modules/lib_and_app/)
 - Observation count: 4
+
+### Resolution
+
+Fixed in Phase 15.14. `moss edit rename` and target resolution now handle module-qualified entity selectors (e.g. `mod.fn`, `entity-v1:function:mod__fn`) unambiguously. The rename engine maps module prefixes across qualified and unqualified declarations and call sites without `EDIT_TARGET_AMBIGUOUS`, while genuinely ambiguous unqualified requests continue to be rejected.
+
+Regression: `tests/tooling/check_swarm_060_qualified_rename.py`.
 
 ### Minimal reproducer
 
@@ -2268,16 +2435,11 @@ moss edit rename entity-v1:function:util__double triple --json
 
 Committed paired reproducer: `examples/swarm/modules/domain_services/repro/edit_rename` (`single` vs `split`).
 
-### Observed behavior
+### Observed behavior (before fix)
 
 In single-file code, `moss edit rename entity-v1:function:double triple --json` succeeds and updates declaration and callers.
-In multi-module code, `moss inspect util__double` succeeds and reports durable identity `entity-v1:function:util__double`. However, running `moss edit rename` fails with:
+In multi-module code, `moss inspect util__double` succeeds and reports durable identity `entity-v1:function:util__double`. However, running `moss edit rename` failed with:
 `error[EDIT_TARGET_AMBIGUOUS]: rename could not map every semantic reference to one exact token`.
-The semantic edit engine fails to map the mangled identity (`util__double`) across module-qualified call sites (`util.double`) and unqualified export declarations (`export fn double`).
-
-### Workaround
-
-Perform textual find-and-replace across project source files and verify with `moss check` and `margo test`.
 
 ### Notes
 
@@ -2287,7 +2449,7 @@ Specifically module/package-boundary-dependent: semantic renaming works cleanly 
 
 ## SWARM-061 — Test binary compilation fails when test modules import internal modules omitted from `main.moss`
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / test target lowering
 - First observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
 - Also observed: [Modules / Data Pipeline](modules/data_pipeline/),
@@ -2340,9 +2502,14 @@ Specifically module/package-boundary-dependent: test projection assumes the root
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-062 — Specialized imported generic function calling transitive module fails native lowering
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / module specialization & lowering
 - First observed: [Modules / Algo Chain](modules/algo_chain/)
 - Also observed: —
@@ -2389,9 +2556,14 @@ Specifically module/package-boundary-dependent: monomorphization projects specia
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-063 — Transitive struct field types leak unimported Rust trait requirements across modules
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & type generation
 - First observed: [Modules / Lib and App](modules/lib_and_app/)
 - Also observed: —
@@ -2444,9 +2616,14 @@ Specifically module/package-boundary-dependent: generated Rust view traits for i
 
 ---
 
+### Resolution
+
+Fixed in the lost-semantics module-closure pass. The checked module/interface semantics are now carried into source-free interfaces and the transitive Rust dependency projection, with the original reproducer retained as regression coverage.
+
+
 ## SWARM-064 — Struct field named with a Rust reserved keyword fails native compilation
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering & symbol hygiene
 - First observed: [Modules / Lib and App](modules/lib_and_app/)
 - Also observed: [Modules / Calc Interpreter](modules/calc_interpreter/)
@@ -2482,9 +2659,14 @@ Non-boundary defect (occurs equally in single-file and multi-module programs). R
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-065 — Boolean pipeline (`filter |> any`) fails native lowering with invalid return type
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Expression Surface / Numerical Tool](expression_surface_2026/numerical_tool/)
 - Observation count: 1
@@ -2534,12 +2716,41 @@ hygiene. Confirmed by expression-surface swarm (Phase 15.12A) with minimal repro
 
 ---
 
+### Resolution
+
+Verified/fixed on the current compiler with a dedicated regression in the lost-semantics closeout pass. The checked Moss semantics now survive through the affected inference/lowering/runtime boundary without relying on backend accidents.
+
+
 ## SWARM-066 — `for i in range(...)` accepted by checker but native lowering loses induction binding
 
-- Status: Open
+- Status: Fixed
 - Category: Compiler / native lowering
 - First observed: [Control Flow / Simulation Engine](control_flow_2026/simulation_engine/)
 - Observation count: 1
+
+Regression: `tests/swarm_066_for_range_lowering.moss`, registered in `tests/run.sh`.
+
+### Root cause
+
+In `gen_block` (`src/moss.cpp`), the `Stmt::Kind::For` / `is_range` path emitted:
+
+```rust
+for index in <start_expr>..<end_expr> { body }
+```
+
+When `<end_expr>` expands to a Rust block (e.g. a functional pipeline
+`values |> count` lowered to `{ let __moss_pipeline_source = ...; __moss_result }`),
+Rust parses `{ block }` after `..` as the **for-loop body**, not the upper bound.
+This created a `RangeFrom` (`start_expr..`) with the pipeline block as the body,
+leaving the actual Moss loop body unreachable. The induction variable was never
+declared in the loop scope, producing `E0425` and `E0308` from rustc.
+
+### Fix
+
+Range bounds are now always materialized into typed `let __moss_range_start_<line>: i64`
+and `let __moss_range_end_<line>: i64` bindings before the for-loop. The for-loop
+header then uses simple variable references, eliminating the precedence ambiguity
+entirely for any expression kind (literals, helper calls, functional pipelines, etc.).
 
 ### Minimal reproducer
 
@@ -2556,21 +2767,17 @@ fn main():
 
 Committed reproducer: `examples/swarm/control_flow_2026/simulation_engine/failed_attempts/01_for_native_reproducer/`.
 
-### Observed behavior
+### Observed behavior (before fix)
 
 `moss fmt` accepts the source. `moss check` passes. Fast Debug reports its documented
 limitation (`interpreter error: Fast Debug does not support for iteration yet`).
 
-Native compilation fails with:
+Native compilation failed with:
 
 ```
 error[E0425]: cannot find value `index` in this scope
 error[E0308]: mismatched types — expected `()`, found `i64`
 ```
-
-The induction variable `index` is referenced in the generated Rust loop body but was never
-declared in the loop scope, and the loop result type is mismatched. The lowering of `for/range`
-induction binding and result accumulation is incorrect.
 
 ### Classification distinction from SWARM-057
 
@@ -2579,20 +2786,8 @@ explicit module scope (a module/package-boundary defect). SWARM-066 is a differe
 the same construct is accepted by the checker in a plain single-file program but the native
 lowering backend emits invalid Rust. Distinct compiler phases, distinct failure signatures.
 
-### Workaround
-
-Replace `for index in range(start, end):` with an explicit `while` loop:
-
-```moss
-var index = 0
-while index < (values |> count):
-  result = result + values[index]
-  index = index + 1
-```
-
 ### Notes
 
 Non-boundary defect: fails in a single-file program without any module structure. Formatter and
-checker fully accept the source, making this a native-lowering-only parity gap. The control-flow
-swarm (Phase 15.12B) used `while` loops as the bounded workaround; `for`/`range` in any
-non-trivial function body is currently unreliable for native compilation.
+checker fully accept the source, making this a native-lowering-only parity gap. Fixed in
+Phase 15.14 by materializing range bounds before the for-loop header.

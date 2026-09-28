@@ -1,0 +1,28 @@
+fn both(a, b) -> Bool:
+  return a and b
+
+fn either(a, b) -> Bool:
+  return a or b
+
+fn exclusive(a, b) -> Bool:
+  return a xor b
+
+fn invert(a) -> Bool:
+  return not a
+
+fn fail_bool() -> Bool:
+  assert(false)
+  return true
+
+fn main():
+  echo both(true, true)
+  echo both(true, false)
+  echo either(false, true)
+  echo exclusive(true, false)
+  echo exclusive(true, true)
+  echo invert(false)
+  echo not true or true
+  echo true xor true and false
+  echo false or true xor true
+  echo false and fail_bool()
+  echo true or fail_bool()

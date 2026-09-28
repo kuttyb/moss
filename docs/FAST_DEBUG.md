@@ -32,6 +32,12 @@ loops, and assertions. Inferred WRITE parameters refer to caller storage,
 including primitive parameters and nested domain-state projections. Integer
 arithmetic retains Moss wrapping behavior.
 
+Closed enum construction, exhaustive READ and consuming matches, owned-rvalue
+consumption, `replace` on writable state, `pass`, and `var` reinitialization use
+the same checked semantics in Fast Debug and native execution. `message` and
+`reply` establish value boundaries for READ enum payload views. Traces report
+the selected case and domain state reads/writes, including a replacement.
+
 ## Synchronous domains
 
 Phase 10.6E adds logical instances corresponding one-to-one with the checked
@@ -84,9 +90,9 @@ class ranks, lock events, or simulated interleavings appear in this trace.
 
 ## Remaining interpreter limits
 
-Existing unsupported expression/iteration constructs, including functional
-pipelines and `for` traversal, still produce construct-specific interpreter
-errors. There is no blanket domain/message/reply restriction or automatic native
+Unsupported iteration constructs, including `for` traversal, still produce
+construct-specific interpreter errors. Current eager functional pipelines run
+in Fast Debug. There is no blanket domain/message/reply restriction or automatic native
 Moss fallback. Source-free providers remain supported by production, while Fast
 Debug requires their source. Phase 10.6F records [production measurements and trace-size observations](PERFORMANCE_10_6F.md);
 concurrency correctness remains covered by the production harness.

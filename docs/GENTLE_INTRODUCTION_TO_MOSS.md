@@ -125,6 +125,33 @@ Ordinary `x = value` remains the usual inferred binding form.
 Integer arithmetic uses `+`, `-`, `*`, `/`, and `%`. The `%` operator is
 integer remainder and follows the same truncating signed-division model as `/`.
 
+Moss v0.1 has a closed set of built-in operators; user-defined types cannot
+overload or redefine them. `String` has three built-in operator forms:
+concatenation with `+`, equality with `==`, and inequality with `!=`.
+String ordering with `<`, `<=`, `>`, or `>=` is not part of v0.1.
+
+String methods read their inputs and return independent values. Character
+positions are zero-based Unicode code-point positions (like Python), not UTF-8
+byte offsets or grapheme clusters. A character is a one-code-point `String`:
+
+```moss
+fn main():
+  text = "aé🙂"
+  echo text.length()          # 3
+  echo text.char_at(1)        # é
+  letters = text.chars()      # Vector[String]
+  fields = "a,b,".split(",") # ["a", "b", ""]
+  echo ",".join(fields)       # a,b,
+```
+
+`char_at` requires a valid nonnegative position; `split` requires a nonempty
+separator. Invalid inputs fail under current runtime precondition behavior.
+`join` accepts `Vector[String]` and returns an empty String for an empty vector.
+String numeric parsing and recoverable invalid-input behavior belong to Phase 21.
+
+There are no bitwise or shift operators (`&`, `|`, `^`, `<<`, `>>`) in v0.1, and
+Boolean logic uses words rather than `&&` and `||` (Section 2).
+
 ---
 
 ## 2. Branches and Loops
@@ -176,12 +203,60 @@ for i in range(0, 10):
   echo i
 ```
 
-Boolean negation is written with `not`:
+Boolean operators use Python-style words:
 
 ```moss
-if not ready:
-  echo "waiting"
+if ready and not cancelled:
+  echo "running"
+
+if cached or retrying:
+  echo "available"
+
+if primary xor fallback:
+  echo "exactly one path is active"
 ```
+
+All Boolean operators require `Bool` operands. `and` and `or` short-circuit;
+`xor` evaluates both operands and is true when exactly one is true. Precedence,
+from highest to lowest, is `not`, `and`, `xor`, `or`.
+
+### A name bound inside a loop or branch stays there
+
+Python lets a name assigned inside a loop or an `if` leak into the rest of the
+function. Moss does not:
+
+```moss
+fn main():
+  values = [10, 20, 30]
+  var total = 0
+
+  for value in values:
+    doubled = value * 2
+    total = total + doubled
+
+  echo total
+```
+
+After the loop, `total` is still available because it existed before the loop.
+`value` and `doubled` are not: using either one after the loop is a
+compile-time error. A name first bound inside a `for` or `while` body,
+including the loop variable, stays inside the loop, since the loop might not run
+at all.
+
+A name first bound inside an `if` is visible afterwards only when every branch
+binds it:
+
+```moss
+fn describe(n: Int) -> String:
+  if n < 0:
+    label = "negative"
+  else:
+    label = "non-negative"
+  return label
+```
+
+To carry a value out of a loop or a one-sided `if`, create it before and update
+it inside, as `total` does above.
 
 ---
 
@@ -222,6 +297,38 @@ fn main():
 ```
 
 Moss resolves concrete versions for the uses it sees. It does not turn `x` into a dynamically typed runtime value.
+
+Untyped parameters may call methods supplied by each concrete caller. A direct
+field read needs a concrete parameter annotation: `fn name(user: User): return
+user.name` works when `User` declares `name`, while `fn name(user): return
+user.name` is rejected at the field access. A shared `user.name()` method can
+instead be inferred for each concrete caller or declared in a named trait.
+
+### Passing a function to a function
+
+A function can take another named function as an argument and call it:
+
+```moss
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn inc(x: Int) -> Int:
+  return x + 1
+
+fn apply(f, x: Int) -> Int:
+  return f(x)
+
+fn main():
+  echo apply(double, 5)
+  echo apply(inc, 5)
+```
+
+This is still static. Every call passes a function the compiler can see, and
+Moss compiles a separate version of `apply` for each one, so there is no
+function pointer or dynamic call at run time. For now, the function you pass
+needs its parameter types annotated. A function passed this way can also be used
+as a pipeline stage (Section 6), but it cannot be returned, stored in a field or
+collection, or sent in a message.
 
 ---
 
@@ -309,6 +416,48 @@ Module exports control the public boundary of a module. Ordinary type members do
 
 ---
 
+### Closed enums
+
+Use an `enum` when a value can be exactly one of a known set of cases:
+
+```moss
+enum Job:
+  Waiting
+  Done(value: Int)
+  Failed(code: Int, message: String)
+
+fn describe(job: Job):
+  match job:
+    case Waiting:
+      echo "waiting"
+    case Done(value):
+      echo value
+    case Failed(code, message):
+      echo message
+```
+
+Construct a case with its type name, such as `Job.Done(value: 42)` or
+`Job.Waiting`. A match must cover every case exactly once. Pattern names
+must equal the declared field names in their declared order.
+
+`match job` reads the enum and leaves `job` usable afterward. A READ match
+may also use a statically known enum expression such as `envelope.job`; it
+borrows the containing value for the arm without copying the enum. A nontrivial
+payload such as `String` is only borrowed inside that arm. If an arm needs to
+transfer ownership of such a payload, write `match consume job:` instead;
+that consumes the entire `job` on every path. An owned function result or fresh
+enum construction can also be consumed. An interior place such as
+`envelope.job` cannot be partially moved. A READ payload can still feed a
+calculation or cross a `message`/`reply` value boundary. The READ borrow lasts
+through the whole match. No `move` or `ref` annotation is written in the pattern.
+
+Use `old = replace(phase, Phase.Idle)` to install an equal-typed fallback in
+writable state and receive the old whole enum as owned. Then `match consume old:`
+can transfer its payload into the next state. A consumed `var` may be assigned
+a new whole value before its next read; every path through a loop must restore
+it before the next iteration. `pass` is the no-op statement for an arm or any
+other normal block. Tag-only cases use `Waiting`, never `Waiting()`.
+
 ## 5. Collections
 
 The built-in collection names are:
@@ -332,6 +481,13 @@ fn main():
 
 Vectors support `push(item)`, `pop()`, indexed reads (`vec[i]`) and writes
 (`vec[i] = item`). Use `vec |> count` for cardinality.
+
+An untyped helper can index built-in collections. Moss checks each concrete
+call separately, so `fn first(items): return items[0]` can return `Int` for a
+`Vector[Int]` caller and `String` for a `Vector[String]` caller. The container
+determines the key and value types; an incorrect key, assigned value, or
+non-indexable caller is a compile error. A valid index type does not guarantee
+that an element or Map key is present at runtime.
 
 Contained types are inferred:
 
@@ -358,13 +514,22 @@ fn main():
 
   keys = scores.keys()
   values = scores.values()
+  var found = false
+  prior = scores.delete("test", 0, found)
+  assert(found)
+  echo prior  # 9
 ```
 
 The key and value types are inferred from use.
 `get(key, default)` is the safe/defaulted lookup; `map[key]` remains strict and
 expects the key to exist. `keys()` and `values()` produce ordinary eager `Vector`
 snapshots. Map iteration order is unspecified. Map supports indexed writes
-(`map[key] = value`), but v0.1 has no deletion operation.
+(`map[key] = value`). `delete(key, fallback, found)` removes a present entry,
+returns its owned value, and sets the writable Bool `found` to `true`. For a
+missing key it returns the eagerly evaluated fallback and sets `found` to
+`false`. The map and flag are WRITE accesses; the key is READ and the fallback
+is evaluated eagerly and transferred by value (nontrivial bindings are consumed
+even when the key is present). This API does not introduce a new `Option` type.
 
 ### Queue
 
@@ -583,6 +748,10 @@ fn f(x: Drawable):
 
 means "this interface requirement has a name."
 
+A trait names a requirement; it is not a storage type. `Vector[Drawable]()` is
+rejected, and a list literal that mixes `Circle` and `Rectangle` values does not
+type-check. Keep each concrete type in its own collection.
+
 ---
 
 ## 9. Iteration
@@ -751,14 +920,25 @@ Constructor argument order does not matter because fields and routes are named.
 The beginning of `main` establishes the concrete domain instances and their connections. After that, normal execution proceeds.
 
 This composition prefix is also the one domain topology for a program: a
-`test "name":` block is not another composition root. Constructor state
-initializers must be side-effect-free. The current checker permits pure ordinary
-helper calls there, but rejects messages, domain access, I/O, failing, divergent,
-and unresolved work. Here, **unresolved** means an expression or call whose
-relevant observable effects cannot be statically established; it does not mean
-ordinary local computation, local bindings, multi-statement pure helpers, or
-normal value allocation. See `docs/TESTING.md` for how tests participate in the
-project's composed program.
+`test "name":` block is not another composition root. See `docs/TESTING.md` for
+how tests participate in the project's composed program.
+
+Domain state initializers must be side-effect-free. The rule covers both a
+default written in the domain declaration, such as `value = 0` or one that
+calls a helper function, and a value passed to the constructor in `main`. The
+checker permits pure ordinary helper calls there, but rejects messages, domain
+access, I/O, failing, divergent, and unresolved work. **Failing** work includes
+operations that can fail at run time, such as division, indexing, or `pop()`. A
+helper's `while` loop is accepted when the checker can prove it terminates. In
+practice that means a simple counting loop, such as `while i < n:`, that moves
+`i` toward the bound by a fixed step once per pass. The bound must have no side
+effects and must not change inside the loop. A `for` over a vector is accepted
+too. **Unresolved** means an expression or call whose relevant observable
+effects cannot be statically established; it does not mean ordinary local
+computation, local bindings, multi-statement pure helpers, or normal value
+allocation. To check a helper before using it as an initializer, run
+`moss effects fn:<name> --source <file> --json`. It reports the same
+`may_fail`, `may_diverge`, and `unresolved` facts the checker uses.
 
 ### Messages have value semantics
 
@@ -897,6 +1077,7 @@ Use **Margo** for current package/project work:
 margo build
 margo run
 margo test
+margo test --interp
 margo bench
 margo clean
 margo debug
@@ -935,6 +1116,17 @@ margo test
 
 `moss test` remains available as the direct compiler/project compatibility
 path.
+
+To run the project's tests through Fast Debug instead of a native build, use:
+
+```sh
+margo test --interp
+margo test --interp --trace
+```
+
+This discovers tests across the project's files and modules and does not invoke
+`rustc`. Fast Debug's current limits (Section 14) apply, so a test that uses
+`for` still needs native `margo test`.
 
 There are two simple assertion forms:
 
@@ -1013,6 +1205,9 @@ For a package graph, use:
 margo debug --trace
 ```
 
+To trace a project's tests instead, use `margo test --interp --trace`
+(Section 13).
+
 A reachable source-free `.mossi`/rlib provider cannot be mixed into Fast Debug.
 Use native execution or make that dependency's Moss source available through
 the resolved package graph.
@@ -1046,7 +1241,9 @@ There are no user-visible references or lifetime annotations.
 
 There is no general runtime dynamic dispatch or trait-object model.
 
-There are no general escaping closure values.
+There are no general escaping closure values. You can pass a named function to
+another function (Section 3), but that is static specialization, not a closure
+value.
 
 There is no requirement to write locks around domain state.
 
@@ -1103,14 +1300,16 @@ If you already know Python, the shortest useful way to approach Moss is:
 1. Write variables, functions, branches, loops, objects, and collections normally.
 2. Leave types out until an annotation improves the interface.
 3. Remember that owned objects do not silently alias when assigned.
-4. Use traits when you want to give a structural requirement a name.
-5. Use pipelines for collection transformations.
-6. Use domains when mutable state needs to be isolated and shared safely.
-7. Connect domains explicitly with `domainroutes`.
-8. Use modules as named namespaces and compilation units.
-9. Use Margo for package/project testing and package-aware Fast Debug; use
-   `moss debug` or `moss run --interp` for direct same-project or standalone
-   interpreted execution.
-10. Let the compiler worry about native lowering, synchronization, and the Rust backend.
+4. Remember that a name first bound inside a loop, or in only one branch of an
+   `if`, stays there.
+5. Use traits when you want to give a structural requirement a name.
+6. Use pipelines for collection transformations.
+7. Use domains when mutable state needs to be isolated and shared safely.
+8. Connect domains explicitly with `domainroutes`.
+9. Use modules as named namespaces and compilation units.
+10. Use Margo for package/project testing and package-aware Fast Debug; use
+    `moss debug` or `moss run --interp` for direct same-project or standalone
+    interpreted execution.
+11. Let the compiler worry about native lowering, synchronization, and the Rust backend.
 
 Moss is meant to let a programmer begin near Python's level of ceremony while retaining a much more static, native, systems-oriented execution model underneath.

@@ -1,0 +1,28 @@
+fn add_if(counts: Map[Int, Int], item: Int) -> Map[Int, Int]:
+  if item > 0:
+    counts[item] = counts.get(item, 0) + 1
+  return counts
+
+fn add_loop(counts: Map[Int, Int], item: Int) -> Map[Int, Int]:
+  var i = 0
+  while i < 2:
+    counts[item] = counts.get(item, 0) + 1
+    i = i + 1
+  return counts
+
+fn write_through(counts: Map[Int, Int], item: Int):
+  counts[item] = counts.get(item, 0) + 1
+
+fn add_helper(counts: Map[Int, Int], item: Int) -> Map[Int, Int]:
+  write_through(counts, item)
+  return counts
+
+fn main():
+  items = [1, 2]
+  var initial = Map()
+  initial[0] = 0
+  via_if = items |> reduce(initial, add_if)
+  via_loop = items |> reduce(via_if, add_loop)
+  via_helper = items |> reduce(via_loop, add_helper)
+  echo via_helper.get(1, 0)
+  echo via_helper.get(2, 0)

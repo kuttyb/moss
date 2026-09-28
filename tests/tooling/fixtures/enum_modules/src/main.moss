@@ -1,0 +1,16 @@
+module app
+import tags
+
+fn main():
+  let signal = tags.make()
+  match signal:
+    case Off:
+      echo 0
+    case On(value):
+      echo value
+  let off = tags.Signal.Off
+  match consume off:
+    case Off:
+      echo 1
+    case On(value):
+      echo value

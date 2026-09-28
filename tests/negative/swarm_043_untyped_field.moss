@@ -1,0 +1,12 @@
+type Alpha:
+  name: String
+
+type Beta:
+  name: String
+
+fn get_name(item):
+  return item.name
+
+fn main():
+  echo get_name(Alpha(name: "A"))
+  echo get_name(Beta(name: "B"))
