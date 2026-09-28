@@ -657,6 +657,20 @@ class FastInterpreter {
     std::string callee; std::vector<std::string> args;
     if (parse_call(e, callee, args)) {
       if (callee.find('.') == std::string::npos) {
+        if (callee == "replace" && args.size() == 2) {
+          Value replacement = eval(args[1], frame, line, output);
+          if (identifier(trim_copy(args[1]))) frame.locals.erase(trim_copy(args[1]));
+          auto place = locate(args[0], frame, line, output);
+          if (!place.value)
+            throw RuntimeError(line, "replace requires an assignable place");
+          Value previous = std::move(*place.value);
+          *place.value = std::move(replacement);
+          if (place.domain)
+            state_event("state_write", frame, line, place, summary(previous),
+                        summary(*place.value));
+          else emit("LocalWrite", frame, line, args[0]);
+          return previous;
+        }
         if (args.empty() && callee.rfind("Vector[", 0) == 0 &&
             callee.size() > 8 && callee.back() == ']')
           return Value::vector_value({}, callee.substr(7, callee.size() - 8));
@@ -1088,7 +1102,8 @@ class FastInterpreter {
         if (selected.kind != Value::Kind::Struct || !selected.object ||
             selected.object->case_name.empty())
           throw RuntimeError(statement.line, "match requires an enum value");
-        if (statement.b == "consume") frame.locals.erase(statement.a);
+        if (statement.b == "consume" && identifier(statement.a))
+          frame.locals.erase(statement.a);
         const EnumType* declaration = nullptr;
         for (const auto& candidate : program_.enums)
           if (candidate.name == selected.object->type) declaration = &candidate;
@@ -1200,8 +1215,10 @@ class FastInterpreter {
           break;
         case Stmt::Kind::Call:
         case Stmt::Kind::Raw:
-          if (!statement.text.empty() && statement.text != "pass")
+          if (!statement.text.empty())
             eval(statement.text, frame, statement.line, output);
+          break;
+        case Stmt::Kind::Pass:
           break;
         case Stmt::Kind::Return:
           flow.returned = true;

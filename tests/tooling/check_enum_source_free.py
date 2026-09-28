@@ -14,7 +14,26 @@ FIXTURE = ROOT / "tests" / "tooling" / "fixtures" / "enum_modules"
 
 
 def main():
+    def prepare():
+        prepared = subprocess.run(
+            [str(ROOT / "margo"), "build"], cwd=FIXTURE, text=True,
+            capture_output=True, check=False,
+        )
+        if prepared.returncode:
+            raise AssertionError(prepared.stdout + prepared.stderr)
+
+    prepare()
     provider = FIXTURE / "build" / "debug"
+    interface = (provider / "tags.mossi").read_bytes()
+    if b"fn make kind=concrete" not in interface or b"unresolved=0" not in interface:
+        raise AssertionError("exported enum constructor effect is not pure")
+    prepare()
+    if (provider / "tags.mossi").read_bytes() != interface:
+        raise AssertionError("enum provider interface changed on a repeated build")
+    source_run = subprocess.run(
+        [str(ROOT / "margo"), "run"], cwd=FIXTURE, text=True,
+        capture_output=True, check=True,
+    )
     scratch = Path(tempfile.mkdtemp(prefix="express005-source-free-", dir=ROOT / "tmp"))
     artifacts = scratch / "artifacts"
     artifacts.mkdir()
@@ -50,8 +69,9 @@ def main():
         capture_output=True,
         check=True,
     )
-    if run.stdout != "4\n1\n":
-        raise AssertionError(f"source-free enum output: {run.stdout!r}")
+    if run.stdout != "4\n1\n" or run.stdout != source_run.stdout:
+        raise AssertionError(
+            f"enum source/source-free disagreement: {source_run.stdout!r}, {run.stdout!r}")
     print("source-free enum .mossi provider passed")
 
 

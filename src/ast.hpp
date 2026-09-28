@@ -38,7 +38,7 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
+  enum class Kind { Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),

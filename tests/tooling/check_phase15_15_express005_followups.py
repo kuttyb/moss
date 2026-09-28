@@ -8,19 +8,15 @@ and checks the checker, native lowering (``rustc -D warnings``, as
 
 Case kinds:
 
-  bug      Known defect (F*). Expected to fail today: a strict "expected
-           failure". If a bug case starts passing, the run fails with XPASS so
-           the fix is promoted: move the case into the permanent regression
-           tests, then delete it here and mark the finding fixed in the review.
-  open     Open design question (D*). Pins today's behavior, so a design
-           change is deliberate: update the case and the review together.
+  bug      Unfixed defect (F*). Expected to fail in default mode.
+  open     Unresolved design question (D*), pinned to current behavior.
   control  Documented idiom or workaround (C*) that must keep working.
+           Fixed F* cases and decided D* cases remain here as permanent probes.
 
 Usage:
 
   python3 tests/tooling/check_phase15_15_express005_followups.py [compiler]
-      Default strict-xfail mode. Exit 0 when every bug still reproduces and
-      every open/control case holds, so it is safe inside make check.
+      Default regression mode. Exit 0 when all decided cases hold.
   ... --expect-fixed      Require bug cases to pass (the target of a fix).
   ... --only F4a,F4b      Run selected cases only.
   ... --list              Print the case registry.
@@ -53,6 +49,7 @@ class Case:
     # consistent  checker rejects, or native and Fast Debug agree
     # effects     `moss effects target` has observable_effects[key] == value
     # plan        synchronization plan read/write/mode expectations
+    # native      checker and native lowering print `output` (for unsupported Fast Debug for-loops)
     # module_run  multi-file project; margo run and margo debug print `output`
     check: str = "run"
     output: str = ""
@@ -75,7 +72,7 @@ TEXT_PHASE = """enum Phase:
 
 CASES = [
     # ------------------------------------------------------------------ F1
-    Case("F1a", "bug", "payload constructor is an unresolved observable effect",
+    Case("F1a", "control", "payload constructor is an unresolved observable effect",
          """enum Signal:
   Off
   On(value: Int)
@@ -91,7 +88,7 @@ fn main():
     case On(value):
       echo value
 """, check="effects", target="make_on", effect=("unresolved", False)),
-    Case("F1b", "bug", "payload constructor rejected as a domain state default",
+    Case("F1b", "control", "payload constructor rejected as a domain state default",
          PHASE + """
 domain Machine:
   phase: Phase = Phase.Running(job: 1)
@@ -109,7 +106,7 @@ fn main():
   machine = Machine()
   echo message machine.Get()
 """, output="1"),
-    Case("F1c", "bug", "payload constructor rejected as a main constructor argument",
+    Case("F1c", "control", "payload constructor rejected as a main constructor argument",
          PHASE + """
 domain Machine:
   phase: Phase
@@ -128,7 +125,7 @@ fn main():
   echo message machine.Get()
 """, output="5"),
     # ------------------------------------------------------------------ F2
-    Case("F2", "bug", "unannotated enum state is not a known match type",
+    Case("F2", "control", "unannotated enum state is not a known match type",
          PHASE + """
 domain Machine:
   phase = Phase.Idle
@@ -146,8 +143,26 @@ fn main():
   machine = Machine()
   echo message machine.Get()
 """, output="0"),
+    Case("F2b", "control", "inferred payload-bearing domain state is matchable",
+         PHASE + """
+domain Machine:
+  phase = Phase.Running(job: 7)
+
+  fn Get() -> Int:
+    match phase:
+      case Idle:
+        reply 0
+      case Running(job):
+        reply job
+      case Done(job):
+        reply 0 - job
+
+fn main():
+  machine = Machine()
+  echo message machine.Get()
+""", output="7"),
     # ------------------------------------------------------------------ F3
-    Case("F3", "bug", "enum popped from an inferred Queue is not a known match type",
+    Case("F3", "control", "enum popped from an inferred Queue is not a known match type",
          """enum Msg:
   Text(body: String)
   Quit
@@ -164,7 +179,7 @@ fn main():
       echo "quit"
 """, output="queued"),
     # ------------------------------------------------------------------ F4
-    Case("F4a", "bug", "READ view: returning an Int computed from a view is rejected",
+    Case("F4a", "control", "READ view: returning an Int computed from a view is rejected",
          TEXT_PHASE + """
 fn size(p: Phase) -> Int:
   match p:
@@ -176,7 +191,7 @@ fn size(p: Phase) -> Int:
 fn main():
   echo size(Phase.Done(name: "abc"))
 """, output="3"),
-    Case("F4b", "bug", "READ view: returning a new String built from a view is rejected",
+    Case("F4b", "control", "READ view: returning a new String built from a view is rejected",
          TEXT_PHASE + """
 fn describe(p: Phase) -> String:
   match p:
@@ -188,7 +203,7 @@ fn describe(p: Phase) -> String:
 fn main():
   echo describe(Phase.Done(name: "a"))
 """, output="a!"),
-    Case("F4c", "bug", "READ view: replying an Int computed from a view is rejected",
+    Case("F4c", "control", "READ view: replying an Int computed from a view is rejected",
          """enum Result:
   Error(code: Int, message: String)
   Cancelled
@@ -196,8 +211,8 @@ fn main():
 domain Source:
   fn Fetch(result: Result) -> Int:
     match result:
-      case Error(code, text):
-        reply text.length()
+      case Error(code, message):
+        reply message.length()
       case Cancelled:
         reply 0
 
@@ -205,7 +220,7 @@ fn main():
   source = Source()
   echo message source.Fetch(Result.Error(code: 2, message: "boom"))
 """, output="4"),
-    Case("F4d", "bug", "READ view: replying a pipeline terminal over a view is rejected",
+    Case("F4d", "control", "READ view: replying a pipeline terminal over a view is rejected",
          """enum Batch:
   Items(values: Vector[Int])
   Empty
@@ -222,7 +237,7 @@ fn main():
   s = Sum()
   echo message s.Total(Batch.Items(values: [1, 2, 3]))
 """, output="6"),
-    Case("F4e", "bug", "READ view: helper result inside an enum constructor is rejected",
+    Case("F4e", "control", "READ view: helper result inside an enum constructor is rejected",
          TEXT_PHASE + """
 fn copy_text(text: String) -> String:
   return text + ""
@@ -241,7 +256,7 @@ fn main():
       echo name
 """, output="a"),
     # ------------------------------------------------------------------ F5-F10
-    Case("F5", "bug", "`_` pattern binding: checker, native, and Fast Debug disagree",
+    Case("F5", "control", "`_` pattern binding: checker, native, and Fast Debug disagree",
          """enum Span:
   Range(lo: Int, hi: Int)
   Empty
@@ -254,7 +269,7 @@ fn main():
     case Empty:
       echo 0
 """, check="consistent"),
-    Case("F6", "bug", "assigning a scalar payload binding: engines disagree",
+    Case("F6", "control", "assigning a scalar payload binding: engines disagree",
          """enum Box:
   Num(value: Int)
   Nothing
@@ -268,7 +283,7 @@ fn main():
     case Nothing:
       echo 0
 """, check="consistent"),
-    Case("F7", "bug", "enum-typed Map key is accepted (docs: no hashing)",
+    Case("F7", "control", "enum-typed Map key is accepted (docs: no hashing)",
          """enum Color:
   Red
   Blue
@@ -278,7 +293,7 @@ fn main():
   counts[Color.Red] = 1
   echo counts.get(Color.Red, 0)
 """, check="reject"),
-    Case("F8", "bug", "`value.field` projection on an enum is accepted",
+    Case("F8", "control", "`value.field` projection on an enum is accepted",
          """enum Box:
   Num(value: Int)
   Nothing
@@ -287,7 +302,7 @@ fn main():
   let b = Box.Num(value: 1)
   echo b.value
 """, check="reject"),
-    Case("F9", "bug", "trait-typed enum payload field is accepted",
+    Case("F9", "control", "trait-typed enum payload field is accepted",
          """trait Shape:
   fn area() -> Int
 
@@ -298,7 +313,7 @@ enum Holder:
 fn main():
   echo 0
 """, check="reject"),
-    Case("F10", "bug", "`Enum.Case(field = value)`: native accepts, Fast Debug fails",
+    Case("F10", "control", "`Enum.Case(field = value)`: native accepts, Fast Debug fails",
          """enum Box:
   Num(value: Int)
   Nothing
@@ -312,7 +327,7 @@ fn main():
       echo 0
 """, check="consistent"),
     # ------------------------------------------------------------------ F11
-    Case("F11a", "bug", "match consume of an outer binding inside a loop is accepted",
+    Case("F11a", "control", "match consume of an outer binding inside a loop is accepted",
          """enum Msg:
   Text(body: String)
   Quit
@@ -328,7 +343,7 @@ fn main():
         echo "quit"
     i = i + 1
 """, check="reject"),
-    Case("F11b", "bug", "general: moving an outer binding inside a loop is accepted",
+    Case("F11b", "control", "general: moving an outer binding inside a loop is accepted",
          """fn main():
   let s = "once"
   var i = 0
@@ -338,7 +353,7 @@ fn main():
     i = i + 1
 """, check="reject"),
     # ------------------------------------------------------------------ F12
-    Case("F12a", "bug", "var initialized, then assigned in every arm, fails the native build",
+    Case("F12a", "control", "var initialized, then assigned in every arm, fails the native build",
          PHASE + """
 domain Machine:
   phase: Phase = Phase.Idle
@@ -370,7 +385,7 @@ fn main():
   message machine.Step()
   echo message machine.Current()
 """, output="1\n-1"),
-    Case("F12b", "bug", "general: var assigned on both if/else paths fails the native build",
+    Case("F12b", "control", "general: var assigned on both if/else paths fails the native build",
          """fn main():
   let ready = true
   var label = "none"
@@ -381,7 +396,7 @@ fn main():
   echo label
 """, output="go"),
     # ------------------------------------------------------------------ F13
-    Case("F13", "bug", "bare unknown identifier statement is accepted",
+    Case("F13", "control", "bare unknown identifier statement is accepted",
          """enum Color:
   Red
   Blue
@@ -394,8 +409,8 @@ fn main():
     case Blue:
       echo 2
 """, check="reject", needle="INVALID_BARE_IDENTIFIER_STATEMENT"),
-    # ------------------------------------------------------------------ open
-    Case("D1", "open", "pattern names bind by position; reordered names swap silently",
+    # ------------------------------------------------------------------ decided design cases
+    Case("D1", "control", "payload pattern names must match declaration order",
          """enum Span:
   Range(lo: Int, hi: Int)
   Empty
@@ -409,8 +424,8 @@ fn width(s: Span) -> Int:
 
 fn main():
   echo width(Span.Range(lo: 2, hi: 10))
-""", output="-8"),
-    Case("D2", "open", "match consume rejects an owned temporary",
+""", check="reject", needle="MATCH_FIELD_NAME_MISMATCH"),
+    Case("D2", "control", "match consume accepts an owned temporary",
          """enum Msg:
   Text(body: String)
   Quit
@@ -425,8 +440,8 @@ fn main():
       echo owned
     case Quit:
       echo "quit"
-""", check="reject", needle="MATCH_CONSUME_REQUIRES_BINDING"),
-    Case("D3", "open", "READ borrow spans every arm; tag-only arm cannot assign state",
+""", output="hi"),
+    Case("D3", "control", "READ borrow spans the whole match",
          PHASE + """
 domain Machine:
   phase: Phase = Phase.Idle
@@ -444,29 +459,33 @@ fn main():
   machine = Machine()
   message machine.Step()
 """, check="reject", needle="MATCH_READ_BORROW_ACTIVE"),
-    Case("D4", "open", "domain state cannot carry an owned payload into the next state",
+    Case("D4", "control", "replace transfers old domain payload into a new state",
          """enum Phase:
   Idle
-  Running(name: String)
-
-fn advance(current: Phase) -> Phase:
-  match consume current:
-    case Idle:
-      return Phase.Running(name: "job")
-    case Running(name):
-      return Phase.Running(name: name)
+  Running(job: String)
+  Done(job: String)
 
 domain Machine:
-  phase: Phase = Phase.Idle
+  phase = Phase.Running(job: "work")
 
-  fn Step():
-    phase = advance(phase)
+  fn Step() -> Int:
+    old = replace(phase, Phase.Idle)
+    match consume old:
+      case Idle:
+        reply 0
+      case Running(job):
+        size = job.length()
+        phase = Phase.Done(job: job)
+        reply size
+      case Done(job):
+        phase = Phase.Done(job: job)
+        reply 0
 
 fn main():
   machine = Machine()
-  message machine.Step()
-""", check="reject", needle="cannot be consumed"),
-    Case("D5", "open", "READ view cannot cross message (a READ parameter can: C4)",
+  echo message machine.Step()
+""", output="4"),
+    Case("D5", "control", "READ enum view crosses a message by-value boundary",
          """enum Result:
   Error(code: Int, message: String)
   Cancelled
@@ -479,12 +498,29 @@ fn main():
   sink = Sink()
   let result = Result.Error(code: 1, message: "bad")
   match result:
-    case Error(code, text):
-      message sink.Store(text)
+    case Error(code, message):
+      message sink.Store(message)
     case Cancelled:
       echo 0
-""", check="reject", needle="BORROWED_ENUM_PAYLOAD_ESCAPE"),
-    Case("D6", "open", "match on an untyped parameter is rejected (no specialization)",
+""", output="bad"),
+    Case("D5b", "control", "READ enum view crosses a reply by-value boundary",
+         """enum Result:
+  Error(code: Int, message: String)
+  Cancelled
+
+domain Source:
+  fn Fetch(result: Result) -> String:
+    match result:
+      case Error(code, message):
+        reply message
+      case Cancelled:
+        reply "cancelled"
+
+fn main():
+  source = Source()
+  echo message source.Fetch(Result.Error(code: 2, message: "boom"))
+""", output="boom"),
+    Case("D6", "control", "match specializes an untyped parameter at concrete calls",
          """enum Job:
   Waiting
   Done(value: Int)
@@ -498,8 +534,8 @@ fn score(item) -> Int:
 
 fn main():
   echo score(Job.Done(value: 5))
-""", check="reject", needle="MATCH_REQUIRES_ENUM"),
-    Case("D7", "open", "a consumed var cannot be re-initialized by a later statement",
+""", output="5"),
+    Case("D7", "control", "a consumed var can be reinitialized before use",
          """enum Phase:
   Start
   Running(name: String)
@@ -511,8 +547,14 @@ fn main():
       phase = Phase.Running(name: "job")
     case Running(name):
       echo name
-""", check="reject", needle="OWNERSHIP_USE_AFTER_CONSUME"),
-    Case("D8", "open", "enum payload field types are required (no inference)",
+      phase = Phase.Start
+  match phase:
+    case Start:
+      echo "start"
+    case Running(name):
+      echo name
+""", output="job"),
+    Case("D8", "control", "enum payload field types are required",
          """enum Box:
   Num(value)
   Nothing
@@ -520,7 +562,7 @@ fn main():
 fn main():
   echo 0
 """, check="reject", needle="requires a type"),
-    Case("D9", "open", "built-in option[T] is not a match scrutinee",
+    Case("D9", "control", "legacy option[T] remains separate from enum match",
          """type Countdown:
   current: Int
   fn next() -> option[Int]:
@@ -539,7 +581,7 @@ fn main():
     case None:
       echo 0
 """, check="reject", needle="MATCH_REQUIRES_ENUM"),
-    Case("D10", "open", "capitalized Option[...] is rejected by the iterator contract",
+    Case("D10", "control", "iterator contract uses lowercase option[T]",
          """type Countdown:
   current: Int
   fn next() -> Option[Int]:
@@ -556,7 +598,7 @@ fn main():
     total = total + value
   echo total
 """, check="reject", needle="without an Option result"),
-    Case("D11", "open", "exhaustive match has no no-op arm body",
+    Case("D11", "control", "pass is a no-op statement in a match arm",
          """enum Color:
   Red
   Blue
@@ -565,10 +607,11 @@ fn main():
   let c = Color.Red
   match c:
     case Red:
+      pass
     case Blue:
       echo 2
-""", check="reject", needle="EMPTY_MATCH_CASE"),
-    Case("D12", "open", "`Tag()` is accepted in declarations and patterns (not construction)",
+""", output=""),
+    Case("D12", "control", "tag-only enum declarations reject parentheses",
          """enum Box:
   Num(value: Int)
   Nothing()
@@ -580,8 +623,8 @@ fn main():
       echo value
     case Nothing():
       echo 0
-""", output="0"),
-    Case("D13", "open", "enums cannot declare methods (diagnostic names case fields)",
+""", check="reject", needle="tag-only enum cases are declared without parentheses"),
+    Case("D13", "control", "enum methods have a targeted unsupported diagnostic",
          """enum Job:
   Waiting
   Done(value: Int)
@@ -591,7 +634,192 @@ fn main():
 
 fn main():
   echo 0
-""", check="reject", needle="enum case fields must be named and typed"),
+""", check="reject", needle="enum methods are not supported"),
+    Case("D2b", "control", "consuming match accepts a constructed enum rvalue",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  match consume Box.Full(value: "fresh"):
+    case Full(value):
+      echo value
+    case Empty:
+      pass
+""", output="fresh"),
+    Case("D2c", "control", "consuming match rejects an interior enum place",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+type Envelope:
+  box: Box
+
+fn main():
+  let envelope = Envelope(box: Box.Empty)
+  match consume envelope.box:
+    case Full(value):
+      echo value
+    case Empty:
+      pass
+""", check="reject", needle="MATCH_CONSUME_INTERIOR_PLACE"),
+    Case("D4a", "control", "local replace returns the old owned payload",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  var current = Box.Full(value: "old")
+  let previous = replace(current, Box.Empty)
+  match consume previous:
+    case Full(value):
+      echo value
+    case Empty:
+      echo "missing"
+  match current:
+    case Full(value):
+      echo value
+    case Empty:
+      echo "empty"
+""", output="old\nempty"),
+    Case("D4b", "control", "replace consumes a nontrivial replacement binding",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  var current = Box.Empty
+  let replacement = Box.Full(value: "new")
+  let previous = replace(current, replacement)
+  match replacement:
+    case Full(value):
+      echo value
+    case Empty:
+      pass
+""", check="reject", needle="consumed"),
+    Case("D4c", "control", "consuming match accepts replace of domain state",
+         """enum Phase:
+  Idle
+  Running(job: String)
+
+domain Machine:
+  phase = Phase.Running(job: "work")
+
+  fn Step() -> String:
+    match consume replace(phase, Phase.Idle):
+      case Idle:
+        reply "idle"
+      case Running(job):
+        reply job
+
+fn main():
+  machine = Machine()
+  echo message machine.Step()
+""", output="work"),
+    Case("D6b", "control", "incompatible non-enum specialization is rejected",
+         """enum Status:
+  Ready
+  Failed(code: Int)
+
+fn describe(value) -> Int:
+  match value:
+    case Ready:
+      return 1
+    case Failed(code):
+      return code
+
+fn main():
+  echo describe(3)
+""", check="reject", needle="found int"),
+    Case("D7b", "control", "loop back edge accepts a reinitialized outer var",
+         """enum Phase:
+  Idle
+  Running(job: String)
+
+fn main():
+  var value = Phase.Running(job: "work")
+  var done = false
+  while not done:
+    let old = value
+    value = Phase.Idle
+    done = true
+  match value:
+    case Idle:
+      echo "idle"
+    case Running(job):
+      echo job
+""", output="idle"),
+    Case("F11c", "control", "for loop rejects consumption without reinitialization",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  let owned = Box.Full(value: "x")
+  for index in range(0, 2):
+    let old = owned
+    echo index
+""", check="reject", needle="LOOP_OUTER_BINDING_CONSUMED"),
+    Case("F11d", "control", "for loop permits consumed var reinitialized before back edge",
+         """enum Box:
+  Full(value: String)
+  Empty
+
+fn main():
+  var owned = Box.Full(value: "x")
+  for index in range(0, 2):
+    let old = owned
+    owned = Box.Empty
+    echo index
+""", check="native", output="0\n1"),
+    Case("F11e", "control", "a loop return path has no ownership back edge",
+         """enum State:
+  Idle
+  Busy(name: String)
+
+fn run(stop: Bool) -> Int:
+  var state = State.Busy(name: "x")
+  var i = 0
+  while i < 2:
+    if stop:
+      match consume state:
+        case Idle:
+          return 0
+        case Busy(name):
+          return name.length()
+    i = i + 1
+  return 2
+
+fn main():
+  echo run(false)
+""", output="2"),
+    Case("D11b", "control", "pass works in ordinary function and main blocks",
+         """fn noop():
+  pass
+
+fn main():
+  noop()
+  pass
+  echo 1
+""", output="1"),
+    Case("D12b", "control", "tag-only enum constructor rejects parentheses",
+         """enum Box:
+  Empty
+
+fn main():
+  let value = Box.Empty()
+  echo 1
+""", check="reject", needle="ENUM_TAG_CALL_UNSUPPORTED"),
+    Case("D12c", "control", "tag-only enum pattern rejects parentheses",
+         """enum Box:
+  Empty
+
+fn main():
+  let value = Box.Empty
+  match value:
+    case Empty():
+      echo 1
+""", check="reject", needle="tag-only enum patterns are written without parentheses"),
     # ------------------------------------------------------------------ controls
     Case("C1", "control", "documented transition idiom: bind next in every arm",
          PHASE + """
@@ -634,8 +862,8 @@ fn main():
 domain Source:
   fn Fetch(result: Result) -> Int:
     match result:
-      case Error(code, text):
-        let n = text.length()
+      case Error(code, message):
+        let n = message.length()
         reply n
       case Cancelled:
         reply 0
@@ -825,7 +1053,7 @@ class Runner:
             if case.needle and case.needle not in diagnostic:
                 return False, f"rejected with a different diagnostic: {diagnostic}"
             return True, diagnostic
-        if case.check in ("run", "plan", "effects") and not accepted:
+        if case.check in ("run", "native", "plan", "effects") and not accepted:
             return False, f"checker rejected: {diagnostic}"
         if case.check == "effects":
             return self.effects(case, source)
@@ -835,6 +1063,12 @@ class Runner:
             return True, f"rejected consistently: {diagnostic}"
 
         native_output, native_error = self.native(source, work)
+        if case.check == "native":
+            if native_error:
+                return False, native_error
+            return native_output == case.output, (
+                "native output matches" if native_output == case.output else
+                f"native printed {native_output!r}, expected {case.output!r}")
         debug_output, debug_error = self.fast_debug(source)
         if case.check == "consistent":
             if native_error or debug_error:

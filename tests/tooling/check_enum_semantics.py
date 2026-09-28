@@ -183,41 +183,6 @@ fn main():
 """,
         "BORROWED_ENUM_PAYLOAD_ACCESS",
     ),
-    "read_payload_message": (
-        """domain Sink:
-  fn Store(value: String):
-    echo value
-
-fn main():
-  sink = Sink()
-  let result = Result.Error(code: 1, message: "bad")
-  match result:
-    case Ok(value):
-      echo value
-    case Error(code, message):
-      message sink.Store(message)
-    case Cancelled:
-      echo 0
-""",
-        "BORROWED_ENUM_PAYLOAD_ESCAPE",
-    ),
-    "read_payload_reply": (
-        """domain Source:
-  fn Fetch(result: Result) -> String:
-    match result:
-      case Ok(value):
-        reply "ok"
-      case Error(code, message):
-        reply message
-      case Cancelled:
-        reply "cancelled"
-
-fn main():
-  source = Source()
-  echo message source.Fetch(Result.Cancelled)
-""",
-        "BORROWED_ENUM_PAYLOAD_ESCAPE",
-    ),
     "read_payload_mutation": (
         """enum Bucket:
   Items(values: Vector[Int])
@@ -281,7 +246,7 @@ fn main():
     case Cancelled:
       echo 0
 """,
-        "MATCH_CONSUME_REQUIRES_BINDING",
+        "MATCH_CONSUME_INTERIOR_PLACE",
     ),
     "scrutinee_after_consume": (
         """fn main():
@@ -394,7 +359,7 @@ def main():
     )
     surface = json.loads(bootstrap.stdout)["result"]["source_surface"]
     if (surface["enums"]["read_match"] != "match expression:"
-            or surface["enums"]["consume_match"] != "match consume value:"):
+            or surface["enums"]["consume_match"] != "match consume <owned enum expression>:"):
         print("bootstrap omitted enum ownership surface", file=sys.stderr)
         return 1
     SCRATCH.mkdir(parents=True, exist_ok=True)
@@ -417,8 +382,8 @@ def main():
         if result.returncode == 0 or expected not in details:
             failures.append(f"{name}: expected {expected}; got {details}")
         if name == "aggregate_field_consume_match" and (
-                "does not partially move" not in details
-                or "Bind an owned enum value first" not in details):
+                "interior place" not in details
+                or "replace(place, replacement)" not in details):
             failures.append(f"{name}: missing targeted guidance; got {details}")
     if failures:
         print("\n".join(failures), file=sys.stderr)

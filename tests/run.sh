@@ -1235,6 +1235,10 @@ run_case string_payload_copy tests/string_payload_snapshot.moss 'fresh'
 # Phase 15.15: Unicode String methods and Map.delete must survive native lowering.
 run_case phase15_15_string_map tests/phase15_15_string_map.moss 'string/map ok'
 run_case phase15_15_enum_positive tests/phase15_15_enum_positive.moss "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')"
+grep -F '"construct_kind": "enum"' "$test_build/phase15_15_enum_positive.mossmap" >/dev/null ||
+  fail "enum declaration missing from debug map"
+grep -F '"construct_kind": "enum_case"' "$test_build/phase15_15_enum_positive.mossmap" >/dev/null ||
+  fail "enum case missing from debug map"
 run_case phase15_15_enum_message tests/phase15_15_enum_message.moss "$(printf '3\n3\nmessage\n3')"
 [ "$("$compiler" run --interp tests/phase15_15_enum_positive.moss)" = "$(printf '42\n0\nhelper\nbad\n7\n3\n7\n3\n7\n11\n42\nowned')" ] ||
   fail "enum standalone Fast Debug parity"
@@ -1250,9 +1254,9 @@ enum_module_expected=$(printf '4\n1')
   fail "enum module Fast Debug output"
 python3 tests/tooling/check_enum_source_free.py ||
   fail "source-free enum module interface"
-# EXPRESS-005 review registry: known bugs are strict expected failures (an
-# XPASS fails the suite so a fix gets promoted); open/control cases must hold.
-PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" ||
+# EXPRESS-005 review registry: every repaired F case and decided D case is
+# an ordinary permanent regression across checking, native, and Fast Debug.
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" --expect-fixed ||
   fail "EXPRESS-005 follow-up registry"
 run_case phase47_iteration tests/phase47_iteration.moss '12 1 20 6 9 3 3'
 run_case phase47_element_effects tests/phase47_element_effects.moss 'element effects'

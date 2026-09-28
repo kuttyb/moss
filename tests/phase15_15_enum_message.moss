@@ -8,9 +8,9 @@ domain Relay:
     match value:
       case Empty:
         echo "empty"
-      case Text(text):
-        echo text
-      case Pair(code, text):
+      case Text(value):
+        echo value
+      case Pair(code, value):
         echo code
     reply value
 
@@ -18,9 +18,9 @@ domain Relay:
     match value:
       case Empty:
         reply 0
-      case Text(text):
+      case Text(value):
         reply 1
-      case Pair(code, text):
+      case Pair(code, value):
         reply code
 
 fn main():
@@ -32,14 +32,14 @@ fn main():
   match consume output:
     case Empty:
       echo "empty"
-    case Text(text):
-      echo text
-    case Pair(code, text):
-      echo text
+    case Text(value):
+      echo value
+    case Pair(code, value):
+      echo value
   match input:
     case Empty:
       echo "empty"
-    case Text(text):
-      echo text
-    case Pair(code, text):
+    case Text(value):
+      echo value
+    case Pair(code, value):
       echo code

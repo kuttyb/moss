@@ -72,7 +72,7 @@ or range-only optimized locations are not presented as precise Moss steps."
     "let" "var"))
 
 (defconst moss--control-keywords
-  '("if" "else" "while" "match" "case" "consume" "return" "and" "or" "not"))
+  '("if" "else" "while" "match" "case" "consume" "return" "pass" "and" "or" "not"))
 
 (defconst moss--domain-keywords
   '("message" "reply" "domainroutes"))
