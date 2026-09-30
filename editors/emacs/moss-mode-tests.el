@@ -359,9 +359,271 @@
       (delete-file generated)
       (delete-file source))))
 
-(provide 'moss-mode-tests)
+(ert-deftest moss-mode-semantic-cache-invalidates-after-change ()
+  (with-temp-buffer
+    (moss-mode)
+    (setq moss--semantic-cache (make-hash-table :test #'equal))
+    (puthash 'query '(1 . result) moss--semantic-cache)
+    (insert "x")
+    (should (= 0 (hash-table-count moss--semantic-cache)))))
 
-;;; moss-mode-tests.el ends here
+(ert-deftest moss-mode-xref-definition-uses-compiler-location ()
+  (with-temp-buffer
+    (insert "inspect(sample)\n")
+    (setq buffer-file-name "/tmp/example.moss")
+    (moss-mode)
+    (cl-letf (((symbol-function 'moss--references-at-point)
+               (lambda ()
+                 '((target . ((kind . "function") (name . "inspect")))
+                   (definition . ((source . ((file . "/src/lib.moss")
+                                             (line . 7) (column . 1)))))))))
+      (let* ((xref (car (xref-backend-definitions 'moss "inspect")))
+             (location (xref-item-location xref)))
+        (should (equal "/src/lib.moss" (xref-file-location-file location)))
+        (should (= 7 (xref-file-location-line location)))))))
+
+(ert-deftest moss-mode-xref-references-excludes-declaration ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/example.moss")
+    (moss-mode)
+    (cl-letf (((symbol-function 'moss--references-at-point)
+               (lambda ()
+                 '((target . ((name . "work")))
+                   (references . (((kind . "declaration")
+                                   (source . ((file . "/src/a.moss") (line . 1))))
+                                  ((kind . "call")
+                                   (source . ((file . "/src/b.moss") (line . 9))))))))))
+      (let ((xrefs (xref-backend-references 'moss "work")))
+        (should (= 1 (length xrefs)))
+        (should (equal "/src/b.moss"
+                       (xref-file-location-file
+                        (xref-item-location (car xrefs)))))))))
+
+(ert-deftest moss-mode-xref-apropos-preserves-symbol-order ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/example.moss")
+    (moss-mode)
+    (cl-letf (((symbol-function 'moss--semantic-query)
+               (lambda (&rest _)
+                 '((symbols . (((qualified_name . "A") (kind . "type")
+                                (source . ((file . "/a") (line . 1))))
+                               ((qualified_name . "B") (kind . "function")
+                                (source . ((file . "/b") (line . 2))))))))))
+      (should (equal '("A — type" "B — function")
+                     (mapcar #'xref-item-summary
+                             (xref-backend-apropos 'moss "")))))))
+
+(ert-deftest moss-mode-capf-exposes-semantic-annotations ()
+  (with-temp-buffer
+    (insert "tot")
+    (setq buffer-file-name "/tmp/example.moss")
+    (moss-mode)
+    (cl-letf (((symbol-function 'moss--semantic-query)
+               (lambda (&rest _)
+                 '((candidates . (((label . "total") (kind . "function")
+                                   (detail . "function (Int) -> Int"))))))))
+      (let* ((capf (moss-completion-at-point))
+             (table (nth 2 capf)))
+        (should (member "total" table))
+        (should (equal "  function (Int) -> Int"
+                       (moss--completion-annotation "total")))))))
+
+(ert-deftest moss-mode-call-tree-marks-repeated-semantic-identity ()
+  (with-temp-buffer
+    (moss-call-tree-mode)
+    (let ((inhibit-read-only t))
+      (moss--call-tree-insert-node "again" "entity-v1:function:f"
+                                   "/f.moss" 2 1
+                                   '("entity-v1:function:f")))
+    (should (string-match-p "\\[repeated\\]" (buffer-string)))
+    (should-not (get-text-property (point-min) 'moss-node-id))))
+
+(ert-deftest moss-mode-callers-and-callees-use-compiler-call-records ()
+  (with-temp-buffer
+    (setq buffer-file-name "/tmp/example.moss")
+    (moss-mode)
+    (let (shown)
+      (cl-letf (((symbol-function 'moss--calls-at-point)
+                 (lambda ()
+                   '((callers . (((source . "fn:outer")
+                                  (source_file . "/src/a.moss") (line . 4))))
+                     (direct_calls . (((target . "fn:inner")
+                                       (boundary . "ordinary_call")
+                                       (source_file . "/src/a.moss")
+                                       (line . 8))
+                                      ((target . "handler:Worker.Add")
+                                       (boundary . "synchronous_message_by_value")
+                                       (source_file . "/src/a.moss")
+                                       (line . 9)))))))
+                ((symbol-function 'moss--show-xrefs)
+                 (lambda (xrefs) (setq shown xrefs))))
+        (moss-callers)
+        (should (= 1 (length shown)))
+        (moss-callees)
+        (should (= 2 (length shown)))
+        (should (string-match-p "synchronous_message"
+                                (xref-item-summary (cadr shown))))))))
+
+(ert-deftest moss-mode-call-tree-expands-message-and-nested-edges ()
+  (let ((source-buffer (generate-new-buffer " *moss-tree-source*")))
+    (unwind-protect
+        (with-temp-buffer
+          (moss-call-tree-mode)
+          (setq moss--call-tree-source-buffer source-buffer)
+          (let ((inhibit-read-only t))
+            (moss--call-tree-insert-node "root" "entity-v1:function:root"
+                                         "/src/a.moss" 1 0 nil))
+          (cl-letf (((symbol-function 'moss--semantic-query)
+                     (lambda (&rest _)
+                       '((direct_calls .
+                          (((target . "handler:Worker.Add")
+                            (target_id . "entity-v1:handler:Worker.Add")
+                            (boundary . "synchronous_message_by_value")
+                            (source_file . "/src/a.moss") (line . 6))))))))
+            (goto-char (point-min))
+            (moss-call-tree-toggle)
+            (should (string-match-p "\\[message\\] handler:Worker.Add"
+                                    (buffer-string)))
+            (forward-line 1)
+            (should (equal "entity-v1:handler:Worker.Add"
+                           (get-text-property (point) 'moss-node-id)))))
+      (kill-buffer source-buffer))))
+
+(ert-deftest moss-mode-real-compiler-completes-incomplete-source ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_incomplete.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-max))
+            (skip-chars-backward "\n")
+            (let ((capf (moss-completion-at-point)))
+              (should (member "total" (nth 2 capf)))))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-xref-cross-file-and-semantic-references ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_ide/src/main.moss" root))
+         (library (expand-file-name
+                   "tests/tooling/fixtures/phase225_ide/src/library.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-min))
+            (search-forward "leaf")
+            (let* ((definition (car (xref-backend-definitions 'moss "leaf")))
+                   (location (xref-item-location definition))
+                   (references (xref-backend-references 'moss "leaf")))
+              (should (equal library (xref-file-location-file location)))
+              (should (= 11 (xref-file-location-line location)))
+              (should (= 3 (length references)))))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-method-and-message-references ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_ide/src/main.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-min))
+            (search-forward "Read")
+            (should (= 2 (length (xref-backend-references 'moss "Read"))))
+            (search-forward "top")
+            (let ((location (xref-item-location
+                             (car (xref-backend-definitions 'moss "top")))))
+              (should (equal source (xref-file-location-file location)))
+              (should (= 1 (xref-file-location-line location))))
+            (search-forward "Add")
+            (let ((references (xref-backend-references 'moss "Add")))
+              (should (= 1 (length references)))
+              (should (string-match-p "handler_message"
+                                      (xref-item-summary (car references))))))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-ambiguity-is-not-guessed ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_shadow.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (should-error
+             (moss--semantic-query "references" "binding:value")
+             :type 'moss-semantic-error))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-workspace-symbol-kinds-and-modules ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_ide/src/main.moss" root))
+         (module-source (expand-file-name
+                         "tests/tooling/fixtures/phase225_modules/src/main.moss"
+                         root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (dolist (file (list source module-source))
+      (with-current-buffer (find-file-noselect file)
+        (unwind-protect
+            (progn
+              (moss-mode)
+              (let* ((first (moss--json-get
+                             'symbols (moss--semantic-query "symbols" nil)))
+                     (second (moss--json-get
+                              'symbols (moss--semantic-query "symbols" nil)))
+                     (projection
+                      (mapcar (lambda (item)
+                                (cons (moss--json-get 'qualified_name item)
+                                      (moss--json-get 'kind item))) first)))
+                (should (equal first second))
+                (if (equal file source)
+                    (progn
+                      (should (member '("top" . "function") projection))
+                      (should (member '("Counter" . "type") projection))
+                      (should (member '("Worker" . "domain") projection))
+                      (should (member '("Worker.Add" . "handler") projection)))
+                  (should (member '("math.leaf" . "function") projection)))))
+          (kill-buffer (current-buffer)))))))
+
+(ert-deftest moss-mode-real-compiler-contextual-completion-kinds ()
+  (let* ((root (moss--repo-root default-directory))
+         (compiler (expand-file-name "moss" root))
+         (cases `(("tests/tooling/fixtures/phase225_ide/src/main.moss"
+                   "at:8:24" "Read" "method")
+                  ("tests/tooling/fixtures/phase225_ide/src/main.moss"
+                   "at:11:27" "Add" "handler")
+                  ("tests/tooling/fixtures/phase225_type_incomplete.moss"
+                   "at:4:21" "Counter" "type")
+                  ("tests/tooling/fixtures/phase225_modules/src/main.moss"
+                   "at:5:13" "leaf" "function"))))
+    (dolist (case cases)
+      (let ((file (expand-file-name (nth 0 case) root))
+            (moss-compiler-command compiler))
+        (with-current-buffer (find-file-noselect file)
+          (unwind-protect
+              (progn
+                (moss-mode)
+                (let ((candidates
+                     (moss--json-get
+                      'candidates
+                      (moss--semantic-query "complete" (nth 1 case) nil t))))
+                  (should (cl-some
+                           (lambda (candidate)
+                             (and (equal (moss--json-get 'label candidate)
+                                         (nth 2 case))
+                                  (equal (moss--json-get 'kind candidate)
+                                         (nth 3 case))))
+                           candidates))))
+            (kill-buffer (current-buffer))))))))
 
 (ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
   (with-temp-buffer
@@ -376,3 +638,7 @@
     (should (eq (get-text-property (point) 'face) 'font-lock-keyword-face))
     (forward-line 1)
     (should (eq (get-text-property (point) 'face) 'font-lock-keyword-face))))
+
+(provide 'moss-mode-tests)
+
+;;; moss-mode-tests.el ends here

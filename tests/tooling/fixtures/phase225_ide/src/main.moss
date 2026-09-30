@@ -1,0 +1,12 @@
+fn top(value: Int) -> Int:
+  first = middle(value)
+  return leaf(first)
+
+fn main():
+  worker = Worker()
+  counter = Counter(value: 2)
+  read_value = counter.Read()
+  first = top(read_value)
+  second = leaf(first)
+  result = message worker.Add(second)
+  echo result

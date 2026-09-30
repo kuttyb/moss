@@ -1,0 +1,5 @@
+module app
+import math
+
+fn main():
+  echo math.leaf(1)

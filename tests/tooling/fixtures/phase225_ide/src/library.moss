@@ -1,0 +1,25 @@
+type Counter:
+  value: Int
+
+  fn Read() -> Int:
+    return value
+
+enum Choice:
+  Some(value: Int)
+  None
+
+fn leaf(value: Int) -> Int:
+  return value + 1
+
+fn middle(value: Int) -> Int:
+  return leaf(value)
+
+fn read_counter(counter: Counter) -> Int:
+  return counter.Read()
+
+domain Worker:
+  total = 0
+
+  fn Add(value: Int) -> Int:
+    total = total + value
+    reply total

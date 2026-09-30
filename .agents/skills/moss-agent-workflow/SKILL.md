@@ -210,6 +210,9 @@ moss type <target> --source <source> --json
 moss effects <target> --source <source> --json
 moss ownership <target> --source <source> --json
 moss calls <target> --source <source> --json
+moss references <target> --source <source> --json
+moss symbols [prefix] --source <source> --json
+moss complete at:<line>:<column> --source <source> --json
 moss why <target> --source <source> --json
 moss cost <target> --source <source> --json
 moss impact <target> --source <source> --json
@@ -244,6 +247,9 @@ The requested physical path still disambiguates a result.
 | What does it READ / WRITE / CONSUME, and what observable effects occur? | `effects` |
 | What capability does this parameter or call require? | `ownership` |
 | What direct/transitive callers, callees, specializations, or messages are known? | `calls` |
+| Where is this declaration and which checked uses refer to it? | `references` |
+| Which semantic declarations are in this project context? | `symbols` |
+| Which names are valid at this editor position? | `complete` |
 | Why did a semantic, fusion, backend, or synchronization choice occur? | `why` |
 | What static work/copy/materialization/backend facts are known? | `cost` |
 | What could this edit invalidate or which tests could it affect? | `impact` then `test --affected` |

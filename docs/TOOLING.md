@@ -100,23 +100,39 @@ then have the conventional clickable form:
 
 The default command-line diagnostic prefix remains `moss:12` for compatibility.
 
-## Emacs `moss-mode`
+## Emacs installation
 
-Add the repository directory to `load-path`:
+### Required semantic editing setup
+
+- Emacs 29.1 or newer.
+- A built or installed Moss compiler (`make` builds `./moss` in a checkout).
+- `editors/emacs/moss-mode.el`.
+
+Put this copy/pasteable configuration in `~/.emacs.d/init.el` (adjust the
+checkout path):
 
 ```elisp
 (add-to-list 'load-path "/path/to/moss/editors/emacs")
 (require 'moss-mode)
 ```
 
-Opening a `.moss` file then enables:
+That setup alone enables:
 
 - `#` comments and string-aware syntax;
 - two-space, tab-free block indentation with `else` dedenting;
 - font lock for declarations, control flow, concurrency, builtin types, and
   functional operations;
 - Imenu categories for functions, types/traits, domains, methods, and handlers;
-- basic beginning/end-of-definition navigation.
+- check/build/run integration and basic definition movement;
+- compiler-resolved definition and reference navigation through built-in xref;
+- semantic project-symbol search, callers/callees, and an expandable call tree;
+- context-sensitive compiler completion through built-in
+  `completion-at-point`.
+
+No LSP server is involved.  Eglot, lsp-mode, Company, Corfu, Cape, and
+tree-sitter packages are **not required**.  Corfu and other CAPF frontends are
+compatible if a user already prefers them, because Moss exposes the standard
+Emacs completion-at-point API.
 
 The primary commands are:
 
@@ -130,6 +146,13 @@ The primary commands are:
 | `M-x moss-show-debug-map` | open the shared JSON map read-only |
 | `M-x moss-goto-generated-rust` | jump from Moss to its generated location |
 | `M-x moss-jump-to-moss-source` | jump from generated Rust to Moss |
+| `M-.` / `xref-find-definitions` | go to the compiler-resolved declaration |
+| `M-?` / `xref-find-references` | list compiler-resolved semantic references |
+| `M-x xref-find-apropos` | search semantic symbols in the project context |
+| `M-x moss-callers` | show navigable callers |
+| `M-x moss-callees` | show navigable direct callees |
+| `M-x moss-call-tree` | browse an expandable static call hierarchy (`TAB`/`RET`) |
+| `M-x completion-at-point` | complete lexical, member, module, type, and message names |
 
 Check, compile, build, and run commands use Emacs `compilation-mode`. Moss
 diagnostics are clickable. Artifacts are kept under
@@ -145,7 +168,15 @@ C-c C-g  generated Rust
 C-c C-d  toggle pending Moss breakpoint
 ```
 
-The mode is dependency-light. `dape` is loaded only when debugging is requested.
+Semantic queries invoke the compiler directly with argument vectors and parse
+the `moss-agent-1` JSON envelope.  Results are cached only for an unchanged
+buffer and invalidated on edit/save.  Completion sends unsaved text through the
+compiler's bounded, tooling-only overlay/recovery path; it does not relax normal
+Moss checking and does not create an editor-side semantic database.
+
+### Optional native debugging
+
+`dape` is loaded only when debugging is requested.
 Projects need not live inside the Moss checkout: customize
 `moss-compiler-command` when the compiler is not on `PATH`, and
 `moss-lldb-script` only when the LLDB bridge was installed separately from the
@@ -166,6 +197,17 @@ requirement is that this succeeds before debugging:
 
 ```elisp
 (require 'dape)
+```
+
+For example, in stock Emacs run `M-x package-refresh-contents`, then
+`M-x package-install RET dape RET`.  A complete optional configuration is:
+
+```elisp
+;; Optional: only native LLDB/DAP debugging needs this package.
+(require 'dape)
+;; Set this only if your adapter is not discoverable as lldb-dap or
+;; /usr/bin/lldb-dap-N.
+;; (setq moss-lldb-dap-command "/path/to/lldb-dap")
 ```
 
 `moss-mode` loads it lazily when `M-x moss-debug` is invoked.

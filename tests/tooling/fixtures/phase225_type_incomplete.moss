@@ -1,0 +1,5 @@
+type Counter:
+  value: Int
+
+fn choose(value: Cou) -> Int:
+  return value

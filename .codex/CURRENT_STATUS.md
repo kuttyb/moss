@@ -1,5 +1,46 @@
 # Moss current status
 
+## Phase 22.5 — Emacs Semantic IDE — COMPLETE (2026-09-29)
+
+Phase numbering is reassigned: Phase 22.5 is the Emacs Semantic IDE and the
+previously reserved repair/workflow automation work moves to Phase 22.6. No
+Phase 22.6 implementation is part of this branch.
+
+The branch `phase-22.5-emacs-ide` started from current `main`. The compiler now
+exposes deterministic `references`, `symbols`, and contextual `complete`
+queries through `moss-agent-1`. Completion accepts a tooling-only source
+overlay, recovers only the active line, and reports whether recovery was used.
+The stock-Emacs client consumes those facts for xref definitions/references,
+workspace symbols, CAPF completion, callers/callees, and an expandable call
+tree without maintaining an editor-side semantic index or consulting generated
+Rust.
+
+Closeout fixed two issues exposed by the dedicated regressions: binding
+reference queries no longer inherit calls to the enclosing function when names
+overlap, and completion chooses an enclosing callable body rather than a module
+or declaration symbol. The tests also use exact cursor positions and assert
+the fixture's complete compiler-owned call sets: three `leaf` calls and two
+`Counter.Read` method calls.
+
+Validation used `rustc 1.98.1` and the repository compiler built from this
+tree. The dedicated Phase 22.5 semantic IDE query check passed. All 34 Emacs
+ERT tests passed, including real-compiler incomplete-buffer completion,
+cross-file xref, method/message references, ambiguity, workspace symbols,
+module completion, and contextual completion kinds. Full `make check` and
+`make examples` passed. A strict C++17 compiler build with
+`-O2 -Wall -Wextra -pedantic -Werror`, `sh -n tests/run.sh`, and
+`git diff HEAD --check` passed. No Phase 22.6 repair/workflow automation is
+included.
+
+Session report: live bootstrap and structured JSON query probes made the
+reference-set mismatch and ambiguity behavior explicit. Three significant
+edit/check/repair cycles were needed. The remaining uncertainty was internal
+completion-scope selection, which required a reduced probe because no query
+currently explains candidate inclusion/exclusion. Impact/affected testing was
+not useful for this compiler/editor cross-cut, so the dedicated checks and full
+suite were used. A structured completion-explanation query would have saved the
+most diagnostic time. No implementation work remains for Phase 22.5.
+
 ## Phase 22.1–22.4 consolidation — COMPLETE (2026-09-28)
 
 The dedicated `phase-22-integration` branch starts from upstream `main`
@@ -44,7 +85,9 @@ are absent; they are not required Phase 22.4 functionality.
 
 No canonical Phase 22.3 A/B trial was rerun and no raw result was changed. Only
 deterministic derived artifacts were regenerated for the terminology/reporting
-cleanup. Phase 22.5 repair/workflow automation remains out of scope.
+cleanup. That checkpoint's Phase 22.5 repair/workflow reservation is
+superseded: Phase 22.5 is the Emacs Semantic IDE and repair/workflow automation
+is Phase 22.6.
 
 ## Phase 22.3 quantitative A/B benchmark — COMPLETE (2026-09-28)
 
@@ -163,7 +206,7 @@ Deliberate limitations retained for later phases:
 - source provenance is line-oriented;
 - some nested message expressions do not become semantic call edges;
 - trace slicing is provided by Phase 22.4;
-- repair/workflow automation is Phase 22.5.
+- the Emacs Semantic IDE is Phase 22.5; repair/workflow automation is Phase 22.6.
 
 ## 2026-09-28 — Phase 22.4 structured debugging closeout — COMPLETE
 
@@ -848,7 +891,7 @@ The remaining Phase 22.3 limitations are unchanged:
 - source provenance is currently line-oriented;
 - some nested message expressions are not represented as semantic call edges;
 - trace slicing belongs to Phase 22.4;
-- automated repair/workflow belongs to Phase 22.5.
+- the Emacs Semantic IDE belongs to Phase 22.5; automated repair/workflow belongs to Phase 22.6.
 
 The frozen post-22.3 evidence remains tied to compiler commit
 `ddf927ca490d092b776168c45d330c439d220268`: final passes 28 to 28,

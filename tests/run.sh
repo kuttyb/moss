@@ -18,6 +18,7 @@ python3 tests/tooling/check_agent_baseline_analysis.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase22_3_ab.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase225_semantic_ide.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_003_formatter.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_032_formatter_parentheses.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_formatter_indexing.py "$compiler"

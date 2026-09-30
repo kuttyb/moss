@@ -135,6 +135,9 @@ moss type line:18 --source src/main.moss --json
 moss effects fn:normalize --source src/main.moss --json
 moss ownership method:Buffer.push --source src/main.moss --json
 moss calls fn:evaluate --source src/main.moss --json
+moss references fn:evaluate --source src/main.moss --json
+moss symbols eval --source src/main.moss --json
+moss complete at:18:9 --source src/main.moss --json
 moss why main@24:expression:0 --source src/main.moss --json -O
 ```
 
@@ -220,6 +223,35 @@ exact matching specialization. `inspect` and `calls` additionally expose `caller
 `transitive_calls`
 from the same retained static call graph. No field is inferred from generated symbol
 spelling.
+
+### Editor semantic queries (Phase 22.5)
+
+`references` resolves through the same target contract and returns the selected
+declaration plus deterministically ordered compiler-resolved call, method-call,
+synchronous-message, callable, and retained type-use locations.  It reuses the
+checked `SemanticCallEdge`, functional callable, declaration/type, and durable
+identity facts used by semantic rename and the other queries; it never greps
+source text.  Ambiguity is a structured `QUERY_TARGET_NOT_FOUND` result with
+`details.resolution.status = "ambiguous"`.
+
+`symbols [prefix]` enumerates compiler-known declarations in the selected
+semantic/project context.  Each result has `entity_id`, `kind`,
+`qualified_name`, `display_name`, physical `source`, and `enclosing_entity`.
+Filtering is deterministic, case-insensitive prefix matching on qualified or
+display name.
+
+`complete at:<line>:<column>` returns structured candidates from checked lexical
+scope, receiver type/member facts, module exports, type position, and static
+domain composition.  Candidates expose `label`, `kind`, optional `entity_id`,
+`qualified_name`, retained `type`, `detail`, and physical `source`.
+
+Editor clients may pass `--overlay-source <temporary-file>` to `complete` so
+unsaved buffer text participates without modifying the real source.  Completion
+uses a bounded tooling-only recovery: the active type token is replaced with
+`Int`, or the active expression line is elided to a neutral checked statement
+or value in the in-memory overlay.  The result reports `recovery.used` and the
+contract name.  This path is exclusive to completion; normal check/build/run
+acceptance and Moss syntax are unchanged.
 
 The Phase 10.5 synchronization schema reservation is superseded by Phase 10.6C.
 `synchronization_diagnostics.availability` is now `derived`: graph-relative

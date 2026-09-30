@@ -1,0 +1,7 @@
+fn total(values: Vector[Int]) -> Int:
+  return values |> sum
+
+fn main():
+  values = [1, 2]
+  total_value = total(values)
+  tot

@@ -1,0 +1,12 @@
+fn left() -> Int:
+  value = 1
+  echo value
+  return value
+
+fn right() -> Int:
+  value = 2
+  echo value
+  return value
+
+fn main():
+  echo left() + right()

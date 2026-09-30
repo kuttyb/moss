@@ -69,5 +69,5 @@ records. No query reparses generated Rust or performs heuristic Moss analysis.
   checked `Stmt::Message` invocations currently become semantic message call edges.
   Their effects and topology remain available from the other compiler records.
 
-Trace slicing belongs to Phase 22.4. Source repair and workflow automation belong to
-Phase 22.5.
+Trace slicing belongs to Phase 22.4. Phase 22.5 adds the Emacs Semantic IDE;
+source repair and workflow automation are reassigned to Phase 22.6.

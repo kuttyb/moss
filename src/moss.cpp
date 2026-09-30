@@ -15802,6 +15802,7 @@ static string body_fingerprint_text(const vector<Stmt>& body) {
 static string durable_identity_base(const SemanticTargetFact& fact) {
   string prefix = "entity-v1:";
   if (fact.kind == "function") return prefix + "function:" + fact.name;
+  if (fact.kind == "module") return prefix + "module:" + fact.name;
   if (fact.kind == "specialization")
     return prefix + "specialization:" + fact.context.substr(3);
   if (fact.kind == "type") return prefix + "type:" + fact.name;
@@ -16011,9 +16012,14 @@ static void append_statement_targets(
     fact.context = context;
     fact.kind = (statement.kind == Stmt::Kind::Let ||
                  statement.kind == Stmt::Kind::Var ||
-                 statement.kind == Stmt::Kind::Assign)
+                 statement.kind == Stmt::Kind::Assign ||
+                 (statement.kind == Stmt::Kind::Message &&
+                  !statement.message_result.empty()))
         ? "binding" : "statement";
-    fact.name = fact.kind == "binding" ? statement.a : statement.text;
+    fact.name = fact.kind == "binding"
+        ? (statement.kind == Stmt::Kind::Message
+              ? statement.message_result : statement.a)
+        : statement.text;
     fact.type = statement.semantic_type;
     fact.line = statement.line;
     if (enclosing_effects) {
@@ -16370,6 +16376,40 @@ static vector<SemanticTargetFact> semantic_target_facts(
     targets.push_back(std::move(fact));
   }
 
+  std::map<string,std::pair<string,int>> module_locations;
+  for (const auto& target : targets)
+    if (!target.module_identity.empty()) {
+      auto location = module_locations.find(target.module_identity);
+      if (location == module_locations.end() ||
+          (target.line > 0 && target.line < location->second.second))
+        module_locations[target.module_identity] =
+            {target.source_file, target.line};
+    }
+  for (const auto& import : program.imports)
+    if (!import.owner_module.empty() &&
+        !module_locations.count(import.owner_module))
+      module_locations[import.owner_module] =
+          {import.source_file, import.line};
+  if (program.main && !program.main_module.empty() &&
+      !module_locations.count(program.main_module))
+    module_locations[program.main_module] =
+        {program.main->source_file, program.main->line};
+  for (const auto& module : module_locations) {
+    SemanticTargetFact fact;
+    fact.semantic_identity = "module:" + module.first;
+    fact.context = fact.semantic_identity;
+    fact.kind = "module";
+    fact.name = module.first;
+    fact.type = "module";
+    fact.line = module.second.second;
+    fact.source_file = module.second.first;
+    fact.module_identity = module.first;
+    fact.export_visibility = "exported";
+    fact.export_kind = "module";
+    fact.provenance.push_back(fact.semantic_identity);
+    targets.push_back(std::move(fact));
+  }
+
   auto source_for_context = [&](const string& context, int line) -> string {
     for (const auto& function : program.functions)
       if (context == "fn:" + function.name ||
@@ -16393,6 +16433,13 @@ static vector<SemanticTargetFact> semantic_target_facts(
     for (const auto& pipeline : program.functional_pipelines)
       if (pipeline.semantic_identity == context && !pipeline.source_file.empty())
         return pipeline.source_file;
+    if (starts_with(context, "module:")) {
+      string module = context.substr(7);
+      for (const auto& target : targets)
+        if (target.kind != "module" && target.module_identity == module &&
+            !target.source_file.empty())
+          return target.source_file;
+    }
     (void)line;
     return {};
   };
@@ -16421,6 +16468,28 @@ static vector<SemanticTargetFact> semantic_target_facts(
   // is a relationship projection over compiler-owned entities, not a second
   // name-resolution pass.
   for (auto& target : targets) {
+    string explicit_parent_kind;
+    string explicit_parent_name;
+    if (target.kind == "method" || target.kind == "field") {
+      explicit_parent_kind = "type";
+    } else if (target.kind == "handler" || target.kind == "domain_state") {
+      explicit_parent_kind = "domain";
+    } else if (target.kind == "enum_case") {
+      explicit_parent_kind = "enum";
+    }
+    if (!explicit_parent_kind.empty()) {
+      size_t separator = target.name.rfind('.');
+      if (separator != string::npos)
+        explicit_parent_name = target.name.substr(0, separator);
+      for (const auto& candidate : targets)
+        if (candidate.kind == explicit_parent_kind &&
+            candidate.name == explicit_parent_name) {
+          target.enclosing_semantic_identity = candidate.semantic_identity;
+          target.enclosing_durable_identity = candidate.durable_identity;
+          break;
+        }
+      if (!target.enclosing_durable_identity.empty()) continue;
+    }
     if (target.context.empty() || target.context == target.semantic_identity)
       continue;
     const SemanticTargetFact* enclosing = nullptr;
@@ -16464,7 +16533,8 @@ static bool semantic_target_is_root(const SemanticTargetFact& target) {
   return target.kind == "function" || target.kind == "specialization" ||
       target.kind == "method" || target.kind == "handler" ||
       target.kind == "domain" || target.kind == "type" ||
-      target.kind == "trait" || target.kind == "test" ||
+      target.kind == "trait" || target.kind == "module" ||
+      target.kind == "test" ||
       target.kind == "benchmark" || target.kind == "main";
 }
 
@@ -16514,6 +16584,8 @@ static SemanticQueryResolution resolve_semantic_target(
   SemanticQueryResolution result;
   int best_match_rank = 100;
   for (const auto& target : targets) {
+    if (by_location && target.kind == "module" && kind_filter != "module")
+      continue;
     if (!filters_match(target)) continue;
     int match_rank = 100;
     if (by_location) {
@@ -16593,7 +16665,8 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
   static const vector<AgentCapabilityDescriptor> catalog = {
       {"structured_diagnostics", "Stable machine-readable Moss diagnostics with compiler-owned source, rule, cause, entity, related-location, and guidance facts.", "moss check <source> --json"},
       {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
-      {"semantic_queries", "Resolve entities without guessing, then read checked type, ownership, effect, call, domain, synchronization, explanation, and cost facts.", "moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <source> --json"},
+      {"semantic_queries", "Resolve entities without guessing, then read checked type, ownership, effect, call, reference, symbol, completion, domain, synchronization, explanation, and cost facts.", "moss resolve|inspect|type|effects|ownership|calls|references|symbols|complete|why|cost ... --source <source> --json"},
+      {"semantic_editor_queries", "Compiler-owned references, workspace symbols, and context-sensitive completion for editor clients without an LSP server.", "moss references|symbols|complete ... --source <source> --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
       {"impact_analysis", "Changed semantic facts, dependents, affected tests, and reuse facts.", "moss impact <target> --source <source> --json"},
       {"formatter", "Canonical Moss formatting or formatting drift detection.", "moss fmt [--check] [--json]"},
@@ -17200,7 +17273,9 @@ static void write_bootstrap_json(std::ostream& out,
             "backend_lowering_explanations", "project_builds",
             "native_tests", "native_benchmarks", "benchmark_baselines",
             "durable_semantic_identities", "robust_query_targeting",
-            "semantic_query_expansion", "semantic_hashing",
+            "semantic_query_expansion", "semantic_editor_queries",
+            "semantic_references", "workspace_symbols",
+            "semantic_completion", "semantic_hashing",
             "impact_analysis", "incremental_verification",
             "modules", "qualified_imports", "module_interfaces",
             "generic_specialization_identity", "interpreted_domains",
@@ -17224,6 +17299,10 @@ static void write_bootstrap_json(std::ostream& out,
          "\"cost_facts\": true, "
          "\"robust_query_targeting\": true, "
          "\"semantic_query_expansion\": true, "
+         "\"semantic_editor_queries\": true, "
+         "\"semantic_references\": true, "
+         "\"workspace_symbols\": true, "
+         "\"semantic_completion\": true, "
          "\"language_surface\": true, "
          "\"package_project_driver\": true, "
          "\"package_dependencies\": true, "
@@ -17261,6 +17340,9 @@ static void write_bootstrap_json(std::ostream& out,
             "moss calls <target> --source <source> --json",
             "moss why <target> --source <source> --json",
             "moss cost <target> --source <source> --json",
+            "moss references <target> --source <source> --json",
+            "moss symbols [prefix] --source <source> --json",
+            "moss complete at:<line>:<column> --source <source> --json",
             "moss inspect main --source <source> --json (includes concrete_domain_graph)",
             "moss debug-query event|semantic|subtree|message-subtree|control-flow|writes|failure-slice [selector] --source <source> --json",
             "moss impact <target> [--source <source>] --json",
@@ -17288,6 +17370,9 @@ static void write_bootstrap_json(std::ostream& out,
          "{\"name\":\"calls\",\"purpose\":\"direct and transitive statically resolved callers, callees, specializations, and message edges\",\"command\":\"moss calls <target> --source <source> --json\"},"
          "{\"name\":\"why\",\"purpose\":\"structured compiler evidence for type, ownership, effects, calls, functional plans, and synchronization decisions\",\"command\":\"moss why <target> --source <source> --json\"},"
          "{\"name\":\"cost\",\"purpose\":\"known static cost facts, not runtime predictions\",\"command\":\"moss cost <target> --source <source> --json\"},"
+         "{\"name\":\"references\",\"purpose\":\"definition plus deterministic compiler-resolved semantic references\",\"command\":\"moss references <target> --source <source> --json\"},"
+         "{\"name\":\"symbols\",\"purpose\":\"deterministic semantic workspace symbol enumeration and prefix search\",\"command\":\"moss symbols [prefix] --source <source> --json\"},"
+         "{\"name\":\"complete\",\"purpose\":\"context-sensitive candidates from checked scope, receiver types, modules, and domain topology\",\"command\":\"moss complete at:<line>:<column> --source <source> --json\"},"
          "{\"name\":\"impact\",\"purpose\":\"changed semantic unit, dependents, affected tests, and reuse facts\",\"command\":\"moss impact <target> --source <source> --json\"}]";
   out << ",\n    \"actions\": ["
          "{\"name\":\"check\",\"command\":\"moss check <source> --json\",\"purpose\":\"structured Moss diagnostics\"},"
@@ -17408,6 +17493,12 @@ static void write_bootstrap_json(std::ostream& out,
            "\"ambiguity_path\": \"error.details.resolution.candidates\", "
            "\"source_precision\": \"line\", "
            "\"column_behavior\": \"accepted as a location hint; candidates retain line precision\"}";
+    out << ", \"editor_query_contracts\": {"
+           "\"references_fields\": [\"target\", \"definition\", \"references\"], "
+           "\"reference_fields\": [\"entity_id\", \"kind\", \"source\", \"enclosing_entity\", \"call_site_id\"], "
+           "\"symbol_fields\": [\"entity_id\", \"kind\", \"qualified_name\", \"display_name\", \"source\", \"enclosing_entity\"], "
+           "\"completion_fields\": [\"position\", \"prefix\", \"context\", \"recovery\", \"candidates\"], "
+           "\"completion_candidate_fields\": [\"label\", \"kind\", \"entity_id\", \"qualified_name\", \"type\", \"detail\", \"source\"]}";
     out << ", \"diagnostic_codes_are_stable\": true, "
            "\"diagnostic_repair_fields\": [\"fixes\", "
            "\"legal_alternatives\", \"source\", \"rule\", \"cause\", "
@@ -17452,11 +17543,18 @@ static void write_bootstrap_json(std::ostream& out,
          "FUNCTIONAL_CAPTURE_MUTATION", "TYPE_INFERENCE_FAILED"});
     out << ',';
     write_agent_command_schema(
-        out, "semantic_query", "Resolve entities and inspect existing checked facts; operations are resolve, inspect, type, effects, ownership, calls, why, and cost.",
+        out, "semantic_query", "Resolve entities and inspect existing checked facts; operations include resolve, inspect, type, effects, ownership, calls, references, symbols, complete, why, and cost.",
         {"operation", "target", "--source", "--json"}, {"-O"},
         "moss-agent-1 envelope with resolved target plus operation-specific facts; ambiguity returns details.resolution.candidates",
         {"entity-v1", "source_identity", "specialization_identity"},
         {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND", "ambiguous resolution status"});
+    out << ',';
+    write_agent_command_schema(
+        out, "semantic_editor_query", "Expose compiler-owned navigation, symbol, and completion facts to editors without an LSP server.",
+        {"references target | symbols [prefix] | complete at:<line>:<column>", "--source", "--json"}, {"--kind", "--enclosing", "complete --overlay-source <temporary-file>"},
+        "moss-agent-1 envelope with physical Moss locations, durable identities, deterministic symbols, or structured completion candidates",
+        {"entity-v1", "physical Moss source location"},
+        {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND", "COMPLETION_POSITION_INVALID", "ambiguous resolution status"});
     out << ',';
     write_agent_command_schema(
         out, "impact", "Report changed semantic facts, dependents, affected tests, and incremental reuse.",
@@ -18446,6 +18544,776 @@ static bool write_semantic_query_json(
   }
   out << "}\n}\n";
   return true;
+}
+
+static bool semantic_declaration_kind(const string& kind) {
+  static const std::set<string> declaration_kinds = {
+      "function", "method", "type", "enum", "enum_case", "trait",
+      "domain", "domain_state", "handler", "test", "benchmark", "main",
+      "field", "binding", "module"};
+  return declaration_kinds.count(kind) != 0;
+}
+
+static string semantic_display_name(const SemanticTargetFact& target) {
+  string name = target.name;
+  size_t module = name.find("__");
+  if (module != string::npos)
+    return name.substr(0, module) + "." + name.substr(module + 2);
+  return name;
+}
+
+static string semantic_leaf_name(const SemanticTargetFact& target) {
+  string name = semantic_display_name(target);
+  size_t separator = name.rfind('.');
+  return separator == string::npos ? name : name.substr(separator + 1);
+}
+
+static const SemanticTargetFact* semantic_declaration_for_context(
+    const vector<SemanticTargetFact>& targets, const string& context) {
+  const SemanticTargetFact* result = nullptr;
+  for (const auto& candidate : targets) {
+    if (!semantic_declaration_kind(candidate.kind) ||
+        candidate.context != context || candidate.kind == "binding" ||
+        candidate.kind == "field" || candidate.kind == "domain_state")
+      continue;
+    if (!result || candidate.kind != "specialization") result = &candidate;
+  }
+  return result;
+}
+
+static const SemanticTargetFact* semantic_reference_target(
+    const vector<SemanticTargetFact>& targets,
+    const SemanticTargetFact& selected) {
+  if (selected.kind != "call") return &selected;
+  return semantic_declaration_for_context(targets, selected.name);
+}
+
+static void write_semantic_location_json(
+    std::ostream& out, const string& file, int line) {
+  out << "{\"file\": ";
+  write_debug_json_string(out, file);
+  out << ", \"line\": " << line
+      << ", \"column\": 1, \"range_precision\": \"line\"}";
+}
+
+static bool checked_text_uses_binding(const string& text,
+                                      const string& name) {
+  for (size_t position = 0;
+       (position = text.find(name, position)) != string::npos;
+       position += name.size()) {
+    bool left = position == 0 ||
+        (!std::isalnum(static_cast<unsigned char>(text[position - 1])) &&
+         text[position - 1] != '_');
+    bool right = position + name.size() == text.size() ||
+        (!std::isalnum(static_cast<unsigned char>(text[position + name.size()])) &&
+         text[position + name.size()] != '_');
+    size_t previous = position;
+    while (previous > 0 && std::isspace(
+        static_cast<unsigned char>(text[previous - 1]))) --previous;
+    bool qualified_member = previous > 0 && text[previous - 1] == '.';
+    if (left && right && !qualified_member) return true;
+  }
+  return false;
+}
+
+static const vector<Stmt>* semantic_body_for_context(
+    const Program& program, const string& context) {
+  for (const auto& function : program.functions)
+    if (context == "fn:" + function.name) return &function.body;
+  for (const auto& object : program.objects)
+    for (const auto& method : object.methods)
+      if (context == "method:" + object.name + "." + method.name)
+        return &method.body;
+  for (const auto& domain : program.domains)
+    for (const auto& handler : domain.handlers)
+      if (context == "handler:" + domain.name + "." + handler.name)
+        return &handler.body;
+  for (const auto& test : program.tests)
+    if (context == "test:" + test.name) return &test.body;
+  for (const auto& benchmark : program.benchmarks)
+    if (context == "bench:" + benchmark.name) return &benchmark.body;
+  if (context == "main" && program.main) return &program.main->body;
+  return nullptr;
+}
+
+static bool write_references_query_json(
+    std::ostream& out, const string& selector, const string& source_file,
+    const Program& program, const OptimizationPlan& plan,
+    const string& kind_filter = {}, const string& enclosing_filter = {}) {
+  vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
+  SemanticQueryResolution resolution = resolve_semantic_target(
+      targets, selector, source_file, kind_filter, enclosing_filter);
+  const SemanticTargetFact* selected = resolution.target();
+  const SemanticTargetFact* target = selected
+      ? semantic_reference_target(targets, *selected) : nullptr;
+  if (!target) {
+    const bool ambiguous = resolution.status ==
+        SemanticQueryResolution::Status::Ambiguous;
+    write_structured_error(
+        out, "references", "QUERY_TARGET_NOT_FOUND",
+        ambiguous ? "Moss semantic target is ambiguous: '" + selector + "'"
+                  : "no exact Moss semantic target matches '" + selector + "'",
+        source_file, 0, {}, {}, nullptr, &resolution.candidates,
+        ambiguous ? "ambiguous" : "missing");
+    return false;
+  }
+
+  struct ReferenceRecord {
+    string kind;
+    string source_file;
+    int line = 0;
+    string enclosing;
+    string call_site_id;
+  };
+  vector<ReferenceRecord> references;
+  references.push_back(
+      {"declaration", target->source_file.empty() ? source_file
+                                                   : target->source_file,
+       target->line,
+       target->enclosing_durable_identity, {}});
+
+  const bool callable_target = target->kind == "function" ||
+      target->kind == "method" || target->kind == "handler" ||
+      target->kind == "main";
+  if (callable_target)
+    for (const auto& edge : program.semantic_call_edges) {
+      if (edge.target != target->context) continue;
+      string kind = starts_with(edge.invocation_kind, "synchronous_message")
+          ? "handler_message" : target->kind == "method"
+              ? "method_call" : "call";
+      references.push_back(
+          {kind, edge.source_file, edge.line, edge.source,
+           semantic_call_site_identity(edge)});
+    }
+  for (const auto& pipeline : program.functional_pipelines) {
+    bool found = std::any_of(
+        pipeline.nodes.begin(), pipeline.nodes.end(),
+        [&](const FunctionalNode& node) {
+          return node.callable_identity == target->context;
+        });
+    if (found)
+      references.push_back(
+          {"callable_reference", pipeline.source_file, pipeline.line,
+           pipeline.context, {}});
+  }
+
+  if (target->kind == "binding") {
+    if (const vector<Stmt>* body = semantic_body_for_context(
+            program, target->context)) {
+      for (const auto& statement : *body) {
+        if (statement.line <= target->line) continue;
+        bool redeclares = (statement.kind == Stmt::Kind::Let ||
+                           statement.kind == Stmt::Kind::Var) &&
+            statement.a == target->name;
+        if (redeclares) continue;
+        bool used = checked_text_uses_binding(statement.text, target->name);
+        if (!used) {
+          used = checked_text_uses_binding(statement.a, target->name) ||
+              checked_text_uses_binding(statement.b, target->name) ||
+              checked_text_uses_binding(statement.message_result, target->name);
+          for (const auto& argument : statement.args)
+            used = used || checked_text_uses_binding(argument, target->name);
+        }
+        if (used)
+          references.push_back(
+              {"binding_use", statement.source_file.empty()
+                                  ? source_file : statement.source_file,
+               statement.line, target->context, {}});
+      }
+    }
+  }
+
+  auto add_type_use = [&](const string& type, const string& file, int line,
+                          const string& enclosing) {
+    if ((target->kind == "type" || target->kind == "enum" ||
+         target->kind == "trait" || target->kind == "domain") &&
+        type == target->name)
+      references.push_back({"type_use", file, line, enclosing, {}});
+  };
+  for (const auto& function : program.functions) {
+    for (const auto& parameter : function.params)
+      add_type_use(parameter.type, function.source_file, function.line,
+                   "fn:" + function.name);
+    if (function.return_type)
+      add_type_use(*function.return_type, function.source_file, function.line,
+                   "fn:" + function.name);
+  }
+  for (const auto& object : program.objects) {
+    for (const auto& field : object.fields)
+      add_type_use(field.type, field.source_file, field.line,
+                   "type:" + object.name);
+    for (const auto& method : object.methods) {
+      for (const auto& parameter : method.params)
+        add_type_use(parameter.type, method.source_file, method.line,
+                     "method:" + object.name + "." + method.name);
+      if (method.return_type)
+        add_type_use(*method.return_type, method.source_file, method.line,
+                     "method:" + object.name + "." + method.name);
+    }
+  }
+  for (const auto& domain : program.domains) {
+    for (const auto& field : domain.state)
+      add_type_use(field.type, field.source_file, field.line,
+                   "domain:" + domain.name);
+    for (const auto& route : domain.routes)
+      add_type_use(route.type, route.source_file, route.line,
+                   "domain:" + domain.name);
+    for (const auto& handler : domain.handlers) {
+      for (const auto& parameter : handler.params)
+        add_type_use(parameter.type, handler.source_file, handler.line,
+                     "handler:" + domain.name + "." + handler.name);
+      if (handler.reply_type)
+        add_type_use(*handler.reply_type, handler.source_file, handler.line,
+                     "handler:" + domain.name + "." + handler.name);
+    }
+  }
+
+  std::sort(references.begin(), references.end(),
+            [](const ReferenceRecord& left, const ReferenceRecord& right) {
+              if (left.source_file != right.source_file)
+                return left.source_file < right.source_file;
+              if (left.line != right.line) return left.line < right.line;
+              if (left.kind != right.kind) return left.kind < right.kind;
+              return left.call_site_id < right.call_site_id;
+            });
+  references.erase(std::unique(
+      references.begin(), references.end(),
+      [](const ReferenceRecord& left, const ReferenceRecord& right) {
+        return left.source_file == right.source_file && left.line == right.line &&
+            left.kind == right.kind && left.call_site_id == right.call_site_id;
+      }), references.end());
+
+  write_agent_envelope_begin(out, "references", true);
+  out << "  \"result\": {\"status\": \"resolved\", \"target\": ";
+  write_semantic_target_json(out, *target, source_file);
+  out << ", \"definition\": {\"entity_id\": ";
+  write_debug_json_string(out, target->durable_identity);
+  out << ", \"kind\": \"declaration\", \"source\": ";
+  write_semantic_location_json(
+      out, target->source_file.empty() ? source_file : target->source_file,
+      target->line);
+  out << "}, \"references\": [";
+  for (size_t index = 0; index < references.size(); ++index) {
+    if (index) out << ", ";
+    const auto& reference = references[index];
+    out << "{\"entity_id\": ";
+    write_debug_json_string(out, target->durable_identity);
+    out << ", \"kind\": ";
+    write_debug_json_string(out, reference.kind);
+    out << ", \"source\": ";
+    write_semantic_location_json(out, reference.source_file, reference.line);
+    out << ", \"enclosing_entity\": ";
+    if (reference.enclosing.empty()) out << "null";
+    else write_debug_json_string(out, reference.enclosing);
+    out << ", \"call_site_id\": ";
+    if (reference.call_site_id.empty()) out << "null";
+    else write_debug_json_string(out, reference.call_site_id);
+    out << "}";
+  }
+  out << "]}\n}\n";
+  return true;
+}
+
+static bool semantic_symbol_kind(const string& kind) {
+  static const std::set<string> symbol_kinds = {
+      "function", "method", "type", "enum", "enum_case", "trait",
+      "domain", "handler", "module", "test", "benchmark", "main"};
+  return symbol_kinds.count(kind) != 0;
+}
+
+static void write_symbols_query_json(
+    std::ostream& out, const string& query, const string& source_file,
+    const Program& program, const OptimizationPlan& plan) {
+  (void)source_file;
+  vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
+  vector<const SemanticTargetFact*> symbols;
+  string current_module;
+  if (program.explicit_module) {
+    for (const auto& target : targets)
+      if (target.source_file == source_file && !target.module_identity.empty()) {
+        current_module = target.module_identity;
+        break;
+      }
+    if (current_module.empty() && program.main &&
+        program.main->source_file == source_file)
+      current_module = program.main_module;
+  }
+  auto visible_module = [&](const string& module) {
+    if (!program.explicit_module || module.empty() || module == current_module)
+      return true;
+    return std::any_of(
+        program.imports.begin(), program.imports.end(),
+        [&](const ModuleImport& import) {
+          return import.owner_module == current_module && import.name == module;
+        });
+  };
+  string folded_query = query;
+  std::transform(folded_query.begin(), folded_query.end(), folded_query.begin(),
+                 [](unsigned char value) { return std::tolower(value); });
+  for (const auto& target : targets) {
+    if (!semantic_symbol_kind(target.kind)) continue;
+    if (!visible_module(target.module_identity)) continue;
+    if (program.explicit_module && target.kind != "module" &&
+        !target.module_identity.empty() &&
+        target.module_identity != current_module &&
+        target.export_visibility != "exported")
+      continue;
+    string display = semantic_display_name(target);
+    string leaf = semantic_leaf_name(target);
+    string folded = display;
+    string folded_leaf = leaf;
+    std::transform(folded.begin(), folded.end(), folded.begin(),
+                   [](unsigned char value) { return std::tolower(value); });
+    std::transform(folded_leaf.begin(), folded_leaf.end(), folded_leaf.begin(),
+                   [](unsigned char value) { return std::tolower(value); });
+    if (!folded_query.empty() && !starts_with(folded, folded_query) &&
+        !starts_with(folded_leaf, folded_query))
+      continue;
+    symbols.push_back(&target);
+  }
+  std::sort(symbols.begin(), symbols.end(),
+            [](const SemanticTargetFact* left,
+               const SemanticTargetFact* right) {
+              string left_name = semantic_display_name(*left);
+              string right_name = semantic_display_name(*right);
+              if (left_name != right_name) return left_name < right_name;
+              if (left->kind != right->kind) return left->kind < right->kind;
+              if (left->source_file != right->source_file)
+                return left->source_file < right->source_file;
+              if (left->line != right->line) return left->line < right->line;
+              return left->durable_identity < right->durable_identity;
+            });
+
+  write_agent_envelope_begin(out, "symbols", true);
+  out << "  \"result\": {\"query\": ";
+  write_debug_json_string(out, query);
+  out << ", \"symbols\": [";
+  for (size_t index = 0; index < symbols.size(); ++index) {
+    if (index) out << ", ";
+    const auto& symbol = *symbols[index];
+    out << "{\"entity_id\": ";
+    write_debug_json_string(out, symbol.durable_identity);
+    out << ", \"kind\": "; write_debug_json_string(out, symbol.kind);
+    out << ", \"qualified_name\": ";
+    write_debug_json_string(out, semantic_display_name(symbol));
+    out << ", \"display_name\": ";
+    write_debug_json_string(out, semantic_leaf_name(symbol));
+    out << ", \"source\": ";
+    write_semantic_location_json(
+        out, symbol.source_file.empty() ? source_file : symbol.source_file,
+        symbol.line);
+    out << ", \"enclosing_entity\": ";
+    if (symbol.enclosing_durable_identity.empty()) out << "null";
+    else write_debug_json_string(out, symbol.enclosing_durable_identity);
+    out << "}";
+  }
+  out << "]}\n}\n";
+}
+
+struct SemanticCompletionCandidate {
+  string label;
+  string kind;
+  string entity_id;
+  string qualified_name;
+  string type;
+  string detail;
+  string source_file;
+  int line = 0;
+};
+
+static bool parse_completion_location(
+    const string& selector, int& line, int& column) {
+  if (!starts_with(selector, "at:")) return false;
+  size_t separator = selector.find(':', 3);
+  if (separator == string::npos) return false;
+  string line_text = selector.substr(3, separator - 3);
+  string column_text = selector.substr(separator + 1);
+  if (line_text.empty() || column_text.empty() ||
+      !std::all_of(line_text.begin(), line_text.end(), [](unsigned char value) {
+        return std::isdigit(value);
+      }) ||
+      !std::all_of(column_text.begin(), column_text.end(), [](unsigned char value) {
+        return std::isdigit(value);
+      }))
+    return false;
+  try {
+    line = std::stoi(line_text);
+    column = std::stoi(column_text);
+  } catch (const std::exception&) {
+    return false;
+  }
+  return line > 0 && column > 0;
+}
+
+static vector<string> read_source_lines_for_completion(
+    const string& file, const string* overlay = nullptr) {
+  std::ifstream input;
+  std::istringstream overlay_input(overlay ? *overlay : string());
+  if (!overlay) input.open(file);
+  std::istream& stream = overlay
+      ? static_cast<std::istream&>(overlay_input)
+      : static_cast<std::istream&>(input);
+  vector<string> lines;
+  string line;
+  while (std::getline(stream, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(std::move(line));
+  }
+  return lines;
+}
+
+static string completion_candidate_detail(const SemanticTargetFact& target) {
+  std::ostringstream detail;
+  detail << target.kind;
+  if (!target.parameters.empty()) {
+    detail << " (";
+    for (size_t index = 0; index < target.parameters.size(); ++index) {
+      if (index) detail << ", ";
+      detail << target.parameters[index].name;
+      if (!target.parameters[index].type.empty())
+        detail << ": " << target.parameters[index].type;
+    }
+    detail << ")";
+  }
+  if (!target.type.empty() && target.type != "unit")
+    detail << " -> " << target.type;
+  return detail.str();
+}
+
+static void append_completion_target(
+    vector<SemanticCompletionCandidate>& candidates,
+    const SemanticTargetFact& target, const string& label = {}) {
+  candidates.push_back(
+      {label.empty() ? semantic_leaf_name(target) : label, target.kind,
+       target.durable_identity, semantic_display_name(target), target.type,
+       completion_candidate_detail(target), target.source_file, target.line});
+}
+
+static bool write_completion_query_json(
+    std::ostream& out, const string& selector, const string& source_file,
+    const Program& program, const OptimizationPlan& plan,
+    bool recovered = false, const string* overlay = nullptr) {
+  int requested_line = 0;
+  int requested_column = 0;
+  if (!parse_completion_location(selector, requested_line, requested_column)) {
+    write_structured_error(
+        out, "complete", "COMPLETION_POSITION_INVALID",
+        "completion target must be at:<line>:<column>", source_file);
+    return false;
+  }
+  vector<string> source_lines = read_source_lines_for_completion(
+      source_file, overlay);
+  if (static_cast<size_t>(requested_line) > source_lines.size()) {
+    write_structured_error(
+        out, "complete", "COMPLETION_POSITION_INVALID",
+        "completion position is outside the source file", source_file,
+        requested_line);
+    return false;
+  }
+  string line_text = source_lines[static_cast<size_t>(requested_line - 1)];
+  size_t point = std::min(
+      line_text.size(), static_cast<size_t>(requested_column - 1));
+  string before = line_text.substr(0, point);
+  auto identifier_character = [](unsigned char value) {
+    return std::isalnum(value) || value == '_';
+  };
+  size_t prefix_start = before.size();
+  while (prefix_start > 0 &&
+         identifier_character(before[prefix_start - 1]))
+    --prefix_start;
+  string prefix = before.substr(prefix_start);
+  string qualifier;
+  if (prefix_start > 0 && before[prefix_start - 1] == '.') {
+    size_t qualifier_end = prefix_start - 1;
+    size_t qualifier_start = qualifier_end;
+    while (qualifier_start > 0 &&
+           identifier_character(before[qualifier_start - 1]))
+      --qualifier_start;
+    qualifier = before.substr(qualifier_start,
+                              qualifier_end - qualifier_start);
+  }
+  string trimmed_before = trim(before);
+  bool message_context = trimmed_before.find("message ") != string::npos;
+  bool type_context = qualifier.empty() &&
+      (before.rfind(':') != string::npos ||
+       before.rfind("->") != string::npos ||
+       starts_with(trimmed_before, "type ") ||
+       starts_with(trimmed_before, "domainroutes("));
+
+  vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
+  const SemanticTargetFact* enclosing = nullptr;
+  for (const auto& target : targets) {
+    const bool completion_scope = target.kind == "function" ||
+        target.kind == "specialization" || target.kind == "method" ||
+        target.kind == "handler" || target.kind == "test" ||
+        target.kind == "benchmark" || target.kind == "main";
+    if (!completion_scope ||
+        (!target.source_file.empty() && target.source_file != source_file) ||
+        target.line > requested_line) continue;
+    if (!enclosing || target.line >= enclosing->line) enclosing = &target;
+  }
+  string context = enclosing ? enclosing->context : string();
+  string current_module = enclosing ? enclosing->module_identity : string();
+  if (current_module.empty() && enclosing && enclosing->kind == "main")
+    current_module = program.main_module;
+  vector<SemanticCompletionCandidate> candidates;
+
+  auto prefix_matches = [&](const string& label) {
+    return prefix.empty() || starts_with(label, prefix);
+  };
+  auto add_target = [&](const SemanticTargetFact& target,
+                        const string& label = {}) {
+    string actual = label.empty() ? semantic_leaf_name(target) : label;
+    if (prefix_matches(actual)) append_completion_target(candidates, target, actual);
+  };
+
+  if (!qualifier.empty()) {
+    bool module_matched = false;
+    bool module_visible = qualifier == current_module;
+    for (const auto& import : program.imports)
+      if (import.owner_module == current_module && import.name == qualifier)
+        module_visible = true;
+    if (module_visible) {
+      for (const auto& target : targets) {
+        if (!semantic_symbol_kind(target.kind) ||
+            target.kind == "module" ||
+            target.module_identity != qualifier ||
+            target.export_visibility != "exported") continue;
+        module_matched = true;
+        add_target(target);
+      }
+    }
+    if (!module_matched) {
+      string receiver_type;
+      for (const auto& target : targets) {
+        if (target.kind == "binding" && target.context == context &&
+            target.name == qualifier && target.line <= requested_line)
+          receiver_type = target.type;
+      }
+      if (enclosing)
+        for (const auto& parameter : enclosing->parameters)
+          if (parameter.name == qualifier) receiver_type = parameter.type;
+      for (const auto& instance : program.concrete_domain_graph.instances)
+        if (instance.binding == qualifier) receiver_type = instance.domain;
+      if (enclosing && enclosing->kind == "handler") {
+        string handler_name = enclosing->name;
+        size_t separator = handler_name.rfind('.');
+        string domain_name = separator == string::npos
+            ? string() : handler_name.substr(0, separator);
+        for (const auto& domain : program.domains)
+          if (domain.name == domain_name)
+            for (const auto& route : domain.routes)
+              if (route.name == qualifier) receiver_type = route.type;
+      }
+
+      if (message_context) {
+        for (const auto& target : targets)
+          if (target.kind == "handler" &&
+              starts_with(target.name, receiver_type + "."))
+            add_target(target);
+      } else {
+        for (const auto& target : targets)
+          if ((target.kind == "method" || target.kind == "field") &&
+              starts_with(target.name, receiver_type + "."))
+            add_target(target);
+        string builtin_type = receiver_type;
+        std::transform(builtin_type.begin(), builtin_type.end(),
+                       builtin_type.begin(), [](unsigned char value) {
+                         return std::tolower(value);
+                       });
+        vector<std::pair<string,string>> builtin_members;
+        if (starts_with(builtin_type, "vector[") || builtin_type == "vector")
+          builtin_members = {{"push", "method push(item)"},
+                             {"pop", "method pop()"}};
+        else if (starts_with(builtin_type, "map[") || builtin_type == "map")
+          builtin_members = {{"get", "method get(key, default)"},
+                             {"keys", "method keys()"},
+                             {"values", "method values()"},
+                             {"delete", "method delete(key, fallback, found)"}};
+        else if (starts_with(builtin_type, "queue[") || builtin_type == "queue")
+          builtin_members = {{"push", "method push(item)"},
+                             {"pop", "method pop()"}};
+        else if (builtin_type == "string")
+          builtin_members = {{"length", "method length()"},
+                             {"char_at", "method char_at(index)"},
+                             {"chars", "method chars()"},
+                             {"split", "method split(separator)"},
+                             {"join", "method join(parts)"}};
+        for (const auto& member : builtin_members)
+          if (prefix_matches(member.first))
+            candidates.push_back(
+                {member.first, "method", {}, receiver_type + "." + member.first,
+                 {}, member.second, {}, 0});
+      }
+    }
+  } else if (message_context) {
+    std::set<string> legal_targets;
+    for (const auto& instance : program.concrete_domain_graph.instances) {
+      bool visible = std::any_of(
+          targets.begin(), targets.end(), [&](const SemanticTargetFact& target) {
+            return target.kind == "binding" && target.context == context &&
+                target.name == instance.binding && target.line < requested_line;
+          });
+      if (visible && prefix_matches(instance.binding))
+        legal_targets.insert(instance.binding);
+    }
+    if (enclosing && enclosing->kind == "handler") {
+      size_t separator = enclosing->name.rfind('.');
+      string domain_name = separator == string::npos
+          ? string() : enclosing->name.substr(0, separator);
+      for (const auto& domain : program.domains)
+        if (domain.name == domain_name)
+          for (const auto& route : domain.routes)
+            if (prefix_matches(route.name)) legal_targets.insert(route.name);
+    }
+    for (const auto& label : legal_targets)
+      candidates.push_back(
+          {label, "domain", {}, label, {}, "static message target", {}, 0});
+  } else if (type_context) {
+    for (const auto& target : targets)
+      if (target.kind == "type" || target.kind == "enum" ||
+          target.kind == "trait" || target.kind == "domain") {
+        if (!program.explicit_module || target.module_identity.empty() ||
+            target.module_identity == current_module)
+          add_target(target);
+      }
+    static const vector<string> builtin_types = {
+        "Bool", "Float", "Int", "Map", "Queue", "String", "Vector"};
+    for (const auto& builtin : builtin_types)
+      if (prefix_matches(builtin))
+        candidates.push_back(
+            {builtin, "type", {}, builtin, builtin, "builtin type", {}, 0});
+  } else {
+    if (enclosing) {
+      for (const auto& parameter : enclosing->parameters)
+        if (parameter.name != "self" && prefix_matches(parameter.name))
+          candidates.push_back(
+              {parameter.name, "variable", {}, parameter.name,
+               parameter.type, "parameter: " + parameter.type,
+               enclosing->source_file, enclosing->line});
+    }
+    std::map<string,const SemanticTargetFact*> visible_bindings;
+    for (const auto& target : targets)
+      if (target.kind == "binding" && target.context == context &&
+          target.line < requested_line)
+        visible_bindings[target.name] = &target;
+    for (const auto& entry : visible_bindings)
+      if (prefix_matches(entry.first)) add_target(*entry.second, entry.first);
+    for (const auto& target : targets)
+      if (semantic_symbol_kind(target.kind) &&
+          (target.kind == "function" || target.kind == "type" ||
+           target.kind == "enum" || target.kind == "trait" ||
+           target.kind == "domain") &&
+          (!program.explicit_module || target.module_identity.empty() ||
+           target.module_identity == current_module))
+        add_target(target);
+  }
+
+  std::sort(candidates.begin(), candidates.end(),
+            [](const SemanticCompletionCandidate& left,
+               const SemanticCompletionCandidate& right) {
+              if (left.label != right.label) return left.label < right.label;
+              if (left.kind != right.kind) return left.kind < right.kind;
+              if (left.qualified_name != right.qualified_name)
+                return left.qualified_name < right.qualified_name;
+              return left.entity_id < right.entity_id;
+            });
+  candidates.erase(std::unique(
+      candidates.begin(), candidates.end(),
+      [](const SemanticCompletionCandidate& left,
+         const SemanticCompletionCandidate& right) {
+        return left.label == right.label && left.kind == right.kind &&
+            left.entity_id == right.entity_id;
+      }), candidates.end());
+
+  write_agent_envelope_begin(out, "complete", true);
+  out << "  \"result\": {\"position\": {\"line\": " << requested_line
+      << ", \"column\": " << requested_column << "}, \"prefix\": ";
+  write_debug_json_string(out, prefix);
+  out << ", \"context\": ";
+  write_debug_json_string(out, message_context
+      ? (!qualifier.empty() ? "domain_handler" : "domain_message_target")
+      : !qualifier.empty() ? "member_or_qualified"
+      : type_context ? "type" : "lexical");
+  out << ", \"recovery\": {\"used\": "
+      << (recovered ? "true" : "false")
+      << ", \"contract\": \"tooling-only line suffix elision\"}, "
+         "\"candidates\": [";
+  for (size_t index = 0; index < candidates.size(); ++index) {
+    if (index) out << ", ";
+    const auto& candidate = candidates[index];
+    out << "{\"label\": "; write_debug_json_string(out, candidate.label);
+    out << ", \"kind\": "; write_debug_json_string(out, candidate.kind);
+    out << ", \"entity_id\": ";
+    if (candidate.entity_id.empty()) out << "null";
+    else write_debug_json_string(out, candidate.entity_id);
+    out << ", \"qualified_name\": ";
+    write_debug_json_string(out, candidate.qualified_name);
+    out << ", \"type\": ";
+    if (candidate.type.empty()) out << "null";
+    else write_debug_json_string(out, candidate.type);
+    out << ", \"detail\": "; write_debug_json_string(out, candidate.detail);
+    out << ", \"source\": ";
+    if (candidate.source_file.empty() && candidate.entity_id.empty()) out << "null";
+    else write_semantic_location_json(
+        out, candidate.source_file.empty() ? source_file
+                                           : candidate.source_file,
+        candidate.line);
+    out << "}";
+  }
+  out << "]}\n}\n";
+  return true;
+}
+
+static std::optional<string> completion_recovery_source(
+    const string& source_file, const string& selector,
+    const string* overlay = nullptr) {
+  int line = 0;
+  int column = 0;
+  if (!parse_completion_location(selector, line, column)) return std::nullopt;
+  vector<string> lines = read_source_lines_for_completion(source_file, overlay);
+  if (line <= 0 || static_cast<size_t>(line) > lines.size())
+    return std::nullopt;
+  string& current = lines[static_cast<size_t>(line - 1)];
+  size_t point = std::min(current.size(), static_cast<size_t>(column - 1));
+  string before = current.substr(0, point);
+  size_t indent = 0;
+  while (indent < current.size() && current[indent] == ' ') ++indent;
+  size_t word_start = point;
+  while (word_start > 0) {
+    unsigned char value = current[word_start - 1];
+    if (!std::isalnum(value) && value != '_') break;
+    --word_start;
+  }
+  size_t word_end = point;
+  while (word_end < current.size()) {
+    unsigned char value = current[word_end];
+    if (!std::isalnum(value) && value != '_') break;
+    ++word_end;
+  }
+  bool type_context = before.rfind(':') != string::npos ||
+      before.rfind("->") != string::npos ||
+      starts_with(trim(before), "domainroutes(");
+  if (type_context) {
+    current.replace(word_start, word_end - word_start, "Int");
+  } else {
+    size_t equals = before.find('=');
+    if (equals != string::npos &&
+        (equals + 1 == before.size() || before[equals + 1] != '=')) {
+      current = current.substr(0, equals + 1) + " 0";
+    } else if (starts_with(trim(before), "return")) {
+      current = string(indent, ' ') + "return 0";
+    } else if (starts_with(trim(before), "reply")) {
+      current = string(indent, ' ') + "reply 0";
+    } else if (indent > 0) {
+      current = string(indent, ' ') + "pass";
+    } else {
+      return std::nullopt;
+    }
+  }
+  std::ostringstream recovered;
+  for (const auto& source_line : lines) recovered << source_line << "\n";
+  return recovered.str();
 }
 
 // Phase 7 project commands deliberately reuse the ordinary compiler pipeline.
@@ -24395,6 +25263,9 @@ static void usage() {
             << "  moss --check <input.moss>\n"
             << "  moss check <input.moss> [--json]\n"
             << "  moss agent bootstrap|capabilities|schema --json\n"
+            << "  moss references <target> --source <source> --json\n"
+            << "  moss symbols [prefix] --source <source> --json\n"
+            << "  moss complete at:<line>:<column> --source <source> --json\n"
             << "  moss agent session-report-template --json\n"
             << "  moss agent benchmark list|show|validate|run [--json]\n"
             << "  moss resolve|inspect|type|effects|ownership|calls|why|cost <target> --source <input.moss> [--kind KIND] [--enclosing TARGET] --json\n"
@@ -25365,11 +26236,11 @@ int main(int argc, char** argv) {
     bool diagnostic_paths = false;
     string input, output, debug_map_output, native_output;
     string query_command, query_target, query_source, query_kind,
-        query_enclosing;
+        query_enclosing, query_overlay_source;
     int first_argument = 1;
     static const std::set<string> semantic_commands = {
         "resolve", "inspect", "type", "effects", "ownership", "calls",
-        "why", "cost"};
+        "why", "cost", "references", "symbols", "complete"};
     if (string(argv[1]) == "check") {
       check_only = true;
       active_command = "check";
@@ -25395,6 +26266,10 @@ int main(int argc, char** argv) {
       else if (a == "--enclosing") {
         if (++i >= argc) { usage(); return 2; }
         query_enclosing = argv[i];
+      }
+      else if (a == "--overlay-source") {
+        if (++i >= argc) { usage(); return 2; }
+        query_overlay_source = argv[i];
       }
       else if (a == "--dump-functional-ir") dump_functional = true;
       else if (a == "--explain-fusion") explain_fusion = true;
@@ -25428,7 +26303,8 @@ int main(int argc, char** argv) {
           return 2;
         }
       }
-      if (!query_command.empty() && query_target.empty()) {
+      if (!query_command.empty() && query_target.empty() &&
+          query_command != "symbols") {
         moss::write_structured_error(
             std::cout, query_command, "QUERY_TARGET_INVALID",
             "semantic query requires a target");
@@ -25473,13 +26349,39 @@ int main(int argc, char** argv) {
     moss::OptimizationPlan plan;
     vector<moss::Warning> warnings;
     bool project_query = false;
+    bool completion_recovered = false;
+    std::optional<string> recovered_completion_source;
+    std::optional<string> completion_overlay;
+    if (query_command == "complete") {
+      if (!query_overlay_source.empty()) {
+        std::ifstream overlay_input(query_overlay_source, std::ios::binary);
+        if (!overlay_input) {
+          moss::write_structured_error(
+              std::cout, "complete", "COMPLETION_OVERLAY_NOT_FOUND",
+              "cannot read completion overlay source", query_overlay_source);
+          return 1;
+        }
+        std::ostringstream overlay_text;
+        overlay_text << overlay_input.rdbuf();
+        completion_overlay = overlay_text.str();
+      }
+      recovered_completion_source = moss::completion_recovery_source(
+          std::filesystem::absolute(input).lexically_normal().string(),
+          query_target, completion_overlay ? &*completion_overlay : nullptr);
+      completion_recovered = recovered_completion_source.has_value();
+    }
     if (!query_command.empty() || check_only) {
       try {
         auto context = moss::analyze_source_context(input);
         if (context.project) {
+          std::map<std::filesystem::path, string> overrides;
+          if (recovered_completion_source)
+            overrides[std::filesystem::absolute(input).lexically_normal()] =
+                *recovered_completion_source;
           auto unit = moss::analyze_project_sources(
               context.manifest, context.sources, optimize_shared_memory,
-              debug_build, context.mode);
+              debug_build, context.mode, {}, nullptr,
+              overrides.empty() ? nullptr : &overrides);
           active_program = std::move(unit.program);
           plan = std::move(unit.plan);
           warnings = std::move(unit.warnings);
@@ -25512,8 +26414,14 @@ int main(int argc, char** argv) {
           std::cerr << "moss: cannot open " << input << "\n";
         return 1;
       }
+      std::istringstream recovered_input(
+          recovered_completion_source.value_or(string()));
+      std::istream& source_stream = recovered_completion_source
+          ? static_cast<std::istream&>(recovered_input)
+          : static_cast<std::istream&>(f);
       auto lines = moss::lex_lines(
-          f, std::filesystem::absolute(input).lexically_normal().string());
+          source_stream,
+          std::filesystem::absolute(input).lexically_normal().string());
       moss::Parser parser(std::move(lines));
       active_program = parser.parse();
       auto& standalone_program = *active_program;
@@ -25564,12 +26472,30 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (!query_command.empty())
+    if (!query_command.empty()) {
+      const string absolute_source =
+          std::filesystem::absolute(input).lexically_normal().string();
+      if (query_command == "references")
+        return moss::write_references_query_json(
+                   std::cout, query_target, absolute_source, program, plan,
+                   query_kind, query_enclosing)
+            ? 0 : 1;
+      if (query_command == "symbols") {
+        moss::write_symbols_query_json(
+            std::cout, query_target, absolute_source, program, plan);
+        return 0;
+      }
+      if (query_command == "complete")
+        return moss::write_completion_query_json(
+                   std::cout, query_target, absolute_source, program, plan,
+                   completion_recovered,
+                   completion_overlay ? &*completion_overlay : nullptr)
+            ? 0 : 1;
       return moss::write_semantic_query_json(
-                 std::cout, query_command, query_target,
-                 std::filesystem::absolute(input).lexically_normal().string(),
+                 std::cout, query_command, query_target, absolute_source,
                  program, plan, warnings, query_kind, query_enclosing)
           ? 0 : 1;
+    }
 
     if (check_only) {
       if (json_output)

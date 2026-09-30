@@ -7,9 +7,10 @@
 
 ;;; Commentary:
 
-;; Dependency-light editing, compilation, source-map navigation, LLDB/DAP, and
-;; native disassembly support for Moss.  All navigation consumes the compiler's
-;; .mossmap artifact; this mode never reverse-engineers generated Rust.
+;; Dependency-light editing, compilation, semantic navigation and completion,
+;; source-map navigation, LLDB/DAP, and native disassembly support for Moss.
+;; Semantic features consume the compiler JSON API; this mode never infers
+;; Moss semantics from generated Rust.
 
 ;;; Code:
 
@@ -18,6 +19,7 @@
 (require 'imenu)
 (require 'json)
 (require 'subr-x)
+(require 'xref)
 
 (declare-function dape "dape" (config &optional skip-compile))
 
@@ -66,6 +68,15 @@ or range-only optimized locations are not presented as precise Moss steps."
 (defcustom moss-objdump-command nil
   "Objdump executable, or nil to prefer llvm-objdump and then objdump."
   :type '(choice (const :tag "Find automatically" nil) file))
+
+(defcustom moss-semantic-cache-seconds 1.0
+  "Seconds to retain an unchanged-buffer semantic query result."
+  :type 'number)
+
+(define-error 'moss-semantic-error "Moss semantic query failed")
+
+(defvar-local moss--semantic-cache nil)
+(defvar-local moss--completion-metadata nil)
 
 (defconst moss--declaration-keywords
   '("fn" "proc" "type" "enum" "trait" "domain" "on" "test" "bench"
@@ -410,6 +421,332 @@ When RUN is non-nil, execute the resulting program too."
   "Get KEY from JSON alist OBJECT across supported Emacs JSON key forms."
   (or (alist-get key object)
       (alist-get (symbol-name key) object nil nil #'equal)))
+
+(defun moss--semantic-cache-clear (&rest _)
+  "Invalidate semantic results for the current Moss buffer."
+  (when moss--semantic-cache (clrhash moss--semantic-cache)))
+
+(defun moss--semantic-source ()
+  "Return the current physical Moss source without saving it."
+  (unless (and buffer-file-name
+               (string-equal (file-name-extension buffer-file-name) "moss"))
+    (user-error "Current buffer is not visiting a .moss file"))
+  (expand-file-name buffer-file-name))
+
+(defun moss--semantic-query (command &optional target extra overlay)
+  "Invoke semantic COMMAND and return its result alist.
+TARGET is an optional positional selector and EXTRA is an argument list.
+When OVERLAY is non-nil, send the unsaved buffer through the compiler's
+tooling-only completion overlay.  This function never invokes a shell."
+  (let* ((source (moss--semantic-source))
+         (key (list command target extra (buffer-chars-modified-tick)
+                    (and overlay (point))))
+         (now (float-time))
+         (cached (and moss--semantic-cache
+                      (gethash key moss--semantic-cache))))
+    (if (and cached (< (- now (car cached)) moss-semantic-cache-seconds))
+        (cdr cached)
+      (let ((output (generate-new-buffer " *moss-semantic*"))
+            overlay-file document status)
+        (unwind-protect
+            (progn
+              (when overlay
+                (let ((temporary-file-directory
+                       (expand-file-name "tmp" (moss--repo-root source))))
+                  (make-directory temporary-file-directory t)
+                  (setq overlay-file
+                        (make-temp-file "moss-emacs-overlay-" nil ".moss")))
+                (write-region (point-min) (point-max) overlay-file nil 'silent))
+              (let ((arguments
+                     (append (list command)
+                             (and target (not (string-empty-p target))
+                                  (list target))
+                             (list "--source" source) extra
+                             (and overlay-file
+                                  (list "--overlay-source" overlay-file))
+                             (list "--json"))))
+                (with-current-buffer output
+                  (setq status
+                        (apply #'process-file
+                               (moss--compiler (moss--repo-root source))
+                               nil t nil arguments))
+                  (goto-char (point-min))
+                  (condition-case error
+                      (setq document
+                            (json-parse-buffer :object-type 'alist
+                                               :array-type 'list
+                                               :null-object nil
+                                               :false-object nil))
+                    (error
+                     (signal 'moss-semantic-error
+                             (list (format "Invalid Moss JSON: %s"
+                                           (error-message-string error))))))))
+              (unless (and (zerop status) (moss--json-get 'ok document))
+                (let* ((error (moss--json-get 'error document))
+                       (code (moss--json-get 'code error))
+                       (message (moss--json-get 'message error)))
+                  (signal 'moss-semantic-error
+                          (list (format "%s%s%s"
+                                        (or code "MOSS_QUERY_ERROR")
+                                        (if message ": " "")
+                                        (or message "semantic query failed"))
+                                error))))
+              (let ((result (moss--json-get 'result document)))
+                (unless moss--semantic-cache
+                  (setq moss--semantic-cache (make-hash-table :test #'equal)))
+                (puthash key (cons now result) moss--semantic-cache)
+                result))
+          (when (buffer-live-p output) (kill-buffer output))
+          (when (and overlay-file (file-exists-p overlay-file))
+            (delete-file overlay-file)))))))
+
+(defun moss--point-selector ()
+  "Return an at:LINE:COLUMN selector for point."
+  (format "at:%d:%d" (line-number-at-pos) (1+ (current-column))))
+
+(defun moss--references-at-point ()
+  "Return compiler references for the semantic entity at point."
+  (condition-case call-error
+      (moss--semantic-query "references" (moss--point-selector)
+                            '("--kind" "call"))
+    (moss-semantic-error
+     (let* ((error (caddr call-error))
+            (details (moss--json-get 'details error))
+            (resolution (moss--json-get 'resolution details))
+            (status (moss--json-get 'status resolution))
+            (identifier (thing-at-point 'symbol t)))
+       (if (and identifier (equal status "missing"))
+           (let* ((location
+                   (condition-case nil
+                       (moss--semantic-query
+                        "resolve" (moss--point-selector)
+                        '("--kind" "statement"))
+                     (moss-semantic-error
+                      (condition-case nil
+                          (moss--semantic-query
+                           "resolve" (moss--point-selector)
+                           '("--kind" "binding"))
+                        (moss-semantic-error nil)))))
+                  (located-target (moss--json-get 'target location))
+                  (enclosing (moss--json-get 'enclosing_entity located-target)))
+             (moss--semantic-query
+              "references" identifier
+              (and enclosing (list "--enclosing" enclosing))))
+         (signal (car call-error) (cdr call-error)))))))
+
+(defun moss--xref-from-location (summary location)
+  "Create an xref named SUMMARY from compiler LOCATION."
+  (xref-make summary
+             (xref-make-file-location
+              (moss--json-get 'file location)
+              (moss--json-get 'line location)
+              (max 0 (1- (or (moss--json-get 'column location) 1))))))
+
+(defun moss-xref-backend ()
+  "Return the Moss xref backend in a Moss buffer."
+  'moss)
+
+(cl-defmethod xref-backend-identifier-at-point ((_backend (eql moss)))
+  (or (thing-at-point 'symbol t) (moss--point-selector)))
+
+(cl-defmethod xref-backend-definitions ((_backend (eql moss)) _identifier)
+  (let* ((result (moss--references-at-point))
+         (target (moss--json-get 'target result))
+         (definition (moss--json-get 'definition result)))
+    (list (moss--xref-from-location
+           (format "%s %s" (moss--json-get 'kind target)
+                   (moss--json-get 'name target))
+           (moss--json-get 'source definition)))))
+
+(cl-defmethod xref-backend-references ((_backend (eql moss)) _identifier)
+  (let* ((result (moss--references-at-point))
+         (target (moss--json-get 'target result))
+         (name (moss--json-get 'name target))
+         xrefs)
+    (dolist (reference (moss--json-get 'references result) (nreverse xrefs))
+      (unless (equal (moss--json-get 'kind reference) "declaration")
+        (push (moss--xref-from-location
+               (format "%s — %s" name (moss--json-get 'kind reference))
+               (moss--json-get 'source reference))
+              xrefs)))))
+
+(cl-defmethod xref-backend-apropos ((_backend (eql moss)) pattern)
+  (let (xrefs)
+    (dolist (symbol (moss--json-get
+                     'symbols (moss--semantic-query "symbols" nil))
+                    (nreverse xrefs))
+      (when (string-match-p pattern
+                            (moss--json-get 'qualified_name symbol))
+        (push (moss--xref-from-location
+               (format "%s — %s"
+                       (moss--json-get 'qualified_name symbol)
+                       (moss--json-get 'kind symbol))
+               (moss--json-get 'source symbol))
+              xrefs)))))
+
+(defun moss--completion-annotation (candidate)
+  "Return semantic annotation for completion CANDIDATE."
+  (when-let ((metadata (assoc-string candidate moss--completion-metadata)))
+    (format "  %s" (cdr metadata))))
+
+(defun moss-completion-at-point ()
+  "Complete semantically valid Moss names at point through the compiler."
+  (when (derived-mode-p 'moss-mode)
+    (let* ((end (point))
+           (start (save-excursion (skip-syntax-backward "w_") (point)))
+           (result (moss--semantic-query "complete" (moss--point-selector)
+                                         nil t))
+           (candidates (moss--json-get 'candidates result))
+           labels)
+      (setq moss--completion-metadata nil)
+      (dolist (candidate candidates)
+        (let ((label (moss--json-get 'label candidate))
+              (detail (or (moss--json-get 'detail candidate)
+                          (moss--json-get 'kind candidate))))
+          (push label labels)
+          (push (cons label detail) moss--completion-metadata)))
+      (list start end (delete-dups (nreverse labels))
+            :annotation-function #'moss--completion-annotation
+            :exclusive 'no))))
+
+(defun moss--entity-at-point ()
+  "Return the compiler semantic target at point."
+  (moss--json-get 'target (moss--references-at-point)))
+
+(defun moss--calls-at-point ()
+  "Return the compiler call graph rooted at point."
+  (let ((target (moss--entity-at-point)))
+    (moss--semantic-query "calls" (moss--json-get 'id target))))
+
+(defun moss--show-xrefs (xrefs)
+  "Display XREFS through the standard Emacs xref UI."
+  (funcall xref-show-xrefs-function (lambda () xrefs) nil))
+
+;;;###autoload
+(defun moss-callers ()
+  "Show statically resolved callers of the callable at point."
+  (interactive)
+  (let (xrefs)
+    (dolist (caller (moss--json-get 'callers (moss--calls-at-point)))
+      (push (moss--xref-from-location
+             (format "caller %s" (moss--json-get 'source caller))
+             `((file . ,(moss--json-get 'source_file caller))
+               (line . ,(moss--json-get 'line caller)) (column . 1))) xrefs))
+    (moss--show-xrefs (nreverse xrefs))))
+
+;;;###autoload
+(defun moss-callees ()
+  "Show statically resolved direct callees of the callable at point."
+  (interactive)
+  (let (xrefs)
+    (dolist (callee (moss--json-get 'direct_calls (moss--calls-at-point)))
+      (push (moss--xref-from-location
+             (format "%s — %s" (moss--json-get 'target callee)
+                     (moss--json-get 'boundary callee))
+             `((file . ,(moss--json-get 'source_file callee))
+               (line . ,(moss--json-get 'line callee)) (column . 1))) xrefs))
+    (moss--show-xrefs (nreverse xrefs))))
+
+(defvar moss-call-tree-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map special-mode-map)
+    (define-key map (kbd "TAB") #'moss-call-tree-toggle)
+    (define-key map (kbd "RET") #'moss-call-tree-visit)
+    map))
+
+(defvar-local moss--call-tree-source-buffer nil)
+
+(define-derived-mode moss-call-tree-mode special-mode "Moss-Calls"
+  "Interactive Moss semantic call hierarchy.  TAB expands; RET visits.")
+
+(defun moss--call-tree-insert-node (label id file line depth path &optional edge)
+  "Insert a call-tree node LABEL with semantic identity ID."
+  (let ((start (point))
+        (repeated (member id path)))
+    (insert (make-string (* 2 depth) ? )
+            (if edge (format "%s " edge) "") label
+            (if repeated "  [repeated]" "") "\n")
+    (add-text-properties
+     start (1- (point))
+     (list 'moss-node-id (and (not repeated) id)
+           'moss-node-file file 'moss-node-line line
+           'moss-node-depth depth 'moss-node-path (cons id path)
+           'moss-node-expanded nil))))
+
+(defun moss-call-tree-toggle ()
+  "Expand or collapse the compiler-owned node on the current line."
+  (interactive)
+  (let* ((position (line-beginning-position))
+         (id (get-text-property position 'moss-node-id))
+         (depth (get-text-property position 'moss-node-depth))
+         (path (get-text-property position 'moss-node-path))
+         (expanded (get-text-property position 'moss-node-expanded)))
+    (unless id (user-error "This repeated call-tree node cannot expand"))
+    (let ((inhibit-read-only t))
+      (if expanded
+          (save-excursion
+            (forward-line 1)
+            (let ((begin (point)))
+              (while (and (not (eobp))
+                          (> (or (get-text-property
+                                  (point) 'moss-node-depth) -1)
+                             depth))
+                (forward-line 1))
+              (delete-region begin (point))))
+        (let ((calls
+               (progn
+                 (unless (buffer-live-p moss--call-tree-source-buffer)
+                   (user-error "The source Moss buffer no longer exists"))
+                 (with-current-buffer moss--call-tree-source-buffer
+                   (moss--semantic-query "calls" id)))))
+          (save-excursion
+            (forward-line 1)
+            (dolist (callee (moss--json-get 'direct_calls calls))
+              (moss--call-tree-insert-node
+               (moss--json-get 'target callee)
+               (moss--json-get 'target_id callee)
+               (moss--json-get 'source_file callee)
+               (moss--json-get 'line callee) (1+ depth) path
+               (if (string-prefix-p
+                    "synchronous_message"
+                    (or (moss--json-get 'boundary callee) ""))
+                   "[message]" "[call]"))))))
+      (put-text-property position (line-end-position)
+                         'moss-node-expanded (not expanded)))))
+
+(defun moss-call-tree-visit ()
+  "Visit the Moss declaration or call site on the current tree line."
+  (interactive)
+  (let ((file (get-text-property (line-beginning-position) 'moss-node-file))
+        (line (get-text-property (line-beginning-position) 'moss-node-line)))
+    (unless (and file line) (user-error "No Moss source location here"))
+    (find-file-other-window file)
+    (goto-char (point-min))
+    (forward-line (1- line))))
+
+;;;###autoload
+(defun moss-call-tree ()
+  "Open an expandable compiler-owned call hierarchy rooted at point."
+  (interactive)
+  (let* ((source-buffer (current-buffer))
+         (target (moss--entity-at-point))
+         (source (moss--json-get 'source target))
+         (origin-directory default-directory)
+         (buffer (get-buffer-create "*Moss Call Tree*")))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (moss-call-tree-mode)
+        (setq-local moss--call-tree-source-buffer source-buffer)
+        (setq-local default-directory origin-directory)
+        (moss--call-tree-insert-node
+         (format "%s %s" (moss--json-get 'kind target)
+                 (moss--json-get 'name target))
+         (moss--json-get 'id target)
+         (moss--json-get 'file source) (moss--json-get 'line source)
+         0 nil)
+        (goto-char (point-min))))
+    (pop-to-buffer buffer)))
 
 (defun moss--read-map (filename)
   "Read and validate one Moss map from FILENAME."
@@ -842,7 +1179,13 @@ to generated Rust locations by the shared compiler map before execution."
 
 ;;;###autoload
 (define-derived-mode moss-mode prog-mode "Moss"
-  "Major mode for statically typed Moss source."
+  "Major mode for Moss source with compiler-owned semantic IDE support.
+
+`M-.' finds definitions, `M-?' finds semantic references, and
+`xref-find-apropos' searches project symbols.  `completion-at-point' provides
+semantic completion.  `moss-callers', `moss-callees', and `moss-call-tree'
+navigate the static call graph.  These features use stock Emacs APIs and the
+Moss JSON CLI; no LSP server or third-party completion package is required."
   :syntax-table moss-mode-syntax-table
   (setq-local font-lock-defaults '(moss-font-lock-keywords))
   (setq-local font-lock-keywords-case-fold-search nil)
@@ -853,7 +1196,11 @@ to generated Rust locations by the shared compiler map before execution."
   (setq-local comment-end "")
   (setq-local imenu-create-index-function #'moss-imenu-create-index)
   (setq-local beginning-of-defun-function #'moss-beginning-of-defun)
-  (setq-local end-of-defun-function #'moss-end-of-defun))
+  (setq-local end-of-defun-function #'moss-end-of-defun)
+  (add-hook 'xref-backend-functions #'moss-xref-backend nil t)
+  (add-hook 'completion-at-point-functions #'moss-completion-at-point nil t)
+  (add-hook 'after-change-functions #'moss--semantic-cache-clear nil t)
+  (add-hook 'after-save-hook #'moss--semantic-cache-clear nil t))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.moss\\'" . moss-mode))
