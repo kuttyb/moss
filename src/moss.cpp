@@ -184,6 +184,60 @@ static std::optional<std::pair<string, string>> map_key_value_types(
   return std::make_pair(trim(parts[0]), trim(parts[1]));
 }
 
+enum class BuiltinReceiverFamily { Vector, Map, Queue, String };
+
+struct BuiltinOperationDescriptor {
+  BuiltinReceiverFamily receiver;
+  const char* name;
+  const char* signature;
+};
+
+// Authoritative compiler-owned surface for receiver builtins.  Type checking
+// owns the operation set; editor completion projects these same descriptors.
+static const vector<BuiltinOperationDescriptor>& builtin_operations() {
+  static const vector<BuiltinOperationDescriptor> operations = {
+      {BuiltinReceiverFamily::Vector, "push", "push(item)"},
+      {BuiltinReceiverFamily::Vector, "pop", "pop()"},
+      {BuiltinReceiverFamily::Map, "get", "get(key, default)"},
+      {BuiltinReceiverFamily::Map, "keys", "keys()"},
+      {BuiltinReceiverFamily::Map, "values", "values()"},
+      {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)"},
+      {BuiltinReceiverFamily::Queue, "push", "push(item)"},
+      {BuiltinReceiverFamily::Queue, "pop", "pop()"},
+      {BuiltinReceiverFamily::String, "length", "length()"},
+      {BuiltinReceiverFamily::String, "char_at", "char_at(index)"},
+      {BuiltinReceiverFamily::String, "chars", "chars()"},
+      {BuiltinReceiverFamily::String, "split", "split(separator)"},
+      {BuiltinReceiverFamily::String, "join", "join(parts)"},
+  };
+  return operations;
+}
+
+static std::optional<BuiltinReceiverFamily> builtin_receiver_family(
+    const string& type) {
+  string concrete = canonical_type_name(type);
+  if (concrete == "vector" || starts_with(concrete, "vector["))
+    return BuiltinReceiverFamily::Vector;
+  if (concrete == "map" || starts_with(concrete, "map["))
+    return BuiltinReceiverFamily::Map;
+  if (concrete == "queue" || starts_with(concrete, "queue["))
+    return BuiltinReceiverFamily::Queue;
+  if (concrete == "string") return BuiltinReceiverFamily::String;
+  return std::nullopt;
+}
+
+static const BuiltinOperationDescriptor* builtin_operation(
+    const string& receiver_type, const string& name) {
+  auto family = builtin_receiver_family(receiver_type);
+  if (!family) return nullptr;
+  auto operation = std::find_if(
+      builtin_operations().begin(), builtin_operations().end(),
+      [&](const BuiltinOperationDescriptor& candidate) {
+        return candidate.receiver == *family && candidate.name == name;
+      });
+  return operation == builtin_operations().end() ? nullptr : &*operation;
+}
+
 static bool parse_index(const string& text, string& base, string& index) {
   string value = trim(text);
   if (value.empty() || value.back() != ']') return false;
@@ -451,14 +505,32 @@ struct LoweredFunctionalPipeline {
   vector<LoweredFunctionalStage> stages;
 };
 
+struct FunctionalOperationDescriptor {
+  const char* name;
+  FunctionalNodeKind kind;
+  const char* signature;
+};
+
+static const vector<FunctionalOperationDescriptor>& functional_operations() {
+  static const vector<FunctionalOperationDescriptor> operations = {
+      {"map", FunctionalNodeKind::Map, "map(transform)"},
+      {"filter", FunctionalNodeKind::Filter, "filter(predicate)"},
+      {"reduce", FunctionalNodeKind::Reduce, "reduce(initial, combine)"},
+      {"sum", FunctionalNodeKind::Sum, "sum"},
+      {"count", FunctionalNodeKind::Count, "count"},
+      {"any", FunctionalNodeKind::Any, "any(predicate)"},
+      {"all", FunctionalNodeKind::All, "all(predicate)"},
+  };
+  return operations;
+}
+
 static std::optional<FunctionalNodeKind> functional_stage_kind(const string& name) {
-  if (name == "map") return FunctionalNodeKind::Map;
-  if (name == "filter") return FunctionalNodeKind::Filter;
-  if (name == "reduce") return FunctionalNodeKind::Reduce;
-  if (name == "sum") return FunctionalNodeKind::Sum;
-  if (name == "count") return FunctionalNodeKind::Count;
-  if (name == "any") return FunctionalNodeKind::Any;
-  if (name == "all") return FunctionalNodeKind::All;
+  auto operation = std::find_if(
+      functional_operations().begin(), functional_operations().end(),
+      [&](const FunctionalOperationDescriptor& candidate) {
+        return candidate.name == name;
+      });
+  if (operation != functional_operations().end()) return operation->kind;
   return std::nullopt;
 }
 
@@ -1411,6 +1483,7 @@ class Checker {
   }
 
   void run() {
+    p_.semantic_uses.clear();
     check_enums();
     check_domain_handle_declarations();
     // Seed internal structural/generic parameter relations before cross-reference inference.
@@ -1452,6 +1525,29 @@ class Checker {
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     build_functional_ir();
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
+    retain_checked_type_uses();
+    std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
+              [](const SemanticUse& left, const SemanticUse& right) {
+                return std::tie(left.target_identity, left.kind,
+                                left.source_file, left.line,
+                                left.enclosing_identity,
+                                left.call_site_identity) <
+                    std::tie(right.target_identity, right.kind,
+                             right.source_file, right.line,
+                             right.enclosing_identity,
+                             right.call_site_identity);
+              });
+    p_.semantic_uses.erase(
+        std::unique(p_.semantic_uses.begin(), p_.semantic_uses.end(),
+                    [](const SemanticUse& left, const SemanticUse& right) {
+                      return left.target_identity == right.target_identity &&
+                          left.kind == right.kind &&
+                          left.source_file == right.source_file &&
+                          left.line == right.line &&
+                          left.enclosing_identity == right.enclosing_identity &&
+                          left.call_site_identity == right.call_site_identity;
+                    }),
+        p_.semantic_uses.end());
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
@@ -1471,6 +1567,7 @@ class Checker {
   FunctionSpecialization* checking_specialization_ = nullptr;
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
+  string current_semantic_context_;
   vector<Warning> warnings_;
 
   using TypeEnv = std::unordered_map<string,string>;
@@ -2362,6 +2459,9 @@ class Checker {
     for (const auto& h : d.handlers) {
       string h_source = h.source_file.empty() ? d.source_file : h.source_file;
       current_source_file_ = h_source;
+      SourceFileScope semantic_context(
+          current_semantic_context_,
+          "handler:" + d.name + "." + h.name);
       if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
@@ -2404,6 +2504,7 @@ class Checker {
 
   void check_main(const MainProc& m) {
     current_source_file_ = m.source_file;
+    SourceFileScope semantic_context(current_semantic_context_, "main");
     std::unordered_map<string,string> env;
     env = check_stmts(m.body, std::move(env), nullptr, nullptr);
     OwnershipEnv ownership;
@@ -2678,6 +2779,9 @@ class Checker {
       env = check_stmts(test.body, std::move(env), nullptr, nullptr);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
+      SourceFileScope source_scope(current_source_file_, test.source_file);
+      SourceFileScope semantic_context(
+          current_semantic_context_, "test:" + test.name);
       check_ownership(test.body, std::move(ownership), nullptr, nullptr);
     }
     std::set<string> benchmark_names;
@@ -2689,12 +2793,17 @@ class Checker {
       env = check_stmts(benchmark.body, std::move(env), nullptr, nullptr);
       OwnershipEnv ownership;
       ownership.types = std::move(env);
+      SourceFileScope source_scope(current_source_file_, benchmark.source_file);
+      SourceFileScope semantic_context(
+          current_semantic_context_, "bench:" + benchmark.name);
       check_ownership(benchmark.body, std::move(ownership), nullptr, nullptr);
     }
   }
 
   void check_function(const Function& f) {
     current_source_file_ = f.source_file;
+    SourceFileScope semantic_context(
+        current_semantic_context_, "fn:" + f.name);
     std::unordered_map<string,string> env;
     std::set<string> names;
     if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
@@ -2970,6 +3079,9 @@ class Checker {
 
   struct OwnershipEnv {
     std::unordered_map<string,string> types;
+    // Exact declarations selected for local names by the ordinary ownership
+    // walk. Branch copies naturally preserve lexical shadowing.
+    std::unordered_map<string,string> binding_identities;
     // Only fallthrough paths reach a join or a loop back edge.
     bool can_continue = true;
     std::set<string> state_fields;
@@ -2988,6 +3100,106 @@ class Checker {
     std::unordered_map<string,string> borrowed_enum_payloads;
     std::map<string,MoveInfo> moved;
   };
+
+  void retain_semantic_use(const string& target_identity, const string& kind,
+                           int line) {
+    if (target_identity.empty() || current_semantic_context_.empty()) return;
+    p_.semantic_uses.push_back(
+        {target_identity, kind, current_source_file_, line,
+         current_semantic_context_, {}});
+  }
+
+  static string statement_binding_identity(const string& context, int line) {
+    return context + "@" + std::to_string(line) + ":statement";
+  }
+
+  void retain_resolved_type_uses(const string& declared_type,
+                                 const string& source_file, int line,
+                                 const string& enclosing) {
+    string type = canonical_type_name(declared_type);
+    auto bracket = type.find('[');
+    string nominal = bracket == string::npos ? type : type.substr(0, bracket);
+    string target;
+    if (auto object = objects_.find(nominal); object != objects_.end())
+      target = "type:" + object->second->name + "@" +
+          std::to_string(object->second->line);
+    else if (auto enumeration = enums_.find(nominal);
+             enumeration != enums_.end())
+      target = "enum:" + enumeration->second->name + "@" +
+          std::to_string(enumeration->second->line);
+    else if (auto trait = traits_.find(nominal);
+             trait != traits_.end() && trait->second != &iterator_trait_)
+      target = "trait:" + trait->second->name + "@" +
+          std::to_string(trait->second->line);
+    else if (auto domain = domains_.find(nominal); domain != domains_.end())
+      target = "domain:" + domain->second->name + "@" +
+          std::to_string(domain->second->line);
+    if (!target.empty())
+      p_.semantic_uses.push_back(
+          {target, "type_use", source_file, line, enclosing, {}});
+    if (bracket != string::npos && ends_with(type, "]"))
+      for (const auto& argument : split_top_level(
+               type.substr(bracket + 1, type.size() - bracket - 2), ','))
+        retain_resolved_type_uses(argument, source_file, line, enclosing);
+  }
+
+  void retain_checked_type_uses() {
+    for (const auto& function : p_.functions) {
+      string enclosing = "fn:" + function.name;
+      for (const auto& parameter : function.params)
+        retain_resolved_type_uses(parameter.type, function.source_file,
+                                  function.line, enclosing);
+      if (function.return_type)
+        retain_resolved_type_uses(*function.return_type, function.source_file,
+                                  function.line, enclosing);
+    }
+    for (const auto& object : p_.objects) {
+      for (const auto& field : object.fields)
+        retain_resolved_type_uses(field.type, field.source_file, field.line,
+                                  "type:" + object.name);
+      for (const auto& method : object.methods) {
+        string enclosing = "method:" + object.name + "." + method.name;
+        for (const auto& parameter : method.params)
+          retain_resolved_type_uses(parameter.type, method.source_file,
+                                    method.line, enclosing);
+        if (method.return_type)
+          retain_resolved_type_uses(*method.return_type, method.source_file,
+                                    method.line, enclosing);
+      }
+    }
+    for (const auto& enumeration : p_.enums)
+      for (const auto& item : enumeration.cases)
+        for (const auto& field : item.fields)
+          retain_resolved_type_uses(field.type, field.source_file, field.line,
+                                    "enum:" + enumeration.name);
+    for (const auto& trait : p_.traits)
+      for (const auto& method : trait.methods) {
+        string enclosing = "trait:" + trait.name;
+        for (const auto& parameter : method.params)
+          retain_resolved_type_uses(parameter.type, trait.source_file,
+                                    trait.line, enclosing);
+        if (method.return_type)
+          retain_resolved_type_uses(*method.return_type, trait.source_file,
+                                    trait.line, enclosing);
+      }
+    for (const auto& domain : p_.domains) {
+      for (const auto& field : domain.state)
+        retain_resolved_type_uses(field.type, field.source_file, field.line,
+                                  "domain:" + domain.name);
+      for (const auto& route : domain.routes)
+        retain_resolved_type_uses(route.type, route.source_file, route.line,
+                                  "domain:" + domain.name);
+      for (const auto& handler : domain.handlers) {
+        string enclosing = "handler:" + domain.name + "." + handler.name;
+        for (const auto& parameter : handler.params)
+          retain_resolved_type_uses(parameter.type, handler.source_file,
+                                    handler.line, enclosing);
+        if (handler.reply_type)
+          retain_resolved_type_uses(*handler.reply_type, handler.source_file,
+                                    handler.line, enclosing);
+      }
+    }
+  }
 
   static bool simple_identifier(const string& value) {
     string s = trim(value);
@@ -3284,7 +3496,8 @@ class Checker {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
         string concrete_base = canonical_type_name(*base);
-        if (concrete_base == "string") {
+        const auto* builtin = builtin_operation(concrete_base, method_name);
+        if (concrete_base == "string" && builtin) {
           if (method_name == "length" && method_args.empty()) return string("int");
           if (method_name == "char_at" && method_args.size() == 1) return string("string");
           if ((method_name == "chars" && method_args.empty()) ||
@@ -3292,7 +3505,7 @@ class Checker {
             return string("vector[string]");
           if (method_name == "join" && method_args.size() == 1) return string("string");
         }
-        if ((concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
+        if (builtin && (concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
              concrete_base == "queue" || starts_with(concrete_base, "queue["))) {
           if (method_name == "push" && method_args.size() == 1)
             return string("unit");
@@ -3302,7 +3515,7 @@ class Checker {
               return trim(concrete_base.substr(open + 1, concrete_base.size() - open - 2));
           }
         }
-        if (auto map_types = map_key_value_types(*base)) {
+        if (auto map_types = map_key_value_types(*base); map_types && builtin) {
           if (method_name == "get" && method_args.size() == 2)
             return map_types->second;
           if (method_name == "delete" && method_args.size() == 3)
@@ -7490,6 +7703,10 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
+        SourceFileScope source_scope(current_source_file_, method.source_file);
+        SourceFileScope semantic_context(
+            current_semantic_context_,
+            "method:" + object.name + "." + method.name);
         OwnershipEnv ownership;
         ownership.types["self"] = object.name;
         for (const auto& field : object.fields)
@@ -7851,6 +8068,9 @@ class Checker {
     }
     if (simple_identifier(value)) {
       if (functions_.count(value)) return;  // Statically closed callable identity.
+      auto resolved_binding = env.binding_identities.find(value);
+      if (resolved_binding != env.binding_identities.end())
+        retain_semantic_use(resolved_binding->second, "binding_use", line);
       auto location = storage_location(value, env.types);
       string binding = location ? location->root : value;
       if (requested == Effect::Write && env.moved.count(binding) &&
@@ -7869,7 +8089,8 @@ class Checker {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
-        if (concrete == "string" &&
+        const auto* builtin = builtin_operation(concrete, method);
+        if (builtin && concrete == "string" &&
             (((method == "length" || method == "chars") && arguments.empty()) ||
              ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
           check_ownership_expression(line, receiver, env, Effect::Read);
@@ -7880,7 +8101,7 @@ class Checker {
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
-        if (collection) {
+        if (collection && builtin) {
           auto location = storage_location(receiver, env.types);
           if ((method == "push" || method == "pop" || method == "delete") && location &&
               active_read_overlap(receiver, env))
@@ -7955,6 +8176,9 @@ class Checker {
     string callee;
     vector<string> call_arguments;
     if (parse_simple_call(value, callee, call_arguments)) {
+      auto resolved_callee = env.binding_identities.find(callee);
+      if (resolved_callee != env.binding_identities.end())
+        retain_semantic_use(resolved_callee->second, "binding_use", line);
       if (callee == "replace" && call_arguments.size() == 2) {
         auto replacement_type = inferred_expr_type(call_arguments[1], env.types);
         Effect replacement_effect = replacement_type && transfer_type(*replacement_type)
@@ -8164,7 +8388,7 @@ class Checker {
         err(s.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
-        require_available(s.line, s.a, env);
+        check_ownership_expression(s.line, s.a, env, Effect::Read);
         bool is_if = s.kind == Stmt::Kind::If;
         OwnershipEnv incoming = env;
         ++index;
@@ -8221,12 +8445,19 @@ class Checker {
         check_ownership_expression(s.line, s.b, env, source_effect);
         OwnershipEnv body = env;
         body.types[s.a] = element.value_or("_value");
+        body.binding_identities[s.a] = statement_binding_identity(
+            current_semantic_context_, s.line);
         if (!source_root.empty() && source_effect == Effect::Read)
           body.active_read_traversals.insert(source_root);
         ++index;
         check_ownership_block(statements, index, level + 1, body,
                               current_domain, current_handler);
         body.types.erase(s.a);
+        if (auto prior = env.binding_identities.find(s.a);
+            prior != env.binding_identities.end())
+          body.binding_identities[s.a] = prior->second;
+        else
+          body.binding_identities.erase(s.a);
         body.moved.erase(s.a);
         OwnershipEnv incoming = env;
         if (body.can_continue)
@@ -8269,6 +8500,8 @@ class Checker {
           else type = inferred_expr_type(s.b, env.types);
 
           env.types[s.a] = type.value_or("_value");
+          env.binding_identities[s.a] = statement_binding_identity(
+              current_semantic_context_, s.line);
           if (s.kind == Stmt::Kind::Let) env.immutable_locals.insert(s.a);
           else env.immutable_locals.erase(s.a);
           env.moved.erase(s.a); // A declaration may intentionally shadow an older moved binding.
@@ -8309,6 +8542,9 @@ class Checker {
           if (simple_identifier(s.a)) {
             if (source_type) env.types[s.a] = *source_type;
             else if (!env.types.count(s.a)) env.types[s.a] = "_value";
+            if (!env.binding_identities.count(s.a))
+              env.binding_identities[s.a] = statement_binding_identity(
+                  current_semantic_context_, s.line);
             // Assignment creates or reinitializes the target, including a
             // binding that was consumed on an earlier path.
             env.moved.erase(s.a);
@@ -8333,6 +8569,8 @@ class Checker {
           }
           if (!s.message_result.empty()) {
             if (handler->reply_type) env.types[s.message_result] = *handler->reply_type;
+            env.binding_identities[s.message_result] = statement_binding_identity(
+                current_semantic_context_, s.line);
             env.moved.erase(s.message_result);
           }
           ++index;
@@ -8514,7 +8752,13 @@ class Checker {
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
-    check_ownership(function.body, std::move(specialized_ownership), nullptr, nullptr);
+    {
+      SourceFileScope source_scope(current_source_file_, function.source_file);
+      SourceFileScope semantic_context(
+          current_semantic_context_, "fn:" + function.name);
+      check_ownership(function.body, std::move(specialized_ownership), nullptr,
+                      nullptr);
+    }
     if (function.result_expression)
       check_expression(function.result_line ? function.result_line : function.line,
                        *function.result_expression, specialized_env);
@@ -9189,9 +9433,9 @@ class Checker {
     if (parse_member_call(value, receiver, handler, args)) {
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (canonical_type_name(*receiver_type) == "string") {
-          bool zero = handler == "length" || handler == "chars";
+          if (!builtin_operation(*receiver_type, handler))
+            err(line, "unknown String method '" + handler + "'");
           bool one = handler == "char_at" || handler == "split" || handler == "join";
-          if (!zero && !one) err(line, "unknown String method '" + handler + "'");
           if (args.size() != (one ? 1u : 0u))
             err(line, "String " + handler + " expects " + (one ? "one" : "no") + " argument(s)");
           if (one) {
@@ -9206,6 +9450,8 @@ class Checker {
           return;
         }
         if (auto map_types = map_key_value_types(*receiver_type)) {
+          if (!builtin_operation(*receiver_type, handler))
+            err(line, "invalid collection operation '" + handler + "'");
           if (handler == "delete") {
             if (args.size() != 3)
               err(line, "map delete expects key, fallback, and writable Bool flag");
@@ -9267,8 +9513,9 @@ class Checker {
       }
       if (it != env.end() && (it->second == "vector" || it->second == "queue" || it->second == "map" ||
           starts_with(it->second, "vector[") || starts_with(it->second, "queue[") || starts_with(it->second, "map["))) {
-        if (handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
-        if (handler == "pop" && args.empty() && (starts_with(it->second, "queue[") || starts_with(it->second, "vector["))) return;
+        const auto* builtin = builtin_operation(it->second, handler);
+        if (builtin && handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
+        if (builtin && handler == "pop" && args.empty() && (starts_with(it->second, "queue[") || starts_with(it->second, "vector["))) return;
         err(line, "invalid collection operation '" + handler + "'");
       }
       if (it != env.end() && traits_.count(it->second)) {
@@ -16012,6 +16259,7 @@ static void append_statement_targets(
     fact.context = context;
     fact.kind = (statement.kind == Stmt::Kind::Let ||
                  statement.kind == Stmt::Kind::Var ||
+                 statement.kind == Stmt::Kind::For ||
                  statement.kind == Stmt::Kind::Assign ||
                  (statement.kind == Stmt::Kind::Message &&
                   !statement.message_result.empty()))
@@ -16666,7 +16914,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
       {"structured_diagnostics", "Stable machine-readable Moss diagnostics with compiler-owned source, rule, cause, entity, related-location, and guidance facts.", "moss check <source> --json"},
       {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
       {"semantic_queries", "Resolve entities without guessing, then read checked type, ownership, effect, call, reference, symbol, completion, domain, synchronization, explanation, and cost facts.", "moss resolve|inspect|type|effects|ownership|calls|references|symbols|complete|why|cost ... --source <source> --json"},
-      {"semantic_editor_queries", "Compiler-owned references, workspace symbols, and context-sensitive completion for editor clients without an LSP server.", "moss references|symbols|complete ... --source <source> --json"},
+      {"semantic_editor_queries", "Compiler-owned navigation, workspace symbols, call hierarchy, and context-sensitive completion with strict unsaved-source overlays for editor clients without an LSP server.", "moss resolve|references|symbols|calls|complete ... --source <source> [--overlay-source <temporary-file>] --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
       {"impact_analysis", "Changed semantic facts, dependents, affected tests, and reuse facts.", "moss impact <target> --source <source> --json"},
       {"formatter", "Canonical Moss formatting or formatting drift detection.", "moss fmt [--check] [--json]"},
@@ -17551,7 +17799,7 @@ static void write_bootstrap_json(std::ostream& out,
     out << ',';
     write_agent_command_schema(
         out, "semantic_editor_query", "Expose compiler-owned navigation, symbol, and completion facts to editors without an LSP server.",
-        {"references target | symbols [prefix] | complete at:<line>:<column>", "--source", "--json"}, {"--kind", "--enclosing", "complete --overlay-source <temporary-file>"},
+        {"resolve|references|symbols|calls target | complete at:<line>:<column>", "--source", "--json"}, {"--kind", "--enclosing", "--overlay-source <temporary-file>"},
         "moss-agent-1 envelope with physical Moss locations, durable identities, deterministic symbols, or structured completion candidates",
         {"entity-v1", "physical Moss source location"},
         {"QUERY_SOURCE_REQUIRED", "QUERY_TARGET_NOT_FOUND", "COMPLETION_POSITION_INVALID", "ambiguous resolution status"});
@@ -18596,46 +18844,6 @@ static void write_semantic_location_json(
       << ", \"column\": 1, \"range_precision\": \"line\"}";
 }
 
-static bool checked_text_uses_binding(const string& text,
-                                      const string& name) {
-  for (size_t position = 0;
-       (position = text.find(name, position)) != string::npos;
-       position += name.size()) {
-    bool left = position == 0 ||
-        (!std::isalnum(static_cast<unsigned char>(text[position - 1])) &&
-         text[position - 1] != '_');
-    bool right = position + name.size() == text.size() ||
-        (!std::isalnum(static_cast<unsigned char>(text[position + name.size()])) &&
-         text[position + name.size()] != '_');
-    size_t previous = position;
-    while (previous > 0 && std::isspace(
-        static_cast<unsigned char>(text[previous - 1]))) --previous;
-    bool qualified_member = previous > 0 && text[previous - 1] == '.';
-    if (left && right && !qualified_member) return true;
-  }
-  return false;
-}
-
-static const vector<Stmt>* semantic_body_for_context(
-    const Program& program, const string& context) {
-  for (const auto& function : program.functions)
-    if (context == "fn:" + function.name) return &function.body;
-  for (const auto& object : program.objects)
-    for (const auto& method : object.methods)
-      if (context == "method:" + object.name + "." + method.name)
-        return &method.body;
-  for (const auto& domain : program.domains)
-    for (const auto& handler : domain.handlers)
-      if (context == "handler:" + domain.name + "." + handler.name)
-        return &handler.body;
-  for (const auto& test : program.tests)
-    if (context == "test:" + test.name) return &test.body;
-  for (const auto& benchmark : program.benchmarks)
-    if (context == "bench:" + benchmark.name) return &benchmark.body;
-  if (context == "main" && program.main) return &program.main->body;
-  return nullptr;
-}
-
 static bool write_references_query_json(
     std::ostream& out, const string& selector, const string& source_file,
     const Program& program, const OptimizationPlan& plan,
@@ -18672,6 +18880,14 @@ static bool write_references_query_json(
        target->line,
        target->enclosing_durable_identity, {}});
 
+  for (const auto& use : program.semantic_uses) {
+    if (use.target_identity != target->semantic_identity) continue;
+    references.push_back(
+        {use.kind, use.source_file.empty() ? source_file : use.source_file,
+         use.line, use.enclosing_identity,
+         use.call_site_identity});
+  }
+
   const bool callable_target = target->kind == "function" ||
       target->kind == "method" || target->kind == "handler" ||
       target->kind == "main";
@@ -18695,77 +18911,6 @@ static bool write_references_query_json(
       references.push_back(
           {"callable_reference", pipeline.source_file, pipeline.line,
            pipeline.context, {}});
-  }
-
-  if (target->kind == "binding") {
-    if (const vector<Stmt>* body = semantic_body_for_context(
-            program, target->context)) {
-      for (const auto& statement : *body) {
-        if (statement.line <= target->line) continue;
-        bool redeclares = (statement.kind == Stmt::Kind::Let ||
-                           statement.kind == Stmt::Kind::Var) &&
-            statement.a == target->name;
-        if (redeclares) continue;
-        bool used = checked_text_uses_binding(statement.text, target->name);
-        if (!used) {
-          used = checked_text_uses_binding(statement.a, target->name) ||
-              checked_text_uses_binding(statement.b, target->name) ||
-              checked_text_uses_binding(statement.message_result, target->name);
-          for (const auto& argument : statement.args)
-            used = used || checked_text_uses_binding(argument, target->name);
-        }
-        if (used)
-          references.push_back(
-              {"binding_use", statement.source_file.empty()
-                                  ? source_file : statement.source_file,
-               statement.line, target->context, {}});
-      }
-    }
-  }
-
-  auto add_type_use = [&](const string& type, const string& file, int line,
-                          const string& enclosing) {
-    if ((target->kind == "type" || target->kind == "enum" ||
-         target->kind == "trait" || target->kind == "domain") &&
-        type == target->name)
-      references.push_back({"type_use", file, line, enclosing, {}});
-  };
-  for (const auto& function : program.functions) {
-    for (const auto& parameter : function.params)
-      add_type_use(parameter.type, function.source_file, function.line,
-                   "fn:" + function.name);
-    if (function.return_type)
-      add_type_use(*function.return_type, function.source_file, function.line,
-                   "fn:" + function.name);
-  }
-  for (const auto& object : program.objects) {
-    for (const auto& field : object.fields)
-      add_type_use(field.type, field.source_file, field.line,
-                   "type:" + object.name);
-    for (const auto& method : object.methods) {
-      for (const auto& parameter : method.params)
-        add_type_use(parameter.type, method.source_file, method.line,
-                     "method:" + object.name + "." + method.name);
-      if (method.return_type)
-        add_type_use(*method.return_type, method.source_file, method.line,
-                     "method:" + object.name + "." + method.name);
-    }
-  }
-  for (const auto& domain : program.domains) {
-    for (const auto& field : domain.state)
-      add_type_use(field.type, field.source_file, field.line,
-                   "domain:" + domain.name);
-    for (const auto& route : domain.routes)
-      add_type_use(route.type, route.source_file, route.line,
-                   "domain:" + domain.name);
-    for (const auto& handler : domain.handlers) {
-      for (const auto& parameter : handler.params)
-        add_type_use(parameter.type, handler.source_file, handler.line,
-                     "handler:" + domain.name + "." + handler.name);
-      if (handler.reply_type)
-        add_type_use(*handler.reply_type, handler.source_file, handler.line,
-                     "handler:" + domain.name + "." + handler.name);
-    }
   }
 
   std::sort(references.begin(), references.end(),
@@ -19034,6 +19179,8 @@ static bool write_completion_query_json(
   }
   string trimmed_before = trim(before);
   bool message_context = trimmed_before.find("message ") != string::npos;
+  bool functional_context = qualifier.empty() &&
+      before.rfind("|>") != string::npos;
   bool type_context = qualifier.empty() &&
       (before.rfind(':') != string::npos ||
        before.rfind("->") != string::npos ||
@@ -19116,36 +19263,26 @@ static bool write_completion_query_json(
           if ((target.kind == "method" || target.kind == "field") &&
               starts_with(target.name, receiver_type + "."))
             add_target(target);
-        string builtin_type = receiver_type;
-        std::transform(builtin_type.begin(), builtin_type.end(),
-                       builtin_type.begin(), [](unsigned char value) {
-                         return std::tolower(value);
-                       });
-        vector<std::pair<string,string>> builtin_members;
-        if (starts_with(builtin_type, "vector[") || builtin_type == "vector")
-          builtin_members = {{"push", "method push(item)"},
-                             {"pop", "method pop()"}};
-        else if (starts_with(builtin_type, "map[") || builtin_type == "map")
-          builtin_members = {{"get", "method get(key, default)"},
-                             {"keys", "method keys()"},
-                             {"values", "method values()"},
-                             {"delete", "method delete(key, fallback, found)"}};
-        else if (starts_with(builtin_type, "queue[") || builtin_type == "queue")
-          builtin_members = {{"push", "method push(item)"},
-                             {"pop", "method pop()"}};
-        else if (builtin_type == "string")
-          builtin_members = {{"length", "method length()"},
-                             {"char_at", "method char_at(index)"},
-                             {"chars", "method chars()"},
-                             {"split", "method split(separator)"},
-                             {"join", "method join(parts)"}};
-        for (const auto& member : builtin_members)
-          if (prefix_matches(member.first))
+        auto family = builtin_receiver_family(receiver_type);
+        if (family)
+          for (const auto& operation : builtin_operations()) {
+            if (operation.receiver != *family ||
+                !prefix_matches(operation.name))
+              continue;
             candidates.push_back(
-                {member.first, "method", {}, receiver_type + "." + member.first,
-                 {}, member.second, {}, 0});
+                {operation.name, "method", {},
+                 receiver_type + "." + operation.name, {},
+                 "method " + string(operation.signature), {}, 0});
+          }
       }
     }
+  } else if (functional_context) {
+    for (const auto& operation : functional_operations())
+      if (prefix_matches(operation.name))
+        candidates.push_back(
+            {operation.name, "function", {}, operation.name, {},
+             "functional pipeline stage " + string(operation.signature),
+             {}, 0});
   } else if (message_context) {
     std::set<string> legal_targets;
     for (const auto& instance : program.concrete_domain_graph.instances) {
@@ -26351,23 +26488,35 @@ int main(int argc, char** argv) {
     bool project_query = false;
     bool completion_recovered = false;
     std::optional<string> recovered_completion_source;
-    std::optional<string> completion_overlay;
-    if (query_command == "complete") {
-      if (!query_overlay_source.empty()) {
-        std::ifstream overlay_input(query_overlay_source, std::ios::binary);
-        if (!overlay_input) {
-          moss::write_structured_error(
-              std::cout, "complete", "COMPLETION_OVERLAY_NOT_FOUND",
-              "cannot read completion overlay source", query_overlay_source);
-          return 1;
-        }
-        std::ostringstream overlay_text;
-        overlay_text << overlay_input.rdbuf();
-        completion_overlay = overlay_text.str();
+    std::optional<string> query_overlay;
+    static const std::set<string> overlay_commands = {
+        "resolve", "references", "symbols", "calls", "complete"};
+    if (!query_overlay_source.empty()) {
+      if (!overlay_commands.count(query_command)) {
+        moss::write_structured_error(
+            std::cout, query_command, "QUERY_OVERLAY_UNSUPPORTED",
+            "this semantic query does not accept an editor source overlay",
+            query_overlay_source);
+        return 1;
       }
+      std::ifstream overlay_input(query_overlay_source, std::ios::binary);
+      if (!overlay_input) {
+        moss::write_structured_error(
+            std::cout, query_command,
+            query_command == "complete" ? "COMPLETION_OVERLAY_NOT_FOUND"
+                                        : "QUERY_OVERLAY_NOT_FOUND",
+            "cannot read semantic query overlay source",
+            query_overlay_source);
+        return 1;
+      }
+      std::ostringstream overlay_text;
+      overlay_text << overlay_input.rdbuf();
+      query_overlay = overlay_text.str();
+    }
+    if (query_command == "complete") {
       recovered_completion_source = moss::completion_recovery_source(
           std::filesystem::absolute(input).lexically_normal().string(),
-          query_target, completion_overlay ? &*completion_overlay : nullptr);
+          query_target, query_overlay ? &*query_overlay : nullptr);
       completion_recovered = recovered_completion_source.has_value();
     }
     if (!query_command.empty() || check_only) {
@@ -26378,6 +26527,9 @@ int main(int argc, char** argv) {
           if (recovered_completion_source)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *recovered_completion_source;
+          else if (query_overlay)
+            overrides[std::filesystem::absolute(input).lexically_normal()] =
+                *query_overlay;
           auto unit = moss::analyze_project_sources(
               context.manifest, context.sources, optimize_shared_memory,
               debug_build, context.mode, {}, nullptr,
@@ -26416,9 +26568,11 @@ int main(int argc, char** argv) {
       }
       std::istringstream recovered_input(
           recovered_completion_source.value_or(string()));
+      std::istringstream overlay_input(query_overlay.value_or(string()));
       std::istream& source_stream = recovered_completion_source
           ? static_cast<std::istream&>(recovered_input)
-          : static_cast<std::istream&>(f);
+          : query_overlay ? static_cast<std::istream&>(overlay_input)
+                          : static_cast<std::istream&>(f);
       auto lines = moss::lex_lines(
           source_stream,
           std::filesystem::absolute(input).lexically_normal().string());
@@ -26489,7 +26643,7 @@ int main(int argc, char** argv) {
         return moss::write_completion_query_json(
                    std::cout, query_target, absolute_source, program, plan,
                    completion_recovered,
-                   completion_overlay ? &*completion_overlay : nullptr)
+                   query_overlay ? &*query_overlay : nullptr)
             ? 0 : 1;
       return moss::write_semantic_query_json(
                  std::cout, query_command, query_target, absolute_source,

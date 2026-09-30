@@ -212,6 +212,19 @@ struct SemanticCallEdge {
   string receiver;
 };
 
+// Minimal resolved-use facts retained by the ordinary checker for semantic
+// tooling.  `target_identity` names the declaration selected by normal name
+// or type resolution; tooling must never reconstruct that selection from
+// source text.
+struct SemanticUse {
+  string target_identity;
+  string kind;
+  string source_file;
+  int line = 0;
+  string enclosing_identity;
+  string call_site_identity;
+};
+
 
 
 
@@ -273,6 +286,7 @@ struct Program {
   vector<FunctionalPipeline> functional_pipelines;
   vector<FunctionalTraversalGroup> functional_traversal_groups;
   vector<SemanticCallEdge> semantic_call_edges;
+  vector<SemanticUse> semantic_uses;
   // Per-declared-instance facts for source domains whose untyped state and
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;

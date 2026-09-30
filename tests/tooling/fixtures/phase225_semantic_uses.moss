@@ -1,0 +1,20 @@
+type Counter:
+  value: Int
+
+type CounterCollections:
+  values: Vector[Counter]
+  lookup: Map[String, Counter]
+  pending: Queue[Counter]
+
+fn keep(counter: Counter) -> Counter:
+  return counter
+
+fn scoped() -> Int:
+  let value = 1
+  echo "value is text, not a reference"
+  # value is a comment, not a reference
+  if true:
+    let value = 2
+    echo value
+  echo value
+  return value

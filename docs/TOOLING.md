@@ -170,9 +170,27 @@ C-c C-d  toggle pending Moss breakpoint
 
 Semantic queries invoke the compiler directly with argument vectors and parse
 the `moss-agent-1` JSON envelope.  Results are cached only for an unchanged
-buffer and invalidated on edit/save.  Completion sends unsaved text through the
-compiler's bounded, tooling-only overlay/recovery path; it does not relax normal
-Moss checking and does not create an editor-side semantic database.
+buffer and invalidated on edit/save. Definition/reference navigation, semantic
+search, callers/callees, call-tree expansion, and completion all send the
+current unsaved text through `--overlay-source`; the physical visited path
+continues to select project/module context. Invalid unsaved navigation source
+fails explicitly rather than using stale disk contents. Only completion uses
+the compiler's bounded incomplete-line recovery; every other semantic overlay
+is strict. This does not relax normal Moss checking and does not create an
+editor-side semantic database.
+
+Informational latency can be reproduced with:
+
+```sh
+python3 tests/tooling/measure_phase225_semantic_ide.py ./moss --samples 25
+```
+
+The utility reports first-process, median, and p95 observations for completion,
+references, symbols, and calls without imposing a timing gate. Current requests
+start a compiler process; identical requests in an unchanged Emacs buffer are
+served from the short-lived editor cache, and an edit invalidates that cache.
+See [PHASE_22_5_EMACS_IDE.md](PHASE_22_5_EMACS_IDE.md#informational-latency-measurement)
+for the recorded closeout measurements.
 
 ### Optional native debugging
 

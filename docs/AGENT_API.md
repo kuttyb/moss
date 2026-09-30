@@ -229,9 +229,11 @@ spelling.
 `references` resolves through the same target contract and returns the selected
 declaration plus deterministically ordered compiler-resolved call, method-call,
 synchronous-message, callable, and retained type-use locations.  It reuses the
-checked `SemanticCallEdge`, functional callable, declaration/type, and durable
-identity facts used by semantic rename and the other queries; it never greps
-source text.  Ambiguity is a structured `QUERY_TARGET_NOT_FOUND` result with
+checked `SemanticCallEdge` and functional callable records plus the normal
+checker's minimal `SemanticUse` records for exact binding and nested declared
+type identities. `references` is projected from compiler-resolved semantic
+uses and does not infer references from source text or compare type-name
+strings. Ambiguity is a structured `QUERY_TARGET_NOT_FOUND` result with
 `details.resolution.status = "ambiguous"`.
 
 `symbols [prefix]` enumerates compiler-known declarations in the selected
@@ -244,14 +246,21 @@ display name.
 scope, receiver type/member facts, module exports, type position, and static
 domain composition.  Candidates expose `label`, `kind`, optional `entity_id`,
 `qualified_name`, retained `type`, `detail`, and physical `source`.
+Receiver operations come from the same compiler-owned builtin registry used by
+checking for Vector, Map, Queue, and String. Pipeline stages come from the same
+functional-operation descriptors used to recognize and check `map`, `filter`,
+`reduce`, `sum`, `count`, `any`, and `all`.
 
-Editor clients may pass `--overlay-source <temporary-file>` to `complete` so
-unsaved buffer text participates without modifying the real source.  Completion
-uses a bounded tooling-only recovery: the active type token is replaced with
-`Int`, or the active expression line is elided to a neutral checked statement
-or value in the in-memory overlay.  The result reports `recovery.used` and the
-contract name.  This path is exclusive to completion; normal check/build/run
-acceptance and Moss syntax are unchanged.
+Editor clients may pass `--overlay-source <temporary-file>` to `resolve`,
+`references`, `symbols`, `calls`, and `complete` so unsaved buffer text
+participates without modifying the real source. `--source` remains the physical
+path and project/module identity. Navigation, search, and call queries check an
+overlay strictly; invalid unsaved source returns an explicit structured error
+and never falls back to disk. Completion alone uses bounded tooling recovery:
+the active type token is replaced with `Int`, or the active expression line is
+elided to a neutral checked statement or value. Its result reports
+`recovery.used` and the contract name. Normal check/build/run acceptance and
+Moss syntax are unchanged.
 
 The Phase 10.5 synchronization schema reservation is superseded by Phase 10.6C.
 `synchronization_diagnostics.availability` is now `derived`: graph-relative

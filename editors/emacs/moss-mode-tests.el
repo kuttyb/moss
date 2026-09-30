@@ -625,6 +625,121 @@
                            candidates))))
             (kill-buffer (current-buffer))))))))
 
+(ert-deftest moss-mode-semantic-cache-avoids-process-and-invalidates-on-edit ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_shadow.moss" root))
+         (moss-semantic-cache-seconds 60)
+         (invocations 0)
+         argument-lists)
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (cl-letf (((symbol-function 'moss--compiler)
+                       (lambda (&rest _) "/mock/moss"))
+                      ((symbol-function 'process-file)
+                       (lambda (_program _infile _destination _display
+                                &rest arguments)
+                         (setq invocations (1+ invocations))
+                         (push arguments argument-lists)
+                         (insert "{\"ok\":true,\"result\":{\"symbols\":[]}}")
+                         0)))
+              (moss--semantic-query "symbols" nil)
+              (moss--semantic-query "symbols" nil)
+              (should (= invocations 1))
+              (goto-char (point-max))
+              (insert "\n")
+              (moss--semantic-query "symbols" nil)
+              (should (= invocations 2))
+              (dolist (arguments argument-lists)
+                (should (member "--overlay-source" arguments)))))
+        (set-buffer-modified-p nil)
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-unsaved-xref-and-references ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_shadow.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-min))
+            (search-forward "value")
+            (should (= 2 (xref-file-location-line
+                          (xref-item-location
+                           (car (xref-backend-definitions 'moss "value"))))))
+            (goto-char (point-min))
+            (insert "\n")
+            (forward-line 2)
+            (search-forward "value" (line-end-position))
+            (let* ((definition
+                    (car (xref-backend-definitions 'moss "value")))
+                   (references (xref-backend-references 'moss "value")))
+              (should (= 3 (xref-file-location-line
+                            (xref-item-location definition))))
+              (should (equal '(4 5)
+                             (mapcar
+                              (lambda (xref)
+                                (xref-file-location-line
+                                 (xref-item-location xref)))
+                              references)))))
+        (set-buffer-modified-p nil)
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-unsaved-symbols-and-calls ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_ide/src/main.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-min))
+            (search-forward "middle(value)")
+            (replace-match "leaf(value)" t t)
+            (goto-char (point-min))
+            (search-forward "top")
+            (let* ((calls (moss--calls-at-point))
+                   (targets
+                    (mapcar (lambda (edge) (moss--json-get 'target edge))
+                            (moss--json-get 'direct_calls calls))))
+              (should-not (member "fn:middle" targets))
+              (should (= 2 (cl-count "fn:leaf" targets :test #'equal))))
+            (goto-char (point-min))
+            (while (search-forward "top" nil t)
+              (replace-match "summit" t t))
+            (let ((names
+                   (mapcar
+                    (lambda (symbol)
+                      (moss--json-get 'qualified_name symbol))
+                    (moss--json-get
+                     'symbols (moss--semantic-query "symbols" "")))))
+              (should (member "summit" names))
+              (should-not (member "top" names))))
+        (set-buffer-modified-p nil)
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-compiler-invalid-unsaved-source-fails-explicitly ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_shadow.moss" root))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (goto-char (point-min))
+            (insert "fn broken(:\n")
+            (should-error
+             (moss--semantic-query "references" "fn:left")
+             :type 'moss-semantic-error))
+        (set-buffer-modified-p nil)
+        (kill-buffer (current-buffer))))))
+
 (ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
   (with-temp-buffer
     (insert "spawn Worker()\nawait worker.Run()\nmessage worker.Run()\ndomainroutes(worker: Worker)\n")

@@ -1,5 +1,59 @@
 # Moss current status
 
+## Phase 22.5 corrective hardening — COMPLETE (2026-09-29)
+
+Current `main` was hardened from `1964cb733d74cbd33601a111c917bf1edc6463ca`
+without redesigning Phase 22.5, adding an LSP server, or implementing Phase
+22.6. Before edits, the dedicated semantic IDE check passed and all 34 existing
+ERT tests passed.
+
+Semantic references now project exact facts retained by normal checking. The
+scope-aware ownership walk records minimal `SemanticUse` entries for resolved
+local identities; checked declaration types retain exact nominal identities,
+including nested Vector, Map, and Queue arguments. Existing
+`SemanticCallEdge` and functional callable records remain authoritative for
+calls. `checked_text_uses_binding` and query-time type-string equality were
+removed. Regressions cover same names in separate functions, nested `let`
+shadowing, strings/comments, qualified members, and composite type uses.
+
+Normal checking and completion now share `BuiltinOperationDescriptor` for the
+complete current Vector, Map, Queue, and String member surfaces. Functional
+pipeline recognition and completion share `FunctionalOperationDescriptor` for
+`map`, `filter`, `reduce`, `sum`, `count`, `any`, and `all`. Invalid
+receiver/member combinations remain excluded.
+
+`resolve`, `references`, `symbols`, `calls`, and `complete` accept a tooling
+overlay while preserving the physical source path for project identity and
+diagnostics. `moss-mode` always supplies the current buffer for these editor
+operations. Navigation/search/call overlays are strict and fail explicitly on
+invalid unsaved source; bounded incomplete-line recovery remains exclusive to
+`complete`. The unchanged-buffer cache avoids an identical process invocation,
+and edits invalidate it, as verified by deterministic ERT invocation counts.
+
+The informational 25-sample fresh-process measurement on the Phase 22.5
+representative project recorded first/median/p95 milliseconds as follows:
+`complete` 5.985/6.856/15.913, `references` 5.884/6.965/10.163,
+`symbols` 6.344/8.839/13.761, and `calls` 15.191/7.006/11.508. Compiler
+process startup is included and is a material part of these small-query
+observations. No daemon was introduced.
+
+Validation passed: `make`; the expanded Phase 22.5 Python check; all 38 ERT
+tests; `make check`; `make examples`; strict C++17
+`-O2 -Wall -Wextra -pedantic -Werror`; `git diff --check`; `sh -n tests/run.sh`;
+the 25-sample latency utility; and live `agent bootstrap`, `capabilities`,
+`schema`, and `session-report-template` JSON. Discovery still reports
+`moss-0.1` / `moss-agent-1` and now advertises editor overlays coherently.
+
+Session report: semantic references, structured query errors, source overlays,
+completion, calls, bootstrap/capabilities/schema, and the session-report
+template were used. Exact query output and real compiler ERT integration most
+reduced ambiguity. Two significant repair cycles followed implementation: one
+strict-warning cleanup and one ERT-exposed enclosing-identity JSON handling
+fix. No generated Rust was consulted. Impact/affected testing was not useful
+for this compiler/editor cross-cut, so focused and full suites were run. A
+compiler query explaining why each completion candidate is legal would have
+saved the most remaining inspection time. No corrective Phase 22.5 work remains.
+
 ## Phase 22.5 — Emacs Semantic IDE — COMPLETE (2026-09-29)
 
 Phase numbering is reassigned: Phase 22.5 is the Emacs Semantic IDE and the

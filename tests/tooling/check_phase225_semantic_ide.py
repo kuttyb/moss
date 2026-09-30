@@ -27,6 +27,11 @@ project_library = project / "src" / "library.moss"
 module_project = root / "tests" / "tooling" / "fixtures" / "phase225_modules"
 module_main = module_project / "src" / "main.moss"
 shadow = root / "tests" / "tooling" / "fixtures" / "phase225_shadow.moss"
+semantic_uses = (
+    root / "tests" / "tooling" / "fixtures" / "phase225_semantic_uses.moss"
+)
+overlay_directory = root / "tmp" / "phase225-overlays"
+overlay_directory.mkdir(parents=True, exist_ok=True)
 
 
 def invoke(*args: str, expect: int = 0) -> dict[str, object]:
@@ -45,11 +50,27 @@ def invoke(*args: str, expect: int = 0) -> dict[str, object]:
         fail(f"{' '.join(args)} did not emit JSON: {error}")
 
 
+def invoke_overlay(
+    name: str, contents: str, *args: str, expect: int = 0
+) -> dict[str, object]:
+    overlay = overlay_directory / name
+    overlay.write_text(contents, encoding="utf-8")
+    try:
+        return invoke(*args, "--overlay-source", str(overlay), expect=expect)
+    finally:
+        overlay.unlink(missing_ok=True)
+
+
+discovery_results = {}
 for discovery in ("bootstrap", "capabilities", "schema"):
-    text = json.dumps(invoke("agent", discovery, "--json")["result"])
+    discovery_results[discovery] = invoke("agent", discovery, "--json")["result"]
+    text = json.dumps(discovery_results[discovery])
     for operation in ("references", "symbols", "complete"):
         if operation not in text:
             fail(f"agent {discovery} omitted {operation}")
+for discovery in ("capabilities", "schema"):
+    if "--overlay-source" not in json.dumps(discovery_results[discovery]):
+        fail(f"agent {discovery} omitted semantic editor overlays")
 
 references = invoke(
     "references", "fn:inspect", "--source", str(source), "--json"
@@ -97,6 +118,39 @@ left_references = invoke(
 if [item["source"]["line"] for item in left_references] != [2, 3, 4]:
     fail("binding references crossed into an unrelated same-name binding")
 
+outer_binding = invoke(
+    "resolve", "line:13", "--kind", "binding", "--source",
+    str(semantic_uses), "--json",
+)["result"]["target"]["id"]
+outer_lines = [
+    item["source"]["line"] for item in invoke(
+        "references", outer_binding, "--source", str(semantic_uses), "--json",
+    )["result"]["references"]
+]
+if outer_lines != [13, 19, 20]:
+    fail(f"outer binding references included text or shadowed uses: {outer_lines}")
+inner_binding = invoke(
+    "resolve", "line:17", "--kind", "binding", "--source",
+    str(semantic_uses), "--json",
+)["result"]["target"]["id"]
+inner_lines = [
+    item["source"]["line"] for item in invoke(
+        "references", inner_binding, "--source", str(semantic_uses), "--json",
+    )["result"]["references"]
+]
+if inner_lines != [17, 18]:
+    fail(f"nested shadow references did not preserve identity: {inner_lines}")
+
+counter_references = invoke(
+    "references", "type:Counter", "--source", str(semantic_uses), "--json",
+)["result"]["references"]
+counter_type_lines = {
+    item["source"]["line"] for item in counter_references
+    if item["kind"] == "type_use"
+}
+if counter_type_lines != {5, 6, 7, 9}:
+    fail(f"nested/composite type uses were not resolved: {counter_type_lines}")
+
 symbols = invoke("symbols", "", "--source", str(source), "--json")["result"]["symbols"]
 projection = [(item["qualified_name"], item["kind"]) for item in symbols]
 if projection != sorted(projection):
@@ -137,6 +191,39 @@ if not any(item["label"] == "Add" and item["kind"] == "handler"
            for item in message_completion):
     fail("domain/message completion omitted the statically legal handler")
 
+builtin_overlays = {
+    "vector": ("fn main():\n  values = [1, 2]\n  echo values.\n", 3,
+               {"push", "pop"}, {"get"}),
+    "map": ("fn main():\n  values = Map()\n  values[\"one\"] = 1\n"
+            "  echo values.\n", 4,
+            {"get", "keys", "values", "delete"}, {"push"}),
+    "queue": ("fn main():\n  values = Queue()\n  values.push(1)\n"
+              "  echo values.\n", 4, {"push", "pop"}, {"keys"}),
+    "string": ("fn main():\n  value = \"moss\"\n  echo value.\n", 3,
+               {"length", "char_at", "chars", "split", "join"}, {"push"}),
+}
+for family, (contents, line, required, forbidden) in builtin_overlays.items():
+    result = invoke_overlay(
+        f"completion-{family}.moss", contents,
+        "complete", f"at:{line}:999", "--source", str(shadow), "--json",
+    )["result"]
+    labels = {item["label"] for item in result["candidates"]}
+    if not required <= labels:
+        fail(f"{family} completion omitted compiler builtins: {required - labels}")
+    if labels & forbidden:
+        fail(f"{family} completion offered invalid receiver operations: {labels & forbidden}")
+
+pipeline_source = "fn main():\n  values = [1, 2]\n  echo values |> \n"
+pipeline = invoke_overlay(
+    "completion-pipeline.moss", pipeline_source,
+    "complete", "at:3:999", "--source", str(shadow), "--json",
+)["result"]["candidates"]
+pipeline_labels = {item["label"] for item in pipeline}
+functional_operations = {"map", "filter", "reduce", "sum", "count", "any", "all"}
+if not functional_operations <= pipeline_labels:
+    fail("functional pipeline completion omitted compiler-owned operations: "
+         f"{functional_operations - pipeline_labels}")
+
 cross_file = invoke(
     "references", "fn:leaf", "--source", str(project_main), "--json"
 )["result"]
@@ -167,6 +254,36 @@ if not any(item["target"].endswith("Worker.Add") and
            item["boundary"] == "synchronous_message_by_value"
            for item in main_calls):
     fail("domain message call-hierarchy edge is missing")
+
+unsaved_shadow = "\n" + shadow.read_text(encoding="utf-8")
+unsaved_references = invoke_overlay(
+    "unsaved-shadow.moss", unsaved_shadow,
+    "references", "at:3:4", "--source", str(shadow), "--json",
+)["result"]
+if unsaved_references["definition"]["source"]["line"] != 3:
+    fail("references used the stale saved declaration location")
+if [item["source"]["line"] for item in unsaved_references["references"]] != [3, 4, 5]:
+    fail("references used stale saved use locations")
+
+project_overlay = project_main.read_text(encoding="utf-8").replace(
+    "middle(value)", "leaf(value)", 1
+)
+unsaved_calls = invoke_overlay(
+    "unsaved-project-main.moss", project_overlay,
+    "calls", "fn:top", "--source", str(project_main), "--json",
+)["result"]["direct_calls"]
+call_targets = [item["target"] for item in unsaved_calls]
+if any(target.endswith("middle") for target in call_targets):
+    fail("calls used the stale saved call target")
+if len([target for target in call_targets if target.endswith("leaf")]) != 2:
+    fail("calls did not use the valid unsaved overlay")
+
+invalid_overlay = invoke_overlay(
+    "invalid-unsaved.moss", "fn broken(:\n",
+    "references", "fn:left", "--source", str(shadow), "--json", expect=1,
+)
+if invalid_overlay.get("ok") is not False:
+    fail("invalid unsaved source did not produce an explicit semantic error")
 
 module_symbols = invoke(
     "symbols", "math.", "--source", str(module_main), "--json"

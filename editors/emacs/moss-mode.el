@@ -436,11 +436,19 @@ When RUN is non-nil, execute the resulting program too."
 (defun moss--semantic-query (command &optional target extra overlay)
   "Invoke semantic COMMAND and return its result alist.
 TARGET is an optional positional selector and EXTRA is an argument list.
-When OVERLAY is non-nil, send the unsaved buffer through the compiler's
-tooling-only completion overlay.  This function never invokes a shell."
+Interactive editor queries always send the current unsaved buffer as an
+overlay while preserving its physical path as project identity.  OVERLAY is
+retained for compatibility with callers that explicitly request this.  Only
+the compiler's `complete' operation performs incomplete-source recovery;
+ordinary navigation overlays are strict.  This function never invokes a shell."
   (let* ((source (moss--semantic-source))
+         (use-overlay
+          (or overlay
+              (member command
+                      '("resolve" "references" "symbols" "calls"
+                        "complete"))))
          (key (list command target extra (buffer-chars-modified-tick)
-                    (and overlay (point))))
+                    (and use-overlay (point))))
          (now (float-time))
          (cached (and moss--semantic-cache
                       (gethash key moss--semantic-cache))))
@@ -450,7 +458,7 @@ tooling-only completion overlay.  This function never invokes a shell."
             overlay-file document status)
         (unwind-protect
             (progn
-              (when overlay
+              (when use-overlay
                 (let ((temporary-file-directory
                        (expand-file-name "tmp" (moss--repo-root source))))
                   (make-directory temporary-file-directory t)
@@ -528,7 +536,12 @@ tooling-only completion overlay.  This function never invokes a shell."
                            '("--kind" "binding"))
                         (moss-semantic-error nil)))))
                   (located-target (moss--json-get 'target location))
-                  (enclosing (moss--json-get 'enclosing_entity located-target)))
+                  (enclosing-value
+                   (moss--json-get 'enclosing_entity located-target))
+                  (enclosing
+                   (if (listp enclosing-value)
+                       (moss--json-get 'id enclosing-value)
+                     enclosing-value)))
              (moss--semantic-query
               "references" identifier
               (and enclosing (list "--enclosing" enclosing))))
