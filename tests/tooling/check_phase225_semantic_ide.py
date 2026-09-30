@@ -30,6 +30,10 @@ shadow = root / "tests" / "tooling" / "fixtures" / "phase225_shadow.moss"
 semantic_uses = (
     root / "tests" / "tooling" / "fixtures" / "phase225_semantic_uses.moss"
 )
+pipeline_completion = (
+    root / "tests" / "tooling" / "fixtures" /
+    "phase225_pipeline_completion.moss"
+)
 overlay_directory = root / "tmp" / "phase225-overlays"
 overlay_directory.mkdir(parents=True, exist_ok=True)
 
@@ -223,6 +227,54 @@ functional_operations = {"map", "filter", "reduce", "sum", "count", "any", "all"
 if not functional_operations <= pipeline_labels:
     fail("functional pipeline completion omitted compiler-owned operations: "
          f"{functional_operations - pipeline_labels}")
+
+
+def pipeline_completion_labels(expression: str, binding: str = "values") -> set[str]:
+    contents = pipeline_completion.read_text(encoding="utf-8").replace(
+        f"  echo {binding}\n", f"  echo {expression} |> \n", 1
+    )
+    line = 16 if binding == "values" else 17
+    candidates = invoke_overlay(
+        "pipeline-legality.moss", contents,
+        "complete", f"at:{line}:999", "--source", str(pipeline_completion),
+        "--json",
+    )["result"]["candidates"]
+    return {item["label"] for item in candidates}
+
+
+pipeline_start = pipeline_completion_labels("values")
+if pipeline_start != functional_operations:
+    fail(f"pipeline-start legality was not compiler-filtered: {pipeline_start}")
+
+pipeline_after_map = pipeline_completion_labels("values |> map(to_string)")
+expected_after_map = {"map", "reduce", "count", "any", "all"}
+if pipeline_after_map != expected_after_map:
+    fail("type-changing map did not update the legal next-stage set: "
+         f"{pipeline_after_map}")
+
+pipeline_after_filter = pipeline_completion_labels(
+    "values |> filter(keep_int)"
+)
+if pipeline_after_filter != functional_operations:
+    fail(f"filter did not preserve collection pipeline state: {pipeline_after_filter}")
+
+terminal_expressions = {
+    "sum": "values |> sum",
+    "count": "values |> count",
+    "any": "values |> any(keep_int)",
+    "all": "values |> all(keep_int)",
+    "reduce": "values |> reduce(0, add_int)",
+}
+for terminal, expression in terminal_expressions.items():
+    labels = pipeline_completion_labels(expression)
+    if labels:
+        fail(f"terminal {terminal} offered a following pipeline stage: {labels}")
+
+item_labels = pipeline_completion_labels("items", "items")
+if "sum" in item_labels:
+    fail("non-numeric user values offered numeric-only sum completion")
+if "count" not in item_labels:
+    fail("non-numeric collection lost the legal count terminal")
 
 cross_file = invoke(
     "references", "fn:leaf", "--source", str(project_main), "--json"

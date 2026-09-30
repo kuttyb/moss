@@ -511,6 +511,12 @@ struct FunctionalOperationDescriptor {
   const char* signature;
 };
 
+struct FunctionalPipelineState {
+  string element_type;
+  string output_type;
+  bool terminal = false;
+};
+
 static const vector<FunctionalOperationDescriptor>& functional_operations() {
   static const vector<FunctionalOperationDescriptor> operations = {
       {"map", FunctionalNodeKind::Map, "map(transform)"},
@@ -1551,6 +1557,18 @@ class Checker {
   }
 
   const vector<Warning>& warnings() const { return warnings_; }
+
+  vector<FunctionalOperationDescriptor> legal_functional_operations(
+      const string& expression,
+      const std::unordered_map<string,string>& env) const {
+    auto state = inferred_functional_pipeline_state(expression, env, true);
+    vector<FunctionalOperationDescriptor> legal;
+    if (!state) return legal;
+    for (const auto& operation : functional_operations())
+      if (functional_operation_legal(*state, operation.kind))
+        legal.push_back(operation);
+    return legal;
+  }
 
  private:
   Program& p_;
@@ -2982,43 +3000,60 @@ class Checker {
     return result;
   }
 
-  std::optional<string> inferred_functional_pipeline_type(
-      const string& expression, const TypeEnv& env) const {
+  bool functional_operation_legal(
+      const FunctionalPipelineState& state, FunctionalNodeKind kind) const {
+    if (state.terminal || kind == FunctionalNodeKind::Source) return false;
+    if (kind == FunctionalNodeKind::Filter &&
+        !unresolved_semantic_type(state.element_type) &&
+        !copy_type(state.element_type))
+      return false;
+    if (kind == FunctionalNodeKind::Sum &&
+        !unresolved_semantic_type(state.element_type) &&
+        !numeric_type(state.element_type))
+      return false;
+    return true;
+  }
+
+  std::optional<FunctionalPipelineState> inferred_functional_pipeline_state(
+      const string& expression, const TypeEnv& env,
+      bool accept_bare_source = false) const {
     auto parsed = parse_functional_pipeline(expression);
-    if (!parsed) return std::nullopt;
-    auto source_type = inferred_expr_type(parsed->source, env);
+    string source = parsed ? parsed->source : trim(expression);
+    if (!parsed && !accept_bare_source) return std::nullopt;
+    auto source_type = inferred_expr_type(source, env);
     if (!source_type) return std::nullopt;
-    auto element = functional_element_type(*source_type, parsed->source);
+    auto element = functional_element_type(*source_type, source);
     if (!element) return std::nullopt;
 
-    string current_element = *element;
-    string output = starts_with(*source_type, "vector[")
-        ? *source_type : "_functional_collection:" + current_element;
-    bool terminal = false;
+    FunctionalPipelineState state;
+    state.element_type = *element;
+    state.output_type = starts_with(*source_type, "vector[")
+        ? *source_type : "_functional_collection:" + state.element_type;
+    if (!parsed) return state;
     for (const auto& stage : parsed->stages) {
-      if (terminal) return std::nullopt;
+      if (!functional_operation_legal(state, stage.kind)) return std::nullopt;
       switch (stage.kind) {
         case FunctionalNodeKind::Map: {
           if (stage.arguments.size() != 1) return std::nullopt;
           auto result = functional_callable_result(stage.arguments.front(),
-                                                   {current_element}, env);
+                                                   {state.element_type}, env);
           if (!result) return std::nullopt;
-          current_element = canonical_type_name(*result);
-          output = unresolved_semantic_type(current_element)
-              ? "_functional_collection:" + current_element
-              : "vector[" + current_element + "]";
+          state.element_type = canonical_type_name(*result);
+          state.output_type = unresolved_semantic_type(state.element_type)
+              ? "_functional_collection:" + state.element_type
+              : "vector[" + state.element_type + "]";
           break;
         }
         case FunctionalNodeKind::Filter: {
           if (stage.arguments.size() != 1) return std::nullopt;
           auto result = functional_callable_result(stage.arguments.front(),
-                                                   {current_element}, env);
+                                                   {state.element_type}, env);
           if (!result || (!unresolved_semantic_type(*result) &&
                           canonical_type_name(*result) != "bool"))
             return std::nullopt;
-          output = unresolved_semantic_type(current_element)
-              ? "_functional_collection:" + current_element
-              : "vector[" + current_element + "]";
+          state.output_type = unresolved_semantic_type(state.element_type)
+              ? "_functional_collection:" + state.element_type
+              : "vector[" + state.element_type + "]";
           break;
         }
         case FunctionalNodeKind::Reduce: {
@@ -3026,50 +3061,54 @@ class Checker {
           auto accumulator = inferred_expr_type(stage.arguments.front(), env);
           if (!accumulator) return std::nullopt;
           auto result = functional_callable_result(stage.arguments[1],
-                                                   {*accumulator, current_element}, env);
+                                                   {*accumulator, state.element_type}, env);
           if (!result || (!unresolved_semantic_type(*result) &&
                           !unresolved_semantic_type(*accumulator) &&
                           !same_type(*result, *accumulator)))
             return std::nullopt;
-          output = canonical_type_name(*accumulator);
-          terminal = true;
+          state.output_type = canonical_type_name(*accumulator);
+          state.terminal = true;
           break;
         }
         case FunctionalNodeKind::Sum:
-          if (!stage.arguments.empty() ||
-              (!unresolved_semantic_type(current_element) &&
-               !numeric_type(current_element)))
-            return std::nullopt;
-          output = current_element;
-          terminal = true;
+          if (!stage.arguments.empty()) return std::nullopt;
+          state.output_type = state.element_type;
+          state.terminal = true;
           break;
         case FunctionalNodeKind::Count:
           if (!stage.arguments.empty()) return std::nullopt;
-          output = "int";
-          terminal = true;
+          state.output_type = "int";
+          state.terminal = true;
           break;
         case FunctionalNodeKind::Any:
         case FunctionalNodeKind::All: {
           if (stage.arguments.size() > 1) return std::nullopt;
-          string predicate_type = current_element;
+          string predicate_type = state.element_type;
           if (!stage.arguments.empty()) {
             auto result = functional_callable_result(stage.arguments.front(),
-                                                     {current_element}, env);
+                                                     {state.element_type}, env);
             if (!result) return std::nullopt;
             predicate_type = *result;
           }
           if (!unresolved_semantic_type(predicate_type) &&
               canonical_type_name(predicate_type) != "bool")
             return std::nullopt;
-          output = "bool";
-          terminal = true;
+          state.output_type = "bool";
+          state.terminal = true;
           break;
         }
         case FunctionalNodeKind::Source:
           return std::nullopt;
       }
     }
-    return output;
+    return state;
+  }
+
+  std::optional<string> inferred_functional_pipeline_type(
+      const string& expression, const TypeEnv& env) const {
+    auto state = inferred_functional_pipeline_state(expression, env);
+    if (!state) return std::nullopt;
+    return state->output_type;
   }
 
   struct MoveInfo {
@@ -9132,12 +9171,20 @@ class Checker {
     if (!element) return false;  // General/scalar pipeline compatibility.
 
     check_expression(line, parsed->source, env);
-    string current_element = *element;
-    bool terminal = false;
+    FunctionalPipelineState state{*element, *source_type, false};
     for (size_t stage_index = 0; stage_index < parsed->stages.size(); ++stage_index) {
       const auto& stage = parsed->stages[stage_index];
-      if (terminal)
-        err(line, "functional terminal must be the final pipeline stage");
+      if (!functional_operation_legal(state, stage.kind)) {
+        if (state.terminal)
+          err(line, "functional terminal must be the final pipeline stage");
+        if (stage.kind == FunctionalNodeKind::Filter)
+          err(line, "filter over nontrivial element type '" +
+              state.element_type +
+              "' cannot produce a new collection without an explicit deep copy");
+        if (stage.kind == FunctionalNodeKind::Sum)
+          err(line, "sum requires numeric elements, found '" +
+              state.element_type + "'");
+      }
       auto require_arity = [&](size_t expected) {
         if (stage.arguments.size() != expected)
           err(line, string(functional_node_name(stage.kind)) +
@@ -9149,19 +9196,15 @@ class Checker {
         case FunctionalNodeKind::Map: {
           require_arity(1);
           auto result = check_functional_callable(
-              line, stage.arguments.front(), {current_element}, env,
+              line, stage.arguments.front(), {state.element_type}, env,
               functional_node_name(stage.kind));
-          if (result) current_element = canonical_type_name(*result);
+          if (result) state.element_type = canonical_type_name(*result);
           break;
         }
         case FunctionalNodeKind::Filter: {
           require_arity(1);
-          if (!unresolved_semantic_type(current_element) &&
-              !copy_type(current_element))
-            err(line, "filter over nontrivial element type '" + current_element +
-                "' cannot produce a new collection without an explicit deep copy");
           auto result = check_functional_callable(
-              line, stage.arguments.front(), {current_element}, env,
+              line, stage.arguments.front(), {state.element_type}, env,
               functional_node_name(stage.kind));
           if (result && !unresolved_semantic_type(*result) &&
               canonical_type_name(*result) != "bool")
@@ -9187,37 +9230,33 @@ class Checker {
                 "use-statically-typed-expression",
                 "use a concrete seed expression whose type matches the named reduce callable's accumulator");
           auto result = check_functional_callable(
-              line, stage.arguments[1], {*accumulator, current_element}, env,
+              line, stage.arguments[1], {*accumulator, state.element_type}, env,
               functional_node_name(stage.kind));
           if (result && !unresolved_semantic_type(*result) &&
               !unresolved_semantic_type(*accumulator) &&
               !same_type(*result, *accumulator))
             err(line, "reduce callable returns '" + *result +
                 "'; expected accumulator type '" + *accumulator + "'");
-          terminal = true;
+          state.terminal = true;
           break;
         }
         case FunctionalNodeKind::Sum:
           require_arity(0);
-          if (!unresolved_semantic_type(current_element) &&
-              !numeric_type(current_element))
-            err(line, "sum requires numeric elements, found '" +
-                current_element + "'");
-          terminal = true;
+          state.terminal = true;
           break;
         case FunctionalNodeKind::Count:
           require_arity(0);
-          terminal = true;
+          state.terminal = true;
           break;
         case FunctionalNodeKind::Any:
         case FunctionalNodeKind::All: {
           if (stage.arguments.size() > 1)
             err(line, string(functional_node_name(stage.kind)) +
                 " stage accepts zero or one predicate");
-          string predicate_type = current_element;
+          string predicate_type = state.element_type;
           if (!stage.arguments.empty()) {
             auto result = check_functional_callable(
-                line, stage.arguments.front(), {current_element}, env,
+                line, stage.arguments.front(), {state.element_type}, env,
                 functional_node_name(stage.kind));
             if (result) predicate_type = *result;
           }
@@ -9226,7 +9265,7 @@ class Checker {
             err(line, string(functional_node_name(stage.kind)) +
                 " predicate returns '" + predicate_type +
                 "'; expected 'bool'");
-          terminal = true;
+          state.terminal = true;
           break;
         }
         case FunctionalNodeKind::Source:
@@ -19134,9 +19173,37 @@ static void append_completion_target(
        completion_candidate_detail(target), target.source_file, target.line});
 }
 
+static string completion_pipeline_expression(
+    const vector<string>& source_lines, int requested_line,
+    const string& current_before_prefix) {
+  size_t first_line = static_cast<size_t>(requested_line - 1);
+  while (first_line > 0 &&
+         starts_with(trim(source_lines[first_line]), "|>"))
+    --first_line;
+  string expression;
+  for (size_t index = first_line;
+       index < static_cast<size_t>(requested_line); ++index) {
+    if (!expression.empty()) expression += " ";
+    expression += index + 1 == static_cast<size_t>(requested_line)
+        ? current_before_prefix : source_lines[index];
+  }
+  size_t final_stage = expression.rfind("|>");
+  if (final_stage == string::npos) return {};
+  expression = trim(expression.substr(0, final_stage));
+  size_t assignment = top_level_assignment(expression);
+  if (assignment != string::npos)
+    expression = trim(expression.substr(assignment + 1));
+  for (const string keyword : {"echo ", "return ", "reply "})
+    if (starts_with(expression, keyword)) {
+      expression = trim(expression.substr(keyword.size()));
+      break;
+    }
+  return expression;
+}
+
 static bool write_completion_query_json(
     std::ostream& out, const string& selector, const string& source_file,
-    const Program& program, const OptimizationPlan& plan,
+    Program& program, const OptimizationPlan& plan,
     bool recovered = false, const string* overlay = nullptr) {
   int requested_line = 0;
   int requested_column = 0;
@@ -19277,7 +19344,19 @@ static bool write_completion_query_json(
       }
     }
   } else if (functional_context) {
-    for (const auto& operation : functional_operations())
+    std::unordered_map<string,string> env;
+    if (enclosing)
+      for (const auto& parameter : enclosing->parameters)
+        env[parameter.name] = parameter.type;
+    for (const auto& target : targets)
+      if (target.kind == "binding" && target.context == context &&
+          target.line < requested_line && !target.type.empty())
+        env[target.name] = target.type;
+    string expression = completion_pipeline_expression(
+        source_lines, requested_line, before.substr(0, prefix_start));
+    Checker completion_checker(program);
+    for (const auto& operation :
+         completion_checker.legal_functional_operations(expression, env))
       if (prefix_matches(operation.name))
         candidates.push_back(
             {operation.name, "function", {}, operation.name, {},

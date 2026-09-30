@@ -1,5 +1,48 @@
 # Moss current status
 
+## Phase 22.5 pipeline completion legality — COMPLETE (2026-09-29)
+
+The final Phase 22.5 hardening follow-up started from
+`b7692e530b38db570f14be158bb6ddc6fa729402` and remains narrowly scoped to
+functional pipeline completion. `Checker::functional_operation_legal` is now
+the common stage-state predicate used by ordinary pipeline checking, pipeline
+type inference, and semantic completion. `FunctionalPipelineState` retains the
+current element type, current output type, and terminal status; completed
+`map` callbacks advance the element type through the existing compiler
+callable-result inference.
+
+Completion still enumerates the compiler-owned `functional_operations()`
+registry, but now asks the checker to filter those descriptors. An `Int`
+collection initially offers all seven current operations. A valid `filter`
+preserves that set. Mapping `Int` to non-copy `String` offers only `map`,
+`reduce`, `count`, `any`, and `all`; `filter` and numeric-only `sum` are
+excluded. User-defined non-numeric elements do not offer `sum`. After each of
+`sum`, `count`, `any`, `all`, and `reduce`, completion offers no following
+functional stage. Stage-name discovery still offers callback-taking operations
+before the callback has been typed.
+
+The focused compiler regression uses real completion overlays for pipeline
+start, post-map, post-filter, all five terminals, mapped-element type changes,
+and a non-numeric user type. The new real-compiler ERT test verifies the same
+filtered results through Emacs CAPF. All 39 ERT tests pass.
+
+Validation passed: `make -B -j4`; `make`; the expanded Phase 22.5 Python check;
+all 39 ERT tests; `make check`; `make examples`; strict C++17
+`-O2 -Wall -Wextra -pedantic -Werror`; `git diff HEAD --check`;
+`sh -n tests/run.sh`; and live `agent bootstrap`, `capabilities`, `schema`, and
+`session-report-template` JSON. Discovery remains coherent at `moss-0.1` /
+`moss-agent-1`. No generated Rust was consulted for completion semantics.
+
+Session report: bootstrap, semantic completion overlays, structured checking,
+and the session-report template were used. The existing checker pipeline-state
+and callable-result logic removed ambiguity and limited the work to one shared
+predicate/state refactor. Two significant edit/check/repair cycles were needed:
+the initial shared-state implementation and a strict-warning/predicate-sharing
+cleanup. Impact/affected testing was not useful for this compiler/editor
+cross-cut, so focused, ERT, and full suites were run. A compiler-owned
+completion-explanation field naming each accepted/rejected legality rule would
+have reduced the remaining source inspection.
+
 ## Phase 22.5 corrective hardening — COMPLETE (2026-09-29)
 
 Current `main` was hardened from `1964cb733d74cbd33601a111c917bf1edc6463ca`

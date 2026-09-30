@@ -249,7 +249,10 @@ domain composition.  Candidates expose `label`, `kind`, optional `entity_id`,
 Receiver operations come from the same compiler-owned builtin registry used by
 checking for Vector, Map, Queue, and String. Pipeline stages come from the same
 functional-operation descriptors used to recognize and check `map`, `filter`,
-`reduce`, `sum`, `count`, `any`, and `all`.
+`reduce`, `sum`, `count`, `any`, and `all`. Completion advances the same
+compiler pipeline state used by ordinary checking and filters candidates with
+the same legality predicate, so mapped element types, non-copy filters,
+numeric-only `sum`, and terminal stages are reflected at the cursor.
 
 Editor clients may pass `--overlay-source <temporary-file>` to `resolve`,
 `references`, `symbols`, `calls`, and `complete` so unsaved buffer text

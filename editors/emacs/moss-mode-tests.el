@@ -625,6 +625,48 @@
                            candidates))))
             (kill-buffer (current-buffer))))))))
 
+(ert-deftest moss-mode-real-compiler-filters-pipeline-capf-by-legality ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_pipeline_completion.moss"
+                  root))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (all-operations
+          '("all" "any" "count" "filter" "map" "reduce" "sum")))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (let ((original (buffer-string)))
+            (moss-mode)
+            (cl-labels
+                ((complete-line
+                  (line expression)
+                  (let ((inhibit-read-only t))
+                    (erase-buffer)
+                    (insert original)
+                    (goto-char (point-min))
+                    (forward-line (1- line))
+                    (delete-region (line-beginning-position)
+                                   (line-end-position))
+                    (insert "  echo " expression " |> ")
+                    (sort (copy-sequence
+                           (or (nth 2 (moss-completion-at-point)) '()))
+                          #'string-lessp))))
+              (should (equal all-operations
+                             (complete-line 16 "values")))
+              (let ((after-map
+                     (complete-line 16 "values |> map(to_string)")))
+                (should (equal '("all" "any" "count" "map" "reduce")
+                               after-map)))
+              (should (equal all-operations
+                             (complete-line
+                              16 "values |> filter(keep_int)")))
+              (should-not (complete-line 16 "values |> sum"))
+              (let ((items (complete-line 17 "items")))
+                (should (member "count" items))
+                (should-not (member "sum" items)))))
+        (set-buffer-modified-p nil)
+        (kill-buffer (current-buffer))))))
+
 (ert-deftest moss-mode-semantic-cache-avoids-process-and-invalidates-on-edit ()
   (let* ((root (moss--repo-root default-directory))
          (source (expand-file-name

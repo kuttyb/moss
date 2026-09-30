@@ -1,0 +1,17 @@
+type Item:
+  value: Int
+
+fn to_string(value: Int) -> String:
+  return "item"
+
+fn keep_int(value: Int) -> Bool:
+  return value > 0
+
+fn add_int(total: Int, value: Int) -> Int:
+  return total + value
+
+fn main():
+  values = [1, 2, 3]
+  items = [Item(value: 1)]
+  echo values
+  echo items

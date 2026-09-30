@@ -32,7 +32,10 @@ Receiver builtin completion and normal checking share the compiler-owned
 `BuiltinOperationDescriptor` registry for Vector, Map, Queue, and String.
 Functional pipeline completion shares `FunctionalOperationDescriptor` with
 the parser/checker recognition of `map`, `filter`, `reduce`, `sum`, `count`,
-`any`, and `all`. There is no completion-only API table.
+`any`, and `all`. Candidates are filtered through the normal checker's
+pipeline-state legality predicate, including transformed element types,
+non-copy filtering, numeric `sum`, and terminal-stage finality. There is no
+completion-only API table or editor-side pipeline type checker.
 
 ## Unsaved editor overlays
 
