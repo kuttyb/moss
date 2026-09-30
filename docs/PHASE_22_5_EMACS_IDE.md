@@ -19,6 +19,14 @@ moss-mode xref / CAPF / call tree
 and completion does not keep an editor-side semantic index. Generated Rust is
 not an input to any semantic editor feature.
 
+`resolve at:<line>:<column>` is the common entity-at-point primitive. It maps
+the token under point through compiler-checked declarations, semantic uses,
+and resolved ordinary/message call edges. `M-.`, `M-?`, `moss-callers`,
+`moss-callees`, and `moss-call-tree` all consume the resulting durable entity
+identity; they do not maintain separate call/statement/binding fallback rules.
+This path covers domains and handlers as well as ordinary functions, methods,
+types, bindings, and module symbols.
+
 The normal checker retains a minimal `SemanticUse` for each resolved local or
 declared-type use: exact target identity, use kind, physical source and line,
 and enclosing semantic identity. Callable references continue to project the
@@ -61,6 +69,15 @@ does not make an invalid complete program valid.
 
 This bounded recovery is exclusive to `complete`. Overlays for `resolve`,
 `references`, `symbols`, and `calls` are checked strictly.
+
+## Call-tree locations
+
+The compiler's direct-call records distinguish the call site (`source_file` +
+`line`) from the callee declaration (`target_source`). A call-tree root and
+every child node represent semantic callable entities. `RET` therefore visits
+the represented declaration, while expansion uses its durable identity. Call
+site provenance remains available in the compiler result and is not silently
+used as though it were the declaration.
 
 ## Informational latency measurement
 

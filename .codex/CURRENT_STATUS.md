@@ -1,5 +1,53 @@
 # Moss current status
 
+## Phase 22.5 call-tree/domain-navigation corrective pass — COMPLETE (2026-09-30)
+
+Current `main` was corrected from `9e8923a` (with required starting commit
+`478a695` verified as an ancestor). The canonical regression is
+`tests/tooling/fixtures/phase225_domain_navigation.moss` and preserves the full
+Ledger, Inventory, and App routing/message chain.
+
+The domain-goto failure was compiler-side: `at:<line>:<column>` discarded the
+column and selected every retained entity on the line. At the Ledger constructor
+it therefore selected the left-hand `ledger` binding, while Emacs's `--kind
+call` query found no constructor call entity. The call-tree failure combined
+that call-biased editor resolver with a second compiler gap: message calls
+embedded in `reply` and `echo` expressions were not retained as call edges.
+
+`resolve at:<line>:<column>` now maps the actual token through checked
+declarations, `SemanticUse` identities, and resolved ordinary/message edges.
+Domain, object, and enum constructors and module tokens participate in that
+same compiler-owned path. Emacs `moss--entity-at-point` invokes it directly;
+xref definitions/references, callers, callees, and call tree reuse the returned
+durable ID. Direct call records now separate call-site provenance from
+`target_source` callee-declaration provenance. Call-tree roots and children are
+entities, and `RET` visits their declarations.
+
+The focused compiler regression now checks generic resolve, references, calls,
+durable IDs, declarations, callers/callees, and callee provenance for Ledger,
+Ledger.Read, Inventory, Inventory.Available, App, and App.Run. Nine new
+real-compiler ERT tests cover domain/handler goto, domain/handler references,
+callers, callees, call-tree command opening, nested expansion, and `RET` visit.
+The complete ERT suite is 48/48 green.
+
+Validation passed: `make`; the expanded Phase 22.5 Python check; Phase 22.1
+teaching and Phase 22.3 semantic-query compatibility checks; all 48 ERT tests;
+`make check`; `make examples`; strict C++17 `-O2 -Wall -Wextra -pedantic
+-Werror`; `git diff --check`; `sh -n tests/run.sh`; and live `agent bootstrap`,
+`capabilities`, and `schema` JSON. Discovery remains coherent at `moss-0.1` /
+`moss-agent-1`, including token-aware resolution and `target_source` call
+provenance. A separate non-ERT Emacs smoke run passed constructor/route and
+handler goto, handler references, callers/callees, call-tree open, two-level
+message expansion, and declaration-backed child navigation.
+
+Session report: bootstrap, generic resolve, semantic references, static calls,
+editor overlays, and discovery schema were used. Exact `at:` probes exposed the
+line-only resolver and missing embedded-message edges before implementation.
+Two full-suite compatibility repairs preserved bare-name ambiguity while
+keeping token-at-point declaration selection exact. No generated Rust was used
+to infer Moss semantics, no LSP server or Phase 22.6 work was added, and no push
+was performed.
+
 ## Phase 22.5 pipeline completion legality — COMPLETE (2026-09-29)
 
 The final Phase 22.5 hardening follow-up started from

@@ -179,6 +179,13 @@ the compiler's bounded incomplete-line recovery; every other semantic overlay
 is strict. This does not relax normal Moss checking and does not create an
 editor-side semantic database.
 
+`M-.`, `M-?`, `moss-callers`, `moss-callees`, and `moss-call-tree` share one
+compiler `resolve at:<line>:<column>` entity-at-point operation. It resolves
+domain constructors and route types, handler/message targets, ordinary
+functions and methods, bindings, types, and module symbols to durable semantic
+identities. Call-tree nodes represent callees and `RET` visits callee
+declarations; call-site locations remain separate compiler provenance.
+
 Informational latency can be reproduced with:
 
 ```sh

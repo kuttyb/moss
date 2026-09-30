@@ -267,6 +267,10 @@ struct ModuleImport {
 };
 
 struct Program {
+  // Parsed physical source lines retained for compiler-owned editor
+  // resolution.  They preserve indentation and file identity, while all
+  // semantic selection still comes from checked declarations/uses/calls.
+  vector<Line> source_lines;
   string module_name;
   string main_module;
   bool explicit_module = false;

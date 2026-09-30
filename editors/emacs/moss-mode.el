@@ -514,38 +514,8 @@ ordinary navigation overlays are strict.  This function never invokes a shell."
 
 (defun moss--references-at-point ()
   "Return compiler references for the semantic entity at point."
-  (condition-case call-error
-      (moss--semantic-query "references" (moss--point-selector)
-                            '("--kind" "call"))
-    (moss-semantic-error
-     (let* ((error (caddr call-error))
-            (details (moss--json-get 'details error))
-            (resolution (moss--json-get 'resolution details))
-            (status (moss--json-get 'status resolution))
-            (identifier (thing-at-point 'symbol t)))
-       (if (and identifier (equal status "missing"))
-           (let* ((location
-                   (condition-case nil
-                       (moss--semantic-query
-                        "resolve" (moss--point-selector)
-                        '("--kind" "statement"))
-                     (moss-semantic-error
-                      (condition-case nil
-                          (moss--semantic-query
-                           "resolve" (moss--point-selector)
-                           '("--kind" "binding"))
-                        (moss-semantic-error nil)))))
-                  (located-target (moss--json-get 'target location))
-                  (enclosing-value
-                   (moss--json-get 'enclosing_entity located-target))
-                  (enclosing
-                   (if (listp enclosing-value)
-                       (moss--json-get 'id enclosing-value)
-                     enclosing-value)))
-             (moss--semantic-query
-              "references" identifier
-              (and enclosing (list "--enclosing" enclosing))))
-         (signal (car call-error) (cdr call-error)))))))
+  (let ((target (moss--entity-at-point)))
+    (moss--semantic-query "references" (moss--json-get 'id target))))
 
 (defun moss--xref-from-location (summary location)
   "Create an xref named SUMMARY from compiler LOCATION."
@@ -623,8 +593,9 @@ ordinary navigation overlays are strict.  This function never invokes a shell."
             :exclusive 'no))))
 
 (defun moss--entity-at-point ()
-  "Return the compiler semantic target at point."
-  (moss--json-get 'target (moss--references-at-point)))
+  "Return the compiler-resolved semantic entity denoted at point."
+  (moss--json-get
+   'target (moss--semantic-query "resolve" (moss--point-selector))))
 
 (defun moss--calls-at-point ()
   "Return the compiler call graph rooted at point."
@@ -653,11 +624,14 @@ ordinary navigation overlays are strict.  This function never invokes a shell."
   (interactive)
   (let (xrefs)
     (dolist (callee (moss--json-get 'direct_calls (moss--calls-at-point)))
-      (push (moss--xref-from-location
-             (format "%s — %s" (moss--json-get 'target callee)
-                     (moss--json-get 'boundary callee))
-             `((file . ,(moss--json-get 'source_file callee))
-               (line . ,(moss--json-get 'line callee)) (column . 1))) xrefs))
+      (let ((target-source (moss--json-get 'target_source callee)))
+        (push (moss--xref-from-location
+               (format "%s — %s" (moss--json-get 'target callee)
+                       (moss--json-get 'boundary callee))
+               (or target-source
+                   `((file . ,(moss--json-get 'source_file callee))
+                     (line . ,(moss--json-get 'line callee)) (column . 1))))
+              xrefs)))
     (moss--show-xrefs (nreverse xrefs))))
 
 (defvar moss-call-tree-mode-map
@@ -715,20 +689,26 @@ ordinary navigation overlays are strict.  This function never invokes a shell."
           (save-excursion
             (forward-line 1)
             (dolist (callee (moss--json-get 'direct_calls calls))
-              (moss--call-tree-insert-node
-               (moss--json-get 'target callee)
-               (moss--json-get 'target_id callee)
-               (moss--json-get 'source_file callee)
-               (moss--json-get 'line callee) (1+ depth) path
-               (if (string-prefix-p
-                    "synchronous_message"
-                    (or (moss--json-get 'boundary callee) ""))
-                   "[message]" "[call]"))))))
+              (let ((target-source (moss--json-get 'target_source callee)))
+                (moss--call-tree-insert-node
+                 (moss--json-get 'target callee)
+                 (moss--json-get 'target_id callee)
+                 (if target-source
+                     (moss--json-get 'file target-source)
+                   (moss--json-get 'source_file callee))
+                 (if target-source
+                     (moss--json-get 'line target-source)
+                   (moss--json-get 'line callee))
+                 (1+ depth) path
+                 (if (string-prefix-p
+                      "synchronous_message"
+                      (or (moss--json-get 'boundary callee) ""))
+                     "[message]" "[call]")))))))
       (put-text-property position (line-end-position)
                          'moss-node-expanded (not expanded)))))
 
 (defun moss-call-tree-visit ()
-  "Visit the Moss declaration or call site on the current tree line."
+  "Visit the Moss declaration represented by the current tree line."
   (interactive)
   (let ((file (get-text-property (line-beginning-position) 'moss-node-file))
         (line (get-text-property (line-beginning-position) 'moss-node-line)))

@@ -625,6 +625,7 @@ class Parser {
 
   Program parse() {
     Program p;
+    p.source_lines = lines_;
     while (i_ < lines_.size()) {
       const auto& L = lines_[i_];
       if (L.indent != 0) fail(L, "top-level declaration must start at indentation 0");
@@ -3236,6 +3237,21 @@ class Checker {
         if (handler.reply_type)
           retain_resolved_type_uses(*handler.reply_type, handler.source_file,
                                     handler.line, enclosing);
+      }
+    }
+    if (p_.main) {
+      for (const auto& statement : p_.main->body) {
+        string constructor;
+        vector<string> arguments;
+        if (!parse_simple_call(statement.b, constructor, arguments)) continue;
+        auto domain = domains_.find(canonical_type_name(constructor));
+        if (domain == domains_.end()) continue;
+        p_.semantic_uses.push_back(
+            {"domain:" + domain->second->name + "@" +
+                 std::to_string(domain->second->line),
+             "constructor", statement.source_file.empty()
+                 ? p_.main->source_file : statement.source_file,
+             statement.line, "main", {}});
       }
     }
   }
@@ -6470,6 +6486,46 @@ class Checker {
       int result_line, TypeEnv env, const ObjectType* implicit_owner,
       const string& source, std::map<string,std::set<string>>& graph,
       std::map<string,int>& edge_lines, const string& physical_source) {
+    auto retain_message_edge = [&](int line, const string& expression,
+                                   const TypeEnv& current_env,
+                                   const string& expression_source) {
+      string value = trim(expression);
+      if (!starts_with(value, "message ")) return;
+      string receiver_name;
+      string handler_name;
+      vector<string> arguments;
+      if (!parse_member_call(trim(value.substr(8)), receiver_name,
+                             handler_name, arguments) ||
+          !plain_identifier(receiver_name) ||
+          !plain_identifier(handler_name))
+        return;
+      auto receiver = current_env.find(receiver_name);
+      if (receiver == current_env.end()) return;
+      const string domain = canonical_type_name(receiver->second);
+      auto declared = domains_.find(domain);
+      const Handler* handler = declared == domains_.end()
+          ? nullptr : find_handler(*declared->second, handler_name);
+      if (!handler) return;
+      vector<string> argument_types;
+      for (const auto& argument : arguments)
+        argument_types.push_back(
+            inferred_expr_type(argument, current_env).value_or(""));
+      SemanticCallEdge edge{
+          source, "handler:" + domain + "." + handler_name, line,
+          argument_types, expression_source.empty() ? physical_source
+                                                     : expression_source,
+          "synchronous_message", receiver_name};
+      if (std::find_if(
+              p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+              [&](const SemanticCallEdge& existing) {
+                return existing.source == edge.source &&
+                    existing.target == edge.target &&
+                    existing.line == edge.line &&
+                    existing.invocation_kind == edge.invocation_kind &&
+                    existing.receiver == edge.receiver;
+              }) == p_.semantic_call_edges.end())
+        p_.semantic_call_edges.push_back(std::move(edge));
+    };
     TypeEnvVisitor collect_statement = [&](const Stmt& statement,
                                             const TypeEnv& current_env) {
       for (const auto& expression : statement_expressions(statement)) {
@@ -6497,6 +6553,8 @@ class Checker {
                   }) == p_.semantic_call_edges.end())
             p_.semantic_call_edges.push_back(std::move(edge));
         }
+        retain_message_edge(statement.line, expression, current_env,
+                            statement.source_file);
       }
       if (statement.kind == Stmt::Kind::Message) {
         auto receiver = current_env.find(statement.a);
@@ -6557,6 +6615,8 @@ class Checker {
                 }) == p_.semantic_call_edges.end())
           p_.semantic_call_edges.push_back(std::move(edge));
       }
+      retain_message_edge(result_line, *result_expression, env,
+                          physical_source);
     }
   }
 
@@ -8093,6 +8153,15 @@ class Checker {
         const EnumType& declaration = *enums_.at(enum_name);
         auto item = std::find_if(declaration.cases.begin(), declaration.cases.end(),
             [&](const EnumCase& candidate) { return candidate.name == case_name; });
+        retain_semantic_use(
+            "enum:" + declaration.name + "@" +
+                std::to_string(declaration.line),
+            "enum_constructor", line);
+        if (item != declaration.cases.end())
+          retain_semantic_use(
+              "enum_case:" + declaration.name + "." + item->name + "@" +
+                  std::to_string(item->line),
+              "enum_case_constructor", line);
         if (item != declaration.cases.end()) for (const auto& argument : fields) {
           string name, expression;
           if (!parse_named_argument(argument, name, expression)) continue;
@@ -8229,6 +8298,11 @@ class Checker {
         return;
       }
       if (objects_.count(callee)) {
+        const ObjectType& declaration = *objects_.at(callee);
+        retain_semantic_use(
+            "type:" + declaration.name + "@" +
+                std::to_string(declaration.line),
+            "constructor", line);
         std::unordered_map<string,string> supplied;
         for (const auto& argument : call_arguments) {
           string field, field_value;
@@ -16825,10 +16899,58 @@ static bool semantic_target_is_root(const SemanticTargetFact& target) {
       target.kind == "benchmark" || target.kind == "main";
 }
 
+static bool semantic_target_is_declaration(
+    const SemanticTargetFact& target) {
+  return semantic_target_is_root(target) || target.kind == "binding" ||
+      target.kind == "field" || target.kind == "domain_state" ||
+      target.kind == "enum_case";
+}
+
+static string semantic_token_name(const SemanticTargetFact& target) {
+  string name = target.name;
+  size_t module = name.rfind("__");
+  if (module != string::npos) name = name.substr(module + 2);
+  size_t member = name.rfind('.');
+  if (member != string::npos) name = name.substr(member + 1);
+  return name;
+}
+
+static std::optional<string> semantic_source_token_at(
+    const Program& program, const string& source_file, int line, int column) {
+  const Line* source_line = nullptr;
+  for (const auto& candidate : program.source_lines)
+    if (candidate.no == line &&
+        (source_file.empty() || candidate.source_file == source_file)) {
+      source_line = &candidate;
+      break;
+    }
+  if (!source_line || column <= source_line->indent) return std::nullopt;
+  auto word = [](unsigned char value) {
+    return std::isalnum(value) || value == '_';
+  };
+  size_t offset = static_cast<size_t>(column - source_line->indent - 1);
+  if (offset >= source_line->text.size() ||
+      !word(static_cast<unsigned char>(source_line->text[offset]))) {
+    if (offset == 0 || offset > source_line->text.size() ||
+        !word(static_cast<unsigned char>(source_line->text[offset - 1])))
+      return std::nullopt;
+    --offset;
+  }
+  size_t begin = offset;
+  size_t end = offset + 1;
+  while (begin > 0 &&
+         word(static_cast<unsigned char>(source_line->text[begin - 1])))
+    --begin;
+  while (end < source_line->text.size() &&
+         word(static_cast<unsigned char>(source_line->text[end])))
+    ++end;
+  return source_line->text.substr(begin, end - begin);
+}
+
 static SemanticQueryResolution resolve_semantic_target(
     const vector<SemanticTargetFact>& targets, string selector,
     const string& source_file = {}, const string& kind_filter = {},
-    const string& enclosing_filter = {}) {
+    const string& enclosing_filter = {}, const Program* program = nullptr) {
   selector = trim(std::move(selector));
   int requested_line = 0;
   int requested_column = 0;
@@ -16868,6 +16990,79 @@ static SemanticQueryResolution resolve_semantic_target(
     return true;
   };
 
+  if (by_location && requested_column > 0 && program) {
+    auto token = semantic_source_token_at(
+        *program, source_file, requested_line, requested_column);
+    if (token) {
+      SemanticQueryResolution exact;
+      auto append = [&](const SemanticTargetFact* candidate) {
+        if (!candidate || !filters_match(*candidate) ||
+            semantic_token_name(*candidate) != *token)
+          return;
+        if (std::none_of(
+                exact.candidates.begin(), exact.candidates.end(),
+                [&](const SemanticTargetFact* existing) {
+                  return existing->durable_identity ==
+                      candidate->durable_identity;
+                }))
+          exact.candidates.push_back(candidate);
+      };
+      auto by_semantic_identity = [&](const string& identity) {
+        for (const auto& candidate : targets)
+          if (candidate.semantic_identity == identity) return &candidate;
+        return static_cast<const SemanticTargetFact*>(nullptr);
+      };
+      auto by_context = [&](const string& context) {
+        for (const auto& candidate : targets)
+          if (semantic_target_is_root(candidate) &&
+              candidate.context == context)
+            return &candidate;
+        return static_cast<const SemanticTargetFact*>(nullptr);
+      };
+
+      for (const auto& candidate : targets)
+        if (candidate.line == requested_line &&
+            source_matches(candidate) &&
+            semantic_target_is_declaration(candidate))
+          append(&candidate);
+      for (const auto& use : program->semantic_uses)
+        if (use.line == requested_line &&
+            (source_file.empty() || use.source_file == source_file))
+          append(by_semantic_identity(use.target_identity));
+      for (const auto& edge : program->semantic_call_edges) {
+        if (edge.line != requested_line ||
+            (!source_file.empty() && edge.source_file != source_file))
+          continue;
+        if (kind_filter == "call") {
+          const string call_identity = edge.source + "@" +
+              std::to_string(edge.line) + ":call:" + edge.target;
+          append(by_semantic_identity(call_identity));
+        } else {
+          const SemanticTargetFact* callee = by_context(edge.target);
+          append(callee);
+          if (callee && !callee->module_identity.empty() &&
+              callee->module_identity == *token)
+            append(by_context("module:" + callee->module_identity));
+        }
+      }
+      for (const auto& import : program->imports)
+        if (import.line == requested_line && import.name == *token &&
+            (source_file.empty() || import.source_file == source_file))
+          append(by_context("module:" + import.name));
+      std::sort(exact.candidates.begin(), exact.candidates.end(),
+                [](const auto* left, const auto* right) {
+                  return left->durable_identity < right->durable_identity;
+                });
+      exact.status = exact.candidates.empty()
+          ? SemanticQueryResolution::Status::Missing
+          : exact.candidates.size() == 1
+              ? SemanticQueryResolution::Status::Resolved
+              : SemanticQueryResolution::Status::Ambiguous;
+      if (exact.status != SemanticQueryResolution::Status::Missing)
+        return exact;
+    }
+  }
+
   SemanticQueryResolution result;
   int best_match_rank = 100;
   for (const auto& target : targets) {
@@ -16876,9 +17071,9 @@ static SemanticQueryResolution resolve_semantic_target(
     if (!filters_match(target)) continue;
     int match_rank = 100;
     if (by_location) {
-      // Current compiler provenance is line-oriented.  Column 1 is exact;
-      // any other column selects all entities retained for the source line
-      // and reports that precision in the candidate record.
+      // Token-aware editor resolution above handles checked declarations,
+      // uses, and call targets.  This line-oriented path remains the
+      // compatibility fallback for selectors outside a retained token.
       (void)requested_column;
       if (target.line == requested_line && source_matches(target)) match_rank = 0;
     } else if (target.semantic_identity == selector ||
@@ -16894,7 +17089,8 @@ static SemanticQueryResolution resolve_semantic_target(
       else {
         size_t separator = target.name.rfind('.');
         if (separator != string::npos)
-          if (target.name.substr(separator + 1) == selector) match_rank = 3;
+          if (target.name.substr(separator + 1) == selector)
+            match_rank = semantic_target_is_declaration(target) ? 3 : 4;
       }
     }
     if (match_rank < best_match_rank) {
@@ -17779,10 +17975,11 @@ static void write_bootstrap_json(std::ostream& out,
            "[\"resolved\", \"ambiguous\", \"missing\"], "
            "\"ambiguity_path\": \"error.details.resolution.candidates\", "
            "\"source_precision\": \"line\", "
-           "\"column_behavior\": \"accepted as a location hint; candidates retain line precision\"}";
+           "\"column_behavior\": \"token-aware for compiler-resolved declarations, uses, and call targets; returned declaration locations retain line precision\"}";
     out << ", \"editor_query_contracts\": {"
            "\"references_fields\": [\"target\", \"definition\", \"references\"], "
            "\"reference_fields\": [\"entity_id\", \"kind\", \"source\", \"enclosing_entity\", \"call_site_id\"], "
+           "\"call_fields\": [\"call_site_id\", \"target\", \"target_id\", \"target_source\", \"source_file\", \"line\", \"boundary\", \"receiver\"], "
            "\"symbol_fields\": [\"entity_id\", \"kind\", \"qualified_name\", \"display_name\", \"source\", \"enclosing_entity\"], "
            "\"completion_fields\": [\"position\", \"prefix\", \"context\", \"recovery\", \"candidates\"], "
            "\"completion_candidate_fields\": [\"label\", \"kind\", \"entity_id\", \"qualified_name\", \"type\", \"detail\", \"source\"]}";
@@ -17992,6 +18189,17 @@ static void write_calls_result(std::ostream& out, const Program& program,
     out << ", \"target_id\": ";
     if (callee) write_debug_json_string(out, callee->durable_identity);
     else out << "null";
+    out << ", \"target_source\": ";
+    if (callee) {
+      out << "{\"file\": ";
+      write_debug_json_string(
+          out, callee->source_file.empty() ? calls[index]->source_file
+                                           : callee->source_file);
+      out << ", \"line\": " << callee->line
+          << ", \"column\": 1, \"range_precision\": \"line\"}";
+    } else {
+      out << "null";
+    }
     out << ", \"resolved\": true, \"target_kind\": ";
     write_debug_json_string(out,
                             semantic_call_target_kind(calls[index]->target));
@@ -18686,7 +18894,7 @@ static bool write_semantic_query_json(
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
-      targets, selector, source_file, kind_filter, enclosing_filter);
+      targets, selector, source_file, kind_filter, enclosing_filter, &program);
   const SemanticTargetFact* target = resolution.target();
   if (!target) {
     TeachingDiagnostic teaching;
@@ -18889,7 +19097,7 @@ static bool write_references_query_json(
     const string& kind_filter = {}, const string& enclosing_filter = {}) {
   vector<SemanticTargetFact> targets = semantic_target_facts(program, plan);
   SemanticQueryResolution resolution = resolve_semantic_target(
-      targets, selector, source_file, kind_filter, enclosing_filter);
+      targets, selector, source_file, kind_filter, enclosing_filter, &program);
   const SemanticTargetFact* selected = resolution.target();
   const SemanticTargetFact* target = selected
       ? semantic_reference_target(targets, *selected) : nullptr;
@@ -20026,6 +20234,10 @@ static void merge_project_program(Program& destination, Program source,
   // explicit modules/imports; no synthetic source file or implicit namespace
   // is introduced.
   annotate_program_source(source, source_file);
+  destination.source_lines.insert(
+      destination.source_lines.end(),
+      std::make_move_iterator(source.source_lines.begin()),
+      std::make_move_iterator(source.source_lines.end()));
   destination.imports.insert(destination.imports.end(), source.imports.begin(),
                              source.imports.end());
   destination.functions.insert(destination.functions.end(),
@@ -25813,7 +26025,7 @@ static DebugSemanticResolution debug_runtime_semantic_selector(
   moss::OptimizationPlan plan;
   auto facts = moss::semantic_target_facts(program, plan);
   auto resolution = moss::resolve_semantic_target(
-      facts, normalized, source_file);
+      facts, normalized, source_file, {}, {}, &program);
   if (const auto* target = resolution.target())
     return {target->semantic_identity, true, false};
   return {normalized, false,

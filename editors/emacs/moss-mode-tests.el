@@ -3,6 +3,40 @@
 (require 'ert)
 (require 'moss-mode)
 
+(defun moss-test--with-domain-navigation (function)
+  "Call FUNCTION in the real-compiler domain-navigation fixture buffer."
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "tests/tooling/fixtures/phase225_domain_navigation.moss"
+                  root))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (source-buffer (find-file-noselect source)))
+    (unwind-protect
+        (with-current-buffer source-buffer
+          (moss-mode)
+          (funcall function source))
+      (when (get-buffer "*Moss Call Tree*")
+        (kill-buffer "*Moss Call Tree*"))
+      (when (buffer-live-p source-buffer)
+        (kill-buffer source-buffer)))))
+
+(defun moss-test--goto-line-token (line token)
+  "Move point to TOKEN on one-based LINE in the current buffer."
+  (goto-char (point-min))
+  (forward-line (1- line))
+  (let ((case-fold-search nil))
+    (search-forward token (line-end-position)))
+  (backward-char (length token)))
+
+(defun moss-test--capture-xrefs (command)
+  "Invoke interactive COMMAND and return the xrefs it displays."
+  (let* ((shown nil)
+         (xref-show-xrefs-function
+          (lambda (fetcher _display-action)
+            (setq shown (funcall fetcher)))))
+    (funcall command)
+    shown))
+
 (defun moss-test--write-debug-map (filename source generated exact-line)
   "Write a minimal valid map to FILENAME for SOURCE and GENERATED."
   (let* ((mappings
@@ -504,6 +538,136 @@
               (should (member "total" (nth 2 capf)))))
         (kill-buffer (current-buffer))))))
 
+(ert-deftest moss-mode-real-compiler-domain-goto-definition ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((21 "Ledger" 2)
+                     (9 "Ledger" 2)
+                     (22 "Inventory" 8)
+                     (23 "App" 14)))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (let* ((xref (car (xref-backend-definitions 'moss (nth 1 case))))
+              (location (xref-item-location xref)))
+         (should (= (nth 2 case) (xref-file-location-line location))))))))
+
+(ert-deftest moss-mode-real-compiler-handler-goto-definition ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((12 "Read" 5)
+                     (18 "Available" 11)
+                     (24 "Run" 17)))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (let* ((xref (car (xref-backend-definitions 'moss (nth 1 case))))
+              (location (xref-item-location xref)))
+         (should (= (nth 2 case) (xref-file-location-line location))))))))
+
+(ert-deftest moss-mode-real-compiler-domain-references ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (moss-test--goto-line-token 21 "Ledger")
+     (should
+      (equal '(9 15 21)
+             (mapcar
+              (lambda (xref)
+                (xref-file-location-line (xref-item-location xref)))
+              (xref-backend-references 'moss "Ledger")))))))
+
+(ert-deftest moss-mode-real-compiler-handler-references ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((12 "Read") (18 "Available") (24 "Run")))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (let ((references (xref-backend-references 'moss (nth 1 case))))
+         (should (= 1 (length references)))
+         (should (= (nth 0 case)
+                    (xref-file-location-line
+                     (xref-item-location (car references))))))))))
+
+(ert-deftest moss-mode-real-compiler-callers ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((5 "Read" "handler:Inventory.Available" 12)
+                     (11 "Available" "handler:App.Run" 18)
+                     (17 "Run" "main" 24)))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (let ((xrefs (moss-test--capture-xrefs #'moss-callers)))
+         (should (= 1 (length xrefs)))
+         (should (string-match-p (regexp-quote (nth 2 case))
+                                 (xref-item-summary (car xrefs))))
+         (should (= (nth 3 case)
+                    (xref-file-location-line
+                     (xref-item-location (car xrefs))))))))))
+
+(ert-deftest moss-mode-real-compiler-callees ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((17 "Run" "handler:Inventory.Available" 11)
+                     (11 "Available" "handler:Ledger.Read" 5)))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (let ((xrefs (moss-test--capture-xrefs #'moss-callees)))
+         (should (= 1 (length xrefs)))
+         (should (string-match-p (regexp-quote (nth 2 case))
+                                 (xref-item-summary (car xrefs))))
+         (should (= (nth 3 case)
+                    (xref-file-location-line
+                     (xref-item-location (car xrefs)))))))
+     (moss-test--goto-line-token 5 "Read")
+     (should-not (moss-test--capture-xrefs #'moss-callees)))))
+
+(ert-deftest moss-mode-real-compiler-call-tree-command ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (dolist (case '((12 "Read" "handler Ledger.Read")
+                     (5 "Read" "handler Ledger.Read")
+                     (11 "Available" "handler Inventory.Available")
+                     (17 "Run" "handler App.Run")))
+       (moss-test--goto-line-token (nth 0 case) (nth 1 case))
+       (cl-letf (((symbol-function 'pop-to-buffer)
+                  (lambda (buffer &rest _ignore) buffer)))
+         (moss-call-tree))
+       (with-current-buffer "*Moss Call Tree*"
+         (should (string-match-p (regexp-quote (nth 2 case))
+                                 (buffer-string))))))))
+
+(ert-deftest moss-mode-real-compiler-call-tree-expansion ()
+  (moss-test--with-domain-navigation
+   (lambda (_source)
+     (moss-test--goto-line-token 17 "Run")
+     (cl-letf (((symbol-function 'pop-to-buffer)
+                (lambda (buffer &rest _ignore) buffer)))
+       (moss-call-tree))
+     (with-current-buffer "*Moss Call Tree*"
+       (goto-char (point-min))
+       (moss-call-tree-toggle)
+       (should (string-match-p
+                "\\[message\\] handler:Inventory.Available"
+                (buffer-string)))
+       (forward-line 1)
+       (should (= 11 (get-text-property (point) 'moss-node-line)))
+       (moss-call-tree-toggle)
+       (should (string-match-p "\\[message\\] handler:Ledger.Read"
+                               (buffer-string)))
+       (forward-line 1)
+       (should (= 5 (get-text-property (point) 'moss-node-line)))))))
+
+(ert-deftest moss-mode-real-compiler-call-tree-visit ()
+  (moss-test--with-domain-navigation
+   (lambda (source)
+     (moss-test--goto-line-token 17 "Run")
+     (cl-letf (((symbol-function 'pop-to-buffer)
+                (lambda (buffer &rest _ignore) buffer)))
+       (moss-call-tree))
+     (with-current-buffer "*Moss Call Tree*"
+       (goto-char (point-min))
+       (moss-call-tree-toggle)
+       (forward-line 1)
+       (cl-letf (((symbol-function 'find-file-other-window)
+                  (lambda (file)
+                    (should (equal source file))
+                    (set-buffer (find-file-noselect file)))))
+         (moss-call-tree-visit)
+         (should (= 11 (line-number-at-pos))))))))
+
 (ert-deftest moss-mode-real-compiler-xref-cross-file-and-semantic-references ()
   (let* ((root (moss--repo-root default-directory))
          (source (expand-file-name
@@ -535,7 +699,8 @@
           (progn
             (moss-mode)
             (goto-char (point-min))
-            (search-forward "Read")
+            (let ((case-fold-search nil))
+              (search-forward "Read"))
             (should (= 2 (length (xref-backend-references 'moss "Read"))))
             (search-forward "top")
             (let ((location (xref-item-location

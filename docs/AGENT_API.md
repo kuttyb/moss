@@ -150,10 +150,14 @@ moss inspect src/main.moss:18 --json
 moss inspect src/main.moss:18:9 --kind call --json
 ```
 
-Current compiler provenance is line-oriented. Columns are accepted as location hints,
-and candidate records say `precision: "line"`; the resolver never fabricates an exact
-expression range. `--kind KIND` and `--enclosing TARGET` narrow candidates using checked
-entity kind and enclosing semantic identity. A resolved result has `status: "resolved"`.
+For `at:<line>:<column>`, the compiler selects the source token at that position and
+maps it through checked declarations, semantic uses, and resolved call/message edges.
+This generic editor resolution identifies declarations and uses of functions, methods,
+handlers, types, enums, traits, domains, bindings, calls, messages, and module symbols
+without an editor-side kind guess list. Returned declaration provenance remains
+line-oriented and candidate records therefore say `precision: "line"`; the resolver
+does not fabricate an expression range. `--kind KIND` and `--enclosing TARGET` remain
+available for explicit query narrowing. A resolved result has `status: "resolved"`.
 Ambiguous targets fail rather than silently choosing one and return deterministic records
 at `error.details.resolution.candidates`:
 
@@ -201,7 +205,9 @@ exists. Phase 6A does not run a new statement-effect analysis to answer a query.
 Direct records include a durable call-site ID, callee ID, source, concrete argument
 types, selected specialization, and boundary. Checked message edges are retained as
 `synchronous_message_by_value` with their receiver binding; ordinary calls remain
-`ordinary_call`.
+`ordinary_call`. Each direct record also carries `target_source`, the callee
+declaration provenance. Its existing `source_file` and `line` fields remain the call
+site provenance.
 The retired `awaits` query and await-only schema fields are removed. Concrete
 routing remains available through `inspect` and its `concrete_domain_graph`.
 `domain` reports sender/receiver, handler, concrete instance precision, payload/reply

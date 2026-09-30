@@ -34,6 +34,10 @@ pipeline_completion = (
     root / "tests" / "tooling" / "fixtures" /
     "phase225_pipeline_completion.moss"
 )
+domain_navigation = (
+    root / "tests" / "tooling" / "fixtures" /
+    "phase225_domain_navigation.moss"
+)
 overlay_directory = root / "tmp" / "phase225-overlays"
 overlay_directory.mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +79,95 @@ for discovery in ("bootstrap", "capabilities", "schema"):
 for discovery in ("capabilities", "schema"):
     if "--overlay-source" not in json.dumps(discovery_results[discovery]):
         fail(f"agent {discovery} omitted semantic editor overlays")
+
+domain_positions = {
+    "Ledger": ((21, 12), "entity-v1:domain:Ledger", 2),
+    "Inventory": ((22, 15), "entity-v1:domain:Inventory", 8),
+    "App": ((23, 9), "entity-v1:domain:App", 14),
+}
+handler_positions = {
+    "Ledger.Read": ((12, 26), "entity-v1:handler:Ledger.Read", 5),
+    "Inventory.Available": (
+        (18, 29), "entity-v1:handler:Inventory.Available", 11
+    ),
+    "App.Run": ((24, 20), "entity-v1:handler:App.Run", 17),
+}
+for name, (position, expected_id, expected_line) in {
+    **domain_positions, **handler_positions,
+}.items():
+    resolved = invoke(
+        "resolve", f"at:{position[0]}:{position[1]}",
+        "--source", str(domain_navigation), "--json",
+    )["result"]["target"]
+    if resolved["id"] != expected_id:
+        fail(f"entity-at-point resolved {name} as {resolved['id']}")
+    if resolved["source"]["line"] != expected_line:
+        fail(f"entity-at-point returned the wrong declaration for {name}")
+
+route_ledger = invoke(
+    "resolve", "at:9:24", "--source", str(domain_navigation), "--json",
+)["result"]["target"]
+if route_ledger["id"] != "entity-v1:domain:Ledger":
+    fail("route declaration type did not resolve to the Ledger domain")
+
+expected_domain_reference_lines = {
+    "Ledger": [2, 9, 15, 21],
+    "Inventory": [8, 15, 22],
+    "App": [14, 23],
+}
+for name, (position, expected_id, _) in domain_positions.items():
+    references = invoke(
+        "references", f"at:{position[0]}:{position[1]}",
+        "--source", str(domain_navigation), "--json",
+    )["result"]
+    if references["target"]["id"] != expected_id:
+        fail(f"domain references selected the wrong identity for {name}")
+    lines = [item["source"]["line"] for item in references["references"]]
+    if lines != expected_domain_reference_lines[name]:
+        fail(f"domain references for {name} were {lines}")
+    calls = invoke(
+        "calls", expected_id, "--source", str(domain_navigation), "--json",
+    )["result"]
+    if calls["target"]["id"] != expected_id:
+        fail(f"calls changed the resolved domain identity for {name}")
+    if calls["target"]["source"]["line"] != domain_positions[name][2]:
+        fail(f"calls returned the wrong domain declaration for {name}")
+
+expected_handler_callers = {
+    "Ledger.Read": "handler:Inventory.Available",
+    "Inventory.Available": "handler:App.Run",
+    "App.Run": "main",
+}
+expected_handler_callees = {
+    "Ledger.Read": [],
+    "Inventory.Available": ["handler:Ledger.Read"],
+    "App.Run": ["handler:Inventory.Available"],
+}
+for name, (position, expected_id, declaration_line) in handler_positions.items():
+    references = invoke(
+        "references", f"at:{position[0]}:{position[1]}",
+        "--source", str(domain_navigation), "--json",
+    )["result"]
+    if references["target"]["id"] != expected_id:
+        fail(f"handler references selected the wrong identity for {name}")
+    reference_lines = [
+        item["source"]["line"] for item in references["references"]
+    ]
+    if reference_lines != [declaration_line, position[0]]:
+        fail(f"handler references for {name} were {reference_lines}")
+    calls = invoke(
+        "calls", expected_id, "--source", str(domain_navigation), "--json",
+    )["result"]
+    callers = [item["source"] for item in calls["callers"]]
+    if callers != [expected_handler_callers[name]]:
+        fail(f"callers for {name} were {callers}")
+    callees = [item["target"] for item in calls["direct_calls"]]
+    if callees != expected_handler_callees[name]:
+        fail(f"callees for {name} were {callees}")
+    for callee in calls["direct_calls"]:
+        target_source = callee.get("target_source")
+        if not target_source or not target_source.get("file"):
+            fail(f"callee declaration provenance is missing for {name}")
 
 references = invoke(
     "references", "fn:inspect", "--source", str(source), "--json"
@@ -354,5 +447,12 @@ module_completion = invoke(
 )["result"]["candidates"]
 if not any(item["label"] == "leaf" for item in module_completion):
     fail("module-qualified completion omitted exported member")
+
+for selector in ("at:2:8", "at:5:8"):
+    module_target = invoke(
+        "resolve", selector, "--source", str(module_main), "--json",
+    )["result"]["target"]
+    if module_target["id"] != "entity-v1:module:math":
+        fail(f"module token {selector} did not resolve semantically")
 
 print("Phase 22.5 semantic IDE query checks passed")
