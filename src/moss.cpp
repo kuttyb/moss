@@ -16410,6 +16410,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = function.name;
     fact.type = function.return_type.value_or("unit");
     fact.line = function.line;
+    fact.source_file = function.source_file;
     fact.module_identity = semantic_module_name(function.name);
     fact.export_visibility = function.exported ? "exported" : "private";
     fact.export_kind = function.exported
@@ -16462,6 +16463,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = enumeration.name;
     fact.type = enumeration.name;
     fact.line = enumeration.line;
+    fact.source_file = enumeration.source_file;
     fact.module_identity = semantic_module_name(enumeration.name);
     fact.export_visibility = enumeration.exported ? "exported" : "private";
     fact.export_kind = enumeration.exported ? "nominal_type" : "private";
@@ -16476,6 +16478,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
       case_fact.name = enumeration.name + "." + item.name;
       case_fact.type = enumeration.name;
       case_fact.line = item.line;
+      case_fact.source_file = item.source_file;
       case_fact.provenance.push_back(case_fact.semantic_identity);
       for (const auto& field : item.fields)
         case_fact.explanations.push_back("field " + field.name + ": " + field.type);
@@ -16492,6 +16495,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     object_fact.name = object.name;
     object_fact.type = object.name;
     object_fact.line = object.line;
+    object_fact.source_file = object.source_file;
     object_fact.module_identity = semantic_module_name(object.name);
     object_fact.export_visibility = object.exported ? "exported" : "private";
     object_fact.export_kind = object.exported ? "nominal_type" : "private";
@@ -16506,6 +16510,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
       field_fact.name = object.name + "." + field.name;
       field_fact.type = field.type;
       field_fact.line = field.line;
+      field_fact.source_file = field.source_file;
       field_fact.provenance.push_back(field_fact.semantic_identity);
       targets.push_back(std::move(field_fact));
     }
@@ -16518,6 +16523,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
       method_fact.name = object.name + "." + method.name;
       method_fact.type = method.return_type.value_or("unit");
       method_fact.line = method.line;
+      method_fact.source_file = method.source_file;
       method_fact.observable_effects = method.observable_effects;
       method_fact.has_observable_effects = true;
       method_fact.parameters.push_back(
@@ -16546,6 +16552,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     fact.name = trait.name;
     fact.type = trait.name;
     fact.line = trait.line;
+    fact.source_file = trait.source_file;
     fact.module_identity = semantic_module_name(trait.name);
     fact.export_visibility = trait.exported ? "exported" : "private";
     fact.export_kind = trait.exported ? "trait" : "private";
@@ -16564,6 +16571,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
     domain_fact.name = domain.name;
     domain_fact.type = domain.name;
     domain_fact.line = domain.line;
+    domain_fact.source_file = domain.source_file;
     domain_fact.module_identity = semantic_module_name(domain.name);
     domain_fact.export_visibility = domain.exported ? "exported" : "private";
     domain_fact.export_kind = domain.exported ? "domain" : "private";
@@ -16579,6 +16587,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
       field_fact.name = domain.name + "." + field.name;
       field_fact.type = field.type;
       field_fact.line = field.line;
+      field_fact.source_file = field.source_file;
       field_fact.provenance.push_back(field_fact.semantic_identity);
       targets.push_back(std::move(field_fact));
     }
@@ -16591,6 +16600,7 @@ static vector<SemanticTargetFact> semantic_target_facts(
       handler_fact.name = domain.name + "." + handler.name;
       handler_fact.type = handler.reply_type.value_or("unit");
       handler_fact.line = handler.line;
+      handler_fact.source_file = handler.source_file;
       handler_fact.observable_effects = handler.observable_effects;
       handler_fact.has_observable_effects = true;
       for (const auto& parameter : handler.params)
@@ -16738,8 +16748,26 @@ static vector<SemanticTargetFact> semantic_target_facts(
   }
 
   std::map<string,std::pair<string,int>> module_locations;
+  std::set<string> declared_modules;
+  // A module entity denotes its declaration, not whichever exported
+  // declaration happens to occur first. Retained physical source lines are
+  // authoritative here and keep editor navigation on `module Name` even when
+  // the module's first declaration lives later (or in another source file).
+  for (const auto& line : program.source_lines) {
+    string declaration = trim(line.text);
+    if (!starts_with(declaration, "module ")) continue;
+    string name = trim(declaration.substr(7));
+    if (!plain_identifier(name)) continue;
+    declared_modules.insert(name);
+    auto location = module_locations.find(name);
+    if (location == module_locations.end() ||
+        std::tie(line.source_file, line.no) <
+            std::tie(location->second.first, location->second.second))
+      module_locations[name] = {line.source_file, line.no};
+  }
   for (const auto& target : targets)
-    if (!target.module_identity.empty()) {
+    if (!target.module_identity.empty() &&
+        !declared_modules.count(target.module_identity)) {
       auto location = module_locations.find(target.module_identity);
       if (location == module_locations.end() ||
           (target.line > 0 && target.line < location->second.second))
@@ -16947,6 +16975,45 @@ static std::optional<string> semantic_source_token_at(
   return source_line->text.substr(begin, end - begin);
 }
 
+static bool semantic_source_line_has_module_qualifier(
+    const Program& program, const string& source_file, int line,
+    const string& module) {
+  for (const auto& candidate : program.source_lines) {
+    if (candidate.no != line || candidate.source_file != source_file) continue;
+    const string& text = candidate.text;
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t index = 0; index + module.size() <= text.size(); ++index) {
+      char character = text[index];
+      if (in_string) {
+        if (escaped) escaped = false;
+        else if (character == '\\') escaped = true;
+        else if (character == '"') in_string = false;
+        continue;
+      }
+      if (character == '"') {
+        in_string = true;
+        continue;
+      }
+      if (text.compare(index, module.size(), module) != 0) continue;
+      auto word = [](unsigned char value) {
+        return std::isalnum(value) || value == '_';
+      };
+      bool left = index == 0 ||
+          !word(static_cast<unsigned char>(text[index - 1]));
+      size_t after = index + module.size();
+      bool right = after == text.size() ||
+          !word(static_cast<unsigned char>(text[after]));
+      if (!left || !right) continue;
+      while (after < text.size() &&
+             std::isspace(static_cast<unsigned char>(text[after])))
+        ++after;
+      if (after < text.size() && text[after] == '.') return true;
+    }
+  }
+  return false;
+}
+
 static SemanticQueryResolution resolve_semantic_target(
     const vector<SemanticTargetFact>& targets, string selector,
     const string& source_file = {}, const string& kind_filter = {},
@@ -17027,8 +17094,14 @@ static SemanticQueryResolution resolve_semantic_target(
           append(&candidate);
       for (const auto& use : program->semantic_uses)
         if (use.line == requested_line &&
-            (source_file.empty() || use.source_file == source_file))
-          append(by_semantic_identity(use.target_identity));
+            (source_file.empty() || use.source_file == source_file)) {
+          const SemanticTargetFact* used =
+              by_semantic_identity(use.target_identity);
+          append(used);
+          if (used && !used->module_identity.empty() &&
+              used->module_identity == *token)
+            append(by_context("module:" + used->module_identity));
+        }
       for (const auto& edge : program->semantic_call_edges) {
         if (edge.line != requested_line ||
             (!source_file.empty() && edge.source_file != source_file))
@@ -19158,6 +19231,39 @@ static bool write_references_query_json(
       references.push_back(
           {"callable_reference", pipeline.source_file, pipeline.line,
            pipeline.context, {}});
+  }
+
+  if (target->kind == "module") {
+    for (const auto& import : program.imports)
+      if (import.name == target->name)
+        references.push_back(
+            {"module_import", import.source_file, import.line,
+             "module:" + import.owner_module, {}});
+
+    auto append_qualifier = [&](const SemanticTargetFact* used,
+                                const string& file, int line,
+                                const string& enclosing) {
+      if (!used || used->module_identity != target->name ||
+          !semantic_source_line_has_module_qualifier(
+              program, file, line, target->name))
+        return;
+      references.push_back(
+          {"module_qualifier", file, line, enclosing, {}});
+    };
+    for (const auto& use : program.semantic_uses) {
+      const SemanticTargetFact* used = nullptr;
+      for (const auto& candidate : targets)
+        if (candidate.semantic_identity == use.target_identity) {
+          used = &candidate;
+          break;
+        }
+      append_qualifier(used, use.source_file, use.line,
+                       use.enclosing_identity);
+    }
+    for (const auto& edge : program.semantic_call_edges)
+      append_qualifier(
+          semantic_declaration_for_context(targets, edge.target),
+          edge.source_file, edge.line, edge.source);
   }
 
   std::sort(references.begin(), references.end(),

@@ -454,5 +454,21 @@ for selector in ("at:2:8", "at:5:8"):
     )["result"]["target"]
     if module_target["id"] != "entity-v1:module:math":
         fail(f"module token {selector} did not resolve semantically")
+    if pathlib.Path(module_target["source"]["file"]) != (
+        module_project / "src" / "math.moss"
+    ):
+        fail(f"module token {selector} resolved to the wrong physical source")
+    if module_target["source"]["line"] != 1:
+        fail(f"module token {selector} did not resolve to the module declaration")
+
+module_references = invoke(
+    "references", "at:2:8", "--source", str(module_main), "--json",
+)["result"]["references"]
+if [(item["kind"], item["source"]["line"]) for item in module_references] != [
+    ("module_import", 2),
+    ("module_qualifier", 5),
+    ("declaration", 1),
+]:
+    fail("module references omitted the import or checked qualified use")
 
 print("Phase 22.5 semantic IDE query checks passed")

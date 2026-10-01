@@ -1,5 +1,47 @@
 # Moss current status
 
+## Emacs browsing across `examples/projects` — COMPLETE (2026-09-30)
+
+Emacs semantic browsing is now exercised against every one of the ten `.moss`
+files under `examples/projects` and all four enclosing `moss.toml` project
+contexts. The durable ERT matrix checks compiler-owned symbols in each physical
+file, at-point definition lookup for every reported use, find-references counts,
+and callers/callees for every function, method, handler, and main entry. It also
+covers source, test, and benchmark logical contexts. All four example projects
+build successfully through Margo.
+
+The audit found three related compiler provenance/navigation defects. Nominal
+types, traits, fields, and some members did not retain their physical source in
+semantic target facts; explicit module entities pointed at the first exported
+declaration instead of the `module` declaration; and module references omitted
+imports/qualified uses while qualifier-at-point resolution missed constructor
+and type uses. Those facts now retain exact source provenance, module entities
+point at the declaration, module references include `module_import` and
+`module_qualifier`, and qualifiers resolve through checked semantic uses as well
+as call edges.
+
+The stock Emacs mode now recognizes `module`, `import`, `export`, and exported
+declarations in font lock, defun movement, indentation, and Imenu. Imenu exposes
+a Modules group and indexes exported functions, types, domains, and their
+members in the real ledger example.
+
+Validation passed: compiler rebuild; focused Phase 22.5 semantic IDE checks;
+all 52 ERT tests; the exhaustive real-example browsing matrix; `make check`;
+`git diff --check`; `sh -n tests/run.sh`; and Margo builds for `ledger`,
+`phase10_modules`, `phase7_demo`, and `phase7_failing_test`. The expected
+user-bus warning emitted by the sandboxed Margo launcher did not affect any
+build, and the intentionally failing project's tests were not run as a success
+criterion.
+
+Session report: bootstrap, resolve, references, symbols, calls, editor overlays,
+and real-compiler ERT integration were used. Exact at-point probes on the real
+examples exposed all three issues with three substantive edit/check/repair
+cycles. Impact/affected testing was not a useful selector for this compiler and
+editor cross-cut, so focused coverage and the full suite were run. A single
+compiler audit command that enumerated editor operations over a project would
+have saved the most bespoke matrix work. No generated Rust was used to infer
+semantics, and no work remains for this request.
+
 ## Phase 22.5 call-tree/domain-navigation corrective pass — COMPLETE (2026-09-30)
 
 Current `main` was corrected from `9e8923a` (with required starting commit

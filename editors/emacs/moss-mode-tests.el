@@ -142,6 +142,25 @@
       (should (assoc "Ping" (cdr (assoc "Handlers" index))))
       (should (assoc "Stop" (cdr (assoc "Handlers" index)))))))
 
+(ert-deftest moss-mode-imenu-indexes-exported-project-declarations ()
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name
+                  "examples/projects/ledger/src/accounts.moss" root)))
+    (with-current-buffer (find-file-noselect source)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (let ((index (moss-imenu-create-index)))
+              (should (assoc "accounts" (cdr (assoc "Modules" index))))
+              (should (assoc "credit" (cdr (assoc "Functions" index))))
+              (should (assoc "Ledger" (cdr (assoc "Domains" index))))
+              (should (assoc "Journal" (cdr (assoc "Domains" index))))
+              (dolist (handler
+                       '("Credit" "Balance" "Record" "Count" "Last"))
+                (should
+                 (assoc handler (cdr (assoc "Handlers" index)))))))
+        (kill-buffer (current-buffer))))))
+
 (ert-deftest moss-mode-command-construction-uses-source-diagnostics ()
   (let ((moss-compiler-command "/opt/moss compiler")
         (source "/tmp/a program.moss"))
@@ -689,6 +708,85 @@
               (should (= 3 (length references)))))
         (kill-buffer (current-buffer))))))
 
+(ert-deftest moss-mode-real-examples-module-and-type-navigation ()
+  (let* ((root (moss--repo-root default-directory))
+         (compiler (expand-file-name "moss" root))
+         (phase10-main (expand-file-name
+                        "examples/projects/phase10_modules/src/main.moss"
+                        root))
+         (phase10-first (expand-file-name
+                         "examples/projects/phase10_modules/src/first.moss"
+                         root))
+         (ledger-main (expand-file-name
+                       "examples/projects/ledger/src/main.moss" root))
+         (ledger-model (expand-file-name
+                        "examples/projects/ledger/src/model.moss" root))
+         (ledger-service (expand-file-name
+                          "examples/projects/ledger/src/service.moss" root))
+         (moss-compiler-command compiler))
+    (dolist (case `((,phase10-main 2 "First" ,phase10-first 1)
+                    (,phase10-main 5 "add_bonus" ,phase10-first 6)
+                    (,ledger-main 2 "model" ,ledger-model 1)
+                    (,ledger-service 7 "Order" ,ledger-model 7)))
+      (with-current-buffer (find-file-noselect (nth 0 case))
+        (unwind-protect
+            (progn
+              (moss-mode)
+              (moss-test--goto-line-token (nth 1 case) (nth 2 case))
+              (let* ((xref (car (xref-backend-definitions
+                                 'moss (nth 2 case))))
+                     (location (xref-item-location xref)))
+                (should (equal (nth 3 case)
+                               (xref-file-location-file location)))
+                (should (= (nth 4 case)
+                           (xref-file-location-line location)))))
+          (kill-buffer (current-buffer)))))))
+
+(ert-deftest moss-mode-real-examples-domain-calls-and-test-context ()
+  (let* ((root (moss--repo-root default-directory))
+         (compiler (expand-file-name "moss" root))
+         (ledger-main (expand-file-name
+                       "examples/projects/ledger/src/main.moss" root))
+         (ledger-service (expand-file-name
+                          "examples/projects/ledger/src/service.moss" root))
+         (phase7-test (expand-file-name
+                       "examples/projects/phase7_demo/tests/arithmetic.moss"
+                       root))
+         (moss-compiler-command compiler))
+    (with-current-buffer (find-file-noselect ledger-main)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (moss-test--goto-line-token 12 "Submit")
+            (let* ((definition (car (xref-backend-definitions 'moss "Submit")))
+                   (location (xref-item-location definition))
+                   (references (xref-backend-references 'moss "Submit")))
+              (should (equal ledger-service
+                             (xref-file-location-file location)))
+              (should (= 7 (xref-file-location-line location)))
+              (should (equal '(12 13)
+                             (mapcar
+                              (lambda (xref)
+                                (xref-file-location-line
+                                 (xref-item-location xref)))
+                              references))))
+            (let ((callees (moss-test--capture-xrefs #'moss-callees)))
+              (should (= 3 (length callees)))))
+        (kill-buffer (current-buffer))))
+    (with-current-buffer (find-file-noselect phase7-test)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (let ((symbols
+                   (mapcar
+                    (lambda (item) (moss--json-get 'qualified_name item))
+                    (moss--json-get
+                     'symbols (moss--semantic-query "symbols" nil)))))
+              (should (member "add" symbols))
+              (should (member "doubled" symbols))
+              (should (member "external arithmetic" symbols))))
+        (kill-buffer (current-buffer))))))
+
 (ert-deftest moss-mode-real-compiler-method-and-message-references ()
   (let* ((root (moss--repo-root default-directory))
          (source (expand-file-name
@@ -946,6 +1044,138 @@
              :type 'moss-semantic-error))
         (set-buffer-modified-p nil)
         (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-real-examples-exhaustive-browsing-matrix ()
+  (let* ((root (moss--repo-root default-directory))
+         (projects (expand-file-name "examples/projects" root))
+         (sources (directory-files-recursively projects "\\.moss\\'"))
+         (manifests
+          (directory-files-recursively
+           projects "\\(?:Moss\\|moss\\)\\.toml\\'"))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (callable-kinds '("function" "method" "handler" "main"))
+         reference-sites
+         (checked-symbols 0)
+         (checked-callables 0))
+    (should sources)
+    (should manifests)
+    (dolist (manifest manifests)
+      (should
+       (cl-some
+        (lambda (source)
+          (string-prefix-p (file-name-directory manifest) source))
+        sources)))
+    (dolist (source sources)
+      (should
+       (or (locate-dominating-file source "moss.toml")
+           (locate-dominating-file source "Moss.toml")))
+      (with-current-buffer (find-file-noselect source)
+        (unwind-protect
+            (progn
+              (moss-mode)
+              (let* ((symbols
+                      (moss--json-get
+                       'symbols (moss--semantic-query "symbols" nil)))
+                     (local-symbols
+                      (cl-remove-if-not
+                       (lambda (item)
+                         (equal (file-truename source)
+                                (file-truename
+                                 (moss--json-get
+                                  'file (moss--json-get 'source item)))))
+                       symbols)))
+                (should local-symbols)
+                (dolist (symbol local-symbols)
+                  (setq checked-symbols (1+ checked-symbols))
+                  (let* ((id (moss--json-get 'entity_id symbol))
+                         (kind (moss--json-get 'kind symbol))
+                         (label (moss--json-get 'display_name symbol))
+                         (location (moss--json-get 'source symbol))
+                         (line (moss--json-get 'line location))
+                         (references
+                          (moss--semantic-query "references" id))
+                         (definition
+                          (moss--json-get 'source
+                                          (moss--json-get
+                                           'definition references)))
+                         (line-has-label nil))
+                    (goto-char (point-min))
+                    (forward-line (1- line))
+                    (setq line-has-label
+                          (search-forward label (line-end-position) t))
+                    (when line-has-label
+                      (backward-char (length label))
+                      (should (equal id
+                                     (moss--json-get
+                                      'id (moss--entity-at-point))))
+                      (let* ((xref
+                              (car (xref-backend-definitions 'moss label)))
+                             (xref-location (xref-item-location xref)))
+                        (should
+                         (equal (file-truename
+                                 (moss--json-get 'file definition))
+                                (file-truename
+                                 (xref-file-location-file xref-location))))
+                        (should (= (moss--json-get 'line definition)
+                                   (xref-file-location-line xref-location))))
+                      (let ((expected
+                             (cl-count-if
+                              (lambda (item)
+                                (not (equal
+                                      "declaration"
+                                      (moss--json-get 'kind item))))
+                              (moss--json-get 'references references))))
+                        (should (= expected
+                                   (length
+                                    (xref-backend-references 'moss label)))))
+                      (when (member kind callable-kinds)
+                        (setq checked-callables (1+ checked-callables))
+                        (let ((calls (moss--calls-at-point)))
+                          (should
+                           (= (length (moss--json-get 'callers calls))
+                              (length
+                               (moss-test--capture-xrefs #'moss-callers))))
+                          (should
+                           (= (length (moss--json-get 'direct_calls calls))
+                              (length
+                               (moss-test--capture-xrefs #'moss-callees)))))))
+                    (dolist (reference (moss--json-get
+                                        'references references))
+                      (unless (equal "declaration"
+                                     (moss--json-get 'kind reference))
+                        (push
+                         (list
+                          (moss--json-get
+                           'file (moss--json-get 'source reference))
+                          (moss--json-get
+                           'line (moss--json-get 'source reference))
+                          label
+                          (moss--json-get 'file definition)
+                          (moss--json-get 'line definition))
+                         reference-sites)))))))
+          (kill-buffer (current-buffer)))))
+    (should (> checked-symbols 0))
+    (should (> checked-callables 0))
+    ;; Every compiler-reported use is also a working at-point definition jump,
+    ;; including imports, qualified module tokens, calls, constructors, and
+    ;; type uses across physical project files.
+    (dolist (site reference-sites)
+      (ert-info ((format "reference site %S" site))
+        (with-current-buffer (find-file-noselect (nth 0 site))
+          (unwind-protect
+              (progn
+                (moss-mode)
+                (moss-test--goto-line-token (nth 1 site) (nth 2 site))
+                (let* ((xref
+                        (car (xref-backend-definitions 'moss (nth 2 site))))
+                       (location (xref-item-location xref)))
+                  (should
+                   (equal (file-truename (nth 3 site))
+                          (file-truename
+                           (xref-file-location-file location))))
+                  (should (= (nth 4 site)
+                             (xref-file-location-line location)))))
+            (kill-buffer (current-buffer))))))))
 
 (ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
   (with-temp-buffer
