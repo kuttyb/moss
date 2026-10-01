@@ -1177,6 +1177,57 @@
                              (xref-file-location-line location)))))
             (kill-buffer (current-buffer))))))))
 
+(ert-deftest moss-mode-dependent-package-cross-module-navigation ()
+  "Verify Emacs xref, calls, callers, callees, and symbol search cross dependent package boundaries."
+  (let* ((root (moss--repo-root default-directory))
+         (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-buffer (find-file-noselect planner-main))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (unwind-protect
+        (with-current-buffer planner-buffer
+          (moss-mode)
+          ;; Verify project-wide symbols include both local planner and dependent graphlib symbols
+          (let* ((symbols (moss--json-get 'symbols (moss--semantic-query "symbols" nil)))
+                 (graphlib-symbols
+                  (cl-remove-if-not
+                   (lambda (sym)
+                     (string-match-p "graphlib" (or (moss--json-get 'file (moss--json-get 'source sym)) "")))
+                   symbols))
+                 (planner-symbols
+                  (cl-remove-if-not
+                   (lambda (sym)
+                     (string-match-p "planner" (or (moss--json-get 'file (moss--json-get 'source sym)) "")))
+                   symbols)))
+            (should (> (length graphlib-symbols) 0))
+            (should (> (length planner-symbols) 0))
+            ;; Test xref-backend-apropos finds symbols across both packages
+            (let ((apropos-graph (xref-backend-apropos 'moss "make_graph")))
+              (should apropos-graph)
+              (let ((loc (xref-item-location (car apropos-graph))))
+                (should (string-match-p "graph\\.moss" (xref-file-location-file loc)))))
+            ;; Move point to 'model.summary_total_cost' in main.moss and jump to definition in graphlib/src/model.moss
+            (goto-char (point-min))
+            (search-forward "summary_total_cost")
+            (backward-char (length "summary_total_cost"))
+            (let* ((xrefs (xref-backend-definitions 'moss "summary_total_cost"))
+                   (def-loc (xref-item-location (car xrefs))))
+              (should def-loc)
+              (should (string-match-p "graphlib/src/model\\.moss" (xref-file-location-file def-loc)))
+              (should (= 64 (xref-file-location-line def-loc))))
+            ;; Test callers and callees on main function
+            (goto-char (point-min))
+            (search-forward "fn main")
+            (backward-char (length "main"))
+            (let ((callees (moss-test--capture-xrefs #'moss-callees)))
+              (should (> (length callees) 0))
+              (should (cl-some (lambda (xref)
+                                 (string-match-p "planner" (xref-file-location-file (xref-item-location xref))))
+                               callees)))))
+      (when (get-buffer "*Moss Call Tree*")
+        (kill-buffer "*Moss Call Tree*"))
+      (when (buffer-live-p planner-buffer)
+        (kill-buffer planner-buffer)))))
+
 (ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
   (with-temp-buffer
     (insert "spawn Worker()\nawait worker.Run()\nmessage worker.Run()\ndomainroutes(worker: Worker)\n")

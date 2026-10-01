@@ -1,5 +1,18 @@
 # Moss current status
 
+## Cross-Package & Multi-Module Emacs Navigation & Symbol Traversal — COMPLETE (2026-09-30)
+
+Recursive audit across all 1,444 `.moss` source files and 387 `Moss.toml` manifests was conducted to verify that Emacs semantic features (`goto-definition`, `goto-declaration`, `find-references`, `moss-callers`, `moss-callees`, `moss-call-tree`, `imenu`, and `xref-backend-apropos`) work across module and package boundaries.
+
+Key capabilities and fixes verified:
+1. **Emacs Dependency Source Discovery**: `moss-mode.el` discovers path dependencies declared in `[dependencies]` under `Moss.toml` (`moss--dependency-source-roots`) and supplies `MOSS_FAST_DEBUG_SOURCE_ROOTS` during semantic query execution.
+2. **Compiler Query Closure**: `moss` CLI semantic query dispatch (`symbols`, `references`, `calls`, `resolve`, `complete`, `type`, `effects`) now resolves transitive source closures (`fast_debug_source_closure`) with exact source provenance across package boundaries, enabling jump-to-definition (`M-.`) directly to physical `.moss` files in dependent packages.
+3. **Diagnostic Source Provenance**: Parse and compile error handling in `fast_debug_source_closure` preserves exact source filenames and line numbers across submodules.
+4. **Validation Matrix & ERT Coverage**:
+   - Added `moss-mode-dependent-package-cross-module-navigation` ERT test to `editors/emacs/moss-mode-tests.el` verifying cross-package xref definitions, callers/callees, and apropos search using `projects/build_planner` (`planner` -> `graphlib`).
+   - All 53 ERT tests passed (53/53).
+   - Full repository `make check` passed (hygiene, benchmark suite, 30 agent tasks, fast debug convergence, and compiler tests).
+
 ## Emacs browsing across `examples/projects` — COMPLETE (2026-09-30)
 
 Emacs semantic browsing is now exercised against every one of the ten `.moss`

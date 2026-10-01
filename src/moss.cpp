@@ -23481,17 +23481,25 @@ static vector<std::filesystem::path> fast_debug_source_closure(
       throw ProjectError("PROJECT_SOURCE_NOT_FOUND",
                          "cannot read Moss source '" + normalized.string() + "'",
                          normalized.string());
-    Program parsed = Parser(lex_lines(input, normalized.string())).parse();
-    string module = parsed.explicit_module && !parsed.module_name.empty()
-        ? parsed.module_name : context.manifest.name;
-    auto& record = modules[module][normalized_provider];
-    record.root_project = record.root_project || root_project;
-    record.files.push_back(normalized);
-    for (const auto& import : parsed.imports)
-      record.imports.push_back(import.name);
-    has_explicit_modules = has_explicit_modules || parsed.explicit_module;
-    if (normalized == context.requested_source) entry_module = module;
-    if (entry_module.empty() && parsed.main) entry_module = module;
+    try {
+      Program parsed = Parser(lex_lines(input, normalized.string())).parse();
+      string module = parsed.explicit_module && !parsed.module_name.empty()
+          ? parsed.module_name : context.manifest.name;
+      auto& record = modules[module][normalized_provider];
+      record.root_project = record.root_project || root_project;
+      record.files.push_back(normalized);
+      for (const auto& import : parsed.imports)
+        record.imports.push_back(import.name);
+      has_explicit_modules = has_explicit_modules || parsed.explicit_module;
+      if (normalized == context.requested_source) entry_module = module;
+      if (entry_module.empty() && parsed.main) entry_module = module;
+    } catch (CompileError& error) {
+      if (error.source_file.empty()) error.source_file = normalized.string();
+      throw ProjectError(
+          error.code.empty() ? diagnostic_code_for_message(error.what())
+                             : error.code,
+          error.what(), error.source_file, error.line, error.teaching);
+    }
   };
   for (const auto& source : context.sources)
     add_source(source, context.manifest.root, true);
@@ -26927,8 +26935,9 @@ int main(int argc, char** argv) {
           else if (query_overlay)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
                 *query_overlay;
+          auto sources = moss::fast_debug_source_closure(context);
           auto unit = moss::analyze_project_sources(
-              context.manifest, context.sources, optimize_shared_memory,
+              context.manifest, sources, optimize_shared_memory,
               debug_build, context.mode, {}, nullptr,
               overrides.empty() ? nullptr : &overrides);
           active_program = std::move(unit.program);

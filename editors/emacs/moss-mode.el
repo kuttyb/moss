@@ -437,6 +437,28 @@ When RUN is non-nil, execute the resulting program too."
     (user-error "Current buffer is not visiting a .moss file"))
   (expand-file-name buffer-file-name))
 
+(defun moss--dependency-source-roots (source)
+  "Return colon-separated dependency roots for SOURCE based on its manifest."
+  (let* ((manifest-dir (or (locate-dominating-file source "moss.toml")
+                           (locate-dominating-file source "Moss.toml")))
+         roots)
+    (when manifest-dir
+      (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
+                                 (and (file-readable-p f) f))
+                               (let ((f (expand-file-name "moss.toml" manifest-dir)))
+                                 (and (file-readable-p f) f)))))
+        (when manifest-file
+          (with-temp-buffer
+            (insert-file-contents manifest-file)
+            (goto-char (point-min))
+            (while (re-search-forward "^[ \t]*[A-Za-z0-9_.-]+[ \t]*=[ \t]*{[ \t]*path[ \t]*=[ \t]*\"\\([^\"]+\\)\"" nil t)
+              (let* ((rel-path (match-string 1))
+                     (dep-root (expand-file-name rel-path manifest-dir)))
+                (when (file-directory-p dep-root)
+                  (push (file-truename dep-root) roots))))))))
+    (when roots
+      (mapconcat #'identity (delete-dups (nreverse roots)) ":"))))
+
 (defun moss--semantic-query (command &optional target extra overlay)
   "Invoke semantic COMMAND and return its result alist.
 TARGET is an optional positional selector and EXTRA is an argument list.
@@ -446,6 +468,12 @@ retained for compatibility with callers that explicitly request this.  Only
 the compiler's `complete' operation performs incomplete-source recovery;
 ordinary navigation overlays are strict.  This function never invokes a shell."
   (let* ((source (moss--semantic-source))
+         (dep-roots (moss--dependency-source-roots source))
+         (process-environment
+          (if dep-roots
+              (cons (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots)
+                    process-environment)
+            process-environment))
          (use-overlay
           (or overlay
               (member command
