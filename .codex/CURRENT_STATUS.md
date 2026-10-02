@@ -1,19 +1,19 @@
 # Moss current status
 
-## Emacs Cross-Package Native Builds (`C-c C-b`, `C-c C-r`, `Margo`) — COMPLETE (2026-10-01)
+## Emacs Package Build Hardening (Canonical Artifacts, Toolchains, Spaces) — COMPLETE (2026-10-01)
 
-Unified Emacs package compilation and execution with Margo native build orchestration while preserving compiler-driven semantic queries and direct standalone compilation paths.
+Hardening pass on Emacs package build integration to consume compiler/Margo-owned canonical artifact metadata without filename guessing, maintain exact build profile tracking across debug and release builds, propagate configured toolchain commands, and parse compilation diagnostics containing spaces.
 
 Key capabilities and fixes verified:
-1. **Package Root Detection (`moss--package-root`)**: Added `moss--package-root` locating the nearest `Moss.toml` or `moss.toml` directory for any source file (including nested `src/`, `tests/`, `benches/`), returning `nil` for standalone `.moss` files.
-2. **Margo Driver Integration (`moss--margo`, `moss--package-build-command`)**: Routed package compilation (`C-c C-b` / `moss-compile-buffer`) and execution (`C-c C-r` / `moss-run-buffer`) to `margo build` and `margo run` executed in the package root directory with explicit working-directory binding. Standalone `.moss` files retain direct `moss` -> generated Rust -> `rustc` compilation.
-3. **Profile Semantics**: Mapped `moss-compile-optimization` (`"-O"` -> `--release`, `"-O0"`/empty/nil -> debug) to canonical Margo profiles.
-4. **Clean Dependency Building**: Proved that building `projects/build_planner/planner` from a completely clean state (with no prebuilt `graphlib` or `planner` artifacts) automatically builds `graphlib` interfaces/rlibs and links the `planner` executable via Margo.
-5. **Clickable Diagnostics**: Updated compilation error regex in `moss-mode.el` to match both direct compiler diagnostics and Margo-prefixed diagnostic output.
-6. **Validation & ERT Coverage**:
-   - Replaced `moss-mode-dependent-package-check-and-compilation` with full end-to-end clean-state compilation, verification of generated artifacts, binary execution, and package check.
-   - Added `moss-mode-command-selection-and-package-root`, `moss-mode-standalone-compilation-and-run`, and `moss-mode-compilation-diagnostics-match-margo-and-compiler` ERT tests.
-   - All 58 ERT tests passed (58/58).
+1. **Canonical Package Artifact Retrieval (`moss--package-build-result`, `moss--get-package-artifacts`)**: Replaced raw package and source basename guessing with structured Margo build JSON metadata. Artifact lookups (`moss-show-generated-rust`, `moss--source-map-file`, `moss-goto-generated-rust`, `moss-show-debug-map`, `moss-debug`, and `moss-disassemble-at-point`) consume exact canonical paths (`executable`, `generated_rust`, `debug_map`, and `cache_metadata`), correctly handling hyphenated package names (`phase7-demo` -> `phase7_demo`) and root module names (`planner` -> `app.rs`).
+2. **Build Profile Tracking & Cache (`moss--last-build-artifacts`)**: Implemented last-successful-build artifact tracking keyed by package root, updated upon compilation success. Verified that building with `--release` supersedes older debug artifacts and ensures `C-c C-g` navigates to `build/release/<artifact>.rs` and `.mossmap`. Cleaned packages or missing artifacts immediately signal user-errors rather than falling back to standalone `build/emacs/` paths.
+3. **Toolchain Consistency (`MOSS`, `RUSTC`)**: Propagated user-configured `moss-compiler-command` and `moss-rustc-command` to Margo via environment variables in compilation starts and structured build queries.
+4. **Environment Isolation**: Ensured Margo package builds do not receive synthesized editor `MOSS_MODULE_PATH` or `MOSS_FAST_DEBUG_SOURCE_ROOTS`, leaving dependency resolution and build order strictly to Margo. Also filtered conflicting package build directories in Margo's `package_environment`.
+5. **Clickable Diagnostics with Spaces**: Updated `compilation-error-regexp-alist-alist` to match diagnostic paths containing spaces and optional column numbers for direct and Margo-forwarded diagnostics.
+6. **Package Debug Build (`moss-build-debug-buffer`)**: Routed `moss-build-debug-buffer` for package sources through Margo in debug profile from the package root.
+7. **Validation & ERT Coverage**:
+   - Added `moss-mode-package-artifacts-and-profile-selection`, `moss-mode-toolchain-and-env-propagation`, and `moss-mode-package-debug-build-command` ERT tests; expanded `moss-mode-compilation-diagnostics-match-margo-and-compiler` for paths with spaces and column numbers.
+   - All 61 ERT tests passed (61/61).
    - Full repository `make`, `make check`, `make examples`, `git diff --check`, `sh -n tests/run.sh` passed.
 
 Recursive audit and verification across `.moss` source files, multi-module projects, and dependency packages for Emacs compilation (`C-c C-c` / `moss-check-buffer`, `C-c C-b` / `moss-compile-buffer`, `C-c C-r` / `moss-run-buffer`) and generated Rust navigation (`C-c C-g` / `moss-goto-generated-rust`).

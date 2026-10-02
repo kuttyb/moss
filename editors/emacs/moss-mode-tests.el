@@ -1270,6 +1270,22 @@
               ;; Execute resulting binary and assert exit status 0
               (should (= 0 (call-process planner-bin nil nil nil)))))
 
+          ;; 3b. Execute release compilation when debug artifacts already exist
+          (let* ((moss-compile-optimization "-O")
+                 (comp-buffer (moss-compile-buffer))
+                 (proc (get-buffer-process comp-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc)))
+            (let ((planner-bin (expand-file-name "build/release/planner" planner-root))
+                  (graph-mossi (expand-file-name "build/release/graph.mossi" graphlib-root))
+                  (graph-rlib (expand-file-name "build/release/libmoss_graph.rlib" graphlib-root)))
+              (should (file-executable-p planner-bin))
+              (should (file-exists-p graph-mossi))
+              (should (file-exists-p graph-rlib))
+              (should (= 0 (call-process planner-bin nil nil nil)))))
+
           ;; 4. Verify moss-check-buffer succeeds with dependency package present
           (let* ((check-buffer (moss-check-buffer))
                  (proc (get-buffer-process check-buffer)))
@@ -1391,14 +1407,16 @@
         (kill-buffer buffer)))))
 
 (ert-deftest moss-mode-compilation-diagnostics-match-margo-and-compiler ()
-  "Verify compilation error regexp matches both direct compiler and Margo diagnostics."
+  "Verify compilation error regexp matches both direct compiler and Margo diagnostics, including paths with spaces."
   (let ((lines
          (list
           "/path/to/source.moss:42: error: direct compiler error"
-          "/path/to/source.moss:42: warning: direct compiler warning"
-          "/path/to/source.moss:42: error[UNKNOWN_SYMBOL]: typed compiler error"
-          "margo: error: /path/to/source.moss:42: error: margo forwarded error"
-          "margo: error: command failed (/bin/moss build --json): /path/to/source.moss:42: error: command error")))
+          "/path with spaces/source.moss:42: error: direct compiler error with spaces"
+          "/path with spaces/source.moss:42:15: error: direct compiler error with column"
+          "/path with spaces/source.moss:42: warning: direct compiler warning with spaces"
+          "/path with spaces/source.moss:42: error[UNKNOWN_SYMBOL]: typed compiler error with spaces"
+          "margo: error: /path with spaces/source.moss:42: error: margo forwarded error"
+          "margo: error: command failed (/bin/moss build --json): /path with spaces/source.moss:42: error: command error")))
     (dolist (line lines)
       (with-temp-buffer
         (compilation-mode)
@@ -1407,8 +1425,154 @@
         (compilation--flush-parse (point-min) (point-max))
         (compilation--ensure-parse (point-max))
         (goto-char (point-min))
-        (search-forward "/path/to/source.moss")
+        (search-forward "source.moss")
         (should (get-text-property (1- (point)) 'compilation-message))))))
+
+(ert-deftest moss-mode-package-artifacts-and-profile-selection ()
+  "Verify package generated Rust and mossmap navigation uses canonical artifacts and tracks build profile."
+  (let* ((root (moss--repo-root default-directory))
+         (demo-main (expand-file-name "examples/projects/phase7_demo/src/main.moss" root))
+         (demo-root (expand-file-name "examples/projects/phase7_demo" root))
+         (demo-build (expand-file-name "build" demo-root))
+         (demo-buffer (find-file-noselect demo-main))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root)))
+    (unwind-protect
+        (with-current-buffer demo-buffer
+          (moss-mode)
+          ;; 1. Clean prior build outputs and cache
+          (delete-directory demo-build t)
+          (clrhash moss--last-build-artifacts)
+          (should-not (file-exists-p demo-build))
+
+          ;; 2. Before build, artifact lookup must error cleanly, never guess or fall back to standalone
+          (should-error (moss--source-map-file demo-main) :type 'user-error)
+          (should-error (moss-show-generated-rust) :type 'user-error)
+
+          ;; 3. Compile in debug profile (-O0)
+          (let* ((moss-compile-optimization "-O0")
+                 (comp-buffer (moss-compile-buffer))
+                 (proc (get-buffer-process comp-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc)))
+            ;; Assert canonical sanitized artifact naming (phase7_demo, not phase7-demo or main)
+            (let ((debug-exec (expand-file-name "build/debug/phase7_demo" demo-root))
+                  (debug-rs (expand-file-name "build/debug/phase7_demo.rs" demo-root))
+                  (debug-map (expand-file-name "build/debug/phase7_demo.mossmap" demo-root)))
+              (should (file-executable-p debug-exec))
+              (should (file-exists-p debug-rs))
+              (should (file-exists-p debug-map))
+              ;; Verify structured map file lookup
+              (should (equal (file-truename debug-map)
+                             (file-truename (moss--source-map-file demo-main))))
+              ;; Verify moss-goto-generated-rust lands in debug/phase7_demo.rs
+              (goto-char (point-min))
+              (search-forward "fn add")
+              (cl-letf (((symbol-function 'find-file-other-window)
+                         (lambda (file)
+                           (should (equal (file-truename debug-rs) (file-truename file)))
+                           (find-file-noselect file))))
+                (moss-goto-generated-rust))
+              ;; Verify moss-show-generated-rust
+              (with-current-buffer demo-buffer
+                (let ((shown-buf (cl-letf (((symbol-function 'find-file-other-window)
+                                            (lambda (file)
+                                              (should (equal (file-truename debug-rs) (file-truename file)))
+                                              (find-file-noselect file))))
+                                   (moss-show-generated-rust))))
+                  (when (buffer-live-p shown-buf) (kill-buffer shown-buf))))))
+
+          ;; 4. Compile in release profile (-O) when debug artifacts already exist
+          (with-current-buffer demo-buffer
+            (let* ((moss-compile-optimization "-O")
+                   (comp-buffer (moss-compile-buffer))
+                   (proc (get-buffer-process comp-buffer)))
+              (when proc
+                (while (process-live-p proc)
+                  (accept-process-output proc 0.1)))
+              (should (zerop (process-exit-status proc)))
+              (let ((release-exec (expand-file-name "build/release/phase7_demo" demo-root))
+                    (release-rs (expand-file-name "build/release/phase7_demo.rs" demo-root))
+                    (release-map (expand-file-name "build/release/phase7_demo.mossmap" demo-root)))
+                (should (file-executable-p release-exec))
+                (should (file-exists-p release-rs))
+                (should (file-exists-p release-map))
+                ;; Verify release profile wins over existing debug artifacts
+                (should (equal (file-truename release-map)
+                               (file-truename (moss--source-map-file demo-main))))
+                (goto-char (point-min))
+                (search-forward "fn add")
+                (cl-letf (((symbol-function 'find-file-other-window)
+                           (lambda (file)
+                             (should (equal (file-truename release-rs) (file-truename file)))
+                             (find-file-noselect file))))
+                  (moss-goto-generated-rust))))))
+      (when (get-buffer "*moss-compile*")
+        (kill-buffer "*moss-compile*"))
+      (when (buffer-live-p demo-buffer)
+        (kill-buffer demo-buffer)))))
+
+(ert-deftest moss-mode-toolchain-and-env-propagation ()
+  "Verify configured MOSS and RUSTC are passed to Margo without synthesized editor module paths."
+  (let* ((root (moss--repo-root default-directory))
+         (demo-main (expand-file-name "examples/projects/phase7_demo/src/main.moss" root))
+         (moss-compiler-command "/custom/bin/moss")
+         (moss-rustc-command "/custom/bin/rustc")
+         captured-comp-env
+         captured-proc-env)
+    (with-current-buffer (find-file-noselect demo-main)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (cl-letf (((symbol-function 'compilation-start)
+                       (lambda (_cmd _mode _name-fn)
+                         (setq captured-comp-env compilation-environment)
+                         (setq captured-proc-env process-environment)
+                         (get-buffer-create "*mock-compilation*"))))
+              (moss-compile-buffer)
+              ;; Assert MOSS and RUSTC are propagated
+              (should (member "MOSS=/custom/bin/moss" captured-comp-env))
+              (should (member "RUSTC=/custom/bin/rustc" captured-comp-env))
+              (should (member "MOSS=/custom/bin/moss" captured-proc-env))
+              (should (member "RUSTC=/custom/bin/rustc" captured-proc-env))
+              ;; Assert MOSS_MODULE_PATH and MOSS_FAST_DEBUG_SOURCE_ROOTS are NOT passed to Margo
+              (should-not (cl-some (lambda (e) (string-prefix-p "MOSS_MODULE_PATH=" e))
+                                   captured-comp-env))
+              (should-not (cl-some (lambda (e) (string-prefix-p "MOSS_FAST_DEBUG_SOURCE_ROOTS=" e))
+                                   captured-comp-env))))
+        (when (get-buffer "*mock-compilation*")
+          (kill-buffer "*mock-compilation*"))
+        (kill-buffer (current-buffer))))))
+
+(ert-deftest moss-mode-package-debug-build-command ()
+  "Verify moss-build-debug-buffer routes package sources through Margo in debug profile."
+  (let* ((root (moss--repo-root default-directory))
+         (demo-main (expand-file-name "examples/projects/phase7_demo/src/main.moss" root))
+         (margo (expand-file-name "margo" root))
+         (moss-margo-command margo)
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-compile-optimization "-O") ;; even if optimization is -O, debug build forces debug profile
+         captured-cmd
+         captured-dir)
+    (with-current-buffer (find-file-noselect demo-main)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (cl-letf (((symbol-function 'compilation-start)
+                       (lambda (cmd _mode _name-fn)
+                         (setq captured-cmd cmd)
+                         (setq captured-dir default-directory)
+                         (get-buffer-create "*mock-debug-build*"))))
+              (moss-build-debug-buffer)
+              (should (string-match-p "margo.*build\\'" captured-cmd))
+              (should-not (string-match-p "--release" captured-cmd))
+              (should (equal (file-name-as-directory (file-truename (expand-file-name "examples/projects/phase7_demo" root)))
+                             (file-name-as-directory (file-truename captured-dir))))))
+        (when (get-buffer "*mock-debug-build*")
+          (kill-buffer "*mock-debug-build*"))
+        (kill-buffer (current-buffer))))))
 
 (ert-deftest moss-mode-goto-generated-rust-navigation ()
   "Verify moss-goto-generated-rust finds the mapped line in generated Rust."

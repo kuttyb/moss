@@ -424,6 +424,84 @@ When RUN is non-nil, execute the resulting program too."
            (alist-get 'executable artifacts))))
     (concat compiler-command " && " rust-command)))
 
+(defvar moss--last-build-artifacts (make-hash-table :test #'equal)
+  "Map package root directory to the last successful build artifacts alist.
+Keys are canonical package root directories ending in a slash.
+Values are alists containing `package-root', `profile', `executable',
+`generated-rust', `debug-map', and `cache-metadata'.")
+
+(defun moss--package-build-result (package-root &optional profile)
+  "Return structured build artifacts for PACKAGE-ROOT in PROFILE (`debug' or `release').
+Invokes Margo with --json from PACKAGE-ROOT and parses the root package artifact result.
+Returns an alist with `package-root', `profile', `executable', `generated-rust',
+`debug-map', and `cache-metadata'."
+  (let* ((repo-root (moss--repo-root package-root))
+         (margo (moss--margo repo-root))
+         (compiler (moss--compiler repo-root))
+         (rustc (or moss-rustc-command "rustc"))
+         (prof (or profile (if (equal moss-compile-optimization "-O") 'release 'debug)))
+         (flags (append (if (eq prof 'release) '("--release") nil) '("--json")))
+         (process-environment
+          (append (list (format "MOSS=%s" compiler)
+                        (format "RUSTC=%s" rustc))
+                  process-environment))
+         (default-directory (file-name-as-directory (expand-file-name package-root))))
+    (with-temp-buffer
+      (let ((status (apply #'process-file margo nil t nil "build" flags)))
+        (goto-char (point-min))
+        (let ((document
+               (condition-case nil
+                   (json-parse-buffer :object-type 'alist :array-type 'list
+                                      :null-object nil :false-object nil)
+                 (error nil))))
+          (when (and (zerop status) document (moss--json-get 'ok document))
+            (let* ((art-section (moss--json-get 'artifacts document))
+                   (art-map (moss--json-get 'artifacts art-section))
+                   (exec (moss--json-get 'executable art-map))
+                   (rust (moss--json-get 'generated_rust art-map))
+                   (map-file (moss--json-get 'debug_map art-map))
+                   (meta (moss--json-get 'cache_metadata art-map)))
+              `((package-root . ,(file-name-as-directory (expand-file-name package-root)))
+                (profile . ,prof)
+                (executable . ,exec)
+                (generated-rust . ,rust)
+                (debug-map . ,map-file)
+                (cache-metadata . ,meta)))))))))
+
+(defun moss--record-package-build-success (package-root profile)
+  "Record canonical artifacts for PACKAGE-ROOT in PROFILE upon successful build."
+  (when-let ((artifacts (moss--package-build-result package-root profile)))
+    (puthash (file-name-as-directory (expand-file-name package-root))
+             artifacts
+             moss--last-build-artifacts)
+    artifacts))
+
+(defun moss--get-package-artifacts (package-root &optional profile)
+  "Return valid build artifacts for PACKAGE-ROOT in PROFILE.
+PROFILE defaults to the profile mapped from `moss-compile-optimization'.
+Uses cached artifacts from the last successful build if they match PROFILE and
+their files still exist on disk.  Otherwise, queries Margo if build outputs exist."
+  (let* ((canonical-root (file-name-as-directory (expand-file-name package-root)))
+         (expected-profile (or profile (if (equal moss-compile-optimization "-O") 'release 'debug)))
+         (prof-dir (if (eq expected-profile 'release) "build/release" "build/debug"))
+         (cached (gethash canonical-root moss--last-build-artifacts)))
+    (if (and cached
+             (eq (alist-get 'profile cached) expected-profile)
+             (let ((rs (alist-get 'generated-rust cached))
+                   (map (alist-get 'debug-map cached)))
+               (and rs (file-readable-p rs)
+                    map (file-readable-p map))))
+        cached
+      ;; Only query Margo if the build directory for this profile already exists
+      (when (file-directory-p (expand-file-name prof-dir package-root))
+        (when-let ((fresh (moss--package-build-result package-root expected-profile)))
+          (let ((rs (alist-get 'generated-rust fresh))
+                (map (alist-get 'debug-map fresh)))
+            (when (and rs (file-readable-p rs)
+                       map (file-readable-p map))
+              (puthash canonical-root fresh moss--last-build-artifacts)
+              fresh)))))))
+
 (cl-defun moss--compilation-start (command name &key source directory)
   "Start COMMAND in compilation mode with a buffer named from NAME.
 SOURCE is the physical Moss source file.  DIRECTORY is the working directory
@@ -433,15 +511,37 @@ for compilation; when omitted, uses PACKAGE-ROOT, or REPO-ROOT for standalone."
          (repo-root (moss--repo-root src))
          (working-dir (or directory pkg-root repo-root default-directory))
          (default-directory (file-name-as-directory (expand-file-name working-dir)))
-         (dep-roots (and src (moss--dependency-source-roots src)))
-         (mod-paths (and src (moss--dependency-module-paths src)))
-         (env-vars (delq nil (list
-                              (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
-                              (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths)))))
+         (is-margo (string-match-p "\\(?:\\`\\|[[:space:]/]\\)margo\\(?:\\'\\|[[:space:]]\\)" command))
+         (compiler (moss--compiler repo-root))
+         (rustc (or moss-rustc-command "rustc"))
+         (dep-roots (and src (not is-margo) (moss--dependency-source-roots src)))
+         (mod-paths (and src (not is-margo) (moss--dependency-module-paths src)))
+         (margo-env (and is-margo
+                         (list (format "MOSS=%s" compiler)
+                               (format "RUSTC=%s" rustc))))
+         (editor-env (and (not is-margo)
+                          (list
+                           (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
+                           (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths)))))
+         (env-vars (delq nil (append margo-env editor-env)))
          (compilation-environment (append env-vars compilation-environment))
-         (process-environment (append env-vars process-environment)))
-    (compilation-start command 'compilation-mode
-                       (lambda (_) (format "*moss-%s*" name)))))
+         (process-environment (append env-vars process-environment))
+         (comp-buf (compilation-start command 'compilation-mode
+                                      (lambda (_) (format "*moss-%s*" name)))))
+    (when (and pkg-root (member name '("compile" "run" "debug-build")))
+      (let ((target-root pkg-root)
+            (prof (if (and (not (equal name "debug-build"))
+                           (equal moss-compile-optimization "-O"))
+                      'release
+                    'debug)))
+        (with-current-buffer comp-buf
+          (add-hook
+           'compilation-finish-functions
+           (lambda (_buf msg)
+             (when (string-prefix-p "finished" msg)
+               (moss--record-package-build-success target-root prof)))
+           nil t))))
+    comp-buf))
 
 ;;;###autoload
 (defun moss-check-buffer ()
@@ -486,18 +586,26 @@ standalone source, compile and execute directly."
 
 ;;;###autoload
 (defun moss-build-debug-buffer ()
-  "Build an unoptimized Moss executable with debug info and stable symbols."
+  "Build an unoptimized Moss executable with debug info and stable symbols.
+For a package source, invoke Margo build in debug profile.  For standalone
+sources, compile with debug options directly."
   (interactive)
-  (let ((source (moss--source-file)))
-    (moss--compilation-start
-     (moss--debug-build-command source) "debug-build"
-     :source source)))
+  (let* ((source (moss--source-file))
+         (package-root (moss--package-root source)))
+    (if package-root
+        (let ((moss-compile-optimization "-O0"))
+          (moss--compilation-start
+           (moss--package-build-command package-root) "debug-build"
+           :source source :directory package-root))
+      (moss--compilation-start
+       (moss--debug-build-command source) "debug-build"
+       :source source))))
 
 (defun moss--display-artifact (filename mode)
   "Visit FILENAME in another window, make it read-only, and use MODE."
-  (unless (file-readable-p filename)
+  (unless (and filename (file-readable-p filename))
     (user-error "Artifact does not exist; compile the Moss buffer first: %s"
-                filename))
+                (or filename "<unknown>")))
   (let ((buffer (find-file-other-window filename)))
     (with-current-buffer buffer
       (funcall mode)
@@ -512,13 +620,9 @@ standalone source, compile and execute directly."
          (package-root (moss--package-root source))
          (rust
           (if package-root
-              (let* ((base (file-name-base source))
-                     (debug-rs (expand-file-name (format "build/debug/%s.rs" base) package-root))
-                     (release-rs (expand-file-name (format "build/release/%s.rs" base) package-root)))
-                (cond
-                 ((file-readable-p debug-rs) debug-rs)
-                 ((file-readable-p release-rs) release-rs)
-                 (t (alist-get 'rust (moss--artifact-alist source)))))
+              (if-let ((artifacts (moss--get-package-artifacts package-root)))
+                  (alist-get 'generated-rust artifacts)
+                (user-error "Artifact does not exist; compile the Moss package first"))
             (alist-get 'rust (moss--artifact-alist source)))))
     (moss--display-artifact rust
                             (if (fboundp 'rust-ts-mode)
@@ -574,6 +678,7 @@ standalone source, compile and execute directly."
 (defun moss--dependency-module-paths (source)
   "Return colon-separated module paths for dependencies of SOURCE."
   (let* ((manifest-dir (moss--package-root source))
+         (release (equal moss-compile-optimization "-O"))
          paths)
     (when manifest-dir
       (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
@@ -591,11 +696,17 @@ standalone source, compile and execute directly."
                   (let ((debug-dir (expand-file-name "build/debug" dep-root))
                         (release-dir (expand-file-name "build/release" dep-root))
                         (deps-dir (expand-file-name "deps" dep-root)))
-                    (cond
-                     ((file-directory-p debug-dir)
-                      (push (file-truename debug-dir) paths))
-                     ((file-directory-p release-dir)
-                      (push (file-truename release-dir) paths)))
+                    (if release
+                        (cond
+                         ((file-directory-p release-dir)
+                          (push (file-truename release-dir) paths))
+                         ((file-directory-p debug-dir)
+                          (push (file-truename debug-dir) paths)))
+                      (cond
+                       ((file-directory-p debug-dir)
+                        (push (file-truename debug-dir) paths))
+                       ((file-directory-p release-dir)
+                        (push (file-truename release-dir) paths))))
                     (when (file-directory-p deps-dir)
                       (push (file-truename deps-dir) paths))))))))))
     (when paths
@@ -980,16 +1091,11 @@ a source breakpoint because it cannot promise an exact Moss stop."
                             (moss--json-get 'semantic_identity right)))))))
 
 (defun moss--source-map-file (source)
-  "Return the expected Moss map for SOURCE."
+  "Return the expected Moss map file for SOURCE."
   (if-let ((package-root (moss--package-root source)))
-      (let* ((pkg-name (or (moss--package-name package-root)
-                           (file-name-nondirectory (directory-file-name package-root))))
-             (debug-map (expand-file-name (format "build/debug/%s.mossmap" pkg-name) package-root))
-             (release-map (expand-file-name (format "build/release/%s.mossmap" pkg-name) package-root)))
-        (cond
-         ((file-readable-p debug-map) debug-map)
-         ((file-readable-p release-map) release-map)
-         (t (alist-get 'map (moss--artifact-alist source)))))
+      (if-let ((artifacts (moss--get-package-artifacts package-root)))
+          (alist-get 'debug-map artifacts)
+        (user-error "Artifact does not exist; compile the Moss package first"))
     (alist-get 'map (moss--artifact-alist source))))
 
 ;;;###autoload
@@ -1120,8 +1226,8 @@ generated source buffer at the selected stack-frame line."
                             (display-buffer
                              buffer
                              '((display-buffer-reuse-window
-                                display-buffer-same-window
-                                display-buffer-use-some-window)))))
+                                 display-buffer-same-window
+                                 display-buffer-use-some-window)))))
                   (set-window-point window (line-beginning-position)))))))
       (error nil))))
 
@@ -1180,7 +1286,7 @@ Breakpoints are translated through the .mossmap when `moss-debug' starts."
      (sort
       (cl-remove-if-not
        #'file-executable-p
-      (directory-files
+       (directory-files
         "/usr/bin" t
         (concat "\\`" (regexp-quote name) "-[0-9]+\\'") t))
       (lambda (left right)
@@ -1234,17 +1340,25 @@ to generated Rust locations by the shared compiler map before execution."
   (unless (require 'dape nil t)
     (user-error "Install the optional Emacs package `dape' first"))
   (let* ((source (moss--source-file))
-         (artifacts (moss--artifact-alist source))
-         (executable (alist-get 'executable artifacts))
-         (map-file (alist-get 'map artifacts)))
-    (unless (file-executable-p executable)
+         (package-root (moss--package-root source))
+         (artifacts
+          (if package-root
+              (moss--get-package-artifacts package-root 'debug)
+            (moss--artifact-alist source)))
+         (executable (if package-root
+                         (and artifacts (alist-get 'executable artifacts))
+                       (alist-get 'executable artifacts)))
+         (map-file (if package-root
+                       (and artifacts (alist-get 'debug-map artifacts))
+                     (alist-get 'map artifacts))))
+    (unless (and executable (file-executable-p executable))
       (user-error
        "Moss debug executable not found: %s; run M-x moss-build-debug-buffer"
-       executable))
-    (unless (file-readable-p map-file)
+       (or executable "<unknown>")))
+    (unless (and map-file (file-readable-p map-file))
       (user-error
        "Moss debug map not found: %s; run M-x moss-build-debug-buffer"
-       map-file))
+       (or map-file "<unknown>")))
     (let* ((document (moss--read-map map-file))
            (script (moss--lldb-script))
            (adapter (moss--lldb-dap))
@@ -1260,8 +1374,11 @@ to generated Rust locations by the shared compiler map before execution."
           (user-error
            "Moss breakpoint has no exact generated mapping: %s:%d"
            source line)))
-      (let ((config (moss--make-debug-config
-                     source artifacts script adapter breakpoint-lines)))
+      (let* ((debug-artifacts `((root . ,(or package-root (alist-get 'root artifacts)))
+                                (executable . ,executable)
+                                (map . ,map-file)))
+             (config (moss--make-debug-config
+                      source debug-artifacts script adapter breakpoint-lines)))
         (setq moss--active-debug-map map-file)
         (add-hook 'dape-display-source-hook #'moss--dape-display-moss-source)
         (condition-case error-data
@@ -1302,14 +1419,24 @@ to generated Rust locations by the shared compiler map before execution."
   (interactive)
   (let* ((source (moss--source-file))
          (line (line-number-at-pos))
-         (artifacts (moss--artifact-alist source))
-         (map-file (alist-get 'map artifacts))
-         (document (moss--read-map map-file))
-         (entry (moss--native-entry-at-point document source line))
-         (executable (alist-get 'executable artifacts)))
+         (package-root (moss--package-root source))
+         (artifacts
+          (if package-root
+              (moss--get-package-artifacts package-root 'debug)
+            (moss--artifact-alist source)))
+         (map-file
+          (if package-root
+              (and artifacts (alist-get 'debug-map artifacts))
+            (alist-get 'map artifacts)))
+         (executable
+          (if package-root
+              (and artifacts (alist-get 'executable artifacts))
+            (alist-get 'executable artifacts)))
+         (document (and map-file (file-readable-p map-file) (moss--read-map map-file)))
+         (entry (and document (moss--native-entry-at-point document source line))))
     (unless entry
       (user-error "No stable native symbol here; make a debug build first"))
-    (unless (file-executable-p executable)
+    (unless (and executable (file-executable-p executable))
       (user-error "Debug executable not found; run M-x moss-build-debug-buffer"))
     (let* ((program (moss--objdump))
            (symbol (moss--json-get 'native_symbol entry))
@@ -1352,7 +1479,7 @@ to generated Rust locations by the shared compiler map before execution."
 
 (add-to-list
  'compilation-error-regexp-alist-alist
- '(moss "^\\(?:.*?\\(?:error:\\|warning:\\|failed ([^)]+):\\)[[:space:]]+\\)?\\(?1:[^ \t\r\n:\"']+\\.moss\\):\\(?2:[0-9]+\\): \\(?:warning\\|error\\(?: *\\[[A-Za-z0-9_]+\\]\\)?\\):" 1 2))
+ '(moss "^\\(?:.*?\\(?:error:\\|warning:\\|failed ([^)]+):\\)[[:space:]]+\\)?\\(?1:[^:\r\n\"']+\\.moss\\):\\(?2:[0-9]+\\):\\(?:\\(?3:[0-9]+\\):\\)? \\(?:warning\\|error\\(?: *\\[[A-Za-z0-9_]+\\]\\)?\\):" 1 2 3))
 (add-to-list 'compilation-error-regexp-alist 'moss)
 
 ;;;###autoload

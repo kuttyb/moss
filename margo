@@ -225,8 +225,17 @@ def package_environment(root: Package, ordered: list[Package], release: bool) ->
              for package in ordered if package is not root]
     env = dict(os.environ)
     if paths:
-        env["MOSS_MODULE_PATH"] = os.pathsep.join(
-            paths + ([env["MOSS_MODULE_PATH"]] if env.get("MOSS_MODULE_PATH") else []))
+        existing = [p for p in env.get("MOSS_MODULE_PATH", "").split(os.pathsep) if p]
+        pkg_build_dirs = {str((pkg.root / "build").resolve()) for pkg in ordered}
+        filtered_existing = []
+        for p in existing:
+            try:
+                resolved_p = str(Path(p).resolve())
+                if not any(resolved_p == b_dir or resolved_p.startswith(b_dir + os.sep) for b_dir in pkg_build_dirs):
+                    filtered_existing.append(p)
+            except Exception:
+                filtered_existing.append(p)
+        env["MOSS_MODULE_PATH"] = os.pathsep.join(paths + filtered_existing)
     return env
 
 
