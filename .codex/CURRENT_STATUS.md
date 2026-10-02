@@ -1,6 +1,20 @@
 # Moss current status
 
-## Recursive Emacs Compilation & Generated Rust Navigation (`C-c C-c`, `C-c C-g`, `Margo`) — COMPLETE (2026-09-30)
+## Emacs Cross-Package Native Builds (`C-c C-b`, `C-c C-r`, `Margo`) — COMPLETE (2026-10-01)
+
+Unified Emacs package compilation and execution with Margo native build orchestration while preserving compiler-driven semantic queries and direct standalone compilation paths.
+
+Key capabilities and fixes verified:
+1. **Package Root Detection (`moss--package-root`)**: Added `moss--package-root` locating the nearest `Moss.toml` or `moss.toml` directory for any source file (including nested `src/`, `tests/`, `benches/`), returning `nil` for standalone `.moss` files.
+2. **Margo Driver Integration (`moss--margo`, `moss--package-build-command`)**: Routed package compilation (`C-c C-b` / `moss-compile-buffer`) and execution (`C-c C-r` / `moss-run-buffer`) to `margo build` and `margo run` executed in the package root directory with explicit working-directory binding. Standalone `.moss` files retain direct `moss` -> generated Rust -> `rustc` compilation.
+3. **Profile Semantics**: Mapped `moss-compile-optimization` (`"-O"` -> `--release`, `"-O0"`/empty/nil -> debug) to canonical Margo profiles.
+4. **Clean Dependency Building**: Proved that building `projects/build_planner/planner` from a completely clean state (with no prebuilt `graphlib` or `planner` artifacts) automatically builds `graphlib` interfaces/rlibs and links the `planner` executable via Margo.
+5. **Clickable Diagnostics**: Updated compilation error regex in `moss-mode.el` to match both direct compiler diagnostics and Margo-prefixed diagnostic output.
+6. **Validation & ERT Coverage**:
+   - Replaced `moss-mode-dependent-package-check-and-compilation` with full end-to-end clean-state compilation, verification of generated artifacts, binary execution, and package check.
+   - Added `moss-mode-command-selection-and-package-root`, `moss-mode-standalone-compilation-and-run`, and `moss-mode-compilation-diagnostics-match-margo-and-compiler` ERT tests.
+   - All 58 ERT tests passed (58/58).
+   - Full repository `make`, `make check`, `make examples`, `git diff --check`, `sh -n tests/run.sh` passed.
 
 Recursive audit and verification across `.moss` source files, multi-module projects, and dependency packages for Emacs compilation (`C-c C-c` / `moss-check-buffer`, `C-c C-b` / `moss-compile-buffer`, `C-c C-r` / `moss-run-buffer`) and generated Rust navigation (`C-c C-g` / `moss-goto-generated-rust`).
 

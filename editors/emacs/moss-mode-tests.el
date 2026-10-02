@@ -1229,24 +1229,186 @@
         (kill-buffer planner-buffer)))))
 
 (ert-deftest moss-mode-dependent-package-check-and-compilation ()
-  "Verify Emacs check and compile commands propagate MOSS_MODULE_PATH for dependent packages."
+  "Verify Emacs compilation builds dependent packages from clean state without prebuilt artifacts."
   (let* ((root (moss--repo-root default-directory))
          (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-root (expand-file-name "projects/build_planner/planner" root))
+         (graphlib-root (expand-file-name "projects/build_planner/graphlib" root))
+         (planner-build (expand-file-name "build" planner-root))
+         (graphlib-build (expand-file-name "build" graphlib-root))
          (planner-buffer (find-file-noselect planner-main))
-         (moss-compiler-command (expand-file-name "moss" root)))
+         (moss-compiler-command (expand-file-name "moss" root))
+         (moss-margo-command (expand-file-name "margo" root)))
     (unwind-protect
         (with-current-buffer planner-buffer
           (moss-mode)
-          (let ((mod-paths (moss--dependency-module-paths planner-main))
-                (src-roots (moss--dependency-source-roots planner-main)))
-            (should mod-paths)
-            (should (string-match-p "graphlib" mod-paths))
-            (should src-roots)
-            (should (string-match-p "graphlib" src-roots)))
-          (let ((cmd (moss--check-command planner-main)))
-            (should (string-match-p "--diagnostic-paths --check" cmd))))
+          ;; 1. Clean prior build outputs from both planner and graphlib
+          (delete-directory planner-build t)
+          (delete-directory graphlib-build t)
+          (should-not (file-exists-p planner-build))
+          (should-not (file-exists-p graphlib-build))
+
+          ;; 2. Verify package-root detection
+          (let ((pkg-root (moss--package-root planner-main)))
+            (should (equal (file-name-as-directory (file-truename planner-root))
+                           (file-name-as-directory (file-truename pkg-root)))))
+
+          ;; 3. Execute compilation using the primitive used by moss-compile-buffer
+          (let* ((moss-compile-optimization "-O0")
+                 (comp-buffer (moss-compile-buffer))
+                 (proc (get-buffer-process comp-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc)))
+            (let ((planner-bin (expand-file-name "build/debug/planner" planner-root))
+                  (graph-mossi (expand-file-name "build/debug/graph.mossi" graphlib-root))
+                  (graph-rlib (expand-file-name "build/debug/libmoss_graph.rlib" graphlib-root)))
+              (should (file-executable-p planner-bin))
+              (should (file-exists-p graph-mossi))
+              (should (file-exists-p graph-rlib))
+              ;; Execute resulting binary and assert exit status 0
+              (should (= 0 (call-process planner-bin nil nil nil)))))
+
+          ;; 4. Verify moss-check-buffer succeeds with dependency package present
+          (let* ((check-buffer (moss-check-buffer))
+                 (proc (get-buffer-process check-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc))))
+
+          ;; 5. Clean again and verify moss-run-buffer builds and runs from clean state
+          (delete-directory planner-build t)
+          (delete-directory graphlib-build t)
+          (let* ((moss-compile-optimization "-O0")
+                 (run-buffer (moss-run-buffer))
+                 (proc (get-buffer-process run-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc)))
+            (with-current-buffer run-buffer
+              (should (string-match-p "Build Planner Status:" (buffer-string)))
+              (should (string-match-p "Specialized task cost: 15" (buffer-string))))))
+      (when (get-buffer "*moss-compile*")
+        (kill-buffer "*moss-compile*"))
+      (when (get-buffer "*moss-run*")
+        (kill-buffer "*moss-run*"))
+      (when (get-buffer "*moss-check*")
+        (kill-buffer "*moss-check*"))
       (when (buffer-live-p planner-buffer)
         (kill-buffer planner-buffer)))))
+
+(ert-deftest moss-mode-command-selection-and-package-root ()
+  "Verify package-root detection and command selection across standalone and project sources."
+  (let* ((root (moss--repo-root default-directory))
+         (margo (expand-file-name "margo" root))
+         (compiler (expand-file-name "moss" root))
+         (moss-margo-command margo)
+         (moss-compiler-command compiler)
+         (standalone (expand-file-name "examples/counter.moss" root))
+         (single-pkg (expand-file-name "examples/projects/phase7_demo/src/main.moss" root))
+         (single-pkg-test (expand-file-name "examples/projects/phase7_demo/tests/arithmetic.moss" root))
+         (single-pkg-bench (expand-file-name "examples/projects/phase7_demo/benches/bench_add.moss" root))
+         (multi-module (expand-file-name "examples/projects/ledger/src/service.moss" root))
+         (path-dep (expand-file-name "projects/build_planner/planner/src/main.moss" root)))
+
+    ;; 1. Standalone source -> package-root is nil
+    (should-not (moss--package-root standalone))
+    (with-current-buffer (find-file-noselect standalone)
+      (unwind-protect
+          (progn
+            (moss-mode)
+            (should-not (moss--package-root))
+            (should (string-match-p "rustc" (moss--native-command standalone))))
+        (kill-buffer (current-buffer))))
+
+    ;; 2. Package root detection from nested src/, tests/, benches/
+    (let ((demo-root (expand-file-name "examples/projects/phase7_demo" root)))
+      (should (equal (file-name-as-directory (file-truename demo-root))
+                     (file-name-as-directory (file-truename (moss--package-root single-pkg)))))
+      (should (equal (file-name-as-directory (file-truename demo-root))
+                     (file-name-as-directory (file-truename (moss--package-root single-pkg-test)))))
+      (should (equal (file-name-as-directory (file-truename demo-root))
+                     (file-name-as-directory (file-truename (moss--package-root single-pkg-bench))))))
+
+    ;; 3. Single-package project -> Margo build command
+    (let ((demo-pkg-root (moss--package-root single-pkg)))
+      (should (equal (moss--package-name demo-pkg-root) "phase7-demo"))
+      (let ((moss-compile-optimization "-O0"))
+        (should (equal (format "%s build" (shell-quote-argument margo))
+                       (moss--package-build-command demo-pkg-root))))
+      (let ((moss-compile-optimization "-O"))
+        (should (equal (format "%s build --release" (shell-quote-argument margo))
+                       (moss--package-build-command demo-pkg-root))))
+      (let ((moss-compile-optimization "-O0"))
+        (should (equal (format "%s run" (shell-quote-argument margo))
+                       (moss--package-build-command demo-pkg-root t)))))
+
+    ;; 4. Multi-module package -> Margo build
+    (let ((ledger-pkg-root (moss--package-root multi-module)))
+      (should (equal (moss--package-name ledger-pkg-root) "ledger"))
+      (let ((moss-compile-optimization "-O0"))
+        (should (equal (format "%s build" (shell-quote-argument margo))
+                       (moss--package-build-command ledger-pkg-root)))))
+
+    ;; 5. Path-dependent package -> Margo build
+    (let ((planner-pkg-root (moss--package-root path-dep)))
+      (should (equal (moss--package-name planner-pkg-root) "planner"))
+      (let ((moss-compile-optimization "-O0"))
+        (should (equal (format "%s build" (shell-quote-argument margo))
+                       (moss--package-build-command planner-pkg-root))))
+      (let ((moss-compile-optimization "-O"))
+        (should (equal (format "%s run --release" (shell-quote-argument margo))
+                       (moss--package-build-command planner-pkg-root t)))))
+
+    ;; 6. Invalid optimization flag raises user-error
+    (let ((moss-compile-optimization "-O3"))
+      (should-error (moss--margo-profile-flags) :type 'user-error))))
+
+(ert-deftest moss-mode-standalone-compilation-and-run ()
+  "Verify standalone .moss compilation and run use the direct Moss/rustc path."
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name "examples/counter.moss" root))
+         (buffer (find-file-noselect source))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (moss-mode)
+          (let* ((comp-buffer (moss-compile-buffer))
+                 (proc (get-buffer-process comp-buffer)))
+            (when proc
+              (while (process-live-p proc)
+                (accept-process-output proc 0.1)))
+            (should (zerop (process-exit-status proc))))
+          (let ((artifacts (moss--artifact-alist source)))
+            (should (file-executable-p (alist-get 'executable artifacts)))
+            (should (= 0 (call-process (alist-get 'executable artifacts) nil nil nil)))))
+      (when (get-buffer "*moss-compile*")
+        (kill-buffer "*moss-compile*"))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest moss-mode-compilation-diagnostics-match-margo-and-compiler ()
+  "Verify compilation error regexp matches both direct compiler and Margo diagnostics."
+  (let ((lines
+         (list
+          "/path/to/source.moss:42: error: direct compiler error"
+          "/path/to/source.moss:42: warning: direct compiler warning"
+          "/path/to/source.moss:42: error[UNKNOWN_SYMBOL]: typed compiler error"
+          "margo: error: /path/to/source.moss:42: error: margo forwarded error"
+          "margo: error: command failed (/bin/moss build --json): /path/to/source.moss:42: error: command error")))
+    (dolist (line lines)
+      (with-temp-buffer
+        (compilation-mode)
+        (let ((inhibit-read-only t))
+          (insert line "\n"))
+        (compilation--flush-parse (point-min) (point-max))
+        (compilation--ensure-parse (point-max))
+        (goto-char (point-min))
+        (search-forward "/path/to/source.moss")
+        (should (get-text-property (1- (point)) 'compilation-message))))))
 
 (ert-deftest moss-mode-goto-generated-rust-navigation ()
   "Verify moss-goto-generated-rust finds the mapped line in generated Rust."

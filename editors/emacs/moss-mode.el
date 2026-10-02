@@ -38,6 +38,10 @@
   "Moss compiler executable, or nil to find the repository compiler."
   :type '(choice (const :tag "Find automatically" nil) file))
 
+(defcustom moss-margo-command nil
+  "Margo project driver executable, or nil to find repository or PATH margo."
+  :type '(choice (const :tag "Find automatically" nil) file))
+
 (defcustom moss-rustc-command "rustc"
   "Rust compiler used to build generated Moss programs."
   :type 'string)
@@ -272,6 +276,33 @@ With negative ARGUMENT, move forward instead."
       (locate-dominating-file (or start default-directory) ".git")
       default-directory))
 
+(defun moss--package-root (&optional source)
+  "Return the nearest package root directory containing SOURCE, or nil.
+Locates the nearest Moss.toml or legacy moss.toml containing SOURCE."
+  (let ((start (or source (and buffer-file-name (expand-file-name buffer-file-name))
+                   default-directory)))
+    (when start
+      (let ((root (locate-dominating-file
+                   start
+                   (lambda (dir)
+                     (or (file-readable-p (expand-file-name "Moss.toml" dir))
+                         (file-readable-p (expand-file-name "moss.toml" dir)))))))
+        (and root (file-name-as-directory (expand-file-name root)))))))
+
+(defun moss--package-name (package-root)
+  "Return the package name for PACKAGE-ROOT from its manifest, or nil."
+  (when package-root
+    (let ((manifest (or (let ((f (expand-file-name "Moss.toml" package-root)))
+                          (and (file-readable-p f) f))
+                        (let ((f (expand-file-name "moss.toml" package-root)))
+                          (and (file-readable-p f) f)))))
+      (when manifest
+        (with-temp-buffer
+          (insert-file-contents manifest)
+          (goto-char (point-min))
+          (when (re-search-forward "^[ \t]*name[ \t]*=[ \t]*\"\\([^\"]+\\)\"" nil t)
+            (match-string 1)))))))
+
 (defun moss--compiler (&optional root)
   "Return the configured or repository-local Moss compiler."
   (or moss-compiler-command
@@ -281,6 +312,39 @@ With negative ARGUMENT, move forward instead."
         (and (file-executable-p candidate) candidate))
       (executable-find "moss")
       (user-error "Build Moss first or customize `moss-compiler-command'")))
+
+(defun moss--margo (&optional root)
+  "Return the configured or repository-local Margo executable."
+  (or moss-margo-command
+      (let ((candidate (expand-file-name "margo" (or root (moss--repo-root)))))
+        (and (file-executable-p candidate) candidate))
+      (let ((candidate (expand-file-name "margo" moss--installation-root)))
+        (and (file-executable-p candidate) candidate))
+      (executable-find "margo")
+      (user-error "Build Margo first or customize `moss-margo-command'")))
+
+(defun moss--margo-profile-flags ()
+  "Return Margo flags corresponding to `moss-compile-optimization'.
+Maps \"-O\" to (\"--release\") and \"-O0\", \"\", or nil to nil (debug).
+Signals a `user-error' for unrecognized optimization strings."
+  (cond
+   ((or (null moss-compile-optimization)
+        (string-empty-p moss-compile-optimization)
+        (equal moss-compile-optimization "-O0"))
+    nil)
+   ((equal moss-compile-optimization "-O")
+    '("--release"))
+   (t
+    (user-error "Cannot map optimization %S to a canonical Margo profile"
+                moss-compile-optimization))))
+
+(defun moss--package-build-command (package-root &optional run)
+  "Return the Margo build or run command for PACKAGE-ROOT.
+When RUN is non-nil, use \"run\"; otherwise use \"build\"."
+  (let* ((margo (moss--margo (moss--repo-root package-root)))
+         (flags (moss--margo-profile-flags))
+         (action (if run "run" "build")))
+    (apply #'moss--shell-command margo action flags)))
 
 (defun moss--source-file ()
   "Return and save the current Moss source file."
@@ -360,11 +424,15 @@ When RUN is non-nil, execute the resulting program too."
            (alist-get 'executable artifacts))))
     (concat compiler-command " && " rust-command)))
 
-(defun moss--compilation-start (command name &optional source)
-  "Start COMMAND in compilation mode with a buffer named from NAME."
+(cl-defun moss--compilation-start (command name &key source directory)
+  "Start COMMAND in compilation mode with a buffer named from NAME.
+SOURCE is the physical Moss source file.  DIRECTORY is the working directory
+for compilation; when omitted, uses PACKAGE-ROOT, or REPO-ROOT for standalone."
   (let* ((src (or source (and buffer-file-name (moss--source-file))))
-         (root (moss--repo-root src))
-         (default-directory (or root default-directory))
+         (pkg-root (and src (moss--package-root src)))
+         (repo-root (moss--repo-root src))
+         (working-dir (or directory pkg-root repo-root default-directory))
+         (default-directory (file-name-as-directory (expand-file-name working-dir)))
          (dep-roots (and src (moss--dependency-source-roots src)))
          (mod-paths (and src (moss--dependency-module-paths src)))
          (env-vars (delq nil (list
@@ -379,26 +447,51 @@ When RUN is non-nil, execute the resulting program too."
 (defun moss-check-buffer ()
   "Check the current Moss buffer and show clickable diagnostics."
   (interactive)
-  (moss--compilation-start (moss--check-command (moss--source-file)) "check"))
+  (let ((source (moss--source-file)))
+    (moss--compilation-start
+     (moss--check-command source) "check"
+     :source source)))
 
 ;;;###autoload
 (defun moss-compile-buffer ()
-  "Compile the current Moss buffer to a native executable."
+  "Compile the current Moss buffer to a native executable.
+For a package source, invoke Margo build from the package root.  For a
+standalone source, compile with Moss and Rustc directly."
   (interactive)
-  (moss--compilation-start (moss--native-command (moss--source-file)) "compile"))
+  (let* ((source (moss--source-file))
+         (package-root (moss--package-root source)))
+    (if package-root
+        (moss--compilation-start
+         (moss--package-build-command package-root) "compile"
+         :source source :directory package-root)
+      (moss--compilation-start
+       (moss--native-command source) "compile"
+       :source source))))
 
 ;;;###autoload
 (defun moss-run-buffer ()
-  "Compile and run the current Moss buffer in compilation mode."
+  "Compile and run the current Moss buffer in compilation mode.
+For a package source, invoke Margo run from the package root.  For a
+standalone source, compile and execute directly."
   (interactive)
-  (moss--compilation-start (moss--native-command (moss--source-file) t) "run"))
+  (let* ((source (moss--source-file))
+         (package-root (moss--package-root source)))
+    (if package-root
+        (moss--compilation-start
+         (moss--package-build-command package-root t) "run"
+         :source source :directory package-root)
+      (moss--compilation-start
+       (moss--native-command source t) "run"
+       :source source))))
 
 ;;;###autoload
 (defun moss-build-debug-buffer ()
   "Build an unoptimized Moss executable with debug info and stable symbols."
   (interactive)
-  (moss--compilation-start
-   (moss--debug-build-command (moss--source-file)) "debug-build"))
+  (let ((source (moss--source-file)))
+    (moss--compilation-start
+     (moss--debug-build-command source) "debug-build"
+     :source source)))
 
 (defun moss--display-artifact (filename mode)
   "Visit FILENAME in another window, make it read-only, and use MODE."
@@ -416,7 +509,17 @@ When RUN is non-nil, execute the resulting program too."
   "Show generated Rust for the current Moss source."
   (interactive)
   (let* ((source (moss--source-file))
-         (rust (alist-get 'rust (moss--artifact-alist source))))
+         (package-root (moss--package-root source))
+         (rust
+          (if package-root
+              (let* ((base (file-name-base source))
+                     (debug-rs (expand-file-name (format "build/debug/%s.rs" base) package-root))
+                     (release-rs (expand-file-name (format "build/release/%s.rs" base) package-root)))
+                (cond
+                 ((file-readable-p debug-rs) debug-rs)
+                 ((file-readable-p release-rs) release-rs)
+                 (t (alist-get 'rust (moss--artifact-alist source)))))
+            (alist-get 'rust (moss--artifact-alist source)))))
     (moss--display-artifact rust
                             (if (fboundp 'rust-ts-mode)
                                 #'rust-ts-mode #'prog-mode))))
@@ -426,7 +529,7 @@ When RUN is non-nil, execute the resulting program too."
   "Show the compiler-emitted debug/provenance map read-only."
   (interactive)
   (let* ((source (moss--source-file))
-         (map (alist-get 'map (moss--artifact-alist source))))
+         (map (moss--source-map-file source)))
     (moss--display-artifact map
                             (if (fboundp 'js-json-mode)
                                 #'js-json-mode #'js-mode))))
@@ -449,8 +552,7 @@ When RUN is non-nil, execute the resulting program too."
 
 (defun moss--dependency-source-roots (source)
   "Return colon-separated dependency roots for SOURCE based on its manifest."
-  (let* ((manifest-dir (or (locate-dominating-file source "moss.toml")
-                           (locate-dominating-file source "Moss.toml")))
+  (let* ((manifest-dir (moss--package-root source))
          roots)
     (when manifest-dir
       (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
@@ -471,8 +573,7 @@ When RUN is non-nil, execute the resulting program too."
 
 (defun moss--dependency-module-paths (source)
   "Return colon-separated module paths for dependencies of SOURCE."
-  (let* ((manifest-dir (or (locate-dominating-file source "moss.toml")
-                           (locate-dominating-file source "Moss.toml")))
+  (let* ((manifest-dir (moss--package-root source))
          paths)
     (when manifest-dir
       (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
@@ -880,7 +981,16 @@ a source breakpoint because it cannot promise an exact Moss stop."
 
 (defun moss--source-map-file (source)
   "Return the expected Moss map for SOURCE."
-  (alist-get 'map (moss--artifact-alist source)))
+  (if-let ((package-root (moss--package-root source)))
+      (let* ((pkg-name (or (moss--package-name package-root)
+                           (file-name-nondirectory (directory-file-name package-root))))
+             (debug-map (expand-file-name (format "build/debug/%s.mossmap" pkg-name) package-root))
+             (release-map (expand-file-name (format "build/release/%s.mossmap" pkg-name) package-root)))
+        (cond
+         ((file-readable-p debug-map) debug-map)
+         ((file-readable-p release-map) release-map)
+         (t (alist-get 'map (moss--artifact-alist source)))))
+    (alist-get 'map (moss--artifact-alist source))))
 
 ;;;###autoload
 (defun moss-goto-generated-rust ()
@@ -1242,7 +1352,7 @@ to generated Rust locations by the shared compiler map before execution."
 
 (add-to-list
  'compilation-error-regexp-alist-alist
- '(moss "^\\(.+\\.moss\\):\\([0-9]+\\): \\(?:warning\\|error\\):" 1 2))
+ '(moss "^\\(?:.*?\\(?:error:\\|warning:\\|failed ([^)]+):\\)[[:space:]]+\\)?\\(?1:[^ \t\r\n:\"']+\\.moss\\):\\(?2:[0-9]+\\): \\(?:warning\\|error\\(?: *\\[[A-Za-z0-9_]+\\]\\)?\\):" 1 2))
 (add-to-list 'compilation-error-regexp-alist 'moss)
 
 ;;;###autoload
