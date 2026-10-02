@@ -16943,8 +16943,50 @@ static string semantic_token_name(const SemanticTargetFact& target) {
   return name;
 }
 
+static vector<string> read_source_lines_for_completion(
+    const string& file, const string* overlay = nullptr) {
+  std::ifstream input;
+  std::istringstream overlay_input(overlay ? *overlay : string());
+  if (!overlay) input.open(file);
+  std::istream& stream = overlay
+      ? static_cast<std::istream&>(overlay_input)
+      : static_cast<std::istream&>(input);
+  vector<string> lines;
+  string line;
+  while (std::getline(stream, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    lines.push_back(std::move(line));
+  }
+  return lines;
+}
+
 static std::optional<string> semantic_source_token_at(
     const Program& program, const string& source_file, int line, int column) {
+  if (line <= 0 || column <= 0) return std::nullopt;
+  auto word = [](unsigned char value) {
+    return std::isalnum(value) || value == '_';
+  };
+  if (!source_file.empty()) {
+    auto file_lines = read_source_lines_for_completion(source_file);
+    if (static_cast<size_t>(line) <= file_lines.size()) {
+      const string& text = file_lines[static_cast<size_t>(line - 1)];
+      size_t offset = static_cast<size_t>(column - 1);
+      if (offset >= text.size() ||
+          !word(static_cast<unsigned char>(text[offset]))) {
+        if (offset == 0 || offset > text.size() ||
+            !word(static_cast<unsigned char>(text[offset - 1])))
+          return std::nullopt;
+        --offset;
+      }
+      size_t begin = offset;
+      size_t end = offset + 1;
+      while (begin > 0 && word(static_cast<unsigned char>(text[begin - 1])))
+        --begin;
+      while (end < text.size() && word(static_cast<unsigned char>(text[end])))
+        ++end;
+      return text.substr(begin, end - begin);
+    }
+  }
   const Line* source_line = nullptr;
   for (const auto& candidate : program.source_lines)
     if (candidate.no == line &&
@@ -16953,9 +16995,6 @@ static std::optional<string> semantic_source_token_at(
       break;
     }
   if (!source_line || column <= source_line->indent) return std::nullopt;
-  auto word = [](unsigned char value) {
-    return std::isalnum(value) || value == '_';
-  };
   size_t offset = static_cast<size_t>(column - source_line->indent - 1);
   if (offset >= source_line->text.size() ||
       !word(static_cast<unsigned char>(source_line->text[offset]))) {
@@ -17122,6 +17161,36 @@ static SemanticQueryResolution resolve_semantic_target(
         if (import.line == requested_line && import.name == *token &&
             (source_file.empty() || import.source_file == source_file))
           append(by_context("module:" + import.name));
+      for (const auto& pipeline : program->functional_pipelines) {
+        if (!source_file.empty() && !pipeline.source_file.empty() &&
+            pipeline.source_file != source_file)
+          continue;
+        for (const auto& node : pipeline.nodes) {
+          if (node.span.line != requested_line || node.callable_identity.empty())
+            continue;
+          if (node.callable_expression == *token ||
+              node.callable_identity == *token ||
+              node.callable_identity == "fn:" + *token) {
+            const SemanticTargetFact* callee =
+                by_context(node.callable_identity);
+            if (!callee) callee = by_context("fn:" + node.callable_identity);
+            if (!callee) callee = by_context("method:" + node.callable_identity);
+            append(callee);
+            if (callee && !callee->module_identity.empty() &&
+                callee->module_identity == *token)
+              append(by_context("module:" + callee->module_identity));
+          }
+        }
+      }
+      if (exact.candidates.size() > 1 && kind_filter.empty()) {
+        vector<const SemanticTargetFact*> filtered;
+        for (const auto* candidate : exact.candidates) {
+          if (candidate->kind != "specialization" &&
+              candidate->kind != "domain_specialization")
+            filtered.push_back(candidate);
+        }
+        if (!filtered.empty()) exact.candidates = std::move(filtered);
+      }
       std::sort(exact.candidates.begin(), exact.candidates.end(),
                 [](const auto* left, const auto* right) {
                   return left->durable_identity < right->durable_identity;
@@ -17148,7 +17217,12 @@ static SemanticQueryResolution resolve_semantic_target(
       // uses, and call targets.  This line-oriented path remains the
       // compatibility fallback for selectors outside a retained token.
       (void)requested_column;
-      if (target.line == requested_line && source_matches(target)) match_rank = 0;
+      if (target.line == requested_line && source_matches(target)) {
+        match_rank = (target.kind == "specialization" ||
+                      target.kind == "domain_specialization")
+            ? 1
+            : 0;
+      }
     } else if (target.semantic_identity == selector ||
                target.durable_identity == selector) {
       match_rank = 0;
@@ -17158,12 +17232,20 @@ static SemanticQueryResolution resolve_semantic_target(
           (semantic_target_is_root(target) && target.context == selector))
         match_rank = 1;
       else if (target.name == selector)
-        match_rank = 2;
+        match_rank = (target.kind == "specialization" ||
+                      target.kind == "domain_specialization")
+            ? 3
+            : 2;
       else {
         size_t separator = target.name.rfind('.');
         if (separator != string::npos)
           if (target.name.substr(separator + 1) == selector)
-            match_rank = semantic_target_is_declaration(target) ? 3 : 4;
+            match_rank = semantic_target_is_declaration(target)
+                ? ((target.kind == "specialization" ||
+                    target.kind == "domain_specialization")
+                       ? 5
+                       : 4)
+                : 6;
       }
     }
     if (match_rank < best_match_rank) {
@@ -19222,15 +19304,16 @@ static bool write_references_query_json(
            semantic_call_site_identity(edge)});
     }
   for (const auto& pipeline : program.functional_pipelines) {
-    bool found = std::any_of(
-        pipeline.nodes.begin(), pipeline.nodes.end(),
-        [&](const FunctionalNode& node) {
-          return node.callable_identity == target->context;
-        });
-    if (found)
-      references.push_back(
-          {"callable_reference", pipeline.source_file, pipeline.line,
-           pipeline.context, {}});
+    for (const auto& node : pipeline.nodes) {
+      if (node.callable_identity == target->context ||
+          "fn:" + node.callable_identity == target->context ||
+          "method:" + node.callable_identity == target->context) {
+        references.push_back(
+            {"callable_reference", pipeline.source_file,
+             node.span.line > 0 ? node.span.line : pipeline.line,
+             pipeline.context, {}});
+      }
+    }
   }
 
   if (target->kind == "module") {
@@ -19441,23 +19524,6 @@ static bool parse_completion_location(
     return false;
   }
   return line > 0 && column > 0;
-}
-
-static vector<string> read_source_lines_for_completion(
-    const string& file, const string* overlay = nullptr) {
-  std::ifstream input;
-  std::istringstream overlay_input(overlay ? *overlay : string());
-  if (!overlay) input.open(file);
-  std::istream& stream = overlay
-      ? static_cast<std::istream&>(overlay_input)
-      : static_cast<std::istream&>(input);
-  vector<string> lines;
-  string line;
-  while (std::getline(stream, line)) {
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    lines.push_back(std::move(line));
-  }
-  return lines;
 }
 
 static string completion_candidate_detail(const SemanticTargetFact& target) {

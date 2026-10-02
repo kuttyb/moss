@@ -354,4 +354,44 @@ missing_source, _ = invoke("inspect", "fn:inspect", "--json", expect=2)
 if missing_source["error"]["code"] != "QUERY_SOURCE_REQUIRED":
     fail("missing query source lacked a structured error")
 
+dataflow_source = root / "examples" / "functional_dataflow.moss"
+resolved_decl, _ = invoke(
+    "resolve", "at:10:4", "--source", str(dataflow_source), "--json"
+)
+if resolved_decl["result"]["target"]["id"] != "entity-v1:function:evaluate":
+    fail("location query at generic function definition did not resolve primary declaration")
+
+resolved_spec, _ = invoke(
+    "resolve", "at:10:4", "--kind", "specialization", "--source", str(dataflow_source), "--json"
+)
+if resolved_spec["result"]["target"]["id"] != "entity-v1:specialization:evaluate<vector[int]>":
+    fail("location query with --kind specialization did not resolve specialization")
+
+resolved_name, _ = invoke(
+    "resolve", "evaluate", "--source", str(dataflow_source), "--json"
+)
+if resolved_name["result"]["target"]["id"] != "entity-v1:function:evaluate":
+    fail("bare name query did not prioritize primary function declaration over specialization")
+
+callers_dataflow, _ = invoke(
+    "calls", "evaluate", "--source", str(dataflow_source), "--json"
+)
+if not callers_dataflow["result"]["callers"]:
+    fail("calls query on generic function definition omitted callers")
+
+resolved_stage_callable, _ = invoke(
+    "resolve", "at:12:12", "--source", str(dataflow_source), "--json"
+)
+if resolved_stage_callable["result"]["target"]["id"] != "entity-v1:function:normalize":
+    fail("location query on pipeline callable stage did not resolve to referenced function")
+
+refs_normalize, _ = invoke(
+    "references", "fn:normalize", "--source", str(dataflow_source), "--json"
+)
+if not any(r["kind"] == "callable_reference" and r["source"]["line"] == 12
+           for r in refs_normalize["result"]["references"]):
+    fail("references for pipeline callable did not report stage line 12")
+
 print("Phase 6A agent API checks passed")
+
+
