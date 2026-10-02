@@ -327,6 +327,7 @@ When RUN is non-nil, execute the resulting program too."
           (moss--shell-command
            (moss--compiler (alist-get 'root artifacts))
            "--diagnostic-paths" moss-compile-optimization source
+           "--emit-debug-map" (alist-get 'map artifacts)
            "--native-output" (alist-get 'executable artifacts)
            "-o" (alist-get 'rust artifacts)))
          (rust-command
@@ -359,9 +360,18 @@ When RUN is non-nil, execute the resulting program too."
            (alist-get 'executable artifacts))))
     (concat compiler-command " && " rust-command)))
 
-(defun moss--compilation-start (command name)
+(defun moss--compilation-start (command name &optional source)
   "Start COMMAND in compilation mode with a buffer named from NAME."
-  (let ((default-directory (moss--repo-root)))
+  (let* ((src (or source (and buffer-file-name (moss--source-file))))
+         (root (moss--repo-root src))
+         (default-directory (or root default-directory))
+         (dep-roots (and src (moss--dependency-source-roots src)))
+         (mod-paths (and src (moss--dependency-module-paths src)))
+         (env-vars (delq nil (list
+                              (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
+                              (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths)))))
+         (compilation-environment (append env-vars compilation-environment))
+         (process-environment (append env-vars process-environment)))
     (compilation-start command 'compilation-mode
                        (lambda (_) (format "*moss-%s*" name)))))
 
@@ -459,6 +469,37 @@ When RUN is non-nil, execute the resulting program too."
     (when roots
       (mapconcat #'identity (delete-dups (nreverse roots)) ":"))))
 
+(defun moss--dependency-module-paths (source)
+  "Return colon-separated module paths for dependencies of SOURCE."
+  (let* ((manifest-dir (or (locate-dominating-file source "moss.toml")
+                           (locate-dominating-file source "Moss.toml")))
+         paths)
+    (when manifest-dir
+      (let ((manifest-file (or (let ((f (expand-file-name "Moss.toml" manifest-dir)))
+                                 (and (file-readable-p f) f))
+                               (let ((f (expand-file-name "moss.toml" manifest-dir)))
+                                 (and (file-readable-p f) f)))))
+        (when manifest-file
+          (with-temp-buffer
+            (insert-file-contents manifest-file)
+            (goto-char (point-min))
+            (while (re-search-forward "^[ \t]*[A-Za-z0-9_.-]+[ \t]*=[ \t]*{[ \t]*path[ \t]*=[ \t]*\"\\([^\"]+\\)\"" nil t)
+              (let* ((rel-path (match-string 1))
+                     (dep-root (expand-file-name rel-path manifest-dir)))
+                (when (file-directory-p dep-root)
+                  (let ((debug-dir (expand-file-name "build/debug" dep-root))
+                        (release-dir (expand-file-name "build/release" dep-root))
+                        (deps-dir (expand-file-name "deps" dep-root)))
+                    (cond
+                     ((file-directory-p debug-dir)
+                      (push (file-truename debug-dir) paths))
+                     ((file-directory-p release-dir)
+                      (push (file-truename release-dir) paths)))
+                    (when (file-directory-p deps-dir)
+                      (push (file-truename deps-dir) paths))))))))))
+    (when paths
+      (mapconcat #'identity (delete-dups (nreverse paths)) ":"))))
+
 (defun moss--semantic-query (command &optional target extra overlay)
   "Invoke semantic COMMAND and return its result alist.
 TARGET is an optional positional selector and EXTRA is an argument list.
@@ -469,11 +510,13 @@ the compiler's `complete' operation performs incomplete-source recovery;
 ordinary navigation overlays are strict.  This function never invokes a shell."
   (let* ((source (moss--semantic-source))
          (dep-roots (moss--dependency-source-roots source))
+         (mod-paths (moss--dependency-module-paths source))
          (process-environment
-          (if dep-roots
-              (cons (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots)
-                    process-environment)
-            process-environment))
+          (append
+           (delq nil (list
+                      (and dep-roots (format "MOSS_FAST_DEBUG_SOURCE_ROOTS=%s" dep-roots))
+                      (and mod-paths (format "MOSS_MODULE_PATH=%s" mod-paths))))
+           process-environment))
          (use-overlay
           (or overlay
               (member command

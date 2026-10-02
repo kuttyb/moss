@@ -26924,10 +26924,9 @@ int main(int argc, char** argv) {
           query_target, query_overlay ? &*query_overlay : nullptr);
       completion_recovered = recovered_completion_source.has_value();
     }
-    if (!query_command.empty() || check_only) {
-      try {
-        auto context = moss::analyze_source_context(input);
-        if (context.project) {
+    try {
+      auto context = moss::analyze_source_context(input);
+      if (context.project) {
           std::map<std::filesystem::path, string> overrides;
           if (recovered_completion_source)
             overrides[std::filesystem::absolute(input).lexically_normal()] =
@@ -26960,7 +26959,6 @@ int main(int argc, char** argv) {
                           << ": error: " << error.what() << "\n";
         return 1;
       }
-    }
     if (!project_query) {
       std::ifstream f(input);
       if (!f) {

@@ -1,5 +1,18 @@
 # Moss current status
 
+## Recursive Emacs Compilation & Generated Rust Navigation (`C-c C-c`, `C-c C-g`, `Margo`) — COMPLETE (2026-09-30)
+
+Recursive audit and verification across `.moss` source files, multi-module projects, and dependency packages for Emacs compilation (`C-c C-c` / `moss-check-buffer`, `C-c C-b` / `moss-compile-buffer`, `C-c C-r` / `moss-run-buffer`) and generated Rust navigation (`C-c C-g` / `moss-goto-generated-rust`).
+
+Key capabilities and fixes verified:
+1. **Margo Dependency Build Pre-requisites**: Verified that module projects with dependencies (such as `projects/build_planner`, `examples/projects/ledger`, `tests/tooling/fixtures/phase15_8`, etc.) have their external dependencies built via `./margo build` to emit `.mossi` interfaces under `<dep>/build/debug`.
+2. **Emacs Module Dependency Resolution (`moss--dependency-module-paths`)**: Added `moss--dependency-module-paths` to `moss-mode.el` to discover and propagate `MOSS_MODULE_PATH` into `compilation-environment` and `process-environment` during `moss--compilation-start` and `moss--semantic-query`. Refined path resolution to select `build/debug` or `build/release` and `deps` without ambiguous parent directories.
+3. **Debug Map Generation for Normal Compilation**: Added `--emit-debug-map` to `moss--native-command` in `moss-mode.el` so `C-c C-g` (`moss-goto-generated-rust`) immediately maps source lines to generated Rust after compilation.
+4. **ERT & Repo Validation**:
+   - Added `moss-mode-dependent-package-check-and-compilation` and `moss-mode-goto-generated-rust-navigation` ERT tests in `editors/emacs/moss-mode-tests.el`.
+   - All 55 ERT tests passed (55/55).
+   - Full repository `make check` passed (hygiene, benchmark suite, 30 agent tasks, fast debug convergence, and compiler tests).
+
 ## Cross-Package & Multi-Module Emacs Navigation & Symbol Traversal — COMPLETE (2026-09-30)
 
 Recursive audit across all 1,444 `.moss` source files and 387 `Moss.toml` manifests was conducted to verify that Emacs semantic features (`goto-definition`, `goto-declaration`, `find-references`, `moss-callers`, `moss-callees`, `moss-call-tree`, `imenu`, and `xref-backend-apropos`) work across module and package boundaries.

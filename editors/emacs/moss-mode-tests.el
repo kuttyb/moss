@@ -1228,6 +1228,57 @@
       (when (buffer-live-p planner-buffer)
         (kill-buffer planner-buffer)))))
 
+(ert-deftest moss-mode-dependent-package-check-and-compilation ()
+  "Verify Emacs check and compile commands propagate MOSS_MODULE_PATH for dependent packages."
+  (let* ((root (moss--repo-root default-directory))
+         (planner-main (expand-file-name "projects/build_planner/planner/src/main.moss" root))
+         (planner-buffer (find-file-noselect planner-main))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (unwind-protect
+        (with-current-buffer planner-buffer
+          (moss-mode)
+          (let ((mod-paths (moss--dependency-module-paths planner-main))
+                (src-roots (moss--dependency-source-roots planner-main)))
+            (should mod-paths)
+            (should (string-match-p "graphlib" mod-paths))
+            (should src-roots)
+            (should (string-match-p "graphlib" src-roots)))
+          (let ((cmd (moss--check-command planner-main)))
+            (should (string-match-p "--diagnostic-paths --check" cmd))))
+      (when (buffer-live-p planner-buffer)
+        (kill-buffer planner-buffer)))))
+
+(ert-deftest moss-mode-goto-generated-rust-navigation ()
+  "Verify moss-goto-generated-rust finds the mapped line in generated Rust."
+  (let* ((root (moss--repo-root default-directory))
+         (source (expand-file-name "examples/counter.moss" root))
+         (buffer (find-file-noselect source))
+         (moss-compiler-command (expand-file-name "moss" root)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (moss-mode)
+          ;; Build debug artifacts
+          (let* ((artifacts (moss--prepare-artifacts source))
+                 (cmd (moss--debug-build-command source)))
+            (call-process-shell-command cmd)
+            (should (file-exists-p (alist-get 'map artifacts)))
+            (should (file-exists-p (alist-get 'rust artifacts)))
+            ;; Move to line with "fn Add"
+            (goto-char (point-min))
+            (search-forward "fn Add")
+            (let* ((line (line-number-at-pos))
+                   (map-file (moss--source-map-file source))
+                   (doc (moss--read-map map-file))
+                   (entry (car (moss--entries-at-source doc source line))))
+              (should entry)
+              (let* ((gen (moss--json-get 'generated entry))
+                     (gen-file (moss--json-get 'file gen))
+                     (gen-line (moss--entry-generated-line entry line)))
+                (should (file-exists-p gen-file))
+                (should (> gen-line 0))))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest moss-mode-retired-domain-spellings-are-warnings ()
   (with-temp-buffer
     (insert "spawn Worker()\nawait worker.Run()\nmessage worker.Run()\ndomainroutes(worker: Worker)\n")
