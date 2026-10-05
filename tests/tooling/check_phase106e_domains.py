@@ -31,7 +31,15 @@ def equivalent(source, expected):
     text = rust.read_text()
     # Inspect implementation constructs, not historical documentation/comments.
     implementation = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
-    assert not re.search(r'Moss(?:Sender|Receiver|Channel|Tracker|Cluster)|thread::spawn|Condvar|mpsc::|_locked\(|_local\(|AtomicI64|AtomicBool|Arc<(?:Mutex|RwLock)<\w+State', implementation)
+    # The Phase 20 process-wide root coordination module (FileIO inode registry
+    # fair lock, docs/ROOT_RUNTIME_ABI.md) legitimately parks on a Condvar; it is
+    # not domain lowering.  Exempt only that module, and only for Condvar.
+    legacy = r'Moss(?:Sender|Receiver|Channel|Tracker|Cluster)|thread::spawn|mpsc::|_locked\(|_local\(|AtomicI64|AtomicBool|Arc<(?:Mutex|RwLock)<\w+State'
+    root_runtime = re.findall(r'^pub mod moss_root_runtime \{\n.*?^\}\n', implementation, re.S | re.M)
+    assert len(root_runtime) == 1, source
+    assert not re.search(legacy, root_runtime[0])
+    implementation = implementation.replace(root_runtime[0], '')
+    assert not re.search(legacy + r'|Condvar', implementation)
     assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
     binary = rust.with_suffix('')
     run(['rustc', '-D', 'warnings', rust, '-o', binary])

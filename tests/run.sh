@@ -29,6 +29,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_9_cross_package_sp
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_039_project_fast_debug_tests.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_diagnostic_provenance.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_060_qualified_rename.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_fileio_runtime.py
 
 fail() {
   echo "test failure: $*" >&2

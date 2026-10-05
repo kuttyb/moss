@@ -124,3 +124,79 @@ entry paths that must implement the same root-ingress semantics.
 
 Record physical signatures and layouts here once defined by their owning
 implementation area from the phase spec, before other areas call them.
+
+## Process-wide FileIO runtime linkage & platform contract
+
+### Platform Support
+Two runtime modules are emitted, with different platform scope:
+
+| Module | Emitted for | Contents | Platform |
+| --- | --- | --- | --- |
+| `moss_fileio` (`fileio_runtime_rust()`) | programs/providers that use `FileIO`, `Range`, or `RangeBatch` | Linux POSIX FileIO implementation | **Linux x86_64 / aarch64 only** |
+| `moss_root_runtime` (`fileio_root_runtime_rust()`) | every executable root, even with no local FileIO | inode registry, fair leaf lock, Solo hook storage, process-wide symbol definitions | portable (std only, no target guard) |
+
+Only `moss_fileio` carries the target guard:
+```rust
+#[cfg(not(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64"
+    )
+)))]
+compile_error!("Moss Phase 20 FileIO runtime is only supported on Linux x86_64 and aarch64.");
+```
+A root must define the coordination symbols because a source-free linked
+provider may use FileIO. Those symbols are portable, so an ordinary Moss
+program that never uses FileIO keeps its existing portability. The restriction
+applies only when a crate in the program actually compiles `moss_fileio`. It is
+a limit of the initial runtime implementation, not of Moss semantics.
+
+### Process-Wide Linkage Architecture
+Across all linked crates in a process (compiled provider `.rlib`s and the root executable):
+- **Root Executable**: Defines the process-wide `#[no_mangle]` symbol definitions and manages the synchronized process state in `moss_root_runtime`.
+- **Provider Libraries (`.rlib`)**: Consume the runtime symbols via `extern "C"` and `extern "Rust"` declarations under `moss_fileio::sys`.
+- A physical change to cross-crate signatures after Phase 20 integration requires an appropriate native/provider ABI version bump and rebuild of source-free providers.
+
+### Cross-Crate Production ABI
+The only symbols a provider resolves against the executable in production:
+```text
+extern "C":
+  moss_fileio_registry_claim(dev: u64, ino: u64) -> bool
+  moss_fileio_registry_release(dev: u64, ino: u64)
+
+extern "Rust":
+  moss_solo_enter(reason: &str)
+  moss_solo_leave(reason: &str)
+```
+
+### Executable-Internal Runtime Integration Helpers
+Production runtime machinery inside the root executable. Not provider-facing and
+not Moss semantic surface:
+- `moss_root_runtime::moss_set_solo_hooks(enter: fn(&str), leave: fn(&str))` / `moss_clear_solo_hooks()`: installation point for Agent C executor compensation hooks. With no hooks installed, `moss_solo_enter`/`moss_solo_leave` are no-ops.
+
+### Test-Only Instrumentation (Non-ABI)
+Gated behind `#[cfg(any(test, moss_perf))]` (the repository convention shared with `handler_runtime_rust()`). Absent from ordinary generated runtimes, so production code cannot resolve them:
+- `moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
+- `moss_fileio_registry_reset()`: can erase a live inode claim, so it must never reach production
+- `moss_set_close_override(f: fn(RawFd) -> i32)` / `moss_clear_close_override()`
+- `moss_set_sync_hook(hook: fn(&str, RawFd, &str))` / `moss_clear_sync_hook()`
+- `moss_root_runtime::test_support`: fair-lock trace (assigned ticket and critical-section entry order), issued-ticket and parked-waiter counters, and `hold_turn()` for deterministic contention tests
+
+### Fair Leaf Lock Discipline (Phase 20 R5)
+The process-wide inode registry is a private `FairRegistryLock`: an `AtomicU64` ticket counter, a `Mutex<RegistryState { serving_ticket, inode_set }>`, and a `Condvar`.
+1. **FIFO Admission**: Each request takes a ticket with `fetch_add`, locks the state, and waits on the `Condvar` (releasing the mutex) until `serving_ticket` equals its ticket. On exit it increments `serving_ticket` and calls `notify_all`. Waiting is event-driven, with no spin or yield loop.
+2. **Leaf Discipline**: Only the private concrete operations `claim`/`release` run in production (`contains`/`reset` are test-only). Each critical section is a single in-memory `HashSet` insert/remove. No kernel syscalls, no Moss or other runtime locks, and no callbacks run while the registry lock is held. There is no general callback facility.
+3. **No Stranded Tickets**: Critical sections cannot unwind. Poisoned mutex or `Condvar` results abort. A ticket that was taken is therefore always served and advanced.
+4. **Lock-Dropping Hook Invocation**: Solo hook registration locks and test hook mutexes are released before user/executor callbacks are called, preventing reentrancy deadlocks.
+
+### Agent B ↔ Agent C Solo Bridge & Integration Contract
+- FileIO operations bracket all potentially blocking kernel waits (`open`, `fstat`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`, `fstatfs`) with RAII `SoloGuard`, which invokes `moss_solo_enter` and `moss_solo_leave`.
+- Agent C registers executor compensation hooks via `moss_set_solo_hooks`. Agent B does not implement the executor or compensation scheduling.
+- **Integration Test Contract**:
+  - Executor configured with `threads = 1, max_threads >= 2`.
+  - Root A starts and enters a blocking FileIO operation (`moss_solo_enter` fires).
+  - Executor activates compensation worker; independent work (Root B or another branch) makes progress while Root A is blocked in the kernel.
+  - FileIO finishes, `moss_solo_leave` fires without waiting for compute slots.
+  - Active worker count never exceeds `T_max`, and excess workers park cleanly.
+- Status: this end-to-end compensation regression is an A+B+C integration dependency. It has not been run on the isolated Agent B branch. Agent B verifies the bridge only: provider FileIO reaches the executable-installed hooks across `.rlib` boundaries, with no FileIO or registry lock held during the callback.
