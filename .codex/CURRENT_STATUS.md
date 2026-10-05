@@ -1,5 +1,22 @@
 # Moss current status
 
+## Root runtime ABI naming contract — names reserved (2026-10-04)
+
+`docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
+maps their behavior to `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md`:
+FileIO runtime ABI, Executor/root runtime ABI, RootDescriptor representation,
+branch publish/join API, solo-block enter/leave hooks, and the `runtime_invoke`
+host ABI. It fixes the runtime-facing semantic names `FileIO`, `Range`,
+`RangeBatch`, `Executor`, `Root`, and `Branch`, plus the lifecycle
+`INLINE → ACTIVE → DRAINING → INLINE`. Future implementation belongs in new
+`.hpp` / `.inc` modules with only narrow wiring in `src/moss.cpp`.
+
+The phase specification was supplied during this session. It fixes semantic
+behavior but leaves physical Rust signatures, layouts, and error carriers to
+the implementation. Those remain unfinished. No Moss source or compiler code
+changed. Validation: repository bootstrap reported `moss-0.1`; the worktree
+was initially clean; `git diff --check` passed after the documentation edit.
+
 ## Emacs Package Build Hardening (Canonical Artifacts, Toolchains, Spaces) — COMPLETE (2026-10-01)
 
 Hardening pass on Emacs package build integration to consume compiler/Margo-owned canonical artifact metadata without filename guessing, maintain exact build profile tracking across debug and release builds, propagate configured toolchain commands, and parse compilation diagnostics containing spaces.
