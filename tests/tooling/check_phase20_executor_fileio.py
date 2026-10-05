@@ -281,9 +281,9 @@ fn main():
 root_rust, root_binary = native_build('phase20_root_message', root_source, observe=True)
 root_text = code_only(root_rust.read_text())
 assert root_text.count('runtime_invoke(') == 4, root_text
-work_body = re.search(r'fn __moss_body_Worker_Work\\b.*?\\n}\\n', root_text, re.S)
+work_body = re.search(r'fn __moss_body_Worker_Work\b.*?\n}\n', root_text, re.S)
 assert work_body and 'runtime_invoke' not in work_body.group(0), work_body
-assert run_binary(root_binary).stdout == '3\\nlabel evaluated\\n4\\n6\\n'
+assert run_binary(root_binary).stdout == '3\nlabel evaluated\n4\n6\n'
 
 # Root ingress marking covers nested main control-flow blocks.
 nested_root_source = write_source('phase20_root_message_nested_control', """enum MainChoice:
@@ -316,7 +316,7 @@ nested_rust, nested_binary = native_build(
     'phase20_root_message_nested_control', nested_root_source, observe=True)
 nested_text = code_only(nested_rust.read_text())
 assert nested_text.count('runtime_invoke(') == 4, nested_text
-assert run_binary(nested_binary).stdout == '10\\n'
+assert run_binary(nested_binary).stdout == '10\n'
 
 exported_root_source = write_source('phase20_root_message_exported_domain', """export domain Boundary:
   fn Read() -> Int:
@@ -333,7 +333,7 @@ exported_rust, exported_binary = native_build(
     'phase20_root_message_exported_domain', exported_root_source, observe=True)
 exported_text = code_only(exported_rust.read_text())
 assert 'runtime_invoke(move ||' in exported_text and '.__moss_message_Read()' in exported_text
-assert run_binary(exported_binary).stdout == '23\\n'
+assert run_binary(exported_binary).stdout == '23\n'
 
 # runtime_invoke is emitted for executor-free main messages as well; the
 # normal executable root includes Agent C's runtime in INLINE mode.
@@ -347,7 +347,7 @@ fn main():
 """)
 free_rust, free_binary = native_build('phase20_root_message_executor_free', free_root_source)
 assert 'runtime_invoke(move ||' in code_only(free_rust.read_text())
-assert run_binary(free_binary).stdout == '17\\n'
+assert run_binary(free_binary).stdout == '17\n'
 
 # ---------------------------------------------------------------------------
 # FileIO: Agent-B-aligned statement lowering and ordinary helper borrowing.
