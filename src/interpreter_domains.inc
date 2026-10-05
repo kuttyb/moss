@@ -227,6 +227,11 @@
     return call;
   }
 
+  // Phase 20: a top-level `message` from `main` (checker bit
+  // message_root_ingress) is an independent synchronous Root. Fast Debug's
+  // sequential schedule already gives it Root semantics: arguments are
+  // snapshotted (prepare_handler_call) and the Root runs to completion before
+  // the caller continues. Nested messages inside it are ordinary nested calls.
   Value message(const std::string& invocation, Frame& caller, int line, std::ostream& output) {
     return run_handler_call(prepare_handler_call(invocation, caller, line, output), caller, output);
   }

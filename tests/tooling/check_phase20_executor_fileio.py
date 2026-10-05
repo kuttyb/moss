@@ -211,13 +211,143 @@ fn main():
 text, native = executor_parity('phase20_executor_config', config_source, '2\n8\n16\n3\n4\n')
 # Evaluated exactly once each, in source order (stdout above), and passed
 # to Agent C's builder in that order before start().
-assert re.search(r'MossExecutor::new\(\)\.threads\(__moss_executor_cfg_0 as usize\)'
-                 r'\.max_threads\(__moss_executor_cfg_1 as usize\)'
-                 r'\.queue_capacity\(__moss_executor_cfg_2 as usize\)'
-                 r'\.affinity\(__moss_executor_cfg_3\.iter\(\)[^;]*?\)'
-                 r'\.priority\(__moss_executor_cfg_4 as i32\)\.start\(\)', text), text
+assert 'std::convert::TryFrom<i64>' in text and '.try_from(__moss_executor_cfg_' in text, text
+assert not re.search(r'__moss_executor_cfg_\d+ as (usize|i32)', text), text
 assert text.index('.start()') < text.index('.enqueue_root(') < text.rindex('executor.join()')
 assert text.count('__moss_executor_cfg_') >= 10  # 5 temps, each bound then used once
+
+# Dynamic Moss Int values must convert with checked TryFrom, rejecting
+# negative and out-of-range values before Executor.start().
+for label, chain, needle in (
+        ('threads', 'Executor().threads(pick(0 - 2)).start()', 'invalid threads'),
+        ('queue', 'Executor().queue_capacity(pick(0 - 1)).start()', 'invalid queue_capacity'),
+        ('priority', 'Executor().priority(pick(4294967296)).start()', 'invalid priority'),
+        ('affinity', 'Executor().affinity([0, pick(0 - 1)]).start()', 'invalid affinity')):
+    name = 'phase20_executor_config_dynamic_' + label
+    source = write_source(name, """fn pick(n: Int) -> Int:
+  return n
+
+domain Worker:
+  fn Process(amount: Int):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = %s
+  executor.invoke(worker.Process(1))
+  executor.join()
+""" % chain)
+    rust, binary = native_build(name, source)
+    text = rust.read_text()
+    assert 'std::convert::TryFrom<i64>' in text, text
+    p = subprocess.run([str(binary)], text=True, capture_output=True, timeout=120)
+    assert p.returncode != 0 and needle in p.stderr, (name, p.returncode, p.stderr)
+
+# Main-originated messages use runtime_invoke before start, while ACTIVE,
+# and after join. Their arguments are evaluated once, and handler-to-handler
+# messages stay within the current Root.
+root_source = write_source('phase20_root_message', """fn label() -> String:
+  echo "label evaluated"
+  return "abcd"
+
+domain Ledger:
+  total = 0
+  fn Add(amount: Int):
+    total = total + amount
+  fn Get() -> Int:
+    reply total
+
+domain Worker:
+  domainroutes(ledger: Ledger)
+  fn Work(amount: Int):
+    message ledger.Add(amount)
+  fn Get(text: String) -> Int:
+    reply text.length()
+
+fn main():
+  ledger = Ledger()
+  worker = Worker(ledger: ledger)
+  before = message worker.Get("abc")
+  echo before
+  executor = Executor().threads(2).start()
+  executor.invoke(worker.Work(5))
+  during = message worker.Get(label())
+  echo during
+  executor.join()
+  message ledger.Add(1)
+  after = message ledger.Get()
+  echo after
+""")
+root_rust, root_binary = native_build('phase20_root_message', root_source, observe=True)
+root_text = code_only(root_rust.read_text())
+assert root_text.count('runtime_invoke(') == 4, root_text
+work_body = re.search(r'fn __moss_body_Worker_Work\\b.*?\\n}\\n', root_text, re.S)
+assert work_body and 'runtime_invoke' not in work_body.group(0), work_body
+assert run_binary(root_binary).stdout == '3\\nlabel evaluated\\n4\\n6\\n'
+
+# Root ingress marking covers nested main control-flow blocks.
+nested_root_source = write_source('phase20_root_message_nested_control', """enum MainChoice:
+  Run
+  Skip
+
+domain Counter:
+  total = 0
+  fn Add(amount: Int):
+    total = total + amount
+  fn Read() -> Int:
+    reply total
+
+fn main():
+  counter = Counter()
+  executor = Executor().threads(2).start()
+  if true:
+    message counter.Add(1)
+  match MainChoice.Run:
+    case Run:
+      message counter.Add(2)
+    case Skip:
+      pass
+  for item in range(0, 2):
+    message counter.Add(item + 3)
+  executor.join()
+  echo message counter.Read()
+""")
+nested_rust, nested_binary = native_build(
+    'phase20_root_message_nested_control', nested_root_source, observe=True)
+nested_text = code_only(nested_rust.read_text())
+assert nested_text.count('runtime_invoke(') == 4, nested_text
+assert run_binary(nested_binary).stdout == '10\\n'
+
+exported_root_source = write_source('phase20_root_message_exported_domain', """export domain Boundary:
+  fn Read() -> Int:
+    reply 23
+
+fn main():
+  boundary = Boundary()
+  executor = Executor().threads(2).start()
+  value = message boundary.Read()
+  executor.join()
+  echo value
+""")
+exported_rust, exported_binary = native_build(
+    'phase20_root_message_exported_domain', exported_root_source, observe=True)
+exported_text = code_only(exported_rust.read_text())
+assert 'runtime_invoke(move ||' in exported_text and '.__moss_message_Read()' in exported_text
+assert run_binary(exported_binary).stdout == '23\\n'
+
+# runtime_invoke is emitted for executor-free main messages as well; the
+# normal executable root includes Agent C's runtime in INLINE mode.
+free_root_source = write_source('phase20_root_message_executor_free', """domain Counter:
+  fn Read() -> Int:
+    reply 17
+
+fn main():
+  counter = Counter()
+  echo message counter.Read()
+""")
+free_rust, free_binary = native_build('phase20_root_message_executor_free', free_root_source)
+assert 'runtime_invoke(move ||' in code_only(free_rust.read_text())
+assert run_binary(free_binary).stdout == '17\\n'
 
 # ---------------------------------------------------------------------------
 # FileIO: Agent-B-aligned statement lowering and ordinary helper borrowing.

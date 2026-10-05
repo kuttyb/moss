@@ -87,6 +87,12 @@ struct Stmt {
   // for this `name = Executor()...start()` statement (index into
   // Program::executor_start_plans, offset by one).
   mutable std::size_t executor_start_plan_id = 0;
+  // Phase 20 Agent D: set by the checker on statements that execute directly
+  // in `main`. A `message` evaluated by such a statement is root ingress
+  // (an independent synchronous Root through unified admission, sec. 5),
+  // not a nested message inside an existing Root. Codegen and Fast Debug
+  // select their lowering from this checked fact, never from source text.
+  mutable bool message_root_ingress = false;
   string source_file;
 };
 struct Method {

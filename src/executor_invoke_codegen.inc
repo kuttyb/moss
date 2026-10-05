@@ -36,17 +36,35 @@ void emit_executor_start(std::ostringstream& o, const Stmt& s, int spaces,
     o << pad << "let " << temp << " = " << expr(call.argument, nullptr, locals, &types) << ";\n";
     values.push_back(temp);
   }
-  o << pad << "let mut " << s.a << " = MossExecutor::new()";
+  // Moss Int is a signed i64: convert with checked conversions and fail
+  // closed, never with a wrapping `as` cast that could turn -1 into a huge
+  // worker count or core id. Agent C still validates counts > 0 and
+  // max_threads >= threads at start().
+  auto fail = [&](const string& what) {
+    return ".unwrap_or_else(|_| { eprintln!(" +
+        rust_string_literal("moss executor: invalid " + what + " for Executor '" + s.a +
+                            "' at line " + std::to_string(s.line)) +
+        "); std::process::abort() })";
+  };
+  vector<string> converted;
   for (size_t index = 0; index < plan.calls.size(); ++index) {
     const auto& call = plan.calls[index];
-    const string& value = values[index];
+    string temp = values[index] + "_checked";
     if (call.method == "affinity")
-      o << ".affinity(" << value << ".iter().map(|__moss_core| *__moss_core as usize).collect())";
+      o << pad << "let " << temp << ": std::vec::Vec<usize> = " << values[index]
+        << ".iter().map(|__moss_core| <usize as std::convert::TryFrom<i64>>::try_from(*__moss_core)" << fail("affinity core id")
+        << ").collect();\n";
     else if (call.method == "priority")
-      o << ".priority(" << value << " as i32)";
+      o << pad << "let " << temp << ": i32 = <i32 as std::convert::TryFrom<i64>>::try_from(" << values[index] << ")"
+        << fail("priority") << ";\n";
     else
-      o << "." << call.method << "(" << value << " as usize)";
+      o << pad << "let " << temp << ": usize = <usize as std::convert::TryFrom<i64>>::try_from(" << values[index] << ")"
+        << fail(call.method) << ";\n";
+    converted.push_back(temp);
   }
+  o << pad << "let mut " << s.a << " = MossExecutor::new()";
+  for (size_t index = 0; index < plan.calls.size(); ++index)
+    o << "." << plan.calls[index].method << "(" << converted[index] << ")";
   o << ".start();\n";
   locals.insert(s.a);
   types[s.a] = "executor";
@@ -126,4 +144,60 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
                    semantic_program_->root_submission_plans.at(s.root_submission_plan_id - 1),
                    locals, types);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Top-level `message` from `main`: synchronous Root ingress (sec. 5).
+//
+// A message evaluated by a statement the checker marked message_root_ingress
+// is an independent Root, not a nested call. It lowers through Agent C's
+// synchronous ingress, which uses inline admission before start() and after
+// join(), and executor admission while ACTIVE:
+//
+//   { let __d = target.clone(); let __a0 = <owned snapshot>; ...
+//     runtime_invoke(move || __d.Handler_shared(<lend __a0>)[.unwrap reply]) }
+//
+// The target and every argument are evaluated exactly once at the message
+// statement, snapshotted by value with the ordinary message-boundary
+// lowering, and moved into a `Send + 'static` thunk; the caller waits for
+// that Root and receives its reply. Nested messages (inside handlers,
+// functions, methods) keep the direct synchronous lowering.
+//
+string root_ingress_message(const string& receiver, const string& handler,
+                            const vector<string>& arguments,
+                            const Domain& target_domain, const Handler& target_handler,
+                            const Domain* d, const std::set<string>& locals,
+                            const std::unordered_map<string,string>* types,
+                            const vector<size_t>* message_argument_plans) const {
+  std::ostringstream rendered;
+  string domain_temp = "__moss_root_domain_" + std::to_string(executor_invoke_temp_++);
+  rendered << "{ let " << domain_temp << " = " << expr(receiver, d, locals, types) << ".clone(); ";
+  vector<string> argument_locals;
+  for (size_t index = 0; index < arguments.size(); ++index) {
+    string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
+    rendered << "let " << temp << " = "
+             << message_arg(arguments[index], target_handler.params.at(index).type, d,
+                            locals, types,
+                            message_argument_plans ? message_argument_plans->at(index) : 0)
+             << "; ";
+    argument_locals.push_back(temp);
+  }
+  rendered << "runtime_invoke(move || ";
+  if (target_domain.exported && !exported_domain_bridge_body_) {
+    rendered << domain_temp << ".__moss_message_" << handler << "(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      rendered << (index ? ", " : "") << argument_locals[index];
+    rendered << ")";
+  } else {
+    rendered << domain_temp << "." << handler << "_shared(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      rendered << (index ? ", " : "")
+               << shared_message_forward_argument(
+                      Param{argument_locals[index], target_handler.params.at(index).type, false},
+                      true);
+    rendered << ")";
+    if (target_handler.reply_type) rendered << ".unwrap_or_else(|| std::process::abort())";
+  }
+  rendered << ") }";
+  return rendered.str();
 }

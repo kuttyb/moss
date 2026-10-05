@@ -10177,6 +10177,12 @@ class Checker {
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
+      // The type-environment walker visits nested statements with this same
+      // visitor, so every message under main (including branch and loop
+      // bodies) receives the checked Root-ingress fact.
+      if (current == nullptr && current_function == nullptr && current_object_ == nullptr &&
+          p_.main && &statements == &p_.main->body)
+        statement.message_root_ingress = true;
       if (check_executor_or_fileio_statement(statement, current_env, current,
                                              current_function, &statements))
         return;
@@ -12140,6 +12146,7 @@ class Generator {
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
   mutable size_t executor_invoke_temp_ = 0;
+  mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
 
   bool owns_specialization(const Domain& specialized) const {
@@ -13871,6 +13878,10 @@ class Generator {
       const Handler* target_handler = find_handler(target_domain, handler);
       if (!target_handler)
         throw std::runtime_error("internal error: unresolved message expression handler");
+      if (root_ingress_statement_)
+        return root_ingress_message(receiver, handler, arguments, target_domain,
+                                    *target_handler, d, locals, types,
+                                    message_argument_plans);
       if (target_domain.exported && !exported_domain_bridge_body_) {
         std::ostringstream call;
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
@@ -15239,6 +15250,12 @@ class Generator {
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
 
       source_comment(o, (base + level) * 4, s.line, s.text);
+
+      struct RootIngressScope {
+        bool& flag; bool saved;
+        RootIngressScope(bool& f, bool value) : flag(f), saved(f) { flag = value; }
+        ~RootIngressScope() { flag = saved; }
+      } root_ingress_scope(root_ingress_statement_, s.message_root_ingress);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
           s, functional_context, 0);
