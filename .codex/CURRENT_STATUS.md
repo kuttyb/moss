@@ -180,6 +180,100 @@ Final proof-level hardening and concurrency safety completed for Phase 20 Agent 
 - `sh tests/run.sh ./moss build/tests`: **All Moss v0.1 tests passed**.
 - `make examples`: **PASSED** (all 29 examples compiled and verified).
 - `git diff --check`: **Clean**.
+## Phase 20 Agent D — Compiler concurrency lowering (2026-10-04)
+
+Branch `phase-20-d-concurrency-lowering` (base `d3cdc52`). Agent D's compiler
+concurrency planning/lowering is complete against the Phase 20 integration
+seams; it was developed without merging Agents A/B/C and targets the
+physical ABIs on their current branches (`phase-20-a-fileio-semantics`,
+`phase-20-b-fileio-runtime`, `phase-20-c-executor-runtime`). Native
+execution of architectural Roots and chunk Branches needs Agent C's runtime;
+production FileIO/Range needs Agent B's; capability boundary facts are meant
+to come from Agent A. Agent D defines none of those runtimes in `src/`.
+
+**Executor / `executor.invoke`** (`src/executor_invoke_lowering.inc`,
+`src/executor_invoke_codegen.inc`). `Executor()` and `executor.invoke` are
+main-only, compiler-recognized forms (no `executor` entry in `valid_type()`,
+so storage/parameters/payloads are rejected by ordinary type checks). The
+checker builds an `ExecutorStartPlan` (configuration calls in source order;
+`threads`/`max_threads`/`queue_capacity`/`priority` must be Int,
+`affinity` a Vector[Int]; `start()` takes no arguments; literal counts must
+be positive and `max_threads >= threads`) and, per invoke, a
+`RootSubmissionPlan` (target binding, domain and handler semantic
+identities, handler selector, formal argument types, snapshot expressions,
+one-way). Invoke arguments are type-checked like a handler call and
+rejected if their inferred type is a Phase 20 capability
+(`phase20_is_nontransferable_capability`, the one Agent A adapter point).
+Invoke sites participate in ordinary untyped handler-parameter inference
+(`infer_statement_expressions`, `infer_domain_specializations`).
+Codegen lowers to Agent C's `MossExecutor::new().<config>.start()`,
+`enqueue_root(MossRootDescriptor::with_target(next_root_id(), identity,
+move || ...))`, and `join()`: argument snapshots are owned values evaluated
+at the invoke statement, the domain ref is cloned, and the `Send + 'static`
+thunk lends them to `<Handler>_shared`. Never a synchronous call. The
+lifecycle checker tracks one state per binding (Unstarted/Active/Consumed)
+across if/match/loops, rejects `return` with an Active Executor, ignores
+terminated paths when merging, and requires loop bodies to be lifecycle
+no-ops.
+
+**FileIO / Range typing.** `FileIO.open/read/write/sync/close/chunks` and
+`Range.length()` are typed by the compiler; `read` returns `range`,
+`chunks` returns the scoped `seq[range]` (rejected if bound to a local or
+used other than as `chunks(C) |> map(f) |> reduce(init, combine)`). FileIO
+and Range are legal as ordinary helper parameters (sec. 9.3) but not as
+returns, domain state, handler parameters, or message/invoke payloads.
+Generated calls match Agent B: `FileIO::open`, `read`, `write`, `sync()`,
+`sync_dataonly()`, `close()`, `Range::len()`. FileIO operations set
+`ObservableEffects::fileio` (directly and transitively); `Range.length()`
+does not.
+
+**Chunk pipelines** (`src/file_chunk_lowering.inc`,
+`src/file_chunk_codegen.inc`). The checker builds
+`FunctionalPipeline::chunk_plan` (receiver, chunk size, map/initial/combine,
+accumulator/mapped types, `window_k = 4`, static eligibility + reason;
+shown by `--dump-functional-ir`). Eligible = map pure (`fusion_safe`), map
+reaches no FileIO, map captures no parent locals (Branch work must be
+`Send + 'static`), combine reaches no FileIO. Eligible pipelines lower to
+windows of K Branches published into one Agent C join scope
+(`branch_scope_new`/`branch_publish`/`branch_join`) before a single join;
+each Branch reads through an owned compiler-internal
+`moss_fileio_branch_read_borrow(&file)` token and writes its outcome to a
+compiler-owned `Arc<Mutex<Option<..>>>` slot; the parent commits slots in
+index order (zero-length stops without fold, short folds once and stops,
+later speculative slots are discarded). The initializer is evaluated before
+any publication; combine runs only in the parent, left to right.
+Ineligible pipelines lower to the sequential reference loop with no Branch
+calls. Agent C has no current-Root accessor, so `branch_scope_new(0)` is
+passed (its id is instrumentation-only there).
+
+**Fast Debug.** `executor.invoke` is implemented as a deterministic
+sequential schedule: arguments snapshotted at invoke, roots run at join
+through the normal handler machinery, so invoke stays distinct from
+synchronous `message`. FileIO in Fast Debug awaits A/B integration and
+raises a clear error; full native/Fast Debug Phase 20 parity is therefore
+not complete until FileIO is integrated.
+
+**Integration items for A/B/C.** Agent B must provide
+`moss_fileio_branch_read_borrow(&FileIO) -> MossFileIOReadBorrow` (owned,
+read-only, `Send + 'static`; B's current `FileIO` needs shareable backing to
+do so). Agent C should consider a current-Root id accessor for
+`branch_scope_new`. `ObservableEffects::fileio` should eventually be fed by
+Agent A's effect facts, and the capability predicate replaced by A's
+boundary fact. `fileio` is not yet serialized into `.mossi` or effect JSON.
+
+**Validation.** `tests/tooling/check_phase20_executor_fileio.py` (in
+`tests/run.sh`) links generated code with TEST-ONLY shims in
+`tests/tooling/fixtures/` that mirror B/C signatures (including `Send +
+'static` Branch/Root work) and covers: the negative legality matrix
+(lifecycle, early return, branch-consumed state, argument types, config
+types/arity/ranges, chunk materialization/shape); native vs Fast Debug
+parity for invoke programs including deferred execution, untyped-parameter
+inference, and config evaluation order; B-aligned FileIO lowering; K=4
+publish-before-join traces across window boundaries, zero/short terminal
+handling with discarded speculative slots, initializer-before-publication;
+FileIO-in-map/combine and domain-capturing maps lowering sequentially.
+Full `tests/run.sh`, `make examples`, strict rebuild, and
+`git diff --check` pass (see the final commit body).
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

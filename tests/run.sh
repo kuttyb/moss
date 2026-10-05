@@ -16,6 +16,7 @@ python3 tests/tooling/check_agent_benchmark.py "$compiler"
 python3 tests/tooling/check_agent_baseline.py "$compiler"
 python3 tests/tooling/check_agent_baseline_analysis.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase22_3_ab.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_executor_fileio.py "$compiler" "$test_build"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_semantic_queries.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase225_semantic_ide.py "$compiler"

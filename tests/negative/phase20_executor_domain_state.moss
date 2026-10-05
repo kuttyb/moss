@@ -1,0 +1,9 @@
+domain Scheduler:
+  pool: Executor
+
+  fn Run():
+    pass
+
+fn main():
+  scheduler = Scheduler()
+  message scheduler.Run()

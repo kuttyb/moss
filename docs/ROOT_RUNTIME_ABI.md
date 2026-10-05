@@ -263,3 +263,106 @@ pub fn executor_solo_leave_from_fileio(op_name: &'static str);
 ```rust
 pub fn runtime_invoke<R: Send + 'static, F: FnOnce() -> R + Send + 'static>(work: F) -> R;
 ```
+## Agent D compiler seams
+
+Agent D (compiler concurrency lowering) emits no runtime of its own: no root
+queue, Executor or Branch scheduler, Solo compensation, or FileIO
+implementation. Generated native code names the physical ABI owned by Agent
+B (FileIO/Range) and Agent C (Executor/Root/Branch), so a native build that
+uses these features links against their crates.
+
+### Executor and Roots (Agent C)
+
+The checker records `ExecutorStartPlan` (ordered configuration calls) and,
+for every `executor.invoke(...)`, a `RootSubmissionPlan` (target binding,
+checked domain and handler semantic identities, backend handler selector,
+formal argument types, argument snapshot expressions, one-way). Codegen
+consumes only these plans:
+
+```rust
+let __cfg0 = /* threads arg */;   // each argument evaluated once, in source order
+// ...
+let mut executor = MossExecutor::new().threads(__cfg0 as usize)/* ... */.start();
+{
+    let __domain = worker.clone();
+    let __arg0 = /* owned value-boundary snapshot, evaluated at invoke */;
+    executor.enqueue_root(MossRootDescriptor::with_target(
+        next_root_id(), "handler:Worker.Process@N",
+        move || { let _ = __domain.Process_shared(/* lend __arg0 */); }));
+}
+executor.join();
+```
+
+`executor.invoke` never lowers to a synchronous handler call. Root work is
+`FnOnce() + Send + 'static`. `affinity` lowers to `Vec<usize>`, `priority`
+to `i32`, counts to `usize`.
+
+### Chunk-pipeline Branches (Agent C)
+
+An eligible `file.chunks(C) |> map(f) |> reduce(init, combine)` lowers per
+`ChunkParallelPlan` (a compiler-constant `window_k`, currently 4) to windows
+of K Branches in one join scope:
+
+```text
+acc = init                                   // before any publication
+loop over windows:
+    scope = branch_scope_new(owner_root_id)
+    for lane in 0..K:                        // K publications precede the join
+        slot  = Arc<Mutex<Option<(Option<Mapped>, i64, bool)>>>   // compiler-owned
+        token = moss_fileio_branch_read_borrow(&file)
+        branch_publish(&scope, move || { read chunk (index * C, C) via token;
+                                         map if nonempty; store outcome in slot })
+    branch_join(scope)
+    commit slots in index order:
+        zero-length -> stop (no map/fold)
+        short       -> fold once, stop
+        full        -> fold, continue
+        (slots after the first terminal are discarded)
+```
+
+`branch_publish` returns nothing and must not block; the runtime may run
+overflow inline. Branch work is `FnOnce() + Send + 'static`. The mapped
+result never passes through the scheduler. `combine` runs only in the
+parent Root, left to right; there is no tree reduction. Agent C exposes no
+current-Root accessor yet, so generated code passes `0` as the
+instrumentation-only `owner_root_id`.
+
+A pipeline whose map is impure, reaches FileIO, or captures parent locals,
+or whose combine reaches FileIO, lowers to the plain sequential loop and
+uses no Branch ABI.
+
+### FileIO and Range (Agent B)
+
+Generated calls: `FileIO::open(&str, &str)`, `file.read(i64, i64) -> Range`,
+`file.write(i64, data)`, `file.sync()`, `file.sync_dataonly()` (for
+`sync(dataonly)`), `file.close()`, and `Range::len() -> i64` (for Moss
+`range.length()`). `file.chunks(C)` is a scoped `seq[Range]` source that is
+only consumed by the chunk-pipeline lowering above, never materialized.
+
+**Reserved seam (not yet provided by Agent B):**
+
+```rust
+fn moss_fileio_branch_read_borrow(file: &FileIO) -> MossFileIOReadBorrow;
+impl MossFileIOReadBorrow { fn read(&self, offset: i64, size: i64) -> Range; }
+```
+
+A compiler-internal, owned, read-only token that a `'static` Branch can
+carry instead of `&FileIO`. It is not a Moss value and not a second FileIO
+owner; it shares the open file's runtime backing, permits only reads, and
+the compiler guarantees every token is dead by the window's `branch_join`.
+Agent B's current `FileIO { inner: Mutex<Option<FileIOInner>> }` would need
+shareable backing (for example an `Arc` inside) to implement it.
+
+### Fast Debug
+
+`executor.invoke` runs as a deterministic sequential schedule of deferred
+roots (snapshot at invoke, run at join). FileIO execution in Fast Debug
+awaits Agent A/B integration and raises a clear error.
+
+### Test-only shims
+
+`tests/tooling/fixtures/phase20_executor_runtime_shim.rs`,
+`phase20_branch_runtime_shim.rs`, and `phase20_fileio_range_shim.rs` mirror
+the signatures above so Agent D's lowering can be compiled and run in
+isolation. They are never emitted by the compiler and are not a design for
+Agent B/C.

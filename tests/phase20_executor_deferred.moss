@@ -1,0 +1,17 @@
+domain Worker:
+  total = 0
+
+  fn Process(amount: Int):
+    echo "root ran"
+    total = total + amount
+
+  fn Read() -> Int:
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  executor.invoke(worker.Process(5))
+  echo "submitted"
+  executor.join()
+  echo message worker.Read()

@@ -326,6 +326,101 @@ static bool parse_member_call(const string& text, string& receiver, string& hand
   return true;
 }
 
+// Phase 20: `Executor` and `FileIO` are compiler-recognized pinned-capability
+// forms, not general nominal types registered with the rest of the type
+// system. Both the checker and native codegen decompose their builder-chain
+// and qualified-construction syntax through these shared textual helpers
+// rather than threading a new value type through every generic expression
+// path. This keeps the restriction that neither value can be stored, copied,
+// or passed through an ordinary expression position "for free": nothing
+// outside these targeted call sites recognizes the resulting pseudo-type
+// strings ("executor" / "FileIO") as meaningful.
+static bool parse_executor_chain(const string& text,
+                                 vector<std::pair<string, vector<string>>>& calls) {
+  string value = trim(text);
+  calls.clear();
+  while (true) {
+    string callee;
+    vector<string> args;
+    if (parse_simple_call(value, callee, args) && callee == "Executor" && args.empty()) {
+      std::reverse(calls.begin(), calls.end());
+      return true;
+    }
+    string receiver, method;
+    vector<string> call_args;
+    if (!parse_member_call(value, receiver, method, call_args)) return false;
+    calls.emplace_back(std::move(method), std::move(call_args));
+    value = std::move(receiver);
+  }
+}
+
+static const std::set<string>& executor_config_methods() {
+  static const std::set<string> methods = {
+      "threads", "max_threads", "queue_capacity", "affinity", "priority"};
+  return methods;
+}
+
+static bool parse_fileio_open(const string& text, vector<string>& args) {
+  string receiver, method;
+  if (!parse_member_call(text, receiver, method, args)) return false;
+  return receiver == "FileIO" && method == "open" && args.size() == 2;
+}
+
+static bool executor_typed(const std::unordered_map<string,string>& env,
+                           const string& name) {
+  auto it = env.find(trim(name));
+  return it != env.end() && it->second == "executor";
+}
+
+static bool fileio_typed(const std::unordered_map<string,string>& env,
+                         const string& name) {
+  auto it = env.find(trim(name));
+  return it != env.end() && canonical_type_name(it->second) == "FileIO";
+}
+
+// Phase 20 -- narrow, isolated Agent-A-facing capability adapter (see
+// AGENTS.md corrective-pass item 5). This single predicate is the only
+// place Agent D decides whether a static type is a non-transferable Phase
+// 20 capability (cannot cross message/reply/executor.invoke, domain state,
+// or an ordinary collection). When Agent A's real FileIO/Range ownership
+// checker lands, integrating with it should be a one-function change here
+// -- Agent D must not reimplement FileIO lifecycle, Range borrow scoping,
+// collection escape, or domain effects itself.
+static bool phase20_is_nontransferable_capability(const string& type) {
+  string concrete = canonical_type_name(type);
+  if (concrete == "executor" || concrete == "FileIO" || concrete == "Range" ||
+      concrete == "RangeBatch")
+    return true;
+  auto bracket = concrete.find('[');
+  if (bracket != string::npos && ends_with(concrete, "]"))
+    for (const auto& argument : split_top_level(
+             concrete.substr(bracket + 1, concrete.size() - bracket - 2), ','))
+      if (phase20_is_nontransferable_capability(trim(argument))) return true;
+  return false;
+}
+
+// Ordinary synchronous helper functions may borrow FileIO/Range as a plain
+// parameter (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md sec. 9.3: "Ordinary
+// synchronous helper calls may borrow a FileIO temporarily"); they may not
+// be returned, stored, or cross a message/reply/executor.invoke/domain
+// boundary (phase20_is_nontransferable_capability, above, still applies to
+// those positions). `Executor` has no such allowance: it has no legal use
+// outside `main` at all.
+static bool phase20_allowed_as_ordinary_parameter(const string& type) {
+  string concrete = canonical_type_name(type);
+  return concrete == "FileIO" || concrete == "Range";
+}
+
+static bool parse_fileio_chunks_source(const string& source, string& fileio_receiver,
+                                       string& size_expression) {
+  string method;
+  vector<string> arguments;
+  if (!parse_member_call(source, fileio_receiver, method, arguments)) return false;
+  if (method != "chunks" || arguments.size() != 1) return false;
+  size_expression = arguments.front();
+  return true;
+}
+
 static bool parse_enum_case_expression(const string& expression, string& enum_name,
                                        string& case_name, vector<string>& fields,
                                        bool& called) {
@@ -2558,6 +2653,7 @@ class Checker {
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
     check_fileio_lifecycle(m.body, {}, nullptr, m.line);
+    check_executor_lifecycle(m.body);
   }
 
   static bool legacy_spawn_expression(const string& expression) {
@@ -2862,7 +2958,9 @@ class Checker {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_") &&
+          !phase20_allowed_as_ordinary_parameter(param.type))
+        err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
@@ -3436,6 +3534,13 @@ class Checker {
     if (auto typed_vector = typed_empty_vector_constructor(e)) return *typed_vector;
     if (e == "Map()") return string("map");
     if (e == "Queue()") return string("queue");
+    // Phase 20: `Executor()` begins a compiler-recognized configuration chain
+    // (see parse_executor_chain); it is not a general object construction.
+    if (e == "Executor()") return string("executor");
+    {
+      vector<string> open_arguments;
+      if (parse_fileio_open(e, open_arguments)) return string("FileIO");
+    }
     if (e.size() >= 2 && e.front() == '[' && e.back() == ']') {
       auto parts = split_top_level(e.substr(1, e.size() - 2), ',');
       if (parts.size() == 1 && trim(parts[0]).empty()) return std::nullopt;
@@ -3588,6 +3693,24 @@ class Checker {
       auto base = inferred_expr_type(method_receiver, env);
       if (base) {
         string concrete_base = canonical_type_name(*base);
+        // Phase 20: Executor configuration/start chain and FileIO operations.
+        // See parse_executor_chain and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md.
+        if (concrete_base == "executor" &&
+            (executor_config_methods().count(method_name) || method_name == "start"))
+          return string("executor");
+        if (concrete_base == "FileIO") {
+          if (method_name == "read" && method_args.size() == 2) return string("Range");
+          if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
+          if ((method_name == "write" && method_args.size() == 2) ||
+              (method_name == "sync" && method_args.size() <= 1) ||
+              (method_name == "close" && method_args.empty()))
+            return string("unit");
+        }
+        // Provisional: Agent A/B own Range's final semantic surface. `.length()`
+        // is the one accessor Agent D's own tests need to verify chunk-pipeline
+        // ordering/termination without a materialized byte API.
+        if (concrete_base == "Range" && method_name == "length" && method_args.empty())
+          return string("int");
         const auto* builtin = builtin_operation(concrete_base, method_name);
         if (concrete_base == "string" && builtin) {
           if (method_name == "length" && method_args.empty()) return string("int");
@@ -4234,6 +4357,36 @@ class Checker {
                 env[statement.message_result] = *handler->reply_type;
             }
           }
+          // Phase 20: executor.invoke(domain.Handler(args...)) is a statically
+          // known handler call site exactly like `message`, so it participates
+          // in the same untyped handler-parameter inference. Phase 20 adds no
+          // explicit-type requirement for invoked handlers.
+          if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+              executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+            string target, handler_name;
+            vector<string> handler_args;
+            auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
+                ? current_env.find(target) : current_env.end();
+            if (receiver != current_env.end() && domains_.count(receiver->second)) {
+              if (auto* handler = find_handler(*domains_.at(receiver->second), handler_name)) {
+                for (size_t index = 0;
+                     index < handler_args.size() && index < handler->params.size(); ++index) {
+                  auto actual = inferred_expr_type(handler_args[index], current_env);
+                  if (!actual) continue;
+                  auto& parameter = handler->params[index];
+                  bool inferred_container =
+                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
+                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
+                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool untyped_parameter = parameter.type.empty();
+                  if (untyped_parameter || inferred_container) {
+                    parameter.type = *actual;
+                    parameter.inferred = parameter.inferred || untyped_parameter;
+                  }
+                }
+              }
+            }
+          }
           if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
             auto function = functions_.find(statement.a);
             if (function != functions_.end()) {
@@ -4419,7 +4572,23 @@ class Checker {
         }
       }
 
-      if (statement.kind == Stmt::Kind::Message) {
+      // Phase 20: executor.invoke(domain.Handler(args...)) is a statically
+      // known handler call site; view it as the equivalent message call so
+      // per-instance handler specialization sees it exactly like `message`.
+      Stmt invoke_view;
+      bool invoke_site = false;
+      if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+          statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+          parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+                            invoke_view.args)) {
+        invoke_view.kind = Stmt::Kind::Message;
+        invoke_view.line = statement.line;
+        invoke_view.source_file = statement.source_file;
+        invoke_site = true;
+      }
+      if (statement.kind == Stmt::Kind::Message || invoke_site) {
+        const Stmt& statement_view = invoke_site ? invoke_view : statement;
+        const Stmt& statement = statement_view;
         const string& receiver = statement.a;
         auto binding = bindings.find(receiver);
         if (binding != bindings.end()) {
@@ -5784,6 +5953,15 @@ class Checker {
       return;
     }
 
+    {
+      vector<string> open_arguments;
+      if (parse_fileio_open(value, open_arguments)) {
+        for (const auto& argument : open_arguments)
+          analyze_effect_expression(argument, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        return;
+      }
+    }
     string receiver, method;
     vector<string> arguments;
     if (parse_member_call(value, receiver, method, arguments)) {
@@ -6885,6 +7063,7 @@ class Checker {
         left.domain_write == right.domain_write &&
         left.message == right.message &&
         left.external_io == right.external_io &&
+        left.fileio == right.fileio &&
         left.may_fail == right.may_fail &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
@@ -7033,6 +7212,16 @@ class Checker {
         return effects;
       }
     }
+    {
+      vector<string> open_arguments;
+      if (parse_fileio_open(value, open_arguments)) {
+        for (const auto& argument : open_arguments)
+          effects.merge(observable_expression_effects(
+              argument, env, domain_fields, implicit_object, parameters));
+        effects.fileio = true;
+        return effects;
+      }
+    }
     if (parse_member_call(value, receiver, method, arguments)) {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
@@ -7066,6 +7255,17 @@ class Checker {
           if (method == "char_at" || method == "split") effects.may_fail = true;
           return effects;
         }
+        // Phase 20: a root-local FileIO operation touches no domain state by
+        // itself (its arguments were already merged above) but does set the
+        // explicit `fileio` fact that chunk-pipeline eligibility consumes.
+        // The pure Range length accessor sets nothing.
+        if (canonical_type_name(*receiver_type) == "FileIO") {
+          effects.fileio = true;
+          return effects;
+        }
+        if (canonical_type_name(*receiver_type) == "Range" ||
+            canonical_type_name(*receiver_type) == "RangeBatch")
+          return effects;
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if ((method == "get" && arguments.size() == 2) ||
               ((method == "keys" || method == "values") && arguments.empty()))
@@ -7743,6 +7943,7 @@ class Checker {
     pipeline.output_type = current_value_type;
     if (pipeline.decision.empty())
       pipeline.decision = "fusion eligible: ordered element-independent stages";
+    annotate_fileio_chunk_pipeline(pipeline, *parsed, env);
     size_t pipeline_id = pipeline.transient_id;
     p_.functional_pipelines.push_back(std::move(pipeline));
     return pipeline_id;
@@ -9979,6 +10180,9 @@ class Checker {
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
+      if (check_executor_or_fileio_statement(statement, current_env, current,
+                                             current_function, &statements))
+        return;
       if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
           statement.kind == Stmt::Kind::Assign) {
         if (legacy_spawn_expression(statement.b))
@@ -10074,6 +10278,20 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
+        // Phase 20: a nontransferable capability (Executor/FileIO/Range)
+        // cannot cross a domain boundary as a message argument. One shared
+        // adapter (moss.cpp) owns this rule; see AGENTS.md corrective-pass
+        // item 5.
+        for (const auto& argument : statement.args) {
+          string trimmed = trim(argument);
+          auto bound = current_env.find(trimmed);
+          if (bound != current_env.end() &&
+              phase20_is_nontransferable_capability(bound->second))
+            err(statement.line,
+                "a Phase 20 capability (Executor/FileIO/Range) cannot be "
+                "passed as a message argument",
+                "PHASE20_CAPABILITY_MESSAGE_ARGUMENT");
+        }
         check_message_target_existence(
             statement.line, statement.a, current_env);
         const Handler* target = check_message_call_after_resolution(
@@ -10330,6 +10548,9 @@ class Checker {
     return walk_type_environment(statements, std::move(env), check_statement,
                                  true, true, true, join_context);
   }
+
+#include "executor_invoke_lowering.inc"
+#include "file_chunk_lowering.inc"
 };
 
 // This is a Moss-level optimization plan over the authoritative typed
@@ -11663,6 +11884,19 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
     }
     for (const auto& note : pipeline.optimization_notes)
       out << "  note: " << note << "\n";
+    if (pipeline.chunk_plan.is_chunk_pipeline) {
+      const auto& plan = pipeline.chunk_plan;
+      out << "  chunk-plan: fileio=" << plan.fileio_receiver
+          << " size=" << plan.chunk_size_expression
+          << " map=" << plan.map_callable
+          << " initial=" << plan.initial_expression
+          << " combine=" << plan.combine_callable
+          << " accumulator=" << plan.accumulator_type
+          << " mapped=" << plan.mapped_type
+          << " window_k=" << plan.window_k
+          << " eligible=" << (plan.eligible ? "yes" : "no")
+          << " reason=" << plan.eligibility_reason << "\n";
+    }
     out << "  decision: " << pipeline.decision << "\n\n";
   }
   for (const auto& group : program.functional_traversal_groups) {
@@ -11907,6 +12141,8 @@ class Generator {
   std::set<string> ambiguous_domain_instance_bindings_;
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
+  mutable size_t executor_invoke_temp_ = 0;
+  mutable size_t fileio_chunk_temp_ = 0;
 
   bool owns_specialization(const Domain& specialized) const {
     const string& source = specialization_sources_.at(specialized.name);
@@ -12061,6 +12297,12 @@ class Generator {
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "string") return "String";
+    // Phase 20: runtime-facing semantic names reserved in
+    // docs/ROOT_RUNTIME_ABI.md ("Runtime-facing semantic types"). Agent
+    // D does not define these Rust types; Agent B's crate does.
+    if (x == "FileIO") return "FileIO";
+    if (x == "Range") return "Range";
+    if (x == "RangeBatch") return "RangeBatch";
     if (x == "vector") return "std::vec::Vec<T>";
     if (x == "map") return "std::collections::HashMap<K, V>";
     if (x == "queue") return "std::collections::VecDeque<T>";
@@ -12524,6 +12766,21 @@ class Generator {
       auto receiver_type = generated_expr_type(receiver, types);
       if (receiver_type) {
         string concrete_receiver = canonical_type_name(*receiver_type);
+        // Phase 20: Executor configuration/start chain and FileIO operations;
+        // mirrors the checker's inferred_expr_type handling.
+        if (concrete_receiver == "executor" &&
+            (executor_config_methods().count(method_name) || method_name == "start"))
+          return string("executor");
+        if (concrete_receiver == "FileIO") {
+          if (method_name == "read" && method_args.size() == 2) return string("Range");
+          if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
+          if ((method_name == "write" && method_args.size() == 2) ||
+              (method_name == "sync" && method_args.size() <= 1) ||
+              (method_name == "close" && method_args.empty()))
+            return string("unit");
+        }
+        if (concrete_receiver == "Range" && method_name == "length" && method_args.empty())
+          return string("int");
         if (concrete_receiver == "string") {
           if (method_name == "length" && method_args.empty()) return string("int");
           if (method_name == "char_at" && method_args.size() == 1) return string("string");
@@ -13525,6 +13782,9 @@ class Generator {
       size_t functional_pipeline_id) const {
     auto pipeline = parse_functional_pipeline(expression);
     if (!pipeline) return std::nullopt;
+    if (auto chunk_lowering = gen_fileio_chunk_pipeline(
+            *pipeline, domain, locals, types, functional_pipeline_id))
+      return chunk_lowering;
     auto source_type = generated_expr_type(pipeline->source, types);
     if (!source_type || !generated_functional_element_type(*source_type))
       return std::nullopt;
@@ -13830,6 +14090,10 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        // Phase 20: Moss `range.length()` lowers to Agent B's runtime
+        // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.
+        if ((concrete == "Range" || concrete == "RangeBatch") && member_name == "length" && member_arguments.empty())
+          return "(" + receiver_expression + ").len()";
         if (concrete == "string") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "length" && member_arguments.empty())
@@ -14637,6 +14901,8 @@ class Generator {
 
 #include "handler_lowering.inc"
 #include "borrowed_views.inc"
+#include "executor_invoke_codegen.inc"
+#include "file_chunk_codegen.inc"
 
   static string nominal_handle_variant(const string& domain) {
     return "Specialized_" + stable_hash(domain).substr(0, 12);
@@ -15014,6 +15280,11 @@ class Generator {
             "FUNCTIONAL INTERMEDIATE '" + direct_functional->binding_name +
                 "' MATERIALIZED; reason: " +
                 direct_functional->binding_materialization_reason);
+
+      if (gen_executor_or_fileio_statement(o, s, (base + level) * 4, d, locals, types)) {
+        ++i;
+        continue;
+      }
 
       switch (s.kind) {
         case Stmt::Kind::Match: {

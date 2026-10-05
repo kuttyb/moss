@@ -47,6 +47,11 @@ struct ObservableEffects {
   bool domain_write = false;
   bool message = false;
   bool external_io = false;
+  // Phase 20: reaches a FileIO operation (open/read/batch read/write/sync/
+  // close/chunks), directly or through a helper. Narrower than external_io
+  // (which also covers console I/O): chunk-pipeline Branch eligibility
+  // forbids FileIO specifically in map and combine (sec. 13.2).
+  bool fileio = false;
   bool may_fail = false;
   // Termination is independent of failure and externally visible effects.
   // Phase 4.5 currently treats any reachable Moss `while` as potentially
@@ -57,7 +62,7 @@ struct ObservableEffects {
 
   bool fusion_safe() const {
     return !local_mutation && !domain_read && !domain_write && !message &&
-           !external_io && !may_fail && !unresolved;
+           !external_io && !fileio && !may_fail && !unresolved;
   }
 
   bool deterministic() const {
@@ -75,6 +80,7 @@ struct ObservableEffects {
     domain_write = domain_write || other.domain_write;
     message = message || other.message;
     external_io = external_io || other.external_io;
+    fileio = fileio || other.fileio;
     may_fail = may_fail || other.may_fail;
     may_diverge = may_diverge || other.may_diverge;
     unresolved = unresolved || other.unresolved;
@@ -177,6 +183,33 @@ struct FunctionalPipeline {
   std::vector<std::string> lowered_provenance;
   std::vector<std::string> optimization_notes;
   std::string decision;
+
+  // Phase 20 Agent D: a structured compiler-owned chunk parallelization plan
+  // for `file.chunks(size) |> map(f) |> reduce(initial, combine)`. Populated
+  // once by the checker (file_chunk_lowering.inc's annotate_fileio_chunk_pipeline)
+  // and consumed as-is by codegen (file_chunk_codegen.inc) -- codegen never
+  // re-derives these facts from source text. `decision`/`optimization_notes`
+  // above remain the human-readable projection of this structured plan, not
+  // the other way around. See docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md
+  // sec. 13 and AGENTS.md corrective-pass item 15.
+  struct ChunkParallelPlan {
+    bool is_chunk_pipeline = false;
+    std::string fileio_receiver;
+    std::string chunk_size_expression;
+    std::string map_callable;
+    std::string initial_expression;
+    std::string combine_callable;
+    std::string accumulator_type;
+    std::string mapped_type;
+    // Eligible for the bounded-K read/map Branch lowering (file_chunk_codegen.inc).
+    // Static only: never depends on whether an Executor happens to be active.
+    bool eligible = false;
+    std::string eligibility_reason;
+    // Finite lowering window K: at most this many read/map Branches are
+    // published before each join (sec. 19, M4). A compiler constant, never a
+    // runtime knob, so the Proof 2 bound T * K * C is statically known.
+    std::size_t window_k = 4;
+  } chunk_plan;
 };
 
 struct FunctionalTraversalConsumer {

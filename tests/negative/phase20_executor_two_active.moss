@@ -1,0 +1,12 @@
+domain Worker:
+  fn Process(amount: Int):
+    pass
+
+fn main():
+  worker = Worker()
+  first = Executor().threads(1).start()
+  second = Executor().threads(1).start()
+  first.invoke(worker.Process(1))
+  second.invoke(worker.Process(2))
+  first.join()
+  second.join()

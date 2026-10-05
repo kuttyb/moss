@@ -11,6 +11,7 @@
 #include <map>
 #include <optional>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -577,6 +578,13 @@ class FastInterpreter {
   Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
                       int line, std::ostream& output) {
     if (stages.size() < 2) return Value::unit();
+    // A FileIO chunk source (`<fileio>.chunks(n)`) never reaches here in
+    // practice: FileIO.open always throws first (see interp_phase20_statement
+    // in interpreter_phase20.inc) because there is no Agent B FileIO runtime
+    // wired into Fast Debug yet. Chunk-pipeline differential testing happens
+    // against native codegen's test-only Rust shim instead; see
+    // tests/tooling/check_phase20_executor_fileio.py and AGENTS.md
+    // corrective-pass items 2 and 24.
     Value current = eval(stages.front(), frame, line, output);
     for (size_t stage_index = 1; stage_index < stages.size(); ++stage_index) {
       std::string callee; std::vector<std::string> args;
@@ -637,6 +645,7 @@ class FastInterpreter {
   }
 
 #include "interpreter_domains.inc"
+#include "interpreter_phase20.inc"
 
   Value eval(const std::string& expression, Frame& frame, int line,
              std::ostream& output) {
@@ -1321,6 +1330,7 @@ class FastInterpreter {
       }
       Flow flow;
       if (compose(statement, frame, output)) { ++index; continue; }
+      if (interp_phase20_statement(statement, frame, output)) { ++index; continue; }
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:
