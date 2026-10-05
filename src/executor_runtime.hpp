@@ -1,17 +1,22 @@
-#pragma once
-// Phase 20 Agent C — Executor and Root Runtime
+// ============================================================
+// Phase 20 Executor & Root Runtime
+// Module ownership: src/executor_runtime.hpp.
 //
-// Returns the Rust source implementing the Phase 20 execution substrate.
-// Emitted into every generated Moss program by the code generator, after
-// handler_runtime_rust() (see src/moss.cpp line ~11659).
+// Shared root-admission, branch-helping scheduler, and Solo-block
+// compensation runtime for Moss programs.
 //
-// Implements:
-//   - MossExecutor: INLINE → ACTIVE → DRAINING → INLINE lifecycle (§5.4)
-//   - MossRootDescriptor: internal root representation (ROOT_RUNTIME_ABI §3)
-//   - MossRoot / MossBranch: distinct scheduler classes (E1)
+// Key contracts:
+//   - INLINE -> ACTIVE -> DRAINING -> INLINE lifecycle (§5.4)
+//   - RootDescriptor: shared representation for all ingress paths (§3)
+//   - MossExecutor: builder pattern with immutable post-start config (§3)
+//   - MossExecutorHandle: linear capability, enqueues roots, join() drains (§4, §5)
+//   - runtime_invoke: synchronous host ingress with reply return (§6)
 //   - branch_publish / branch_join: bounded non-blocking branch API (§7.3)
-//   - solo_enter / solo_leave: managed Solo blocking compensation (§15)
-//   - runtime_invoke: synchronous host → Moss ingress (ROOT_RUNTIME_ABI §6)
+//   - solo_enter / solo_leave: compensation hooks for Solo kernel waits (§15)
+//   - A5 / R5 leaf-lock invariant: runtime locks are never nested
+//   - R5 fairness: ticket-based FIFO ingress and root queue admission
+//   - Agent D seam: moss_root_start / moss_root_submit / moss_root_join
+//   - Agent B seam: moss_solo_enter / moss_solo_leave
 //   - Test instrumentation under #[cfg(any(test, moss_perf))]
 //
 // Module ownership: src/executor_runtime.hpp.
@@ -85,7 +90,7 @@ fn moss_rt_ev(ev: MossRtEvent, root_id: u64, branch_id: u64, worker_id: usize) {
 fn moss_rt_ev(_ev: u8, _r: u64, _b: u64, _w: usize) {}
 
 // ─── Type-erased work container ──────────────────────────────────────────
-pub type MossWork = std::boxed::Box</*moss*/dyn/*moss*/FnOnce() + Send + 'static>;
+pub type MossWork = std::boxed::Box<dyn FnOnce() + Send + 'static>;
 
 // ─── RootDescriptor ──────────────────────────────────────────────────────
 /// Internal submission record for one statically resolved handler invocation.
@@ -120,7 +125,10 @@ pub struct MossRootId(pub u64);
 /// Phase 20 branches acquire no Moss locks (E1, §7.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MossBranchId(pub u64);
+)EXECUTOR_RUST";
 
+  if (!is_library) {
+    s += R"EXECUTOR_RUST(
 // ─── Branch join scope ────────────────────────────────────────────────────
 /// Shared state for one branch join scope, owned by a single Root.
 pub struct MossBranchScope {
@@ -188,6 +196,7 @@ struct MossGlobalExec {
     queue_not_full_cv: std::sync::Condvar,
     drain_cv: std::sync::Condvar,
     branch_scopes: std::sync::Mutex<std::collections::VecDeque<std::sync::Arc<MossBranchScope>>>,
+    branch_seq: std::sync::atomic::AtomicU64,
     worker_threads: std::sync::Mutex<std::vec::Vec<std::thread::JoinHandle<()>>>,
     affinity_cores: std::option::Option<std::vec::Vec<usize>>,
     priority_level: std::option::Option<i32>,
@@ -227,44 +236,78 @@ impl MossProcessRuntime {
         }
     }
 }
-)EXECUTOR_RUST";
 
-  if (!is_library) {
-    s += R"EXECUTOR_RUST(
+static RUNTIME: std::sync::OnceLock<MossProcessRuntime> = std::sync::OnceLock::new();
+
+fn process_rt() -> &'static MossProcessRuntime {
+    RUNTIME.get_or_init(MossProcessRuntime::new)
+}
+
+// ─── Cross-crate C ABI exports ───────────────────────────────────────────
 #[no_mangle]
-pub extern "C" fn __moss_process_runtime_raw() -> *mut () {
-    static RUNTIME: std::sync::OnceLock<MossProcessRuntime> = std::sync::OnceLock::new();
-    let rt = RUNTIME.get_or_init(MossProcessRuntime::new);
-    rt as *const MossProcessRuntime as *mut ()
-}
-
-fn process_rt() -> &'static MossProcessRuntime {
-    let ptr = __moss_process_runtime_raw();
-    unsafe/*moss*/{ &*(ptr as *const MossProcessRuntime) }
-}
-)EXECUTOR_RUST";
-  } else {
-    s += R"EXECUTOR_RUST(
-extern "C" {
-    fn __moss_process_runtime_raw() -> *mut ();
-}
-
-fn process_rt() -> &'static MossProcessRuntime {
-    let ptr = unsafe/*moss*/{ __moss_process_runtime_raw() };
-    unsafe/*moss*/{ &*(ptr as *const MossProcessRuntime) }
-}
-)EXECUTOR_RUST";
-  }
-
-  s += R"EXECUTOR_RUST(
-// ─── ID counters ─────────────────────────────────────────────────────────
-#[allow(dead_code)]
-pub fn next_root_id() -> u64 {
+pub extern "C" fn __moss_next_root_id() -> u64 {
     process_rt().next_root_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-pub fn next_branch_id() -> u64 {
+#[no_mangle]
+pub extern "C" fn __moss_next_branch_id() -> u64 {
     process_rt().next_branch_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[no_mangle]
+pub extern "C" fn __moss_branch_scope_new(owner_root_id: u64) -> *mut () {
+    let scope = MossBranchScope::new(owner_root_id);
+    std::sync::Arc::into_raw(scope) as *mut ()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __moss_branch_scope_clone(scope_ptr: *mut ()) -> *mut () {
+    // SAFETY: caller passes a valid Arc pointer from __moss_branch_scope_new or clone
+    let arc = unsafe { std::sync::Arc::from_raw(scope_ptr as *const MossBranchScope) };
+    let cloned = std::sync::Arc::clone(&arc);
+    let _ = std::sync::Arc::into_raw(arc);
+    std::sync::Arc::into_raw(cloned) as *mut ()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __moss_branch_scope_drop(scope_ptr: *mut ()) {
+    // SAFETY: caller relinquishes ownership of one Arc count
+    let _ = unsafe { std::sync::Arc::from_raw(scope_ptr as *const MossBranchScope) };
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __moss_branch_publish_trampoline(
+    scope_ptr: *mut (),
+    data: *mut (),
+    invoker: unsafe extern "C" fn(*mut ()),
+) {
+    // SAFETY: caller borrows a valid Arc pointer
+    let arc = unsafe { std::sync::Arc::from_raw(scope_ptr as *const MossBranchScope) };
+    let scope_clone = std::sync::Arc::clone(&arc);
+    let _ = std::sync::Arc::into_raw(arc);
+
+    let data_addr = data as usize;
+    branch_publish(&scope_clone, move || {
+        // SAFETY: invoking foreign closure thunk exactly once
+        unsafe { invoker(data_addr as *mut ()) };
+    });
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn __moss_branch_join(scope_ptr: *mut ()) {
+    // SAFETY: caller passes a valid Arc pointer to join
+    let arc = unsafe { std::sync::Arc::from_raw(scope_ptr as *const MossBranchScope) };
+    branch_join(arc);
+}
+
+// ─── ID counters ─────────────────────────────────────────────────────────
+#[allow(dead_code)]
+pub fn next_root_id() -> u64 {
+    __moss_next_root_id()
+}
+
+pub fn next_branch_id() -> u64 {
+    __moss_next_branch_id()
 }
 
 // ─── Thread-local worker identity ─────────────────────────────────────────
@@ -290,7 +333,8 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
             extern "C" {
                 fn sched_setaffinity(pid: i32, cpusetsize: usize, mask: *const u8) -> i32;
             }
-            let ret = unsafe/*moss*/{ sched_setaffinity(0, std::mem::size_of_val(&set), set.as_ptr()) };
+            // SAFETY: Calling libc sched_setaffinity with valid pointer and size.
+            let ret = unsafe { sched_setaffinity(0, std::mem::size_of_val(&set), set.as_ptr()) };
             if ret != 0 {
                 eprintln!("moss executor warning: sched_setaffinity refused");
             }
@@ -299,7 +343,8 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
             extern "C" {
                 fn setpriority(which: i32, who: i32, prio: i32) -> i32;
             }
-            let ret = unsafe/*moss*/{ setpriority(0, 0, pri) };
+            // SAFETY: Calling libc setpriority with current process target.
+            let ret = unsafe { setpriority(0, 0, pri) };
             if ret != 0 {
                 eprintln!("moss executor warning: setpriority refused");
             }
@@ -313,10 +358,13 @@ fn apply_affinity_and_priority(cores: std::option::Option<&std::vec::Vec<usize>>
     }
 }
 
-// ─── Worker loop ──────────────────────────────────────────────────────────
+// ─── Worker loop (A5 / R5 leaf-lock compliant) ───────────────────────────
 /// Each physical worker runs this loop.
 /// R4 / E2 / E11: worker runs ONE root at a time; never switches to another
 /// root before the current root (and its nested messages) completes.
+///
+/// A5 / R5 leaf-lock invariant: no runtime lock is EVER held while acquiring
+/// another lock. Lock acquisition is strictly non-nested.
 fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
     let _abort_guard = MossAbortOnUnwind;
     MOSS_CURRENT_WORKER_ID.with(|c| c.set(Some(worker_id)));
@@ -335,9 +383,62 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
             Branch(std::sync::Arc<MossBranchScope>, u64, MossWork),
         }
 
-        let task = {
+        let mut task = None;
+
+        // Phase 1: Check root queue under gx.inner leaf lock
+        {
             let mut inner = gx.inner.lock().unwrap_or_else(|e| e.into_inner());
-            loop {
+            if inner.shutdown && inner.root_queue.is_empty() {
+                inner.active_workers = inner.active_workers.saturating_sub(1);
+                #[cfg(any(test, moss_perf))]
+                moss_rt_ev(MossRtEvent::WorkerParked, 0, 0, worker_id);
+                return;
+            }
+
+            let is_excess = inner.runnable_workers() > inner.target_threads && inner.solo_blocked_workers.is_empty();
+            if is_excess && inner.root_queue.is_empty() {
+                inner.active_workers = inner.active_workers.saturating_sub(1);
+                #[cfg(any(test, moss_perf))]
+                moss_rt_ev(MossRtEvent::WorkerParked, 0, 0, worker_id);
+                return;
+            }
+
+            if let Some(desc) = inner.root_queue.pop_front() {
+                inner.running_roots += 1;
+                gx.queue_not_full_cv.notify_all();
+                task = Some(Task::Root(desc));
+            }
+        }
+
+        // Phase 2: If no root found, check branch work without holding gx.inner
+        if task.is_none() {
+            let branch_seq_before = gx.branch_seq.load(std::sync::atomic::Ordering::SeqCst);
+            let scope_opt = {
+                let mut scopes = gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
+                scopes.pop_front()
+            };
+
+            if let Some(scope) = scope_opt {
+                let (has_more, item) = {
+                    let mut pending = scope.pending.lock().unwrap_or_else(|e| e.into_inner());
+                    let item = pending.pop_front();
+                    let has_more = !pending.is_empty();
+                    (has_more, item)
+                };
+
+                if has_more {
+                    let mut scopes = gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
+                    scopes.push_back(std::sync::Arc::clone(&scope));
+                }
+
+                if let Some((bid, bfn)) = item {
+                    task = Some(Task::Branch(scope, bid, bfn));
+                }
+            }
+
+            // If still no task found, wait under gx.inner unless new work arrived
+            if task.is_none() {
+                let mut inner = gx.inner.lock().unwrap_or_else(|e| e.into_inner());
                 if inner.shutdown && inner.root_queue.is_empty() {
                     inner.active_workers = inner.active_workers.saturating_sub(1);
                     #[cfg(any(test, moss_perf))]
@@ -345,45 +446,7 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
                     return;
                 }
 
-                // Check excess compensation parking (E8 / §15)
                 let is_excess = inner.runnable_workers() > inner.target_threads && inner.solo_blocked_workers.is_empty();
-
-                // Priority 1: Pick Root work if available
-                if let Some(desc) = inner.root_queue.pop_front() {
-                    inner.running_roots += 1;
-                    gx.queue_not_full_cv.notify_all();
-                    break Task::Root(desc);
-                }
-
-                // Priority 2: Pick Branch work from any active branch scope
-                let branch_item = {
-                    let mut scopes = gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
-                    let mut found = None;
-                    let len = scopes.len();
-                    'find_branch: for _ in 0..len {
-                        if let Some(scope) = scopes.pop_front() {
-                            let (has_more, item) = {
-                                let mut pending = scope.pending.lock().unwrap_or_else(|e| e.into_inner());
-                                let item = pending.pop_front();
-                                let has_more = !pending.is_empty();
-                                (has_more, item)
-                            };
-                            if has_more {
-                                scopes.push_back(std::sync::Arc::clone(&scope));
-                            }
-                            if let Some((bid, bfn)) = item {
-                                found = Some((scope, bid, bfn));
-                                break 'find_branch;
-                            }
-                        }
-                    }
-                    found
-                };
-
-                if let Some((scope, bid, bfn)) = branch_item {
-                    break Task::Branch(scope, bid, bfn);
-                }
-
                 if is_excess && inner.root_queue.is_empty() {
                     inner.active_workers = inner.active_workers.saturating_sub(1);
                     #[cfg(any(test, moss_perf))]
@@ -391,11 +454,15 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
                     return;
                 }
 
-                inner = gx.work_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                // If no root arrived and branch_seq didn't change, sleep on condvar
+                if inner.root_queue.is_empty() && gx.branch_seq.load(std::sync::atomic::Ordering::SeqCst) == branch_seq_before {
+                    drop(gx.work_cv.wait(inner).unwrap_or_else(|e| e.into_inner()));
+                }
+                continue;
             }
-        };
+        }
 
-        match task {
+        match task.unwrap() {
             Task::Root(desc) => {
                 let root_id = desc.root_id;
                 #[cfg(any(test, moss_perf))]
@@ -406,12 +473,10 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
                 #[cfg(any(test, moss_perf))]
                 moss_rt_ev(MossRtEvent::RootCompleted, root_id, 0, worker_id);
 
-                {
-                    let mut inner = gx.inner.lock().unwrap_or_else(|e| e.into_inner());
-                    inner.running_roots = inner.running_roots.saturating_sub(1);
-                    if inner.running_roots == 0 && inner.root_queue.is_empty() {
-                        gx.drain_cv.notify_all();
-                    }
+                let mut inner = gx.inner.lock().unwrap_or_else(|e| e.into_inner());
+                inner.running_roots = inner.running_roots.saturating_sub(1);
+                if inner.running_roots == 0 && inner.root_queue.is_empty() {
+                    gx.drain_cv.notify_all();
                 }
             }
             Task::Branch(scope, branch_id, branch_fn) => {
@@ -443,7 +508,7 @@ fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
     moss_rt_ev(MossRtEvent::WorkerSpawned, 0, 0, wid);
 }
 
-// ─── Shared Root Admission Primitive ─────────────────────────────────────
+// ─── Shared Root Admission Primitive (R5 FIFO Fairness) ─────────────────
 enum MossAdmissionResult {
     Admitted,
     DrainingBeforeAdmission(MossRootDescriptor),
@@ -523,6 +588,7 @@ impl MossExecutor {
 
     /// INLINE → ACTIVE transition (§5.2 / §5.3 / E6 / R15).
     /// Closes the inline gate before waiting so no inline root overlaps ACTIVE.
+    /// Exclusive activation reservation guarantees concurrent start() fails deterministically.
     pub fn start(self) -> MossExecutorHandle {
         let rt = process_rt();
         let target = self.target_threads;
@@ -551,6 +617,7 @@ impl MossExecutor {
             queue_not_full_cv: std::sync::Condvar::new(),
             drain_cv: std::sync::Condvar::new(),
             branch_scopes: std::sync::Mutex::new(std::collections::VecDeque::new()),
+            branch_seq: std::sync::atomic::AtomicU64::new(0),
             worker_threads: std::sync::Mutex::new(std::vec::Vec::default()),
             affinity_cores: self.affinity_cores,
             priority_level: self.priority_level,
@@ -558,14 +625,18 @@ impl MossExecutor {
 
         {
             let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if inner.state != MossIngressState::Inline {
+            if inner.state != MossIngressState::Inline || inner.start_pending {
                 drop(inner);
                 panic!("moss executor: at most one active executor allowed (E6/R15)");
             }
-            // Close the gate to future INLINE callers before waiting for current running root
+            // Exclusive activation reservation: close gate to future INLINE and start callers
             inner.start_pending = true;
             while inner.inline_running {
                 inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                // Revalidate state after condvar wake
+                if inner.state != MossIngressState::Inline || !inner.start_pending {
+                    panic!("moss executor: invalid state during start()");
+                }
             }
 
             inner.state = MossIngressState::Active;
@@ -590,8 +661,7 @@ impl MossExecutor {
 impl Default for MossExecutor { fn default() -> Self { Self::new() } }
 
 // ─── MossExecutorHandle (post-start) ─────────────────────────────────────
-/// Returned by start(); valid until join().
-#[derive(Clone)]
+/// Returned by start(); valid until join(). Linear capability (never Clone).
 pub struct MossExecutorHandle {
     gx: std::sync::Arc<MossGlobalExec>,
 }
@@ -599,7 +669,11 @@ pub struct MossExecutorHandle {
 impl MossExecutorHandle {
     /// Enqueue a one-way root (executor.invoke, §4 / E9 / E10).
     /// Waits for queue capacity; caller holds no Moss lock as part of ingress.
+    /// Workers executing another root cannot enqueue new roots (E11).
     pub fn enqueue_root(&self, desc: MossRootDescriptor) {
+        if current_worker_id().is_some() {
+            panic!("moss executor: worker threads cannot enqueue new roots (E11)");
+        }
         match admit_root(&self.gx, desc) {
             MossAdmissionResult::Admitted => {},
             MossAdmissionResult::DrainingBeforeAdmission(_) => {
@@ -612,7 +686,7 @@ impl MossExecutorHandle {
     pub fn join(self) {
         let rt = process_rt();
 
-        // Step 1: Transition ACTIVE → DRAINING
+        // Step 1: Transition ACTIVE → DRAINING under rt.inner leaf lock
         {
             let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
             if inner.state != MossIngressState::Active {
@@ -641,7 +715,7 @@ impl MossExecutorHandle {
         }
         self.gx.work_cv.notify_all();
 
-        // Step 3: Wait for every physical worker to terminate
+        // Step 3: Wait for every physical worker to terminate (no locks held)
         let handles: std::vec::Vec<_> = {
             let mut guard = self.gx.worker_threads.lock().unwrap_or_else(|e| e.into_inner());
             guard.drain(..).collect()
@@ -650,7 +724,7 @@ impl MossExecutorHandle {
             let _ = h.join();
         }
 
-        // Step 4: Transition DRAINING → INLINE
+        // Step 4: Transition DRAINING → INLINE under rt.inner leaf lock
         {
             let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
             inner.state = MossIngressState::Inline;
@@ -661,6 +735,23 @@ impl MossExecutorHandle {
         #[cfg(any(test, moss_perf))]
         moss_rt_ev(MossRtEvent::IngressStateChange, 0, 0, 0);
     }
+}
+
+// ─── Agent D Seam Bridge (ROOT_RUNTIME_ABI §2 / §3) ──────────────────────
+#[inline]
+pub fn moss_root_start() -> MossExecutorHandle {
+    MossExecutor::new().start()
+}
+
+#[inline]
+pub fn moss_root_submit(executor: &MossExecutorHandle, work: impl FnOnce() + Send + 'static) {
+    let desc = MossRootDescriptor::one_way(next_root_id(), work);
+    executor.enqueue_root(desc);
+}
+
+#[inline]
+pub fn moss_root_join(executor: MossExecutorHandle) {
+    executor.join();
 }
 
 // ─── runtime_invoke ───────────────────────────────────────────────────────
@@ -714,9 +805,14 @@ where
                 inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
             }
             MossIngressState::Active => {
-                if my_ticket == inner.serving_inline_ticket {
-                    inner.serving_inline_ticket += 1;
+                // Must retire inline tickets in contiguous FIFO order
+                if my_ticket != inner.serving_inline_ticket {
+                    inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                    continue;
                 }
+                inner.serving_inline_ticket += 1;
+                rt.ingress_cv.notify_all();
+
                 let gx = std::sync::Arc::clone(inner.active_executor.as_ref().expect("active executor missing in ACTIVE state"));
                 drop(inner);
 
@@ -746,32 +842,34 @@ where
                         return guard.take().unwrap();
                     }
                     MossAdmissionResult::DrainingBeforeAdmission(unadmitted_desc) => {
-                        // Wait for transition back to INLINE, then run unadmitted descriptor
+                        // Fallback: wait for INLINE restoration, then run unadmitted descriptor with fair fallback ticket
                         let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
-                        while inner.state != MossIngressState::Inline {
+                        let fallback_ticket = inner.next_inline_ticket;
+                        inner.next_inline_ticket += 1;
+                        loop {
+                            if inner.state == MossIngressState::Inline && !inner.start_pending && fallback_ticket == inner.serving_inline_ticket && !inner.inline_running {
+                                inner.inline_running = true;
+                                drop(inner);
+
+                                #[cfg(any(test, moss_perf))]
+                                moss_rt_ev(MossRtEvent::RootStarted, root_id, 0, usize::MAX);
+
+                                (unadmitted_desc.work)();
+
+                                #[cfg(any(test, moss_perf))]
+                                moss_rt_ev(MossRtEvent::RootCompleted, root_id, 0, usize::MAX);
+
+                                let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
+                                inner.inline_running = false;
+                                inner.serving_inline_ticket += 1;
+                                rt.ingress_cv.notify_all();
+
+                                let (lock, _cvar) = &*reply_slot;
+                                let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+                                return guard.take().expect("reply missing after synchronous fallback execution");
+                            }
                             inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
                         }
-                        while inner.inline_running || inner.start_pending {
-                            inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
-                        }
-                        inner.inline_running = true;
-                        drop(inner);
-
-                        #[cfg(any(test, moss_perf))]
-                        moss_rt_ev(MossRtEvent::RootStarted, root_id, 0, usize::MAX);
-
-                        (unadmitted_desc.work)();
-
-                        #[cfg(any(test, moss_perf))]
-                        moss_rt_ev(MossRtEvent::RootCompleted, root_id, 0, usize::MAX);
-
-                        let mut inner = rt.inner.lock().unwrap_or_else(|e| e.into_inner());
-                        inner.inline_running = false;
-                        rt.ingress_cv.notify_all();
-
-                        let (lock, _cvar) = &*reply_slot;
-                        let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-                        return guard.take().expect("reply missing after synchronous fallback execution");
                     }
                 }
             }
@@ -786,6 +884,7 @@ where
 /// Publish a branch to the scope's pending queue (E4 / §7.3).
 /// If the queue is saturated, execute inline in the owner root.
 /// Publication never blocks (E4).
+/// A5 / R5 leaf-lock compliant: no locks are nested.
 pub fn branch_publish<F>(scope: &std::sync::Arc<MossBranchScope>, branch_fn: F)
 where
     F: FnOnce() + Send + 'static,
@@ -808,7 +907,10 @@ where
             inner.active_executor.clone()
         };
         if let Some(gx) = gx_opt {
-            gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).push_back(std::sync::Arc::clone(scope));
+            let mut scopes = gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
+            scopes.push_back(std::sync::Arc::clone(scope));
+            drop(scopes);
+            gx.branch_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             gx.work_cv.notify_one();
         }
     } else {
@@ -855,7 +957,7 @@ pub fn branch_scope_new(owner_root_id: u64) -> std::sync::Arc<MossBranchScope> {
 // ─── solo_enter / solo_leave ─────────────────────────────────────────────
 /// Mark worker as entering a known Solo kernel wait (§15 / R1).
 /// May activate a compensation worker to maintain target parallelism (E7).
-/// Synchronized entirely by gx.inner (no secondary mutex lock).
+/// Synchronized entirely by gx.inner (no nested mutex locks).
 fn solo_enter_worker(worker_id: usize, _reason: &str) {
     #[cfg(any(test, moss_perf))]
     moss_rt_ev(MossRtEvent::SoloEnter, 0, 0, worker_id);
@@ -889,7 +991,7 @@ fn solo_enter_worker(worker_id: usize, _reason: &str) {
 
 /// Mark worker as leaving a Solo kernel wait (§15 / R2 / E8).
 /// The waking worker resumes immediately; never waits for a slot.
-/// Excess compensation workers may park on their next idle cycle.
+/// Excess compensation workers park on their next idle cycle.
 fn solo_leave_worker(worker_id: usize, _reason: &str) {
     #[cfg(any(test, moss_perf))]
     moss_rt_ev(MossRtEvent::SoloLeave, 0, 0, worker_id);
@@ -902,6 +1004,7 @@ fn solo_leave_worker(worker_id: usize, _reason: &str) {
     if let Some(gx) = gx_opt {
         let mut inner = gx.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.solo_blocked_workers.remove(&worker_id);
+        drop(inner);
         gx.work_cv.notify_one();
     }
 }
@@ -931,6 +1034,16 @@ pub fn executor_solo_enter_from_fileio(reason: &str) {
 }
 
 pub fn executor_solo_leave_from_fileio(reason: &str) {
+    solo_leave_current(reason);
+}
+
+#[no_mangle]
+pub extern "Rust" fn moss_solo_enter(reason: &str) {
+    solo_enter_current(reason);
+}
+
+#[no_mangle]
+pub extern "Rust" fn moss_solo_leave(reason: &str) {
     solo_leave_current(reason);
 }
 
@@ -981,6 +1094,112 @@ pub fn moss_executor_solo_blocked() -> usize {
     inner.active_executor.as_ref().map(|gx| gx.inner.lock().unwrap_or_else(|e| e.into_inner()).solo_blocked_workers.len()).unwrap_or(0)
 }
 )EXECUTOR_RUST";
+  } else {
+    // Provider crate (.rlib) implementation: opaque C / Rust ABI linkage with zero type punning
+    s += R"EXECUTOR_RUST(
+extern "C" {
+    fn __moss_next_root_id() -> u64;
+    fn __moss_next_branch_id() -> u64;
+    fn __moss_branch_scope_new(owner_root_id: u64) -> *mut ();
+    fn __moss_branch_scope_clone(scope_ptr: *mut ()) -> *mut ();
+    fn __moss_branch_scope_drop(scope_ptr: *mut ());
+    fn __moss_branch_publish_trampoline(
+        scope_ptr: *mut (),
+        data: *mut (),
+        invoker: unsafe extern "C" fn(*mut ()),
+    );
+    fn __moss_branch_join(scope_ptr: *mut ());
+}
+
+extern "Rust" {
+    pub fn moss_solo_enter(reason: &str);
+    pub fn moss_solo_leave(reason: &str);
+}
+
+pub fn next_root_id() -> u64 {
+    // SAFETY: Process runtime root crate exports __moss_next_root_id.
+    unsafe { __moss_next_root_id() }
+}
+
+pub fn next_branch_id() -> u64 {
+    // SAFETY: Process runtime root crate exports __moss_next_branch_id.
+    unsafe { __moss_next_branch_id() }
+}
+
+pub fn solo_enter_current(reason: &str) {
+    // SAFETY: Process runtime root crate exports moss_solo_enter.
+    unsafe { moss_solo_enter(reason); }
+}
+
+pub fn solo_leave_current(reason: &str) {
+    // SAFETY: Process runtime root crate exports moss_solo_leave.
+    unsafe { moss_solo_leave(reason); }
+}
+
+pub fn executor_solo_enter_from_fileio(reason: &str) {
+    // SAFETY: Process runtime root crate exports moss_solo_enter.
+    unsafe { moss_solo_enter(reason); }
+}
+
+pub fn executor_solo_leave_from_fileio(reason: &str) {
+    // SAFETY: Process runtime root crate exports moss_solo_leave.
+    unsafe { moss_solo_leave(reason); }
+}
+
+pub struct MossBranchScope {
+    raw: *mut (),
+}
+// SAFETY: Branch scope pointer is managed across threads by the process runtime.
+unsafe impl Send for MossBranchScope {}
+unsafe impl Sync for MossBranchScope {}
+
+impl Clone for MossBranchScope {
+    fn clone(&self) -> Self {
+        // SAFETY: Cloning the reference count in the owning root runtime.
+        let raw = unsafe { __moss_branch_scope_clone(self.raw) };
+        Self { raw }
+    }
+}
+
+impl Drop for MossBranchScope {
+    fn drop(&mut self) {
+        // SAFETY: Dropping scope handle in the owning root runtime.
+        unsafe { __moss_branch_scope_drop(self.raw) };
+    }
+}
+
+pub fn branch_scope_new(owner_root_id: u64) -> MossBranchScope {
+    // SAFETY: Creating new branch scope in the owning root runtime.
+    let raw = unsafe { __moss_branch_scope_new(owner_root_id) };
+    MossBranchScope { raw }
+}
+
+unsafe extern "C" fn __moss_invoke_foreign_branch(ptr: *mut ()) {
+    let boxed: std::boxed::Box<std::boxed::Box<dyn FnOnce() + Send + 'static>> = unsafe {
+        std::boxed::Box::from_raw(ptr as *mut _)
+    };
+    (*boxed)();
+}
+
+pub fn branch_publish<F>(scope: &MossBranchScope, branch_fn: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let boxed: std::boxed::Box<std::boxed::Box<dyn FnOnce() + Send + 'static>> =
+        std::boxed::Box::new(std::boxed::Box::new(branch_fn));
+    let raw_data = std::boxed::Box::into_raw(boxed) as *mut ();
+    // SAFETY: Passing heap-allocated thunk to process runtime trampoline.
+    unsafe {
+        __moss_branch_publish_trampoline(scope.raw, raw_data, __moss_invoke_foreign_branch);
+    }
+}
+
+pub fn branch_join(scope: MossBranchScope) {
+    // SAFETY: Joining branch scope in the owning root runtime.
+    unsafe { __moss_branch_join(scope.raw) };
+}
+)EXECUTOR_RUST";
+  }
 
   return s;
 }

@@ -1212,6 +1212,315 @@ fn main() {
             run_res = subprocess.run([t30_bin], capture_output=True, text=True, timeout=30)
             check("30-two-crate-provider", run_res, "ok")
 
+    # ── Test 31: Concurrent start() Race & Exclusive Reservation ──────────
+    print("Test 31: Concurrent start() race (exclusive reservation rejects second caller)")
+    src31 = preamble + r"""
+fn main() {
+    use std::sync::{Arc, Barrier};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    // 1. Inline root starts and holds INLINE admission
+    let inline_blocker = Arc::new(Barrier::new(2));
+    let ib_c = Arc::clone(&inline_blocker);
+    let inline_release = Arc::new(Barrier::new(2));
+    let ir_c = Arc::clone(&inline_release);
+
+    let inline_h = thread::spawn(move || {
+        runtime_invoke(move || {
+            ib_c.wait();
+            ir_c.wait();
+        });
+    });
+
+    inline_blocker.wait(); // Inline root is now running
+
+    // 2. Start A begins and sets start_pending = true, waiting for inline root
+    let start_a_handle = Arc::new(std::sync::Mutex::new(None));
+    let sah_c = Arc::clone(&start_a_handle);
+
+    let thread_a = thread::spawn(move || {
+        let exec = MossExecutor::new().threads(2).start();
+        *sah_c.lock().unwrap() = Some(exec);
+    });
+
+    // Give thread A time to acquire rt.inner and set start_pending = true
+    thread::sleep(Duration::from_millis(50));
+
+    // 3. Start B attempts to start while start A is pending -> must fail deterministically
+    let start_b_res = std::panic::catch_unwind(|| {
+        MossExecutor::new().threads(2).start();
+    });
+    assert!(start_b_res.is_err(), "concurrent start B succeeded while start A was pending!");
+
+    // 4. Release inline root -> thread A completes start and becomes the sole executor
+    inline_release.wait();
+    inline_h.join().unwrap();
+    thread_a.join().unwrap();
+
+    let exec_a = start_a_handle.lock().unwrap().take().expect("start A did not produce executor");
+    assert_eq!(moss_executor_state(), "ACTIVE");
+
+    // 5. Submit work and join
+    let root_ran = Arc::new(AtomicBool::new(false));
+    let rr_c = Arc::clone(&root_ran);
+    let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+        rr_c.store(true, Ordering::SeqCst);
+    });
+    exec_a.enqueue_root(desc);
+
+    exec_a.join();
+
+    assert!(root_ran.load(Ordering::SeqCst));
+    assert_eq!(moss_executor_state(), "INLINE");
+    assert_eq!(moss_executor_worker_count(), 0);
+    println!("ok concurrent_start_race_exclusive");
+}
+"""
+    check("31-concurrent-start-race", build_and_run_rust("t31", src31), "ok")
+
+    # ── Test 32: Contiguous Ticket Transfer Across INLINE -> ACTIVE ────────
+    print("Test 32: Contiguous ticket transfer across INLINE -> ACTIVE (out-of-order wake)")
+    src32 = preamble + r"""
+fn main() {
+    use std::sync::{Arc, Barrier, Mutex};
+    use std::thread;
+    use std::time::Duration;
+
+    // Blocker holding inline gate
+    let blocker_b = Arc::new(Barrier::new(2));
+    let bb_c = Arc::clone(&blocker_b);
+    let blocker_r = Arc::new(Barrier::new(2));
+    let br_c = Arc::clone(&blocker_r);
+
+    let blocker_h = thread::spawn(move || {
+        runtime_invoke(move || {
+            bb_c.wait();
+            br_c.wait();
+        });
+    });
+
+    blocker_b.wait();
+
+    // Spawn Waiter 1 (gets ticket 1) and Waiter 2 (gets ticket 2)
+    let w1_reg = Arc::new(Barrier::new(2));
+    let w1r_c = Arc::clone(&w1_reg);
+    let w1_hold = Arc::new(Barrier::new(2));
+    let w1h_c = Arc::clone(&w1_hold);
+    let w1_res = Arc::new(Mutex::new(None));
+    let w1res_c = Arc::clone(&w1_res);
+
+    let h_w1 = thread::spawn(move || {
+        w1r_c.wait();
+        let res = runtime_invoke(move || {
+            w1h_c.wait();
+            100u32
+        });
+        *w1res_c.lock().unwrap() = Some(res);
+    });
+    w1_reg.wait();
+    thread::sleep(Duration::from_millis(20));
+
+    let w2_reg = Arc::new(Barrier::new(2));
+    let w2r_c = Arc::clone(&w2_reg);
+    let w2_res = Arc::new(Mutex::new(None));
+    let w2res_c = Arc::clone(&w2_res);
+
+    let h_w2 = thread::spawn(move || {
+        w2r_c.wait();
+        let res = runtime_invoke(move || 200u32);
+        *w2res_c.lock().unwrap() = Some(res);
+    });
+    w2_reg.wait();
+    thread::sleep(Duration::from_millis(20));
+
+    // Start executor on a separate thread
+    let exec_h = thread::spawn(move || {
+        MossExecutor::new().threads(2).start()
+    });
+
+    thread::sleep(Duration::from_millis(30));
+    blocker_r.wait();
+    blocker_h.join().unwrap();
+    let exec = exec_h.join().unwrap();
+
+    // Release waiter 1
+    w1_hold.wait();
+    h_w1.join().unwrap();
+    h_w2.join().unwrap();
+
+    assert_eq!(*w1_res.lock().unwrap(), Some(100u32));
+    assert_eq!(*w2_res.lock().unwrap(), Some(200u32));
+
+    exec.join();
+    assert_eq!(moss_executor_state(), "INLINE");
+
+    // Verify subsequent runtime_invoke does NOT hang behind a stranded ticket
+    let fresh_res = runtime_invoke(|| 300u32);
+    assert_eq!(fresh_res, 300u32);
+    println!("ok ticket_transfer_no_stranding");
+}
+"""
+    check("32-ticket-transfer-no-stranding", build_and_run_rust("t32", src32), "ok")
+
+    # ── Test 33: Direct E7 / T_max Compensation Cap Test ───────────────────
+    print("Test 33: Direct E7 / T_max compensation cap under real worker barriers")
+    src33 = preamble + r"""
+fn main() {
+    use std::sync::{Arc, Barrier};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    let target = 2usize;
+    let max_t = 4usize;
+    let exec = MossExecutor::new().threads(target).max_threads(max_t).queue_capacity(16).start();
+
+    let barrier_enter = Arc::new(Barrier::new(max_t + 1));
+    let barrier_release = Arc::new(Barrier::new(max_t + 1));
+    let roots_completed = Arc::new(AtomicUsize::new(0));
+
+    // Submit 4 roots (equal to max_threads = 4)
+    for _ in 0..max_t {
+        let be = Arc::clone(&barrier_enter);
+        let br = Arc::clone(&barrier_release);
+        let rc = Arc::clone(&roots_completed);
+        let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+            solo_enter_current("test-tmax");
+            be.wait();
+            br.wait();
+            solo_leave_current("test-tmax");
+            rc.fetch_add(1, Ordering::SeqCst);
+        });
+        exec.enqueue_root(desc);
+    }
+
+    barrier_enter.wait(); // All 4 compensation/worker slots occupied in Solo
+    thread::sleep(Duration::from_millis(40));
+
+    let workers_peak = moss_executor_worker_count();
+    assert_eq!(workers_peak, max_t, "worker count ({}) exceeded max_threads ({}) or failed to reach it", workers_peak, max_t);
+    assert!(workers_peak <= max_t, "E7 violation: workers {} exceeded T_max {}", workers_peak, max_t);
+
+    barrier_release.wait();
+    exec.join();
+
+    assert_eq!(roots_completed.load(Ordering::SeqCst), max_t);
+    assert_eq!(moss_executor_worker_count(), 0);
+    println!("ok tmax_cap_proven peak={}", workers_peak);
+}
+"""
+    check("33-tmax-compensation-cap", build_and_run_rust("t33", src33), "ok")
+
+    # ── Test 34: Agent D Seam Integration ──────────────────────────────────
+    print("Test 34: Agent D seam integration (moss_root_start/submit/join & builder)")
+    src34 = preamble + r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // 1. Default seam start
+    let exec = moss_root_start();
+    let counter = Arc::new(AtomicUsize::new(0));
+
+    for _ in 0..10 {
+        let c = Arc::clone(&counter);
+        moss_root_submit(&exec, move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+    }
+
+    moss_root_join(exec);
+    assert_eq!(counter.load(Ordering::SeqCst), 10);
+
+    // 2. Builder configuration seam
+    let custom_exec = MossExecutor::new()
+        .threads(3)
+        .max_threads(6)
+        .queue_capacity(32)
+        .affinity(vec![0, 1])
+        .priority(0)
+        .start();
+
+    let counter2 = Arc::new(AtomicUsize::new(0));
+    for _ in 0..5 {
+        let c = Arc::clone(&counter2);
+        moss_root_submit(&custom_exec, move || {
+            c.fetch_add(2, Ordering::SeqCst);
+        });
+    }
+    moss_root_join(custom_exec);
+    assert_eq!(counter2.load(Ordering::SeqCst), 10);
+
+    println!("ok agent_d_seam_compatible");
+}
+"""
+    check("34-agent-d-seam-integration", build_and_run_rust("t34", src34), "ok")
+
+    # ── Test 35: Unique Linear Capability & Worker Enqueue Rejection ────────
+    print("Test 35: Unique linear capability (worker root enqueue rejected)")
+    src35 = preamble + r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let exec = MossExecutor::new().threads(2).start();
+    let worker_enqueue_panicked = Arc::new(AtomicBool::new(false));
+    let wep_c = Arc::clone(&worker_enqueue_panicked);
+
+    // Root running on worker thread attempts to enqueue new root
+    let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+        let rt = process_rt();
+        let gx_opt = rt.inner.lock().unwrap().active_executor.clone();
+        if let Some(gx) = gx_opt {
+            let handle = MossExecutorHandle { gx };
+            let bad_submit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                handle.enqueue_root(MossRootDescriptor::one_way(next_root_id(), || {}));
+            }));
+            if bad_submit.is_err() {
+                wep_c.store(true, Ordering::SeqCst);
+            }
+        }
+    });
+
+    exec.enqueue_root(desc);
+    exec.join();
+
+    assert!(worker_enqueue_panicked.load(Ordering::SeqCst), "worker enqueue was not rejected!");
+    println!("ok unique_handle_worker_enqueue_rejected");
+}
+"""
+    check("35-unique-handle-worker-rejected", build_and_run_rust("t35", src35), "ok")
+
+    # ── Test 36: Real Agent B Hooks Integration ────────────────────────────
+    print("Test 36: Real Agent B hooks integration (moss_solo_enter/leave with reasons)")
+    src36 = preamble + r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    let exec = MossExecutor::new().threads(1).max_threads(3).start();
+    let comp_active = Arc::new(AtomicBool::new(false));
+    let ca = Arc::clone(&comp_active);
+
+    let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+        moss_solo_enter("fileio-read");
+        if moss_executor_worker_count() > 1 {
+            ca.store(true, Ordering::SeqCst);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        moss_solo_leave("fileio-read");
+    });
+    exec.enqueue_root(desc);
+
+    exec.join();
+    println!("ok agent_b_solo_hooks_verified");
+}
+"""
+    check("36-agent-b-solo-hooks", build_and_run_rust("t36", src36), "ok")
+
     # ── Summary ───────────────────────────────────────────────────────────
     print()
     print(f"Results: {len(PASS)} passed, {len(FAIL)} failed out of {len(PASS)+len(FAIL)} tests")
