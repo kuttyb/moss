@@ -1,69 +1,111 @@
 # Moss current status
 
-## Phase 20 Agent C — Final Hardened Executor Runtime — COMPLETE (2026-10-04)
+## Phase 20 Agent C — executor/root runtime — validated corrective checkpoint (2026-10-04)
 
-Final proof-level hardening and concurrency safety completed for Phase 20 Agent C executor and root runtime on branch `phase-20-c-executor-runtime`.
-- **Checkpoint & Base:** HEAD `de65b182b536b33e12deae3e60a900ab75b2d22f` -> hardened implementation (base: `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`).
-- **Files modified/implemented:**
-  - `src/executor_runtime.hpp`: Hardened lock hierarchy, ticket FIFO fairness, gate closing, TLS worker context, fail-closed validation, Linux affinity/priority, event-driven branch joins, and cross-crate process-wide runtime symbol export.
-  - `src/moss.cpp`: Propagated module identity `p_.explicit_module` to `executor_runtime_rust(bool is_library)`.
-  - `tests/tooling/check_borrowed_reads.py`: Updated assertion hygiene checks.
-  - `tests/tooling/check_phase20c_executor.py`: Expanded to a 30-test proof-level test suite.
-  - `docs/ROOT_RUNTIME_ABI.md`: Documented physical signatures and Agent B/C FileIO Solo integration seam.
+This section is the single authoritative description of Agent C on branch
+`phase-20-c-executor-runtime`. It supersedes the earlier "Final Hardened
+Executor Runtime" and "runtime ABI continuation audit" notes, whose
+`__moss_process_runtime_raw` design and 30/30 result describe the older
+`de65b182` implementation and do not validate the current code.
 
-### Key Hardened Capabilities & Fixes
-1. **Single Lock Ownership (Solo Lock-Order Deadlock Eliminated)**:
-   - Moved `solo_blocked_workers` into `MossExecInner`. Both worker scheduling state (`active_workers`, `target_threads`, `max_threads`) and Solo blocked worker set are guarded by the single `gx.inner` mutex.
-   - Completely eliminated lock inversion cycles between `worker_loop` and `solo_enter`/`solo_leave`.
-   - Dedicated concurrency stress test under barriers verified zero deadlocks across repeated iterations.
-2. **Gate-Closing INLINE Admission on `start()`**:
-   - Added `start_pending` gate-closing flag in `MossProcessRuntimeInner`.
-   - `start()` immediately asserts `start_pending = true`, preventing new INLINE admissions from entering.
-   - Any currently running INLINE root finishes cleanly; queued callers wait and automatically re-evaluate once the executor transitions to `ACTIVE`, routing through executor admission.
-3. **Deterministic FIFO Ticket Fairness for INLINE Roots**:
-   - Replaced boolean-only admission with ticket counters (`next_inline_ticket`, `serving_inline_ticket`).
-   - Callers take a monotonic ticket and wait on `ingress_cv` until `my_ticket == serving_inline_ticket`.
-   - Upon completion, `serving_inline_ticket` is incremented and `ingress_cv.notify_all()` wakes waiters in deterministic FIFO order.
-4. **Fair ACTIVE Queue Admission & Unified `admit_root`**:
-   - Ticket admission (`next_admission_ticket`, `serving_admission_ticket`) for root queue capacity in `MossExecInner`.
-   - Unified `admit_root(&gx, desc)` primitive returning `MossAdmissionResult::Admitted` or `MossAdmissionResult::DrainingBeforeAdmission(desc)` without premature work consumption.
-5. **Thread-Local Worker Identity & Agent-B Solo Seam**:
-   - Added `thread_local! { pub static MOSS_CURRENT_WORKER_ID: Cell<Option<usize>> }` with RAII `WorkerTlsGuard`.
-   - Added `solo_enter_current()` and `solo_leave_current()` returning `bool` (safely ignoring non-worker threads).
-   - Added `executor_solo_enter_from_fileio(op_name)` and `executor_solo_leave_from_fileio(op_name)` adapter bridge matching Agent B's exact integration requirements.
-6. **Process-Wide Runtime Across Crates / `.rlib`s**:
-   - Exported `#[no_mangle] pub extern "C" fn __moss_process_runtime_raw() -> *mut ()` from root crates.
-   - Dependency module crates link against the root symbol via `extern "C" { fn __moss_process_runtime_raw() -> *mut (); }`, ensuring all `.rlib` provider crates share the identical process-wide `MossProcessRuntime`.
-7. **Defensive Configuration Validation**:
-   - Validated `threads`, `max_threads`, and `queue_capacity` during `start()`.
-   - Configs with `max_threads < threads`, `threads == 0`, `max_threads == 0`, or `queue_capacity == 0` fail closed immediately via panics.
-8. **Linux Best-Effort Thread Affinity & Priority**:
-   - Configured optional CPU affinity via `libc::sched_setaffinity` and thread scheduling priority via `libc::setpriority` (PRIO_PROCESS) where available.
-9. **Event-Driven Branch Join**:
-   - `MossBranchScope` uses `done_cond` condition variable to signal branch completion, eliminating polling sleeps in `branch_join`.
+Resumed from crash checkpoint `9a1dafbc65f9` (parent `7d3aa89`), whose
+continuation changes were unvalidated. The crashed workspace also held staged,
+uncommitted test edits (runtime-block exemption for `tests/run.sh`,
+`check_handler_2pl.py`, `check_phase106e_domains.py`, `check_phase106f.py`);
+they were preserved, made strict, and included.
 
-### Validation
-- `python3 tests/tooling/check_phase20c_executor.py`: **30 passed, 0 failed (30/30)**.
-- `sh tests/run.sh ./moss build/tests`: **All Moss v0.1 tests passed**.
-- `make examples`: **PASSED** (all 29 examples compiled and verified).
-- `git diff --check`: **Clean**.
+### Reproduction of the untouched checkpoint
+- `check_phase20c_executor.py`: 47/47 passed.
+- `make check`: **failed** — `fused terminal reduction allocated an
+  intermediate Vec` (a whole-file grep matched `Vec::new()` inside the emitted
+  runtime). The preserved workspace edits fix exactly this class.
+- `make examples`, `git diff --check`, `sh -n tests/run.sh`: passed.
 
-## Phase 20 runtime ABI continuation audit (2026-10-04)
+### Current design (src/executor_runtime.hpp; narrow wiring in src/moss.cpp)
+- **Crate roles** (`ExecutorRuntimeRole`): exactly one process-runtime owner
+  per executable. `ProcessRoot` = implicit-module program or the explicit
+  module declaring `main`; `Provider` = other modules of a unit with `main`;
+  `SelectedByExecutableBuild` = modules of a unit without `main` (library
+  packages and their test/bench/stub executables), emitted as
+  `#[cfg(moss_process_root)]` root / `#[cfg(not(...))]` wrapper modules. Moss's
+  explicit-module executable compile passes `--cfg moss_process_root`; the
+  published `.rlib` stays a wrapper.
+- **No `__moss_process_runtime_raw`**. Providers own no scheduler, process
+  runtime, Root IDs, or Solo scheduler; they hold an opaque `MossBranchScope`
+  over the root-exported C ABI: `__moss_branch_scope_new_current`, `_clone`,
+  `_drop`, `__moss_branch_publish_trampoline`, `__moss_branch_join`.
+- **Ownership contract**: `new_current`/`clone` return one owned count;
+  `drop`/`join` consume one; `publish` borrows the scope and takes the foreign
+  closure, reclaimed by exactly one of `invoke(data)` / `discard(data)`.
+- **Current-Root TLS** is set by `run_root` on every ingress path (INLINE
+  `runtime_invoke`, ACTIVE worker Root, post-DRAINING INLINE, re-admitted
+  Root) and by `run_branch` for Branches (owner identity). A scope outside a
+  Root fails closed; a Root cannot publish/join another Root's scope.
+- **Scheduler classes**: workers run one Root to completion; free workers may
+  run Branches; join helps only its own scope's unstarted Branches.
+- **One-shot, nonblocking Branch scopes**: bounded per-scope window, owner runs
+  inline when full or with no Executor; `queued` flag ⇒ one ready-queue entry
+  per unjoined scope; `branch_seq` + `gx.inner` handshake closes the idle-worker
+  lost wakeup (Test 38).
+- **Ingress**: INLINE→ACTIVE gate closing via `start_pending`, FIFO inline
+  tickets, ticket-FIFO bounded admission, DRAINING-denied callers keep their
+  inline ticket (Tests 44/45); handles are linear.
+- **Solo seam**: `executor_solo_enter_from_fileio` / `_leave_from_fileio` and
+  `executor_fileio_solo_{enter,leave}_callback()`; Agent C defines no
+  `moss_solo_enter`/`moss_solo_leave`. Solo bookkeeping stays under the single
+  `MossExecInner` mutex.
 
-Continued from the reserved-names checkpoint below. The staged Agent C
-implementation now provides the executor/root runtime component and its
-physical Rust interfaces in `src/executor_runtime.hpp`; `docs/ROOT_RUNTIME_ABI.md`
-already records the actual crate roles and signatures. In particular, the
-runtime does not export `__moss_process_runtime_raw`: the executable root owns
-the process runtime, and provider crates share only the opaque Branch ABI.
+### Corrective fixes in this pass
+1. **Joined scopes leaked in the ready-scope queue.** With all workers busy
+   (e.g. `threads(1)`), each joined scope's entry and state stayed queued for
+   the Root's lifetime (20,000 scope cycles ⇒ 20,000 entries). `branch_join`
+   now sets `joined` under the pending lock and removes the entry; a worker or
+   publisher that re-pushes an in-transit entry removes it if the scope was
+   joined meanwhile. All runtime locks remain non-nested (A5/R5). Tests 30/39
+   now require join to release the entry; new Tests 46, 47.
+2. **T_max physical bound (E7).** A retiring compensation worker gave up its
+   slot before its thread ended; 3 live threads were observed with
+   `max_threads(2)`. A `live_threads` slot is now reserved before spawn and
+   released by a guard when the thread body returns. New Test 48.
+3. **Library-only units had no process-runtime owner.** Their stub/test
+   executables contained only wrappers and failed to link once code referenced
+   the Branch ABI (`undefined symbol: __moss_branch_join`). Fixed by
+   `SelectedByExecutableBuild`. New Test 49; Test 37 now checks a real
+   Provider-role crate from a unit with `main`.
+4. **Branch scope one-shot race hardening**: `joined` lives under the scope's
+   pending lock, so no publication can slip in after a join begins; ownership
+   is checked before the one-shot flag, so a rejected foreign join no longer
+   consumes the scope.
+5. **Older safety tests**: the runtime-block exemption is now strict —
+   line-anchored exact header, exactly one block, no stray markers (Python
+   asserts; `tests/run.sh` falls back to the whole file, i.e. stricter).
+6. **Test 18 flake** (14/100): it asserted a two-worker peak without waiting
+   for the second thread to start; it now waits.
 
-Phase 20 as a whole remains unfinished. The next implementation area is the
-FileIO runtime and Solo hook table; after that, compiler lowering must connect
-Executor configuration/invocation, root message ingress, FileIO operations,
-and the ABI seams. Fast Debug parity is also outstanding. The Phase 20
-specification remains the behavior source; this continuation did not change
-language semantics or run validation, so the earlier Phase 20C validation
-results apply only to that completed executor checkpoint.
+### Validation (final tree)
+- `python3 tests/tooling/check_phase20c_executor.py ./moss`: **51/51 passed**
+  (47 checkpoint tests, Tests 18/30/37/39 tightened, new 46–49).
+- Repeated runs: Tests 38, 39, 42, 44, 45, 46, 47, 48, 18 at 100× each on the
+  final binary, 0 failures; every suite binary 50× (pre-final tree), 0
+  failures.
+- `make check`: **all Moss v0.1 tests passed**.
+- `make examples`: passed.
+- `git diff --check` and `sh -n tests/run.sh`: clean.
+- No validation was invalidated by later edits (all gates rerun after the
+  last runtime change).
+
+### Remaining integration dependencies
+- A+B+C: Agent B registers `executor_fileio_solo_{enter,leave}_callback()`
+  in its FileIO hook table (`moss_set_solo_hooks`); Test 36's B-shaped table
+  is a fixture until then. Real FileIO → SoloGuard → compensation end-to-end
+  belongs to that pass.
+- Agent D: lower `Executor().…start()`, `executor.invoke`, `join`, top-level
+  `message`, and chunk Branches onto `moss_root_start_with_config`,
+  `moss_root_submit[_with_target]`, `moss_root_join`, `runtime_invoke`, and
+  `branch_scope_new_current`/`branch_publish`/`branch_join` (pub API only; in
+  the selected role the runtime lives in a module re-exported by `pub use`).
+- Fast Debug parity for Executor/Root semantics is outstanding.
+- `check_phase20c_executor.py` is not yet wired into `make check`.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

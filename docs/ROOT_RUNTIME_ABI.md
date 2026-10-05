@@ -128,13 +128,23 @@ implementation area from the phase spec, before other areas call them.
 ## Physical signatures & Integration Seam (Agent C Runtime)
 
 ### Crate roles
-`executor_runtime_rust(owns_process_runtime)` emits one of two variants.
-The final application crate (an implicit-module program, or the explicit
-module that declares `main`) owns the process runtime: the scheduler, the
-ingress state, Root/Branch identity counters, and the TLS execution context.
-Every other generated crate is a provider and emits only an opaque
-`MossBranchScope` wrapper over the root's exported C Branch ABI; providers
-never own a scheduler or allocate Root identities.
+`executor_runtime_rust(ExecutorRuntimeRole)` emits exactly one delimited
+runtime block per crate. Exactly one crate per executable owns the process
+runtime: the scheduler, the ingress state, Root/Branch identity counters, and
+the TLS execution context.
+
+| Role | Crate | Emitted runtime |
+| --- | --- | --- |
+| `ProcessRoot` | implicit-module program, or the explicit module that declares `main` | process runtime; exports the Branch ABI |
+| `Provider` | any other module of a unit that has `main` | opaque `MossBranchScope` wrapper importing the Branch ABI |
+| `SelectedByExecutableBuild` | every module of a unit without `main` (library package, its tests/benches) | both, in `#[cfg(moss_process_root)]` / `#[cfg(not(moss_process_root))]` modules re-exported with `pub use` |
+
+A unit without `main` still links its root module as an executable (a stub
+or the test harness) while publishing the same crate source as a provider
+`.rlib`. The build passes `--cfg moss_process_root` only to the executable
+compile, so that executable owns the runtime and the published `.rlib`
+remains a wrapper that never duplicates the root's exported symbols.
+Providers never own a scheduler or allocate Root identities.
 
 ```rust
 // Exported by the process-root crate, imported by provider crates:
@@ -148,6 +158,8 @@ never own a scheduler or allocate Root identities.
 ```
 `new_current` and `clone` return one owned count; `drop` and `join` consume
 one; `publish` borrows. `discard` releases a foreign closure that never ran.
+`join` also releases the scope's ready-queue entry, so a joined scope is
+never retained by the scheduler.
 
 ### Execution context (runtime-owned TLS)
 ```rust
@@ -214,10 +226,11 @@ pub fn branch_publish<F: FnOnce() + Send + 'static>(scope: &MossBranchScope, wor
 pub fn branch_join(scope: MossBranchScope);
 ```
 Scopes are one-shot: publish after join, or a second join, fails closed.
-Publication never blocks. With no Executor, or when the per-scope window is
-full, the owner runs the Branch inline. Each scope occupies at most one
-ready-queue entry. While joining, the owner helps only its own unstarted
-Branches.
+The joined flag is checked under the scope's pending lock, so no Branch can be
+added once a join begins. Publication never blocks. With no Executor, or when
+the per-scope window is full, the owner runs the Branch inline. Each unjoined
+scope occupies at most one ready-queue entry and a joined scope none. While
+joining, the owner helps only its own unstarted Branches.
 
 ### Solo Compensation Seam (Agent B FileIO Integration)
 The process-wide `moss_solo_enter` / `moss_solo_leave` symbols belong to the
@@ -233,8 +246,11 @@ pub fn executor_fileio_solo_enter_callback() -> fn(&str);
 pub fn executor_fileio_solo_leave_callback() -> fn(&str);
 ```
 Solo nesting is counted per worker. Entering may activate one compensation
-worker, but never more than `max_threads`. Leaving resumes immediately, and
-excess workers exit at their next idle point.
+worker, but never more than `max_threads`: a worker's physical slot is
+reserved before its thread is spawned and released only when its thread body
+returns, so a retiring worker cannot overlap its replacement beyond
+`max_threads`. Leaving resumes immediately, and excess workers exit at their
+next idle point.
 
 ### Synchronous Host Ingress (`runtime_invoke`)
 ```rust

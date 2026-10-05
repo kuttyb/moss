@@ -11658,10 +11658,14 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
-    // The final application (an implicit-module program, or the explicit
-    // module that owns `main`) is the single process-runtime owner; every
-    // other generated crate is a provider and links to its Branch ABI.
-    o << executor_runtime_rust(!p_.explicit_module || p_.main.has_value());
+    // Exactly one crate per executable owns the process runtime: the final
+    // application (an implicit-module program, or the explicit module that
+    // owns `main`).  Other crates of a unit with `main` are providers.  In a
+    // unit without `main`, whichever crate is built as the executable owns it.
+    o << executor_runtime_rust(
+        !p_.explicit_module || p_.main.has_value() ? ExecutorRuntimeRole::ProcessRoot
+        : semantic_program_->main.has_value()      ? ExecutorRuntimeRole::Provider
+                                                   : ExecutorRuntimeRole::SelectedByExecutableBuild);
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
@@ -23388,6 +23392,10 @@ static NativeArtifact compile_native_artifact(
     command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
                    artifact.backend_toolchain.compile_flags.end());
     command.push_back(artifact.rust.string());
+    // The executable crate is the process-runtime owner (see
+    // ExecutorRuntimeRole::SelectedByExecutableBuild for units without main).
+    command.push_back("--cfg");
+    command.push_back("moss_process_root");
     command.push_back("-o");
     command.push_back(artifact.executable.string());
     command.push_back("-L");

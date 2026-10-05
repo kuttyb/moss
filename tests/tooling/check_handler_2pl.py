@@ -8,6 +8,20 @@ import shutil
 import subprocess
 import sys
 
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue, worker threads, and C Branch ABI are runtime internals, not
+    lowered Moss code.  Exactly one line-anchored, delimited block must be
+    present, so the exemption can never swallow ordinary lowered code."""
+    lowered, blocks = re.subn(
+        r"^// Phase 20 Executor Runtime  \(moss executor_runtime_rust: [a-z -]+\)\n"
+        r".*?^// ─── End Phase 20 Executor Runtime ─*\n",
+        "", text, flags=re.S | re.M)
+    assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
+        "expected exactly one delimited Phase 20 executor runtime block"
+    return lowered
+
+
 repository = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2] if len(sys.argv) > 2 else repository / 'tmp/phase106d').resolve()
@@ -26,8 +40,9 @@ def compile_fixture(source, flags=(), name='fixture'):
     run([compiler, *flags, source, '-o', rust])
     text = rust.read_text()
     assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
-    assert not re.search(r'Arc<(Mutex|RwLock)<\w+State|AtomicI64|AtomicBool|thread::spawn', text)
-    assert 'unsafe {' not in text and 'unsafe impl' not in text
+    lowered = strip_executor_runtime(text)
+    assert not re.search(r'Arc<(Mutex|RwLock)<\w+State|AtomicI64|AtomicBool|thread::spawn', lowered)
+    assert 'unsafe' not in lowered
     return rust, text
 
 

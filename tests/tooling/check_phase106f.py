@@ -8,6 +8,22 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import re
+
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue, worker threads, and C Branch ABI are runtime internals, not
+    lowered Moss code.  Exactly one line-anchored, delimited block must be
+    present, so the exemption can never swallow ordinary lowered code."""
+    lowered, blocks = re.subn(
+        r"^// Phase 20 Executor Runtime  \(moss executor_runtime_rust: [a-z -]+\)\n"
+        r".*?^// ─── End Phase 20 Executor Runtime ─*\n",
+        "", text, flags=re.S | re.M)
+    assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
+        "expected exactly one delimited Phase 20 executor runtime block"
+    return lowered
+
+
 repo=Path(__file__).resolve().parents[2]
 compiler=Path(sys.argv[1]).resolve()
 out=Path(sys.argv[2]).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -58,7 +74,7 @@ for path in corpus:
     command=[compiler,'-O',source,'-o',rust]
     run(command);generated=rust.read_text();run(command);assert generated==rust.read_text()
     assert 'let self_ref = self.clone()' not in generated
-    assert 'unsafe {' not in generated and 'unsafe impl' not in generated
+    assert 'unsafe' not in strip_executor_runtime(generated)
     # No instrumentation calls/clock reads survive a normal optimized build.
     run(['rustc','--edition=2021','-D','warnings','-C','opt-level=3',rust,'-o',binary])
     production=run([binary]).stdout

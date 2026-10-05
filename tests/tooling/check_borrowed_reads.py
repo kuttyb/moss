@@ -9,9 +9,16 @@ import sys
 
 def strip_executor_runtime(text):
     """Drop the emitted Phase 20 executor runtime; its type-erased Root work
-    queue and C Branch ABI are runtime internals, not lowered Moss code."""
-    return re.sub(r"// Phase 20 Executor Runtime .*?// ─── End Phase 20 Executor Runtime[^\n]*\n",
-                  "", text, flags=re.S)
+    queue, worker threads, and C Branch ABI are runtime internals, not
+    lowered Moss code.  Exactly one line-anchored, delimited block must be
+    present, so the exemption can never swallow ordinary lowered code."""
+    lowered, blocks = re.subn(
+        r"^// Phase 20 Executor Runtime  \(moss executor_runtime_rust: [a-z -]+\)\n"
+        r".*?^// ─── End Phase 20 Executor Runtime ─*\n",
+        "", text, flags=re.S | re.M)
+    assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
+        "expected exactly one delimited Phase 20 executor runtime block"
+    return lowered
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()

@@ -24,10 +24,11 @@
 //     moss_root_join
 //   - Test instrumentation under #[cfg(any(test, moss_perf))]
 //
-// Crate roles: exactly one generated crate (the executable root) owns the
-// process runtime and exports the opaque cross-crate Branch ABI.  Provider
-// crates emit only an opaque MossBranchScope wrapper over that ABI and never
-// own a scheduler.
+// Crate roles: exactly one generated crate per executable (the crate built
+// as the executable) owns the process runtime and exports the opaque
+// cross-crate Branch ABI.  Provider crates emit only an opaque
+// MossBranchScope wrapper over that ABI and never own a scheduler.  See
+// ExecutorRuntimeRole.
 //
 // src/moss.cpp includes this and emits it alongside handler_runtime_rust().
 // See docs/ROOT_RUNTIME_ABI.md and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md.
@@ -36,16 +37,22 @@
 
 namespace moss {
 
-inline std::string executor_runtime_rust(bool owns_process_runtime) {
-  std::string s;
-  if (owns_process_runtime) {
-    s += R"EXECUTOR_RUST(
-// ============================================================
-// Phase 20 Executor Runtime  (moss executor_runtime_rust: process root)
-// INLINE ─start()→ ACTIVE ─join()→ DRAINING ─drained→ INLINE
-// Fully-qualified standard types prevent collisions with user symbols.
-// ============================================================
+enum class ExecutorRuntimeRole {
+  // The crate is always its program's executable: an implicit-module
+  // program, or the explicit module that declares `main`.
+  ProcessRoot,
+  // The crate is only ever a library of an executable whose `main` lives in
+  // another crate.
+  Provider,
+  // A unit with no `main`: the same crate source is built as a provider
+  // .rlib and as the unit's (stub or test) executable, so the role is chosen
+  // by `--cfg moss_process_root`, which only the executable build passes.
+  SelectedByExecutableBuild,
+};
 
+// Process-root runtime items (without the block delimiters).
+inline const char* executor_runtime_root_items() {
+  return R"EXECUTOR_RUST(
 // ─── Lifecycle ───────────────────────────────────────────────────────────
 /// Ingress lifecycle. §5.4 / ROOT_RUNTIME_ABI §"Exact ingress lifecycle".
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -220,7 +227,12 @@ impl Default for MossExecutorConfig {
 // ─── Executor inner state ─────────────────────────────────────────────────
 struct MossExecInner {
     root_queue: std::collections::VecDeque<MossRootDescriptor>,
+    /// Workers in the scheduling loop (runnable or Solo-blocked).
     active_workers: usize,
+    /// Physical worker threads not yet finished: a worker that has decided to
+    /// exit still counts until its thread body returns, so a replacement
+    /// compensation worker cannot overlap it beyond T_max (E7).
+    live_threads: usize,
     running_roots: usize,
     draining: bool,
     shutdown: bool,
@@ -282,13 +294,37 @@ impl MossGlobalExec {
                 (item, requeue)
             };
             if requeue {
-                self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).push_back(std::sync::Arc::clone(&scope));
+                self.push_ready_scope(&scope);
             }
             if let Some((branch_id, work)) = item {
                 return Some((scope, branch_id, work));
             }
             // The owner already helped every pending Branch of this scope.
         }
+    }
+
+    /// Push a scope's single ready-queue entry, whose `queued` flag the caller
+    /// set under the scope's pending lock.  The owner may have joined while
+    /// the entry was in transit; its join then cleared `queued` but could not
+    /// find the entry, so the pusher removes it.
+    fn push_ready_scope(&self, scope: &std::sync::Arc<MossBranchScopeState>) {
+        self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).push_back(std::sync::Arc::clone(scope));
+        let stale = {
+            let pending = scope.lock_pending();
+            pending.joined && !pending.queued
+        };
+        if stale { self.remove_ready_scope(scope); }
+    }
+
+    /// Remove one ready-queue entry of a joined scope.  After join no
+    /// publication can enqueue the scope again, so any entry is stale.
+    fn remove_ready_scope(&self, scope: &std::sync::Arc<MossBranchScopeState>) {
+        let removed = {
+            let mut ready = self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
+            ready.iter().position(|s| std::sync::Arc::ptr_eq(s, scope)).and_then(|index| ready.remove(index))
+        };
+        // Release the entry's reference after the queue lock.
+        drop(removed);
     }
 }
 
@@ -542,6 +578,19 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
 }
 
 // ─── Spawn workers helper ─────────────────────────────────────────────────
+/// RAII: release one physical-thread slot when a worker thread body ends,
+/// after every other worker-owned value (including its TLS context) is gone.
+struct MossWorkerThreadGuard(std::sync::Arc<MossGlobalExec>);
+
+impl Drop for MossWorkerThreadGuard {
+    fn drop(&mut self) {
+        let mut inner = self.0.lock_inner();
+        inner.live_threads = inner.live_threads.saturating_sub(1);
+    }
+}
+
+/// Spawn a worker whose physical slot the caller already reserved in
+/// `live_threads` (and `active_workers`).
 fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
     let gx2 = std::sync::Arc::clone(gx);
     let affinity = gx.config.affinity.clone();
@@ -549,6 +598,7 @@ fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
     let handle = std::thread::Builder::new()
         .name(format!("moss-worker-{}", wid))
         .spawn(move || {
+            let _slot = MossWorkerThreadGuard(std::sync::Arc::clone(&gx2));
             #[cfg(any(test, moss_perf))]
             moss_rt_ev(MossRtEvent::WorkerSpawned, 0, 0, wid);
             apply_affinity_and_priority(affinity.as_ref(), priority);
@@ -676,6 +726,7 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
         inner: std::sync::Mutex::new(MossExecInner {
             root_queue: std::collections::VecDeque::new(),
             active_workers: target,
+            live_threads: target,
             running_roots: 0,
             draining: false,
             shutdown: false,
@@ -951,8 +1002,12 @@ where
 // ─── Branch join scope ────────────────────────────────────────────────────
 struct MossBranchPending {
     items: std::collections::VecDeque<(u64, MossWork)>,
-    /// True while this scope has an entry in the executor's ready queue.
+    /// True while this scope has an entry in the executor's ready queue
+    /// (or a worker holds that entry in transit).
     queued: bool,
+    /// One-shot contract: set by the single branch_join.  Publication checks
+    /// it under this lock, so no Branch can be added once a join began.
+    joined: bool,
 }
 
 /// Shared state for one one-shot Branch join scope, owned by exactly one Root.
@@ -962,8 +1017,6 @@ pub struct MossBranchScopeState {
     pending: std::sync::Mutex<MossBranchPending>,
     /// Branches published to workers and not yet complete.
     outstanding: std::sync::atomic::AtomicUsize,
-    /// One-shot contract: set by the single branch_join.
-    joined: std::sync::atomic::AtomicBool,
     done_mutex: std::sync::Mutex<()>,
     done_cond: std::sync::Condvar,
 }
@@ -1043,9 +1096,9 @@ fn branch_scope_new(owner_root_id: u64) -> MossBranchScope {
             pending: std::sync::Mutex::new(MossBranchPending {
                 items: std::collections::VecDeque::new(),
                 queued: false,
+                joined: false,
             }),
             outstanding: std::sync::atomic::AtomicUsize::new(0),
-            joined: std::sync::atomic::AtomicBool::new(false),
             done_mutex: std::sync::Mutex::new(()),
             done_cond: std::sync::Condvar::new(),
         }),
@@ -1074,18 +1127,22 @@ where
     F: FnOnce() + Send + 'static,
 {
     let st = &scope.state;
-    if st.joined.load(std::sync::atomic::Ordering::Acquire) {
-        panic!("moss runtime: branch_publish after branch_join (one-shot scope)");
-    }
     if current_root_id() != Some(st.owner_root_id) {
         panic!("moss runtime: branch_publish outside the scope's owning Root {}", st.owner_root_id);
     }
+    let gx = process_rt().active_executor();
+    let mut pending = st.lock_pending();
+    if pending.joined {
+        drop(pending);
+        panic!("moss runtime: branch_publish after branch_join (one-shot scope)");
+    }
     let branch_id = next_branch_id();
 
-    let gx = match process_rt().active_executor() {
+    let gx = match gx {
         Some(gx) => gx,
         None => {
             // INLINE mode: compiler branches execute inline (§5.2).
+            drop(pending);
             #[cfg(any(test, moss_perf))]
             moss_rt_ev(MossRtEvent::BranchInline, st.owner_root_id, branch_id, usize::MAX);
             branch_fn();
@@ -1093,7 +1150,6 @@ where
         }
     };
 
-    let mut pending = st.lock_pending();
     if pending.items.len() >= MOSS_BRANCH_QUEUE_CAP {
         // Window full: the owner runs this Branch inline now (E4).
         drop(pending);
@@ -1112,7 +1168,7 @@ where
     #[cfg(any(test, moss_perf))]
     moss_rt_ev(MossRtEvent::BranchPublished, st.owner_root_id, branch_id, usize::MAX);
     if enqueue {
-        gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).push_back(std::sync::Arc::clone(st));
+        gx.push_ready_scope(st);
     }
     gx.signal_branch_work();
 }
@@ -1123,22 +1179,33 @@ where
 /// unrelated queued Roots or other Roots' Branches.
 pub fn branch_join(scope: MossBranchScope) {
     let st = scope.state;
-    if st.joined.swap(true, std::sync::atomic::Ordering::AcqRel) {
-        panic!("moss runtime: Branch scope joined twice (one-shot scope)");
-    }
+    // Check ownership first so a rejected foreign join leaves the scope intact.
     if current_root_id() != Some(st.owner_root_id) {
         panic!("moss runtime: branch_join outside the scope's owning Root {}", st.owner_root_id);
     }
-    loop {
-        let item = st.lock_pending().items.pop_front();
-        match item {
+    if std::mem::replace(&mut st.lock_pending().joined, true) {
+        panic!("moss runtime: Branch scope joined twice (one-shot scope)");
+    }
+    let was_queued = loop {
+        let mut pending = st.lock_pending();
+        match pending.items.pop_front() {
             Some((branch_id, work)) => {
+                drop(pending);
                 #[cfg(any(test, moss_perf))]
                 moss_rt_ev(MossRtEvent::BranchHelped, st.owner_root_id, branch_id, current_worker_id().unwrap_or(usize::MAX));
                 run_branch(st.owner_root_id, work);
                 st.mark_complete(branch_id);
             }
-            None => break,
+            // Joined and empty: nothing can be published again, so the
+            // ready-queue entry (if any) is dead.  Release it now rather than
+            // whenever a free worker next pops it: under saturation no worker
+            // may, and dead entries would grow with every joined scope.
+            None => break std::mem::replace(&mut pending.queued, false),
+        }
+    };
+    if was_queued {
+        if let Some(gx) = process_rt().active_executor() {
+            gx.remove_ready_scope(&st);
         }
     }
     // Remaining Branches were started by free workers; wait for them.
@@ -1234,10 +1301,11 @@ fn solo_enter_worker(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
         *depth += 1;
         if *depth == 1
             && inner.runnable_workers() < gx.config.threads
-            && inner.active_workers < gx.config.max_threads
+            && inner.live_threads < gx.config.max_threads
             && !inner.shutdown
         {
             inner.active_workers += 1;
+            inner.live_threads += 1;
             let wid = inner.next_worker_id;
             inner.next_worker_id += 1;
             Some(wid)
@@ -1317,6 +1385,12 @@ pub fn moss_executor_worker_count() -> usize {
     moss_test_exec(|gx| gx.lock_inner().active_workers).unwrap_or(0)
 }
 
+/// Physical worker threads whose bodies have not returned (E7 bound).
+#[cfg(any(test, moss_perf))]
+pub fn moss_executor_live_threads() -> usize {
+    moss_test_exec(|gx| gx.lock_inner().live_threads).unwrap_or(0)
+}
+
 #[cfg(any(test, moss_perf))]
 pub fn moss_executor_physical_threads() -> usize {
     moss_test_exec(|gx| {
@@ -1386,18 +1460,14 @@ pub fn moss_executor_solo_blocked() -> usize {
 pub fn moss_executor_ready_scopes() -> usize {
     moss_test_exec(|gx| gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).len()).unwrap_or(0)
 }
-// ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 )EXECUTOR_RUST";
-  } else {
-    // Provider crate (.rlib): an opaque wrapper over the process root's
-    // Branch ABI.  Providers never own a scheduler, never allocate Root
-    // identities, and never define the FileIO Solo symbols.
-    s += R"EXECUTOR_RUST(
-// ============================================================
-// Phase 20 Executor Runtime  (moss executor_runtime_rust: provider wrapper)
-// Opaque Branch ABI exported by the process-root crate.
-// ============================================================
-extern "C" {
+}
+
+// Provider items: an opaque wrapper over the process root's Branch ABI.
+// Providers never own a scheduler, never allocate Root identities, and never
+// define the FileIO Solo symbols.
+inline const char* executor_runtime_provider_items() {
+  return R"EXECUTOR_RUST(extern "C" {
     fn __moss_branch_scope_new_current() -> *const ();
     fn __moss_branch_scope_clone(scope: *const ()) -> *const ();
     fn __moss_branch_scope_drop(scope: *const ());
@@ -1486,10 +1556,39 @@ pub fn branch_join(scope: MossBranchScope) {
     // SAFETY: join consumes exactly the one count this handle owned.
     unsafe { __moss_branch_join(scope.into_raw_owned()) };
 }
-// ─── End Phase 20 Executor Runtime ───────────────────────────────────────
 )EXECUTOR_RUST";
-  }
+}
 
+// One delimited runtime block per crate, whatever its role.
+inline std::string executor_runtime_rust(ExecutorRuntimeRole role) {
+  std::string s = "\n// ============================================================\n";
+  switch (role) {
+    case ExecutorRuntimeRole::ProcessRoot:
+      s += "// Phase 20 Executor Runtime  (moss executor_runtime_rust: process root)\n"
+           "// INLINE ─start()→ ACTIVE ─join()→ DRAINING ─drained→ INLINE\n"
+           "// Fully-qualified standard types prevent collisions with user symbols.\n"
+           "// ============================================================\n";
+      s += executor_runtime_root_items();
+      break;
+    case ExecutorRuntimeRole::Provider:
+      s += "// Phase 20 Executor Runtime  (moss executor_runtime_rust: provider wrapper)\n"
+           "// Opaque Branch ABI exported by the process-root crate.\n"
+           "// ============================================================\n";
+      s += executor_runtime_provider_items();
+      break;
+    case ExecutorRuntimeRole::SelectedByExecutableBuild:
+      s += "// Phase 20 Executor Runtime  (moss executor_runtime_rust: process root when built as the executable)\n"
+           "// Built as the executable (--cfg moss_process_root) this crate owns the\n"
+           "// process runtime; built as a provider .rlib it is the opaque wrapper.\n"
+           "// ============================================================\n"
+           "#[cfg(moss_process_root)]\nmod __moss_executor_runtime {\nuse super::*;\n";
+      s += executor_runtime_root_items();
+      s += "}\n#[cfg(not(moss_process_root))]\nmod __moss_executor_runtime {\nuse super::*;\n";
+      s += executor_runtime_provider_items();
+      s += "}\npub use __moss_executor_runtime::*;\n";
+      break;
+  }
+  s += "// ─── End Phase 20 Executor Runtime ───────────────────────────────────────\n";
   return s;
 }
 

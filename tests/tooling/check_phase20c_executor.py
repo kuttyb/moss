@@ -12,9 +12,9 @@ deadline miss is a failure (hang detector), not a timing assumption.
 
 Coverage:
   ingress     1-10, 21-27, 31, 32, 44  (INLINE/ACTIVE/DRAINING, fairness, tickets)
-  branches    11-15, 30, 38, 39, 41, 42 (publish/join, helping, ABI ownership)
-  solo        17-20, 28, 29, 33, 36     (real-worker compensation, T_max)
-  seams       16, 34, 35, 37, 40, 43    (config, linear handle, symbols, TLS, roles)
+  branches    11-15, 30, 38, 39, 41, 42, 46, 47 (publish/join, helping, ABI ownership)
+  solo        17-20, 28, 29, 33, 36, 48 (real-worker compensation, T_max)
+  seams       16, 34, 35, 37, 40, 43, 49 (config, linear handle, symbols, TLS, roles)
 """
 
 import concurrent.futures
@@ -643,6 +643,8 @@ fn main() {
         let _g = l2.lock().unwrap();
     }));
     wait_until("root reaches lock", || about_to_lock.load(Ordering::SeqCst));
+    // Both worker threads must be running before the peak is meaningful.
+    wait_until("both workers started", || evlog::live() == 2);
     assert_eq!(moss_executor_worker_count(), 2);
     drop(held);
     exec.join();
@@ -1111,7 +1113,8 @@ unsafe extern "C" fn invoke(data: *mut ()) { let c = unsafe { Box::from_raw(data
 unsafe extern "C" fn discard(data: *mut ()) { drop(unsafe { Box::from_raw(data as *mut Arc<AtomicUsize>) }); }
 
 // `queued` is the deterministic ready-queue reference: 0 in INLINE mode, 1
-// when the Root occupies the only worker so no worker pops the scope.
+// when the Root occupies the only worker so no worker pops the scope.  Join
+// releases that reference along with the joiner's own count.
 fn exact_cycle(queued: usize) {
     let n = Arc::new(AtomicUsize::new(0));
     let owned = __moss_branch_scope_new_current();
@@ -1126,9 +1129,10 @@ fn exact_cycle(queued: usize) {
     }
     assert_eq!(scope_track::strong(id), 2 + queued, "publish must only borrow the scope");
     unsafe { __moss_branch_join(owned) };
-    assert_eq!(scope_track::strong(id), 1 + queued, "join must consume exactly one count");
+    assert_eq!(scope_track::strong(id), 1, "join must consume one count and release the ready-queue entry");
+    assert_eq!(moss_executor_ready_scopes(), 0, "a joined scope stayed in the ready queue");
     unsafe { __moss_branch_scope_drop(clone) };
-    assert_eq!(scope_track::strong(id), queued, "drop must consume exactly one count");
+    assert_eq!(scope_track::strong(id), 0, "drop must consume exactly one count");
     assert_eq!(n.load(Ordering::SeqCst), 3);
 }
 
@@ -1254,6 +1258,88 @@ fn main() {
 }
 """))
 
+T.append(RustTest("46-joined-scopes-leave-ready-queue", "Joined scopes leave the ready queue even when every worker is busy", r"""
+fn main() {
+    // threads=1: the Root occupies the only worker, so no free worker ever
+    // pops the ready queue.  Joined scopes must not accumulate there.
+    let exec = MossExecutor::new().threads(1).max_threads(1).start();
+    let (peak, ready, live) = runtime_invoke(|| {
+        let mut peak = 0;
+        for _ in 0..5000 {
+            let s = branch_scope_new_current();
+            for _ in 0..3 { branch_publish(&s, || {}); }
+            peak = peak.max(moss_executor_ready_scopes());
+            branch_join(s);
+        }
+        (peak, moss_executor_ready_scopes(), moss_live_branch_scopes())
+    });
+    exec.join();
+    assert_eq!(peak, 1, "one live scope must occupy at most one entry");
+    assert_eq!(ready, 0, "joined scopes stayed in the ready queue");
+    assert_eq!(live, 0, "joined scope states were retained by the ready queue");
+    assert_eq!(moss_live_branch_scopes(), 0);
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("47-joined-scope-in-transit-race", "A ready-queue entry re-pushed while its scope joins is released", r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    // Free workers pop, run, and re-push scope entries while the owner joins
+    // the same scope, exercising the in-transit entry path.
+    let exec = MossExecutor::new().threads(4).max_threads(4).start();
+    let total = Arc::new(AtomicUsize::new(0));
+    let t2 = Arc::clone(&total);
+    let roots: Vec<_> = (0..3).map(|_| {
+        let t = Arc::clone(&t2);
+        std::thread::spawn(move || runtime_invoke(move || {
+            for _ in 0..2000 {
+                let s = branch_scope_new_current();
+                for _ in 0..4 {
+                    let t = Arc::clone(&t);
+                    branch_publish(&s, move || { t.fetch_add(1, Ordering::Relaxed); });
+                }
+                branch_join(s);
+            }
+        }))
+    }).collect();
+    for r in roots { r.join().unwrap(); }
+    // An in-transit pusher releases its stale entry right after re-pushing.
+    wait_until("ready queue empty", || moss_executor_ready_scopes() == 0);
+    wait_until("no live scope", || moss_live_branch_scopes() == 0);
+    exec.join();
+    assert_eq!(total.load(Ordering::SeqCst), 3 * 2000 * 4);
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("48-tmax-physical-thread-slots", "A retiring compensation worker holds its T_max slot until its thread body ends", r"""
+fn main() {
+    // Every leave makes the compensation worker excess; every enter wants a
+    // replacement.  The replacement may only reuse a slot after the retiring
+    // thread body has returned, so live worker threads never exceed T_max.
+    let exec = MossExecutor::new().threads(1).max_threads(2).start();
+    let (worst, spawned) = runtime_invoke(|| {
+        evlog::install();
+        let mut worst = 0;
+        for _ in 0..3000 {
+            solo_enter_current("stress");
+            worst = worst.max(moss_executor_live_threads());
+            solo_leave_current("stress");
+            worst = worst.max(moss_executor_live_threads());
+        }
+        (worst, evlog::count(MossRtEvent::WorkerSpawned))
+    });
+    wait_until("compensation retired", || moss_executor_live_threads() == 1);
+    exec.join();
+    assert!(worst <= 2, "live worker threads reached {} with max_threads=2", worst);
+    assert!(spawned >= 1, "no compensation worker was ever activated");
+    assert_eq!(moss_executor_live_threads(), 0);
+    println!("ok worst={} spawned={}", worst, spawned);
+}
+"""))
+
 T.append(RustTest("44-draining-denied-caller-keeps-fifo", "A caller denied by DRAINING keeps its FIFO place for the inline run", r"""
 fn main() {
     use std::sync::{Arc, Barrier, Mutex};
@@ -1319,11 +1405,14 @@ fn main() {
 # Static, cross-crate, and build-pipeline tests
 # ════════════════════════════════════════════════════════════════════════════
 
-def test_symbol_ownership(root_rs: str, module_root_rs: str, provider_rs: str):
+def test_symbol_ownership(root_rs: str, module_root_rs: str, provider_rs: str, selected_rs: str):
     name = "37-symbol-ownership"
     print(f"Test {name}: Executor owns no FileIO Solo symbols; roles emit the right ABI side")
     problems = []
-    for label, text in (("root", root_rs), ("module-root", module_root_rs), ("provider", provider_rs)):
+    for label, text in (("root", root_rs), ("module-root", module_root_rs), ("provider", provider_rs),
+                        ("selected", selected_rs)):
+        if text.count("// Phase 20 Executor Runtime  (") != 1 or text.count("// ─── End Phase 20 Executor Runtime") != 1:
+            problems.append(f"{label} lacks exactly one delimited runtime block")
         for forbidden in ("fn moss_solo_enter", "fn moss_solo_leave", "__moss_process_runtime_raw",
                           "__moss_next_root_id", "__moss_next_branch_id", "fn __moss_branch_scope_new("):
             if forbidden in text:
@@ -1339,6 +1428,13 @@ def test_symbol_ownership(root_rs: str, module_root_rs: str, provider_rs: str):
             problems.append(f"provider emits {forbidden}")
     if "fn __moss_branch_scope_new_current() -> *const ();" not in provider_rs:
         problems.append("provider lacks the opaque Branch ABI import")
+    # A unit without main: the executable build alone selects the root role.
+    for required in ("(moss executor_runtime_rust: process root when built as the executable)",
+                     "#[cfg(moss_process_root)]\nmod __moss_executor_runtime {",
+                     "#[cfg(not(moss_process_root))]\nmod __moss_executor_runtime {",
+                     "pub use __moss_executor_runtime::*;"):
+        if required not in selected_rs:
+            problems.append(f"selected-role crate lacks {required!r}")
     report(name, not problems, "\n".join(problems))
 
 
@@ -1373,7 +1469,8 @@ pub fn provider_branch_runs_on_worker() -> bool {
 
 /// The provider wrapper's clone / publish / join / drop must each move
 /// exactly the reference counts documented by the ABI.  `queued` is the
-/// deterministic ready-queue reference (see the root-side test).
+/// deterministic ready-queue reference (see the root-side test), which the
+/// root releases when the scope is joined.
 pub fn provider_refcount_exact(queued: usize, track: fn(*const ()) -> usize, strong: fn(usize) -> usize) -> usize {
     let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let scope = branch_scope_new_current();
@@ -1387,9 +1484,9 @@ pub fn provider_refcount_exact(queued: usize, track: fn(*const ()) -> usize, str
     }
     assert_eq!(strong(id), 2 + queued);
     branch_join(scope);
-    assert_eq!(strong(id), 1 + queued, "provider branch_join must transfer exactly one count");
+    assert_eq!(strong(id), 1, "provider branch_join must transfer exactly one count and release the ready-queue entry");
     drop(clone);
-    assert_eq!(strong(id), queued);
+    assert_eq!(strong(id), 0, "provider drop must consume exactly one count");
     count.load(std::sync::atomic::Ordering::SeqCst)
 }
 
@@ -1463,6 +1560,101 @@ def test_cross_crate_provider(module_root_preamble: str, provider_preamble: str)
     print(f"Test {name}: provider scope creation outside a Root fails closed")
     r = subprocess.run([str(binary), "outside-root"], capture_output=True, text=True, timeout=RUN_TIMEOUT)
     report(name, r.returncode != 0 and "outside a running Root" in r.stderr, f"exit={r.returncode}\n{r.stderr}")
+
+
+def build_role_project():
+    """A real two-module unit with main: app is the process root and pricing
+    a Provider-role crate.  Returns (app.rs, pricing.rs)."""
+    project = TMP_DIR / "role_project"
+    shutil.rmtree(project, ignore_errors=True)
+    (project / "src").mkdir(parents=True)
+    (project / "moss.toml").write_text('[project]\nname = "p20c_role"\nversion = "0.1.0"\n[build]\nsource = "src"\n')
+    (project / "src" / "pricing.moss").write_text(
+        "module pricing\n\nexport fn notional(value: Int) -> Int:\n  value * 2\n")
+    (project / "src" / "main.moss").write_text(
+        "module app\nimport pricing\n\nfn main():\n  echo pricing.notional(21)\n")
+    p = subprocess.run([str(COMPILER), "build", "--json"], cwd=project, capture_output=True, text=True)
+    if p.returncode != 0:
+        print("ERROR: role project build failed:", (p.stdout + p.stderr)[:800], file=sys.stderr)
+        sys.exit(1)
+    out = project / "build" / "debug"
+    return (out / "app.rs").read_text(), (out / "pricing.rs").read_text()
+
+
+LIBRARY_EXECUTABLE_MAIN = r"""fn main() {
+    let exec = MossExecutor::new().threads(2).start();
+    let n = runtime_invoke(|| {
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let scope = branch_scope_new_current();
+        for _ in 0..16 {
+            let h = std::sync::Arc::clone(&hits);
+            branch_publish(&scope, move || { h.fetch_add(1, std::sync::atomic::Ordering::SeqCst); });
+        }
+        branch_join(scope);
+        hits.load(std::sync::atomic::Ordering::SeqCst)
+    });
+    exec.join();
+    assert_eq!(n, 16);
+    println!("ok");
+}"""
+
+
+def test_library_only_unit(preamble: str):
+    name = "49-library-only-unit-executable-owns-runtime"
+    print(f"Test {name}: a unit without main gives its executable build, not its rlib, the runtime")
+    project = TMP_DIR / "library_only_project"
+    shutil.rmtree(project, ignore_errors=True)
+    (project / "src").mkdir(parents=True)
+    (project / "tests").mkdir()
+    (project / "moss.toml").write_text('[project]\nname = "p20c_lib"\nversion = "0.1.0"\n[build]\nsource = "src"\n')
+    (project / "src" / "pricing.moss").write_text(
+        "module pricing\n\nexport fn notional(value: Int) -> Int:\n  value * 2\n")
+    (project / "tests" / "pricing_test.moss").write_text(
+        'module pricing_tests\nimport pricing\n\ntest "notional":\n  assertEqual(pricing.notional(21), 42)\n')
+    problems = []
+    try:
+        p = subprocess.run([str(COMPILER), "build", "--json"], cwd=project, capture_output=True, text=True)
+        if p.returncode != 0:
+            raise AssertionError(p.stdout + p.stderr)
+        artifacts = json.loads(p.stdout)["result"]["artifacts"]
+        subprocess.run([artifacts["executable"]], check=True, timeout=RUN_TIMEOUT)
+        t = subprocess.run([str(COMPILER), "test"], cwd=project, capture_output=True, text=True, timeout=600)
+        if t.returncode != 0:
+            problems.append("library-only unit tests failed:\n" + t.stdout + t.stderr)
+        out = project / "build" / "debug"
+        pricing_rs = (out / "pricing.rs").read_text()
+        if "(moss executor_runtime_rust: process root when built as the executable)" not in pricing_rs:
+            problems.append("library-only crate does not select its role at executable build")
+        # Executable build (as Moss links it): this crate owns a working runtime.
+        if pricing_rs.count("fn main() {}") != 1:
+            raise AssertionError("library executable stub main not found")
+        exe_src = pricing_rs.replace("fn main() {}", LIBRARY_EXECUTABLE_MAIN)
+        cr, binary = write_and_compile("t_49_exe", exe_src,
+                                       ["--cfg", "moss_process_root", "-D", "warnings", "-L", f"dependency={out}"])
+        if cr.returncode != 0:
+            problems.append("executable build of the library crate did not link a process runtime:\n" + cr.stderr)
+        else:
+            r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
+            if r.returncode != 0 or "ok" not in r.stdout:
+                problems.append(f"library executable Branch run failed: exit={r.returncode}\n{r.stderr}")
+        # Provider build: the published rlib is a wrapper, so a separate root
+        # links against it without duplicate runtime symbols.
+        rlib = next((Path(x) for x in artifacts["module_rlibs"] if Path(x).name.startswith("libpricing")), None)
+        if rlib is None:
+            raise AssertionError("no pricing rlib in artifacts")
+        main_src = preamble + TEST_PRELUDE + "extern crate moss_pricing;\n" + LIBRARY_EXECUTABLE_MAIN.replace(
+            "branch_scope_new_current()", "moss_pricing::branch_scope_new_current()").replace(
+            "branch_publish(", "moss_pricing::branch_publish(").replace("branch_join(", "moss_pricing::branch_join(")
+        cr, binary = write_and_compile("t_49_root", main_src, ["--extern", f"moss_pricing={rlib}", "-L", f"dependency={out}"])
+        if cr.returncode != 0:
+            problems.append("root failed to link the library's provider rlib:\n" + cr.stderr)
+        else:
+            r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
+            if r.returncode != 0 or "ok" not in r.stdout:
+                problems.append(f"root + library rlib Branch run failed: exit={r.returncode}\n{r.stderr}")
+        report(name, not problems, "\n".join(problems))
+    except (AssertionError, subprocess.SubprocessError, KeyError, OSError) as error:
+        report(name, False, str(error))
 
 
 def test_explicit_module_pipeline():
@@ -1551,14 +1743,17 @@ def main():
 
     root_rs = generate("root", "fn main():\n  echo 1\n")
     module_root_rs = generate("module_root", "module app\nfn main():\n  echo 1\n")
-    provider_rs = generate("provider", "module probelib\nexport fn foo() -> Int:\n  return 1\n")
+    # A single-file explicit module without main is a unit without main.
+    selected_rs = generate("library_unit", "module probelib\nexport fn foo() -> Int:\n  return 1\n")
+    _, provider_rs = build_role_project()
     preamble = runtime_preamble(root_rs)
 
-    test_symbol_ownership(root_rs, module_root_rs, provider_rs)
+    test_symbol_ownership(root_rs, module_root_rs, provider_rs, selected_rs)
     run_rust_tests(T, preamble)
     test_handle_not_clone(preamble)
     test_cross_crate_provider(runtime_preamble(module_root_rs), runtime_preamble(provider_rs))
     test_explicit_module_pipeline()
+    test_library_only_unit(preamble)
 
     print()
     print(f"Results: {len(PASS)} passed, {len(FAIL)} failed out of {len(PASS) + len(FAIL)} tests")
