@@ -28,6 +28,10 @@ def main(body):
     return 'fn main():\n' + ''.join('  ' + line + '\n' for line in body.splitlines())
 
 
+def proc_main(body):
+    return 'proc main():\n' + ''.join('  ' + line + '\n' for line in body.splitlines())
+
+
 read, _ = check('root_read', main('file = FileIO.open("input", ro)\n'
     'data = file.read(0, 4)\necho data.length()\nfile.close()'))
 check('root_write', main('file = FileIO.open("output", create)\n'
@@ -45,6 +49,18 @@ check('batch_iteration', main('file = FileIO.open("input", ro)\n'
     'batch = file.read([(0, 4)])\nfor item in batch:\n'
     '  echo item.length()\nfile.close()'))
 check('branch_closed', main('file = FileIO.open("input", ro)\n'
+    'if true:\n  file.close()\nelse:\n  file.close()'))
+check('main_unclosed', main('file = FileIO.open("input", ro)\necho 1'),
+      'FILEIO_MUST_CLOSE')
+check('main_partial_close', main('file = FileIO.open("input", ro)\n'
+    'if true:\n  file.close()'), 'FILEIO_MUST_CLOSE')
+check('main_all_branches_close', main('file = FileIO.open("input", ro)\n'
+    'if true:\n  file.close()\nelse:\n  file.close()'))
+check('proc_main_unclosed', proc_main('file = FileIO.open("input", ro)\necho 1'),
+      'FILEIO_MUST_CLOSE')
+check('proc_main_partial_close', proc_main('file = FileIO.open("input", ro)\n'
+    'if true:\n  file.close()'), 'FILEIO_MUST_CLOSE')
+check('proc_main_all_branches_close', proc_main('file = FileIO.open("input", ro)\n'
     'if true:\n  file.close()\nelse:\n  file.close()'))
 
 domain = '''fn borrowed_read(file: FileIO) -> Int:
@@ -149,6 +165,9 @@ check('range_domain_store', 'domain Store:\n  saved: Range\n\n' +
     main('store = Store()'), 'RANGE_STATE_ESCAPE')
 check('range_collection', main('file = FileIO.open("input", ro)\n'
     'data = file.read(0, 4)\nsaved = [data]\nfile.close()'), 'FILEIO')
+check('rangefinder_collection', 'type RangeFinder:\n  value: Int\n\n'
+    'fn accept(items: Vector[RangeFinder]):\n  echo 1\n\n' +
+    main('echo 1'))
 check('batch_escape', main('file = FileIO.open("input", ro)\n'
     'batch = file.read([(0, 4)])\ndata = batch[0]\n'
     'batch = file.read([(4, 4)])\necho data.length()\nfile.close()'), 'RANGE_BATCH_LIFETIME')
@@ -176,6 +195,47 @@ check('read_only_write', main('file = FileIO.open("input", ro)\n'
     'file.write(0, "ok")\nfile.close()'), 'FILEIO_READ_ONLY')
 check('branch_unclosed', main('file = FileIO.open("input", ro)\n'
     'if true:\n  file.close()'), 'FILEIO_MUST_CLOSE')
+check('unbounded_read', 'fn run(size: Int):\n'
+    '  file = FileIO.open("input", ro)\n  data = file.read(0, size)\n'
+    '  file.close()\n\n' + main('echo 1'),
+    'FILEIO_UNBOUNDED_REQUEST')
+check('unbounded_chunk', 'fn run(size: Int):\n'
+    '  file = FileIO.open("input", ro)\n  chunks = file.chunks(size)\n'
+    '  file.close()\n\n' + main('echo 1'), 'FILEIO_UNBOUNDED_REQUEST')
+check('unbounded_batch_total', 'fn run(size: Int):\n'
+    '  file = FileIO.open("input", ro)\n'
+    '  batch = file.read([(0, size), (4096, size)])\n  file.close()\n\n' +
+    main('echo 1'),
+    'FILEIO_UNBOUNDED_REQUEST')
+check('scalar_batch_rejected', main('file = FileIO.open("input", ro)\n'
+    'batch = file.read(123)\nfile.close()'), 'FILEIO_INVALID_OPERATION')
+check('malformed_batch_pair', main('file = FileIO.open("input", ro)\n'
+    'batch = file.read([(0, 4, 8)])\nfile.close()'), 'FILEIO_INVALID_OPERATION')
+check('string_batch_coordinate', main('file = FileIO.open("input", ro)\n'
+    'batch = file.read([("zero", 4)])\nfile.close()'), 'FILEIO_INVALID_OPERATION')
+check('unbounded_write_payload', 'fn run(payload: String):\n'
+    '  file = FileIO.open("input", rw)\n  file.write(0, payload)\n'
+    '  file.close()\n\n' + main('echo 1'), 'FILEIO_UNBOUNDED_REQUEST')
+check('handler_fileio_parameter', 'domain Sink:\n  fn Take(file: FileIO):\n'
+    '    echo 1\n\n' + main('sink = Sink()'), 'FILEIO_BOUNDARY_ESCAPE')
+check('helper_close_propagates', 'fn finish(file: FileIO):\n  file.close()\n\n' +
+    main('file = FileIO.open("input", ro)\nfinish(file)'))
+check('helper_close_use_rejected', 'fn finish(file: FileIO):\n  file.close()\n\n' +
+    main('file = FileIO.open("input", ro)\nfinish(file)\nfile.read(0, 4)'),
+    'FILEIO_CLOSED_OPERATION')
+check('handler_range_reply', 'domain Source:\n  file: FileIO\n'
+    '  fn Get() -> Range:\n    reply file.read(0, 4)\n\n' +
+    main('source = Source()'), 'FILEIO_BOUNDARY_ESCAPE')
+check('helper_chain_block_warning', 'fn leaf(file: FileIO):\n'
+    '  data = file.read(0, 4)\n\nfn middle(file: FileIO):\n  leaf(file)\n\n'
+    'domain Store:\n  file: FileIO\n  counter: Int\n\n'
+    '  fn Block():\n    counter = counter + 1\n    middle(file)\n\n' +
+    main('store = Store()'))
+check('negative_batch_offset', main('file = FileIO.open("input", ro)\n'
+    'batch = file.read([(-1, 4)])\nfile.close()'), 'FILEIO_INVALID_BOUND')
+check('negative_chunk', main('file = FileIO.open("input", ro)\n'
+    'chunks = file.chunks(-4)\nfile.close()'), 'FILEIO_INVALID_BOUND')
+
 native = subprocess.run([str(compiler), '--check', str(out / 'file_copy.moss')],
                         text=True, capture_output=True)
 fast_debug = subprocess.run([str(compiler), 'debug', str(out / 'file_copy.moss')],

@@ -6,12 +6,67 @@
            t == "seq[Range]";
   }
 
+  static bool fileio_contains_scoped_type(const string& type) {
+    string t = canonical_type_name(type);
+    if (fileio_scoped_type(t)) return true;
+    auto open = t.find('[');
+    if (open == string::npos || !ends_with(t, "]")) return false;
+    auto arguments = split_top_level(
+        t.substr(open + 1, t.size() - open - 2), ',');
+    for (const auto& argument : arguments)
+      if (fileio_contains_scoped_type(argument)) return true;
+    return false;
+  }
+
   static bool fileio_forbidden_collection_type(const string& type) {
     string t = canonical_type_name(type);
-    return (starts_with(t, "vector[") || starts_with(t, "map[") ||
-            starts_with(t, "queue[") || starts_with(t, "table[")) &&
-           (t.find("FileIO") != string::npos ||
-            t.find("Range") != string::npos);
+    bool collection = starts_with(t, "vector[") || starts_with(t, "map[") ||
+        starts_with(t, "queue[") || starts_with(t, "table[") ||
+        starts_with(t, "seq[");
+    return collection && fileio_contains_scoped_type(
+        t.substr(t.find('[') + 1, t.size() - t.find('[') - 2));
+  }
+
+  // Conservative Phase 20 proof: integer literals and compile-time arithmetic
+  // have finite upper bounds. Unknown runtime values are deliberately rejected.
+  static std::optional<uint64_t> fileio_static_integer(const string& source) {
+    string value = trim(source);
+    if (value.empty()) return std::nullopt;
+    try {
+      size_t used = 0;
+      long long number = std::stoll(value, &used, 0);
+      if (used != value.size() || number < 0) return std::nullopt;
+      return static_cast<uint64_t>(number);
+    } catch (const std::exception&) { return std::nullopt; }
+  }
+
+  static bool fileio_is_negative_integer(const string& source) {
+    string value = trim(source);
+    if (value.empty()) return false;
+    try {
+      size_t used = 0;
+      long long number = std::stoll(value, &used, 0);
+      return used == value.size() && number < 0;
+    } catch (const std::exception&) { return false; }
+  }
+
+  static std::optional<uint64_t> fileio_static_payload_bytes(const string& source) {
+    string value = trim(source);
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+      return static_cast<uint64_t>(value.size() - 2); // ASCII source literals.
+    if (starts_with(value, "[") && ends_with(value, "]")) {
+      string inside = value.substr(1, value.size() - 2);
+      if (trim(inside).empty()) return uint64_t{0};
+      auto items = split_top_level(inside, ',');
+      return static_cast<uint64_t>(items.size());
+    }
+    return std::nullopt;
+  }
+
+  void fileio_require_bound(int line, const string& what,
+                            const std::optional<uint64_t>& bound) {
+    if (!bound) err(line, "FileIO " + what + " must have a statically provable finite bound",
+                     "FILEIO_UNBOUNDED_REQUEST");
   }
 
   static std::optional<Effect> fileio_operation_effect(const string& method) {
@@ -31,7 +86,15 @@
     if (!owner) return std::nullopt;
     string type = canonical_type_name(*owner);
     if (type == "FileIO") {
-      if (method == "read") return args.size() == 1 ? "RangeBatch" : "Range";
+      if (method == "read") {
+        if (args.size() == 2) return string("Range");
+        if (args.size() == 1) {
+          string batch = trim(args[0]);
+          if (starts_with(batch, "[") && ends_with(batch, "]"))
+            return string("RangeBatch");
+        }
+        return std::nullopt;
+      }
       if (method == "chunks") return string("seq[Range]");
       if (fileio_operation_effect(method)) return string("unit");
     }
@@ -100,33 +163,44 @@
       if (!offset || canonical_type_name(*offset) != "int")
         fail("FileIO.write offset must be Int");
     }
-    auto check_nonnegative_literal = [&](const string& expression,
-                                          bool must_be_positive) {
-      string value = trim(expression);
-      if (value.empty()) return;
-      size_t start = value.front() == '-' || value.front() == '+' ? 1 : 0;
-      if (start == value.size() ||
-          !std::all_of(value.begin() + static_cast<std::ptrdiff_t>(start),
-                       value.end(), [](unsigned char c) { return std::isdigit(c); }))
-        return;
-      long long literal = 0;
-      try { literal = std::stoll(value); }
-      catch (const std::exception&) { return; }
-      if (literal < 0 || (must_be_positive && literal == 0))
-        err(line, "FileIO request size/offset must be nonnegative and chunks must be positive",
+    auto check_offset = [&](const string& expression) {
+      auto value = fileio_static_integer(expression);
+      if (fileio_is_negative_integer(expression))
+        err(line, "FileIO offset must be nonnegative", "FILEIO_INVALID_BOUND");
+      if (!value) err(line, "FileIO offset must be statically known and nonnegative",
+                      "FILEIO_INVALID_BOUND");
+    };
+    auto check_size = [&](const string& expression, const string& what,
+                          bool positive = false) {
+      auto value = fileio_static_integer(expression);
+      if (fileio_is_negative_integer(expression))
+        err(line, "FileIO " + what + " must be nonnegative",
             "FILEIO_INVALID_BOUND");
+      if (value && positive && *value == 0)
+        err(line, "FileIO " + what + " must be positive", "FILEIO_INVALID_BOUND");
+      fileio_require_bound(line, what, value);
     };
     if (method == "read" && args.size() == 2) {
-      check_nonnegative_literal(args[0], false);
-      check_nonnegative_literal(args[1], false);
+      check_offset(args[0]);
+      check_size(args[1], "read size");
     }
-    if (method == "chunks") check_nonnegative_literal(args[0], true);
-    if (method == "write") check_nonnegative_literal(args[0], false);
+    if (method == "chunks") check_size(args[0], "chunk size", true);
+    if (method == "write") {
+      check_offset(args[0]);
+      fileio_require_bound(line, "write payload",
+                           fileio_static_payload_bytes(args[1]));
+    }
     if (method == "read" && args.size() == 1) {
       string batch = trim(args[0]);
       if (starts_with(batch, "[") && ends_with(batch, "]")) {
         string entries = batch.substr(1, batch.size() - 2);
-        for (const auto& entry : split_top_level(entries, ',')) {
+        auto requests = trim(entries).empty() ? vector<string>{} :
+            split_top_level(entries, ',');
+        fileio_require_bound(line, "batch count",
+                             static_cast<uint64_t>(requests.size()));
+        uint64_t total = 0;
+        bool total_known = true;
+        for (const auto& entry : requests) {
           string pair = trim(entry);
           if (!starts_with(pair, "(") || !ends_with(pair, ")")) {
             fail("batch entries must be (offset, size) pairs");
@@ -137,9 +211,24 @@
             fail("batch entries must be (offset, size) pairs");
             continue;
           }
-          check_nonnegative_literal(coordinates[0], false);
-          check_nonnegative_literal(coordinates[1], false);
+          for (const auto& coordinate : coordinates) {
+            auto actual = inferred_expr_type(coordinate, env);
+            if (!actual || canonical_type_name(*actual) != "int")
+              fail("batch offset and size must be Int");
+          }
+          check_offset(coordinates[0]);
+          auto size = fileio_static_integer(coordinates[1]);
+          if (fileio_is_negative_integer(coordinates[1]))
+            err(line, "FileIO batch entry size must be nonnegative",
+                "FILEIO_INVALID_BOUND");
+          fileio_require_bound(line, "batch entry size", size);
+          if (size && UINT64_MAX - total >= *size) total += *size;
+          else total_known = false;
         }
+        fileio_require_bound(line, "batch total bytes",
+            total_known ? std::optional<uint64_t>(total) : std::nullopt);
+      } else {
+        fail("one-argument FileIO.read requires a literal batch of (Int, Int) pairs");
       }
     }
     if (!constructor) check_expression(line, receiver, env);
@@ -193,11 +282,62 @@
     }
     merged.local_owners.insert(right.local_owners.begin(), right.local_owners.end());
     for (const auto& entry : right.types) merged.types.emplace(entry);
+    for (const auto& entry : right.batch_generation) {
+      auto found = merged.batch_generation.find(entry.first);
+      if (found == merged.batch_generation.end())
+        merged.batch_generation[entry.first] = entry.second;
+      else if (found->second != entry.second)
+        found->second = std::max(found->second, entry.second) + 1;
+    }
+    for (const auto& entry : right.range_origin) {
+      auto found = merged.range_origin.find(entry.first);
+      if (found == merged.range_origin.end()) merged.range_origin[entry.first] = entry.second;
+      else if (found->second != entry.second) {
+        merged.range_origin[entry.first] = entry.second;
+        ++merged.batch_generation[entry.second.first];
+      }
+    }
     return merged;
   }
 
   void fileio_lifecycle_expression(int line, const string& expression,
                                    FileIOFlow& flow) const {
+    string callee;
+    vector<string> call_args;
+    string member_receiver, member_method;
+    vector<string> member_args;
+    bool is_member_call = parse_member_call(trim(expression), member_receiver,
+                                             member_method, member_args);
+    if (!is_member_call && parse_simple_call(trim(expression), callee, call_args)) {
+      auto function = functions_.find(callee);
+      if (function != functions_.end() &&
+          function->second->params.size() == call_args.size()) {
+        FileIOFlow helper = flow;
+        helper.local_owners.clear();
+        helper.continuing = true;
+        vector<std::pair<string, string>> aliases;
+        for (size_t i = 0; i < call_args.size(); ++i) {
+          const auto& parameter = function->second->params[i];
+          auto actual = trim(call_args[i]);
+          if (canonical_type_name(parameter.type) != "FileIO" ||
+              !simple_identifier(actual)) continue;
+          helper.types[parameter.name] = "FileIO";
+          helper.state[parameter.name] = flow.state.count(actual)
+              ? flow.state.at(actual) : 2;
+          if (flow.mode.count(actual)) helper.mode[parameter.name] = flow.mode.at(actual);
+          aliases.emplace_back(parameter.name, actual);
+        }
+        size_t helper_index = 0;
+        check_fileio_lifecycle_block(function->second->body, helper_index, 0, helper);
+        for (const auto& alias : aliases) {
+          auto found = helper.state.find(alias.first);
+          if (found != helper.state.end()) flow.state[alias.second] = found->second;
+          auto mode = helper.mode.find(alias.first);
+          if (mode != helper.mode.end()) flow.mode[alias.second] = mode->second;
+        }
+      }
+      return;
+    }
     string receiver, method;
     vector<string> args;
     if (!parse_member_call(trim(expression), receiver, method, args)) return;
@@ -260,6 +400,11 @@
         FileIOFlow incoming = flow;
         ++index;
         FileIOFlow branch = incoming;
+        bool range_batch_iteration = s.kind == Stmt::Kind::For &&
+            canonical_type_name(inferred_expr_type(s.b, flow.types).value_or("")) ==
+                "RangeBatch";
+        if (range_batch_iteration)
+          branch.range_origin[s.a] = {trim(s.b), branch.batch_generation[trim(s.b)]};
         check_fileio_lifecycle_block(body, index, indent + 1, branch);
         if (s.kind == Stmt::Kind::If && index < body.size() &&
             body[index].indent == indent && body[index].kind == Stmt::Kind::Else) {
@@ -270,6 +415,7 @@
         } else {
           flow = fileio_join_flow(incoming, branch);
         }
+        if (s.kind == Stmt::Kind::For) flow.range_origin.erase(s.a);
         continue;
       }
       if (s.kind == Stmt::Kind::Else || s.kind == Stmt::Kind::Case) return;
@@ -289,6 +435,10 @@
             canonical_type_name(inferred_expr_type(source, flow.types).value_or("")) ==
                 "RangeBatch")
           flow.range_origin[s.a] = {source, flow.batch_generation[source]};
+        else if (type && canonical_type_name(*type) == "Range" &&
+                 simple_identifier(trim(s.b)) &&
+                 flow.range_origin.count(trim(s.b)))
+          flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
         else flow.range_origin.erase(s.a);
         if (type && canonical_type_name(*type) == "FileIO" &&
             starts_with(trim(s.b), "FileIO.open(")) {
@@ -303,8 +453,71 @@
           flow.types[s.a] = *type;
         }
       } else if (s.kind == Stmt::Kind::Call || s.kind == Stmt::Kind::Raw) {
-        fileio_lifecycle_expression(s.line,
-            s.kind == Stmt::Kind::Call ? s.text : s.text, flow);
+        string call_text = s.text;
+        if (s.kind == Stmt::Kind::Call && s.b.empty() && !s.a.empty() &&
+            s.a.find('.') == string::npos) {
+          call_text = s.a + "(";
+          for (size_t i = 0; i < s.args.size(); ++i) {
+            if (i) call_text += ", ";
+            call_text += s.args[i];
+          }
+          call_text += ")";
+        }
+        fileio_lifecycle_expression(s.line, call_text, flow);
+        // The common single-operation helper case also has a direct summary.
+        // This keeps the caller fact robust even when a call statement's
+        // normalized expression is unavailable on an alternate parser path.
+        string summary_callee;
+        vector<string> summary_args;
+        if (parse_simple_call(call_text, summary_callee, summary_args)) {
+          auto function = functions_.find(summary_callee);
+          if (function != functions_.end() &&
+              function->second->params.size() == summary_args.size()) {
+            for (size_t i = 0; i < summary_args.size(); ++i) {
+              const auto& parameter = function->second->params[i];
+              string actual = trim(summary_args[i]);
+              if (canonical_type_name(parameter.type) != "FileIO" ||
+                  !simple_identifier(actual)) continue;
+              int summarized = flow.state.count(actual) ? flow.state[actual] : 2;
+              bool simple = true;
+              bool saw_operation = false;
+              for (const auto& operation : function->second->body) {
+                if (operation.kind == Stmt::Kind::Pass ||
+                    (operation.kind == Stmt::Kind::Return && operation.a.empty()))
+                  continue;
+                if (operation.kind == Stmt::Kind::If ||
+                    operation.kind == Stmt::Kind::While ||
+                    operation.kind == Stmt::Kind::For ||
+                    operation.kind == Stmt::Kind::Match) {
+                  simple = false;
+                  break;
+                }
+                if (operation.kind != Stmt::Kind::Call &&
+                    operation.kind != Stmt::Kind::Raw) continue;
+                string receiver, method;
+                vector<string> arguments;
+                bool member = operation.kind == Stmt::Kind::Call &&
+                    !operation.b.empty();
+                if (member) {
+                  receiver = operation.a;
+                  method = operation.b;
+                  arguments = operation.args;
+                } else {
+                  member = parse_member_call(trim(operation.text), receiver,
+                                             method, arguments);
+                }
+                if (!member || receiver != parameter.name) continue;
+                if (method != "open" && method != "close" && method != "read" &&
+                    method != "write" && method != "sync" && method != "chunks")
+                  continue;
+                saw_operation = true;
+                if (method == "open") summarized = 1;
+                else if (method == "close") summarized = 0;
+              }
+              if (simple && saw_operation) flow.state[actual] = summarized;
+            }
+          }
+        }
       } else if (s.kind == Stmt::Kind::Reply || s.kind == Stmt::Kind::Return) {
         fileio_require_closed(s.line, flow);
         flow.continuing = false;

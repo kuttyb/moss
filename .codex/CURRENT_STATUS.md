@@ -2,32 +2,29 @@
 
 ## Phase 20 Agent A — FileIO semantics
 
-Implemented the static `FileIO`, `Range`, and `RangeBatch` language surface on
-`phase-20-a-fileio-semantics` from base `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`.
-The checker recognizes the built-in types and modes; rejects pinned-owner
-copy/move, return, message, collection, and domain-state escapes; checks root
-local close obligations and statically knowable open/closed/read-only
-operations; and checks scoped RangeBatch views after batch replacement. FileIO
-operations derive READ or WRITE through synchronous helper borrows, preserving
-domain-field provenance for synchronization. Added warning
-`FILEIO_BLOCKING_WITH_SHARED_WRITE` for direct or synchronous-helper FileIO
-blocking while a handler writes/consumes other state; the FileIO field’s own
-protection is excluded. Literal request bounds and batch pair sizes are checked.
+Corrective pass started from checkpoint `066bd61b2ad531096db154116bf66948f8202195`.
+This pass adds finite-bound checks for literal read/chunk/batch sizes and known
+literal write payloads, batch pair/type validation, structural scoped-type
+recognition for collections, early handler parameter/reply boundary rejection,
+and additional main lifecycle and RangeBatch flow coverage. The existing
+`check_fileio_lifecycle(...)` hook is present for `proc main()` and regression
+cases were added for its fallthrough and branch joins.
 
-Focused regression coverage is in
-`tests/tooling/check_phase20_fileio_semantics.py`, wired into `tests/run.sh`.
-The unsupported `executor.invoke` syntax has an Agent D integration fixture at
-`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss`.
-Validation on this branch: focused FileIO semantic tests passed; `make check`
-passed; `make examples` passed; `git diff --check` passed. Native checking and
-Fast Debug reject the same FileIO copy probe with `FILEIO_PINNED_OWNERSHIP`.
-Native Rust compilation and Fast Debug execution of legal FileIO operations
-remain dependent on Agent B’s runtime implementation; `rustc` currently
-reports missing `FileIO`/mode runtime symbols and the interpreter reports an
-unknown local for `FileIO.open`. Executor boundary/lowering checks await Agent
-D; runtime FileIO and Executor runtime/scheduling integration await Agent B and
-Agent C respectively. This entry is before the other status sections so their
-content remains unchanged.
+The corrective pass is incomplete. The focused suite and `make check` currently
+fail on the new helper lifecycle regression: `finish(file)` is incorrectly
+rejected with `FILEIO_MUST_CLOSE` even though `finish` synchronously calls
+`file.close()`. This is the minimal reproducer for the remaining helper-summary
+gap. Bounds are currently proven only for literals; startup configuration and
+compiler-proven clamps have not been connected to a static-bound fact source.
+`make examples` completed successfully and `git diff --check` passes. No
+corrective commit has been made.
+
+Focused regressions remain in `tests/tooling/check_phase20_fileio_semantics.py`.
+The unsupported `executor.invoke` integration fixture remains at
+`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss`; Agent D
+must reuse the scoped-capability predicate. Runtime execution still awaits
+Agent B, and Executor runtime/scheduling integration awaits Agents B/C. This
+entry is before the other status sections so their content remains unchanged.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

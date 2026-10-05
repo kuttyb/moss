@@ -2499,6 +2499,10 @@ class Checker {
           "handler:" + d.name + "." + h.name);
       if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
+      if (h.reply_type && fileio_contains_scoped_type(*h.reply_type))
+        err(h.line,
+            "handler replies cannot contain FileIO, Range, or RangeBatch capabilities",
+            "FILEIO_BOUNDARY_ESCAPE");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
         return s.kind == Stmt::Kind::Reply;
       });
@@ -2520,6 +2524,10 @@ class Checker {
           err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
         if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (fileio_contains_scoped_type(p.type))
+          err(h.line,
+              "handler parameters cannot contain FileIO, Range, or RangeBatch capabilities",
+              "FILEIO_BOUNDARY_ESCAPE");
         if (env.count(p.name)) err(h_source, h.line, "duplicate parameter '" + p.name + "'");
         if (route_names.count(p.name))
           err(h_source, h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
