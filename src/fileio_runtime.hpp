@@ -2,49 +2,85 @@
 
 namespace moss {
 
+inline bool contains_fileio_token(const std::string& s) {
+  static const char* const tokens[] = {"FileIO", "RangeBatch", "Range"};
+  for (const char* const token_str : tokens) {
+    std::string_view token = token_str;
+    size_t pos = 0;
+    while ((pos = s.find(token, pos)) != std::string::npos) {
+      bool before_ok = (pos == 0 || !(std::isalnum(static_cast<unsigned char>(s[pos - 1])) || s[pos - 1] == '_'));
+      size_t end = pos + token.size();
+      bool after_ok = (end == s.size() || !(std::isalnum(static_cast<unsigned char>(s[end])) || s[end] == '_'));
+      if (before_ok && after_ok) return true;
+      pos = end;
+    }
+  }
+  return false;
+}
+
 inline bool program_uses_fileio(const Program& p) {
-  auto check_text = [](const std::string& s) {
-    return s.find("FileIO") != std::string::npos ||
-           s.find("RangeBatch") != std::string::npos ||
-           s.find("Range") != std::string::npos;
-  };
+  if (p.main) {
+    for (const auto& s : p.main->body) {
+      if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+    }
+  }
   for (const auto& obj : p.objects) {
-    if (check_text(obj.name)) return true;
-    for (const auto& f : obj.fields) if (check_text(f.name) || check_text(f.type) || check_text(f.init)) return true;
+    if (contains_fileio_token(obj.name)) return true;
+    for (const auto& f : obj.fields) if (contains_fileio_token(f.name) || contains_fileio_token(f.type) || contains_fileio_token(f.init)) return true;
     for (const auto& m : obj.methods) {
-      if (check_text(m.name)) return true;
-      for (const auto& param : m.params) if (check_text(param.name) || check_text(param.type)) return true;
-      for (const auto& s : m.body) if (check_text(s.text) || check_text(s.a) || check_text(s.b)) return true;
+      if (contains_fileio_token(m.name)) return true;
+      for (const auto& param : m.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
+      for (const auto& s : m.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
     }
   }
   for (const auto& d : p.domains) {
-    if (check_text(d.name)) return true;
-    for (const auto& f : d.state) if (check_text(f.name) || check_text(f.type) || check_text(f.init)) return true;
+    if (contains_fileio_token(d.name)) return true;
+    for (const auto& f : d.state) if (contains_fileio_token(f.name) || contains_fileio_token(f.type) || contains_fileio_token(f.init)) return true;
     for (const auto& h : d.handlers) {
-      if (check_text(h.name)) return true;
-      for (const auto& param : h.params) if (check_text(param.name) || check_text(param.type)) return true;
-      for (const auto& s : h.body) if (check_text(s.text) || check_text(s.a) || check_text(s.b)) return true;
+      if (contains_fileio_token(h.name)) return true;
+      for (const auto& param : h.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
+      for (const auto& s : h.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
     }
   }
   for (const auto& fn : p.functions) {
-    if (check_text(fn.name)) return true;
-    for (const auto& param : fn.params) if (check_text(param.name) || check_text(param.type)) return true;
-    for (const auto& s : fn.body) if (check_text(s.text) || check_text(s.a) || check_text(s.b)) return true;
+    if (contains_fileio_token(fn.name)) return true;
+    for (const auto& param : fn.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
+    for (const auto& s : fn.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+  }
+  for (const auto& e : p.enums) {
+    if (contains_fileio_token(e.name)) return true;
+    for (const auto& c : e.cases) {
+      if (contains_fileio_token(c.name)) return true;
+      for (const auto& f : c.fields) if (contains_fileio_token(f.name) || contains_fileio_token(f.type)) return true;
+    }
   }
   return false;
 }
 
 inline const char* fileio_runtime_rust() {
   return R"RUST(
-// Moss Phase 20 FileIO Runtime
+// Moss Phase 20 FileIO Runtime (Linux x86_64 / aarch64 native)
+#[cfg(not(target_os = "linux"))]
+compile_error!("Moss Phase 20 FileIO runtime currently supports Linux only (x86_64 / aarch64 linux).");
+
 #[allow(dead_code)]
 pub mod moss_fileio {
     use std::os::unix::fs::MetadataExt;
     use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
     use std::sync::{Arc, Mutex};
-    use std::collections::HashSet;
     use std::path::Path;
     use std::ffi::CString;
+
+    pub mod sys {
+        extern "C" {
+            pub fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool;
+            pub fn moss_fileio_registry_release(dev: u64, ino: u64);
+            pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool;
+            pub fn moss_fileio_registry_reset();
+            pub fn moss_solo_enter(reason_ptr: *const u8, reason_len: usize);
+            pub fn moss_solo_leave(reason_ptr: *const u8, reason_len: usize);
+        }
+    }
 
     pub mod posix {
         pub const O_RDONLY: i32 = 0;
@@ -106,12 +142,18 @@ pub mod moss_fileio {
 
     #[inline]
     pub unsafe fn sys_close(fd: RawFd) -> i32 {
-        if let Ok(g) = MOSS_CLOSE_OVERRIDE.lock() {
-            if let Some(f) = *g {
-                return f(fd);
+        let override_fn = {
+            if let Ok(g) = MOSS_CLOSE_OVERRIDE.lock() {
+                *g
+            } else {
+                None
             }
+        };
+        if let Some(f) = override_fn {
+            f(fd)
+        } else {
+            posix::close(fd)
         }
-        posix::close(fd)
     }
 
     #[inline]
@@ -119,7 +161,10 @@ pub mod moss_fileio {
         #[cfg(target_os = "linux")]
         unsafe{
             let mut st: posix::statfs = std::mem::zeroed();
-            if posix::fstatfs(fd, &mut st) == 0 {
+            let guard = SoloGuard::new("fstatfs");
+            let res = posix::fstatfs(fd, &mut st);
+            drop(guard);
+            if res == 0 {
                 const FUSE_SUPER_MAGIC: i64 = 0x65735546;
                 if st.f_type == FUSE_SUPER_MAGIC {
                     eprintln!("[moss-diagnostic] warning: path '{}' resides on a FUSE filesystem; Solo scheduling guarantees may be affected", path);
@@ -130,43 +175,24 @@ pub mod moss_fileio {
         let _ = (fd, path);
     }
 
-    static MOSS_SOLO_ENTER_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
-    static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
+    #[inline]
+    pub fn solo_enter(reason: &str) {
+        unsafe { sys::moss_solo_enter(reason.as_ptr(), reason.len()) };
+    }
+
+    #[inline]
+    pub fn solo_leave(reason: &str) {
+        unsafe { sys::moss_solo_leave(reason.as_ptr(), reason.len()) };
+    }
 
     #[inline]
     pub fn moss_solo_enter(reason: &str) {
-        if let Ok(guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-            if let Some(enter) = *guard {
-                enter(reason);
-            }
-        }
+        solo_enter(reason);
     }
 
     #[inline]
     pub fn moss_solo_leave(reason: &str) {
-        if let Ok(guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-            if let Some(leave) = *guard {
-                leave(reason);
-            }
-        }
-    }
-
-    pub fn moss_set_solo_hooks(enter: fn(&str), leave: fn(&str)) {
-        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-            *guard = Some(enter);
-        }
-        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-            *guard = Some(leave);
-        }
-    }
-
-    pub fn moss_clear_solo_hooks() {
-        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-            *guard = None;
-        }
+        solo_leave(reason);
     }
 
     pub struct SoloGuard<'a> {
@@ -176,7 +202,7 @@ pub mod moss_fileio {
     impl<'a> SoloGuard<'a> {
         #[inline]
         pub fn new(reason: &'a str) -> Self {
-            moss_solo_enter(reason);
+            solo_enter(reason);
             SoloGuard { reason }
         }
     }
@@ -184,7 +210,7 @@ pub mod moss_fileio {
     impl<'a> Drop for SoloGuard<'a> {
         #[inline]
         fn drop(&mut self) {
-            moss_solo_leave(self.reason);
+            solo_leave(self.reason);
         }
     }
 
@@ -192,10 +218,15 @@ pub mod moss_fileio {
 
     #[inline]
     pub fn moss_sync_event(event: &str, fd: RawFd, path: &str) {
-        if let Ok(guard) = MOSS_SYNC_HOOK.lock() {
-            if let Some(hook) = *guard {
-                hook(event, fd, path);
+        let hook = {
+            if let Ok(guard) = MOSS_SYNC_HOOK.lock() {
+                *guard
+            } else {
+                None
             }
+        };
+        if let Some(h) = hook {
+            h(event, fd, path);
         }
     }
 
@@ -211,35 +242,24 @@ pub mod moss_fileio {
         }
     }
 
-    static MOSS_FILEIO_REGISTRY: Mutex<Option<HashSet<(u64, u64)>>> = Mutex::new(None);
-
+    #[inline]
     pub fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
-        set.insert((dev, ino))
+        unsafe { sys::moss_fileio_registry_claim(dev, ino) }
     }
 
+    #[inline]
     pub fn moss_fileio_registry_release(dev: u64, ino: u64) {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_mut() {
-            set.remove(&(dev, ino));
-        }
+        unsafe { sys::moss_fileio_registry_release(dev, ino) }
     }
 
+    #[inline]
     pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
-        let guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_ref() {
-            set.contains(&(dev, ino))
-        } else {
-            false
-        }
+        unsafe { sys::moss_fileio_registry_contains(dev, ino) }
     }
 
+    #[inline]
     pub fn moss_fileio_registry_reset() {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_mut() {
-            set.clear();
-        }
+        unsafe { sys::moss_fileio_registry_reset() }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -485,27 +505,34 @@ pub mod moss_fileio {
 
             // Validate regular file via metadata and extract (dev, ino)
             let (dev, ino) = {
+                let guard = SoloGuard::new("fstat");
                 let file_temp = unsafe{ std::fs::File::from_raw_fd(fd) };
                 let meta_res = file_temp.metadata();
                 let _ = file_temp.into_raw_fd();
+                drop(guard);
                 match meta_res {
                     Ok(meta) => {
                         if !meta.file_type().is_file() {
+                            let cguard = SoloGuard::new("cleanup_close");
                             unsafe{ sys_close(fd); }
+                            drop(cguard);
                             eprintln!("[moss-fileio] error: path '{}' is not a regular file", path);
                             std::process::abort();
                         }
                         (meta.dev(), meta.ino())
                     }
                     Err(err) => {
+                        let cguard = SoloGuard::new("cleanup_close");
                         unsafe{ sys_close(fd); }
+                        drop(cguard);
                         eprintln!("[moss-fileio] error: fstat failed on '{}': {}", path, err);
                         std::process::abort();
                     }
                 }
             };
 
-            // Clear O_NONBLOCK to operate as standard blocking descriptor
+            // Clear O_NONBLOCK to operate as standard blocking descriptor.
+            // Note: fcntl F_SETFL is an in-memory descriptor flag update without storage I/O.
             let flags = unsafe{ posix::fcntl(fd, posix::F_GETFL) };
             if flags >= 0 {
                 unsafe{ posix::fcntl(fd, posix::F_SETFL, flags & !posix::O_NONBLOCK); }
@@ -535,7 +562,9 @@ pub mod moss_fileio {
                 if pfd >= 0 {
                     parent_dir_fd = Some(pfd);
                 } else {
+                    let cguard = SoloGuard::new("cleanup_close");
                     unsafe{ sys_close(fd); }
+                    drop(cguard);
                     eprintln!("[moss-fileio] error: failed to open parent directory '{}': {}", parent_str, std::io::Error::last_os_error());
                     std::process::abort();
                 }
@@ -543,12 +572,14 @@ pub mod moss_fileio {
 
             // Claim (dev, ino) in process-local registry
             if !moss_fileio_registry_claim(dev, ino) {
+                let cguard = SoloGuard::new("cleanup_close");
                 unsafe{
                     sys_close(fd);
                     if let Some(pfd) = parent_dir_fd {
                         sys_close(pfd);
                     }
                 }
+                drop(cguard);
                 eprintln!("[moss-fileio] error: duplicate live FileIO for (dev: {}, ino: {})", dev, ino);
                 std::process::abort();
             }
@@ -802,17 +833,28 @@ pub mod moss_fileio {
             };
 
             if let Some((fd, pfd, dev, ino)) = to_close {
+                let mut parent_close_err = false;
                 if let Some(parent_fd) = pfd {
                     let guard = SoloGuard::new("close_parent_dir");
-                    let _ = unsafe{ sys_close(parent_fd) };
+                    let pres = unsafe{ sys_close(parent_fd) };
                     drop(guard);
+                    if pres < 0 {
+                        parent_close_err = true;
+                    }
                 }
+
                 let guard = SoloGuard::new("close");
-                let res = unsafe{ sys_close(fd) };
+                let file_res = unsafe{ sys_close(fd) };
                 drop(guard);
+
                 // Inode claim is released after the close attempt
                 moss_fileio_registry_release(dev, ino);
-                if res < 0 {
+
+                if parent_close_err {
+                    eprintln!("[moss-fileio] error: close failed on parent directory descriptor: {}", std::io::Error::last_os_error());
+                    std::process::abort();
+                }
+                if file_res < 0 {
                     eprintln!("[moss-fileio] error: close failed on descriptor {}: {}", fd, std::io::Error::last_os_error());
                     std::process::abort();
                 }
@@ -936,7 +978,113 @@ pub mod moss_fileio {
     }
 }
 
-pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks};
+pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_claim, moss_fileio_registry_release, moss_fileio_registry_contains, moss_fileio_registry_reset};
+)RUST";
+}
+
+inline const char* fileio_root_runtime_rust() {
+  return R"RUST(
+// Moss Phase 20 FileIO Process-Wide Root Runtime (Linux x86_64 / aarch64 native)
+#[allow(dead_code)]
+pub mod moss_root_runtime {
+    use std::sync::Mutex;
+    use std::collections::HashSet;
+
+    static MOSS_FILEIO_REGISTRY: Mutex<Option<HashSet<(u64, u64)>>> = Mutex::new(None);
+    static MOSS_SOLO_ENTER_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
+    static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
+        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
+        let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
+        set.insert((dev, ino))
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64) {
+        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
+        if let Some(set) = guard.as_mut() {
+            set.remove(&(dev, ino));
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
+        let guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
+        if let Some(set) = guard.as_ref() {
+            set.contains(&(dev, ino))
+        } else {
+            false
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_fileio_registry_reset() {
+        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
+        if let Some(set) = guard.as_mut() {
+            set.clear();
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_solo_enter(reason_ptr: *const u8, reason_len: usize) {
+        let reason = if reason_ptr.is_null() || reason_len == 0 {
+            ""
+        } else {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(reason_ptr, reason_len))
+        };
+        let hook = {
+            if let Ok(guard) = MOSS_SOLO_ENTER_HOOK.lock() {
+                *guard
+            } else {
+                None
+            }
+        };
+        if let Some(enter) = hook {
+            enter(reason);
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn moss_solo_leave(reason_ptr: *const u8, reason_len: usize) {
+        let reason = if reason_ptr.is_null() || reason_len == 0 {
+            ""
+        } else {
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(reason_ptr, reason_len))
+        };
+        let hook = {
+            if let Ok(guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
+                *guard
+            } else {
+                None
+            }
+        };
+        if let Some(leave) = hook {
+            leave(reason);
+        }
+    }
+
+    pub fn moss_set_solo_hooks(enter: fn(&str), leave: fn(&str)) {
+        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
+            *guard = Some(enter);
+        }
+        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
+            *guard = Some(leave);
+        }
+    }
+
+    pub fn moss_clear_solo_hooks() {
+        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
+            *guard = None;
+        }
+    }
+}
+
+pub use moss_root_runtime::{moss_set_solo_hooks, moss_clear_solo_hooks};
 )RUST";
 }
 

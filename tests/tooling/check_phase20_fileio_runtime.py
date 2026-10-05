@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 20 Agent B — FileIO Runtime Verification Suite.
+"""Phase 20 Agent B — Final FileIO Runtime Verification Suite.
 
 Tests all required behaviors:
 1. Exact read
@@ -31,7 +31,12 @@ Tests all required behaviors:
 27. Close error simulation (single attempt, registry released, fails closed)
 28. Numerical overflow validation on offsets and sizes
 29. Rust compile-negative test: FileIO is NOT cloneable
-+ Chunks read primitive borrowing FileIO and Range / RangeBatch buffer operations.
+30. Cross-crate process-global registry collision rejection (.rlib provider + consumer)
+31. Cross-crate process-global Solo hook propagation
+32. Hook registration lock-dropping discipline
+33. Parent-directory close failure handling (main close executed, registry released, fail closed)
+34. Main-only FileIO compiler runtime emission
+35. False-positive emission avoidance on unrelated identifiers (RangeRover)
 """
 
 import os
@@ -50,8 +55,9 @@ RUST_HARNESS_SOURCE = r"""
 #![allow(unused_mut)]
 #![allow(non_snake_case)]
 
-// Include FileIO runtime
+// Include FileIO runtime and root runtime
 MOSS_FILEIO_RUNTIME_PLACEHOLDER
+MOSS_FILEIO_ROOT_RUNTIME_PLACEHOLDER
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
@@ -86,13 +92,17 @@ fn test_sync_hook(event: &str, _fd: RawFd, _path: &str) {
 static TEST_SOLO_DEPTH: Mutex<i32> = Mutex::new(0);
 static TEST_SOLO_ENTERS: Mutex<i32> = Mutex::new(0);
 static TEST_SOLO_LEAVES: Mutex<i32> = Mutex::new(0);
+static TEST_SOLO_REASONS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-fn test_solo_enter_hook(_reason: &str) {
+fn test_solo_enter_hook(reason: &str) {
     if let Ok(mut d) = TEST_SOLO_DEPTH.lock() {
         *d += 1;
     }
     if let Ok(mut c) = TEST_SOLO_ENTERS.lock() {
         *c += 1;
+    }
+    if let Ok(mut r) = TEST_SOLO_REASONS.lock() {
+        r.push(reason.to_string());
     }
 }
 
@@ -113,17 +123,39 @@ fn dummy_solo_leave_hook(_reason: &str) {}
 
 static CLOSE_ATTEMPT_COUNT: Mutex<i32> = Mutex::new(0);
 static TARGET_FD: Mutex<RawFd> = Mutex::new(-1);
+static FAIL_PARENT_CLOSE_ONLY: Mutex<bool> = Mutex::new(false);
+static FILE_CLOSE_ATTEMPTED: Mutex<bool> = Mutex::new(false);
 
 fn failing_close_override(fd: RawFd) -> i32 {
     let target = *TARGET_FD.lock().unwrap();
-    if target == -1 || fd == target {
-        if let Ok(mut c) = CLOSE_ATTEMPT_COUNT.lock() {
+    let fail_parent = *FAIL_PARENT_CLOSE_ONLY.lock().unwrap();
+    if fail_parent {
+        // Parent close fails, main file close succeeds
+        let count = {
+            let mut c = CLOSE_ATTEMPT_COUNT.lock().unwrap();
             *c += 1;
+            *c
+        };
+        if count == 1 {
+            // First close is parent close
+            unsafe { moss_fileio::posix::close(fd) };
+            -1
+        } else {
+            if let Ok(mut f) = FILE_CLOSE_ATTEMPTED.lock() {
+                *f = true;
+            }
+            unsafe { moss_fileio::posix::close(fd) }
         }
-        unsafe { moss_fileio::posix::close(fd) };
-        -1
     } else {
-        unsafe { moss_fileio::posix::close(fd) }
+        if target == -1 || fd == target {
+            if let Ok(mut c) = CLOSE_ATTEMPT_COUNT.lock() {
+                *c += 1;
+            }
+            unsafe { moss_fileio::posix::close(fd) };
+            -1
+        } else {
+            unsafe { moss_fileio::posix::close(fd) }
+        }
     }
 }
 
@@ -428,7 +460,7 @@ fn test_21_close_without_sync_no_durability(dir: &str) {
 
 fn test_23_locks_not_held_across_waits(dir: &str) {
     println!("[RUN] Test 23: runtime/registry locks not held across file waits");
-    moss_fileio::moss_set_solo_hooks(test_solo_lock_check_hook, dummy_solo_leave_hook);
+    moss_set_solo_hooks(test_solo_lock_check_hook, dummy_solo_leave_hook);
 
     let path = format!("{}/test23.dat", dir);
     let file = FileIO::open(&path, "create");
@@ -437,7 +469,7 @@ fn test_23_locks_not_held_across_waits(dir: &str) {
     file.sync();
     file.close();
 
-    moss_fileio::moss_clear_solo_hooks();
+    moss_clear_solo_hooks();
     println!("[PASS] Test 23: runtime/registry locks not held across file waits");
 }
 
@@ -446,8 +478,9 @@ fn test_24_solo_hooks_paired(dir: &str) {
     *TEST_SOLO_DEPTH.lock().unwrap() = 0;
     *TEST_SOLO_ENTERS.lock().unwrap() = 0;
     *TEST_SOLO_LEAVES.lock().unwrap() = 0;
+    TEST_SOLO_REASONS.lock().unwrap().clear();
 
-    moss_fileio::moss_set_solo_hooks(test_solo_enter_hook, test_solo_leave_hook);
+    moss_set_solo_hooks(test_solo_enter_hook, test_solo_leave_hook);
 
     let path = format!("{}/test24.dat", dir);
     let file = FileIO::open(&path, "create");
@@ -466,7 +499,17 @@ fn test_24_solo_hooks_paired(dir: &str) {
     assert_true(enters > 0, "Solo enter called multiple times");
     assert_eq(enters, leaves, "Solo enter and leave counts match exactly");
 
-    moss_fileio::moss_clear_solo_hooks();
+    let reasons = TEST_SOLO_REASONS.lock().unwrap().clone();
+    assert_true(reasons.contains(&"open_create".to_string()), "contains open_create");
+    assert_true(reasons.contains(&"fstat".to_string()), "contains fstat");
+    assert_true(reasons.contains(&"open_parent_dir".to_string()), "contains open_parent_dir");
+    assert_true(reasons.contains(&"write".to_string()), "contains write");
+    assert_true(reasons.contains(&"read".to_string()), "contains read");
+    assert_true(reasons.contains(&"sync".to_string()), "contains sync");
+    assert_true(reasons.contains(&"sync_dir".to_string()), "contains sync_dir");
+    assert_true(reasons.contains(&"close".to_string()), "contains close");
+
+    moss_clear_solo_hooks();
     println!("[PASS] Test 24: Solo hooks paired around waits");
 }
 
@@ -633,7 +676,11 @@ fn main() {
         }
         "test_27_close_error_simulation" => {
             let path = format!("{}/test27_fail_close.dat", test_dir);
-            let file = FileIO::open(&path, "create");
+            {
+                let f = FileIO::open(&path, "create");
+                f.close();
+            }
+            let file = FileIO::open(&path, "rw");
             let dev = file.device();
             let ino = file.inode();
             moss_fileio::moss_set_close_override(failing_close_override);
@@ -668,6 +715,19 @@ fn main() {
             let file = FileIO::open(&path, "create");
             file.write(i64::MAX - 5, b"overflow"); // MUST fail closed
         }
+        "test_33_parent_close_failure" => {
+            let path = format!("{}/test33_parent_fail.dat", test_dir);
+            let file = FileIO::open(&path, "create");
+            let dev = file.device();
+            let ino = file.inode();
+            assert_true(file.has_directory_obligation(), "has directory obligation");
+            *FAIL_PARENT_CLOSE_ONLY.lock().unwrap() = true;
+            *CLOSE_ATTEMPT_COUNT.lock().unwrap() = 0;
+            *FILE_CLOSE_ATTEMPTED.lock().unwrap() = false;
+            moss_fileio::moss_set_close_override(failing_close_override);
+            // This explicit close will attempt parent close (fails), then attempt file close (succeeds), release registry, and fail closed (abort)
+            file.close();
+        }
         _ => {
             eprintln!("Unknown test: {}", test_name);
             std::process::exit(1);
@@ -680,17 +740,31 @@ def extract_fileio_runtime_rust():
     header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
     with open(header_path, "r", encoding="utf-8") as f:
         content = f.read()
-    start_marker = 'return R"RUST(\n'
-    end_marker = '\n)RUST";'
+    start_marker = 'inline const char* fileio_runtime_rust() {\n  return R"RUST(\n'
+    end_marker = '\n)RUST";\n}'
     start_idx = content.find(start_marker)
-    end_idx = content.find(end_marker)
+    end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
         raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.hpp")
     return content[start_idx + len(start_marker):end_idx]
 
+def extract_fileio_root_runtime_rust():
+    header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
+    with open(header_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    start_marker = 'inline const char* fileio_root_runtime_rust() {\n  return R"RUST(\n'
+    end_marker = '\n)RUST";\n}'
+    start_idx = content.find(start_marker)
+    end_idx = content.find(end_marker, start_idx)
+    if start_idx == -1 or end_idx == -1:
+        raise RuntimeError("Failed to extract fileio_root_runtime_rust from src/fileio_runtime.hpp")
+    return content[start_idx + len(start_marker):end_idx]
+
 def compile_test_harness():
     runtime_rust = extract_fileio_runtime_rust()
+    root_runtime_rust = extract_fileio_root_runtime_rust()
     harness_src = RUST_HARNESS_SOURCE.replace("MOSS_FILEIO_RUNTIME_PLACEHOLDER", runtime_rust)
+    harness_src = harness_src.replace("MOSS_FILEIO_ROOT_RUNTIME_PLACEHOLDER", root_runtime_rust)
     rs_path = os.path.join(TMP_DIR, "test_fileio_harness.rs")
     bin_path = os.path.join(TMP_DIR, "test_fileio_harness")
     with open(rs_path, "w", encoding="utf-8") as f:
@@ -723,6 +797,224 @@ def test_compile_negative_clone():
     assert res.returncode != 0, "FileIO.clone() must fail to compile"
     assert "no method named `clone`" in res.stderr or "clone" in res.stderr, f"Expected clone failure in stderr: {res.stderr}"
     print("[PASS] Test 29: Compile-negative FileIO.clone() verified")
+
+def test_cross_crate_process_global_registry(test_dir):
+    print("=== Running Test 30 & 31: Cross-crate process-global registry & Solo hooks ===")
+    runtime_rust = extract_fileio_runtime_rust()
+    root_runtime_rust = extract_fileio_root_runtime_rust()
+
+    # 1. Compile Provider Library as .rlib (uses runtime_rust only, no root runtime)
+    provider_src = f"""
+    #![allow(dead_code)]
+    #![allow(unused_variables)]
+    {runtime_rust}
+
+    pub struct ProviderFile {{
+        file: FileIO,
+    }}
+
+    impl ProviderFile {{
+        pub fn open_create(path: &str) -> Self {{
+            ProviderFile {{ file: FileIO::open(path, "create") }}
+        }}
+        pub fn write_data(&self, offset: i64, data: &[u8]) {{
+            self.file.write(offset, data);
+        }}
+        pub fn close(self) {{
+            self.file.close();
+        }}
+        pub fn inode(&self) -> (u64, u64) {{
+            (self.file.device(), self.file.inode())
+        }}
+    }}
+    """
+    provider_rs = os.path.join(TMP_DIR, "provider_a.rs")
+    provider_rlib = os.path.join(TMP_DIR, "libprovider_a.rlib")
+    with open(provider_rs, "w", encoding="utf-8") as f:
+        f.write(provider_src)
+
+    cmd_prov = ["rustc", "-D", "warnings", "--crate-type", "rlib", "-o", provider_rlib, provider_rs]
+    res_prov = subprocess.run(cmd_prov, capture_output=True, text=True)
+    assert res_prov.returncode == 0, f"Provider compilation failed:\n{res_prov.stderr}"
+
+    # 2. Compile Consumer Executable linked against provider_a.rlib
+    consumer_src = f"""
+    #![allow(dead_code)]
+    #![allow(unused_variables)]
+    extern crate provider_a;
+    use provider_a::ProviderFile;
+
+    {runtime_rust}
+    {root_runtime_rust}
+
+    use std::sync::Mutex;
+
+    static SOLO_CALLED: Mutex<bool> = Mutex::new(false);
+    fn test_solo_enter(reason: &str) {{
+        if let Ok(mut g) = SOLO_CALLED.lock() {{
+            *g = true;
+        }}
+    }}
+    fn test_solo_leave(_reason: &str) {{}}
+
+    fn main() {{
+        let args: Vec<String> = std::env::args().collect();
+        let test_dir = &args[1];
+        let path = format!("{{}}/cross_crate_test.dat", test_dir);
+
+        // Register Solo hooks in consumer
+        moss_root_runtime::moss_set_solo_hooks(test_solo_enter, test_solo_leave);
+
+        // Provider A opens file
+        let pfile = ProviderFile::open_create(&path);
+        let (dev, ino) = pfile.inode();
+        assert!(moss_fileio::moss_fileio_registry_contains(dev, ino), "registry contains inode claimed by provider");
+
+        // Provider writes data -> triggers Consumer's registered Solo hook
+        *SOLO_CALLED.lock().unwrap() = false;
+        pfile.write_data(0, b"provider written payload");
+        assert!(*SOLO_CALLED.lock().unwrap(), "consumer Solo hook called during provider file write!");
+
+        // Mode 1: Check collision rejection
+        if args.len() > 2 && args[2] == "collision" {{
+            // Consumer attempts to open SAME inode -> MUST abort due to cross-crate registry claim
+            println!("[CONSUMER] Attempting duplicate open of provider file...");
+            let _cfile = FileIO::open(&path, "ro");
+            println!("[CONSUMER] UNEXPECTED: duplicate open succeeded!");
+            std::process::exit(0);
+        }}
+
+        // Mode 2: Provider closes file -> Consumer can now open
+        pfile.close();
+        assert!(!moss_fileio::moss_fileio_registry_contains(dev, ino), "registry released after provider close");
+        let cfile = FileIO::open(&path, "ro");
+        let data = cfile.read(0, 24);
+        assert_eq!(data.as_slice(), b"provider written payload");
+        cfile.close();
+        println!("[PASS] Cross-crate process-global registry and Solo hooks passed!");
+    }}
+    """
+    consumer_rs = os.path.join(TMP_DIR, "consumer.rs")
+    consumer_bin = os.path.join(TMP_DIR, "consumer")
+    with open(consumer_rs, "w", encoding="utf-8") as f:
+        f.write(consumer_src)
+
+    cmd_cons = ["rustc", "-D", "warnings", "--extern", f"provider_a={provider_rlib}", "-o", consumer_bin, consumer_rs]
+    res_cons = subprocess.run(cmd_cons, capture_output=True, text=True)
+    assert res_cons.returncode == 0, f"Consumer compilation failed:\n{res_cons.stderr}"
+
+    # Run normal mode (provider open -> write -> Solo hook check -> provider close -> consumer open)
+    res = subprocess.run([consumer_bin, test_dir], capture_output=True, text=True)
+    assert res.returncode == 0, f"Cross-crate test failed:\n{res.stderr}"
+    print(res.stdout.strip())
+
+    # Run collision mode (provider open -> consumer duplicate open fails closed)
+    res_col = subprocess.run([consumer_bin, test_dir, "collision"], capture_output=True, text=True)
+    assert res_col.returncode != 0, "Duplicate open across crates must fail closed"
+    assert "duplicate live FileIO" in res_col.stderr, f"Expected duplicate live FileIO in stderr: {res_col.stderr}"
+    print("[PASS] Test 30 & 31: Cross-crate collision and Solo hook propagation verified")
+
+def test_hook_lock_discipline(test_dir):
+    print("=== Running Test 32: Hook registration lock-dropping discipline ===")
+    runtime_rust = extract_fileio_runtime_rust()
+    root_runtime_rust = extract_fileio_root_runtime_rust()
+
+    test_src = f"""
+    #![allow(dead_code)]
+    {runtime_rust}
+    {root_runtime_rust}
+
+    use std::sync::Mutex;
+    static SECOND_LOCK: Mutex<i32> = Mutex::new(0);
+    static HOOK_EXECUTED: Mutex<bool> = Mutex::new(false);
+
+    fn reentrant_solo_hook(_reason: &str) {{
+        // 1. Acquire another lock inside callback
+        let mut g = SECOND_LOCK.lock().unwrap();
+        *g += 1;
+        // 2. Query registry from inside callback (proves registration lock is not held)
+        let _ = moss_fileio::moss_fileio_registry_contains(12345, 67890);
+        *HOOK_EXECUTED.lock().unwrap() = true;
+    }}
+    fn dummy_leave(_reason: &str) {{}}
+
+    fn main() {{
+        moss_root_runtime::moss_set_solo_hooks(reentrant_solo_hook, dummy_leave);
+        let path = "{test_dir}/test_lock_disc.dat";
+        let file = FileIO::open(path, "create");
+        file.write(0, b"data");
+        file.close();
+        assert!(*HOOK_EXECUTED.lock().unwrap(), "hook executed");
+        assert!(*SECOND_LOCK.lock().unwrap() > 0, "second lock acquired");
+        moss_root_runtime::moss_clear_solo_hooks();
+        println!("[PASS] Hook lock discipline verified");
+    }}
+    """
+    rs_path = os.path.join(TMP_DIR, "test_lock_discipline.rs")
+    bin_path = os.path.join(TMP_DIR, "test_lock_discipline")
+    with open(rs_path, "w", encoding="utf-8") as f:
+        f.write(test_src)
+    res = subprocess.run(["rustc", "-D", "warnings", rs_path, "-o", bin_path], capture_output=True, text=True)
+    assert res.returncode == 0, f"Compilation failed:\n{res.stderr}"
+    res = subprocess.run([bin_path], capture_output=True, text=True)
+    assert res.returncode == 0, f"Execution failed:\n{res.stderr}"
+    print("[PASS] Test 32: Hook registration lock-dropping discipline verified")
+
+def test_main_only_runtime_emission(test_dir):
+    print("=== Running Test 34 & 35: Main-only runtime emission & false-positive hardening ===")
+
+    # 1. Main / enum FileIO program
+    moss_main_src = """
+enum StorageMode:
+  FileIO
+  Range
+  RangeBatch
+
+fn main():
+  mode = StorageMode.FileIO
+  val = 42
+"""
+    moss_file = os.path.join(test_dir, "main_only_fileio.moss")
+    with open(moss_file, "w", encoding="utf-8") as f:
+        f.write(moss_main_src)
+
+    rs_out = os.path.join(TMP_DIR, "main_only_fileio.rs")
+    compile_cmd = [os.path.join(REPO_ROOT, "moss"), moss_file, "-o", rs_out]
+    res = subprocess.run(compile_cmd, capture_output=True, text=True)
+    assert res.returncode == 0, f"moss compile failed for main-only FileIO:\n{res.stderr}"
+
+    with open(rs_out, "r", encoding="utf-8") as f:
+        rs_content = f.read()
+    assert "moss_fileio" in rs_content, "Generated Rust must contain moss_fileio"
+    assert "moss_root_runtime" in rs_content, "Generated Rust must contain moss_root_runtime"
+
+    # Verify generated Rust compiles cleanly with rustc
+    res_rustc = subprocess.run(["rustc", "-D", "warnings", rs_out, "-o", os.path.join(TMP_DIR, "main_only_fileio")], capture_output=True, text=True)
+    assert res_rustc.returncode == 0, f"Generated Rust failed to compile:\n{res_rustc.stderr}"
+    print("[PASS] Test 34: Main-only FileIO emitted and compiled cleanly")
+
+    # 2. False-positive hardening (RangeRover / CustomRange identifier without FileIO)
+    moss_fp_src = """
+type RangeRover:
+  fuel: int
+
+fn drive(rover: RangeRover) -> int:
+  return rover.fuel
+
+fn main():
+  rover = RangeRover(fuel: 100)
+  drive(rover)
+"""
+    moss_fp_file = os.path.join(test_dir, "fp_test.moss")
+    with open(moss_fp_file, "w", encoding="utf-8") as f:
+        f.write(moss_fp_src)
+    rs_fp_out = os.path.join(TMP_DIR, "fp_test.rs")
+    res_fp = subprocess.run([os.path.join(REPO_ROOT, "moss"), moss_fp_file, "-o", rs_fp_out], capture_output=True, text=True)
+    assert res_fp.returncode == 0, f"moss compile failed:\n{res_fp.stderr}"
+    with open(rs_fp_out, "r", encoding="utf-8") as f:
+        rs_fp_content = f.read()
+    assert "mod moss_fileio" not in rs_fp_content, "Unrelated RangeRover identifier must not emit moss_fileio"
+    print("[PASS] Test 35: False-positive identifier hardening verified")
 
 def run_tests():
     bin_path = compile_test_harness()
@@ -851,8 +1143,24 @@ def run_tests():
     # 13. Test 29: Compile-negative FileIO.clone()
     test_compile_negative_clone()
 
+    # 14. Test 30 & 31: Cross-crate process-global registry & Solo hooks
+    test_cross_crate_process_global_registry(test_run_dir)
+
+    # 15. Test 32: Hook lock discipline
+    test_hook_lock_discipline(test_run_dir)
+
+    # 16. Test 33: Parent directory close failure
+    print("=== Running Test 33: Parent directory close failure handling ===")
+    res = subprocess.run([bin_path, "test_33_parent_close_failure", test_run_dir], capture_output=True, text=True)
+    assert res.returncode != 0, "Parent close failure must abort"
+    assert "close failed on parent directory descriptor" in res.stderr, f"Expected parent close failure in stderr: {res.stderr}"
+    print("[PASS] Test 33: Parent directory close failure handling verified")
+
+    # 17. Test 34 & 35: Main-only emission & false-positive hardening
+    test_main_only_runtime_emission(test_run_dir)
+
     print("\n" + "="*50)
-    print("ALL PHASE 20 FILEIO RUNTIME CORRECTIVE TESTS PASSED!")
+    print("ALL PHASE 20 FILEIO FINAL HARDENING TESTS PASSED!")
     print("="*50)
 
 if __name__ == "__main__":

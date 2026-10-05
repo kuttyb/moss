@@ -11658,7 +11658,12 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
-    if (program_uses_fileio(p_)) o << fileio_runtime_rust();
+    if (program_uses_fileio(p_)) {
+      o << fileio_runtime_rust();
+      if (!p_.explicit_module || p_.main) {
+        o << fileio_root_runtime_rust();
+      }
+    }
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());

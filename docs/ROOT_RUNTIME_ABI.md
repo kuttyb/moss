@@ -124,3 +124,19 @@ entry paths that must implement the same root-ingress semantics.
 
 Record physical signatures and layouts here once defined by their owning
 implementation area from the phase spec, before other areas call them.
+
+## Process-wide FileIO runtime linkage & platform contract
+
+Phase 20 FileIO native runtime targets Linux (`x86_64` / `aarch64` native). Other platforms explicitly fail compilation via `compile_error!`.
+
+Across all linked crates in a process (compiled provider `.rlib`s and the root executable):
+- Provider `.rlib` crates declare `extern "C"` linkage symbols under `moss_fileio::sys`:
+  * `moss_fileio_registry_claim(dev: u64, ino: u64) -> bool`
+  * `moss_fileio_registry_release(dev: u64, ino: u64)`
+  * `moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
+  * `moss_fileio_registry_reset()`
+  * `moss_solo_enter(reason_ptr: *const u8, reason_len: usize)`
+  * `moss_solo_leave(reason_ptr: *const u8, reason_len: usize)`
+- The root executable crate emits `moss_root_runtime` containing the single process-wide `#[no_mangle]` symbol definitions and their leaf-lock synchronized state (`MOSS_FILEIO_REGISTRY`, `MOSS_SOLO_ENTER_HOOK`, `MOSS_SOLO_LEAVE_HOOK`).
+- Registration callbacks are never invoked while holding the registration mutex (locks are dropped before hook invocation).
+- Potentially blocking file descriptor operations (`open`, `fstat`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`, cleanup closes, `fstatfs`) are bracketed with RAII `SoloGuard`. Descriptor flag modification `fcntl(F_SETFL)` is in-memory and non-blocking.
