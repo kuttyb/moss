@@ -1,7 +1,9 @@
 // TEST ONLY -- NOT PHASE 20 RUNTIME.
 //
 // Minimal stand-in for Agent C's Branch join-scope ABI
-// (branch_scope_new / branch_publish / branch_join). Signatures mirror Agent
+// (branch_scope_new_current / branch_publish / branch_join). The scope belongs
+// to the current Root; this shim uses a synthetic owner id (the compiler never
+// supplies one). Signatures mirror Agent
 // C's, including `F: FnOnce() + Send + 'static`, so a lowering that captures
 // a parent borrow fails to compile here exactly as it would against Agent C.
 // Never emitted by the compiler; not a proposal for Agent C's scheduler.
@@ -17,8 +19,12 @@ pub struct MossBranchScope {
     pending: std::sync::Mutex<std::collections::VecDeque<Box<dyn FnOnce() + Send + 'static>>>,
 }
 
-pub fn branch_scope_new(owner_root_id: u64) -> std::sync::Arc<MossBranchScope> {
-    std::sync::Arc::new(MossBranchScope { owner_root_id, pending: std::sync::Mutex::new(std::collections::VecDeque::new()) })
+pub fn branch_scope_new_current() -> std::sync::Arc<MossBranchScope> {
+    const MOSS_TEST_CURRENT_ROOT: u64 = 1;
+    std::sync::Arc::new(MossBranchScope {
+        owner_root_id: MOSS_TEST_CURRENT_ROOT,
+        pending: std::sync::Mutex::new(std::collections::VecDeque::new()),
+    })
 }
 
 pub fn branch_publish<F>(scope: &std::sync::Arc<MossBranchScope>, branch_fn: F)

@@ -9,7 +9,7 @@
 //  - FileIO/Range: Agent B's `FileIO::open(&str, &str)`, `read(i64, i64) ->
 //    Range`, `write(i64, data)`, `sync()`, `sync_dataonly()`, `close()`, and
 //    `Range::len() -> i64`. Agent D defines none of them.
-//  - Branches: Agent C's join-scope ABI -- `branch_scope_new(owner_root_id)`,
+//  - Branches: Agent C's join-scope ABI -- `branch_scope_new_current()`,
 //    `branch_publish(&scope, work: FnOnce() + Send + 'static)` (nonblocking;
 //    the runtime may execute overflow inline), `branch_join(scope)`. Agent D
 //    emits no Branch scheduler of its own.
@@ -176,9 +176,9 @@ string gen_chunk_pipeline_bounded_k(
       << expr(plan.initial_expression, domain, locals, types) << ";\n";
   out << "        let mut " << next << ": i64 = 0;\n";
   out << "        " << label << ": loop {\n";
-  out << "            // Agent C's branch_scope_new takes an owner Root id used only\n";
-  out << "            // for instrumentation; no current-Root accessor exists yet.\n";
-  out << "            let " << scope << " = branch_scope_new(0);\n";
+  out << "            // The scope belongs to the currently executing Root; the runtime,\n";
+  out << "            // not compiler output, supplies that Root's identity.\n";
+  out << "            let " << scope << " = branch_scope_new_current();\n";
   out << "            let mut " << slots << ": std::vec::Vec<std::sync::Arc<std::sync::Mutex<Option<"
       << outcome_type << ">>>> = std::vec::Vec::with_capacity(" << k << ");\n";
   out << "            for " << lane << " in 0.." << k << "usize {\n";

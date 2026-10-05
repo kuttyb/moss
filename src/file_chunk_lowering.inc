@@ -27,6 +27,14 @@
 // transitively through helpers (a helper may legally borrow a FileIO
 // parameter or open its own root-local FileIO). A FileIO-reaching map or
 // combine is still valid Moss; it simply lowers sequentially.
+//
+// A source-free provider function's .mossi interface carries no FileIO fact,
+// so it is marked ObservableEffects::fileio_unknown and never assumed
+// FileIO-free: a map or combine reaching one lowers sequentially.
+//
+// This FileIO recognition is provisional and not authoritative. It only
+// chooses between Branch and sequential lowering and must never short-circuit
+// Agent A's checker; at integration A's effect facts feed fileio directly.
 
 // Builds the structured ChunkParallelPlan for a checked pipeline whose
 // source is `<fileio-local>.chunks(size)`. Returns false (plan left
@@ -95,6 +103,8 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
   string reason;
   if (map_effects.fileio)
     reason = "map stage reaches a FileIO operation";
+  else if (map_effects.fileio_unknown)
+    reason = "map callable FileIO effect unavailable for compiled provider";
   else if (!map_effects.fusion_safe())
     reason = "map stage is not pure: " + observable_barrier(map_effects);
   else if (!map_node.captures.empty() ||
@@ -104,6 +114,8 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
              "Send + 'static";
   else if (combine_effects.fileio)
     reason = "combine stage reaches a FileIO operation";
+  else if (combine_effects.fileio_unknown)
+    reason = "combine callable FileIO effect unavailable for compiled provider";
   bool eligible = reason.empty();
   pipeline.chunk_plan.eligible = eligible;
   pipeline.chunk_plan.window_k = 4;
@@ -117,7 +129,7 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
         "pure map, no FileIO call in map or combine, combine runs parent-only";
     pipeline.decision =
         "eligible: bounded K=" + std::to_string(pipeline.chunk_plan.window_k) +
-        " read/map Branch lowering (branch_scope_new/branch_publish/branch_join), "
+        " read/map Branch lowering (branch_scope_new_current/branch_publish/branch_join), "
         "ordered parent commit and fold";
     pipeline.optimization_notes.push_back(pipeline.chunk_plan.eligibility_reason);
   }

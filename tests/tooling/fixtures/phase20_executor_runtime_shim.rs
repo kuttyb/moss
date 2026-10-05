@@ -8,6 +8,11 @@
 // surface here (notably: root work must be `FnOnce() + Send + 'static`).
 // Never emitted by the compiler; not a proposal for Agent C's runtime.
 //
+// runtime_invoke (synchronous Root ingress for top-level `message` from main)
+// runs the Root on the caller's thread and returns its result -- a valid
+// sequential stand-in for inline or executor admission that logs
+// "moss-executor runtime_invoke".
+//
 // Behavior: start() prints the received configuration to stderr; each
 // enqueue_root records the submitted root and returns immediately (the
 // caller continues after submission); join() drains every admitted root in
@@ -62,7 +67,7 @@ pub fn next_root_id() -> u64 {
     MOSS_TEST_NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-#[derive(Clone)]
+// Linear, like Agent C's handle: no Clone.
 pub struct MossExecutorHandle {
     pending: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<MossRootDescriptor>>>,
 }
@@ -82,4 +87,9 @@ impl MossExecutorHandle {
         }
         eprintln!("moss-executor join");
     }
+}
+
+pub fn runtime_invoke<R: Send + 'static, F: FnOnce() -> R + Send + 'static>(work: F) -> R {
+    eprintln!("moss-executor runtime_invoke");
+    work()
 }

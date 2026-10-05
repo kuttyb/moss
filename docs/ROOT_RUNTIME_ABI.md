@@ -144,7 +144,10 @@ consumes only these plans:
 ```rust
 let __cfg0 = /* threads arg */;   // each argument evaluated once, in source order
 // ...
-let mut executor = MossExecutor::new().threads(__cfg0 as usize)/* ... */.start();
+let __cfg0_checked: usize = <usize as std::convert::TryFrom<i64>>::try_from(__cfg0)
+    .unwrap_or_else(|_| { eprintln!("moss executor: invalid threads ..."); std::process::abort() });
+// ...
+let mut executor = MossExecutor::new().threads(__cfg0_checked)/* ... */.start();
 {
     let __domain = worker.clone();
     let __arg0 = /* owned value-boundary snapshot, evaluated at invoke */;
@@ -157,7 +160,34 @@ executor.join();
 
 `executor.invoke` never lowers to a synchronous handler call. Root work is
 `FnOnce() + Send + 'static`. `affinity` lowers to `Vec<usize>`, `priority`
-to `i32`, counts to `usize`.
+to `i32`, and counts to `usize`. Every conversion is checked (`TryFrom`,
+never `as`). A run-time value that is out of range fails closed before
+`start()`.
+
+### Top-level `message` root ingress (Agent C)
+
+The checker marks a `message` statement directly in `main`'s body as root
+ingress (`Stmt::message_root_ingress`). It lowers to a synchronous Root:
+
+```rust
+let before = {
+    let __moss_root_domain_N = worker.clone();
+    let __moss_root_arg_N = /* owned snapshot, evaluated once */;
+    runtime_invoke(move || __moss_root_domain_N.Get_shared(/* lend __moss_root_arg_N */))
+};
+```
+
+This holds in `INLINE` (before `start()`), `ACTIVE`, and again after
+`join()`. A nested `message` inside a Root (handler or helper body) is never
+marked. It stays a direct synchronous call within its caller's Root.
+`runtime_invoke` must therefore accept `F: FnOnce() -> R + Send + 'static`.
+It returns the reply.
+
+Today the compiler emits `runtime_invoke` only in programs that construct an
+Executor (`root_ingress_uses_runtime()`). Executor-free programs keep the
+direct call, so they need no Agent C crate to link. That predicate is the
+single switch to flip at integration. Fast Debug runs a root message
+synchronously, with no scheduler.
 
 ### Chunk-pipeline Branches (Agent C)
 
@@ -168,7 +198,7 @@ of K Branches in one join scope:
 ```text
 acc = init                                   // before any publication
 loop over windows:
-    scope = branch_scope_new(owner_root_id)
+    scope = branch_scope_new_current()
     for lane in 0..K:                        // K publications precede the join
         slot  = Arc<Mutex<Option<(Option<Mapped>, i64, bool)>>>   // compiler-owned
         token = moss_fileio_branch_read_borrow(&file)
@@ -185,13 +215,24 @@ loop over windows:
 `branch_publish` returns nothing and must not block; the runtime may run
 overflow inline. Branch work is `FnOnce() + Send + 'static`. The mapped
 result never passes through the scheduler. `combine` runs only in the
-parent Root, left to right; there is no tree reduction. Agent C exposes no
-current-Root accessor yet, so generated code passes `0` as the
-instrumentation-only `owner_root_id`.
+parent Root, left to right; there is no tree reduction.
+`branch_scope_new_current()` takes no argument. The runtime associates the
+scope with the Root currently executing on the calling thread; generated
+code never names a Root id.
 
-A pipeline whose map is impure, reaches FileIO, or captures parent locals,
-or whose combine reaches FileIO, lowers to the plain sequential loop and
-uses no Branch ABI.
+A pipeline lowers to the plain sequential loop and uses no Branch ABI when:
+
+- its map is impure, reaches FileIO, or captures parent locals;
+- its combine reaches FileIO;
+- either callable reaches a source-free provider function. A `.mossi`
+  interface carries no FileIO fact, so such a callable's FileIO effect is
+  unknown and is never assumed FileIO-free.
+
+Agent D's FileIO recognition is provisional and not authoritative. This
+covers its typing, its `fileio`/`fileio_unknown` effect facts, and the
+capability predicate. It only selects a lowering. It must not short-circuit
+or replace Agent A's checker, and it is isolated behind one adapter so A's
+facts can replace it.
 
 ### FileIO and Range (Agent B)
 
@@ -209,7 +250,8 @@ impl MossFileIOReadBorrow { fn read(&self, offset: i64, size: i64) -> Range; }
 ```
 
 A compiler-internal, owned, read-only token that a `'static` Branch can
-carry instead of `&FileIO`. It is not a Moss value and not a second FileIO
+carry instead of `&FileIO`; it must be `Send + 'static` (compile-checked by
+`tests/tooling/fixtures/phase20_read_borrow_contract.rs`). It is not a Moss value and not a second FileIO
 owner; it shares the open file's runtime backing, permits only reads, and
 the compiler guarantees every token is dead by the window's `branch_join`.
 Agent B's current `FileIO { inner: Mutex<Option<FileIOInner>> }` would need
@@ -218,7 +260,8 @@ shareable backing (for example an `Arc` inside) to implement it.
 ### Fast Debug
 
 `executor.invoke` runs as a deterministic sequential schedule of deferred
-roots (snapshot at invoke, run at join). FileIO execution in Fast Debug
+roots (snapshot at invoke, run at join). A top-level `message` runs synchronously as
+its own Root. FileIO execution in Fast Debug
 awaits Agent A/B integration and raises a clear error.
 
 ### Test-only shims

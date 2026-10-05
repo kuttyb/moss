@@ -387,7 +387,9 @@ static bool fileio_typed(const std::unordered_map<string,string>& env,
 // or an ordinary collection). When Agent A's real FileIO/Range ownership
 // checker lands, integrating with it should be a one-function change here
 // -- Agent D must not reimplement FileIO lifecycle, Range borrow scoping,
-// collection escape, or domain effects itself.
+// collection escape, or domain effects itself. This recognition is
+// provisional and not authoritative: it only selects Agent D's lowering and
+// must never short-circuit or stand in for Agent A's checker.
 static bool phase20_is_nontransferable_capability(const string& type) {
   string concrete = canonical_type_name(type);
   if (concrete == "executor" || concrete == "fileio" || concrete == "range" ||
@@ -7025,6 +7027,7 @@ class Checker {
         left.message == right.message &&
         left.external_io == right.external_io &&
         left.fileio == right.fileio &&
+        left.fileio_unknown == right.fileio_unknown &&
         left.may_fail == right.may_fail &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
@@ -7551,6 +7554,11 @@ class Checker {
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
               *function.result_expression, env));
+        // Phase 20: a source-free provider function has no body here and its
+        // .mossi metadata does not record FileIO use, so absence of FileIO is
+        // unproven; callers (transitively) inherit fileio_unknown.
+        for (const auto& module : p_.external_modules)
+          if (starts_with(function.name, module + "__")) inferred.fileio_unknown = true;
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
@@ -10059,6 +10067,9 @@ class Checker {
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
+      if (current == nullptr && current_function == nullptr && current_object_ == nullptr &&
+          p_.main && &statements == &p_.main->body)
+        statement.message_root_ingress = true;
       if (check_executor_or_fileio_statement(statement, current_env, current,
                                              current_function, &statements))
         return;
@@ -12005,6 +12016,9 @@ class Generator {
   size_t assertion_temp_ = 0;
   mutable size_t call_argument_temp_ = 0;
   mutable size_t executor_invoke_temp_ = 0;
+  // Phase 20: true while generating a statement the checker marked
+  // message_root_ingress (it executes directly in `main`).
+  mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
 
   bool owns_specialization(const Domain& specialized) const {
@@ -13736,6 +13750,10 @@ class Generator {
       const Handler* target_handler = find_handler(target_domain, handler);
       if (!target_handler)
         throw std::runtime_error("internal error: unresolved message expression handler");
+      if (root_ingress_statement_ && root_ingress_uses_runtime())
+        return root_ingress_message(receiver, handler, arguments, target_domain,
+                                    *target_handler, d, locals, types,
+                                    message_argument_plans);
       if (target_domain.exported && !exported_domain_bridge_body_) {
         std::ostringstream call;
         call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
@@ -15104,6 +15122,12 @@ class Generator {
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
 
       source_comment(o, (base + level) * 4, s.line, s.text);
+
+      struct RootIngressScope {
+        bool& flag; bool saved;
+        RootIngressScope(bool& f, bool value) : flag(f), saved(f) { flag = value; }
+        ~RootIngressScope() { flag = saved; }
+      } root_ingress_scope(root_ingress_statement_, s.message_root_ingress);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
           s, functional_context, 0);
@@ -21685,6 +21709,10 @@ static ObservableEffects interface_effects(const string& text) {
   effects.may_fail = flag("may_fail");
   effects.may_diverge = flag("may_diverge");
   effects.unresolved = flag("unresolved");
+  // Provider interfaces do not serialize ObservableEffects::fileio, so a
+  // source-free callable cannot be proven FileIO-free (Phase 20 chunk
+  // eligibility must stay conservative; see file_chunk_lowering.inc).
+  effects.fileio_unknown = true;
   return effects;
 }
 

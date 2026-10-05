@@ -34,6 +34,9 @@ FIXTURES = repo / 'tests/tooling/fixtures'
 EXECUTOR_SHIM = FIXTURES / 'phase20_executor_runtime_shim.rs'
 BRANCH_SHIM = FIXTURES / 'phase20_branch_runtime_shim.rs'
 FILEIO_SHIM = FIXTURES / 'phase20_fileio_range_shim.rs'
+# Compile-time contract for Agent B's reserved read-borrow seam: the token a
+# Branch carries must be an owned `Send + 'static` value.
+READ_BORROW_CONTRACT = FIXTURES / 'phase20_read_borrow_contract.rs'
 
 
 def run(args, *, expected=0, env=None):
@@ -60,16 +63,21 @@ def expect_rejected(source, needle, *, code=None):
         assert code in p.stderr, (source, p.stderr)
 
 
-def native_build(name, source, *, shims=()):
-    """Compile `source`, append test-only shims (generated file first: its
-    crate-level #![...] attributes must lead), link. Returns (rust, binary)."""
-    rust = out / (name + '.rs')
-    run([compiler, repo / source, '-o', rust])
+def link_with_shims(name, rust, shims, extra=()):
+    """Append test-only shims to generated `rust` (generated file first: its
+    crate-level #![...] attributes must lead) and link."""
     combined = out / (name + '_combined.rs')
     combined.write_text(rust.read_text() + ''.join(Path(s).read_text() for s in shims))
     binary = out / (name + '_bin')
-    run(['rustc', '-D', 'warnings', combined, '-o', binary])
-    return rust, binary
+    run(['rustc', '-D', 'warnings', *extra, combined, '-o', binary])
+    return binary
+
+
+def native_build(name, source, *, shims=()):
+    """Compile `source` and link it with test-only shims. Returns (rust, binary)."""
+    rust = out / (name + '.rs')
+    run([compiler, repo / source, '-o', rust])
+    return rust, link_with_shims(name, rust, shims)
 
 
 def run_binary(binary):
@@ -205,6 +213,91 @@ assert 'moss-executor start threads=Some(2) max_threads=Some(8) queue_capacity=S
 assert native.stderr.index('moss-executor start') < native.stderr.index('moss-executor enqueue') \
     < native.stderr.index('moss-executor join'), native.stderr
 assert text.count('__moss_executor_cfg_') >= 10  # 5 temps, each bound then used once
+# Configuration values are converted with checked conversions, never `as`:
+# a value that passes the static checks but is out of range at run time
+# fails closed before any worker starts.
+assert not re.search(r'__moss_executor_cfg_\d+ as (usize|i32)', text), text
+for label, chain, needle in (
+        ('threads', 'Executor().threads(pick(0 - 2)).start()', 'invalid threads'),
+        ('queue', 'Executor().queue_capacity(pick(0 - 1)).start()', 'invalid queue_capacity'),
+        ('priority', 'Executor().priority(pick(4294967296)).start()', 'invalid priority'),
+        ('affinity', 'Executor().affinity([0, pick(0 - 1)]).start()', 'invalid affinity')):
+    name = 'phase20_executor_config_dynamic_' + label
+    source = write_source(name, """fn pick(n: Int) -> Int:
+  return n
+
+domain Worker:
+  fn Process(amount: Int):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = %s
+  executor.invoke(worker.Process(1))
+  executor.join()
+""" % chain)
+    _, binary = native_build(name, source, shims=[EXECUTOR_SHIM])
+    p = subprocess.run([str(binary)], text=True, capture_output=True, timeout=120)
+    assert p.returncode != 0, (name, p.returncode, p.stderr)
+    assert needle in p.stderr and 'moss-executor start' not in p.stderr, (name, p.stderr)
+
+# The test shim's handle is linear like Agent C's: no Clone.
+assert not re.search(r'derive\([^)]*Clone[^)]*\)\s*pub struct MossExecutorHandle',
+                     EXECUTOR_SHIM.read_text())
+
+# ---------------------------------------------------------------------------
+# Top-level `message` from main is root ingress: a synchronous Root through
+# runtime_invoke, in INLINE (before start), ACTIVE (alongside enqueue_root),
+# and again INLINE after join. A nested message inside a Root stays a direct
+# synchronous call within that Root.
+# ---------------------------------------------------------------------------
+root_source = write_source('phase20_root_message', """fn label() -> String:
+  echo "label evaluated"
+  return "abcd"
+
+domain Ledger:
+  total = 0
+
+  fn Add(amount: Int):
+    total = total + amount
+
+  fn Get() -> Int:
+    reply total
+
+domain Worker:
+  domainroutes(ledger: Ledger)
+
+  fn Work(amount: Int):
+    message ledger.Add(amount)
+
+  fn Get(text: String) -> Int:
+    reply text.length()
+
+fn main():
+  ledger = Ledger()
+  worker = Worker(ledger: ledger)
+  before = message worker.Get("abc")
+  echo before
+  executor = Executor().threads(2).start()
+  executor.invoke(worker.Work(5))
+  during = message worker.Get(label())
+  echo during
+  executor.join()
+  message ledger.Add(1)
+  after = message ledger.Get()
+  echo after
+""")
+rust, binary = native_build('phase20_root_message', root_source, shims=[EXECUTOR_SHIM])
+text = code_only(rust.read_text())
+assert text.count('runtime_invoke(') == 4, text
+assert '.enqueue_root(MossRootDescriptor::with_target(' in text
+work_body = re.search(r'fn __moss_body_Worker_Work\b.*?\n}\n', text, re.S)
+assert work_body and 'runtime_invoke' not in work_body.group(0), work_body
+native = run_binary(binary)
+assert native.stdout == fast_debug(root_source).stdout == '3\nlabel evaluated\n4\n6\n', native.stdout
+events = [line for line in native.stderr.splitlines() if line.startswith('moss-executor ')]
+assert [e.split()[1] for e in events] == ['runtime_invoke', 'start', 'enqueue', 'runtime_invoke',
+                                         'join', 'runtime_invoke', 'runtime_invoke'], events
 
 # ---------------------------------------------------------------------------
 # FileIO: Agent-B-aligned statement lowering and ordinary helper borrowing.
@@ -275,10 +368,12 @@ def chunk_case(name, content, size, expected):
     ir = functional_ir(source)
     assert 'Source seq[range]' in ir and 'vector[range]' not in ir, ir
     assert 'window_k=4 eligible=yes' in ir, ir
-    rust, binary = native_build(name, source, shims=[BRANCH_SHIM, FILEIO_SHIM])
+    rust, binary = native_build(name, source, shims=[BRANCH_SHIM, FILEIO_SHIM, READ_BORROW_CONTRACT])
     text = rust.read_text()
     assert_no_d_runtime(text, name)
-    assert 'branch_scope_new(' in text and 'moss_fileio_branch_read_borrow(&' in text
+    # The runtime supplies the current Root's identity; no placeholder owner.
+    assert 'branch_scope_new_current()' in text and 'branch_scope_new(' not in text
+    assert 'moss_fileio_branch_read_borrow(&' in text
     lines, trace, program = split_trace(run_binary(binary).stdout)
     assert program == ['initializer', expected], (name, program)
     # The initializer is evaluated before any Branch is published.
@@ -388,6 +483,61 @@ assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not 
 rust, binary = native_build('phase20_chunk_handler', handler_source, shims=[BRANCH_SHIM, FILEIO_SHIM])
 _, trace, program = split_trace(run_binary(binary).stdout)
 assert program == ['33', '44'], program
+assert trace == ['moss-branch publish'] * 4 + ['moss-branch join'], trace
+
+# A source-free provider callable carries no FileIO fact in its .mossi
+# interface, so it must not be assumed FileIO-free: a pipeline whose combine
+# reaches one lowers sequentially, while a local combine stays eligible.
+provider_root = out / 'phase20_provider'
+provider = provider_root / 'provider'
+consumer = provider_root / 'consumer'
+for directory in (provider / 'src', consumer / 'src'):
+    directory.mkdir(parents=True, exist_ok=True)
+for directory in (provider, consumer):
+    run(['rm', '-rf', directory / 'build'])
+(provider / 'Moss.toml').write_text('[project]\nname = "foldlib"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n')
+(provider / 'src/folds.moss').write_text("""module folds
+
+export fn positional(acc: Int, len: Int) -> Int:
+  return acc * 10 + len
+""")
+provider_data = provider_root / 'data.txt'
+provider_data.write_bytes(b'123456')
+(consumer / 'Moss.toml').write_text('[project]\nname = "p20consumer"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n')
+(consumer / 'src/main.moss').write_text("""module app
+import folds
+
+fn chunk_length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn local_positional(acc: Int, len: Int) -> Int:
+  return acc * 10 + len
+
+fn provider_positional(acc: Int, len: Int) -> Int:
+  return folds.positional(acc, len)
+
+fn main():
+  file = FileIO.open("%s", ro)
+  local_total = file.chunks(3) |> map(chunk_length) |> reduce(0, local_positional)
+  provider_total = file.chunks(3) |> map(chunk_length) |> reduce(0, provider_positional)
+  file.close()
+  echo local_total
+  echo provider_total
+""" % provider_data)
+subprocess.run([str(compiler), 'build'], cwd=provider, text=True, capture_output=True, timeout=120, check=True)
+provider_artifacts = provider / 'build/debug'
+# The consumer's own rustc link needs Agent B/C's crates and fails here; the
+# generated Rust is still written and is linked below against the shims.
+subprocess.run([str(compiler), 'build'], cwd=consumer, text=True, capture_output=True, timeout=120,
+               env=dict(os.environ, MOSS_MODULE_PATH=str(provider_artifacts)))
+consumer_rust = consumer / 'build/debug/app.rs'
+text = consumer_rust.read_text()
+assert text.count('branch_publish(') == 1, text
+assert 'ineligible for Branch lowering: combine callable FileIO effect unavailable for compiled provider' in text, text
+binary = link_with_shims('phase20_provider_chunks', consumer_rust, [BRANCH_SHIM, FILEIO_SHIM],
+                         extra=['-L', provider_artifacts])
+_, trace, program = split_trace(run_binary(binary).stdout)
+assert program == ['33', '33'], program
 assert trace == ['moss-branch publish'] * 4 + ['moss-branch join'], trace
 
 # The chunk source is a scoped seq[Range], not a materializable collection.
