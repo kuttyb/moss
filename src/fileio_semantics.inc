@@ -586,17 +586,16 @@
                  flow.range_origin.count(trim(s.b)))
           flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
         else flow.range_origin.erase(s.a);
-        string initializer = strip_redundant_outer_parentheses(trim(s.b));
+        vector<string> open_args;
         if (type && canonical_type_name(*type) == "FileIO" &&
-            starts_with(initializer, "FileIO.open(")) {
+            is_direct_fileio_open_initializer(s.b, &open_args)) {
           flow.types[s.a] = "FileIO";
           flow.local_owners.insert(s.a);
           flow.state[s.a] = 1;
           string receiver, method;
           vector<string> args;
-          if (parse_member_call(initializer, receiver, method, args) &&
-              args.size() == 2) {
-            flow.mode[s.a] = trim(args[1]);
+          if (open_args.size() == 2) {
+            flow.mode[s.a] = trim(open_args[1]);
             if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
             else flow.may_be_read_only.erase(s.a);
           }

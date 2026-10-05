@@ -305,9 +305,16 @@ check('anonymous_fileio', 'fn consume(file: FileIO):\n  file.close()\n\n' +
     main('consume(FileIO.open("input", ro))'), 'FILEIO')
 check('parenthesized_fileio_owner', main('file = (FileIO.open("input", ro))\n'
     'data = file.read(0, 4)\nfile.close()'))
+check('parenthesized_fileio_owner_static_write_bound', main(
+    'payload = "abcd"\nfile = (FileIO.open("output", create))\n'
+    'file.write(0, payload)\nfile.close()'))
+check('parenthesized_fileio_owner_chunk_bound', main(
+    'file = ((FileIO.open("input", ro)))\n'
+    'for chunk in file.chunks(4):\n  echo chunk.length()\n'
+    'file.close()'))
 check('anonymous_fileio_in_echo', 'fn wrapper(file: FileIO) -> Int:\n'
     '  file.close()\n  return 1\n\n' +
-    main('echo wrapper(FileIO.open("input", ro))'), 'FILEIO_PINNED_OWNERSHIP')
+    main('echo wrapper((FileIO.open("input", ro)))'), 'FILEIO_PINNED_OWNERSHIP')
 check('nested_helper_close', 'fn finish(file: FileIO):\n  file.close()\n\n'
     'fn finish2(file: FileIO):\n  finish(file)\n\n' +
     main('file = FileIO.open("input", ro)\nfinish2(file)'))
@@ -408,6 +415,14 @@ check('echo_mutation_through_local_alias_loses_bound', request_type +
     main('file = FileIO.open("input", ro)\n'
          'requests = [Request(offset: 0, size: 4)]\n'
          'alias = requests\necho 1, grow(alias)\n'
+    'batch = file.read(requests)\nfile.close()'),
+    'FILEIO_UNBOUNDED_REQUEST')
+check('echo_mutation_through_transitive_local_alias_loses_bound', request_type +
+    'fn grow(requests: Vector[Request]):\n'
+    '  requests.push(Request(offset: 4, size: 4))\n\n' +
+    main('file = FileIO.open("input", ro)\n'
+         'requests = [Request(offset: 0, size: 4)]\n'
+         'a = requests\nb = a\necho 1, grow(b)\n'
          'batch = file.read(requests)\nfile.close()'),
     'FILEIO_UNBOUNDED_REQUEST')
 
@@ -473,7 +488,13 @@ for name, code in (('anonymous_fileio', 'FILEIO_PINNED_OWNERSHIP'),
                    ('fileio_duplicate_write_read_alias_rejected',
                     'OWNERSHIP_CONFLICTING_ACCESS'),
                    ('byte_vector_write_rejected', 'FILEIO_INVALID_PAYLOAD'),
-                   ('range_write_rejected', 'FILEIO_INVALID_PAYLOAD')):
+                   ('range_write_rejected', 'FILEIO_INVALID_PAYLOAD'),
+                   ('echo_second_arg_mutates_batch',
+                    'FILEIO_UNBOUNDED_REQUEST'),
+                   ('echo_mutation_through_local_alias_loses_bound',
+                    'FILEIO_UNBOUNDED_REQUEST'),
+                   ('echo_mutation_through_transitive_local_alias_loses_bound',
+                    'FILEIO_UNBOUNDED_REQUEST')):
     source = str(out / (name + '.moss'))
     native = subprocess.run([str(compiler), '--check', source],
                             text=True, capture_output=True)

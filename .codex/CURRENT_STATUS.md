@@ -16,16 +16,19 @@ runtime-computed Int offsets are legal. The shared `static_bounds.inc` query
 proves overflow-checked integer constant expressions and unchanged local
 single-assignment sources. FileIO uses those facts for read/chunk sizes,
 bounded String write payloads, batch cardinality, entry sizes, and
-overflow-checked total bytes. `FileIO.write` accepts bounded String payloads;
-`Vector[Int]` and `Range` payloads are rejected because the Phase 20 source
-contract names no byte-vector type and the reserved runtime ABI does not promise
-that `Vec<i64>` or Range implements the byte-slice interface. A computed local Vector of records
+overflow-checked total bytes. `FileIO.write` currently accepts bounded String
+payloads as an implementation restriction while the source representation
+remains unresolved; the canonical Phase 20 design does not settle String-only
+writes. `Vector[Int]` is rejected because it is not a byte-vector
+representation, and Range-to-write is not currently supported. No byte type or
+new syntax is introduced. A computed local Vector of records
 with exactly `offset: Int` and `size: Int` is accepted when its count and sizes
 are proven. The documented inline `(offset, size)` batch remains accepted.
 Collections passed to a potentially mutating call lose their construction
 bound, including mutation in later comma-separated expression components and
-calls through simple local aliases. Parenthesized direct FileIO.open
-initializers establish the same pinned owner as unparenthesized initializers.
+calls through transitive local aliases. Parenthesized direct FileIO.open
+initializers establish the same pinned owner as unparenthesized initializers in
+both lifecycle and static-bound analysis, including bounded String writes.
 General startup-configuration and clamp/range facts are not retained in
 the checker at this phase, so those sources are conservatively rejected until
 general compiler analysis supplies a proof. Ordinary tuple literals also lack
@@ -41,20 +44,27 @@ finds nested helper, `echo`, and chained-view operations while excluding the
 FileIO field's own protection. Native and Fast Debug reject the same focused
 ownership, bound, lifecycle, and collection cases.
 
-Validation at checkpoint `9e73f09` passed the expanded Agent A focused suite,
-`make check`, `make examples`, and `git diff HEAD --check`. This corrective
-pass adds focused cases for comma-hidden and aliased mutation, duplicate FileIO
-borrows, write payload types, and parenthesized/anonymous opens; final results
-will be recorded after the full validation sequence. The pending
+Final validation at `ee9ea0b` plus the parenthesized static-bound correction
+passed: `./moss agent bootstrap --json` reported `moss-0.1`, the focused
+`check_phase20_fileio_semantics.py` suite passed, `make check` passed, `make
+examples` passed, `git diff --check` passed, and `sh -n tests/run.sh` passed.
+The focused suite also verified native/Fast Debug diagnostic parity for byte-
+vector and Range writes, anonymous opens in `echo`, hidden comma-expression
+mutation, simple and transitive local-alias mutation, and conflicting duplicate
+FileIO CLOSE/READ and WRITE/READ aliases. The positive duplicate READ/READ
+case remains accepted. The pending
 `tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss` remains
 for Agent D to enforce the same scoped-capability predicate at executor
 boundaries. The pending
-`tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss` covers
-native read, String write, batch read, indexing, dynamic offsets, and the
-SoloGuard/compensation integration contract. Agent B supplies native FileIO
+`tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss` is the
+A+B native FileIO smoke fixture for create, String write, read, batch read,
+indexing, dynamic offsets, sync, and explicit close; native integration remains
+pending. It does not prove compensation. A+B+C compensation still requires a
+separate deterministic integration test. Agent B supplies native FileIO
 runtime/lowering; Agents C/D supply Executor compensation/scheduling and invoke
 integration. No B/C/D implementation was pulled into this branch, and native
-FileIO execution remains unvalidated until Agent B integration.
+FileIO execution remains unvalidated until Agent B integration. The
+`executor.invoke` boundary remains Agent D responsibility.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

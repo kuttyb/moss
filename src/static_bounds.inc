@@ -10,6 +10,17 @@
     ~StaticBindingScope() { bindings = std::move(saved); }
   };
 
+  bool is_direct_fileio_open_initializer(
+      const string& expression, vector<string>* open_args = nullptr) const {
+    string initializer = strip_redundant_outer_parentheses(trim(expression));
+    string receiver, method;
+    vector<string> args;
+    bool direct = parse_member_call(initializer, receiver, method, args) &&
+        receiver == "FileIO" && method == "open" && args.size() == 2;
+    if (direct && open_args) *open_args = std::move(args);
+    return direct;
+  }
+
   void static_mark_possible_mutation(string expression,
                                      const std::set<string>& fileio_owners,
                                      std::set<string>& mutated) const {
@@ -97,7 +108,7 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          starts_with(trim(statement.b), "FileIO.open("))
+          is_direct_fileio_open_initializer(statement.b))
         fileio_owners.insert(statement.a);
     for (const auto& statement : statements) {
       if (statement.kind == Stmt::Kind::Let ||
