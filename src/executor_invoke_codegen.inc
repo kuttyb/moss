@@ -163,14 +163,13 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
 // that Root and receives its reply. Nested messages (inside handlers,
 // functions, methods) keep the direct synchronous lowering.
 //
-// Phase 20 integration note: root ingress only becomes observable when the
-// program can have an ACTIVE Executor (there is no other Root source in a
-// standalone program, so main's direct call already *is* serialized inline
-// admission). Codegen therefore emits runtime_invoke for programs that
-// construct an Executor, and keeps the direct call otherwise so
-// Executor-free programs do not require Agent C's runtime to link. This is
-// one predicate (root_ingress_uses_runtime) to flip once Agent C's runtime
-// is linked into every program.
+// The normative contract requires runtime_invoke for every main-root message,
+// including INLINE programs with no source Executor. This D-only checkout
+// does not emit or link Agent C's runtime for executor-free programs, and
+// package builds have no test-shim link path. Keep the existing conditional
+// solely as an explicit integration blocker until C's runtime is wired into
+// every generated root program; do not treat the direct INLINE call as the
+// final Phase 20 semantics.
 bool root_ingress_uses_runtime() const {
   return semantic_program_ && !semantic_program_->executor_start_plans.empty();
 }

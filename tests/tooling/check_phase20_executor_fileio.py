@@ -299,6 +299,92 @@ events = [line for line in native.stderr.splitlines() if line.startswith('moss-e
 assert [e.split()[1] for e in events] == ['runtime_invoke', 'start', 'enqueue', 'runtime_invoke',
                                          'join', 'runtime_invoke', 'runtime_invoke'], events
 
+# Root-ingress marking must cover every statement nested in main's flattened
+# control-flow tree. A message in an if body, match arm, or loop body still
+# starts a new Root; it must not fall back to an ordinary synchronous call just
+# because its source statement is not a direct child of main.
+nested_root_source = write_source('phase20_root_message_nested_control', '''enum MainChoice:
+  Run
+  Skip
+
+domain Counter:
+  total = 0
+
+  fn Add(amount: Int):
+    total = total + amount
+
+  fn Read() -> Int:
+    reply total
+
+fn main():
+  counter = Counter()
+  executor = Executor().threads(2).start()
+  if true:
+    message counter.Add(1)
+  match MainChoice.Run:
+    case Run:
+      message counter.Add(2)
+    case Skip:
+      pass
+  for item in range(0, 2):
+    message counter.Add(item + 3)
+  executor.join()
+  echo message counter.Read()
+''')
+rust, binary = native_build('phase20_root_message_nested_control', nested_root_source,
+                            shims=[EXECUTOR_SHIM])
+nested_text = code_only(rust.read_text())
+assert nested_text.count('runtime_invoke(') == 4, nested_text
+nested_native = run_binary(binary)
+# This case deliberately includes `for`, which remains outside Fast Debug's
+# interpreter surface; native output and generated ingress calls are the proof.
+assert nested_native.stdout == '10\n', nested_native.stdout
+nested_events = [line for line in nested_native.stderr.splitlines()
+                 if line.startswith('moss-executor ')]
+assert [event.split()[1] for event in nested_events] == [
+    'start', 'runtime_invoke', 'runtime_invoke', 'runtime_invoke', 'runtime_invoke',
+    'join', 'runtime_invoke'], nested_events
+
+# Exported domains use the generated message bridge even when the caller is
+# main-root ingress; the bridge call itself is moved into runtime_invoke.
+exported_root_source = write_source('phase20_root_message_exported_domain', '''export domain Boundary:
+  fn Read() -> Int:
+    reply 23
+
+fn main():
+  boundary = Boundary()
+  executor = Executor().threads(2).start()
+  value = message boundary.Read()
+  executor.join()
+  echo value
+''')
+exported_rust, exported_binary = native_build(
+    'phase20_root_message_exported_domain', exported_root_source,
+    shims=[EXECUTOR_SHIM])
+exported_text = code_only(exported_rust.read_text())
+assert 'runtime_invoke(move ||' in exported_text
+assert '.__moss_message_Read()' in exported_text
+assert run_binary(exported_binary).stdout == '23\n'
+
+# Executor-free main-root messages must use runtime_invoke by the Phase 20
+# contract. This D-only checkout still lacks Agent C's normal root-runtime
+# emission/linking path; retain a regression for the temporary direct-call
+# exception and its clear integration blocker. The C integration worktree
+# validates the runtime_invoke form against C's real runtime.
+executor_free_root_source = write_source('phase20_root_message_executor_free', '''domain Counter:
+  fn Read() -> Int:
+    reply 17
+
+fn main():
+  counter = Counter()
+  echo message counter.Read()
+''')
+free_rust, free_binary = native_build('phase20_root_message_executor_free',
+                                      executor_free_root_source)
+free_text = code_only(free_rust.read_text())
+assert 'runtime_invoke(' not in free_text and '.Read_shared()' in free_text, free_text
+assert run_binary(free_binary).stdout == '17\n'
+
 # ---------------------------------------------------------------------------
 # FileIO: Agent-B-aligned statement lowering and ordinary helper borrowing.
 # ---------------------------------------------------------------------------
@@ -480,7 +566,8 @@ fn main():
 ''' % (handler_data, handler_data))
 ir = functional_ir(handler_source)
 assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not pure: observable domain READ' in ir, ir
-rust, binary = native_build('phase20_chunk_handler', handler_source, shims=[BRANCH_SHIM, FILEIO_SHIM])
+rust, binary = native_build('phase20_chunk_handler', handler_source,
+                            shims=[EXECUTOR_SHIM, BRANCH_SHIM, FILEIO_SHIM])
 _, trace, program = split_trace(run_binary(binary).stdout)
 assert program == ['33', '44'], program
 assert trace == ['moss-branch publish'] * 4 + ['moss-branch join'], trace
