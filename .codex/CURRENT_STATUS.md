@@ -2,29 +2,47 @@
 
 ## Phase 20 Agent A — FileIO semantics
 
-Corrective pass started from checkpoint `066bd61b2ad531096db154116bf66948f8202195`.
-This pass adds finite-bound checks for literal read/chunk/batch sizes and known
-literal write payloads, batch pair/type validation, structural scoped-type
-recognition for collections, early handler parameter/reply boundary rejection,
-and additional main lifecycle and RangeBatch flow coverage. The existing
-`check_fileio_lifecycle(...)` hook is present for `proc main()` and regression
-cases were added for its fallthrough and branch joins.
+The corrective pass from reviewed checkpoint
+`4789563c6ffe6a6612be9444a08a1d1b7afdef23` closes the helper-lifecycle
+failure. The lifecycle walk now follows ordinary synchronous helpers through
+normal returns, final result expressions, nested calls, inferred FileIO
+parameter specializations, and branch joins. It carries open/closed state and
+mode back to the caller; uncertain joined state is rejected when used. `main`
+and ordinary functions retain the explicit-close obligation. Anonymous
+`FileIO.open(...)` without a pinned local owner is rejected.
 
-The corrective pass is incomplete. The focused suite and `make check` currently
-fail on the new helper lifecycle regression: `finish(file)` is incorrectly
-rejected with `FILEIO_MUST_CLOSE` even though `finish` synchronously calls
-`file.close()`. This is the minimal reproducer for the remaining helper-summary
-gap. Bounds are currently proven only for literals; startup configuration and
-compiler-proven clamps have not been connected to a static-bound fact source.
-`make examples` completed successfully and `git diff --check` passes. No
-corrective commit has been made.
+Offsets are checked as Int and statically negative offsets are rejected;
+runtime-computed Int offsets are legal. The shared `static_bounds.inc` query
+proves overflow-checked integer constant expressions and unchanged local
+single-assignment sources. FileIO uses those facts for read/chunk sizes, String
+literal and fixed byte-vector write payload bounds, batch cardinality, entry
+sizes, and overflow-checked total bytes. A computed local Vector of records
+with exactly `offset: Int` and `size: Int` is accepted when its count and sizes
+are proven. The documented inline `(offset, size)` batch remains accepted.
+Collections passed to a potentially mutating call lose their construction
+bound. General startup-configuration and clamp/range facts are not retained in
+the checker at this phase, so those sources are conservatively rejected until
+general compiler analysis supplies a proof. Ordinary tuple literals also lack
+a first-class Vector element type; a computed batch uses the existing named
+record representation. This is a source-representation limitation, not a new
+FileIO runtime contract.
 
-Focused regressions remain in `tests/tooling/check_phase20_fileio_semantics.py`.
-The unsupported `executor.invoke` integration fixture remains at
-`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss`; Agent D
-must reuse the scoped-capability predicate. Runtime execution still awaits
-Agent B, and Executor runtime/scheduling integration awaits Agents B/C. This
-entry is before the other status sections so their content remains unchanged.
+Structural scoped-type checks now follow nested wrappers and object fields
+without rejecting unrelated `RangeFinder` or `FileIOStats` names. Domain-field
+FileIO READ/WRITE attribution, including inferred and nested helper borrows,
+remains intact. `FILEIO_BLOCKING_WITH_SHARED_WRITE` remains a warning and now
+finds nested helper, `echo`, and chained-view operations while excluding the
+FileIO field's own protection. Native and Fast Debug reject the same focused
+ownership, bound, lifecycle, and collection cases.
+
+Validation: the expanded Agent A focused suite passed; `make check` passed;
+`make examples` passed; `git diff HEAD --check` passed. The pending
+`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss` remains
+for Agent D to enforce the same scoped-capability predicate at executor
+boundaries. Agent B supplies native FileIO runtime/lowering; Agents C/D supply
+Executor scheduling and invoke integration. No B/C/D implementation was
+pulled into this branch, and native FileIO execution remains an integration
+stage concern.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

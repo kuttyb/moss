@@ -1593,6 +1593,7 @@ class Checker {
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
 
+#include "static_bounds.inc"
 #include "fileio_semantics.inc"
 
   [[noreturn]] void err(int line, const string& msg) const {
@@ -2139,10 +2140,11 @@ class Checker {
       std::set<string> method_signatures;
       for (const auto& field : object.fields) {
         string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+        if (fileio_contains_scoped_type(field.type))
+          err(field.line,
+              "FileIO and scoped ranges cannot be stored in ordinary objects",
+              "FILEIO_COLLECTION_ESCAPE");
         if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
-        if (fileio_scoped_type(field.type))
-          err(field_source, field.line,
-              "FileIO and scoped ranges cannot be stored in ordinary objects");
         if (!field_names.insert(field.name).second)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
       }
@@ -2456,12 +2458,11 @@ class Checker {
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
       string f_source = f.source_file.empty() ? d.source_file : f.source_file;
-      if (!valid_type(f.type)) err(f_source, f.line, "unknown state type '" + f.type + "'");
-      if (canonical_type_name(f.type) == "Range" ||
-          canonical_type_name(f.type) == "RangeBatch" ||
-          canonical_type_name(f.type) == "seq[Range]")
+      if (canonical_type_name(f.type) != "FileIO" &&
+          fileio_contains_scoped_type(f.type))
         err(f.line, "borrowed Range views cannot be stored in domain state",
             "RANGE_STATE_ESCAPE");
+      if (!valid_type(f.type)) err(f_source, f.line, "unknown state type '" + f.type + "'");
       if (canonical_type_name(f.type) == "FileIO" && !f.init.empty())
         err(f.line, "domain-field FileIO begins closed and is opened in place",
             "FILEIO_PINNED_OWNERSHIP");
@@ -2866,6 +2867,8 @@ class Checker {
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
     infer_statement_expressions(f.body, inferred_env);
+    StaticBindingScope function_bounds(static_bound_bindings_);
+    static_bindings_for_body(f.body, entry_env);
     env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
       if (statement.kind != Stmt::Kind::Match) return false;
@@ -2877,7 +2880,8 @@ class Checker {
     ownership.types = std::move(entry_env);
     OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
         check_ownership(f.body, std::move(ownership), nullptr, nullptr);
-    check_fileio_lifecycle(f.body, entry_env, nullptr, f.line);
+    check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
+                           f.result_expression);
     if (f.result_expression) {
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
@@ -8888,7 +8892,9 @@ class Checker {
       const Method* method = resolve_method(canonical_type_name(receiver->second),
                                             requirement.detail, argument_types,
                                             false, &failure);
-      if (!method) {
+      auto fileio_builtin = fileio_method_requirement_result(
+          receiver->second, requirement.detail, argument_types.size());
+      if (!method && !fileio_builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
         if (failure == MethodResolutionFailure::WrongArity)
@@ -8903,7 +8909,8 @@ class Checker {
               requirement.detail + "'");
         err(line, prefix + " missing required method '" + requirement.detail + "'");
       }
-      string result = method->return_type.value_or("unit");
+      string result = fileio_builtin.value_or(
+          method ? method->return_type.value_or("unit") : "unit");
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))
           err(line, "conflicting method result expectations in function '" +
@@ -8973,6 +8980,8 @@ class Checker {
     FunctionSpecialization* previous = checking_specialization_;
     checking_specialization_ = &function.specializations.back();
     infer_statement_expressions(function.body, specialized_env);
+    StaticBindingScope specialization_bounds(static_bound_bindings_);
+    static_bindings_for_body(function.body, specialized_env);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
@@ -9963,6 +9972,8 @@ class Checker {
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
                       const Domain* current, const Handler* current_handler,
                       const Function* current_function = nullptr) {
+    StaticBindingScope bound_scope(static_bound_bindings_);
+    static_bindings_for_body(statements, env);
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
@@ -9993,6 +10004,7 @@ class Checker {
           if (contains_domain_handle(current_env.at(binding)))
             err(statement.line, "domain handle '" + binding +
                 "' cannot be used as ordinary writable storage");
+        FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env);
         if (statement.kind == Stmt::Kind::Assign &&
             simple_identifier(statement.a) && !current_env.count(statement.a)) {
