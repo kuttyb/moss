@@ -14,13 +14,19 @@ and ordinary functions retain the explicit-close obligation. Anonymous
 Offsets are checked as Int and statically negative offsets are rejected;
 runtime-computed Int offsets are legal. The shared `static_bounds.inc` query
 proves overflow-checked integer constant expressions and unchanged local
-single-assignment sources. FileIO uses those facts for read/chunk sizes, String
-literal and fixed byte-vector write payload bounds, batch cardinality, entry
-sizes, and overflow-checked total bytes. A computed local Vector of records
+single-assignment sources. FileIO uses those facts for read/chunk sizes,
+bounded String write payloads, batch cardinality, entry sizes, and
+overflow-checked total bytes. `FileIO.write` accepts bounded String payloads;
+`Vector[Int]` and `Range` payloads are rejected because the Phase 20 source
+contract names no byte-vector type and the reserved runtime ABI does not promise
+that `Vec<i64>` or Range implements the byte-slice interface. A computed local Vector of records
 with exactly `offset: Int` and `size: Int` is accepted when its count and sizes
 are proven. The documented inline `(offset, size)` batch remains accepted.
 Collections passed to a potentially mutating call lose their construction
-bound. General startup-configuration and clamp/range facts are not retained in
+bound, including mutation in later comma-separated expression components and
+calls through simple local aliases. Parenthesized direct FileIO.open
+initializers establish the same pinned owner as unparenthesized initializers.
+General startup-configuration and clamp/range facts are not retained in
 the checker at this phase, so those sources are conservatively rejected until
 general compiler analysis supplies a proof. Ordinary tuple literals also lack
 a first-class Vector element type; a computed batch uses the existing named
@@ -35,14 +41,20 @@ finds nested helper, `echo`, and chained-view operations while excluding the
 FileIO field's own protection. Native and Fast Debug reject the same focused
 ownership, bound, lifecycle, and collection cases.
 
-Validation: the expanded Agent A focused suite passed; `make check` passed;
-`make examples` passed; `git diff HEAD --check` passed. The pending
+Validation at checkpoint `9e73f09` passed the expanded Agent A focused suite,
+`make check`, `make examples`, and `git diff HEAD --check`. This corrective
+pass adds focused cases for comma-hidden and aliased mutation, duplicate FileIO
+borrows, write payload types, and parenthesized/anonymous opens; final results
+will be recorded after the full validation sequence. The pending
 `tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss` remains
 for Agent D to enforce the same scoped-capability predicate at executor
-boundaries. Agent B supplies native FileIO runtime/lowering; Agents C/D supply
-Executor scheduling and invoke integration. No B/C/D implementation was
-pulled into this branch, and native FileIO execution remains an integration
-stage concern.
+boundaries. The pending
+`tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss` covers
+native read, String write, batch read, indexing, dynamic offsets, and the
+SoloGuard/compensation integration contract. Agent B supplies native FileIO
+runtime/lowering; Agents C/D supply Executor compensation/scheduling and invoke
+integration. No B/C/D implementation was pulled into this branch, and native
+FileIO execution remains unvalidated until Agent B integration.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

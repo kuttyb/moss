@@ -36,6 +36,12 @@ read, _ = check('root_read', main('file = FileIO.open("input", ro)\n'
     'data = file.read(0, 4)\necho data.length()\nfile.close()'))
 check('root_write', main('file = FileIO.open("output", create)\n'
     'file.write(0, "ok")\nfile.sync()\nfile.sync(dataonly)\nfile.close()'))
+check('byte_vector_write_rejected', main('file = FileIO.open("output", create)\n'
+    'file.write(0, [65, 66, 67, 68])\nfile.close()'),
+    'FILEIO_INVALID_PAYLOAD')
+check('range_write_rejected', main('src = FileIO.open("input", ro)\n'
+    'dst = FileIO.open("output", create)\ndata = src.read(0, 4096)\n'
+    'dst.write(0, data)\nsrc.close()\ndst.close()'), 'FILEIO_INVALID_PAYLOAD')
 check('borrow', 'fn use(file: FileIO) -> Int:\n  data = file.read(0, 4)\n'
     '  return data.length()\n\n' + main('file = FileIO.open("input", rw)\n'
     'echo use(file)\nfile.close()'))
@@ -297,6 +303,11 @@ check('negative_dynamic_expression_offset', main('file = FileIO.open("input", ro
     'data = file.read(0 - 1, 4)\nfile.close()'), 'FILEIO_INVALID_BOUND')
 check('anonymous_fileio', 'fn consume(file: FileIO):\n  file.close()\n\n' +
     main('consume(FileIO.open("input", ro))'), 'FILEIO')
+check('parenthesized_fileio_owner', main('file = (FileIO.open("input", ro))\n'
+    'data = file.read(0, 4)\nfile.close()'))
+check('anonymous_fileio_in_echo', 'fn wrapper(file: FileIO) -> Int:\n'
+    '  file.close()\n  return 1\n\n' +
+    main('echo wrapper(FileIO.open("input", ro))'), 'FILEIO_PINNED_OWNERSHIP')
 check('nested_helper_close', 'fn finish(file: FileIO):\n  file.close()\n\n'
     'fn finish2(file: FileIO):\n  finish(file)\n\n' +
     main('file = FileIO.open("input", ro)\nfinish2(file)'))
@@ -375,8 +386,45 @@ check('mutated_batch_loses_bound', request_type +
     '  requests.push(Request(offset: 4, size: 4))\n\n' +
     main('file = FileIO.open("input", ro)\n'
          'requests = [Request(offset: 0, size: 4)]\n'
-         'ignored = add(requests)\nbatch = file.read(requests)\n'
+    'ignored = add(requests)\nbatch = file.read(requests)\n'
+    'file.close()'), 'FILEIO_UNBOUNDED_REQUEST')
+check('echo_second_arg_mutates_batch', request_type +
+    'fn grow(requests: Vector[Request], count: Int) -> Int:\n'
+    '  i = 0\n  while i < count:\n'
+    '    requests.push(Request(offset: i * 4, size: 4))\n'
+    '    i = i + 1\n  return 0\n\n' +
+    main('file = FileIO.open("input", ro)\n'
+         'requests = [Request(offset: 0, size: 4)]\n'
+         'echo 1, grow(requests, 2)\nbatch = file.read(requests)\n'
          'file.close()'), 'FILEIO_UNBOUNDED_REQUEST')
+check('echo_second_arg_nonmutating_preserves_bound', request_type +
+    'fn value() -> Int:\n  return 2\n\n' +
+    main('file = FileIO.open("input", ro)\n'
+         'requests = [Request(offset: 0, size: 4)]\n'
+         'echo 1, value()\nbatch = file.read(requests)\nfile.close()'))
+check('echo_mutation_through_local_alias_loses_bound', request_type +
+    'fn grow(requests: Vector[Request]):\n'
+    '  requests.push(Request(offset: 4, size: 4))\n\n' +
+    main('file = FileIO.open("input", ro)\n'
+         'requests = [Request(offset: 0, size: 4)]\n'
+         'alias = requests\necho 1, grow(alias)\n'
+         'batch = file.read(requests)\nfile.close()'),
+    'FILEIO_UNBOUNDED_REQUEST')
+
+check('fileio_duplicate_close_read_alias_rejected',
+    'fn finish(a: FileIO, b: FileIO):\n'
+    '  a.close()\n  data = b.read(0, 4)\n\n' +
+    main('file = FileIO.open("input", ro)\nfinish(file, file)'),
+    'OWNERSHIP_CONFLICTING_ACCESS')
+check('fileio_duplicate_write_read_alias_rejected',
+    'fn change(a: FileIO, b: FileIO):\n'
+    '  a.write(0, "x")\n  data = b.read(0, 4)\n\n' +
+    main('file = FileIO.open("input", rw)\nchange(file, file)\nfile.close()'),
+    'OWNERSHIP_CONFLICTING_ACCESS')
+check('fileio_duplicate_read_alias_allowed',
+    'fn read_both(a: FileIO, b: FileIO):\n'
+    '  left = a.read(0, 4)\n  right = b.read(4, 4)\n\n' +
+    main('file = FileIO.open("input", ro)\nread_both(file, file)\nfile.close()'))
 check('batch_total_overflow', main('file = FileIO.open("input", ro)\n'
     'batch = file.read([(0, 9223372036854775807), '
     '(0, 9223372036854775807), (0, 9223372036854775807)])\n'
@@ -414,10 +462,18 @@ assert native.returncode == fast_debug.returncode == 1
 assert '[FILEIO_PINNED_OWNERSHIP]' in native.stderr
 assert '[FILEIO_PINNED_OWNERSHIP]' in fast_debug.stderr
 for name, code in (('anonymous_fileio', 'FILEIO_PINNED_OWNERSHIP'),
+                   ('anonymous_fileio_in_echo', 'FILEIO_PINNED_OWNERSHIP'),
                    ('unbounded_read', 'FILEIO_UNBOUNDED_REQUEST'),
+                   ('echo_second_arg_mutates_batch', 'FILEIO_UNBOUNDED_REQUEST'),
                    ('helper_close_use_rejected', 'FILEIO_CLOSED_OPERATION'),
                    ('batch_index_collection', 'FILEIO_COLLECTION_ESCAPE'),
-                   ('conditional_domain_open', 'FILEIO_UNKNOWN_STATE')):
+                   ('conditional_domain_open', 'FILEIO_UNKNOWN_STATE'),
+                   ('fileio_duplicate_close_read_alias_rejected',
+                    'OWNERSHIP_CONFLICTING_ACCESS'),
+                   ('fileio_duplicate_write_read_alias_rejected',
+                    'OWNERSHIP_CONFLICTING_ACCESS'),
+                   ('byte_vector_write_rejected', 'FILEIO_INVALID_PAYLOAD'),
+                   ('range_write_rejected', 'FILEIO_INVALID_PAYLOAD')):
     source = str(out / (name + '.moss'))
     native = subprocess.run([str(compiler), '--check', source],
                             text=True, capture_output=True)

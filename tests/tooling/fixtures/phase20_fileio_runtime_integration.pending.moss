@@ -1,0 +1,17 @@
+# Pending Agent B runtime integration fixture.
+# Native validation must compile and execute this source against the real
+# FileIO ABI, including the SoloGuard boundary around each blocking operation.
+# Agent C integration must additionally prove SoloGuard compensation when a
+# worker blocks in FileIO under the configured Executor.
+
+fn exercise(file: FileIO, offset: Int):
+  data = file.read(offset, 4)
+  file.write(offset, "data")
+  batch = file.read([(offset, 4), (offset + 4, 4)])
+  first = batch[0]
+  echo data.length(), first.length()
+
+fn main():
+  file = FileIO.open("phase20-fileio-integration.tmp", rw)
+  exercise(file, 0)
+  file.close()

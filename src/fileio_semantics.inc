@@ -5,7 +5,9 @@
     string& target;
     string saved;
     FileIOOwnerScope(string& target, string value)
-        : target(target), saved(target) { target = std::move(value); }
+        : target(target), saved(target) {
+      target = strip_redundant_outer_parentheses(trim(value));
+    }
     ~FileIOOwnerScope() { target = std::move(saved); }
   };
 
@@ -192,6 +194,10 @@
       auto offset = inferred_expr_type(args[0], env);
       if (!offset || canonical_type_name(*offset) != "int")
         fail("FileIO.write offset must be Int");
+      auto payload = inferred_expr_type(args[1], env);
+      if (!payload || canonical_type_name(*payload) != "string")
+        err(line, "FileIO.write data must be a bounded String byte payload",
+            "FILEIO_INVALID_PAYLOAD");
     }
     auto check_offset = [&](const string& expression) {
       auto value = static_exact_integer(expression);
@@ -580,14 +586,15 @@
                  flow.range_origin.count(trim(s.b)))
           flow.range_origin[s.a] = flow.range_origin[trim(s.b)];
         else flow.range_origin.erase(s.a);
+        string initializer = strip_redundant_outer_parentheses(trim(s.b));
         if (type && canonical_type_name(*type) == "FileIO" &&
-            starts_with(trim(s.b), "FileIO.open(")) {
+            starts_with(initializer, "FileIO.open(")) {
           flow.types[s.a] = "FileIO";
           flow.local_owners.insert(s.a);
           flow.state[s.a] = 1;
           string receiver, method;
           vector<string> args;
-          if (parse_member_call(trim(s.b), receiver, method, args) &&
+          if (parse_member_call(initializer, receiver, method, args) &&
               args.size() == 2) {
             flow.mode[s.a] = trim(args[1]);
             if (flow.mode[s.a] == "ro") flow.may_be_read_only.insert(s.a);
