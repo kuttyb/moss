@@ -333,15 +333,11 @@ Final proof-level hardening and concurrency safety completed for Phase 20 Agent 
 
 Branch `phase-20-d-concurrency-lowering` recovered at
 `5d7a90b3302df8a136f35d2c401a3595e5dd0342` (`Checkpoint`) after preserving the
-pre-existing `tests/run.sh` edit in the separate Agent C checkout. This
-checkpoint was treated as unvalidated; recovery validation and corrective
-regressions are recorded below. D's core plans and lowering are implemented,
-but executor-free top-level `message` ingress remains blocked on normal C
-runtime emission/linking. Other external integration seams are owned by A/B.
-It was developed without merging their
-branches (`phase-20-a-fileio-semantics`, `phase-20-b-fileio-runtime`,
-`phase-20-c-executor-runtime`) and targets their physical ABIs. Agent D
-defines no Executor, Root, Branch, or FileIO runtime in `src/`.
+pre-existing `tests/run.sh` edit in the separate Agent C checkout. The
+checkpoint was treated as unvalidated, then imported after the earlier D merge
+and reconciled with completed Agent A, B, and C runtime work on
+`phase-20-integration`. Final integration validation is recorded below. Agent
+D defines no Executor, Root, Branch, or FileIO runtime in `src/`.
 
 ### Complete compiler functionality
 
@@ -380,20 +376,12 @@ defines no Executor, Root, Branch, or FileIO runtime in `src/`.
   - each argument is evaluated once into an owned snapshot;
   - the call waits for completion and returns the reply.
   - Exported domains use their `__moss_message_<H>` bridge.
-- This applies before `start()` (INLINE), while ACTIVE, and after `join()`
-  when the runtime path is enabled.
+- This applies before `start()` (INLINE), while ACTIVE, after `join()`, and in
+  programs that never construct an Executor.
 - A nested message inside a Root stays a direct synchronous
   `<Handler>_shared` call.
-- **Open C-linkage blocker:** the normative rule requires all messages
-  initiated in `main` to use `runtime_invoke`, including executor-free INLINE
-  programs. `root_ingress_uses_runtime()` currently enables it only when an
-  Executor is constructed because the D checkpoint does not emit or link
-  Agent C's runtime for ordinary generated programs; Margo package builds have
-  no test-shim link path. Executor-free messages therefore retain a direct
-  synchronous call, which is explicitly provisional and not the Phase 20
-  contract. A temporary D build with this predicate forced on compiled and
-  ran against C's actual emitted runtime, so the remaining work is normal
-  compiler/runtime emission integration rather than a Rust signature change.
+- The checked main-body context marks messages through nested `if`, `match`,
+  and loop blocks; generated main ingress uses `runtime_invoke` unconditionally.
 - Fast Debug runs root messages synchronously through the ordinary handler
   machinery (a synchronous Root under the sequential schedule). There is no
   scheduler.
@@ -429,38 +417,27 @@ defines no Executor, Root, Branch, or FileIO runtime in `src/`.
   lowers sequentially ("... FileIO effect unavailable for compiled
   provider").
 
-**Provisional FileIO recognition.** D's recognition is not authoritative:
-the FileIO typing, the `fileio`/`fileio_unknown` effect facts, and the
-capability predicate `phase20_is_nontransferable_capability`. D uses it only
-to choose a lowering. It must not short-circuit or replace Agent A's
-checker. It is isolated behind that one adapter and the effect fields, to be
-fed by A's facts at integration.
+**FileIO semantic ownership.** Agent A remains authoritative for FileIO
+legality, capability boundaries, static size/bounds, and lifecycle. D's
+`fileio` / `fileio_unknown` facts are scheduling inputs and do not bypass A's
+checker. Source-free provider callables with no FileIO metadata remain
+`fileio_unknown` and lower sequentially.
 
-### External integration seams (not Agent D work)
+### Integrated runtime and ownership seams
 
-- **Agent B:** provide `moss_fileio_branch_read_borrow(&FileIO) ->
-  MossFileIOReadBorrow` (owned, read-only, `Send + 'static`, with
-  `read(i64, i64) -> Range`). `tests/tooling/fixtures/
-  phase20_read_borrow_contract.rs` compile-checks that contract against the
-  shim.
-- **Agent C:** current branch `phase-20-c-executor-runtime` at `9a1dafb`
-  supplies `branch_scope_new_current()`, `runtime_invoke`, the linear
-  `MossExecutorHandle`, `enqueue_root`, `join`, Root TLS, and the D-facing
-  `moss_root_*` adapters. D-generated Rust compiled and ran against the
-  actual C-emitted runtime in a separate temporary worktree. The D branch
-  still needs the ordinary generated-root emission/link path before
-  executor-free ingress can unconditionally use `runtime_invoke`.
-- **Agent A:** capability boundary and FileIO effect facts replace D's
-  provisional adapter. `fileio` is not serialized into `.mossi` or effect
-  JSON.
-- FileIO execution in Fast Debug awaits A/B and raises a clear error. Full
-  native/Fast Debug Phase 20 parity therefore depends on that integration.
+- Agent B provides the production owned, read-only, `Send + 'static`
+  `MossFileIOReadBorrow` token used by Branch reads.
+- Agent C's final runtime is emitted in executable roots and supplies
+  `runtime_invoke`, linear Executor handles, Root TLS,
+  `branch_scope_new_current()`, Branch publish/join, and D-facing root adapters.
+- Fast Debug reports FileIO execution as unsupported; native Phase 20
+  FileIO/Branch execution is exercised against production runtimes.
 
 ### Validation
 
 `tests/tooling/check_phase20_executor_fileio.py` (run by `tests/run.sh`)
-links generated code with TEST-ONLY shims in `tests/tooling/fixtures/`. The
-shim handle is linear, with no `Clone`. Coverage:
+compiles generated code against the production A/B/C runtimes; the observer
+fixture only records runtime events. Coverage:
 
 - the negative legality matrix;
 - invoke parity between native and Fast Debug;
@@ -480,17 +457,17 @@ shim handle is linear, with no `Clone`. Coverage:
 - a source-free provider regression: a provider combine lowers sequentially
   while a local combine stays eligible, both producing correct output.
 
-### Crash recovery validation (after `5d7a90b`)
+### Integration validation
 
-The following were rerun on the recovered D worktree after the final edits:
+The following were rerun on the integrated branch after the final edits:
 
 - `python3 tests/tooling/check_phase20_executor_fileio.py ./moss build/tests` —
-  passed, including new nested-control-flow and exported-domain root-ingress
-  regressions. The executor-free test preserves the explicit C-linkage
-  blocker above.
-- `sh tests/run.sh ./moss build/tests` — passed. (`tests/run.sh` is not
-  executable in this checkout, so it was invoked through `sh`.)
-- `make check` — passed.
+  passed against production A/B/C runtime code, including nested-control-flow,
+  executor-free, exported-domain, Branch, and source-free-provider cases.
+- `python3 tests/tooling/check_phase20_fileio_runtime.py ./moss build/tests/phase20_fileio` — passed.
+- `python3 tests/tooling/check_phase20c_executor.py ./moss` — 51/51 passed.
+- `sh tests/run.sh ./moss build/tests` — passed.
+- `make check` — passed, including the integrated Agent C suite.
 - `make examples` — passed.
 - `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic src/moss.cpp -o
   tmp/moss-strict` — passed.
@@ -498,24 +475,16 @@ The following were rerun on the recovered D worktree after the final edits:
 
 The bootstrap contract reported `language_version: moss-0.1`.
 
-### Temporary integration against current Agent C
+### Production integration against final Agent C
 
-Without merging C into D, a temporary C worktree at `9a1dafb` emitted the real
-executor runtime. Representative D-generated programs were compiled with that
-runtime and run successfully: Executor configuration and multiple invokes;
-main messages before start, while ACTIVE, and after join; value and one-way
-messages; an argument with a visible exactly-once side effect; nested handler
-messaging; nested `if`/`match`/`for` messages; and the exported-domain message
-bridge. For executor-free main ingress, a temporary D build forced the
-`runtime_invoke` path and passed against the C runtime; the checked-in D source
-retains the conditional pending normal C runtime emission.
-
-An eligible K=4 chunk Branch pipeline also compiled and ran using C's actual
-Branch runtime plus only the test FileIO shim. The owned read-borrow token
-remains supplied by the D test fixture because Agent B has not provided
-`MossFileIOReadBorrow`. Fast Debug's existing unsupported `for` iteration
-means the nested loop regression validates generated native calls and runtime
-output, not interpreter parity.
+Representative generated programs compile and run against the integrated C
+runtime: Executor configuration and multiple invokes; main messages before
+start, while ACTIVE, after join, and without an Executor; value and one-way
+messages; exactly-once argument evaluation; nested handler messaging; nested
+`if`/`match`/loop messages; exported-domain bridges; and eligible K=4 Branch
+publication/join using Agent B's production read-borrow token. Source-free
+provider FileIO uncertainty selects sequential lowering. No A/B/C integration
+blocker remains for D's compiler work.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

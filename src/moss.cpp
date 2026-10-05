@@ -2645,7 +2645,8 @@ class Checker {
     current_source_file_ = m.source_file;
     SourceFileScope semantic_context(current_semantic_context_, "main");
     std::unordered_map<string,string> env;
-    env = check_stmts(m.body, std::move(env), nullptr, nullptr);
+    env = check_stmts(m.body, std::move(env), nullptr, nullptr,
+                      nullptr, true);
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
@@ -7061,6 +7062,7 @@ class Checker {
         left.message == right.message &&
         left.external_io == right.external_io &&
         left.fileio == right.fileio &&
+        left.fileio_unknown == right.fileio_unknown &&
         left.may_fail == right.may_fail &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
@@ -7604,6 +7606,11 @@ class Checker {
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
               *function.result_expression, env));
+        // Source-free provider interfaces do not publish a FileIO effect bit,
+        // so absence of FileIO cannot be proven for imported callables.
+        for (const auto& module : p_.external_modules)
+          if (starts_with(function.name, module + "__"))
+            inferred.fileio_unknown = true;
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
@@ -10171,7 +10178,8 @@ class Checker {
 
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
                       const Domain* current, const Handler* current_handler,
-                      const Function* current_function = nullptr) {
+                      const Function* current_function = nullptr,
+                      bool main_body = false) {
     StaticBindingScope bound_scope(static_bound_bindings_);
     static_bindings_for_body(statements, env);
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
@@ -10180,8 +10188,7 @@ class Checker {
       // The type-environment walker visits nested statements with this same
       // visitor, so every message under main (including branch and loop
       // bodies) receives the checked Root-ingress fact.
-      if (current == nullptr && current_function == nullptr && current_object_ == nullptr &&
-          p_.main && &statements == &p_.main->body)
+      if (main_body && current == nullptr && current_function == nullptr)
         statement.message_root_ingress = true;
       if (check_executor_or_fileio_statement(statement, current_env, current,
                                              current_function, &statements))
@@ -12046,9 +12053,15 @@ class Generator {
     if (!p_.explicit_module || p_.main) {
       o << fileio_root_runtime_rust();
     }
-    // Root vs. provider must agree with fileio_root_runtime_rust() emission:
-    // the root executor runtime installs its Solo hooks into moss_root_runtime.
-    o << executor_runtime_rust(p_.explicit_module && !p_.main);
+    // Executor runtime ownership follows C's executable/provider role. The
+    // Agent B FileIO root runtime remains emitted only in the process root.
+    const ExecutorRuntimeRole executor_role =
+        !p_.explicit_module || p_.main.has_value()
+            ? ExecutorRuntimeRole::ProcessRoot
+            : semantic_program_->main.has_value()
+                ? ExecutorRuntimeRole::Provider
+                : ExecutorRuntimeRole::SelectedByExecutableBuild;
+    o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
@@ -15171,6 +15184,9 @@ class Generator {
     backend_comment(o, 0, "main entry point; domain calls below retain their statically selected lowering");
     debug_symbol_attributes(o, 0, "moss__main");
     o << "fn main() {\n";
+    if (program_uses_fileio(p_))
+      o << "    moss_set_solo_hooks(executor_fileio_solo_enter_callback(), "
+           "executor_fileio_solo_leave_callback());\n";
     std::set<string> locals;
     std::unordered_map<string,string> types;
     // Domain construction is a structural composition prefix.  Emit that
@@ -21841,6 +21857,9 @@ static ObservableEffects interface_effects(const string& text) {
   effects.may_fail = flag("may_fail");
   effects.may_diverge = flag("may_diverge");
   effects.unresolved = flag("unresolved");
+  // The source-free .mossi format has no FileIO effect bit. Keep imported
+  // callables conservative until the provider interface can state one.
+  effects.fileio_unknown = true;
   return effects;
 }
 
@@ -23827,6 +23846,9 @@ static NativeArtifact compile_native_artifact(
     command.insert(command.end(), artifact.backend_toolchain.compile_flags.begin(),
                    artifact.backend_toolchain.compile_flags.end());
     command.push_back(artifact.rust.string());
+    // The executable crate owns the process runtime for main-less units.
+    command.push_back("--cfg");
+    command.push_back("moss_process_root");
     command.push_back("-o");
     command.push_back(artifact.executable.string());
     command.push_back("-L");

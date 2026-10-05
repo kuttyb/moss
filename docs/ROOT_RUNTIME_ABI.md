@@ -202,62 +202,130 @@ The process-wide inode registry is a private `FairRegistryLock`: an `AtomicU64` 
 - Status: this end-to-end compensation regression is an A+B+C integration dependency. It has not been run on the isolated Agent B branch. Agent B verifies the bridge only: provider FileIO reaches the executable-installed hooks across `.rlib` boundaries, with no FileIO or registry lock held during the callback.
 ## Physical signatures & Integration Seam (Agent C Runtime)
 
-### Process-Wide Ingress and Runtime
-```rust
-// Process runtime accessor (shared across .rlib and bin crates):
-pub fn moss_process_runtime() -> &'static MossProcessRuntime;
+### Crate roles
+`executor_runtime_rust(ExecutorRuntimeRole)` emits exactly one delimited
+runtime block per crate. Exactly one crate per executable owns the process
+runtime: the scheduler, the ingress state, Root/Branch identity counters, and
+the TLS execution context.
 
-// Cross-crate raw pointer symbol (exported by main root, imported by modules):
-#[no_mangle] pub extern "C" fn __moss_process_runtime_raw() -> *mut ();
+| Role | Crate | Emitted runtime |
+| --- | --- | --- |
+| `ProcessRoot` | implicit-module program, or the explicit module that declares `main` | process runtime; exports the Branch ABI |
+| `Provider` | any other module of a unit that has `main` | opaque `MossBranchScope` wrapper importing the Branch ABI |
+| `SelectedByExecutableBuild` | every module of a unit without `main` (library package, its tests/benches) | both, in `#[cfg(moss_process_root)]` / `#[cfg(not(moss_process_root))]` modules re-exported with `pub use` |
+
+A unit without `main` still links its root module as an executable (a stub
+or the test harness) while publishing the same crate source as a provider
+`.rlib`. The build passes `--cfg moss_process_root` only to the executable
+compile, so that executable owns the runtime and the published `.rlib`
+remains a wrapper that never duplicates the root's exported symbols.
+Providers never own a scheduler or allocate Root identities.
+
+```rust
+// Exported by the process-root crate, imported by provider crates:
+#[no_mangle] pub extern "C" fn __moss_branch_scope_new_current() -> *const ();
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_scope_clone(scope: *const ()) -> *const ();
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_scope_drop(scope: *const ());
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_publish_trampoline(
+    scope: *const (), data: *mut (),
+    invoke: unsafe extern "C" fn(*mut ()), discard: unsafe extern "C" fn(*mut ()));
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_join(scope: *const ());
+```
+`new_current` and `clone` return one owned count; `drop` and `join` consume
+one; `publish` borrows. `discard` releases a foreign closure that never ran.
+`join` also releases the scope's ready-queue entry, so a joined scope is
+never retained by the scheduler.
+
+### Execution context (runtime-owned TLS)
+```rust
+pub fn current_worker_id() -> Option<usize>; // None off Executor workers
+pub fn current_root_id() -> Option<u64>;     // set on every ingress path and for Branches
+pub fn next_root_id() -> u64;                // process root only
 ```
 
 ### Executor API
 ```rust
-pub struct MossExecutor { ... }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MossExecutorConfig {
+    pub threads: usize, pub max_threads: usize, pub queue_capacity: usize,
+    pub affinity: Option<Vec<usize>>, pub priority: Option<i32>,
+}
+impl MossExecutorConfig {
+    pub const DEFAULT_QUEUE_CAPACITY: usize; // 1024
+    // Omitted fields: threads = host parallelism; max_threads =
+    // max(threads, 4 * host parallelism); queue_capacity = default.
+    pub fn resolved(threads: Option<usize>, max_threads: Option<usize>,
+                    queue_capacity: Option<usize>, affinity: Option<Vec<usize>>,
+                    priority: Option<i32>) -> Self;
+}
+
+pub struct MossExecutor { ... } // builder
 impl MossExecutor {
     pub fn new() -> Self;
     pub fn threads(self, n: usize) -> Self;
     pub fn max_threads(self, n: usize) -> Self;
     pub fn queue_capacity(self, n: usize) -> Self;
-    pub fn affinity(self, cores: &[usize]) -> Self;
+    pub fn affinity(self, cores: Vec<usize>) -> Self;
     pub fn priority(self, level: i32) -> Self;
+    pub fn config(&self) -> MossExecutorConfig;
     pub fn start(self) -> MossExecutorHandle;
 }
 
-#[derive(Clone)]
-pub struct MossExecutorHandle { ... }
+pub struct MossExecutorHandle { ... } // linear: not Clone
 impl MossExecutorHandle {
     pub fn enqueue_root(&self, desc: MossRootDescriptor);
+    pub fn config(&self) -> &MossExecutorConfig;
     pub fn join(self);
 }
 ```
+`start()` validates the config (fails closed on zero fields or
+`max_threads < threads`) and is legal only from `main`, outside any Root;
+a second concurrent `start()` panics. `enqueue_root` and `join` panic from
+inside a running Root.
 
-### Branch Publish / Join ABI
+### Agent D seam
 ```rust
-pub fn branch_scope_new(root_id: u64) -> MossBranchScope;
+pub fn moss_root_start() -> MossExecutorHandle; // all defaults
+pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHandle;
+pub fn moss_root_submit(executor: &MossExecutorHandle, work: impl FnOnce() + Send + 'static);
+pub fn moss_root_submit_with_target(executor: &MossExecutorHandle,
+                                    target_identity: &'static str,
+                                    work: impl FnOnce() + Send + 'static);
+pub fn moss_root_join(executor: MossExecutorHandle);
+```
+
+### Branch Publish / Join API
+```rust
+pub fn branch_scope_new_current() -> MossBranchScope; // panics outside a Root
 pub fn branch_publish<F: FnOnce() + Send + 'static>(scope: &MossBranchScope, work: F);
 pub fn branch_join(scope: MossBranchScope);
 ```
+Scopes are one-shot: publish after join, or a second join, fails closed.
+The joined flag is checked under the scope's pending lock, so no Branch can be
+added once a join begins. Publication never blocks. With no Executor, or when
+the per-scope window is full, the owner runs the Branch inline. Each unjoined
+scope occupies at most one ready-queue entry and a joined scope none. While
+joining, the owner helps only its own unstarted Branches.
 
 ### Solo Compensation Seam (Agent B FileIO Integration)
+The process-wide `moss_solo_enter` / `moss_solo_leave` symbols belong to the
+FileIO root runtime. FileIO registers the executor callbacks through its hook
+table (`moss_set_solo_hooks(enter, leave)`) and never supplies a worker
+identity.
 ```rust
-// Thread-local worker identity established during worker execution:
-thread_local! {
-    pub static MOSS_CURRENT_WORKER_ID: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-}
-
-// Low-level Solo hooks for known worker ID:
-pub fn solo_enter(worker_id: usize);
-pub fn solo_leave(worker_id: usize);
-
-// Context-aware Solo hooks using TLS (safe for non-worker threads):
-pub fn solo_enter_current() -> bool;
-pub fn solo_leave_current() -> bool;
-
-// FileIO adapter bridge for Agent B integration:
-pub fn executor_solo_enter_from_fileio(op_name: &'static str);
-pub fn executor_solo_leave_from_fileio(op_name: &'static str);
+pub fn solo_enter_current(reason: &str) -> bool; // false (no-op) off workers
+pub fn solo_leave_current(reason: &str) -> bool;
+pub fn executor_solo_enter_from_fileio(reason: &str);
+pub fn executor_solo_leave_from_fileio(reason: &str);
+pub fn executor_fileio_solo_enter_callback() -> fn(&str);
+pub fn executor_fileio_solo_leave_callback() -> fn(&str);
 ```
+Solo nesting is counted per worker. Entering may activate one compensation
+worker, but never more than `max_threads`: a worker's physical slot is
+reserved before its thread is spawned and released only when its thread body
+returns, so a retiring worker cannot overlap its replacement beyond
+`max_threads`. Leaving resumes immediately, and excess workers exit at their
+next idle point.
 
 ### Synchronous Host Ingress (`runtime_invoke`)
 ```rust
@@ -304,8 +372,9 @@ never `as`). A run-time value that is out of range fails closed before
 
 ### Top-level `message` root ingress (Agent C)
 
-The checker marks a `message` statement directly in `main`'s body as root
-ingress (`Stmt::message_root_ingress`). It lowers to a synchronous Root:
+The checker marks every `message` initiated from `main` as root ingress
+(`Stmt::message_root_ingress`), including messages inside nested `if`, `match`,
+and loop bodies. It lowers to a synchronous Root:
 
 ```rust
 let before = {
@@ -321,10 +390,9 @@ marked. It stays a direct synchronous call within its caller's Root.
 `runtime_invoke` must therefore accept `F: FnOnce() -> R + Send + 'static`.
 It returns the reply.
 
-Today the compiler emits `runtime_invoke` only in programs that construct an
-Executor (`root_ingress_uses_runtime()`). Executor-free programs keep the
-direct call, so they need no Agent C crate to link. That predicate is the
-single switch to flip at integration. Fast Debug runs a root message
+The compiler emits `runtime_invoke` for every checked main-root message,
+including programs that do not construct an Executor. Executable root crates
+include Agent C's runtime in all modes. Fast Debug runs a root message
 synchronously, with no scheduler.
 
 ### Chunk-pipeline Branches (Agent C)
@@ -366,11 +434,11 @@ A pipeline lowers to the plain sequential loop and uses no Branch ABI when:
   interface carries no FileIO fact, so such a callable's FileIO effect is
   unknown and is never assumed FileIO-free.
 
-Agent D's FileIO recognition is provisional and not authoritative. This
-covers its typing, its `fileio`/`fileio_unknown` effect facts, and the
-capability predicate. It only selects a lowering. It must not short-circuit
-or replace Agent A's checker, and it is isolated behind one adapter so A's
-facts can replace it.
+Agent A owns FileIO legality, capability boundaries, bounds, and lifecycle
+checks. Agent D consumes those checked facts to choose a lowering; its
+`fileio`/`fileio_unknown` summaries only control scheduling and cannot bypass
+Agent A's checker. Source-free provider callables with no FileIO metadata stay
+`fileio_unknown` and therefore lower sequentially.
 
 ### FileIO and Range (Agent B)
 
@@ -380,7 +448,7 @@ Generated calls: `FileIO::open(&str, &str)`, `file.read(i64, i64) -> Range`,
 `range.length()`). `file.chunks(C)` is a scoped `seq[Range]` source that is
 only consumed by the chunk-pipeline lowering above, never materialized.
 
-**Reserved seam (not yet provided by Agent B):**
+**Owned Branch read-borrow token (Agent B):**
 
 ```rust
 fn moss_fileio_branch_read_borrow(file: &FileIO) -> MossFileIOReadBorrow;

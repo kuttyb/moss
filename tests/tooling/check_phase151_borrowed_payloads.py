@@ -69,7 +69,7 @@ run(["rustc", "-D", "warnings", external_rust, "-o", out / "exported_payload"])
 assert run([out / "exported_payload"]).strip() == "true"
 assert "pub fn __moss_message_Receive(&self, payload: Payload)" in external
 assert "self.Receive_shared(&(payload))" in external
-assert "boundary.__moss_message_Receive((data).clone())" in external
+assert "let __moss_root_arg_1 = (data).clone(); runtime_invoke(move || __moss_root_domain_0.__moss_message_Receive(__moss_root_arg_1))" in external
 print("Phase 15.1 exported payload bridge retains an owned materialization boundary.")
 
 # The deliberately exported large-payload boundary remains owned. Its warning

@@ -6,7 +6,19 @@ import re
 import shutil
 import subprocess
 import sys
-from generated_rust import without_executor_runtime
+
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue, worker threads, and C Branch ABI are runtime internals, not
+    lowered Moss code.  Exactly one line-anchored, delimited block must be
+    present, so the exemption can never swallow ordinary lowered code."""
+    lowered, blocks = re.subn(
+        r"^// Phase 20 Executor Runtime  \(moss executor_runtime_rust: [a-z -]+\)\n"
+        r".*?^// ─── End Phase 20 Executor Runtime ─*\n",
+        "", text, flags=re.S | re.M)
+    assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
+        "expected exactly one delimited Phase 20 executor runtime block"
+    return lowered
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
@@ -102,8 +114,8 @@ assert 'value: &impl MossAccess_Record' in text
 # handler instead of reconstructing an owned Record at this message boundary.
 assert 'Accept_shared(&(state.record))' in text
 assert 'Some((state.record).__moss_value())' in text
-lowered = without_executor_runtime(text)
-assert 'unsafe {' not in lowered and 'unsafe impl' not in lowered and 'dyn ' not in lowered
+lowered = strip_executor_runtime(text)
+assert 'unsafe' not in lowered and 'dyn ' not in lowered
 repeat = out / 'repeat.rs'
 run([compiler, source, '-o', repeat])
 assert repeat.read_text() == text

@@ -8,6 +8,20 @@ import shutil
 import subprocess
 import sys
 
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue, worker threads, and C Branch ABI are runtime internals, not
+    lowered Moss code.  Exactly one line-anchored, delimited block must be
+    present, so the exemption can never swallow ordinary lowered code."""
+    lowered, blocks = re.subn(
+        r"^// Phase 20 Executor Runtime  \(moss executor_runtime_rust: [a-z -]+\)\n"
+        r".*?^// ─── End Phase 20 Executor Runtime ─*\n",
+        "", text, flags=re.S | re.M)
+    assert blocks == 1 and "Phase 20 Executor Runtime" not in lowered, \
+        "expected exactly one delimited Phase 20 executor runtime block"
+    return lowered
+
+
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2]).resolve()
@@ -30,7 +44,9 @@ def equivalent(source, expected):
     run([compiler, source, '-o', rust])
     text = rust.read_text()
     # Inspect implementation constructs, not historical documentation/comments.
-    implementation = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
+    implementation = '\n'.join(line for line in strip_executor_runtime(text).splitlines() if not line.lstrip().startswith('//'))
+    # The class-lock ABI has a Condvar-backed fair admission primitive.  Its
+    # presence is independent of the retired domain scheduler check below.
     assert not re.search(r'Moss(?:Sender|Receiver|Channel|Tracker|Cluster)|thread::spawn|mpsc::|_locked\(|_local\(|AtomicI64|AtomicBool|Arc<(?:Mutex|RwLock)<\w+State', implementation)
     assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
     binary = rust.with_suffix('')

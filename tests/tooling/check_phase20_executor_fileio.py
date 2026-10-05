@@ -34,9 +34,9 @@ FIXTURES = repo / 'tests/tooling/fixtures'
 RUNTIME_OBSERVER = FIXTURES / 'phase20_runtime_observer.rs'
 
 
-def run(args, *, expected=0, env=None):
+def run(args, *, expected=0, env=None, cwd=None):
     p = subprocess.run(list(map(str, args)), text=True, capture_output=True,
-                       timeout=120, env=env)
+                       timeout=120, env=env, cwd=cwd)
     assert p.returncode == expected, (args, p.returncode, p.stdout, p.stderr)
     return p
 
@@ -95,10 +95,23 @@ def code_only(rust_text):
     return '\n'.join(line for line in rust_text.splitlines() if not line.lstrip().startswith('//'))
 
 
+def lowered_rust(rust_text):
+    """Remove exactly C's delimited runtime block for user-code assertions."""
+    lines = rust_text.splitlines()
+    start = [i for i, line in enumerate(lines)
+             if line.startswith('// Phase 20 Executor Runtime  (moss executor_runtime_rust: ')]
+    end = [i for i, line in enumerate(lines)
+           if line.startswith('// ─── End Phase 20 Executor Runtime ')]
+    if len(start) == len(end) == 1 and start[0] < end[0]:
+        del lines[start[0]:end[0] + 1]
+    return '\n'.join(lines)
+
+
 def assert_owned_runtime(rust_text, label, *, fileio):
-    for item in (r'\bpub fn branch_publish\b', r'\bpub fn branch_join\b', r'\bpub fn branch_scope_new\b',
+    for item in (r'\bpub fn branch_publish\b', r'\bpub fn branch_join\b', r'\bpub fn branch_scope_new_current\b',
                  r'\bpub struct MossExecutor\b'):
         assert len(re.findall(item, rust_text)) == 1, (label, item)
+    assert not re.search(r'\bpub fn branch_scope_new\s*\(', rust_text), label
     for item in (r'\bpub struct FileIO\b', r'\bpub struct Range\b',
                  r'\bpub fn moss_fileio_branch_read_borrow\b'):
         assert len(re.findall(item, rust_text)) == (1 if fileio else 0), (label, item)
@@ -211,9 +224,11 @@ fn main():
 text, native = executor_parity('phase20_executor_config', config_source, '2\n8\n16\n3\n4\n')
 # Evaluated exactly once each, in source order (stdout above), and passed
 # to Agent C's builder in that order before start().
-assert 'std::convert::TryFrom<i64>' in text and '.try_from(__moss_executor_cfg_' in text, text
+assert 'std::convert::TryFrom<i64>' in text and '::try_from(__moss_executor_cfg_' in text, text
 assert not re.search(r'__moss_executor_cfg_\d+ as (usize|i32)', text), text
-assert text.index('.start()') < text.index('.enqueue_root(') < text.rindex('executor.join()')
+builder_start = text.index('MossExecutor::new()')
+start_call = text.index('.start();', builder_start)
+assert start_call < text.index('.enqueue_root(', start_call) < text.rindex('executor.join()')
 assert text.count('__moss_executor_cfg_') >= 10  # 5 temps, each bound then used once
 
 # Dynamic Moss Int values must convert with checked TryFrom, rejecting
@@ -395,11 +410,18 @@ fn start_acc() -> Int:
   echo "initializer"
   return 0
 
+domain Counter:
+  fn Total(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks({size}) |> map(chunk_length) |> reduce(start_acc(), positional)
+    file.close()
+    reply total
+
 fn main():
-  file = FileIO.open("{path}", ro)
-  total = file.chunks({size}) |> map(chunk_length) |> reduce(start_acc(), positional)
-  file.close()
-  echo total
+  counter = Counter()
+  executor = Executor().threads(2).start()
+  echo message counter.Total("{path}")
+  executor.join()
 '''
 
 
@@ -424,7 +446,9 @@ def chunk_case(name, content, size, expected):
     rust, binary = native_build(name, source, observe=True)
     text = rust.read_text()
     assert_owned_runtime(text, name, fileio=True)
-    assert 'branch_scope_new(' in text and 'moss_fileio_branch_read_borrow(&' in text
+    assert re.search(r'let __moss_chunk_scope_\d+ = branch_scope_new_current\(\);', text), text
+    assert not re.search(r'let __moss_chunk_scope_\d+ = branch_scope_new\(', text), text
+    assert 'moss_fileio_branch_read_borrow(&' in text
     lines, trace, program = split_trace(run_binary(binary).stdout)
     assert program == ['initializer', expected], (name, program)
     # The initializer is evaluated before any Branch is published.
@@ -526,8 +550,10 @@ domain Counter:
 
 fn main():
   counter = Counter()
+  executor = Executor().threads(2).start()
   echo message counter.Plain("%s")
   echo message counter.Bonus("%s")
+  executor.join()
 ''' % (handler_data, handler_data))
 ir = functional_ir(handler_source)
 assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not pure: observable domain READ' in ir, ir
@@ -535,6 +561,67 @@ rust, binary = native_build('phase20_chunk_handler', handler_source, observe=Tru
 _, trace, program = split_trace(run_binary(binary).stdout)
 assert program == ['33', '44'], program
 assert trace == WINDOW_TRACE, trace
+
+# A source-free .mossi provider has no authoritative FileIO effect bit. The
+# consumer runs with the real process-root runtime: its local combine is
+# eligible for Branch lowering, while the provider combine stays sequential.
+provider_root = out / 'phase20_provider'
+provider = provider_root / 'provider'
+consumer = provider_root / 'consumer'
+for directory in (provider / 'src', consumer / 'src'):
+    directory.mkdir(parents=True, exist_ok=True)
+for directory in (provider, consumer):
+    run(['rm', '-rf', directory / 'build'])
+(provider / 'Moss.toml').write_text(
+    '[project]\nname = "foldlib"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n')
+(provider / 'src/folds.moss').write_text("""module folds
+
+export fn positional(acc: Int, len: Int) -> Int:
+  return acc * 10 + len
+""")
+provider_data = provider_root / 'data.txt'
+provider_data.write_bytes(b'123456')
+(consumer / 'Moss.toml').write_text(
+    '[project]\nname = "p20consumer"\nversion = "0.1.0"\n\n[build]\nsource = "src"\n')
+(consumer / 'src/main.moss').write_text("""module app
+import folds
+
+fn chunk_length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn local_positional(acc: Int, len: Int) -> Int:
+  return acc * 10 + len
+
+fn provider_positional(acc: Int, len: Int) -> Int:
+  return folds.positional(acc, len)
+
+domain Counter:
+  fn Run(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    local_total = file.chunks(3) |> map(chunk_length) |> reduce(0, local_positional)
+    provider_total = file.chunks(3) |> map(chunk_length) |> reduce(0, provider_positional)
+    file.close()
+    reply local_total * 100 + provider_total
+
+fn main():
+  counter = Counter()
+  executor = Executor().threads(2).start()
+  echo message counter.Run("%s")
+  executor.join()
+""" % provider_data)
+run([compiler, 'build'], cwd=provider)
+provider_artifacts = provider / 'build/debug'
+consumer_env = dict(os.environ, MOSS_MODULE_PATH=str(provider_artifacts))
+run([compiler, 'build'], cwd=consumer, env=consumer_env)
+consumer_rust = consumer / 'build/debug/app.rs'
+consumer_text = consumer_rust.read_text()
+consumer_lowered = lowered_rust(consumer_text)
+assert re.search(r'branch_publish\(&', consumer_lowered), consumer_lowered
+assert 'ineligible for Branch lowering: combine callable FileIO effect unavailable for compiled provider' in consumer_text
+consumer_binary = consumer / 'build/debug/p20consumer'
+provider_run = subprocess.run([str(consumer_binary)], text=True, capture_output=True,
+                              timeout=120, check=True)
+assert provider_run.stdout == '3333\n', provider_run.stdout
 
 # Integrated A+B+C+D: with an active Executor, invoked Roots perform blocking
 # FileIO (Agent B Solo hooks -> Agent C compensation) while a value-returning

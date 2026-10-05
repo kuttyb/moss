@@ -5,13 +5,6 @@ compiler=${1:-./moss}
 test_build=${2:-build/tests}
 mkdir -p "$test_build"
 
-# Generated Rust minus the delimited Phase 20 executor runtime block that
-# every root emits; its type-erased Root/Branch work (Box<dyn FnOnce + Send>)
-# is runtime plumbing, so dispatch scans check only compiler-lowered code.
-user_rust() {
-  sed '/^\/\/ Phase 20 Executor Runtime  (moss executor_runtime_rust)$/,/^\/\/ End Phase 20 Executor Runtime  (moss executor_runtime_rust)$/d' "$1"
-}
-
 # Peer-review source hygiene: only focused migration fixtures contain retired syntax.
 python3 tests/tooling/check_retired_syntax.py --self-test
 
@@ -37,7 +30,23 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_9_cross_package_sp
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_039_project_fast_debug_tests.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_059_diagnostic_provenance.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_swarm_060_qualified_rename.py
-PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_fileio_runtime.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_fileio_runtime.py "$compiler" "$test_build/phase20_fileio"
+
+# Generated Rust minus the emitted Phase 20 executor runtime, whose work
+# queue, threads, and C Branch ABI are runtime internals rather than lowered
+# Moss code.  Negative backend-shape checks inspect only lowered code.  Unless
+# exactly one line-anchored, delimited block is present, the whole file is
+# returned, so a malformed delimiter makes these checks stricter, never weaker.
+lowered_rust() {
+  runtime_start='^// Phase 20 Executor Runtime  (moss executor_runtime_rust: '
+  runtime_end='^// ─── End Phase 20 Executor Runtime '
+  if [ "$(grep -c "$runtime_start" "$1")" -eq 1 ] &&
+     [ "$(grep -c "$runtime_end" "$1")" -eq 1 ]; then
+    sed "\\#$runtime_start#,\\#$runtime_end#d" "$1"
+  else
+    cat "$1"
+  fi
+}
 
 fail() {
   echo "test failure: $*" >&2
@@ -50,7 +59,7 @@ assert_class_lowering() {
     fail "$1 omitted synchronization-class storage"
   grep -F 'let result = __moss_body_' "$1" >/dev/null ||
     fail "$1 bypassed synchronized handler entry"
-  if grep -E 'Arc<(Mutex|RwLock)<[^>]*State|AtomicI64|AtomicBool|MossCluster[0-9]+Runtime|thread::spawn' "$1" >/dev/null; then
+  if lowered_rust "$1" | grep -E 'Arc<(Mutex|RwLock)<[^>]*State|AtomicI64|AtomicBool|MossCluster[0-9]+Runtime|thread::spawn' >/dev/null; then
     fail "$1 activated legacy coarse/atomic/cluster synchronization"
   fi
 }
@@ -234,7 +243,7 @@ grep -F 'holder.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 user pop did not retain its method spelling'
 grep -F 'values.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 Vector pop did not retain Vec lowering'
-user_rust "$test_build/swarm_002_typed_pop.rs" | grep -F 'queue.pop_front()' >/dev/null ||
+grep -F 'queue.pop_front()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 Queue pop did not use VecDeque lowering'
 run_case swarm_004_indexed_binary tests/swarm_004_indexed_binary.moss "$(printf 'true\n5\ntrue')"
 run_case swarm_005_implicit_method_return tests/swarm_005_implicit_method_return.moss "$(printf '5\n9')"
@@ -486,7 +495,7 @@ if grep -E '\.iter\(\)\.(map|filter)|\.into_iter\(\)\.(map|filter)' \
     "$test_build/phase4_fusion_optimized.rs" >/dev/null; then
   fail 'functional pipeline was delegated to a Rust iterator chain'
 fi
-if grep -F 'Vec::new()' "$test_build/phase4_fusion_optimized.rs" >/dev/null; then
+if lowered_rust "$test_build/phase4_fusion_optimized.rs" | grep -F 'Vec::new()' >/dev/null; then
   fail 'fused terminal reduction allocated an intermediate Vec'
 fi
 [ "$(grep -c 'for __moss_item_ref in' "$test_build/phase4_map_map_optimized.rs")" -eq 1 ] ||
@@ -552,8 +561,7 @@ fi
 grep -F 'spin(__moss_shared_value_' \
   "$test_build/phase45_divergent_work_skipping_optimized.rs" >/dev/null ||
   fail 'potentially divergent callback disappeared from optimized traversal'
-if grep -F 'break;' \
-    "$test_build/phase45_divergent_work_skipping_optimized.rs" >/dev/null; then
+if lowered_rust "$test_build/phase45_divergent_work_skipping_optimized.rs" | grep -F 'break;' >/dev/null; then
   fail 'potentially divergent any/all callback was incorrectly short circuited'
 fi
 if grep -F 'Moss backend: COUNT -> EXACT LENGTH' \
@@ -598,24 +606,22 @@ grep -F '__moss_value_0.inspect()' \
   "$test_build/phase45_divergence_method_optimized.rs" >/dev/null ||
   fail 'potentially divergent method callback disappeared from traversal'
 
-[ "$(grep -c 'break;' \
-    "$test_build/phase45_short_circuit_single_optimized.rs")" -eq 3 ] ||
+[ "$(lowered_rust "$test_build/phase45_short_circuit_single_optimized.rs" |
+    grep -c 'break;')" -eq 3 ] ||
   fail 'optimized standalone any/all did not short circuit'
-if grep -F 'break;' "$test_build/phase45_short_circuit_single_o0.rs" >/dev/null; then
+if lowered_rust "$test_build/phase45_short_circuit_single_o0.rs" | grep -F 'break;' >/dev/null; then
   fail '-O0 any/all did not retain complete eager traversal'
 fi
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase45_short_circuit_effect_barrier_optimized.rs" >/dev/null ||
   fail 'observable any/map callbacks did not block skipping work'
-if grep -F 'break;' \
-    "$test_build/phase45_short_circuit_effect_barrier_optimized.rs" >/dev/null; then
+if lowered_rust "$test_build/phase45_short_circuit_effect_barrier_optimized.rs" | grep -F 'break;' >/dev/null; then
   fail 'effectful any callback was incorrectly short circuited'
 fi
 grep -F 'Moss backend: EAGER FUNCTIONAL PIPELINE reference semantics' \
   "$test_build/phase45_short_circuit_failure_barrier_optimized.rs" >/dev/null ||
   fail 'possibly failing any callback did not retain eager traversal'
-if grep -F 'break;' \
-    "$test_build/phase45_short_circuit_failure_barrier_optimized.rs" >/dev/null; then
+if lowered_rust "$test_build/phase45_short_circuit_failure_barrier_optimized.rs" | grep -F 'break;' >/dev/null; then
   fail 'possibly failing any callback was incorrectly short circuited'
 fi
 
@@ -629,8 +635,7 @@ fi
 [ "$(grep -c 'for __moss_item_ref in' \
     "$test_build/phase45_cross_let_fusion_optimized.rs")" -eq 1 ] ||
   fail 'cross-binding map/filter/map/sum did not lower to one traversal'
-if grep -F 'Vec::new()' \
-    "$test_build/phase45_cross_let_fusion_optimized.rs" >/dev/null; then
+if lowered_rust "$test_build/phase45_cross_let_fusion_optimized.rs" | grep -F 'Vec::new()' >/dev/null; then
   fail 'cross-binding fusion allocated an intermediate vector'
 fi
 grep -F "FUNCTIONAL INTERMEDIATE 'normalized' VIRTUALIZED" \
@@ -904,14 +909,13 @@ grep -F 'fn __moss_specialize_transform_0(xs: &std::vec::Vec<i64>) -> std::vec::
 [ "$(grep -c '^fn __moss_specialize_transform_' \
     "$test_build/phase4_hof_optimized.rs")" -eq 2 ] ||
   fail 'higher-order helper was not separately specialized for two callable identities'
-if user_rust "$test_build/phase4_hof_optimized.rs" | grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
+if lowered_rust "$test_build/phase4_hof_optimized.rs" | grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
   fail 'static higher-order helper emitted runtime callable machinery'
 fi
 grep -F '.apply(__moss_value_0)' \
   "$test_build/phase4_bound_method_optimized.rs" >/dev/null ||
   fail 'bound method stage did not lower to a statically selected concrete call'
-if user_rust "$test_build/phase4_bound_method_optimized.rs" |
-    grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
+if lowered_rust "$test_build/phase4_bound_method_optimized.rs" | grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
   fail 'bound method stage emitted runtime callable machinery'
 fi
 [ "$(grep -c '^fn __moss_specialize_double_' \
@@ -1040,8 +1044,7 @@ trait_specializations=$(grep -c '^fn __moss_specialize_render_' \
 [ "$trait_specializations" -eq 2 ] ||
   fail "trait-typed function did not emit two concrete specializations"
 # Backend access traits use static generic dispatch; Moss traits remain erased.
-if user_rust "$test_build/static_trait_dispatch.rs" |
-    grep -Eq '(dyn[[:space:]]|vtable)' ||
+if lowered_rust "$test_build/static_trait_dispatch.rs" | grep -Eq '(dyn[[:space:]]|vtable)' ||
    grep -E '^trait[[:space:]]' "$test_build/static_trait_dispatch.rs" | grep -v '^trait MossAccess_' >/dev/null; then
   fail "static trait dispatch emitted runtime trait machinery"
 fi
@@ -1229,7 +1232,7 @@ grep -F 'fn __moss_specialize_duck_add_0(value: i64) -> i64' \
     "$test_build/phase25_integer_overflow_o0.rs")" -eq 2 ] ||
   fail "duck-typed arithmetic did not retain both concrete call-site types"
 assert_class_lowering "$test_build/phase25_integer_overflow.rs"
-if user_rust "$test_build/phase25_integer_overflow.rs" | grep -F 'unsafe {' >/dev/null; then
+if lowered_rust "$test_build/phase25_integer_overflow.rs" | grep -F 'unsafe {' >/dev/null; then
   fail "integer wrapping lowering used unsafe code"
 fi
 
@@ -1353,8 +1356,7 @@ grep -F 'struct Box__floatBoxRuntime' "$test_build/implicit_domain_specializatio
   fail 'implicit Box Float specialization did not get a concrete Rust layout'
 grep -F 'value: f64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Float layout was not statically concrete'
-if user_rust "$test_build/implicit_domain_specialization.rs" |
-  grep -Eq 'Any|Box<dyn|type_id|TypeId'; then
+if lowered_rust "$test_build/implicit_domain_specialization.rs" | grep -Eq 'Any|Box<dyn|type_id|TypeId'; then
   fail 'implicit domain specialization introduced a dynamic Rust value representation'
 fi
 "$compiler" effects 'handler:Box.Set' \
@@ -1468,15 +1470,14 @@ run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8
 grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: &impl MossAccess_Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
   fail 'direct handler did not receive the internal borrowed payload ABI'
-grep -F 'worker.Process_shared(&(data))' "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'direct call did not lend its stable non-Copy payload'
-if grep -F 'worker.Process_shared((data).clone())' "$test_build/phase26_direct_payload.rs" >/dev/null; then
-  fail 'direct synchronous payload message still cloned its stable value'
-fi
+grep -F 'let __moss_root_arg_1 = (data).clone(); runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1)' \
+  "$test_build/phase26_direct_payload.rs" >/dev/null ||
+  fail 'main Root ingress did not snapshot and borrow its non-Copy payload inside runtime_invoke'
 run_optimized_case phase26_repeated_payload tests/phase26_repeated_payload.moss '7 8'
 run_case phase26_message_payload tests/phase26_message_payload.moss '9'
-grep -F 'Process_shared(&(data))' "$test_build/phase26_message_payload.rs" >/dev/null ||
-  fail 'synchronous internal message did not borrow its stable payload'
+grep -F 'runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1))' \
+  "$test_build/phase26_message_payload.rs" >/dev/null ||
+  fail 'one-way main message did not use runtime_invoke with an owned payload snapshot'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
 run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
   "forwarded: 10
@@ -1844,7 +1845,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_handler_2pl.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_borrowed_reads.py "$compiler" "$test_build/phase106d1"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase151_borrowed_payloads.py "$compiler" "$test_build/phase151"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106e_domains.py "$compiler" "$test_build/phase106e"
-PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_fileio_semantics.py "$compiler" "$test_build/phase20_fileio"
+# Phase 20 Agent C executor/root runtime proof regressions (full suite).
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20c_executor.py "$compiler"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase106f.py "$compiler" "$test_build/phase106f"
 
