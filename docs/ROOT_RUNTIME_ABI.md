@@ -130,13 +130,14 @@ implementation area from the phase spec, before other areas call them.
 Phase 20 FileIO native runtime targets Linux (`x86_64` / `aarch64` native). Other platforms explicitly fail compilation via `compile_error!`.
 
 Across all linked crates in a process (compiled provider `.rlib`s and the root executable):
-- Provider `.rlib` crates declare `extern "C"` linkage symbols under `moss_fileio::sys`:
-  * `moss_fileio_registry_claim(dev: u64, ino: u64) -> bool`
-  * `moss_fileio_registry_release(dev: u64, ino: u64)`
-  * `moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
-  * `moss_fileio_registry_reset()`
-  * `moss_solo_enter(reason_ptr: *const u8, reason_len: usize)`
-  * `moss_solo_leave(reason_ptr: *const u8, reason_len: usize)`
-- The root executable crate emits `moss_root_runtime` containing the single process-wide `#[no_mangle]` symbol definitions and their leaf-lock synchronized state (`MOSS_FILEIO_REGISTRY`, `MOSS_SOLO_ENTER_HOOK`, `MOSS_SOLO_LEAVE_HOOK`).
+- Provider `.rlib` crates declare external linkage symbols under `moss_fileio::sys`:
+  * `extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool`
+  * `extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64)`
+  * `extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
+  * `extern "C" fn moss_fileio_registry_reset()`
+  * `extern "Rust" fn moss_solo_enter(reason: &str)`
+  * `extern "Rust" fn moss_solo_leave(reason: &str)`
+- The root executable crate emits `moss_root_runtime` containing the single process-wide `#[no_mangle]` symbol definitions and their leaf-lock synchronized state (`MOSS_FILEIO_REGISTRY`, `MOSS_SOLO_ENTER_HOOK`, `MOSS_SOLO_LEAVE_HOOK`). Provider `.rlib`s import them. Agent C will provide/register the actual Executor-aware implementation through the process bridge.
+- A physical change to these cross-crate signatures after Phase 20 integration requires the appropriate native/provider ABI version change and rebuild of source-free providers.
 - Registration callbacks are never invoked while holding the registration mutex (locks are dropped before hook invocation).
 - Potentially blocking file descriptor operations (`open`, `fstat`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`, cleanup closes, `fstatfs`) are bracketed with RAII `SoloGuard`. Descriptor flag modification `fcntl(F_SETFL)` is in-memory and non-blocking.

@@ -1,25 +1,23 @@
 # Moss current status
 
-## Phase 20 Agent B — FileIO runtime final packaging & hardening — COMPLETE (2026-10-04)
+## Phase 20 Agent B — FileIO runtime merge-ready cleanup — COMPLETE (2026-10-04)
 
-Completed the final runtime packaging and hardening pass for Phase 20 synchronous blocking `FileIO`:
-1. **Decoupled Root-Runtime Emission for Source-Free Providers**:
-   - Split runtime emitted Rust into `moss_fileio` and `moss_root_runtime`.
-   - Executable root crates (`!p_.explicit_module || p_.main`) unconditionally emit `moss_root_runtime` defining the process-wide `(device, inode)` registry and Solo hooks, satisfying `docs/ROOT_RUNTIME_ABI.md` even when the root contains no local FileIO use.
-   - Provider `.rlib` crates declare and consume root runtime symbols via `extern "C"` / `extern "Rust"` under `moss_fileio::sys`, and emit `fileio_runtime_rust()` only when they locally use FileIO.
-   - Verified that a compiler-generated pure root crate (`pure_root.moss` -> `pure_root.rs`) emits `moss_root_runtime` without `mod moss_fileio` and successfully links against a provider `.rlib`.
-2. **Semantic Local-Use Detection (`program_uses_fileio`)**:
-   - Hardened `program_uses_fileio` to inspect exact type positions (`f.type`, `param.type`, `fn.return_type`, `m.return_type`, `h.reply_type`, `c.fields`) and construction/operation expressions (`FileIO.open`, `RangeBatch.new`, `Range.from_str`, `.chunks(`, etc.).
-   - Explicitly ignored declaration names (`obj.name`, `d.name`, `fn.name`, `e.name`, `c.name`, `t.name`, `b.name`) so user entities named `Range`, `FileIO`, or `RangeRover` do not trigger false-positive FileIO runtime emission.
-   - Added inspection of `p.tests` and `p.benchmarks` statement bodies.
-   - Pure Moss programs remain 100% safe Rust (`unsafe`-free).
-3. **Hook Table Lock-Dropping Discipline**:
-   - Fixed hook invocation across all registration tables (`MOSS_SOLO_ENTER_HOOK`, `MOSS_SOLO_LEAVE_HOOK`, `MOSS_SYNC_HOOK`, `MOSS_CLOSE_OVERRIDE`) to drop internal mutexes before invoking user/runtime callbacks.
-4. **Comprehensive Solo Syscall Bracketing & Durability**:
-   - Bracketed all blocking OS kernel waits with `SoloGuard`: `fstat`, `fstatfs`, `cleanup_close`, `open_parent_dir`, `close_parent_dir`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`.
-   - Handled parent-directory close failure in `FileIO::close` and `Drop` by ensuring main file descriptor close is attempted, inode claim released, and failing closed.
+Completed the merge-ready cleanup pass for Phase 20 synchronous blocking `FileIO`:
+1. **ABI Documentation Alignment (`docs/ROOT_RUNTIME_ABI.md`)**:
+   - Updated documentation to match physical process-wide linkage signatures: `extern "C"` for registry operations (`moss_fileio_registry_claim`, `moss_fileio_registry_release`, `moss_fileio_registry_contains`, `moss_fileio_registry_reset`) and `extern "Rust"` for Solo hooks (`moss_solo_enter(reason: &str)`, `moss_solo_leave(reason: &str)`).
+   - Documented that root executable owns symbol definitions and provider `.rlib`s import them, with note that post-Phase-20 signature changes require native/provider ABI versioning.
+2. **Eliminated Method & Declaration False Positives**:
+   - Hardened `program_uses_fileio` to inspect exact FileIO/Range/RangeBatch type positions and exact constructors (`FileIO.open`, `RangeBatch.new`, `Range.from_str`, `Range.empty`), removing receiver-agnostic method heuristics (`.chunks(`, `.open_in_place(`, `.sync_dataonly(`).
+   - Verified that user types with overlapping method names (e.g. `Dataset.chunks`, `DeviceHolder.open_in_place`, `DeviceHolder.sync_dataonly`) and entities with overlapping declaration names do not trigger FileIO runtime emission.
+3. **Decoupled Root-Runtime Emission for Source-Free Providers**:
+   - Executable root crates unconditionally emit `moss_root_runtime` defining process-wide coordination symbols without `mod moss_fileio` when FileIO is unused locally.
+   - Provider `.rlib` crates consume root symbols and emit `fileio_runtime_rust()` only when locally using FileIO.
+4. **Lifecycle, Durability & Teardown Contracts**:
+   - Explicit `FileIO.close()`: attempts each required close once (parent-dir and main fd), releases inode claim; unexpected close failure fails closed (aborts).
+   - `Drop` / process teardown: best-effort descriptor reclamation; releases inode claim; provides no durability guarantee.
+   - Durability obligation: parent directory synced on first file sync and obligation cleared; uncommitted new files discard parent descriptor on close.
 5. **Validation**:
-   - Expanded test harness `tests/tooling/check_phase20_fileio_runtime.py` covering 35 tests (including compiler-generated root linkage with provider `.rlib`, cross-crate collisions & Solo hook propagation, hook lock-dropping discipline, parent close failure, and declaration name false-positive hardening).
+   - Expanded test harness `tests/tooling/check_phase20_fileio_runtime.py` covering 36 tests (cross-crate collision & Solo hook propagation, hook lock-dropping discipline, parent close failure handling, process root emission, declaration-name false positives, and overlapping method-name false positives).
    - Full Moss-source A+B+C package integration is validated during Phase 20 merge; Agent B's process ABI and runtime are complete independently.
    - All 61 Emacs ERT tests, Fast Debug tests, multi-module checks, and compiler tests in `make check` passed.
    - `make examples` built all 29 optimized examples without regression.

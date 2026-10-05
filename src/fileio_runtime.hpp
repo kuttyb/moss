@@ -27,8 +27,7 @@ inline bool expr_uses_fileio(const std::string& s) {
   if (s.find("FileIO.") != std::string::npos || s.find("FileIO(") != std::string::npos ||
       s.find("RangeBatch.") != std::string::npos || s.find("RangeBatch(") != std::string::npos ||
       s.find("Range.empty") != std::string::npos || s.find("Range.from_") != std::string::npos ||
-      s.find(".open_in_place(") != std::string::npos || s.find(".chunks(") != std::string::npos ||
-      s.find(".sync_dataonly(") != std::string::npos) {
+      s.find("Range::") != std::string::npos || s.find("FileIO::") != std::string::npos) {
     return true;
   }
   return false;

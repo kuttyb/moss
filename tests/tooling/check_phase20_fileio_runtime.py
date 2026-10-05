@@ -914,7 +914,10 @@ def test_cross_crate_process_global_registry(test_dir):
     assert res_col.returncode != 0, "Duplicate open across crates must fail closed"
     assert "duplicate live FileIO" in res_col.stderr, f"Expected duplicate live FileIO in stderr: {res_col.stderr}"
 
-    # 3. Compiler-level test: Root executable without local FileIO compiles with moss and satisfies provider linkage
+    # 3. Compiler-level test: Root executable without local FileIO compiles with moss and emits root runtime symbols
+    # Note: Proves compiler-generated executable root -> emits moss_root_runtime, does not emit moss_fileio when
+    # locally unused, and compiles cleanly. The complete Moss-source (provider uses FileIO -> consumer calls provider
+    # -> consumer has no FileIO locally) belongs to the Phase 20 A+B integration suite.
     pure_moss_src = """
 fn main():
   val = 42
@@ -930,7 +933,7 @@ fn main():
     assert "moss_root_runtime" in pure_rs_content, "Compiler-generated pure root MUST emit moss_root_runtime"
     assert "mod moss_fileio" not in pure_rs_content, "Pure root without FileIO MUST NOT emit mod moss_fileio"
 
-    # Link compiler-generated pure_root.rs directly against provider_a.rlib to verify symbols resolve
+    # Verify compiler-generated pure_root.rs compiles cleanly
     pure_bin = os.path.join(TMP_DIR, "pure_root_bin")
     res_link = subprocess.run(["rustc", "-D", "warnings", "--extern", f"provider_a={provider_rlib}", "-o", pure_bin, pure_rs_file], capture_output=True, text=True)
     assert res_link.returncode == 0, f"Linking compiler-emitted root with provider failed:\n{res_link.stderr}"
@@ -983,7 +986,7 @@ def test_hook_lock_discipline(test_dir):
     print("[PASS] Test 32: Hook registration lock-dropping discipline verified")
 
 def test_main_only_runtime_emission(test_dir):
-    print("=== Running Test 34 & 35: Root-runtime emission & declaration name hardening ===")
+    print("=== Running Test 34, 35 & 36: Root emission & false-positive hardening ===")
 
     # 1. Process-root emission test (no local FileIO)
     moss_root_src = """
@@ -1040,6 +1043,41 @@ fn main():
         rs_fp_content = f.read()
     assert "mod moss_fileio" not in rs_fp_content, "Declaration names containing tokens MUST NOT emit mod moss_fileio"
     print("[PASS] Test 35: Declaration name false-positive hardening verified")
+
+    # 3. False-positive hardening: Overlapping method names on unrelated types (e.g. Dataset.chunks, Thing.open_in_place, Thing.sync_dataonly)
+    moss_method_fp_src = """
+type Dataset:
+  size: Int
+
+  fn chunks(count: Int):
+    return size + count
+
+type DeviceHolder:
+  state_code: Int
+
+  fn open_in_place(tag: Int):
+    return state_code + tag
+
+  fn sync_dataonly():
+    return state_code
+
+fn main():
+  ds = Dataset(size = 100)
+  c = ds.chunks(10)
+  dh = DeviceHolder(state_code = 5)
+  o = dh.open_in_place(2)
+  s = dh.sync_dataonly()
+"""
+    moss_method_fp_file = os.path.join(test_dir, "method_fp_test.moss")
+    with open(moss_method_fp_file, "w", encoding="utf-8") as f:
+        f.write(moss_method_fp_src)
+    rs_method_fp_out = os.path.join(TMP_DIR, "method_fp_test.rs")
+    res_method_fp = subprocess.run([os.path.join(REPO_ROOT, "moss"), moss_method_fp_file, "-o", rs_method_fp_out], capture_output=True, text=True)
+    assert res_method_fp.returncode == 0, f"moss compile failed for method fp:\n{res_method_fp.stderr}"
+    with open(rs_method_fp_out, "r", encoding="utf-8") as f:
+        rs_method_fp_content = f.read()
+    assert "mod moss_fileio" not in rs_method_fp_content, "Unrelated user methods named chunks/open_in_place/sync_dataonly MUST NOT emit mod moss_fileio"
+    print("[PASS] Test 36: Overlapping method name false-positive hardening verified")
 
 def run_tests():
     bin_path = compile_test_harness()
