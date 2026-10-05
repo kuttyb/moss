@@ -7,6 +7,12 @@ import shutil
 import subprocess
 import sys
 
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue and C Branch ABI are runtime internals, not lowered Moss code."""
+    return re.sub(r"// Phase 20 Executor Runtime .*?// ─── End Phase 20 Executor Runtime[^\n]*\n",
+                  "", text, flags=re.S)
+
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2]).resolve()
@@ -101,7 +107,8 @@ assert 'value: &impl MossAccess_Record' in text
 # handler instead of reconstructing an owned Record at this message boundary.
 assert 'Accept_shared(&(state.record))' in text
 assert 'Some((state.record).__moss_value())' in text
-assert 'unsafe {' not in text and 'unsafe impl' not in text and 'dyn ' not in text
+lowered = strip_executor_runtime(text)
+assert 'unsafe' not in lowered and 'dyn ' not in lowered
 repeat = out / 'repeat.rs'
 run([compiler, source, '-o', repeat])
 assert repeat.read_text() == text

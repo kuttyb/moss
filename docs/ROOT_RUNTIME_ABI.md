@@ -127,62 +127,114 @@ implementation area from the phase spec, before other areas call them.
 
 ## Physical signatures & Integration Seam (Agent C Runtime)
 
-### Process-Wide Ingress and Runtime
-```rust
-// Process runtime accessor (shared across .rlib and bin crates):
-pub fn moss_process_runtime() -> &'static MossProcessRuntime;
+### Crate roles
+`executor_runtime_rust(owns_process_runtime)` emits one of two variants.
+The final application crate (an implicit-module program, or the explicit
+module that declares `main`) owns the process runtime: the scheduler, the
+ingress state, Root/Branch identity counters, and the TLS execution context.
+Every other generated crate is a provider and emits only an opaque
+`MossBranchScope` wrapper over the root's exported C Branch ABI; providers
+never own a scheduler or allocate Root identities.
 
-// Cross-crate raw pointer symbol (exported by main root, imported by modules):
-#[no_mangle] pub extern "C" fn __moss_process_runtime_raw() -> *mut ();
+```rust
+// Exported by the process-root crate, imported by provider crates:
+#[no_mangle] pub extern "C" fn __moss_branch_scope_new_current() -> *const ();
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_scope_clone(scope: *const ()) -> *const ();
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_scope_drop(scope: *const ());
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_publish_trampoline(
+    scope: *const (), data: *mut (),
+    invoke: unsafe extern "C" fn(*mut ()), discard: unsafe extern "C" fn(*mut ()));
+#[no_mangle] pub unsafe extern "C" fn __moss_branch_join(scope: *const ());
+```
+`new_current` and `clone` return one owned count; `drop` and `join` consume
+one; `publish` borrows. `discard` releases a foreign closure that never ran.
+
+### Execution context (runtime-owned TLS)
+```rust
+pub fn current_worker_id() -> Option<usize>; // None off Executor workers
+pub fn current_root_id() -> Option<u64>;     // set on every ingress path and for Branches
+pub fn next_root_id() -> u64;                // process root only
 ```
 
 ### Executor API
 ```rust
-pub struct MossExecutor { ... }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MossExecutorConfig {
+    pub threads: usize, pub max_threads: usize, pub queue_capacity: usize,
+    pub affinity: Option<Vec<usize>>, pub priority: Option<i32>,
+}
+impl MossExecutorConfig {
+    pub const DEFAULT_QUEUE_CAPACITY: usize; // 1024
+    // Omitted fields: threads = host parallelism; max_threads =
+    // max(threads, 4 * host parallelism); queue_capacity = default.
+    pub fn resolved(threads: Option<usize>, max_threads: Option<usize>,
+                    queue_capacity: Option<usize>, affinity: Option<Vec<usize>>,
+                    priority: Option<i32>) -> Self;
+}
+
+pub struct MossExecutor { ... } // builder
 impl MossExecutor {
     pub fn new() -> Self;
     pub fn threads(self, n: usize) -> Self;
     pub fn max_threads(self, n: usize) -> Self;
     pub fn queue_capacity(self, n: usize) -> Self;
-    pub fn affinity(self, cores: &[usize]) -> Self;
+    pub fn affinity(self, cores: Vec<usize>) -> Self;
     pub fn priority(self, level: i32) -> Self;
+    pub fn config(&self) -> MossExecutorConfig;
     pub fn start(self) -> MossExecutorHandle;
 }
 
-#[derive(Clone)]
-pub struct MossExecutorHandle { ... }
+pub struct MossExecutorHandle { ... } // linear: not Clone
 impl MossExecutorHandle {
     pub fn enqueue_root(&self, desc: MossRootDescriptor);
+    pub fn config(&self) -> &MossExecutorConfig;
     pub fn join(self);
 }
 ```
+`start()` validates the config (fails closed on zero fields or
+`max_threads < threads`) and is legal only from `main`, outside any Root;
+a second concurrent `start()` panics. `enqueue_root` and `join` panic from
+inside a running Root.
 
-### Branch Publish / Join ABI
+### Agent D seam
 ```rust
-pub fn branch_scope_new(root_id: u64) -> MossBranchScope;
+pub fn moss_root_start() -> MossExecutorHandle; // all defaults
+pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHandle;
+pub fn moss_root_submit(executor: &MossExecutorHandle, work: impl FnOnce() + Send + 'static);
+pub fn moss_root_submit_with_target(executor: &MossExecutorHandle,
+                                    target_identity: &'static str,
+                                    work: impl FnOnce() + Send + 'static);
+pub fn moss_root_join(executor: MossExecutorHandle);
+```
+
+### Branch Publish / Join API
+```rust
+pub fn branch_scope_new_current() -> MossBranchScope; // panics outside a Root
 pub fn branch_publish<F: FnOnce() + Send + 'static>(scope: &MossBranchScope, work: F);
 pub fn branch_join(scope: MossBranchScope);
 ```
+Scopes are one-shot: publish after join, or a second join, fails closed.
+Publication never blocks. With no Executor, or when the per-scope window is
+full, the owner runs the Branch inline. Each scope occupies at most one
+ready-queue entry. While joining, the owner helps only its own unstarted
+Branches.
 
 ### Solo Compensation Seam (Agent B FileIO Integration)
+The process-wide `moss_solo_enter` / `moss_solo_leave` symbols belong to the
+FileIO root runtime. FileIO registers the executor callbacks through its hook
+table (`moss_set_solo_hooks(enter, leave)`) and never supplies a worker
+identity.
 ```rust
-// Thread-local worker identity established during worker execution:
-thread_local! {
-    pub static MOSS_CURRENT_WORKER_ID: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
-}
-
-// Low-level Solo hooks for known worker ID:
-pub fn solo_enter(worker_id: usize);
-pub fn solo_leave(worker_id: usize);
-
-// Context-aware Solo hooks using TLS (safe for non-worker threads):
-pub fn solo_enter_current() -> bool;
-pub fn solo_leave_current() -> bool;
-
-// FileIO adapter bridge for Agent B integration:
-pub fn executor_solo_enter_from_fileio(op_name: &'static str);
-pub fn executor_solo_leave_from_fileio(op_name: &'static str);
+pub fn solo_enter_current(reason: &str) -> bool; // false (no-op) off workers
+pub fn solo_leave_current(reason: &str) -> bool;
+pub fn executor_solo_enter_from_fileio(reason: &str);
+pub fn executor_solo_leave_from_fileio(reason: &str);
+pub fn executor_fileio_solo_enter_callback() -> fn(&str);
+pub fn executor_fileio_solo_leave_callback() -> fn(&str);
 ```
+Solo nesting is counted per worker. Entering may activate one compensation
+worker, but never more than `max_threads`. Leaving resumes immediately, and
+excess workers exit at their next idle point.
 
 ### Synchronous Host Ingress (`runtime_invoke`)
 ```rust

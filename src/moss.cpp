@@ -11658,7 +11658,10 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
-    o << executor_runtime_rust(p_.explicit_module);
+    // The final application (an implicit-module program, or the explicit
+    // module that owns `main`) is the single process-runtime owner; every
+    // other generated crate is a provider and links to its Branch ABI.
+    o << executor_runtime_rust(!p_.explicit_module || p_.main.has_value());
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());

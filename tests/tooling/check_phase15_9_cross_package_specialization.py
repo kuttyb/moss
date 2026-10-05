@@ -2,11 +2,18 @@
 """Phase 15.9 static-specialization ownership across native artifacts."""
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
+
+def strip_executor_runtime(text):
+    """Drop the emitted Phase 20 executor runtime; its type-erased Root work
+    queue and C Branch ABI are runtime internals, not lowered Moss code."""
+    return re.sub(r"// Phase 20 Executor Runtime .*?// ─── End Phase 20 Executor Runtime[^\n]*\n",
+                  "", text, flags=re.S)
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -216,7 +223,8 @@ def test_provider_and_source_free(root):
     app_rust = (app / "build" / "debug" / "App.rs").read_text(encoding="utf-8")
     if app_rust.count("fn __moss_specialize_Provider__bump_0") != 1:
         raise AssertionError("repeated consumer specialization emitted duplicate definitions")
-    if "dyn " in app_rust or "vtable" in app_rust:
+    lowered = strip_executor_runtime(app_rust)
+    if "dyn " in lowered or "vtable" in lowered:
         raise AssertionError("trait specialization introduced runtime dispatch")
 
     # Preserve only normal provider artifacts, then make its Moss source

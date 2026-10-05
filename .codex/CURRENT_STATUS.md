@@ -48,6 +48,23 @@ Final proof-level hardening and concurrency safety completed for Phase 20 Agent 
 - `make examples`: **PASSED** (all 29 examples compiled and verified).
 - `git diff --check`: **Clean**.
 
+## Phase 20 runtime ABI continuation audit (2026-10-04)
+
+Continued from the reserved-names checkpoint below. The staged Agent C
+implementation now provides the executor/root runtime component and its
+physical Rust interfaces in `src/executor_runtime.hpp`; `docs/ROOT_RUNTIME_ABI.md`
+already records the actual crate roles and signatures. In particular, the
+runtime does not export `__moss_process_runtime_raw`: the executable root owns
+the process runtime, and provider crates share only the opaque Branch ABI.
+
+Phase 20 as a whole remains unfinished. The next implementation area is the
+FileIO runtime and Solo hook table; after that, compiler lowering must connect
+Executor configuration/invocation, root message ingress, FileIO operations,
+and the ABI seams. Fast Debug parity is also outstanding. The Phase 20
+specification remains the behavior source; this continuation did not change
+language semantics or run validation, so the earlier Phase 20C validation
+results apply only to that completed executor checkpoint.
+
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
 `docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
