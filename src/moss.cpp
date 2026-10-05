@@ -34,6 +34,7 @@
 #include "diagnostics.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
+#include "fileio_runtime.hpp"
 #include "synchronization_lowering.hpp"
 
 using std::string;
@@ -11657,6 +11658,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
+    if (program_uses_fileio(p_)) o << fileio_runtime_rust();
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());

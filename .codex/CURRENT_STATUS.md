@@ -1,5 +1,32 @@
 # Moss current status
 
+## Phase 20 Agent B — FileIO runtime — COMPLETE (2026-10-04)
+
+Completed the native/OS runtime side of Phase 20 synchronous blocking `FileIO` and passed the corrective hardening pass:
+1. **Rebase & Bootstrap Compliance**:
+   - Rebased onto canonical Phase 20 bootstrap base `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`.
+   - Verified bootstrap protocol (`./moss agent bootstrap --json`) reports `language_version == "moss-0.1"`.
+   - Preserved interface names reserved in `docs/ROOT_RUNTIME_ABI.md` and requirements from `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md`.
+2. **FileIO Lifecycle Contracts & Fail-Closed Behavior**:
+   - `open_in_place(&mut self, path, mode)`: validates receiver is closed/uninitialized before opening replacement; fails closed if already open without modifying live file.
+   - `close(&self)`: requires open receiver and fails closed on uninitialized/closed receiver; performs exactly one underlying close attempt (never retries).
+   - Inode registry claims released after close attempt even if OS close returns error; simulated in tests.
+   - Zero/empty operations (`read(offset, 0)`, empty `write`, empty `read_batch`, `chunks(size)`, `sync()`) validate receiver lifecycle first and fail closed if uninitialized/closed.
+3. **Single-Owner Non-Cloneable `FileIO` & Borrowed `MossChunks`**:
+   - Removed `#[derive(Clone)]` from `FileIO`. Emitted Rust `FileIO` cannot be cloned; verified by dedicated Rust compile-negative test (`test_compile_negative_clone`).
+   - `MossChunks<'a>` borrows `&'a FileIO` (`chunks(&'a self, size) -> MossChunks<'a>`) without capability cloning or heap reference counting (`Arc` removed from FileIO struct).
+4. **Lock Separation Across File Kernel Waits**:
+   - Leaf lock audit: zero runtime/registry mutexes held across kernel waits (`posix::open`, `posix::pread`, `posix::pwrite`, `posix::fsync`, `posix::fdatasync`, `posix::close`).
+   - `sync_internal` parent-directory sync and close execute with receiver mutex released.
+   - Verified via `SoloGuard` hook probing that registry leaf lock is unheld during I/O.
+5. **Numerical Overflow Validation & Error Handling**:
+   - Explicit overflow checks on `offset + size` and `offset + data.len()`, rejecting negative offsets and sizes before arithmetic overflow.
+6. **Validation**:
+   - Expanded test harness `tests/tooling/check_phase20_fileio_runtime.py` covering all 29 behavioral tests (exact/short/EOF reads, explicit offset writes, batch ordering, aliases/inode collision rejection, non-regular rejection, non-truncating create/rw, durability obligations, Solo hook pairing, lifecycle fail-closed, compile-negative uncloneable FileIO, close error simulation, and overflow bounds).
+   - All 61 Emacs ERT tests, multi-module, Fast Debug, and compiler checks in `make check` passed.
+   - `make examples` built all 29 optimized examples without regression.
+   - Ready for Agent C / Agent A integration.
+
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
 `docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
