@@ -32,6 +32,8 @@ FileIO.open(path, mode)
 file.open(path, mode)
 file.read(offset, size)            -> Range
 file.read([(offset, size), ...])  -> RangeBatch
+batch.get(index: i64)             -> Range
+batch.ranges()                    -> &[Range] (native scoped iteration adapter)
 file.write(offset, data)
 file.sync()
 file.sync(dataonly)
@@ -45,6 +47,12 @@ Only regular files are accepted; a second live capability for the same
 internally; a short returned Range establishes EOF. Buffer and batch sizes
 must satisfy the static bounds in the spec. Ownership, borrowing, effects,
 durability, and close behavior follow §§9–12. Console I/O stays separate.
+Native lowering maps the checked one-argument batch form to
+`FileIO::read_batch(&[(i64, i64)])`; a bounded computed local request vector is
+evaluated once and projected to the same ordered request slice. `RangeBatch`
+indexing calls `get(i64)` without converting the Moss Int, and invalid indices
+return the runtime's empty `Range`. Iteration borrows the scoped values from
+`ranges()` and does not materialize a general Moss collection.
 
 ### 2. Executor/root runtime ABI
 
@@ -199,7 +207,13 @@ The process-wide inode registry is a private `FairRegistryLock`: an `AtomicU64` 
   - Executor activates compensation worker; independent work (Root B or another branch) makes progress while Root A is blocked in the kernel.
   - FileIO finishes, `moss_solo_leave` fires without waiting for compute slots.
   - Active worker count never exceeds `T_max`, and excess workers park cleanly.
-- Status: this end-to-end compensation regression is an A+B+C integration dependency. It has not been run on the isolated Agent B branch. Agent B verifies the bridge only: provider FileIO reaches the executable-installed hooks across `.rlib` boundaries, with no FileIO or registry lock held during the callback.
+- Integrated proof: `tests/tooling/check_phase20_executor_fileio.py` runs
+  production FileIO inside an executor Root configured with `threads=1` and
+  `max_threads=2`. Its test-only observer records `SoloEnter` followed by a
+  second `WorkerSpawned`, proving that the real FileIO SoloGuard crosses B's
+  process-wide symbol to C's worker-aware callback and activates compensation.
+  C's independent executor suite continues to verify that instantaneous worker
+  population never exceeds `T_max`.
 ## Physical signatures & Integration Seam (Agent C Runtime)
 
 ### Crate roles
@@ -470,12 +484,16 @@ observes a closed FileIO fails closed.
 
 `executor.invoke` runs as a deterministic sequential schedule of deferred
 roots (snapshot at invoke, run at join). A top-level `message` runs synchronously as
-its own Root. FileIO execution in Fast Debug
-awaits Agent A/B integration and raises a clear error.
+its own Root. Fast Debug FileIO execution is intentionally unsupported in
+Phase 20; native FileIO is the supported execution backend, and the interpreter
+raises a precise diagnostic instead of implementing a second POSIX runtime.
 
 ### Test-only observer
 
 Integration tests link generated code against the real Agent B/C runtimes.
 `tests/tooling/fixtures/phase20_runtime_observer.rs` (never emitted by the
 compiler) is appended under `--cfg moss_perf` and installs Agent C's
-`moss_rt_set_hook` to trace Branch publication and completion.
+`moss_rt_set_hook` to trace Branch publication/completion, Solo entry, and
+worker creation. The Solo/worker events support the production compensation
+regression described above; the observer does not schedule work or alter the
+runtime.

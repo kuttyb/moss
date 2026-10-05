@@ -16,8 +16,9 @@ phase20_runtime_observer.rs, never emitted by the compiler) that installs
 Agent C's `moss_perf` instrumentation hook.
 
 Fast Debug models executor.invoke as a deterministic sequential schedule of
-deferred roots (compared against native output below). FileIO execution in
-Fast Debug awaits Agent A/B integration; Fast Debug raises a clear error.
+deferred roots (compared against native output below). FileIO execution is
+intentionally unsupported in Fast Debug; native execution uses Agent B's
+production FileIO runtime.
 """
 import os
 from pathlib import Path
@@ -77,6 +78,12 @@ def native_build(name, source, *, observe=False):
 
 def run_binary(binary):
     return run([binary])
+
+
+def program_output(stdout):
+    return [line for line in stdout.splitlines()
+            if not line.startswith(('moss-solo ', 'moss-worker spawned ',
+                                    'moss-branch '))]
 
 
 def fast_debug(source, *, expected=0):
@@ -298,7 +305,8 @@ root_text = code_only(root_rust.read_text())
 assert root_text.count('runtime_invoke(') == 4, root_text
 work_body = re.search(r'fn __moss_body_Worker_Work\b.*?\n}\n', root_text, re.S)
 assert work_body and 'runtime_invoke' not in work_body.group(0), work_body
-assert run_binary(root_binary).stdout == '3\nlabel evaluated\n4\n6\n'
+root_output = run_binary(root_binary).stdout
+assert program_output(root_output) == ['3', 'label evaluated', '4', '6'], root_output
 
 # Root ingress marking covers nested main control-flow blocks.
 nested_root_source = write_source('phase20_root_message_nested_control', """enum MainChoice:
@@ -331,7 +339,7 @@ nested_rust, nested_binary = native_build(
     'phase20_root_message_nested_control', nested_root_source, observe=True)
 nested_text = code_only(nested_rust.read_text())
 assert nested_text.count('runtime_invoke(') == 4, nested_text
-assert run_binary(nested_binary).stdout == '10\n'
+assert program_output(run_binary(nested_binary).stdout) == ['10']
 
 exported_root_source = write_source('phase20_root_message_exported_domain', """export domain Boundary:
   fn Read() -> Int:
@@ -348,7 +356,7 @@ exported_rust, exported_binary = native_build(
     'phase20_root_message_exported_domain', exported_root_source, observe=True)
 exported_text = code_only(exported_rust.read_text())
 assert 'runtime_invoke(move ||' in exported_text and '.__moss_message_Read()' in exported_text
-assert run_binary(exported_binary).stdout == '23\n'
+assert program_output(run_binary(exported_binary).stdout) == ['23']
 
 # runtime_invoke is emitted for executor-free main messages as well; the
 # normal executable root includes Agent C's runtime in INLINE mode.
@@ -392,7 +400,58 @@ assert 'data.len()' in text and 'data.length()' not in text
 assert run_binary(binary).stdout == '5\n'
 assert write_target.read_text() == 'written bytes', write_target.read_text()
 p = fast_debug(fileio_source, expected=1)
-assert "FileIO requires Agent B's" in p.stderr, p.stderr
+assert "Fast Debug FileIO execution is intentionally unsupported in Phase 20" in p.stderr, p.stderr
+
+# The promoted A+B source fixture exercises dynamic offsets, String write,
+# direct read, inline batch read, get(0), a later valid dynamically computed
+# index, the runtime's empty-Range out-of-range contract, scoped iteration,
+# length, sync, and explicit close against Agent B's production runtime.
+integration_fixture = 'tests/tooling/fixtures/phase20_fileio_runtime_integration.moss'
+fixture_rust, fixture_binary = native_build(
+    'phase20_fileio_runtime_integration', integration_fixture)
+fixture_text = fixture_rust.read_text()
+assert '.read_batch(&[' in fixture_text, fixture_text
+assert '(batch).get(0_i64)' in fixture_text, fixture_text
+assert '(batch).get(index)' in fixture_text, fixture_text
+assert '(batch).get((index).wrapping_add(1_i64))' in fixture_text, fixture_text
+assert 'in (batch).ranges()' in fixture_text, fixture_text
+assert run_binary(fixture_binary).stdout == '4 4 4 0 8\n'
+
+# Agent A also accepts bounded computed local Vector[record] request batches.
+computed_batch_source = write_source('phase20_fileio_computed_batch', '''type ReadRequest:
+  offset: Int
+  size: Int
+
+fn inspect(file: FileIO, offset: Int) -> Int:
+  requests = [ReadRequest(offset = offset, size = 4), ReadRequest(offset = offset + 4, size = 4)]
+  batch = file.read(requests)
+  index = offset - 1
+  second = batch[index]
+  total = 0
+  for item in batch:
+    total = total + item.length()
+  return second.length() + total
+
+fn main():
+  file = FileIO.open("%s", create)
+  file.write(0, "abcdefgh")
+  result = inspect(file, 1)
+  file.sync()
+  file.close()
+  echo result
+''' % (out / 'phase20_fileio_computed_batch.data'))
+computed_data = out / 'phase20_fileio_computed_batch.data'
+if computed_data.exists():
+    computed_data.unlink()
+computed_rust, computed_binary = native_build(
+    'phase20_fileio_computed_batch', computed_batch_source)
+computed_text = computed_rust.read_text()
+assert 'read_batch(&__moss_fileio_batch_pairs_' in computed_text, computed_text
+assert '.iter().map(|__moss_request| (__moss_request.offset, __moss_request.size))' in computed_text
+assert '(batch).get(index)' in computed_text, computed_text
+assert 'in (batch).ranges()' in computed_text, computed_text
+assert 'batch)[(index) as usize]' not in computed_text
+assert run_binary(computed_binary).stdout == '11\n'
 
 _, binary = native_build('phase20_fileio_helper_parameter', 'tests/phase20_fileio_helper_parameter.moss')
 assert run_binary(binary).stdout == '64\n'
@@ -430,7 +489,8 @@ WINDOW = len(WINDOW_TRACE)
 
 
 def split_trace(stdout):
-    lines = [line for line in stdout.splitlines() if not line.startswith('moss-solo ')]
+    lines = [line for line in stdout.splitlines()
+             if not line.startswith(('moss-solo ', 'moss-worker spawned '))]
     trace = [line for line in lines if line.startswith('moss-branch ')]
     program = [line for line in lines if not line.startswith('moss-branch ')]
     return lines, trace, program
@@ -657,7 +717,7 @@ domain Reader:
 fn main():
   count = Count()
   reader = Reader()
-  executor = Executor().threads(2).max_threads(4).start()
+  executor = Executor().threads(1).max_threads(2).start()
   path = "%s"
   executor.invoke(reader.Scan(path + ".a"))
   executor.invoke(reader.Scan(path + ".b"))
@@ -672,7 +732,17 @@ for _ in range(5):
     assert program == [str(len(e2e_data.read_bytes())), '128'], program
     publishes = trace.count('moss-branch publish')
     assert publishes and publishes % 4 == 0 and trace.count('moss-branch run') == publishes, trace
-    assert 'moss-solo enter' in stdout.splitlines(), stdout
+    events = stdout.splitlines()
+    solo_positions = [index for index, event in enumerate(events)
+                      if event == 'moss-solo enter']
+    worker_positions = [index for index, event in enumerate(events)
+                        if event.startswith('moss-worker spawned ')]
+    assert solo_positions, stdout
+    # threads=1 creates the initial worker; the later WorkerSpawned event must
+    # follow the production FileIO SoloEnter and proves C activated
+    # compensation through B's process-wide Solo hook.
+    assert len(worker_positions) >= 2, stdout
+    assert any(position > solo_positions[0] for position in worker_positions), stdout
 
 # Sequential `for` over the scoped chunk source iterates Agent B's MossChunks.
 for_chunks_source = write_source('phase20_for_chunks', '''fn main():

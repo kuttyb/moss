@@ -1,127 +1,72 @@
 # Moss current status
 
-## Phase 20 integration (A+B+C+D) — branch `phase-20-integration` (2026-10-04)
+## Phase 20 — implementation complete / Phase 20.5 validation soak pending
 
-**Integration marker — Phase 20 is NOT complete.**
+Branch: `phase-20-integration`. This section is the authoritative integrated
+status; older Agent closeout records below are historical inputs and may
+describe their isolated branches.
 
-| Agent | Integrated through | Newer head pending |
-| --- | --- | --- |
-| A — FileIO semantics | `85e6eff` (final closeout; includes `ee9ea0b`) | none |
-| B — FileIO runtime | `7d1b05a` | none |
-| C — Executor runtime | `7d3aa89` (merge `5fcfcb9`) | `9a1dafb` (`phase-20-c-executor-runtime`, active/recovering; not reviewed, not integrated) |
-| D — Concurrency lowering | `557609e` (merge `162c40c`) | `5d7a90b` (`phase-20-d-concurrency-lowering`, active/recovering; not reviewed, not integrated) |
+| Input | Integrated revision |
+| --- | --- |
+| Agent A — final FileIO semantics | `85e6eff` |
+| Agent B — production FileIO runtime and integration | `7d1b05a` plus integration seam |
+| Agent C — process executor runtime | `a099d3e8029c03b7f82030a704001606be532a7a` |
+| Agent D — compiler concurrency lowering | `4cde23ffbb8b4419389f28d546537a12c48dbeb2` |
+| Integration | closeout commit for this pass (parent `ef1fcbd`) |
 
-The branch waits only for the final declared C and D heads. Agent B's
-integration assignment is complete. Do not merge to `main` without explicit
-authorization.
+Phase 20 implementation is ready to enter the Phase 20.5 native IO/Executor
+swarm and soak campaign after the validation below. No Phase 20 production
+runtime is owned by D. Main-originated messages use `runtime_invoke` in all
+control-flow positions and in executor-free programs; messages inside a Root
+remain synchronous nested calls. Executor configuration uses checked
+conversions, and eligible chunk pipelines use K=4 Branch windows with ordered
+parent reduction and owned read-borrow tokens.
 
-### Final Agent A reconciliation (merge of `85e6eff`)
+FileIO batch reads lower through production `FileIO::read_batch`; `RangeBatch`
+indexing uses checked `get(i64)`, and iteration borrows scoped ranges through
+`ranges()`. Source-free provider FileIO effects remain `fileio_unknown`, so
+those pipelines are valid and lower sequentially until `.mossi` carries an
+authoritative FileIO effect bit. This is an optimization limitation, not a
+correctness blocker. Fast Debug FileIO execution is intentionally unsupported
+in Phase 20; native FileIO is the supported backend and Fast Debug reports that
+limitation directly.
 
-`src/static_bounds.inc` is byte-identical to A's final version (comma
-sequence mutation, simple/transitive alias mutation, named/indexed mutated
-arguments, common `is_direct_fileio_open_initializer`, no Vector[Int] payload
-bound). `src/fileio_semantics.inc` is A's final version plus exactly the two
-integration additions (`phase20_capability_type`; pipeline deferral in
-`fileio_result_type`). A's String-only `FileIO.write` restriction
-(`FILEIO_INVALID_PAYLOAD` for Vector[Int] and Range payloads) and
-parenthesized-owner normalization are in force. D's duplicate FileIO legality
-checker remains removed; D keeps only Executor statements and the chunk-shape
-rule. The ten final-A regressions (`byte_vector_write_rejected`,
-`range_write_rejected`, `echo_second_arg_mutates_batch`,
-`echo_mutation_through_local_alias_loses_bound`,
-`echo_mutation_through_transitive_local_alias_loses_bound`,
-`fileio_duplicate_close_read_alias_rejected`,
-`fileio_duplicate_write_read_alias_rejected`,
-`fileio_duplicate_read_alias_allowed`,
-`parenthesized_fileio_owner_static_write_bound`,
-`parenthesized_fileio_owner_chunk_bound`) run in
-`check_phase20_fileio_semantics.py`, which `tests/run.sh` executes.
+The production FileIO→Solo→C compensation regression is in
+`tests/tooling/check_phase20_executor_fileio.py`: with `threads=1` and
+`max_threads=2`, its observer sees `SoloEnter` followed by a second
+`WorkerSpawned` event while the FileIO Root is active. Agent C's separate suite
+continues to prove the `T_max` worker bound.
 
-A's new `tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss`
-stays pending: native lowering of batch reads is missing. D emits
-`file.read(vec![offset, 4, (offset) + (4, 4)])` for
-`file.read([(offset, 4), (offset + 4, 4)])` and `batch[0]` as Vec
-indexing, while B provides `FileIO::read_batch(&[(i64, i64)]) -> RangeBatch`
-and `RangeBatch::get(i64)`. This is D lowering work. D's pending `5d7a90b`
-changes RangeBatch type representation but adds no batch lowering, so it was
-not guessed at here. Fast Debug FileIO also remains unimplemented.
+Validation rerun for closeout:
 
-Validation (A reconciliation, final merged tree): `./moss agent bootstrap
---json` → `moss-0.1`; `check_phase20_fileio_semantics.py` passed;
-`check_phase20_fileio_runtime.py` 47 PASS; `check_phase20c_executor.py`
-36/36; `check_phase20_executor_fileio.py` passed; `make check` passed ("all
-Moss v0.1 tests passed", ERT 61/61); `make examples` passed; `git diff
---check` and `sh -n tests/run.sh` clean. Integrated A+B+C+D
-FileIO/Solo/Branch binary: 100/100 correct (Solo entry observed every run,
-Branch publish count = run count) and 30/30 pinned to one CPU.
+- `./moss agent bootstrap --json`: reports `language_version: moss-0.1`.
+- Agent A `check_phase20_fileio_semantics.py`: passed.
+- Agent B `check_phase20_fileio_runtime.py`: all production runtime checks passed.
+- Agent C `check_phase20c_executor.py`: 51/51 passed.
+- Agent D/integration `check_phase20_executor_fileio.py`: passed against the
+  production FileIO and Executor runtimes, including inline and computed batch
+  lowering, indexing/iteration, and the observed Solo compensation activation.
+- `sh tests/run.sh ./moss build/tests`: passed; all four Phase 20 suites are in
+  the normal gate, and all 61 Emacs tests passed.
+- `make check`: passed; all Moss v0.1 tests passed and Emacs reported 61/61.
+- `make examples`: passed.
+- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` compiler build,
+  `sh -n tests/run.sh`, and `git diff --check`: passed.
 
-### Earlier integration work (preserved)
+Phase 20 implementation is complete. Final native IO/Executor behavior and
+load testing remain the intentional Phase 20.5 swarm/soak campaign. This is a
+local integration closeout; do not push this branch.
 
-Merges of Agents A–D (`ea6d97f`..`162c40c`) plus integration fixes. User
-snapshot `6d2baa8` holds the first half (Solo hooks: C installs
-`solo_enter_current`/`solo_leave_current` via B's
-`moss_root_runtime::moss_set_solo_hooks` and no longer defines
-`moss_solo_enter/leave`; root vs provider executor emission matches
-`fileio_root_runtime_rust()`; C test no longer clones the linear handle).
-Work on top of it:
+### Historical integration notes
 
-1. **A owns FileIO legality.** D's `check_executor_or_fileio_statement` no
-   longer pre-empts FileIO open/read/write/sync/close (it bypassed A's batch
-   reads, pinned-owner, bounds and lifecycle checks). D keeps only the
-   chunk-source shape rule (`FILEIO_CHUNKS_NOT_MATERIALIZABLE`, spec §13),
-   emitted after A's operand/bound diagnostics. Removed D's duplicate mode
-   checker.
-2. **Pipeline typing fix.** A's `fileio_result_type` typed a whole
-   `file.chunks(n) |> map(..) |> reduce(..)` expression as `seq[Range]`
-   (`parse_member_call` misreads past `|>`); it now defers pipelines to the
-   functional IR. Exposed by a handler `reply` of a placeholder-map pipeline.
-3. **Boundary fact.** Message and `executor.invoke` argument checks use the
-   Checker's `phase20_capability_type` = D's name predicate ∪ A's structural
-   `fileio_contains_scoped_type`. A's pending fixture is promoted to
-   `tests/negative/phase20_fileio_executor_invoke.moss` (untyped handler
-   parameter inferred from invoke → `FILEIO_BOUNDARY_ESCAPE`).
-4. **B/D seam.** B's `FileIO.inner` is now `Arc<Mutex<Option<FileIOInner>>>`;
-   added `MossFileIOReadBorrow` + `moss_fileio_branch_read_borrow` sharing one
-   `read_shared` path with `FileIO::read` (same lifecycle check, Solo hooks,
-   errno capture; fails closed after close). Documented in
-   `docs/ROOT_RUNTIME_ABI.md`.
-5. **D tests on real runtimes.** Removed the three TEST-ONLY shims; generated
-   code links against the emitted B/C runtimes. New
-   `tests/tooling/fixtures/phase20_runtime_observer.rs` (appended under
-   `--cfg moss_perf`, installs C's `moss_rt_set_hook` via `.init_array`)
-   traces Branch publish/run and Solo entry. Window shape is now
-   `publish×4, run×4` per K=4 window. Config order is checked on the emitted
-   builder chain plus stdout. Added an integrated e2e case: invoked Roots doing
-   FileIO (Solo → compensation) concurrently with a message-called handler
-   whose chunk pipeline runs as Branches on executor workers (5 runs/test;
-   manual 40/40 plus single-CPU pinned run).
-6. **`for chunk in file.chunks(n)`** was accepted by A's checker but codegen
-   appended `.iter()` to B's `MossChunks` (already `Iterator<Item = Range>`);
-   it now iterates directly. Regression added to the D suite.
-7. **`make check` regressions from C's merge** (reproduced at merge commit
-   `162c40c`). Every root emits C's runtime (`Box<dyn FnOnce() + Send>`
-   work, FFI `unsafe`, `root_queue.pop_front()`), which tripped whole-file
-   scans meant for compiler lowering. The runtime block now has an end
-   delimiter; scans exclude exactly that block via `user_rust` in
-   `tests/run.sh` (hof, bound-method, static-trait, implicit-domain,
-   integer-wrapping `unsafe`, swarm_002 Queue `pop_front` positive) and
-   `tests/tooling/generated_rust.py::without_executor_runtime`
-   (check_phase15_9, check_handler_2pl, check_borrowed_reads,
-   check_phase106f). The helper requires exactly one block.
+The earlier integration reconciled A's semantic checker with D lowering,
+connected B's owned `MossFileIOReadBorrow` to D's Branch closures, and unified
+the executable process runtime across root and provider crates. It also added
+production-runtime tests for Root ingress, nested messages, Branch windows,
+and cross-package publication. See the historical Agent records below for
+their original branch-specific validation details.
 
-Validation (this tree): Phase 20 A semantics suite passed; D
-executor/fileio suite passed; B runtime suite 47 PASS; C executor suite
-36/36; `make check` passed ("all Moss v0.1 tests passed", ERT 61/61);
-`make examples` passed; `sh -n tests/run.sh` and `git diff --cached
---check` clean. All results are for the final staged tree (not committed).
-
-Open items: Fast Debug FileIO is still unimplemented
-(`src/interpreter_phase20.inc` raises a clear error), so native/Fast Debug
-parity for FileIO programs is incomplete.
-`check_phase20c_executor.py` is not wired into `tests/run.sh`. `fileio`
-effects are not yet serialized to `.mossi`/effect JSON. Not pushed.
-
-## Phase 20 Agent A — FileIO semantics (closeout `85e6eff`, as recorded by Agent A)
+## Historical Phase 20 Agent A — FileIO semantics (closeout `85e6eff`, as recorded by Agent A)
 
 > Integration note: on `phase-20-integration` the executor-invoke pending
 > fixture is promoted to `tests/negative/phase20_fileio_executor_invoke.moss`,
@@ -192,7 +137,7 @@ integration. No B/C/D implementation was pulled into this branch, and native
 FileIO execution remains unvalidated until Agent B integration. The
 `executor.invoke` boundary remains Agent D responsibility.
 
-## Phase 20 Agent B — FileIO runtime corrective handoff — COMPLETE (2026-10-04)
+## Historical Phase 20 Agent B — FileIO runtime corrective handoff — COMPLETE (2026-10-04)
 
 Resumed from handoff snapshot `633ad536c7a5` (in progress, parent
 `4ff337d`). The snapshot's earlier "COMPLETE" record overstated its state:
@@ -282,7 +227,7 @@ Remaining dependency: the end-to-end A+B+C executor compensation regression
 (contract in `docs/ROOT_RUNTIME_ABI.md`) has **not** run on this branch. It
 needs Agent C's executor and Agent A's FileIO source semantics. Not merged, not
 pushed.
-## Phase 20 Agent C — Final Hardened Executor Runtime — COMPLETE (2026-10-04)
+## Historical Phase 20 Agent C — Final Hardened Executor Runtime — COMPLETE (2026-10-04)
 
 Final proof-level hardening and concurrency safety completed for Phase 20 Agent C executor and root runtime on branch `phase-20-c-executor-runtime`.
 - **Checkpoint & Base:** HEAD `de65b182b536b33e12deae3e60a900ab75b2d22f` -> hardened implementation (base: `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`).
@@ -329,7 +274,7 @@ Final proof-level hardening and concurrency safety completed for Phase 20 Agent 
 - `sh tests/run.sh ./moss build/tests`: **All Moss v0.1 tests passed**.
 - `make examples`: **PASSED** (all 29 examples compiled and verified).
 - `git diff --check`: **Clean**.
-## Phase 20 Agent D — Compiler concurrency lowering (2026-10-04)
+## Historical Phase 20 Agent D — Compiler concurrency lowering (2026-10-04)
 
 Branch `phase-20-d-concurrency-lowering` recovered at
 `5d7a90b3302df8a136f35d2c401a3595e5dd0342` (`Checkpoint`) after preserving the

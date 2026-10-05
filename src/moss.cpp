@@ -12791,6 +12791,7 @@ class Generator {
           return string("executor");
         if (concrete_receiver == "FileIO") {
           if (method_name == "read" && method_args.size() == 2) return string("Range");
+          if (method_name == "read" && method_args.size() == 1) return string("RangeBatch");
           if (method_name == "chunks" && method_args.size() == 1) return string("seq[Range]");
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
@@ -12893,6 +12894,7 @@ class Generator {
       auto base_type = generated_expr_type(index_base, types);
       if (base_type) {
         string concrete = canonical_type_name(*base_type);
+        if (concrete == "RangeBatch") return string("Range");
         if (starts_with(concrete, "vector[") && ends_with(concrete, "]"))
           return trim(concrete.substr(7, concrete.size() - 8));
         if (starts_with(concrete, "queue[") && ends_with(concrete, "]"))
@@ -14060,9 +14062,12 @@ class Generator {
     }
     string ib, ii;
     if (parse_index(e, ib, ii)) {
+      auto base_type = generated_expr_type(ib, types);
+      if (base_type && canonical_type_name(*base_type) == "RangeBatch")
+        return "(" + expr(ib, d, locals, types) + ").get(" +
+            expr(ii, d, locals, types) + ")";
       bool string_index = ii.size() >= 2 && ii.front() == '"' && ii.back() == '"';
       string ir = string_index ? ii : expr(ii, d, locals, types);
-      auto base_type = generated_expr_type(ib, types);
       bool map_index = base_type &&
           (canonical_type_name(*base_type) == "map" ||
            starts_with(canonical_type_name(*base_type), "map["));
@@ -14112,6 +14117,116 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        // Agent A checks the one-argument read form as a bounded RangeBatch.
+        // This branch only adapts that checked form to Agent B's read_batch
+        // ABI; it deliberately does not repeat request legality or bound
+        // analysis here.
+        if (concrete == "FileIO" && member_name == "read" &&
+            member_arguments.size() == 1) {
+          const size_t batch_id = fileio_chunk_temp_++;
+          string receiver_temp = "__moss_fileio_batch_receiver_" +
+              std::to_string(batch_id);
+          std::ostringstream lowered;
+          lowered << "{ let " << receiver_temp << " = &("
+                  << receiver_expression << "); ";
+          string requests = strip_redundant_outer_parentheses(
+              trim(member_arguments.front()));
+          bool inline_requests = requests.size() >= 2 &&
+              requests.front() == '[' && requests.back() == ']';
+          if (!inline_requests) {
+            auto request_type = generated_expr_type(requests, types);
+            string concrete_request_type = request_type
+                ? canonical_type_name(*request_type) : string();
+            if (!starts_with(concrete_request_type, "vector[") ||
+                !ends_with(concrete_request_type, "]"))
+              throw std::runtime_error(
+                  "internal error: checked FileIO batch requests lost their vector type");
+            string record_type = trim(concrete_request_type.substr(
+                7, concrete_request_type.size() - 8));
+            auto record = objects_.find(canonical_type_name(record_type));
+            if (record == objects_.end())
+              throw std::runtime_error(
+                  "internal error: checked FileIO batch request record is unavailable");
+            auto offset_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "offset";
+                });
+            auto size_field = std::find_if(record->second->fields.begin(),
+                record->second->fields.end(), [](const Field& field) {
+                  return field.name == "size";
+                });
+            if (offset_field == record->second->fields.end() ||
+                size_field == record->second->fields.end())
+              throw std::runtime_error(
+                  "internal error: checked FileIO batch request fields are unavailable");
+            string requests_temp = "__moss_fileio_batch_records_" +
+                std::to_string(batch_id);
+            string pairs_temp = "__moss_fileio_batch_pairs_" +
+                std::to_string(batch_id);
+            lowered << "let " << requests_temp << " = &("
+                    << expr(requests, d, locals, types) << "); "
+                    << "let " << pairs_temp << " = " << requests_temp
+                    << ".iter().map(|__moss_request| (__moss_request."
+                    << rust_identifier(offset_field->name)
+                    << ", __moss_request."
+                    << rust_identifier(size_field->name)
+                    << ")).collect::<std::vec::Vec<_>>(); "
+                    << receiver_temp << ".read_batch(&" << pairs_temp << ") }";
+            return lowered.str();
+          }
+
+          string entries_source = trim(
+              requests.substr(1, requests.size() - 2));
+          vector<string> entries = entries_source.empty()
+              ? vector<string>{} : split_top_level(entries_source, ',');
+          vector<std::pair<string, string>> coordinate_temps;
+          for (size_t entry_index = 0; entry_index < entries.size();
+               ++entry_index) {
+            string entry = trim(entries[entry_index]);
+            vector<string> coordinates;
+            if (entry.size() >= 2 && entry.front() == '(' &&
+                entry.back() == ')') {
+              coordinates = split_top_level(
+                  entry.substr(1, entry.size() - 2), ',');
+            } else {
+              string constructor;
+              vector<string> fields;
+              if (parse_simple_call(entry, constructor, fields) &&
+                  objects_.count(canonical_type_name(constructor))) {
+                std::map<string, string> named;
+                for (const auto& field : fields) {
+                  string name, expression;
+                  if (parse_named_argument(field, name, expression))
+                    named[name] = expression;
+                }
+                if (named.count("offset") && named.count("size") &&
+                    fields.size() == 2)
+                  coordinates = {named["offset"], named["size"]};
+              }
+            }
+            if (coordinates.size() != 2)
+              throw std::runtime_error(
+                  "internal error: checked FileIO batch entry was not a request pair");
+            string offset_temp = "__moss_fileio_batch_offset_" +
+                std::to_string(batch_id) + "_" + std::to_string(entry_index);
+            string size_temp = "__moss_fileio_batch_size_" +
+                std::to_string(batch_id) + "_" + std::to_string(entry_index);
+            lowered << "let " << offset_temp << " = "
+                    << expr(coordinates[0], d, locals, types) << "; let "
+                    << size_temp << " = "
+                    << expr(coordinates[1], d, locals, types) << "; ";
+            coordinate_temps.emplace_back(std::move(offset_temp),
+                                          std::move(size_temp));
+          }
+          lowered << receiver_temp << ".read_batch(&[";
+          for (size_t index = 0; index < coordinate_temps.size(); ++index) {
+            if (index) lowered << ", ";
+            lowered << "(" << coordinate_temps[index].first << ", "
+                    << coordinate_temps[index].second << ")";
+          }
+          lowered << "]) }";
+          return lowered.str();
+        }
         // Phase 20: Moss `range.length()` lowers to Agent B's runtime
         // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.
         if ((concrete == "Range" || concrete == "RangeBatch") && member_name == "length" && member_arguments.empty())
@@ -15527,6 +15642,22 @@ class Generator {
           bool vector_source = source_type &&
               (starts_with(element_type, "vector[") ||
                starts_with(element_type, "seq["));
+          if (source_type &&
+              canonical_type_name(*source_type) == "RangeBatch") {
+            string collection_expression = expr(source, d, locals, &types);
+            o << indent(level) << "for " << s.a << " in ("
+              << collection_expression << ").ranges() {\n";
+            auto child_locals = locals;
+            auto child_types = types;
+            child_locals.insert(s.a);
+            child_types[s.a] = "Range";
+            ++i;
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      child_locals, child_types, base, in_handler, in_function,
+                      join_assignments, functional_context);
+            o << indent(level) << "}\n";
+            break;
+          }
           if (vector_source) {
             string element = starts_with(element_type, "vector[")
                 ? trim(element_type.substr(7, element_type.size() - 8))

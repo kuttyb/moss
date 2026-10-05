@@ -1,0 +1,24 @@
+# Production A+B native FileIO integration fixture.
+# Validation compiles and executes this source against the real
+# Agent B FileIO ABI, including dynamic offsets, String writes, reads, batch
+# indexing, and explicit close. This fixture does not prove executor
+# compensation; deterministic A+B+C compensation coverage is separate.
+
+fn exercise(file: FileIO, offset: Int):
+  file.write(offset, "abcdefgh")
+  data = file.read(offset, 4)
+  batch = file.read([(offset, 4), (offset + 4, 4)])
+  first = batch[0]
+  index = offset + 1
+  second = batch[index]
+  missing = batch[index + 1]
+  total = 0
+  for item in batch:
+    total = total + item.length()
+  echo data.length(), first.length(), second.length(), missing.length(), total
+
+fn main():
+  file = FileIO.open("tmp/phase20-fileio-integration.tmp", create)
+  exercise(file, 0)
+  file.sync()
+  file.close()

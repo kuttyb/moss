@@ -14,11 +14,10 @@
 // This is a valid schedule of Phase 20 roots, not a competing worker pool:
 // it models no physical parallelism, fairness, or timing.
 //
-// FileIO: Agent B owns the FileIO runtime. Fast Debug does not re-implement
-// a POSIX FileIO system here; `FileIO.open(...)` (and therefore any chunk
-// pipeline) raises a clear "pending Agent B" error until A/B integration
-// supplies the Fast Debug path. Native chunk-pipeline lowering is tested
-// against test-only shims instead (tests/tooling/check_phase20_executor_fileio.py).
+// FileIO: native execution uses Agent B's production runtime. Fast Debug
+// intentionally does not implement a second POSIX FileIO backend in Phase 20;
+// `FileIO.open(...)` (and therefore any chunk pipeline) reports that FileIO
+// execution requires the native backend.
 
   std::map<std::string, std::vector<PreparedHandlerCall>> fast_debug_executors_;
 
@@ -39,8 +38,8 @@
       std::vector<std::string> open_arguments;
       if (interp_parse_fileio_open(statement.b, open_arguments)) {
         throw RuntimeError(statement.line,
-            "FileIO requires Agent B's Phase 20 runtime integration; not yet "
-            "executable in Fast Debug (see src/interpreter_phase20.inc)");
+            "Fast Debug FileIO execution is intentionally unsupported in Phase 20; "
+            "run this program with the native backend");
       }
       return false;
     }

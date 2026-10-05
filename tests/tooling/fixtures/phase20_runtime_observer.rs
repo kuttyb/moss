@@ -12,6 +12,7 @@ fn moss_test_observer(event: MossRtEvent, _root: u64, _branch: u64, _worker: usi
         MossRtEvent::BranchPublished => println!("moss-branch publish"),
         MossRtEvent::BranchCompleted => println!("moss-branch run"),
         MossRtEvent::SoloEnter => println!("moss-solo enter"),
+        MossRtEvent::WorkerSpawned => println!("moss-worker spawned {}", _worker),
         _ => {}
     }
 }
