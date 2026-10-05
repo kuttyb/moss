@@ -11,12 +11,17 @@
 #include <map>
 #include <optional>
 #include <ostream>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "ast.hpp"
 
@@ -216,6 +221,7 @@ class FastInterpreter {
   std::vector<int> handler_stack_;
   std::vector<int> control_stack_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
+  std::set<std::pair<unsigned long, unsigned long>> fileio_registry_;
 
   static std::string checked_binding_type(const Stmt& statement,
                                           const Frame& frame) {
@@ -577,6 +583,15 @@ class FastInterpreter {
   Value eval_pipeline(const std::vector<std::string>& stages, Frame& frame,
                       int line, std::ostream& output) {
     if (stages.size() < 2) return Value::unit();
+    {
+      std::string fileio_receiver, size_expression;
+      if (interp_parse_fileio_chunks_source(stages.front(), fileio_receiver, size_expression)) {
+        auto receiver_type = frame.local_types.find(trim_copy(fileio_receiver));
+        if (receiver_type != frame.local_types.end() && receiver_type->second == "fileio")
+          return eval_fileio_chunk_pipeline(fileio_receiver, size_expression, stages,
+                                            frame, line, output);
+      }
+    }
     Value current = eval(stages.front(), frame, line, output);
     for (size_t stage_index = 1; stage_index < stages.size(); ++stage_index) {
       std::string callee; std::vector<std::string> args;
@@ -637,6 +652,7 @@ class FastInterpreter {
   }
 
 #include "interpreter_domains.inc"
+#include "interpreter_fileio.inc"
 
   Value eval(const std::string& expression, Frame& frame, int line,
              std::ostream& output) {
@@ -1321,6 +1337,7 @@ class FastInterpreter {
       }
       Flow flow;
       if (compose(statement, frame, output)) { ++index; continue; }
+      if (interp_executor_or_fileio_statement(statement, frame, output)) { ++index; continue; }
       switch (statement.kind) {
         case Stmt::Kind::Let:
         case Stmt::Kind::Var:

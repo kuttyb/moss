@@ -1,0 +1,11 @@
+domain Worker:
+  fn Process(path: String):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  file = FileIO.open("tests/phase20_fileio_basic.moss", ro)
+  executor.invoke(worker.Process(file))
+  file.close()
+  executor.join()

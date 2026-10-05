@@ -1,0 +1,9 @@
+domain Worker:
+  fn Read() -> Int:
+    reply 1
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  executor.invoke(worker.Read())
+  executor.join()

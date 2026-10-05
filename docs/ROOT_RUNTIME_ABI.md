@@ -124,3 +124,32 @@ entry paths that must implement the same root-ingress semantics.
 
 Record physical signatures and layouts here once defined by their owning
 implementation area from the phase spec, before other areas call them.
+
+## Agent D interim adapters (2026-10-04; non-normative, pending A/C integration)
+
+Agent D (compiler concurrency lowering) landed before Agent A (FileIO) or
+Agent C (Executor/root runtime) in this tree. Per the phase spec's own
+escape hatches, it added the narrowest adapters needed to make
+`executor.invoke` and FileIO chunk pipelines compile-time legal and
+run correctly end to end. These are explicitly **not** the normative
+`RootDescriptor` / `branch_publish` / `branch_join` / `runtime_invoke`
+contracts fixed above, and should be replaced (not merged with) once
+Agent A/C land:
+
+- `executor.invoke(...)` does not produce a `RootDescriptor` or call any
+  root-admission mechanism. It lowers inline to a direct, synchronous call
+  of the target handler's existing `<Handler>_shared(...)` entry point
+  (native) or to the existing `message(...)` helper (Fast Debug), at the
+  `invoke` call site. `Executor()`/`.threads()`/etc. compile to an inert
+  `()` marker; `.join()` is a no-op. See `src/executor_invoke_codegen.inc`.
+- A minimal `MossFileIO` Rust struct (native, `src/fileio_runtime.hpp`) and
+  a parallel C++ Fast Debug implementation (`src/interpreter_fileio.inc`)
+  provide `open`/`read`/`write`/`sync`/`close` over real POSIX file I/O,
+  with a process-local `(device, inode)` registry. This is not Agent A's
+  general FileIO ownership/effect implementation: there is no domain-field
+  lock integration, no `Range`/`RangeBatch` borrow type (chunk/read bytes
+  surface as a plain Moss `string`), and no batch reads.
+- Chunk-pipeline parallel-lowering eligibility is computed and recorded
+  (`src/file_chunk_lowering.inc`), but there is no `branch_publish`/
+  `branch_join` call anywhere: every chunk pipeline, eligible or not,
+  executes the sequential reference loop on both backends.

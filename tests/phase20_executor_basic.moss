@@ -1,0 +1,17 @@
+domain Worker:
+  total = 0
+
+  fn Process(amount: Int):
+    total = total + amount
+
+  fn Read() -> Int:
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(4).start()
+  executor.invoke(worker.Process(5))
+  executor.invoke(worker.Process(7))
+  executor.join()
+  result = message worker.Read()
+  echo result

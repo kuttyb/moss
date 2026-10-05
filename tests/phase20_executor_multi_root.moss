@@ -1,0 +1,19 @@
+domain Counter:
+  value = 0
+
+  fn Add(amount: Int):
+    value = value + amount
+
+  fn Read() -> Int:
+    reply value
+
+fn main():
+  counter = Counter()
+  executor = Executor().threads(2).max_threads(4).queue_capacity(8).start()
+  executor.invoke(counter.Add(1))
+  executor.invoke(counter.Add(2))
+  executor.invoke(counter.Add(3))
+  executor.invoke(counter.Add(4))
+  executor.join()
+  result = message counter.Read()
+  echo result

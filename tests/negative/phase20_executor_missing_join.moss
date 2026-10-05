@@ -1,0 +1,8 @@
+domain Worker:
+  fn Process(amount: Int):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  executor.invoke(worker.Process(1))

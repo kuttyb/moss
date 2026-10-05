@@ -1,0 +1,9 @@
+domain Worker:
+  fn Receive(payload):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  message worker.Receive(executor)
+  executor.join()
