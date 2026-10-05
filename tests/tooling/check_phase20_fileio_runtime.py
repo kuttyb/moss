@@ -40,12 +40,17 @@ Tests all required behaviors:
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 TMP_DIR = os.path.join(REPO_ROOT, "tmp")
+# Test-only runtime APIs use the repository cfg convention `any(test, moss_perf)`;
+# --check-cfg rejects any stray cfg name, as the instrumented benchmark build does.
+CHECK_CFG = ["--check-cfg", "cfg(moss_perf)", "--check-cfg", "cfg(test)"]
+TEST_CFG = ["--cfg", "moss_perf", *CHECK_CFG]
 os.makedirs(TMP_DIR, exist_ok=True)
 
 RUST_HARNESS_SOURCE = r"""
@@ -770,7 +775,7 @@ def compile_test_harness():
     with open(rs_path, "w", encoding="utf-8") as f:
         f.write(harness_src)
     
-    cmd = ["rustc", "-D", "warnings", "--cfg", "moss_test", rs_path, "-o", bin_path]
+    cmd = ["rustc", "-D", "warnings", *TEST_CFG, rs_path, "-o", bin_path]
     print("Compiling test harness:", " ".join(cmd))
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
@@ -833,7 +838,7 @@ def test_cross_crate_process_global_registry(test_dir):
     with open(provider_rs, "w", encoding="utf-8") as f:
         f.write(provider_src)
 
-    cmd_prov = ["rustc", "-D", "warnings", "--cfg", "moss_test", "--crate-type", "rlib", "-o", provider_rlib, provider_rs]
+    cmd_prov = ["rustc", "-D", "warnings", *TEST_CFG, "--crate-type", "rlib", "-o", provider_rlib, provider_rs]
     res_prov = subprocess.run(cmd_prov, capture_output=True, text=True)
     assert res_prov.returncode == 0, f"Provider compilation failed:\n{res_prov.stderr}"
 
@@ -900,7 +905,7 @@ def test_cross_crate_process_global_registry(test_dir):
     with open(consumer_rs, "w", encoding="utf-8") as f:
         f.write(consumer_src)
 
-    cmd_cons = ["rustc", "-D", "warnings", "--cfg", "moss_test", "--extern", f"provider_a={provider_rlib}", "-o", consumer_bin, consumer_rs]
+    cmd_cons = ["rustc", "-D", "warnings", *TEST_CFG, "--extern", f"provider_a={provider_rlib}", "-o", consumer_bin, consumer_rs]
     res_cons = subprocess.run(cmd_cons, capture_output=True, text=True)
     assert res_cons.returncode == 0, f"Consumer compilation failed:\n{res_cons.stderr}"
 
@@ -913,6 +918,64 @@ def test_cross_crate_process_global_registry(test_dir):
     res_col = subprocess.run([consumer_bin, test_dir, "collision"], capture_output=True, text=True)
     assert res_col.returncode != 0, "Duplicate open across crates must fail closed"
     assert "duplicate live FileIO" in res_col.stderr, f"Expected duplicate live FileIO in stderr: {res_col.stderr}"
+
+    # 2b. Production ABI (no test cfgs): provider and executable still share one
+    #     (device, inode) registry and provider FileIO reaches the root's Solo hooks.
+    provider_prod_rs = os.path.join(TMP_DIR, "provider_prod.rs")
+    provider_prod_rlib = os.path.join(TMP_DIR, "libprovider_prod.rlib")
+    with open(provider_prod_rs, "w", encoding="utf-8") as f:
+        f.write(provider_src)
+    res_pp = subprocess.run(["rustc", "-D", "warnings", "--crate-type", "rlib", "-o", provider_prod_rlib, provider_prod_rs], capture_output=True, text=True)
+    assert res_pp.returncode == 0, f"Production provider compilation failed:\n{res_pp.stderr}"
+    consumer_prod_src = f"""
+    #![allow(dead_code)]
+    extern crate provider_prod;
+    use provider_prod::ProviderFile;
+
+    {runtime_rust}
+    {root_runtime_rust}
+
+    use std::sync::atomic::{{AtomicUsize, Ordering}};
+    static ENTERS: AtomicUsize = AtomicUsize::new(0);
+    static LEAVES: AtomicUsize = AtomicUsize::new(0);
+    fn on_enter(_reason: &str) {{ ENTERS.fetch_add(1, Ordering::SeqCst); }}
+    fn on_leave(_reason: &str) {{ LEAVES.fetch_add(1, Ordering::SeqCst); }}
+
+    fn main() {{
+        let args: Vec<String> = std::env::args().collect();
+        let path = format!("{{}}/cross_crate_prod.dat", args[1]);
+        let _ = std::fs::remove_file(&path);
+        moss_root_runtime::moss_set_solo_hooks(on_enter, on_leave);
+        let pfile = ProviderFile::open_create(&path);
+        let before = ENTERS.load(Ordering::SeqCst);
+        pfile.write_data(0, b"prod");
+        assert!(ENTERS.load(Ordering::SeqCst) > before, "provider FileIO must reach the executable Solo enter hook");
+        assert_eq!(ENTERS.load(Ordering::SeqCst), LEAVES.load(Ordering::SeqCst), "Solo enter/leave must balance");
+        let (dev, ino) = pfile.inode();
+        assert!(!moss_fileio_registry_claim(dev, ino), "executable registry must see the provider's live claim");
+        if args.len() > 2 && args[2] == "collision" {{
+            let _dup = FileIO::open(&path, "ro");
+            std::process::exit(0);
+        }}
+        pfile.close();
+        let cfile = FileIO::open(&path, "ro");
+        assert_eq!(cfile.read(0, 4).as_slice(), b"prod");
+        cfile.close();
+        println!("[PASS] Production cross-crate registry and Solo bridge passed!");
+    }}
+    """
+    consumer_prod_rs = os.path.join(TMP_DIR, "consumer_prod.rs")
+    consumer_prod_bin = os.path.join(TMP_DIR, "consumer_prod")
+    with open(consumer_prod_rs, "w", encoding="utf-8") as f:
+        f.write(consumer_prod_src)
+    res_cp = subprocess.run(["rustc", "-D", "warnings", "--extern", f"provider_prod={provider_prod_rlib}", "-o", consumer_prod_bin, consumer_prod_rs], capture_output=True, text=True)
+    assert res_cp.returncode == 0, f"Production consumer compilation failed:\n{res_cp.stderr}"
+    res = subprocess.run([consumer_prod_bin, test_dir], capture_output=True, text=True)
+    assert res.returncode == 0, f"Production cross-crate test failed:\n{res.stderr}"
+    print(res.stdout.strip())
+    res_col = subprocess.run([consumer_prod_bin, test_dir, "collision"], capture_output=True, text=True)
+    assert res_col.returncode != 0 and "duplicate live FileIO" in res_col.stderr, \
+        f"Production duplicate open across crates must fail closed: {res_col.stderr}"
 
     # 3. Compiler-level test: Root executable without local FileIO compiles with moss and emits root runtime symbols
     pure_moss_src = """
@@ -976,7 +1039,7 @@ def test_hook_lock_discipline(test_dir):
     bin_path = os.path.join(TMP_DIR, "test_lock_discipline")
     with open(rs_path, "w", encoding="utf-8") as f:
         f.write(test_src)
-    res = subprocess.run(["rustc", "-D", "warnings", "--cfg", "moss_test", rs_path, "-o", bin_path], capture_output=True, text=True)
+    res = subprocess.run(["rustc", "-D", "warnings", *TEST_CFG, rs_path, "-o", bin_path], capture_output=True, text=True)
     assert res.returncode == 0, f"Compilation failed:\n{res.stderr}"
     res = subprocess.run([bin_path], capture_output=True, text=True)
     assert res.returncode == 0, f"Execution failed:\n{res.stderr}"
@@ -1081,61 +1144,96 @@ def test_fair_registry_admission(test_dir):
     runtime_rust = extract_fileio_runtime_rust()
     root_runtime_rust = extract_fileio_root_runtime_rust()
 
+    # Compares assigned-ticket order with critical-section entry order using
+    # the cfg-gated registry trace, rather than relying on thread spawn order.
     test_src = f"""
     #![allow(dead_code)]
     {runtime_rust}
     {root_runtime_rust}
 
-    use std::sync::{{Arc, Mutex, Barrier}};
+    use moss_root_runtime::test_support as ts;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{{Duration, Instant}};
+
+    const WAITERS: u64 = 8;
+    const HAMMER_THREADS: u64 = 8;
+    const HAMMER_OPS: u64 = 400;
+
+    fn assert_entry_order_follows_tickets(trace: &[ts::RegistryTraceEntry]) {{
+        for pair in trace.windows(2) {{
+            assert_eq!(pair[1].ticket, pair[0].ticket + 1,
+                "critical-section entry order must follow assigned ticket order: {{:?}}", pair);
+        }}
+    }}
 
     fn main() {{
-        let ready_barrier = Arc::new(Barrier::new(2));
-        let order = Arc::new(Mutex::new(Vec::new()));
+        let _ = ts::take_trace();
 
-        let t0_order = order.clone();
-        let t0_ready = ready_barrier.clone();
-        let h0 = thread::spawn(move || {{
-            moss_root_runtime::MOSS_REGISTRY.with_set(|_set| {{
-                t0_ready.wait();
-                thread::sleep(Duration::from_millis(60));
-                t0_order.lock().unwrap().push(0);
-            }});
-        }});
-
-        ready_barrier.wait();
-        let mut other_handles = Vec::new();
-        for i in 1..=5 {{
-            let t_order = order.clone();
-            let h = thread::spawn(move || {{
-                moss_root_runtime::MOSS_REGISTRY.with_set(|_set| {{
-                    t_order.lock().unwrap().push(i);
-                }});
-            }});
-            thread::sleep(Duration::from_millis(5));
-            other_handles.push(h);
+        // Phase 1: deterministic contention.  Hold one admitted turn (without
+        // the state mutex), let every waiter take a ticket, and wait until all
+        // of them are parked on the Condvar before releasing the turn.
+        let first = ts::issued_tickets();
+        let turn = ts::hold_turn();
+        assert_eq!(turn.ticket, first);
+        let handles: Vec<_> = (0..WAITERS).map(|i| thread::spawn(move || {{
+            let key = 70_000 + i;
+            assert!(moss_fileio_registry_claim(key, key));
+        }})).collect();
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while ts::parked_waiters() < WAITERS {{
+            assert!(Instant::now() < deadline, "waiters never parked on the registry Condvar");
+            thread::sleep(Duration::from_millis(1));
         }}
-
-        h0.join().unwrap();
-        for h in other_handles {{
+        assert_eq!(ts::issued_tickets(), first + 1 + WAITERS, "every waiter holds a ticket before release");
+        assert!(ts::take_trace().is_empty(), "no waiter may enter while an earlier ticket holds its turn");
+        drop(turn);
+        for h in handles {{
             h.join().unwrap();
         }}
+        assert_eq!(ts::parked_waiters(), 0);
+        let trace = ts::take_trace();
+        assert_eq!(trace.len() as u64, WAITERS);
+        assert_eq!(trace[0].ticket, first + 1, "ticket N+1 enters first after the held turn");
+        assert_entry_order_follows_tickets(&trace);
+        for entry in &trace {{
+            assert_eq!(entry.op, ts::RegistryOp::Claim);
+            moss_fileio_registry_release(entry.dev, entry.ino);
+        }}
+        let _ = ts::take_trace();
 
-        let recorded = order.lock().unwrap().clone();
-        assert_eq!(recorded, vec![0, 1, 2, 3, 4, 5], "Fair ticket lock granted waiters in exact FIFO order!");
-        println!("[PASS] Test 37: Fair ticket lock admission under contention verified");
+        // Phase 2: free-running contention across claim/release operations.
+        let handles: Vec<_> = (0..HAMMER_THREADS).map(|t| thread::spawn(move || {{
+            for op in 0..HAMMER_OPS {{
+                let key = 1_000_000 + t * HAMMER_OPS + op;
+                assert!(moss_fileio_registry_claim(key, key));
+                moss_fileio_registry_release(key, key);
+            }}
+        }})).collect();
+        for h in handles {{
+            h.join().unwrap();
+        }}
+        let trace = ts::take_trace();
+        assert_eq!(trace.len() as u64, HAMMER_THREADS * HAMMER_OPS * 2);
+        assert_entry_order_follows_tickets(&trace);
+        println!("[PASS] Test 37: ticket N enters before ticket N+1 ({{}} parked waiters, {{}} contended operations)",
+            WAITERS, trace.len());
     }}
     """
     rs_path = os.path.join(TMP_DIR, "test_fair_admission.rs")
     bin_path = os.path.join(TMP_DIR, "test_fair_admission")
     with open(rs_path, "w", encoding="utf-8") as f:
         f.write(test_src)
-    res = subprocess.run(["rustc", "-D", "warnings", rs_path, "-o", bin_path], capture_output=True, text=True)
+    res = subprocess.run(["rustc", "-D", "warnings", *TEST_CFG, rs_path, "-o", bin_path], capture_output=True, text=True)
     assert res.returncode == 0, f"Compilation failed:\n{res.stderr}"
-    res_run = subprocess.run([bin_path], capture_output=True, text=True)
+    res_run = subprocess.run([bin_path], capture_output=True, text=True, timeout=120)
     assert res_run.returncode == 0, f"Execution failed:\n{res_run.stderr}"
     print(res_run.stdout.strip())
+
+    # The production lock must wait on the Condvar, not spin or yield.
+    assert "Condvar" in root_runtime_rust and "self.cv.wait(" in root_runtime_rust, "fair lock must park on a Condvar"
+    assert "yield_now" not in root_runtime_rust, "fair lock must not spin with yield_now"
+    assert "with_set" not in root_runtime_rust, "registry must expose concrete operations, not a callback facility"
+    print("[PASS] Test 37: Fair ticket lock admission under contention verified")
 
 def test_production_abi_purity(test_dir):
     print("=== Running Test 38: Production ABI purity ===")
@@ -1151,54 +1249,112 @@ def test_production_abi_purity(test_dir):
     fn main() {{
         // Production symbols must be accessible
         assert!(moss_fileio_registry_claim(999, 888));
+        assert!(!moss_fileio_registry_claim(999, 888));
         moss_fileio_registry_release(999, 888);
+        assert!(moss_fileio_registry_claim(999, 888));
+        moss_fileio_registry_release(999, 888);
+        moss_root_runtime::moss_set_solo_hooks(|_| {{}}, |_| {{}});
+        moss_root_runtime::moss_clear_solo_hooks();
     }}
     """
     prod_rs = os.path.join(TMP_DIR, "prod_abi_test.rs")
     prod_bin = os.path.join(TMP_DIR, "prod_abi_test")
     with open(prod_rs, "w", encoding="utf-8") as f:
         f.write(prod_src)
-    res_prod = subprocess.run(["rustc", "-D", "warnings", prod_rs, "-o", prod_bin], capture_output=True, text=True)
+    res_prod = subprocess.run(["rustc", "-D", "warnings", *CHECK_CFG, prod_rs, "-o", prod_bin], capture_output=True, text=True)
     assert res_prod.returncode == 0, f"Production compilation failed:\n{res_prod.stderr}"
     res_run = subprocess.run([prod_bin], capture_output=True, text=True)
     assert res_run.returncode == 0, f"Production execution failed:\n{res_run.stderr}"
 
-    # 2. Verify test-only symbols fail to compile in production mode
-    test_only_code = f"""
+    # Exported production symbols: claim/release only; no test entry points.
+    nm = shutil.which("nm")
+    if nm:
+        syms = subprocess.run([nm, prod_bin], capture_output=True, text=True).stdout
+        assert "moss_fileio_registry_claim" in syms and "moss_fileio_registry_release" in syms
+        for forbidden in ["moss_fileio_registry_reset", "moss_fileio_registry_contains"]:
+            assert forbidden not in syms, f"production binary must not define {forbidden}"
+
+    # 2. Verify each test-only entry point fails to resolve in production mode
+    test_only_calls = {
+        "registry_reset": "moss_fileio_registry_reset();",
+        "registry_contains": "let _ = moss_fileio_registry_contains(1, 2);",
+        "registry_reset_qualified": "moss_root_runtime::moss_fileio_registry_reset();",
+        "close_override": "moss_set_close_override(|_| 0);",
+        "close_override_qualified": "moss_fileio::moss_set_close_override(|_| 0);",
+        "sync_hook": "moss_set_sync_hook(|_, _, _| {});",
+        "sync_hook_qualified": "moss_fileio::moss_set_sync_hook(|_, _, _| {});",
+        "fair_lock_trace": "let _ = moss_root_runtime::test_support::take_trace();",
+        "fair_lock_hold": "let _ = moss_root_runtime::test_support::hold_turn();",
+    }
+    for name, call in test_only_calls.items():
+        test_only_code = f"""
     #![allow(dead_code)]
     {runtime_rust}
     {root_runtime_rust}
 
     fn main() {{
-        moss_fileio_registry_reset();
+        {call}
     }}
     """
-    bad_rs = os.path.join(TMP_DIR, "bad_prod_abi.rs")
-    with open(bad_rs, "w", encoding="utf-8") as f:
-        f.write(test_only_code)
-    res_bad = subprocess.run(["rustc", bad_rs, "-o", os.path.join(TMP_DIR, "bad_prod_abi")], capture_output=True, text=True)
-    assert res_bad.returncode != 0, "moss_fileio_registry_reset must not compile in production"
-    assert "cannot find function `moss_fileio_registry_reset`" in res_bad.stderr or "not found" in res_bad.stderr, f"Expected reset not found error: {res_bad.stderr}"
+        bad_rs = os.path.join(TMP_DIR, f"bad_prod_abi_{name}.rs")
+        with open(bad_rs, "w", encoding="utf-8") as f:
+            f.write(test_only_code)
+        res_bad = subprocess.run(["rustc", "--emit=metadata", bad_rs, "-o", os.path.join(TMP_DIR, f"bad_prod_abi_{name}.rmeta")], capture_output=True, text=True)
+        assert res_bad.returncode != 0, f"{call} must not compile in production"
+        assert "cannot find" in res_bad.stderr or "unresolved" in res_bad.stderr or "could not find" in res_bad.stderr, \
+            f"Expected unresolved test-only API for {call}: {res_bad.stderr}"
     print("[PASS] Test 38: Production ABI purity verified (test APIs excluded from normal ABI)")
+
+FILEIO_TARGET_GUARD = re.compile(
+    r'#\[cfg\(not\(all\(\s*target_os\s*=\s*"linux",\s*any\(\s*target_arch\s*=\s*"x86_64",\s*'
+    r'target_arch\s*=\s*"aarch64"\s*\)\s*\)\)\)\]\s*compile_error!\(')
 
 def test_target_platform_gating(test_dir):
     print("=== Running Test 39: Platform target gating ===")
-    # Target compile-negative check for unsupported OS
-    unsupported_os_src = """
-    #![allow(dead_code)]
-    #[cfg(not(all(
-        target_os = "windows", // Simulated mismatch
-        target_arch = "x86_64"
-    )))]
-    compile_error!("Moss Phase 20 FileIO runtime is only supported on Linux x86_64 and aarch64.");
-    fn main() {}
-    """
-    rs_path = os.path.join(TMP_DIR, "test_target_gate.rs")
-    with open(rs_path, "w", encoding="utf-8") as f:
-        f.write(unsupported_os_src)
-    res = subprocess.run(["rustc", rs_path, "-o", os.path.join(TMP_DIR, "test_target_gate")], capture_output=True, text=True)
-    assert res.returncode != 0 and "Moss Phase 20 FileIO runtime is only supported on Linux x86_64 and aarch64." in res.stderr
-    print("[PASS] Test 39: Platform target gating verified")
+    runtime_rust = extract_fileio_runtime_rust()
+    root_runtime_rust = extract_fileio_root_runtime_rust()
+
+    # 1. The Linux POSIX FileIO implementation carries the supported-target guard,
+    #    ahead of the module it protects.
+    m = FILEIO_TARGET_GUARD.search(runtime_rust)
+    assert m, "fileio_runtime_rust() must guard Linux && (x86_64 || aarch64)"
+    assert m.start() < runtime_rust.index("pub mod moss_fileio"), "target guard must precede mod moss_fileio"
+
+    # 2. The portable root coordination runtime carries no platform restriction.
+    for token in ["compile_error!", "target_os", "target_arch"]:
+        assert token not in root_runtime_rust, f"fileio_root_runtime_rust() must stay portable; found {token}"
+
+    # 3. Compiler regression: a pure Moss root without FileIO gets the portable
+    #    root coordination runtime only.
+    pure_src = """fn main():
+  value = 42
+"""
+    pure_file = os.path.join(test_dir, "pure_portable_root.moss")
+    with open(pure_file, "w", encoding="utf-8") as f:
+        f.write(pure_src)
+    pure_rs = os.path.join(TMP_DIR, "pure_portable_root.rs")
+    res = subprocess.run([os.path.join(REPO_ROOT, "moss"), pure_file, "-o", pure_rs], capture_output=True, text=True)
+    assert res.returncode == 0, f"moss compile failed for pure root:\n{res.stderr}"
+    with open(pure_rs, "r", encoding="utf-8") as f:
+        generated = f.read()
+    assert "pub mod moss_root_runtime" in generated, "pure root must emit moss_root_runtime"
+    assert "mod moss_fileio" not in generated, "pure root must not emit moss_fileio"
+    assert not FILEIO_TARGET_GUARD.search(generated), "pure root must not acquire the FileIO target guard"
+    assert "only supported on Linux" not in generated, "pure root must not carry a FileIO platform compile_error"
+    res = subprocess.run(["rustc", "-D", "warnings", pure_rs, "-o", os.path.join(TMP_DIR, "pure_portable_root")], capture_output=True, text=True)
+    assert res.returncode == 0, f"pure root generated Rust failed to compile:\n{res.stderr}"
+    res = subprocess.run([os.path.join(TMP_DIR, "pure_portable_root")], capture_output=True, text=True)
+    assert res.returncode == 0, f"pure root failed to run:\n{res.stderr}"
+
+    # 4. Emission wiring: the guarded implementation is emitted only for programs
+    #    that use FileIO; the root coordination runtime is emitted for every root.
+    with open(os.path.join(REPO_ROOT, "src/moss.cpp"), "r", encoding="utf-8") as f:
+        moss_cpp = f.read()
+    assert re.search(r'if \(program_uses_fileio\(p_\)\) \{\s*o << fileio_runtime_rust\(\);\s*\}', moss_cpp), \
+        "fileio_runtime_rust() must be emitted only for FileIO-using programs"
+    assert re.search(r'if \(!p_\.explicit_module \|\| p_\.main\) \{\s*o << fileio_root_runtime_rust\(\);\s*\}', moss_cpp), \
+        "fileio_root_runtime_rust() must be emitted for executable roots"
+    print("[PASS] Test 39: Platform target gating verified (FileIO guarded, root coordination portable)")
 
 def test_checked_conversions_and_boundary_handling(test_dir):
     print("=== Running Test 40: Checked conversions and boundary handling ===")

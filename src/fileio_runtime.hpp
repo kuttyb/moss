@@ -129,9 +129,9 @@ pub mod moss_fileio {
         extern "C" {
             pub fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool;
             pub fn moss_fileio_registry_release(dev: u64, ino: u64);
-            #[cfg(any(test, moss_test, moss_perf))]
+            #[cfg(any(test, moss_perf))]
             pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool;
-            #[cfg(any(test, moss_test, moss_perf))]
+            #[cfg(any(test, moss_perf))]
             pub fn moss_fileio_registry_reset();
         }
     }
@@ -180,17 +180,17 @@ pub mod moss_fileio {
         }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     static MOSS_CLOSE_OVERRIDE: Mutex<Option<fn(RawFd) -> i32>> = Mutex::new(None);
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     pub fn moss_set_close_override(f: fn(RawFd) -> i32) {
         if let Ok(mut g) = MOSS_CLOSE_OVERRIDE.lock() {
             *g = Some(f);
         }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     pub fn moss_clear_close_override() {
         if let Ok(mut g) = MOSS_CLOSE_OVERRIDE.lock() {
             *g = None;
@@ -199,7 +199,7 @@ pub mod moss_fileio {
 
     #[inline]
     pub unsafe fn sys_close(fd: RawFd) -> i32 {
-        #[cfg(any(test, moss_test, moss_perf))]
+        #[cfg(any(test, moss_perf))]
         {
             let override_fn = {
                 if let Ok(g) = MOSS_CLOSE_OVERRIDE.lock() {
@@ -273,12 +273,12 @@ pub mod moss_fileio {
         }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     static MOSS_SYNC_HOOK: Mutex<Option<fn(&str, RawFd, &str)>> = Mutex::new(None);
 
     #[inline]
     pub fn moss_sync_event(event: &str, fd: RawFd, path: &str) {
-        #[cfg(any(test, moss_test, moss_perf))]
+        #[cfg(any(test, moss_perf))]
         {
             let hook = {
                 if let Ok(guard) = MOSS_SYNC_HOOK.lock() {
@@ -291,20 +291,20 @@ pub mod moss_fileio {
                 h(event, fd, path);
             }
         }
-        #[cfg(not(any(test, moss_test, moss_perf)))]
+        #[cfg(not(any(test, moss_perf)))]
         {
             let _ = (event, fd, path);
         }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     pub fn moss_set_sync_hook(hook: fn(&str, RawFd, &str)) {
         if let Ok(mut guard) = MOSS_SYNC_HOOK.lock() {
             *guard = Some(hook);
         }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     pub fn moss_clear_sync_hook() {
         if let Ok(mut guard) = MOSS_SYNC_HOOK.lock() {
             *guard = None;
@@ -321,13 +321,13 @@ pub mod moss_fileio {
         unsafe { sys::moss_fileio_registry_release(dev, ino) }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     #[inline]
     pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
         unsafe { sys::moss_fileio_registry_contains(dev, ino) }
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     #[inline]
     pub fn moss_fileio_registry_reset() {
         unsafe { sys::moss_fileio_registry_reset() }
@@ -1068,7 +1068,10 @@ pub mod moss_fileio {
                 return None;
             }
             let len = range.len();
-            self.offset += len;
+            self.offset = self.offset.checked_add(len).unwrap_or_else(|| {
+                eprintln!("[moss-fileio] error: offset overflow during chunks");
+                std::process::abort();
+            });
             if len < self.chunk_size {
                 self.finished = true;
             }
@@ -1085,82 +1088,211 @@ pub mod moss_fileio {
 }
 
 pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, moss_fileio_registry_claim, moss_fileio_registry_release};
-#[cfg(any(test, moss_test, moss_perf))]
+#[cfg(any(test, moss_perf))]
 pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset};
 )RUST";
 }
 
 inline const char* fileio_root_runtime_rust() {
   return R"RUST(
-// Moss Phase 20 FileIO Process-Wide Root Runtime (Linux x86_64 / aarch64 native)
-#[cfg(not(all(
-    target_os = "linux",
-    any(
-        target_arch = "x86_64",
-        target_arch = "aarch64"
-    )
-)))]
-compile_error!("Moss Phase 20 FileIO root runtime is only supported on Linux x86_64 and aarch64.");
-
+// Moss Phase 20 process-wide root coordination runtime.
+// Portable std-only state owned by every executable root: the inode registry,
+// its fair leaf lock, and Solo hook storage.  The Linux-only FileIO
+// implementation lives in `moss_fileio`, which carries its own target guard.
 #[allow(dead_code)]
 pub mod moss_root_runtime {
-    use std::sync::Mutex;
+    use std::sync::{Condvar, Mutex, MutexGuard};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::collections::HashSet;
 
-    pub struct FairRegistryLock {
+    // R5 fair leaf lock: callers take a FIFO ticket and park on the Condvar
+    // (releasing the state mutex) until their ticket is served.  Critical
+    // sections are only the concrete HashSet operations below: no kernel I/O,
+    // no callbacks, no other runtime or Moss lock, and nothing that unwinds,
+    // so a served ticket is always advanced.
+    struct FairRegistryLock {
         next_ticket: AtomicU64,
-        serving_ticket: AtomicU64,
-        state: Mutex<Option<HashSet<(u64, u64)>>>,
+        state: Mutex<RegistryState>,
+        cv: Condvar,
+    }
+
+    struct RegistryState {
+        serving_ticket: u64,
+        inode_set: Option<HashSet<(u64, u64)>>,
+        #[cfg(any(test, moss_perf))]
+        trace: Option<Vec<test_support::RegistryTraceEntry>>,
+        #[cfg(any(test, moss_perf))]
+        waiting: u64,
+    }
+
+    impl RegistryState {
+        fn set(&mut self) -> &mut HashSet<(u64, u64)> {
+            self.inode_set.get_or_insert_with(HashSet::new)
+        }
     }
 
     impl FairRegistryLock {
-        pub const fn new() -> Self {
+        const fn new() -> Self {
             FairRegistryLock {
                 next_ticket: AtomicU64::new(0),
-                serving_ticket: AtomicU64::new(0),
-                state: Mutex::new(None),
+                state: Mutex::new(RegistryState {
+                    serving_ticket: 0,
+                    inode_set: None,
+                    #[cfg(any(test, moss_perf))]
+                    trace: None,
+                    #[cfg(any(test, moss_perf))]
+                    waiting: 0,
+                }),
+                cv: Condvar::new(),
             }
         }
 
-        pub fn with_set<R, F: FnOnce(&mut HashSet<(u64, u64)>) -> R>(&self, f: F) -> R {
+        fn lock_state(&self) -> MutexGuard<'_, RegistryState> {
+            self.state.lock().unwrap_or_else(|_| std::process::abort())
+        }
+
+        fn admit(&self) -> (MutexGuard<'_, RegistryState>, u64) {
             let ticket = self.next_ticket.fetch_add(1, Ordering::SeqCst);
-            while self.serving_ticket.load(Ordering::Acquire) != ticket {
-                std::thread::yield_now();
+            let mut state = self.lock_state();
+            while state.serving_ticket != ticket {
+                #[cfg(any(test, moss_perf))]
+                {
+                    state.waiting += 1;
+                }
+                state = self.cv.wait(state).unwrap_or_else(|_| std::process::abort());
+                #[cfg(any(test, moss_perf))]
+                {
+                    state.waiting -= 1;
+                }
             }
-            let mut guard = self.state.lock().unwrap_or_else(|_| std::process::abort());
-            let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
-            let result = f(set);
-            drop(guard);
-            self.serving_ticket.store(ticket.wrapping_add(1), Ordering::Release);
-            result
+            (state, ticket)
+        }
+
+        fn finish(&self, mut state: MutexGuard<'_, RegistryState>) {
+            state.serving_ticket = state.serving_ticket.wrapping_add(1);
+            drop(state);
+            self.cv.notify_all();
+        }
+
+        fn claim(&self, dev: u64, ino: u64) -> bool {
+            let (mut state, _ticket) = self.admit();
+            #[cfg(any(test, moss_perf))]
+            state.record(_ticket, test_support::RegistryOp::Claim, dev, ino);
+            let inserted = state.set().insert((dev, ino));
+            self.finish(state);
+            inserted
+        }
+
+        fn release(&self, dev: u64, ino: u64) {
+            let (mut state, _ticket) = self.admit();
+            #[cfg(any(test, moss_perf))]
+            state.record(_ticket, test_support::RegistryOp::Release, dev, ino);
+            state.set().remove(&(dev, ino));
+            self.finish(state);
+        }
+
+        #[cfg(any(test, moss_perf))]
+        fn contains(&self, dev: u64, ino: u64) -> bool {
+            let (mut state, _ticket) = self.admit();
+            let present = state.set().contains(&(dev, ino));
+            self.finish(state);
+            present
+        }
+
+        #[cfg(any(test, moss_perf))]
+        fn reset(&self) {
+            let (mut state, _ticket) = self.admit();
+            state.set().clear();
+            self.finish(state);
         }
     }
 
-    pub static MOSS_REGISTRY: FairRegistryLock = FairRegistryLock::new();
+    static MOSS_REGISTRY: FairRegistryLock = FairRegistryLock::new();
     static MOSS_SOLO_ENTER_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
     static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
 
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
-        MOSS_REGISTRY.with_set(|set| set.insert((dev, ino)))
+        MOSS_REGISTRY.claim(dev, ino)
     }
 
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64) {
-        MOSS_REGISTRY.with_set(|set| { set.remove(&(dev, ino)); });
+        MOSS_REGISTRY.release(dev, ino)
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
-        MOSS_REGISTRY.with_set(|set| set.contains(&(dev, ino)))
+        MOSS_REGISTRY.contains(dev, ino)
     }
 
-    #[cfg(any(test, moss_test, moss_perf))]
+    #[cfg(any(test, moss_perf))]
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_reset() {
-        MOSS_REGISTRY.with_set(|set| { set.clear(); });
+        MOSS_REGISTRY.reset()
+    }
+
+    // Test-only fair-lock instrumentation.  Never part of the production ABI.
+    #[cfg(any(test, moss_perf))]
+    pub mod test_support {
+        use super::{RegistryState, MOSS_REGISTRY};
+        use std::sync::atomic::Ordering;
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum RegistryOp {
+            Claim,
+            Release,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct RegistryTraceEntry {
+            pub ticket: u64,
+            pub op: RegistryOp,
+            pub dev: u64,
+            pub ino: u64,
+        }
+
+        impl RegistryState {
+            pub(super) fn record(&mut self, ticket: u64, op: RegistryOp, dev: u64, ino: u64) {
+                self.trace.get_or_insert_with(Vec::default).push(RegistryTraceEntry { ticket, op, dev, ino });
+            }
+        }
+
+        // Critical-section entry order of claim/release operations, with the
+        // ticket each one was assigned.  Draining also clears the trace.
+        pub fn take_trace() -> Vec<RegistryTraceEntry> {
+            let mut state = MOSS_REGISTRY.lock_state();
+            state.trace.take().unwrap_or_default()
+        }
+
+        pub fn issued_tickets() -> u64 {
+            MOSS_REGISTRY.next_ticket.load(Ordering::SeqCst)
+        }
+
+        // Number of callers currently parked in `Condvar::wait`.
+        pub fn parked_waiters() -> u64 {
+            MOSS_REGISTRY.lock_state().waiting
+        }
+
+        // Holds one admitted turn without holding the state mutex, so later
+        // tickets observably park on the Condvar.  Dropping ends the turn.
+        pub struct HeldTurn {
+            pub ticket: u64,
+        }
+
+        pub fn hold_turn() -> HeldTurn {
+            let (state, ticket) = MOSS_REGISTRY.admit();
+            drop(state);
+            HeldTurn { ticket }
+        }
+
+        impl Drop for HeldTurn {
+            fn drop(&mut self) {
+                let state = MOSS_REGISTRY.lock_state();
+                MOSS_REGISTRY.finish(state);
+            }
+        }
     }
 
     #[no_mangle]
