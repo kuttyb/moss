@@ -10,6 +10,17 @@
     ~StaticBindingScope() { bindings = std::move(saved); }
   };
 
+  bool is_direct_fileio_open_initializer(
+      const string& expression, vector<string>* open_args = nullptr) const {
+    string initializer = strip_redundant_outer_parentheses(trim(expression));
+    string receiver, method;
+    vector<string> args;
+    bool direct = parse_member_call(initializer, receiver, method, args) &&
+        receiver == "FileIO" && method == "open" && args.size() == 2;
+    if (direct && open_args) *open_args = std::move(args);
+    return direct;
+  }
+
   void static_mark_possible_mutation(string expression,
                                      const std::set<string>& fileio_owners,
                                      std::set<string>& mutated) const {
@@ -18,6 +29,16 @@
                                               "return ", "message "})
       if (starts_with(expression, prefix))
         expression = trim(expression.substr(prefix.size()));
+    // Moss statements can contain expression sequences (notably echo's
+    // comma-separated operands). Inspect every component before trying to
+    // recognize a single call; otherwise a later call can mutate a value
+    // while an earlier component hides it from the bound proof.
+    auto sequence = split_top_level(expression, ',');
+    if (sequence.size() > 1) {
+      for (const auto& item : sequence)
+        static_mark_possible_mutation(item, fileio_owners, mutated);
+      return;
+    }
     string receiver, method;
     vector<string> args;
     if (parse_member_call(expression, receiver, method, args)) {
@@ -25,9 +46,16 @@
           (method == "read" || method == "write" || method == "chunks" ||
            method == "open" || method == "sync" || method == "close");
       if (!fileio_borrow) {
-        mutated.insert(receiver);
-        for (const auto& argument : args)
-          if (simple_identifier(trim(argument))) mutated.insert(trim(argument));
+        string root, index;
+        mutated.insert(parse_index(receiver, root, index) ? root : receiver);
+        for (const auto& argument : args) {
+          string argument_name, argument_value, root, index;
+          string actual = parse_named_argument(argument, argument_name,
+                                                argument_value) ?
+              trim(argument_value) : trim(argument);
+          if (simple_identifier(actual) || parse_index(actual, root, index))
+            mutated.insert(parse_index(actual, root, index) ? root : actual);
+        }
       }
       for (const auto& argument : args)
         static_mark_possible_mutation(argument, fileio_owners, mutated);
@@ -36,8 +64,14 @@
     string callee;
     if (parse_simple_call(expression, callee, args)) {
       if (!objects_.count(callee) && callee != "range" && callee != "Some")
-        for (const auto& argument : args)
-          if (simple_identifier(trim(argument))) mutated.insert(trim(argument));
+        for (const auto& argument : args) {
+          string argument_name, argument_value, root, index;
+          string actual = parse_named_argument(argument, argument_name,
+                                                argument_value) ?
+              trim(argument_value) : trim(argument);
+          if (simple_identifier(actual) || parse_index(actual, root, index))
+            mutated.insert(parse_index(actual, root, index) ? root : actual);
+        }
       for (const auto& argument : args) {
         string name, value;
         static_mark_possible_mutation(
@@ -65,6 +99,7 @@
     static_bound_bindings_.clear();
     std::map<string, int> writes;
     std::set<string> mutated;
+    vector<std::pair<string, string>> aliases;
     std::set<string> fileio_owners;
     for (const auto& binding : entry)
       if (canonical_type_name(binding.second) == "FileIO")
@@ -73,7 +108,7 @@
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
-          starts_with(trim(statement.b), "FileIO.open("))
+          is_direct_fileio_open_initializer(statement.b))
         fileio_owners.insert(statement.a);
     for (const auto& statement : statements) {
       if (statement.kind == Stmt::Kind::Let ||
@@ -82,6 +117,10 @@
         if (simple_identifier(statement.a)) ++writes[statement.a];
         string base, index;
         if (parse_index(statement.a, base, index)) mutated.insert(base);
+        string source = trim(statement.b);
+        source = strip_redundant_outer_parentheses(source);
+        if (simple_identifier(source) && simple_identifier(statement.a))
+          aliases.emplace_back(statement.a, source);
       }
       if (statement.kind == Stmt::Kind::Call) {
         if (!statement.b.empty()) mutated.insert(statement.a);
@@ -98,6 +137,18 @@
           statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
       static_mark_possible_mutation(expression, fileio_owners, mutated);
+    }
+    // A potentially mutating call through any local alias invalidates the
+    // construction fact for every local name that may refer to that value.
+    bool changed = true;
+    while (changed) {
+      changed = false;
+      for (const auto& alias : aliases) {
+        if (mutated.count(alias.first) && mutated.insert(alias.second).second)
+          changed = true;
+        if (mutated.count(alias.second) && mutated.insert(alias.first).second)
+          changed = true;
+      }
     }
     for (const auto& statement : statements)
       if (statement.indent == 0 &&
@@ -170,19 +221,6 @@
     string value = static_source_expression(source);
     if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
       return static_cast<uint64_t>(value.size() - 2);
-    if (starts_with(value, "[") && ends_with(value, "]")) {
-      string items = trim(value.substr(1, value.size() - 2));
-      if (items.empty()) return uint64_t{0};
-      auto elements = split_top_level(items, ',');
-      for (const auto& element : elements) {
-        auto byte = static_exact_integer(element);
-        if (!byte || *byte < 0 || *byte > 255) return std::nullopt;
-      }
-      // The source value is a Vector[Int]. Even if lowering chooses a packed
-      // byte representation, eight bytes per element is a safe byte extent.
-      if (elements.size() > UINT64_MAX / sizeof(int64_t)) return std::nullopt;
-      return static_cast<uint64_t>(elements.size()) * sizeof(int64_t);
-    }
     return std::nullopt;
   }
 

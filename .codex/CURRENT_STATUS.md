@@ -2,6 +2,61 @@
 
 ## Phase 20 integration (A+B+C+D) — branch `phase-20-integration` (2026-10-04)
 
+**Integration marker — Phase 20 is NOT complete.**
+
+| Agent | Integrated through | Newer head pending |
+| --- | --- | --- |
+| A — FileIO semantics | `85e6eff` (final closeout; includes `ee9ea0b`) | none |
+| B — FileIO runtime | `7d1b05a` | none |
+| C — Executor runtime | `7d3aa89` (merge `5fcfcb9`) | `9a1dafb` (`phase-20-c-executor-runtime`, active/recovering; not reviewed, not integrated) |
+| D — Concurrency lowering | `557609e` (merge `162c40c`) | `5d7a90b` (`phase-20-d-concurrency-lowering`, active/recovering; not reviewed, not integrated) |
+
+The branch waits only for the final declared C and D heads. Agent B's
+integration assignment is complete. Do not merge to `main` without explicit
+authorization.
+
+### Final Agent A reconciliation (merge of `85e6eff`)
+
+`src/static_bounds.inc` is byte-identical to A's final version (comma
+sequence mutation, simple/transitive alias mutation, named/indexed mutated
+arguments, common `is_direct_fileio_open_initializer`, no Vector[Int] payload
+bound). `src/fileio_semantics.inc` is A's final version plus exactly the two
+integration additions (`phase20_capability_type`; pipeline deferral in
+`fileio_result_type`). A's String-only `FileIO.write` restriction
+(`FILEIO_INVALID_PAYLOAD` for Vector[Int] and Range payloads) and
+parenthesized-owner normalization are in force. D's duplicate FileIO legality
+checker remains removed; D keeps only Executor statements and the chunk-shape
+rule. The ten final-A regressions (`byte_vector_write_rejected`,
+`range_write_rejected`, `echo_second_arg_mutates_batch`,
+`echo_mutation_through_local_alias_loses_bound`,
+`echo_mutation_through_transitive_local_alias_loses_bound`,
+`fileio_duplicate_close_read_alias_rejected`,
+`fileio_duplicate_write_read_alias_rejected`,
+`fileio_duplicate_read_alias_allowed`,
+`parenthesized_fileio_owner_static_write_bound`,
+`parenthesized_fileio_owner_chunk_bound`) run in
+`check_phase20_fileio_semantics.py`, which `tests/run.sh` executes.
+
+A's new `tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss`
+stays pending: native lowering of batch reads is missing. D emits
+`file.read(vec![offset, 4, (offset) + (4, 4)])` for
+`file.read([(offset, 4), (offset + 4, 4)])` and `batch[0]` as Vec
+indexing, while B provides `FileIO::read_batch(&[(i64, i64)]) -> RangeBatch`
+and `RangeBatch::get(i64)`. This is D lowering work. D's pending `5d7a90b`
+changes RangeBatch type representation but adds no batch lowering, so it was
+not guessed at here. Fast Debug FileIO also remains unimplemented.
+
+Validation (A reconciliation, final merged tree): `./moss agent bootstrap
+--json` → `moss-0.1`; `check_phase20_fileio_semantics.py` passed;
+`check_phase20_fileio_runtime.py` 47 PASS; `check_phase20c_executor.py`
+36/36; `check_phase20_executor_fileio.py` passed; `make check` passed ("all
+Moss v0.1 tests passed", ERT 61/61); `make examples` passed; `git diff
+--check` and `sh -n tests/run.sh` clean. Integrated A+B+C+D
+FileIO/Solo/Branch binary: 100/100 correct (Solo entry observed every run,
+Branch publish count = run count) and 30/30 pinned to one CPU.
+
+### Earlier integration work (preserved)
+
 Merges of Agents A–D (`ea6d97f`..`162c40c`) plus integration fixes. User
 snapshot `6d2baa8` holds the first half (Solo hooks: C installs
 `solo_enter_current`/`solo_leave_current` via B's
@@ -66,7 +121,12 @@ parity for FileIO programs is incomplete.
 `check_phase20c_executor.py` is not wired into `tests/run.sh`. `fileio`
 effects are not yet serialized to `.mossi`/effect JSON. Not pushed.
 
-## Phase 20 Agent A — FileIO semantics
+## Phase 20 Agent A — FileIO semantics (closeout `85e6eff`, as recorded by Agent A)
+
+> Integration note: on `phase-20-integration` the executor-invoke pending
+> fixture is promoted to `tests/negative/phase20_fileio_executor_invoke.moss`,
+> and B is integrated. The runtime-integration fixture remains pending on D's
+> batch-read lowering (see the integration section above).
 
 The corrective pass from reviewed checkpoint
 `4789563c6ffe6a6612be9444a08a1d1b7afdef23` closes the helper-lifecycle
@@ -80,13 +140,22 @@ and ordinary functions retain the explicit-close obligation. Anonymous
 Offsets are checked as Int and statically negative offsets are rejected;
 runtime-computed Int offsets are legal. The shared `static_bounds.inc` query
 proves overflow-checked integer constant expressions and unchanged local
-single-assignment sources. FileIO uses those facts for read/chunk sizes, String
-literal and fixed byte-vector write payload bounds, batch cardinality, entry
-sizes, and overflow-checked total bytes. A computed local Vector of records
+single-assignment sources. FileIO uses those facts for read/chunk sizes,
+bounded String write payloads, batch cardinality, entry sizes, and
+overflow-checked total bytes. `FileIO.write` currently accepts bounded String
+payloads as an implementation restriction while the source representation
+remains unresolved; the canonical Phase 20 design does not settle String-only
+writes. `Vector[Int]` is rejected because it is not a byte-vector
+representation, and Range-to-write is not currently supported. No byte type or
+new syntax is introduced. A computed local Vector of records
 with exactly `offset: Int` and `size: Int` is accepted when its count and sizes
 are proven. The documented inline `(offset, size)` batch remains accepted.
 Collections passed to a potentially mutating call lose their construction
-bound. General startup-configuration and clamp/range facts are not retained in
+bound, including mutation in later comma-separated expression components and
+calls through transitive local aliases. Parenthesized direct FileIO.open
+initializers establish the same pinned owner as unparenthesized initializers in
+both lifecycle and static-bound analysis, including bounded String writes.
+General startup-configuration and clamp/range facts are not retained in
 the checker at this phase, so those sources are conservatively rejected until
 general compiler analysis supplies a proof. Ordinary tuple literals also lack
 a first-class Vector element type; a computed batch uses the existing named
@@ -101,14 +170,28 @@ finds nested helper, `echo`, and chained-view operations while excluding the
 FileIO field's own protection. Native and Fast Debug reject the same focused
 ownership, bound, lifecycle, and collection cases.
 
-Validation: the expanded Agent A focused suite passed; `make check` passed;
-`make examples` passed; `git diff HEAD --check` passed. The pending
+Final validation at `ee9ea0b` plus the parenthesized static-bound correction
+passed: `./moss agent bootstrap --json` reported `moss-0.1`, the focused
+`check_phase20_fileio_semantics.py` suite passed, `make check` passed, `make
+examples` passed, `git diff --check` passed, and `sh -n tests/run.sh` passed.
+The focused suite also verified native/Fast Debug diagnostic parity for byte-
+vector and Range writes, anonymous opens in `echo`, hidden comma-expression
+mutation, simple and transitive local-alias mutation, and conflicting duplicate
+FileIO CLOSE/READ and WRITE/READ aliases. The positive duplicate READ/READ
+case remains accepted. The pending
 `tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss` remains
 for Agent D to enforce the same scoped-capability predicate at executor
-boundaries. Agent B supplies native FileIO runtime/lowering; Agents C/D supply
-Executor scheduling and invoke integration. No B/C/D implementation was
-pulled into this branch, and native FileIO execution remains an integration
-stage concern.
+boundaries. The pending
+`tests/tooling/fixtures/phase20_fileio_runtime_integration.pending.moss` is the
+A+B native FileIO smoke fixture for create, String write, read, batch read,
+indexing, dynamic offsets, sync, and explicit close; native integration remains
+pending. It does not prove compensation. A+B+C compensation still requires a
+separate deterministic integration test. Agent B supplies native FileIO
+runtime/lowering; Agents C/D supply Executor compensation/scheduling and invoke
+integration. No B/C/D implementation was pulled into this branch, and native
+FileIO execution remains unvalidated until Agent B integration. The
+`executor.invoke` boundary remains Agent D responsibility.
+
 ## Phase 20 Agent B — FileIO runtime corrective handoff — COMPLETE (2026-10-04)
 
 Resumed from handoff snapshot `633ad536c7a5` (in progress, parent
