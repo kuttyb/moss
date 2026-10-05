@@ -2,6 +2,9 @@
 tmp/
 tmp/**
 *.rs
+# Hand-written, committed TEST-ONLY Rust shims (see
+# tests/tooling/check_phase20_executor_fileio.py); not generated output.
+!tests/tooling/fixtures/*.rs
 examples/**.rs
 examples/**/*.rs
 *.mossmap

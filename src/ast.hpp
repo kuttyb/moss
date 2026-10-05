@@ -78,6 +78,11 @@ struct Stmt {
   // have several static specializations, so one AST statement can legitimately
   // point at several distinct compilation-local pipeline IDs.
   mutable std::unordered_map<string,vector<std::size_t>> functional_pipeline_ids;
+  // Phase 20 Agent D: nonzero once check_executor_invoke has built a checked
+  // RootSubmissionPlan for this `executor.invoke(...)` statement (index into
+  // Program::root_submission_plans, offset by one so 0 means "none"). See
+  // executor_invoke_lowering.inc / executor_invoke_codegen.inc.
+  mutable std::size_t root_submission_plan_id = 0;
   string source_file;
 };
 struct Method {
@@ -266,6 +271,27 @@ struct ModuleImport {
   string source_file;
 };
 
+// Phase 20 Agent D: the checked, compiler-owned plan for one
+// `executor.invoke(concrete_domain.Handler(args...))` statement. This is
+// compiler IR -- the semantic facts a root submission needs -- not the
+// runtime `RootDescriptor` itself (docs/ROOT_RUNTIME_ABI.md
+// "RootDescriptor representation" remains Agent C's to define physically).
+// Built once by executor_invoke_lowering.inc's check_executor_invoke and
+// consumed as-is by executor_invoke_codegen.inc; codegen never re-derives
+// these facts from source text.
+struct RootSubmissionPlan {
+  string executor_binding;
+  string target_domain_binding;
+  string target_domain_semantic_identity;
+  string handler_semantic_identity;
+  string handler_name;
+  vector<string> argument_expressions;
+  vector<string> argument_types;
+  // Always true in Phase 20: executor.invoke never admits a value-returning
+  // handler (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md sec. 4.3).
+  bool one_way = true;
+};
+
 struct Program {
   // Parsed physical source lines retained for compiler-owned editor
   // resolution.  They preserve indentation and file identity, while all
@@ -294,6 +320,7 @@ struct Program {
   // Per-declared-instance facts for source domains whose untyped state and
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;
+  vector<RootSubmissionPlan> root_submission_plans;
   ConcreteDomainGraph concrete_domain_graph;
   SynchronizationPlan synchronization_plan;
 };

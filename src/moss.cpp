@@ -34,7 +34,7 @@
 #include "diagnostics.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
-#include "fileio_runtime.hpp"
+#include "branch_runtime.hpp"
 #include "synchronization_lowering.hpp"
 
 using std::string;
@@ -154,6 +154,10 @@ static string canonical_type_name(string type) {
   if (type == "Vector") return "vector";
   if (type == "Map") return "map";
   if (type == "Queue") return "queue";
+  // Phase 20 runtime-facing semantic names (docs/ROOT_RUNTIME_ABI.md).
+  if (type == "FileIO") return "fileio";
+  if (type == "Range") return "range";
+  if (type == "RangeBatch") return "rangebatch";
   auto bracket = type.find('[');
   if (bracket != string::npos && ends_with(type, "]")) {
     string head = canonical_type_name(type.substr(0, bracket));
@@ -375,6 +379,39 @@ static bool fileio_typed(const std::unordered_map<string,string>& env,
                          const string& name) {
   auto it = env.find(trim(name));
   return it != env.end() && it->second == "fileio";
+}
+
+// Phase 20 -- narrow, isolated Agent-A-facing capability adapter (see
+// AGENTS.md corrective-pass item 5). This single predicate is the only
+// place Agent D decides whether a static type is a non-transferable Phase
+// 20 capability (cannot cross message/reply/executor.invoke, domain state,
+// or an ordinary collection). When Agent A's real FileIO/Range ownership
+// checker lands, integrating with it should be a one-function change here
+// -- Agent D must not reimplement FileIO lifecycle, Range borrow scoping,
+// collection escape, or domain effects itself.
+static bool phase20_is_nontransferable_capability(const string& type) {
+  string concrete = canonical_type_name(type);
+  if (concrete == "executor" || concrete == "fileio" || concrete == "range" ||
+      concrete == "rangebatch")
+    return true;
+  auto bracket = concrete.find('[');
+  if (bracket != string::npos && ends_with(concrete, "]"))
+    for (const auto& argument : split_top_level(
+             concrete.substr(bracket + 1, concrete.size() - bracket - 2), ','))
+      if (phase20_is_nontransferable_capability(trim(argument))) return true;
+  return false;
+}
+
+// Ordinary synchronous helper functions may borrow FileIO/Range as a plain
+// parameter (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md sec. 9.3: "Ordinary
+// synchronous helper calls may borrow a FileIO temporarily"); they may not
+// be returned, stored, or cross a message/reply/executor.invoke/domain
+// boundary (phase20_is_nontransferable_capability, above, still applies to
+// those positions). `Executor` has no such allowance: it has no legal use
+// outside `main` at all.
+static bool phase20_allowed_as_ordinary_parameter(const string& type) {
+  string concrete = canonical_type_name(type);
+  return concrete == "fileio" || concrete == "range";
 }
 
 static bool parse_fileio_chunks_source(const string& source, string& fileio_receiver,
@@ -2895,7 +2932,9 @@ class Checker {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_")) err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
+      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_") &&
+          !phase20_allowed_as_ordinary_parameter(param.type))
+        err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
       env[param.name] = param.type.empty() ? "_generic:" + param.name : param.type;
     }
@@ -3628,13 +3667,18 @@ class Checker {
             (executor_config_methods().count(method_name) || method_name == "start"))
           return string("executor");
         if (concrete_base == "fileio") {
-          if (method_name == "read" && method_args.size() == 2) return string("string");
-          if (method_name == "chunks" && method_args.size() == 1) return string("vector[string]");
+          if (method_name == "read" && method_args.size() == 2) return string("range");
+          if (method_name == "chunks" && method_args.size() == 1) return string("vector[range]");
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
             return string("unit");
         }
+        // Provisional: Agent A/B own Range's final semantic surface. `.length()`
+        // is the one accessor Agent D's own tests need to verify chunk-pipeline
+        // ordering/termination without a materialized byte API.
+        if (concrete_base == "range" && method_name == "length" && method_args.empty())
+          return string("int");
         const auto* builtin = builtin_operation(concrete_base, method_name);
         if (concrete_base == "string" && builtin) {
           if (method_name == "length" && method_args.empty()) return string("int");
@@ -5847,8 +5891,11 @@ class Checker {
       if (receiver_type) {
         // Phase 20: a root-local FileIO operation touches no domain state and
         // needs no Moss lock (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md
-        // sec. 9.1); only its arguments can observe domain state.
-        if (canonical_type_name(*receiver_type) == "fileio") {
+        // sec. 9.1); only its arguments can observe domain state. The one
+        // recognized Range accessor (.length()) is likewise not itself a
+        // domain-state access.
+        if (canonical_type_name(*receiver_type) == "fileio" ||
+            canonical_type_name(*receiver_type) == "range") {
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           for (const auto& argument : arguments)
@@ -7097,6 +7144,16 @@ class Checker {
           if (method == "char_at" || method == "split") effects.may_fail = true;
           return effects;
         }
+        // Phase 20: a root-local FileIO operation touches no domain state by
+        // itself (its arguments were already merged above); only the
+        // Range-length accessor is recognized for Range (see moss.cpp's
+        // Phase 20 capability adapter). external_io intentionally stays
+        // false here: Agent A/B's eventual FileIO effect metadata, not a
+        // generic "did this touch any FileIO" flag, should set it (see
+        // file_chunk_lowering.inc's eligibility comment).
+        if (canonical_type_name(*receiver_type) == "fileio" ||
+            canonical_type_name(*receiver_type) == "range")
+          return effects;
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if ((method == "get" && arguments.size() == 2) ||
               ((method == "keys" || method == "values") && arguments.empty()))
@@ -10043,19 +10100,19 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Message) {
-        // Phase 20: Executor/FileIO are pinned, main-local capabilities and
-        // cannot cross a domain boundary as a message argument.
+        // Phase 20: a nontransferable capability (Executor/FileIO/Range)
+        // cannot cross a domain boundary as a message argument. One shared
+        // adapter (moss.cpp) owns this rule; see AGENTS.md corrective-pass
+        // item 5.
         for (const auto& argument : statement.args) {
           string trimmed = trim(argument);
-          if (executor_typed(current_env, trimmed))
+          auto bound = current_env.find(trimmed);
+          if (bound != current_env.end() &&
+              phase20_is_nontransferable_capability(bound->second))
             err(statement.line,
-                "an Executor is a static routing-like capability and cannot "
-                "be passed as a message argument",
-                "EXECUTOR_MESSAGE_ARGUMENT");
-          if (fileio_typed(current_env, trimmed))
-            err(statement.line,
-                "a FileIO capability cannot be passed as a message argument",
-                "FILEIO_MESSAGE_ARGUMENT");
+                "a Phase 20 capability (Executor/FileIO/Range) cannot be "
+                "passed as a message argument",
+                "PHASE20_CAPABILITY_MESSAGE_ARGUMENT");
         }
         check_message_target_existence(
             statement.line, statement.a, current_env);
@@ -11782,7 +11839,7 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
-    if (program_uses_fileio()) o << fileio_runtime_rust();
+    o << branch_runtime_rust();
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
@@ -12035,6 +12092,12 @@ class Generator {
     if (x == "float") return "f64";
     if (x == "bool") return "bool";
     if (x == "string") return "String";
+    // Phase 20: runtime-facing semantic names reserved in
+    // docs/ROOT_RUNTIME_ABI.md ("Runtime-facing semantic types"). Agent
+    // D does not define these Rust types; Agent B's crate does.
+    if (x == "fileio") return "FileIO";
+    if (x == "range") return "Range";
+    if (x == "rangebatch") return "RangeBatch";
     if (x == "vector") return "std::vec::Vec<T>";
     if (x == "map") return "std::collections::HashMap<K, V>";
     if (x == "queue") return "std::collections::VecDeque<T>";
@@ -12504,13 +12567,15 @@ class Generator {
             (executor_config_methods().count(method_name) || method_name == "start"))
           return string("executor");
         if (concrete_receiver == "fileio") {
-          if (method_name == "read" && method_args.size() == 2) return string("string");
-          if (method_name == "chunks" && method_args.size() == 1) return string("vector[string]");
+          if (method_name == "read" && method_args.size() == 2) return string("range");
+          if (method_name == "chunks" && method_args.size() == 1) return string("vector[range]");
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
             return string("unit");
         }
+        if (concrete_receiver == "range" && method_name == "length" && method_args.empty())
+          return string("int");
         if (concrete_receiver == "string") {
           if (method_name == "length" && method_args.empty()) return string("int");
           if (method_name == "char_at" && method_args.size() == 1) return string("string");
@@ -13512,8 +13577,8 @@ class Generator {
       size_t functional_pipeline_id) const {
     auto pipeline = parse_functional_pipeline(expression);
     if (!pipeline) return std::nullopt;
-    if (auto chunk_lowering =
-            gen_fileio_chunk_pipeline(*pipeline, domain, locals, types))
+    if (auto chunk_lowering = gen_fileio_chunk_pipeline(
+            *pipeline, domain, locals, types, functional_pipeline_id))
       return chunk_lowering;
     auto source_type = generated_expr_type(pipeline->source, types);
     if (!source_type || !generated_functional_element_type(*source_type))

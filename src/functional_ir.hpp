@@ -177,6 +177,29 @@ struct FunctionalPipeline {
   std::vector<std::string> lowered_provenance;
   std::vector<std::string> optimization_notes;
   std::string decision;
+
+  // Phase 20 Agent D: a structured compiler-owned chunk parallelization plan
+  // for `file.chunks(size) |> map(f) |> reduce(initial, combine)`. Populated
+  // once by the checker (file_chunk_lowering.inc's annotate_fileio_chunk_pipeline)
+  // and consumed as-is by codegen (file_chunk_codegen.inc) -- codegen never
+  // re-derives these facts from source text. `decision`/`optimization_notes`
+  // above remain the human-readable projection of this structured plan, not
+  // the other way around. See docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md
+  // sec. 13 and AGENTS.md corrective-pass item 15.
+  struct ChunkParallelPlan {
+    bool is_chunk_pipeline = false;
+    std::string fileio_receiver;
+    std::string chunk_size_expression;
+    std::string map_callable;
+    std::string initial_expression;
+    std::string combine_callable;
+    std::string accumulator_type;
+    std::string mapped_type;
+    // Eligible for the bounded-K read/map Branch lowering (file_chunk_codegen.inc).
+    // Static only: never depends on whether an Executor happens to be active.
+    bool eligible = false;
+    std::string eligibility_reason;
+  } chunk_plan;
 };
 
 struct FunctionalTraversalConsumer {

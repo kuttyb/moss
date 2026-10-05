@@ -1,0 +1,16 @@
+domain Worker:
+  fn Process(amount: Int):
+    pass
+
+  fn Check() -> Bool:
+    reply true
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(1).start()
+  condition = message worker.Check()
+  if condition:
+    executor.join()
+  else:
+    executor.join()
+  executor.invoke(worker.Process(1))

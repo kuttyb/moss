@@ -125,31 +125,51 @@ entry paths that must implement the same root-ingress semantics.
 Record physical signatures and layouts here once defined by their owning
 implementation area from the phase spec, before other areas call them.
 
-## Agent D interim adapters (2026-10-04; non-normative, pending A/C integration)
+## Agent D codegen seam (2026-10-04)
 
-Agent D (compiler concurrency lowering) landed before Agent A (FileIO) or
-Agent C (Executor/root runtime) in this tree. Per the phase spec's own
-escape hatches, it added the narrowest adapters needed to make
-`executor.invoke` and FileIO chunk pipelines compile-time legal and
-run correctly end to end. These are explicitly **not** the normative
-`RootDescriptor` / `branch_publish` / `branch_join` / `runtime_invoke`
-contracts fixed above, and should be replaced (not merged with) once
-Agent A/C land:
+Agent D (compiler concurrency lowering) implements `executor.invoke` and
+FileIO chunk pipelines against this contract without owning any of the
+three runtime ABIs it reserves. It introduces no competing root queue,
+Executor/Branch worker-pool scheduler, Solo compensation, or production
+FileIO implementation. Two distinct cases:
 
-- `executor.invoke(...)` does not produce a `RootDescriptor` or call any
-  root-admission mechanism. It lowers inline to a direct, synchronous call
-  of the target handler's existing `<Handler>_shared(...)` entry point
-  (native) or to the existing `message(...)` helper (Fast Debug), at the
-  `invoke` call site. `Executor()`/`.threads()`/etc. compile to an inert
-  `()` marker; `.join()` is a no-op. See `src/executor_invoke_codegen.inc`.
-- A minimal `MossFileIO` Rust struct (native, `src/fileio_runtime.hpp`) and
-  a parallel C++ Fast Debug implementation (`src/interpreter_fileio.inc`)
-  provide `open`/`read`/`write`/`sync`/`close` over real POSIX file I/O,
-  with a process-local `(device, inode)` registry. This is not Agent A's
-  general FileIO ownership/effect implementation: there is no domain-field
-  lock integration, no `Range`/`RangeBatch` borrow type (chunk/read bytes
-  surface as a plain Moss `string`), and no batch reads.
-- Chunk-pipeline parallel-lowering eligibility is computed and recorded
-  (`src/file_chunk_lowering.inc`), but there is no `branch_publish`/
-  `branch_join` call anywhere: every chunk pipeline, eligible or not,
-  executes the sequential reference loop on both backends.
+- **`executor.invoke`:** has no valid inline-execution fallback (sec. 4.3,
+  §5). Agent D's checked compiler IR (`RootSubmissionPlan`, `ast.hpp` --
+  concrete domain instance, checked handler semantic identity, evaluated
+  argument snapshot, one-way) lowers through exactly one narrow seam
+  targeting three names this document does not yet fix a signature for:
+  `moss_root_start()`, `moss_root_submit(&executor, thunk)`,
+  `moss_root_join(executor)`. Agent D does not define these names in
+  `src/`; a native build of a program using `executor.invoke` requires
+  Agent C's crate at link time until this document (or Agent C) fixes
+  their real signature. Fast Debug does not substitute synchronous
+  `message` for `invoke` either: it raises a clear "pending Agent C"
+  error. See `src/executor_invoke_codegen.inc`,
+  `src/interpreter_phase20.inc`.
+- **Chunk-pipeline Branches:** unlike `executor.invoke`, inline execution
+  *is* normative Branch fallback behavior (sec. 7.3, E4: "the owning root
+  may execute it inline"). `src/branch_runtime.hpp` therefore implements
+  `branch_publish`/`branch_join` for real -- this is not a placeholder --
+  as the inline-only case of that contract: `branch_publish` runs its
+  work immediately and `branch_join` is the identity function. Agent C
+  may replace this file with a worker-thread implementation (a real
+  handle type, a `branch_join` that actually waits) without any
+  Agent-D-generated chunk-pipeline code changing, because that code only
+  calls these two names. Agent D's checked `ChunkParallelPlan`
+  (`functional_ir.hpp`'s `FunctionalPipeline::chunk_plan`) lowers an
+  eligible pipeline to the bounded-K read/map Branch algorithm
+  (`src/file_chunk_codegen.inc`) and an ineligible one to the plain
+  sequential loop, matching the Phase 20 reference semantics either way.
+  `FileIO`/`Range` are referenced by the names this document's table
+  above fixes, but Agent D does not define their Rust types; a native
+  build of a program using FileIO requires Agent B's crate at link time.
+  Fast Debug raises a clear "pending Agent B" error rather than
+  implementing a competing FileIO runtime.
+
+For Agent D's own isolated tests,
+`tests/tooling/fixtures/phase20_root_queue_shim.rs` and
+`phase20_fileio_range_shim.rs` supply minimal, explicitly TEST-ONLY
+implementations of these names (a deterministic sequential root queue; a
+POSIX-backed FileIO/Range). Neither is emitted by the compiler, and
+neither should be read as proposing a design for Agent B/C's real
+implementation.

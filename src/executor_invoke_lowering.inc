@@ -2,7 +2,8 @@
 // `executor.invoke(concrete_domain.Handler(args...))`.
 //
 // Normative behavior: docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md (secs. 3-7),
-// docs/ROOT_RUNTIME_ABI.md ("Executor/root runtime ABI").
+// docs/ROOT_RUNTIME_ABI.md ("Executor/root runtime ABI", "RootDescriptor
+// representation").
 //
 // `Executor` is a compiler-recognized pinned-capability construction, never a
 // general nominal type: there is no "executor" entry in valid_type(), no
@@ -13,20 +14,29 @@
 // argument, return it, or otherwise let it escape `main`: those positions all
 // go through valid_type()/field-type checking, which never admits "executor".
 //
-// This file adds two things inside class Checker:
+// This file adds inside class Checker:
 //  1. check_executor_or_fileio_statement: per-statement recognition wired
 //     into check_stmts' existing TypeEnvVisitor, validating one statement in
 //     isolation (shape, argument legality, target handler).
-//  2. check_executor_lifecycle: a dedicated sequencing pass over one body
+//  2. check_executor_invoke: full legality for one invoke statement
+//     (target/handler/arity/one-way/argument type compatibility/capability
+//     rejection), building the checked RootSubmissionPlan (ast.hpp) that
+//     executor_invoke_codegen.inc consumes -- it never re-derives these
+//     facts from source text.
+//  3. check_executor_lifecycle: a dedicated sequencing pass over one body
 //     (today only `main`, since executor.invoke/join are main-only) that
-//     tracks configure/start -> invoke* -> join as an explicit state machine,
-//     mirroring every_handler_path_replies' indentation-based CFG walk.
+//     tracks every Executor binding's state (Unstarted/Active/Consumed) as
+//     an explicit per-binding state machine, mirroring
+//     every_handler_path_replies' indentation-based CFG walk, including
+//     terminating statements (`return`) so an early exit before `join()` is
+//     rejected exactly like falling off the end of the body.
 //
-// There is no real Agent-C root-admission/worker-pool runtime in this tree.
-// executor.invoke is lowered (see executor_invoke_codegen.inc) to an inline,
-// synchronous call of the target handler at the submission point. This
-// preserves one-way semantics, argument snapshotting, and submission order,
-// but not physical concurrency -- an explicit, documented integration gap.
+// executor.invoke itself never lowers to a synchronous handler call (see
+// executor_invoke_codegen.inc): there is no valid inline production
+// fallback for "submit an independent Root and continue after submission".
+// The checked RootSubmissionPlan is lowered through one narrow codegen seam
+// that targets Agent C's not-yet-existing root-admission runtime by name;
+// Agent D does not implement a substitute scheduler.
 
 void check_fileio_mode_argument(int line, const string& mode) const {
   string trimmed = trim(mode);
@@ -81,20 +91,60 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
             std::to_string(handler->params.size()) + " argument(s), found " +
             std::to_string(handler_args.size()),
         "EXECUTOR_INVOKE_ARGUMENT_COUNT");
-  for (const auto& argument : handler_args) {
+
+  RootSubmissionPlan plan;
+  plan.executor_binding = statement.a;
+  plan.target_domain_binding = domain_binding;
+  plan.target_domain_semantic_identity = domain_semantic_identity(domain);
+  plan.handler_semantic_identity = handler_semantic_identity(domain, *handler);
+  plan.handler_name = handler_name;
+  plan.one_way = true;
+
+  for (size_t index = 0; index < handler_args.size(); ++index) {
+    const string& argument = handler_args[index];
     string trimmed = trim(argument);
-    if (executor_typed(env, trimmed))
+    // Reuse the one narrow Phase 20 capability adapter (moss.cpp) rather
+    // than reimplementing FileIO/Range/Executor ownership rules here --
+    // Agent A owns the general ownership/escape checker.
+    if (phase20_is_nontransferable_capability(env.count(trimmed) ? env.at(trimmed) : ""))
       err(statement.line,
-          "an Executor is a static routing-like capability and cannot be "
-          "passed as an executor.invoke argument",
-          "EXECUTOR_INVOKE_CAPABILITY_ARGUMENT");
-    if (fileio_typed(env, trimmed))
-      err(statement.line,
-          "a FileIO capability cannot be passed as an executor.invoke "
-          "argument",
+          "a Phase 20 capability (Executor/FileIO/Range) cannot be passed "
+          "as an executor.invoke argument",
           "EXECUTOR_INVOKE_CAPABILITY_ARGUMENT");
     check_expression(statement.line, argument, env);
+    // Reuse the same formal/actual payload type compatibility normal
+    // handler calls use (AGENTS.md corrective-pass item 8), rather than
+    // relying on native rustc to discover a mismatch. executor.invoke
+    // targets must have explicitly typed parameters: unlike `message`,
+    // invoke statements are not visited by infer_statement_expressions, so
+    // an untyped handler parameter would never receive an inferred type
+    // from this call site alone.
+    const Param& formal = handler->params[index];
+    if (formal.type.empty())
+      err(statement.line,
+          "handler '" + domain.name + "." + handler_name +
+              "' parameter '" + formal.name +
+              "' must be explicitly typed to be invoked through "
+              "executor.invoke",
+          "EXECUTOR_INVOKE_UNTYPED_PARAMETER");
+    auto actual = inferred_expr_type(argument, env);
+    if (!actual)
+      err(statement.line,
+          "cannot infer the type of executor.invoke argument '" + argument + "'",
+          "EXECUTOR_INVOKE_ARGUMENT_TYPE_UNRESOLVED");
+    if (!starts_with(*actual, "_") && !same_type(formal.type, *actual))
+      err(statement.line,
+          "argument " + std::to_string(index + 1) + " to executor.invoke(" +
+              domain.name + "." + handler_name + "(...)) has type '" +
+              canonical_type_name(*actual) + "', expected '" +
+              canonical_type_name(formal.type) + "'",
+          "EXECUTOR_INVOKE_ARGUMENT_TYPE_MISMATCH");
+    plan.argument_expressions.push_back(argument);
+    plan.argument_types.push_back(canonical_type_name(formal.type));
   }
+
+  p_.root_submission_plans.push_back(std::move(plan));
+  statement.root_submission_plan_id = p_.root_submission_plans.size();
 }
 
 // Validates one statement that constructs or uses an Executor/FileIO value,
@@ -204,65 +254,120 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
   return false;
 }
 
-// Sequencing pass: configure/start -> invoke* -> join, one active Executor at
-// a time, no use after join, every normal path after start() reaches join().
+// Phase 20 Agent D: one Executor binding's lifecycle state. Unifying
+// "active" and "joined" into one per-binding state (rather than an active
+// map plus a separately-discarded joined set) is required to answer "has
+// this Executor already been consumed" after it was joined inside a branch
+// (AGENTS.md corrective-pass item 13): a stale `joined` set that merge logic
+// drops would make a later `invoke`/`join` report merely "not active"
+// instead of the more precise "already joined and consumed".
+enum class ExecutorLifecycleState { Unstarted, Active, Consumed };
+
+struct ExecutorLifecycle {
+  ExecutorLifecycleState state = ExecutorLifecycleState::Unstarted;
+  int started_line = 0;
+  bool operator==(const ExecutorLifecycle& other) const {
+    return state == other.state;
+  }
+  bool operator!=(const ExecutorLifecycle& other) const {
+    return !(*this == other);
+  }
+};
+
+// Sequencing pass: configure/start -> invoke* -> join, at most one Active
+// Executor at a time, no use after join (Consumed), every normal path after
+// start() reaching join() before the body ends *or* terminates (`return`).
 // Mirrors every_handler_path_replies' flat indentation-based CFG walk.
-std::map<string,int> check_executor_lifecycle_block(
+//
+// `continuing` distinguishes a path that terminates early (via `return`)
+// from one that falls through to the next statement: a terminated path must
+// not be merged into the state that flows into later statements, matching
+// AGENTS.md corrective-pass item 12's early-exit requirement.
+std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
     const vector<Stmt>& statements, size_t& index, int level,
-    std::map<string,int> active, std::set<string> joined) const {
-  while (index < statements.size()) {
+    std::map<string, ExecutorLifecycle> state, bool& continuing) const {
+  continuing = true;
+  while (continuing && index < statements.size()) {
     const Stmt& statement = statements[index];
-    if (statement.indent < level) return active;
+    if (statement.indent < level) return state;
     if (statement.indent > level)
       err(statement.line, "indentation jumps more than one block level");
-    if (statement.kind == Stmt::Kind::Else) return active;
+    if (statement.kind == Stmt::Kind::Else) return state;
 
     if (statement.kind == Stmt::Kind::If) {
       ++index;
-      auto then_active = check_executor_lifecycle_block(
-          statements, index, level + 1, active, joined);
-      auto else_active = active;
+      bool then_continuing = true;
+      auto then_state = check_executor_lifecycle_block(
+          statements, index, level + 1, state, then_continuing);
+      auto else_state = state;
+      bool else_continuing = true;
       if (index < statements.size() && statements[index].indent == level &&
           statements[index].kind == Stmt::Kind::Else) {
         ++index;
-        else_active = check_executor_lifecycle_block(
-            statements, index, level + 1, active, joined);
+        else_state = check_executor_lifecycle_block(
+            statements, index, level + 1, state, else_continuing);
       }
-      if (then_active != else_active)
-        err(statement.line,
-            "an Executor's lifecycle state must agree on every branch "
-            "reaching this point",
-            "EXECUTOR_LIFECYCLE_BRANCH_MISMATCH");
-      active = std::move(then_active);
+      state = merge_executor_lifecycle_paths(
+          statement.line, {{then_state, then_continuing}, {else_state, else_continuing}});
+      continuing = then_continuing || else_continuing;
       continue;
     }
     if (statement.kind == Stmt::Kind::While || statement.kind == Stmt::Kind::For) {
       ++index;
-      auto body_active = check_executor_lifecycle_block(
-          statements, index, level + 1, active, joined);
-      if (body_active != active)
+      bool body_continuing = true;
+      auto body_state = check_executor_lifecycle_block(
+          statements, index, level + 1, state, body_continuing);
+      // The loop may execute zero or more times: its body's lifecycle
+      // effect on bindings that survive the loop must be a no-op, and a
+      // body that always terminates (e.g. always `return`s) can never
+      // legally be entered more than the first iteration's worth.
+      if (body_continuing && body_state != state)
         err(statement.line,
             "an Executor cannot change lifecycle state across a loop "
-            "iteration",
+            "iteration; start and join a complete lifecycle inside the "
+            "loop body, or do neither",
             "EXECUTOR_LIFECYCLE_LOOP_MISMATCH");
       continue;
     }
     if (statement.kind == Stmt::Kind::Match) {
       ++index;
-      std::optional<std::map<string,int>> agreed;
+      std::optional<std::map<string, ExecutorLifecycle>> agreed;
+      bool any_continuing = false;
       while (index < statements.size() &&
              statements[index].indent == level + 1 &&
              statements[index].kind == Stmt::Kind::Case) {
         ++index;
-        auto case_active = check_executor_lifecycle_block(
-            statements, index, level + 2, active, joined);
-        if (!agreed) agreed = std::move(case_active);
-        else if (*agreed != case_active)
+        bool case_continuing = true;
+        auto case_state = check_executor_lifecycle_block(
+            statements, index, level + 2, state, case_continuing);
+        any_continuing = any_continuing || case_continuing;
+        if (!case_continuing) continue;
+        if (!agreed) agreed = std::move(case_state);
+        else if (*agreed != case_state)
           err(statement.line,
-              "an Executor's lifecycle state must agree on every match case",
+              "an Executor's lifecycle state must agree on every match "
+              "case that continues past the match",
               "EXECUTOR_LIFECYCLE_BRANCH_MISMATCH");
       }
-      if (agreed) active = std::move(*agreed);
+      if (agreed) state = std::move(*agreed);
+      continuing = any_continuing;
+      continue;
+    }
+    if (statement.kind == Stmt::Kind::Return) {
+      // Every normal path leaving main must reach join() -- an early
+      // `return` is itself a normal exit, not an escape from the
+      // requirement (AGENTS.md corrective-pass item 12).
+      for (const auto& entry : state)
+        if (entry.second.state == ExecutorLifecycleState::Active)
+          err(statement.line,
+              "'return' leaves Executor '" + entry.first +
+                  "' (started at line " +
+                  std::to_string(entry.second.started_line) +
+                  ") active and unjoined; call Executor.join() on every "
+                  "normal exit path, including 'return'",
+              "EXECUTOR_JOIN_MISSING");
+      ++index;
+      continuing = false;
       continue;
     }
 
@@ -271,18 +376,21 @@ std::map<string,int> check_executor_lifecycle_block(
          statement.kind == Stmt::Kind::Var) &&
         parse_executor_chain(statement.b, calls) && !calls.empty() &&
         calls.back().first == "start") {
-      if (!active.empty())
-        err(statement.line,
-            "at most one Executor may be active at a time; '" +
-                active.begin()->first + "' (started at line " +
-                std::to_string(active.begin()->second) + ") is still active",
-            "EXECUTOR_MULTIPLE_ACTIVE");
-      active[statement.a] = statement.line;
-      joined.erase(statement.a);
+      for (const auto& entry : state)
+        if (entry.second.state == ExecutorLifecycleState::Active)
+          err(statement.line,
+              "at most one Executor may be active at a time; '" +
+                  entry.first + "' (started at line " +
+                  std::to_string(entry.second.started_line) +
+                  ") is still active",
+              "EXECUTOR_MULTIPLE_ACTIVE");
+      state[statement.a] = {ExecutorLifecycleState::Active, statement.line};
     } else if (statement.kind == Stmt::Kind::Call &&
                (statement.b == "invoke" || statement.b == "join")) {
-      if (!active.count(statement.a)) {
-        if (joined.count(statement.a))
+      auto found = state.find(statement.a);
+      if (found == state.end() || found->second.state != ExecutorLifecycleState::Active) {
+        if (found != state.end() &&
+            found->second.state == ExecutorLifecycleState::Consumed)
           err(statement.line,
               "Executor '" + statement.a +
                   "' was already joined and consumed",
@@ -291,24 +399,45 @@ std::map<string,int> check_executor_lifecycle_block(
             "Executor '" + statement.a + "' is not active here",
             "EXECUTOR_NOT_ACTIVE");
       }
-      if (statement.b == "join") {
-        active.erase(statement.a);
-        joined.insert(statement.a);
-      }
+      if (statement.b == "join")
+        found->second.state = ExecutorLifecycleState::Consumed;
     }
     ++index;
   }
-  return active;
+  return state;
+}
+
+// Merges lifecycle state across several alternative paths (if/else arms,
+// match cases), ignoring any path that terminated (`continuing == false`):
+// a terminated path contributes no state to what flows into later
+// statements (AGENTS.md corrective-pass item 12). If every path terminates,
+// the merged state is irrelevant to the caller, which also stops
+// continuing.
+std::map<string, ExecutorLifecycle> merge_executor_lifecycle_paths(
+    int line,
+    const vector<std::pair<std::map<string, ExecutorLifecycle>, bool>>& paths) const {
+  std::optional<std::map<string, ExecutorLifecycle>> agreed;
+  for (const auto& path : paths) {
+    if (!path.second) continue;  // terminated path: contributes nothing.
+    if (!agreed) agreed = path.first;
+    else if (*agreed != path.first)
+      err(line,
+          "an Executor's lifecycle state must agree on every branch that "
+          "continues past this point",
+          "EXECUTOR_LIFECYCLE_BRANCH_MISMATCH");
+  }
+  return agreed.value_or(std::map<string, ExecutorLifecycle>{});
 }
 
 void check_executor_lifecycle(const vector<Stmt>& body) const {
   size_t index = 0;
-  auto active = check_executor_lifecycle_block(body, index, 0, {}, {});
-  if (!active.empty()) {
-    auto first = active.begin();
-    err(first->second,
-        "every normal path after Executor.start() must reach "
-        "Executor.join(); '" + first->first + "' is never joined",
-        "EXECUTOR_JOIN_MISSING");
-  }
+  bool continuing = true;
+  auto state = check_executor_lifecycle_block(body, index, 0, {}, continuing);
+  if (!continuing) return;  // every normal path terminated before falling through.
+  for (const auto& entry : state)
+    if (entry.second.state == ExecutorLifecycleState::Active)
+      err(entry.second.started_line,
+          "every normal path after Executor.start() must reach "
+          "Executor.join(); '" + entry.first + "' is never joined",
+          "EXECUTOR_JOIN_MISSING");
 }
