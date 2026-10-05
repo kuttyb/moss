@@ -452,27 +452,26 @@ fn main() {
     });
     exec.enqueue_root(desc1);
 
-    // Line up submitters 2, 3, 4 waiting for queue capacity in deterministic order
+    // Line up submitters 2, 3, 4 waiting for queue capacity in deterministic order.
+    // MossExecutorHandle is a linear capability (never Clone); producers borrow it.
     let step_barrier = Arc::new(Barrier::new(2));
-    let mut producers = Vec::new();
-    for i in 2..=4 {
-        let ex = exec.clone();
-        let eo = Arc::clone(&executed_order);
-        let step = Arc::clone(&step_barrier);
-        let p = thread::spawn(move || {
-            step.wait();
-            let desc = MossRootDescriptor::one_way(next_root_id(), move || {
-                eo.lock().unwrap().push(i);
+    thread::scope(|scope| {
+        let ex = &exec;
+        for i in 2..=4 {
+            let eo = Arc::clone(&executed_order);
+            let step = Arc::clone(&step_barrier);
+            scope.spawn(move || {
+                step.wait();
+                let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+                    eo.lock().unwrap().push(i);
+                });
+                ex.enqueue_root(desc);
             });
-            ex.enqueue_root(desc);
-        });
-        step_barrier.wait();
-        thread::sleep(Duration::from_millis(10));
-        producers.push(p);
-    }
-
-    worker_barrier.wait(); // unblock worker
-    for p in producers { p.join().unwrap(); }
+            step_barrier.wait();
+            thread::sleep(Duration::from_millis(10));
+        }
+        worker_barrier.wait(); // unblock worker
+    });
     exec.join();
 
     let order = executed_order.lock().unwrap().clone();
@@ -1505,17 +1504,20 @@ fn main() {
     let comp_active = Arc::new(AtomicBool::new(false));
     let ca = Arc::clone(&comp_active);
 
+    // Calls go through Agent B's process-wide symbols, which reach the
+    // executor via the hooks installed by moss_root_runtime::moss_set_solo_hooks.
     let desc = MossRootDescriptor::one_way(next_root_id(), move || {
-        moss_solo_enter("fileio-read");
+        moss_root_runtime::moss_solo_enter("fileio-read");
         if moss_executor_worker_count() > 1 {
             ca.store(true, Ordering::SeqCst);
         }
         std::thread::sleep(Duration::from_millis(10));
-        moss_solo_leave("fileio-read");
+        moss_root_runtime::moss_solo_leave("fileio-read");
     });
     exec.enqueue_root(desc);
 
     exec.join();
+    assert!(comp_active.load(Ordering::SeqCst), "B's moss_solo_enter must activate C compensation");
     println!("ok agent_b_solo_hooks_verified");
 }
 """

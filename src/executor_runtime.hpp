@@ -16,7 +16,8 @@
 //   - A5 / R5 leaf-lock invariant: runtime locks are never nested
 //   - R5 fairness: ticket-based FIFO ingress and root queue admission
 //   - Agent D seam: moss_root_start / moss_root_submit / moss_root_join
-//   - Agent B seam: moss_solo_enter / moss_solo_leave
+//   - Agent B seam: solo_enter_current / solo_leave_current installed via
+//     moss_root_runtime::moss_set_solo_hooks (B owns moss_solo_enter/leave)
 //   - Test instrumentation under #[cfg(any(test, moss_perf))]
 //
 // Module ownership: src/executor_runtime.hpp.
@@ -240,7 +241,14 @@ impl MossProcessRuntime {
 static RUNTIME: std::sync::OnceLock<MossProcessRuntime> = std::sync::OnceLock::new();
 
 fn process_rt() -> &'static MossProcessRuntime {
-    RUNTIME.get_or_init(MossProcessRuntime::new)
+    RUNTIME.get_or_init(|| {
+        // Agent B owns the process-wide moss_solo_enter/moss_solo_leave
+        // symbols (moss_root_runtime). Install the executor compensation
+        // callbacks once, before any worker can exist; they are never cleared
+        // or replaced, and are no-ops off-worker or with no active executor.
+        moss_root_runtime::moss_set_solo_hooks(solo_enter_current, solo_leave_current);
+        MossProcessRuntime::new()
+    })
 }
 
 // ─── Cross-crate C ABI exports ───────────────────────────────────────────
@@ -1037,15 +1045,6 @@ pub fn executor_solo_leave_from_fileio(reason: &str) {
     solo_leave_current(reason);
 }
 
-#[no_mangle]
-pub extern "Rust" fn moss_solo_enter(reason: &str) {
-    solo_enter_current(reason);
-}
-
-#[no_mangle]
-pub extern "Rust" fn moss_solo_leave(reason: &str) {
-    solo_leave_current(reason);
-}
 
 // ─── Test / perf accessors ────────────────────────────────────────────────
 #[cfg(any(test, moss_perf))]

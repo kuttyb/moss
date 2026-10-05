@@ -40,15 +40,6 @@
 // (infer_statement_expressions / infer_domain_specializations treat an
 // invoke site like a message site).
 
-void check_fileio_mode_argument(int line, const string& mode) const {
-  string trimmed = trim(mode);
-  if (trimmed != "ro" && trimmed != "rw" && trimmed != "create")
-    err(line,
-        "FileIO.open mode must be the bare word 'ro', 'rw', or 'create'; found '" +
-            trimmed + "'",
-        "FILEIO_INVALID_MODE");
-}
-
 // Validates `Executor().<config>*.start()` argument types and statically
 // obvious bounds, and records the ordered configuration in an
 // ExecutorStartPlan so codegen evaluates each argument exactly once, in
@@ -235,13 +226,10 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
       return true;
     }
 
-    vector<string> open_arguments;
-    if (parse_fileio_open(statement.b, open_arguments)) {
-      check_fileio_mode_argument(statement.line, open_arguments[1]);
-      check_expression(statement.line, open_arguments[0], env);
-      return true;
-    }
-
+    // FileIO legality (ownership, mode, bounds, lifecycle) belongs to Agent
+    // A's semantics (fileio_semantics.inc), reached through the ordinary
+    // Assign/Call walk. Agent D adds only the chunk-source shape rule: the
+    // scoped seq[Range] source is not a storable collection (spec sec. 13).
     string receiver, method;
     vector<string> arguments;
     // A functional pipeline (e.g. `file.chunks(n) |> map(...) |> reduce(...)`)
@@ -250,22 +238,15 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
     // text would otherwise misparse past the first '|>'.
     if (!parse_functional_pipeline(statement.b) &&
         parse_member_call(statement.b, receiver, method, arguments) &&
-        fileio_typed(env, receiver)) {
-      if (method == "chunks")
-        err(statement.line,
-            "file.chunks(size) is a scoped seq[Range] source, not a "
-            "materializable collection; consume it immediately in a "
-            "'chunks(size) |> map(f) |> reduce(initial, combine)' pipeline",
-            "FILEIO_CHUNKS_NOT_MATERIALIZABLE");
-      if (method == "read" && arguments.size() == 2) {
-        check_expression(statement.line, arguments[0], env);
-        check_expression(statement.line, arguments[1], env);
-        return true;
-      }
+        fileio_typed(env, receiver) && method == "chunks") {
+      // Report A's operand/bound diagnostics before the shape rule.
+      check_expression(statement.line, statement.b, env);
       err(statement.line,
-          "FileIO has no result-producing operation '" + method +
-              "' for this form",
-          "FILEIO_UNKNOWN_METHOD");
+          "file.chunks(size) is a scoped seq[Range] source, not a "
+          "materializable collection; consume it immediately in a "
+          "'chunks(size) |> map(f) |> reduce(initial, combine)' pipeline",
+          "FILEIO_CHUNKS_NOT_MATERIALIZABLE");
+      return true;
     }
     return false;
   }
@@ -285,24 +266,6 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
       err(statement.line,
           "unknown Executor operation '" + statement.b + "'",
           "EXECUTOR_UNKNOWN_METHOD");
-    }
-    if (fileio_typed(env, statement.a)) {
-      if (statement.b == "write" && statement.args.size() == 2) {
-        check_expression(statement.line, statement.args[0], env);
-        check_expression(statement.line, statement.args[1], env);
-        return true;
-      }
-      if (statement.b == "sync" && statement.args.size() <= 1) {
-        if (statement.args.size() == 1 && trim(statement.args[0]) != "dataonly")
-          err(statement.line,
-              "FileIO.sync accepts only the bare argument 'dataonly'",
-              "FILEIO_SYNC_ARGUMENT");
-        return true;
-      }
-      if (statement.b == "close" && statement.args.empty()) return true;
-      err(statement.line,
-          "unknown FileIO operation '" + statement.b + "'",
-          "FILEIO_UNKNOWN_METHOD");
     }
     return false;
   }

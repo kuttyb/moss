@@ -12044,7 +12044,9 @@ class Generator {
     if (!p_.explicit_module || p_.main) {
       o << fileio_root_runtime_rust();
     }
-    o << executor_runtime_rust(p_.explicit_module);
+    // Root vs. provider must agree with fileio_root_runtime_rust() emission:
+    // the root executor runtime installs its Solo hooks into moss_root_runtime.
+    o << executor_runtime_rust(p_.explicit_module && !p_.main);
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
