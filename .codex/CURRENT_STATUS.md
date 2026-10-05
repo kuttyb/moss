@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 20 Agent A — FileIO semantics
+
+Implemented the static `FileIO`, `Range`, and `RangeBatch` language surface on
+`phase-20-a-fileio-semantics` from base `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`.
+The checker recognizes the built-in types and modes; rejects pinned-owner
+copy/move, return, message, collection, and domain-state escapes; checks root
+local close obligations and statically knowable open/closed/read-only
+operations; and checks scoped RangeBatch views after batch replacement. FileIO
+operations derive READ or WRITE through synchronous helper borrows, preserving
+domain-field provenance for synchronization. Added warning
+`FILEIO_BLOCKING_WITH_SHARED_WRITE` for direct or synchronous-helper FileIO
+blocking while a handler writes/consumes other state; the FileIO field’s own
+protection is excluded. Literal request bounds and batch pair sizes are checked.
+
+Focused regression coverage is in
+`tests/tooling/check_phase20_fileio_semantics.py`, wired into `tests/run.sh`.
+The unsupported `executor.invoke` syntax has an Agent D integration fixture at
+`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss`.
+Validation on this branch: focused FileIO semantic tests passed; `make check`
+passed; `make examples` passed; `git diff --check` passed. Native checking and
+Fast Debug reject the same FileIO copy probe with `FILEIO_PINNED_OWNERSHIP`.
+Native Rust compilation and Fast Debug execution of legal FileIO operations
+remain dependent on Agent B’s runtime implementation; `rustc` currently
+reports missing `FileIO`/mode runtime symbols and the interpreter reports an
+unknown local for `FileIO.open`. Executor boundary/lowering checks await Agent
+D; runtime FileIO and Executor runtime/scheduling integration await Agent B and
+Agent C respectively. This entry is before the other status sections so their
+content remains unchanged.
+
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
 `docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
