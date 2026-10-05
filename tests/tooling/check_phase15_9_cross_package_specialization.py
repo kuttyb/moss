@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from generated_rust import without_executor_runtime
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -216,7 +217,7 @@ def test_provider_and_source_free(root):
     app_rust = (app / "build" / "debug" / "App.rs").read_text(encoding="utf-8")
     if app_rust.count("fn __moss_specialize_Provider__bump_0") != 1:
         raise AssertionError("repeated consumer specialization emitted duplicate definitions")
-    if "dyn " in app_rust or "vtable" in app_rust:
+    if "dyn " in without_executor_runtime(app_rust) or "vtable" in app_rust:
         raise AssertionError("trait specialization introduced runtime dispatch")
 
     # Preserve only normal provider artifacts, then make its Moss source

@@ -18,7 +18,7 @@
 // executor_invoke_lowering.inc): they may be borrowed by an ordinary
 // synchronous helper function, but cannot be stored, returned, or cross a
 // message/reply/executor.invoke/domain-state/collection boundary
-// (phase20_is_nontransferable_capability).
+// (phase20_capability_type, fileio_semantics.inc).
 //
 // `map`/`combine` eligibility for the bounded-K Branch lowering
 // (file_chunk_codegen.inc) reuses the existing per-stage purity/effect

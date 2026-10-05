@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from generated_rust import without_executor_runtime
 repo=Path(__file__).resolve().parents[2]
 compiler=Path(sys.argv[1]).resolve()
 out=Path(sys.argv[2]).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -58,7 +59,8 @@ for path in corpus:
     command=[compiler,'-O',source,'-o',rust]
     run(command);generated=rust.read_text();run(command);assert generated==rust.read_text()
     assert 'let self_ref = self.clone()' not in generated
-    assert 'unsafe {' not in generated and 'unsafe impl' not in generated
+    lowered=without_executor_runtime(generated)
+    assert 'unsafe {' not in lowered and 'unsafe impl' not in lowered
     # No instrumentation calls/clock reads survive a normal optimized build.
     run(['rustc','--edition=2021','-D','warnings','-C','opt-level=3',rust,'-o',binary])
     production=run([binary]).stdout

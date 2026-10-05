@@ -378,14 +378,11 @@ static bool fileio_typed(const std::unordered_map<string,string>& env,
   return it != env.end() && canonical_type_name(it->second) == "FileIO";
 }
 
-// Phase 20 -- narrow, isolated Agent-A-facing capability adapter (see
-// AGENTS.md corrective-pass item 5). This single predicate is the only
-// place Agent D decides whether a static type is a non-transferable Phase
-// 20 capability (cannot cross message/reply/executor.invoke, domain state,
-// or an ordinary collection). When Agent A's real FileIO/Range ownership
-// checker lands, integrating with it should be a one-function change here
-// -- Agent D must not reimplement FileIO lifecycle, Range borrow scoping,
-// collection escape, or domain effects itself.
+// Phase 20 -- the name-level capability predicate. Boundary checks use the
+// Checker's phase20_capability_type (fileio_semantics.inc), which adds Agent
+// A's structural scoped-type fact (object fields, nested collections). Agent
+// D must not reimplement FileIO lifecycle, Range borrow scoping, collection
+// escape, or domain effects itself.
 static bool phase20_is_nontransferable_capability(const string& type) {
   string concrete = canonical_type_name(type);
   if (concrete == "executor" || concrete == "FileIO" || concrete == "Range" ||
@@ -10279,14 +10276,13 @@ class Checker {
 
       if (statement.kind == Stmt::Kind::Message) {
         // Phase 20: a nontransferable capability (Executor/FileIO/Range)
-        // cannot cross a domain boundary as a message argument. One shared
-        // adapter (moss.cpp) owns this rule; see AGENTS.md corrective-pass
-        // item 5.
+        // cannot cross a domain boundary as a message argument
+        // (phase20_capability_type, fileio_semantics.inc).
         for (const auto& argument : statement.args) {
           string trimmed = trim(argument);
           auto bound = current_env.find(trimmed);
           if (bound != current_env.end() &&
-              phase20_is_nontransferable_capability(bound->second))
+              phase20_capability_type(bound->second))
             err(statement.line,
                 "a Phase 20 capability (Executor/FileIO/Range) cannot be "
                 "passed as a message argument",
@@ -15504,7 +15500,11 @@ class Generator {
                 : trim(element_type.substr(4, element_type.size() - 5));
             string collection_expression = expr(source, d, locals, &types);
             string traversal = "(" + collection_expression + ").iter()";
-            if (copy_type(element)) traversal += ".copied()";
+            // FileIO.chunks yields Agent B's MossChunks, already an
+            // Iterator<Item = Range> borrowing the FileIO.
+            if (canonical_type_name(element_type) == "seq[Range]")
+              traversal = collection_expression;
+            else if (copy_type(element)) traversal += ".copied()";
             o << indent(level) << "for " << s.a << " in " << traversal
               << " {\n";
             auto child_locals = locals;

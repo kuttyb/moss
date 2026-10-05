@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+from generated_rust import without_executor_runtime
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
@@ -101,7 +102,8 @@ assert 'value: &impl MossAccess_Record' in text
 # handler instead of reconstructing an owned Record at this message boundary.
 assert 'Accept_shared(&(state.record))' in text
 assert 'Some((state.record).__moss_value())' in text
-assert 'unsafe {' not in text and 'unsafe impl' not in text and 'dyn ' not in text
+lowered = without_executor_runtime(text)
+assert 'unsafe {' not in lowered and 'unsafe impl' not in lowered and 'dyn ' not in lowered
 repeat = out / 'repeat.rs'
 run([compiler, source, '-o', repeat])
 assert repeat.read_text() == text

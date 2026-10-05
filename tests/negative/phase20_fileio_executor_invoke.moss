@@ -1,0 +1,13 @@
+# Integration regression: a FileIO capability cannot cross into an
+# independent Root as an executor.invoke argument.
+domain Sink:
+  fn Take(file):
+    echo 1
+
+fn main():
+  sink = Sink()
+  executor = Executor().start()
+  file = FileIO.open("input", ro)
+  executor.invoke(sink.Take(file))
+  file.close()
+  executor.join()

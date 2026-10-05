@@ -350,8 +350,11 @@ A compiler-internal, owned, read-only token that a `'static` Branch can
 carry instead of `&FileIO`. It is not a Moss value and not a second FileIO
 owner; it shares the open file's runtime backing, permits only reads, and
 the compiler guarantees every token is dead by the window's `branch_join`.
-Agent B's current `FileIO { inner: Mutex<Option<FileIOInner>> }` would need
-shareable backing (for example an `Arc` inside) to implement it.
+Agent B implements it in `src/fileio_runtime.hpp`: `FileIO` holds
+`inner: Arc<Mutex<Option<FileIOInner>>>`, and `MossFileIOReadBorrow` clones
+that `Arc`. `FileIO::read` and `MossFileIOReadBorrow::read` share one read
+path (same lifecycle check, Solo hooks, and errno capture). A borrow that
+observes a closed FileIO fails closed.
 
 ### Fast Debug
 
@@ -359,10 +362,9 @@ shareable backing (for example an `Arc` inside) to implement it.
 roots (snapshot at invoke, run at join). FileIO execution in Fast Debug
 awaits Agent A/B integration and raises a clear error.
 
-### Test-only shims
+### Test-only observer
 
-`tests/tooling/fixtures/phase20_executor_runtime_shim.rs`,
-`phase20_branch_runtime_shim.rs`, and `phase20_fileio_range_shim.rs` mirror
-the signatures above so Agent D's lowering can be compiled and run in
-isolation. They are never emitted by the compiler and are not a design for
-Agent B/C.
+Integration tests link generated code against the real Agent B/C runtimes.
+`tests/tooling/fixtures/phase20_runtime_observer.rs` (never emitted by the
+compiler) is appended under `--cfg moss_perf` and installs Agent C's
+`moss_rt_set_hook` to trace Branch publication and completion.

@@ -480,14 +480,17 @@ pub mod moss_fileio {
         parent_path: String,
     }
 
+    // `inner` is shared only with compiler-created branch read borrows
+    // (MossFileIOReadBorrow). The FileIO remains the sole owner: only it can
+    // write, sync, or close, and a borrow observes close and fails closed.
     pub struct FileIO {
-        inner: Mutex<Option<FileIOInner>>,
+        inner: Arc<Mutex<Option<FileIOInner>>>,
     }
 
     impl Default for FileIO {
         fn default() -> Self {
             FileIO {
-                inner: Mutex::new(None),
+                inner: Arc::new(Mutex::new(None)),
             }
         }
     }
@@ -662,7 +665,7 @@ pub mod moss_fileio {
             }
 
             FileIO {
-                inner: Mutex::new(Some(FileIOInner {
+                inner: Arc::new(Mutex::new(Some(FileIOInner {
                     fd,
                     parent_dir_fd,
                     dev,
@@ -672,7 +675,7 @@ pub mod moss_fileio {
                     is_closed: false,
                     path: path.to_string(),
                     parent_path: parent_path_str,
-                })),
+                }))),
             }
         }
 
@@ -690,66 +693,8 @@ pub mod moss_fileio {
         }
 
         pub fn read(&self, offset: i64, size: i64) -> Range {
-            let fd = {
-                let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
-                match guard.as_ref() {
-                    Some(inner) if !inner.is_closed => inner.fd,
-                    _ => {
-                        eprintln!("[moss-fileio] error: read on closed or uninitialized FileIO");
-                        std::process::abort();
-                    }
-                }
-            };
-            if offset < 0 || size < 0 || (i64::MAX - offset < size) {
-                eprintln!("[moss-fileio] error: invalid read offset {} or size {}", offset, size);
-                std::process::abort();
-            }
-            if size == 0 {
-                return Range::empty();
-            }
-
-            let target = usize::try_from(size).unwrap_or_else(|_| {
-                eprintln!("[moss-fileio] error: read size {} exceeds address space", size);
-                std::process::abort();
-            });
-            let mut buf = vec![0u8; target];
-            let mut total_read = 0usize;
-            let mut at_eof = false;
-            while total_read < target && !at_eof {
-                let current_off = offset.checked_add(i64::try_from(total_read).unwrap_or_else(|_| std::process::abort()))
-                    .unwrap_or_else(|| {
-                        eprintln!("[moss-fileio] error: offset overflow during read");
-                        std::process::abort();
-                    });
-                let guard = SoloGuard::new("read");
-                let res = unsafe{
-                    posix::pread(
-                        fd,
-                        buf[total_read..].as_mut_ptr(),
-                        target - total_read,
-                        current_off,
-                    )
-                };
-                drop(guard);
-                if res < 0 {
-                    let err = std::io::Error::last_os_error();
-                    if err.raw_os_error() == Some(posix::EINTR) {
-                        continue;
-                    }
-                    eprintln!("[moss-fileio] error: pread failed: {}", err);
-                    std::process::abort();
-                }
-                if res == 0 {
-                    at_eof = true;
-                } else {
-                    let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
-                    total_read += res_usize;
-                }
-            }
-            buf.truncate(total_read);
-            Range::from_vec(buf)
+            read_shared(&self.inner, offset, size)
         }
-
         pub fn read_batch(&self, requests: &[(i64, i64)]) -> RangeBatch {
             // Verify receiver lifecycle
             {
@@ -997,6 +942,85 @@ pub mod moss_fileio {
         }
     }
 
+    fn read_shared(inner: &Mutex<Option<FileIOInner>>, offset: i64, size: i64) -> Range {
+        let fd = {
+            let guard = inner.lock().unwrap_or_else(|_| std::process::abort());
+            match guard.as_ref() {
+                Some(inner) if !inner.is_closed => inner.fd,
+                _ => {
+                    eprintln!("[moss-fileio] error: read on closed or uninitialized FileIO");
+                    std::process::abort();
+                }
+            }
+        };
+        if offset < 0 || size < 0 || (i64::MAX - offset < size) {
+            eprintln!("[moss-fileio] error: invalid read offset {} or size {}", offset, size);
+            std::process::abort();
+        }
+        if size == 0 {
+            return Range::empty();
+        }
+
+        let target = usize::try_from(size).unwrap_or_else(|_| {
+            eprintln!("[moss-fileio] error: read size {} exceeds address space", size);
+            std::process::abort();
+        });
+        let mut buf = vec![0u8; target];
+        let mut total_read = 0usize;
+        let mut at_eof = false;
+        while total_read < target && !at_eof {
+            let current_off = offset.checked_add(i64::try_from(total_read).unwrap_or_else(|_| std::process::abort()))
+                .unwrap_or_else(|| {
+                    eprintln!("[moss-fileio] error: offset overflow during read");
+                    std::process::abort();
+                });
+            let guard = SoloGuard::new("read");
+            let res = unsafe{
+                posix::pread(
+                    fd,
+                    buf[total_read..].as_mut_ptr(),
+                    target - total_read,
+                    current_off,
+                )
+            };
+            drop(guard);
+            if res < 0 {
+                let err = std::io::Error::last_os_error();
+                if err.raw_os_error() == Some(posix::EINTR) {
+                    continue;
+                }
+                eprintln!("[moss-fileio] error: pread failed: {}", err);
+                std::process::abort();
+            }
+            if res == 0 {
+                at_eof = true;
+            } else {
+                let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
+                total_read += res_usize;
+            }
+        }
+        buf.truncate(total_read);
+        Range::from_vec(buf)
+    }
+
+    // Compiler-created, read-only branch borrow (spec sec. 13.1). Owned and
+    // Send + 'static so a chunk Branch can carry it; it shares the owner's
+    // descriptor state and never becomes a second FileIO owner. Generated
+    // code drops every borrow before the Branch join returns.
+    pub struct MossFileIOReadBorrow {
+        inner: Arc<Mutex<Option<FileIOInner>>>,
+    }
+
+    impl MossFileIOReadBorrow {
+        pub fn read(&self, offset: i64, size: i64) -> Range {
+            read_shared(&self.inner, offset, size)
+        }
+    }
+
+    pub fn moss_fileio_branch_read_borrow(file: &FileIO) -> MossFileIOReadBorrow {
+        MossFileIOReadBorrow { inner: Arc::clone(&file.inner) }
+    }
+
     impl Drop for FileIO {
         fn drop(&mut self) {
             let to_cleanup = {
@@ -1087,7 +1111,7 @@ pub mod moss_fileio {
     }
 }
 
-pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, moss_fileio_registry_claim, moss_fileio_registry_release};
+pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, MossFileIOReadBorrow, moss_fileio_branch_read_borrow, moss_fileio_registry_claim, moss_fileio_registry_release};
 #[cfg(any(test, moss_perf))]
 pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset};
 )RUST";

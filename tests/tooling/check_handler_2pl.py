@@ -7,6 +7,7 @@ import resource
 import shutil
 import subprocess
 import sys
+from generated_rust import without_executor_runtime
 
 repository = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
@@ -26,8 +27,9 @@ def compile_fixture(source, flags=(), name='fixture'):
     run([compiler, *flags, source, '-o', rust])
     text = rust.read_text()
     assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
-    assert not re.search(r'Arc<(Mutex|RwLock)<\w+State|AtomicI64|AtomicBool|thread::spawn', text)
-    assert 'unsafe {' not in text and 'unsafe impl' not in text
+    lowered = without_executor_runtime(text)
+    assert not re.search(r'Arc<(Mutex|RwLock)<\w+State|AtomicI64|AtomicBool|thread::spawn', lowered)
+    assert 'unsafe {' not in lowered and 'unsafe impl' not in lowered
     return rust, text
 
 

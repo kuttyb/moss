@@ -1200,6 +1200,11 @@ pub fn branch_join(scope: MossBranchScope) {
 )EXECUTOR_RUST";
   }
 
+  // Closing delimiter for whole-file generated-code scans: the runtime's
+  // type-erased work (`Box<dyn FnOnce() + Send>`) is not user dispatch.
+  s += "// ============================================================\n"
+       "// End Phase 20 Executor Runtime  (moss executor_runtime_rust)\n"
+       "// ============================================================\n";
   return s;
 }
 

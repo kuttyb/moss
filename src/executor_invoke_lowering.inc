@@ -156,17 +156,16 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
   for (size_t index = 0; index < handler_args.size(); ++index) {
     const string& argument = handler_args[index];
     check_expression(statement.line, argument, env);
-    // Infer the argument's semantic type first, then ask the one narrow
-    // Phase 20 capability adapter (moss.cpp) about that *type* -- this also
+    // Infer the argument's semantic type first, then ask Agent A's checked
+    // boundary fact (phase20_capability_type) about that *type* -- this also
     // catches capability-producing expressions and nested scoped types, not
-    // just a bare capability binding (corrective-pass item 13). Agent A's
-    // checked boundary fact is meant to replace this predicate.
+    // just a bare capability binding (corrective-pass item 13).
     auto actual = inferred_expr_type(argument, env);
     if (!actual)
       err(statement.line,
           "cannot infer the type of executor.invoke argument '" + argument + "'",
           "EXECUTOR_INVOKE_ARGUMENT_TYPE_UNRESOLVED");
-    if (phase20_is_nontransferable_capability(*actual))
+    if (actual && phase20_capability_type(*actual))
       err(statement.line,
           "a Phase 20 capability (Executor/FileIO/Range/chunk source) cannot "
           "be passed as an executor.invoke argument",

@@ -5,6 +5,13 @@ compiler=${1:-./moss}
 test_build=${2:-build/tests}
 mkdir -p "$test_build"
 
+# Generated Rust minus the delimited Phase 20 executor runtime block that
+# every root emits; its type-erased Root/Branch work (Box<dyn FnOnce + Send>)
+# is runtime plumbing, so dispatch scans check only compiler-lowered code.
+user_rust() {
+  sed '/^\/\/ Phase 20 Executor Runtime  (moss executor_runtime_rust)$/,/^\/\/ End Phase 20 Executor Runtime  (moss executor_runtime_rust)$/d' "$1"
+}
+
 # Peer-review source hygiene: only focused migration fixtures contain retired syntax.
 python3 tests/tooling/check_retired_syntax.py --self-test
 
@@ -227,7 +234,7 @@ grep -F 'holder.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 user pop did not retain its method spelling'
 grep -F 'values.pop()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
   fail 'swarm_002 Vector pop did not retain Vec lowering'
-grep -F 'queue.pop_front()' "$test_build/swarm_002_typed_pop.rs" >/dev/null ||
+user_rust "$test_build/swarm_002_typed_pop.rs" | grep -F 'queue.pop_front()' >/dev/null ||
   fail 'swarm_002 Queue pop did not use VecDeque lowering'
 run_case swarm_004_indexed_binary tests/swarm_004_indexed_binary.moss "$(printf 'true\n5\ntrue')"
 run_case swarm_005_implicit_method_return tests/swarm_005_implicit_method_return.moss "$(printf '5\n9')"
@@ -897,14 +904,14 @@ grep -F 'fn __moss_specialize_transform_0(xs: &std::vec::Vec<i64>) -> std::vec::
 [ "$(grep -c '^fn __moss_specialize_transform_' \
     "$test_build/phase4_hof_optimized.rs")" -eq 2 ] ||
   fail 'higher-order helper was not separately specialized for two callable identities'
-if grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)' "$test_build/phase4_hof_optimized.rs"; then
+if user_rust "$test_build/phase4_hof_optimized.rs" | grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
   fail 'static higher-order helper emitted runtime callable machinery'
 fi
 grep -F '.apply(__moss_value_0)' \
   "$test_build/phase4_bound_method_optimized.rs" >/dev/null ||
   fail 'bound method stage did not lower to a statically selected concrete call'
-if grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)' \
-    "$test_build/phase4_bound_method_optimized.rs"; then
+if user_rust "$test_build/phase4_bound_method_optimized.rs" |
+    grep -Eq 'dyn Fn|Box<dyn|fn\(i64\)'; then
   fail 'bound method stage emitted runtime callable machinery'
 fi
 [ "$(grep -c '^fn __moss_specialize_double_' \
@@ -1033,8 +1040,8 @@ trait_specializations=$(grep -c '^fn __moss_specialize_render_' \
 [ "$trait_specializations" -eq 2 ] ||
   fail "trait-typed function did not emit two concrete specializations"
 # Backend access traits use static generic dispatch; Moss traits remain erased.
-if grep -Eq '(dyn[[:space:]]|vtable)' \
-    "$test_build/static_trait_dispatch.rs" ||
+if user_rust "$test_build/static_trait_dispatch.rs" |
+    grep -Eq '(dyn[[:space:]]|vtable)' ||
    grep -E '^trait[[:space:]]' "$test_build/static_trait_dispatch.rs" | grep -v '^trait MossAccess_' >/dev/null; then
   fail "static trait dispatch emitted runtime trait machinery"
 fi
@@ -1222,7 +1229,7 @@ grep -F 'fn __moss_specialize_duck_add_0(value: i64) -> i64' \
     "$test_build/phase25_integer_overflow_o0.rs")" -eq 2 ] ||
   fail "duck-typed arithmetic did not retain both concrete call-site types"
 assert_class_lowering "$test_build/phase25_integer_overflow.rs"
-if grep -F 'unsafe {' "$test_build/phase25_integer_overflow.rs" >/dev/null; then
+if user_rust "$test_build/phase25_integer_overflow.rs" | grep -F 'unsafe {' >/dev/null; then
   fail "integer wrapping lowering used unsafe code"
 fi
 
@@ -1346,8 +1353,8 @@ grep -F 'struct Box__floatBoxRuntime' "$test_build/implicit_domain_specializatio
   fail 'implicit Box Float specialization did not get a concrete Rust layout'
 grep -F 'value: f64' "$test_build/implicit_domain_specialization.rs" >/dev/null ||
   fail 'implicit Box Float layout was not statically concrete'
-if grep -Eq 'Any|Box<dyn|type_id|TypeId' \
-  "$test_build/implicit_domain_specialization.rs"; then
+if user_rust "$test_build/implicit_domain_specialization.rs" |
+  grep -Eq 'Any|Box<dyn|type_id|TypeId'; then
   fail 'implicit domain specialization introduced a dynamic Rust value representation'
 fi
 "$compiler" effects 'handler:Box.Set' \

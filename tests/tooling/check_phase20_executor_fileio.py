@@ -9,11 +9,11 @@ join scope per window, compiler-owned result slots, owned FileIO read-borrow
 tokens, ordered parent commit; sequential lowering for ineligible stages).
 
 Agent D owns no production FileIO, Executor, or Branch runtime. Generated
-native code names Agent B/C's physical ABI and therefore needs their crates
-to link. These tests append TEST-ONLY shims from tests/tooling/fixtures/
-(never emitted by the compiler) whose signatures mirror Agent B/C closely
-enough to surface integration mismatches -- in particular, Branch and Root
-work must satisfy `FnOnce() + Send + 'static`.
+native code links against the real Agent B (src/fileio_runtime.hpp) and
+Agent C (src/executor_runtime.hpp) runtimes emitted by the compiler. Branch
+traces come from a TEST-ONLY observer (tests/tooling/fixtures/
+phase20_runtime_observer.rs, never emitted by the compiler) that installs
+Agent C's `moss_perf` instrumentation hook.
 
 Fast Debug models executor.invoke as a deterministic sequential schedule of
 deferred roots (compared against native output below). FileIO execution in
@@ -31,9 +31,7 @@ out = Path(sys.argv[2] if len(sys.argv) > 2 else repo / 'build/tests').resolve()
 out.mkdir(parents=True, exist_ok=True)
 
 FIXTURES = repo / 'tests/tooling/fixtures'
-EXECUTOR_SHIM = FIXTURES / 'phase20_executor_runtime_shim.rs'
-BRANCH_SHIM = FIXTURES / 'phase20_branch_runtime_shim.rs'
-FILEIO_SHIM = FIXTURES / 'phase20_fileio_range_shim.rs'
+RUNTIME_OBSERVER = FIXTURES / 'phase20_runtime_observer.rs'
 
 
 def run(args, *, expected=0, env=None):
@@ -60,15 +58,20 @@ def expect_rejected(source, needle, *, code=None):
         assert code in p.stderr, (source, p.stderr)
 
 
-def native_build(name, source, *, shims=()):
-    """Compile `source`, append test-only shims (generated file first: its
-    crate-level #![...] attributes must lead), link. Returns (rust, binary)."""
+def native_build(name, source, *, observe=False):
+    """Compile `source` and link it against the emitted B/C runtimes. With
+    `observe`, append the test-only Branch observer (generated file first: its
+    crate-level #![...] attributes must lead) and enable `moss_perf`.
+    Returns (rust, binary)."""
     rust = out / (name + '.rs')
     run([compiler, repo / source, '-o', rust])
-    combined = out / (name + '_combined.rs')
-    combined.write_text(rust.read_text() + ''.join(Path(s).read_text() for s in shims))
     binary = out / (name + '_bin')
-    run(['rustc', '-D', 'warnings', combined, '-o', binary])
+    if observe:
+        combined = out / (name + '_observed.rs')
+        combined.write_text(rust.read_text() + RUNTIME_OBSERVER.read_text())
+        run(['rustc', '-D', 'warnings', '--cfg', 'moss_perf', combined, '-o', binary])
+    else:
+        run(['rustc', '-D', 'warnings', rust, '-o', binary])
     return rust, binary
 
 
@@ -86,17 +89,20 @@ def functional_ir(source):
 
 
 # ---------------------------------------------------------------------------
-# Generated code must not define any sibling agent's production runtime.
+# Runtime items come only from their owning agent's runtime module, once.
 # ---------------------------------------------------------------------------
 def code_only(rust_text):
     return '\n'.join(line for line in rust_text.splitlines() if not line.lstrip().startswith('//'))
 
 
-def assert_no_d_runtime(rust_text, label):
-    for forbidden in (r'\bfn branch_publish\b', r'\bfn branch_join\b', r'\bfn branch_scope_new\b',
-                      r'\bstruct MossExecutor\b', r'\bstruct FileIO\b', r'\bstruct Range\b',
-                      r'\bfn moss_fileio_branch_read_borrow\b', r'MOSS_CHUNK_WINDOW_K'):
-        assert not re.search(forbidden, rust_text), (label, forbidden)
+def assert_owned_runtime(rust_text, label, *, fileio):
+    for item in (r'\bpub fn branch_publish\b', r'\bpub fn branch_join\b', r'\bpub fn branch_scope_new\b',
+                 r'\bpub struct MossExecutor\b'):
+        assert len(re.findall(item, rust_text)) == 1, (label, item)
+    for item in (r'\bpub struct FileIO\b', r'\bpub struct Range\b',
+                 r'\bpub fn moss_fileio_branch_read_borrow\b'):
+        assert len(re.findall(item, rust_text)) == (1 if fileio else 0), (label, item)
+    assert 'MOSS_CHUNK_WINDOW_K' not in rust_text, label
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +127,10 @@ expect_rejected('tests/negative/phase20_executor_domain_boundary.moss',
 expect_rejected('tests/negative/phase20_executor_invoke_capability_argument.moss',
                 'cannot be passed as an executor.invoke argument',
                 code='EXECUTOR_INVOKE_CAPABILITY_ARGUMENT')
+# Untyped handler parameter inferred from the invoke site: Agent A's
+# boundary rule rejects the inferred FileIO handler parameter.
+expect_rejected('tests/negative/phase20_fileio_executor_invoke.moss',
+                'handler parameters cannot contain FileIO', code='FILEIO_BOUNDARY_ESCAPE')
 expect_rejected('tests/negative/phase20_executor_return_before_join.moss',
                 "'return' leaves Executor", code='EXECUTOR_JOIN_MISSING')
 expect_rejected('tests/negative/phase20_executor_branch_join_use_after.moss',
@@ -151,12 +161,12 @@ for chain, needle, code in (
                     needle, code=code)
 
 # ---------------------------------------------------------------------------
-# executor.invoke positive: native (Agent-C-shaped test shim) vs Fast Debug.
+# executor.invoke positive: native (Agent C runtime) vs Fast Debug.
 # ---------------------------------------------------------------------------
 def executor_parity(name, source, expected_stdout):
-    rust, binary = native_build(name, source, shims=[EXECUTOR_SHIM])
+    rust, binary = native_build(name, source)
     text = rust.read_text()
-    assert_no_d_runtime(text, name)
+    assert_owned_runtime(text, name, fileio=False)
     assert 'MossExecutor::new()' in text and '.enqueue_root(MossRootDescriptor::with_target(' in text
     assert re.search(r'\.join\(\);', text)
     # Never a synchronous production fallback: the handler is only called
@@ -199,11 +209,14 @@ fn main():
   echo message worker.Read()
 ''')
 text, native = executor_parity('phase20_executor_config', config_source, '2\n8\n16\n3\n4\n')
-# Evaluated exactly once each, in source order, and passed to start().
-assert 'moss-executor start threads=Some(2) max_threads=Some(8) queue_capacity=Some(16) '\
-       'affinity=Some([0, 1]) priority=Some(3)' in native.stderr, native.stderr
-assert native.stderr.index('moss-executor start') < native.stderr.index('moss-executor enqueue') \
-    < native.stderr.index('moss-executor join'), native.stderr
+# Evaluated exactly once each, in source order (stdout above), and passed
+# to Agent C's builder in that order before start().
+assert re.search(r'MossExecutor::new\(\)\.threads\(__moss_executor_cfg_0 as usize\)'
+                 r'\.max_threads\(__moss_executor_cfg_1 as usize\)'
+                 r'\.queue_capacity\(__moss_executor_cfg_2 as usize\)'
+                 r'\.affinity\(__moss_executor_cfg_3\.iter\(\)[^;]*?\)'
+                 r'\.priority\(__moss_executor_cfg_4 as i32\)\.start\(\)', text), text
+assert text.index('.start()') < text.index('.enqueue_root(') < text.rindex('executor.join()')
 assert text.count('__moss_executor_cfg_') >= 10  # 5 temps, each bound then used once
 
 # ---------------------------------------------------------------------------
@@ -226,18 +239,17 @@ fileio_source = write_source('phase20_fileio_basic', '''fn main():
   out.sync(dataonly)
   out.close()
 ''' % (read_data, write_target))
-rust, binary = native_build('phase20_fileio_basic', fileio_source, shims=[FILEIO_SHIM])
+rust, binary = native_build('phase20_fileio_basic', fileio_source)
 text = code_only(rust.read_text())
-assert_no_d_runtime(text, 'phase20_fileio_basic')
-assert '.sync();' in text and '.sync_dataonly();' in text and 'sync(true' not in text and 'sync(false' not in text
-assert '.len()' in text and '.length()' not in text
+assert_owned_runtime(text, 'phase20_fileio_basic', fileio=True)
+assert 'out.sync();' in text and 'out.sync_dataonly();' in text
+assert 'data.len()' in text and 'data.length()' not in text
 assert run_binary(binary).stdout == '5\n'
 assert write_target.read_text() == 'written bytes', write_target.read_text()
 p = fast_debug(fileio_source, expected=1)
 assert "FileIO requires Agent B's" in p.stderr, p.stderr
 
-_, binary = native_build('phase20_fileio_helper_parameter', 'tests/phase20_fileio_helper_parameter.moss',
-                         shims=[FILEIO_SHIM])
+_, binary = native_build('phase20_fileio_helper_parameter', 'tests/phase20_fileio_helper_parameter.moss')
 assert run_binary(binary).stdout == '64\n'
 
 # ---------------------------------------------------------------------------
@@ -261,8 +273,12 @@ fn main():
 '''
 
 
+WINDOW_TRACE = ['moss-branch publish'] * 4 + ['moss-branch run'] * 4
+WINDOW = len(WINDOW_TRACE)
+
+
 def split_trace(stdout):
-    lines = stdout.splitlines()
+    lines = [line for line in stdout.splitlines() if not line.startswith('moss-solo ')]
     trace = [line for line in lines if line.startswith('moss-branch ')]
     program = [line for line in lines if not line.startswith('moss-branch ')]
     return lines, trace, program
@@ -273,21 +289,21 @@ def chunk_case(name, content, size, expected):
     data.write_bytes(content)
     source = write_source(name, CHUNK_SOURCE.format(path=data, size=size))
     ir = functional_ir(source)
-    assert 'Source seq[range]' in ir and 'vector[range]' not in ir, ir
+    assert 'Source seq[Range]' in ir and 'vector[Range]' not in ir, ir
     assert 'window_k=4 eligible=yes' in ir, ir
-    rust, binary = native_build(name, source, shims=[BRANCH_SHIM, FILEIO_SHIM])
+    rust, binary = native_build(name, source, observe=True)
     text = rust.read_text()
-    assert_no_d_runtime(text, name)
+    assert_owned_runtime(text, name, fileio=True)
     assert 'branch_scope_new(' in text and 'moss_fileio_branch_read_borrow(&' in text
     lines, trace, program = split_trace(run_binary(binary).stdout)
     assert program == ['initializer', expected], (name, program)
     # The initializer is evaluated before any Branch is published.
     assert lines[0] == 'initializer', (name, lines)
-    # Every window publishes exactly K=4 Branches before its single join --
-    # never publish/join/publish/join.
-    assert trace and len(trace) % 5 == 0, (name, trace)
-    for window in range(0, len(trace), 5):
-        assert trace[window:window + 5] == ['moss-branch publish'] * 4 + ['moss-branch join'], (name, trace)
+    # Every window publishes exactly K=4 Branches before its single join runs
+    # them (inline: no active Executor) -- never publish/run/publish/run.
+    assert trace and len(trace) % WINDOW == 0, (name, trace)
+    for window in range(0, len(trace), WINDOW):
+        assert trace[window:window + WINDOW] == WINDOW_TRACE, (name, trace)
     return trace
 
 
@@ -300,19 +316,19 @@ chunk_case('phase20_chunk_exact_multiple', b'123456', 3, '33')
 chunk_case('phase20_chunk_short_final', b'1234567', 3, '331')
 # Spans two K=4 windows; zero-length EOF at index 8 terminates the second.
 trace = chunk_case('phase20_chunk_many', b'0123456789abcdef', 2, '22222222')
-assert len(trace) == 15, trace
+assert len(trace) == 3 * WINDOW, trace
 # Short final chunk inside the second window, with an already-produced
 # speculative outcome after it (index 7) that must be discarded.
 trace = chunk_case('phase20_chunk_short_mid_window', b'0123456789abc', 2, '2222221')
-assert len(trace) == 10, trace
+assert len(trace) == 2 * WINDOW, trace
 
 
 def ineligible_case(name, source, expected, reason):
     ir = functional_ir(source)
     assert 'eligible=no reason=' + reason in ir, (name, ir)
-    rust, binary = native_build(name, source, shims=[FILEIO_SHIM])
-    text = rust.read_text()
-    assert not re.search(r'\bbranch_publish\(', text), name
+    rust, binary = native_build(name, source)
+    text = code_only(rust.read_text())
+    assert 'branch_publish(&__moss_chunk_scope' not in text and '__moss_chunk_borrow' not in text, name
     assert run_binary(binary).stdout == expected, name
 
 
@@ -385,10 +401,71 @@ fn main():
 ''' % (handler_data, handler_data))
 ir = functional_ir(handler_source)
 assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not pure: observable domain READ' in ir, ir
-rust, binary = native_build('phase20_chunk_handler', handler_source, shims=[BRANCH_SHIM, FILEIO_SHIM])
+rust, binary = native_build('phase20_chunk_handler', handler_source, observe=True)
 _, trace, program = split_trace(run_binary(binary).stdout)
 assert program == ['33', '44'], program
-assert trace == ['moss-branch publish'] * 4 + ['moss-branch join'], trace
+assert trace == WINDOW_TRACE, trace
+
+# Integrated A+B+C+D: with an active Executor, invoked Roots perform blocking
+# FileIO (Agent B Solo hooks -> Agent C compensation) while a value-returning
+# handler, called synchronously by message, lowers its chunk pipeline to
+# Branches that run on executor workers. Each Root opens its own inode
+# (spec sec. 10: one live FileIO per inode).
+e2e_data = out / 'phase20_e2e.data'
+e2e_data.write_bytes(bytes(range(256)) * 400 + b'tail')
+for suffix in ('a', 'b'):
+    (out / ('phase20_e2e.data.' + suffix)).write_bytes(e2e_data.read_bytes())
+e2e_source = write_source('phase20_e2e_executor_fileio', '''fn add_length(acc: Int, len: Int) -> Int:
+  return acc + len
+
+domain Count:
+  fn Total(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(4096) |> map(_.length()) |> reduce(0, add_length)
+    file.close()
+    reply total
+
+domain Reader:
+  seen = 0
+
+  fn Scan(path: String):
+    file = FileIO.open(path, ro)
+    data = file.read(0, 64)
+    seen = seen + data.length()
+    file.close()
+
+  fn Seen() -> Int:
+    reply seen
+
+fn main():
+  count = Count()
+  reader = Reader()
+  executor = Executor().threads(2).max_threads(4).start()
+  path = "%s"
+  executor.invoke(reader.Scan(path + ".a"))
+  executor.invoke(reader.Scan(path + ".b"))
+  echo message count.Total(path)
+  executor.join()
+  echo message reader.Seen()
+''' % e2e_data)
+_, binary = native_build('phase20_e2e_executor_fileio', e2e_source, observe=True)
+for _ in range(5):
+    stdout = run_binary(binary).stdout
+    _, trace, program = split_trace(stdout)
+    assert program == [str(len(e2e_data.read_bytes())), '128'], program
+    publishes = trace.count('moss-branch publish')
+    assert publishes and publishes % 4 == 0 and trace.count('moss-branch run') == publishes, trace
+    assert 'moss-solo enter' in stdout.splitlines(), stdout
+
+# Sequential `for` over the scoped chunk source iterates Agent B's MossChunks.
+for_chunks_source = write_source('phase20_for_chunks', '''fn main():
+  file = FileIO.open("%s", ro)
+  for chunk in file.chunks(3):
+    echo chunk.length()
+  file.close()
+''' % (out / 'phase20_chunk_short_final.data'))
+_, binary = native_build('phase20_for_chunks', for_chunks_source)
+assert run_binary(binary).stdout == '3\n3\n1\n'
 
 # The chunk source is a scoped seq[Range], not a materializable collection.
 expect_rejected(write_source('phase20_chunks_materialize', '''fn main():
@@ -403,13 +480,16 @@ expect_rejected(write_source('phase20_chunks_shape', '''fn main():
 ''' % chunk_data), "must be exactly 'file.chunks(size) |> map(f) |> reduce(initial, combine)'",
     code='FILEIO_CHUNK_PIPELINE_SHAPE')
 
-# Production compiler sources define no Branch scheduler or FileIO runtime.
+# Branch scheduling and FileIO runtime live only in their owners' modules
+# (Agent C: executor_runtime.hpp; Agent B: fileio_runtime.hpp), never in
+# Agent D's lowering/codegen.
 for path in (repo / 'src').iterdir():
     if path.suffix in ('.hpp', '.inc', '.cpp'):
         source_text = path.read_text()
-        assert 'fn branch_publish' not in source_text, path
-        assert 'fn moss_fileio_branch_read_borrow' not in source_text, path
+        if path.name != 'executor_runtime.hpp':
+            assert 'fn branch_publish' not in source_text, path
+        if path.name != 'fileio_runtime.hpp':
+            assert 'fn moss_fileio_branch_read_borrow' not in source_text, path
 assert not (repo / 'src/branch_runtime.hpp').exists()
-assert not (repo / 'src/fileio_runtime.hpp').exists()
 
 print('phase20 executor/fileio checks passed')

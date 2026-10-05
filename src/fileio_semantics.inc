@@ -37,6 +37,14 @@
     return fileio_contains_scoped_type(type, visited);
   }
 
+  // The checked boundary fact for message/executor.invoke arguments: the
+  // Executor handle, or any type that structurally reaches a scoped FileIO
+  // capability (through collections or object fields).
+  bool phase20_capability_type(const string& type) const {
+    return phase20_is_nontransferable_capability(type) ||
+        fileio_contains_scoped_type(type);
+  }
+
   bool fileio_forbidden_collection_type(const string& type) const {
     string t = canonical_type_name(type);
     bool collection = starts_with(t, "vector[") || starts_with(t, "map[") ||
@@ -99,6 +107,9 @@
 
   std::optional<string> fileio_result_type(const string& expression,
                                             const TypeEnv& env) const {
+    // `file.chunks(n) |> map(f) |> reduce(...)` is typed by the functional
+    // pipeline IR; parse_member_call would misread it as `file.chunks(...)`.
+    if (parse_functional_pipeline(expression)) return std::nullopt;
     string receiver, method;
     vector<string> args;
     if (!parse_member_call(expression, receiver, method, args)) return std::nullopt;

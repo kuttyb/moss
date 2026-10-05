@@ -1,5 +1,71 @@
 # Moss current status
 
+## Phase 20 integration (A+B+C+D) — branch `phase-20-integration` (2026-10-04)
+
+Merges of Agents A–D (`ea6d97f`..`162c40c`) plus integration fixes. User
+snapshot `6d2baa8` holds the first half (Solo hooks: C installs
+`solo_enter_current`/`solo_leave_current` via B's
+`moss_root_runtime::moss_set_solo_hooks` and no longer defines
+`moss_solo_enter/leave`; root vs provider executor emission matches
+`fileio_root_runtime_rust()`; C test no longer clones the linear handle).
+Work on top of it:
+
+1. **A owns FileIO legality.** D's `check_executor_or_fileio_statement` no
+   longer pre-empts FileIO open/read/write/sync/close (it bypassed A's batch
+   reads, pinned-owner, bounds and lifecycle checks). D keeps only the
+   chunk-source shape rule (`FILEIO_CHUNKS_NOT_MATERIALIZABLE`, spec §13),
+   emitted after A's operand/bound diagnostics. Removed D's duplicate mode
+   checker.
+2. **Pipeline typing fix.** A's `fileio_result_type` typed a whole
+   `file.chunks(n) |> map(..) |> reduce(..)` expression as `seq[Range]`
+   (`parse_member_call` misreads past `|>`); it now defers pipelines to the
+   functional IR. Exposed by a handler `reply` of a placeholder-map pipeline.
+3. **Boundary fact.** Message and `executor.invoke` argument checks use the
+   Checker's `phase20_capability_type` = D's name predicate ∪ A's structural
+   `fileio_contains_scoped_type`. A's pending fixture is promoted to
+   `tests/negative/phase20_fileio_executor_invoke.moss` (untyped handler
+   parameter inferred from invoke → `FILEIO_BOUNDARY_ESCAPE`).
+4. **B/D seam.** B's `FileIO.inner` is now `Arc<Mutex<Option<FileIOInner>>>`;
+   added `MossFileIOReadBorrow` + `moss_fileio_branch_read_borrow` sharing one
+   `read_shared` path with `FileIO::read` (same lifecycle check, Solo hooks,
+   errno capture; fails closed after close). Documented in
+   `docs/ROOT_RUNTIME_ABI.md`.
+5. **D tests on real runtimes.** Removed the three TEST-ONLY shims; generated
+   code links against the emitted B/C runtimes. New
+   `tests/tooling/fixtures/phase20_runtime_observer.rs` (appended under
+   `--cfg moss_perf`, installs C's `moss_rt_set_hook` via `.init_array`)
+   traces Branch publish/run and Solo entry. Window shape is now
+   `publish×4, run×4` per K=4 window. Config order is checked on the emitted
+   builder chain plus stdout. Added an integrated e2e case: invoked Roots doing
+   FileIO (Solo → compensation) concurrently with a message-called handler
+   whose chunk pipeline runs as Branches on executor workers (5 runs/test;
+   manual 40/40 plus single-CPU pinned run).
+6. **`for chunk in file.chunks(n)`** was accepted by A's checker but codegen
+   appended `.iter()` to B's `MossChunks` (already `Iterator<Item = Range>`);
+   it now iterates directly. Regression added to the D suite.
+7. **`make check` regressions from C's merge** (reproduced at merge commit
+   `162c40c`). Every root emits C's runtime (`Box<dyn FnOnce() + Send>`
+   work, FFI `unsafe`, `root_queue.pop_front()`), which tripped whole-file
+   scans meant for compiler lowering. The runtime block now has an end
+   delimiter; scans exclude exactly that block via `user_rust` in
+   `tests/run.sh` (hof, bound-method, static-trait, implicit-domain,
+   integer-wrapping `unsafe`, swarm_002 Queue `pop_front` positive) and
+   `tests/tooling/generated_rust.py::without_executor_runtime`
+   (check_phase15_9, check_handler_2pl, check_borrowed_reads,
+   check_phase106f). The helper requires exactly one block.
+
+Validation (this tree): Phase 20 A semantics suite passed; D
+executor/fileio suite passed; B runtime suite 47 PASS; C executor suite
+36/36; `make check` passed ("all Moss v0.1 tests passed", ERT 61/61);
+`make examples` passed; `sh -n tests/run.sh` and `git diff --cached
+--check` clean. All results are for the final staged tree (not committed).
+
+Open items: Fast Debug FileIO is still unimplemented
+(`src/interpreter_phase20.inc` raises a clear error), so native/Fast Debug
+parity for FileIO programs is incomplete.
+`check_phase20c_executor.py` is not wired into `tests/run.sh`. `fileio`
+effects are not yet serialized to `.mossi`/effect JSON. Not pushed.
+
 ## Phase 20 Agent A — FileIO semantics
 
 The corrective pass from reviewed checkpoint
