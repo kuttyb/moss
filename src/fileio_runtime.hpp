@@ -2,56 +2,100 @@
 
 namespace moss {
 
-inline bool contains_fileio_token(const std::string& s) {
-  static const char* const tokens[] = {"FileIO", "RangeBatch", "Range"};
-  for (const char* const token_str : tokens) {
-    std::string_view token = token_str;
-    size_t pos = 0;
-    while ((pos = s.find(token, pos)) != std::string::npos) {
-      bool before_ok = (pos == 0 || !(std::isalnum(static_cast<unsigned char>(s[pos - 1])) || s[pos - 1] == '_'));
-      size_t end = pos + token.size();
-      bool after_ok = (end == s.size() || !(std::isalnum(static_cast<unsigned char>(s[end])) || s[end] == '_'));
-      if (before_ok && after_ok) return true;
-      pos = end;
-    }
+inline bool contains_fileio_token(const std::string& s, const char* token_str) {
+  std::string_view token = token_str;
+  size_t pos = 0;
+  while ((pos = s.find(token, pos)) != std::string::npos) {
+    bool before_ok = (pos == 0 || !(std::isalnum(static_cast<unsigned char>(s[pos - 1])) || s[pos - 1] == '_'));
+    size_t end = pos + token.size();
+    bool after_ok = (end == s.size() || !(std::isalnum(static_cast<unsigned char>(s[end])) || s[end] == '_'));
+    if (before_ok && after_ok) return true;
+    pos = end;
   }
   return false;
+}
+
+inline bool is_fileio_type(const std::string& type_str) {
+  static const char* const types[] = {"FileIO", "RangeBatch", "Range"};
+  for (const char* const t : types) {
+    if (contains_fileio_token(type_str, t)) return true;
+  }
+  return false;
+}
+
+inline bool expr_uses_fileio(const std::string& s) {
+  if (s.find("FileIO.") != std::string::npos || s.find("FileIO(") != std::string::npos ||
+      s.find("RangeBatch.") != std::string::npos || s.find("RangeBatch(") != std::string::npos ||
+      s.find("Range.empty") != std::string::npos || s.find("Range.from_") != std::string::npos ||
+      s.find(".open_in_place(") != std::string::npos || s.find(".chunks(") != std::string::npos ||
+      s.find(".sync_dataonly(") != std::string::npos) {
+    return true;
+  }
+  return false;
+}
+
+inline bool statement_uses_fileio(const Stmt& s) {
+  return expr_uses_fileio(s.text) || expr_uses_fileio(s.a) || expr_uses_fileio(s.b);
 }
 
 inline bool program_uses_fileio(const Program& p) {
   if (p.main) {
     for (const auto& s : p.main->body) {
-      if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+      if (statement_uses_fileio(s)) return true;
     }
   }
   for (const auto& obj : p.objects) {
-    if (contains_fileio_token(obj.name)) return true;
-    for (const auto& f : obj.fields) if (contains_fileio_token(f.name) || contains_fileio_token(f.type) || contains_fileio_token(f.init)) return true;
+    for (const auto& f : obj.fields) {
+      if (is_fileio_type(f.type) || expr_uses_fileio(f.init)) return true;
+    }
     for (const auto& m : obj.methods) {
-      if (contains_fileio_token(m.name)) return true;
-      for (const auto& param : m.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
-      for (const auto& s : m.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+      if (m.return_type && is_fileio_type(*m.return_type)) return true;
+      for (const auto& param : m.params) {
+        if (is_fileio_type(param.type)) return true;
+      }
+      for (const auto& s : m.body) {
+        if (statement_uses_fileio(s)) return true;
+      }
     }
   }
   for (const auto& d : p.domains) {
-    if (contains_fileio_token(d.name)) return true;
-    for (const auto& f : d.state) if (contains_fileio_token(f.name) || contains_fileio_token(f.type) || contains_fileio_token(f.init)) return true;
+    for (const auto& f : d.state) {
+      if (is_fileio_type(f.type) || expr_uses_fileio(f.init)) return true;
+    }
     for (const auto& h : d.handlers) {
-      if (contains_fileio_token(h.name)) return true;
-      for (const auto& param : h.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
-      for (const auto& s : h.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+      if (h.reply_type && is_fileio_type(*h.reply_type)) return true;
+      for (const auto& param : h.params) {
+        if (is_fileio_type(param.type)) return true;
+      }
+      for (const auto& s : h.body) {
+        if (statement_uses_fileio(s)) return true;
+      }
     }
   }
   for (const auto& fn : p.functions) {
-    if (contains_fileio_token(fn.name)) return true;
-    for (const auto& param : fn.params) if (contains_fileio_token(param.name) || contains_fileio_token(param.type)) return true;
-    for (const auto& s : fn.body) if (contains_fileio_token(s.text) || contains_fileio_token(s.a) || contains_fileio_token(s.b)) return true;
+    if (fn.return_type && is_fileio_type(*fn.return_type)) return true;
+    for (const auto& param : fn.params) {
+      if (is_fileio_type(param.type)) return true;
+    }
+    for (const auto& s : fn.body) {
+      if (statement_uses_fileio(s)) return true;
+    }
   }
   for (const auto& e : p.enums) {
-    if (contains_fileio_token(e.name)) return true;
     for (const auto& c : e.cases) {
-      if (contains_fileio_token(c.name)) return true;
-      for (const auto& f : c.fields) if (contains_fileio_token(f.name) || contains_fileio_token(f.type)) return true;
+      for (const auto& f : c.fields) {
+        if (is_fileio_type(f.type)) return true;
+      }
+    }
+  }
+  for (const auto& t : p.tests) {
+    for (const auto& s : t.body) {
+      if (statement_uses_fileio(s)) return true;
+    }
+  }
+  for (const auto& b : p.benchmarks) {
+    for (const auto& s : b.body) {
+      if (statement_uses_fileio(s)) return true;
     }
   }
   return false;
@@ -72,13 +116,15 @@ pub mod moss_fileio {
     use std::ffi::CString;
 
     pub mod sys {
+        extern "Rust" {
+            pub fn moss_solo_enter(reason: &str);
+            pub fn moss_solo_leave(reason: &str);
+        }
         extern "C" {
             pub fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool;
             pub fn moss_fileio_registry_release(dev: u64, ino: u64);
             pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool;
             pub fn moss_fileio_registry_reset();
-            pub fn moss_solo_enter(reason_ptr: *const u8, reason_len: usize);
-            pub fn moss_solo_leave(reason_ptr: *const u8, reason_len: usize);
         }
     }
 
@@ -177,12 +223,12 @@ pub mod moss_fileio {
 
     #[inline]
     pub fn solo_enter(reason: &str) {
-        unsafe { sys::moss_solo_enter(reason.as_ptr(), reason.len()) };
+        unsafe { sys::moss_solo_enter(reason) };
     }
 
     #[inline]
     pub fn solo_leave(reason: &str) {
-        unsafe { sys::moss_solo_leave(reason.as_ptr(), reason.len()) };
+        unsafe { sys::moss_solo_leave(reason) };
     }
 
     #[inline]
@@ -995,14 +1041,14 @@ pub mod moss_root_runtime {
     static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
+    pub extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
         let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
         let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
         set.insert((dev, ino))
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64) {
+    pub extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64) {
         let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
         if let Some(set) = guard.as_mut() {
             set.remove(&(dev, ino));
@@ -1010,7 +1056,7 @@ pub mod moss_root_runtime {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
+    pub extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
         let guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
         if let Some(set) = guard.as_ref() {
             set.contains(&(dev, ino))
@@ -1020,7 +1066,7 @@ pub mod moss_root_runtime {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_fileio_registry_reset() {
+    pub extern "C" fn moss_fileio_registry_reset() {
         let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
         if let Some(set) = guard.as_mut() {
             set.clear();
@@ -1028,12 +1074,7 @@ pub mod moss_root_runtime {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_solo_enter(reason_ptr: *const u8, reason_len: usize) {
-        let reason = if reason_ptr.is_null() || reason_len == 0 {
-            ""
-        } else {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(reason_ptr, reason_len))
-        };
+    pub extern "Rust" fn moss_solo_enter(reason: &str) {
         let hook = {
             if let Ok(guard) = MOSS_SOLO_ENTER_HOOK.lock() {
                 *guard
@@ -1047,12 +1088,7 @@ pub mod moss_root_runtime {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn moss_solo_leave(reason_ptr: *const u8, reason_len: usize) {
-        let reason = if reason_ptr.is_null() || reason_len == 0 {
-            ""
-        } else {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(reason_ptr, reason_len))
-        };
+    pub extern "Rust" fn moss_solo_leave(reason: &str) {
         let hook = {
             if let Ok(guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
                 *guard

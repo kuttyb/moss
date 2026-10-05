@@ -838,6 +838,7 @@ def test_cross_crate_process_global_registry(test_dir):
     assert res_prov.returncode == 0, f"Provider compilation failed:\n{res_prov.stderr}"
 
     # 2. Compile Consumer Executable linked against provider_a.rlib
+    # Note: Consumer uses root_runtime_rust emitted by root executable, with or without local FileIO
     consumer_src = f"""
     #![allow(dead_code)]
     #![allow(unused_variables)]
@@ -912,6 +913,27 @@ def test_cross_crate_process_global_registry(test_dir):
     res_col = subprocess.run([consumer_bin, test_dir, "collision"], capture_output=True, text=True)
     assert res_col.returncode != 0, "Duplicate open across crates must fail closed"
     assert "duplicate live FileIO" in res_col.stderr, f"Expected duplicate live FileIO in stderr: {res_col.stderr}"
+
+    # 3. Compiler-level test: Root executable without local FileIO compiles with moss and satisfies provider linkage
+    pure_moss_src = """
+fn main():
+  val = 42
+"""
+    pure_moss_file = os.path.join(test_dir, "pure_root.moss")
+    with open(pure_moss_file, "w", encoding="utf-8") as f:
+        f.write(pure_moss_src)
+    pure_rs_file = os.path.join(TMP_DIR, "pure_root.rs")
+    res_pure = subprocess.run([os.path.join(REPO_ROOT, "moss"), pure_moss_file, "-o", pure_rs_file], capture_output=True, text=True)
+    assert res_pure.returncode == 0, f"moss compile failed for pure root:\n{res_pure.stderr}"
+    with open(pure_rs_file, "r", encoding="utf-8") as f:
+        pure_rs_content = f.read()
+    assert "moss_root_runtime" in pure_rs_content, "Compiler-generated pure root MUST emit moss_root_runtime"
+    assert "mod moss_fileio" not in pure_rs_content, "Pure root without FileIO MUST NOT emit mod moss_fileio"
+
+    # Link compiler-generated pure_root.rs directly against provider_a.rlib to verify symbols resolve
+    pure_bin = os.path.join(TMP_DIR, "pure_root_bin")
+    res_link = subprocess.run(["rustc", "-D", "warnings", "--extern", f"provider_a={provider_rlib}", "-o", pure_bin, pure_rs_file], capture_output=True, text=True)
+    assert res_link.returncode == 0, f"Linking compiler-emitted root with provider failed:\n{res_link.stderr}"
     print("[PASS] Test 30 & 31: Cross-crate collision and Solo hook propagation verified")
 
 def test_hook_lock_discipline(test_dir):
@@ -961,49 +983,52 @@ def test_hook_lock_discipline(test_dir):
     print("[PASS] Test 32: Hook registration lock-dropping discipline verified")
 
 def test_main_only_runtime_emission(test_dir):
-    print("=== Running Test 34 & 35: Main-only runtime emission & false-positive hardening ===")
+    print("=== Running Test 34 & 35: Root-runtime emission & declaration name hardening ===")
 
-    # 1. Main / enum FileIO program
-    moss_main_src = """
-enum StorageMode:
-  FileIO
-  Range
-  RangeBatch
-
+    # 1. Process-root emission test (no local FileIO)
+    moss_root_src = """
 fn main():
-  mode = StorageMode.FileIO
-  val = 42
+  val = 100
 """
-    moss_file = os.path.join(test_dir, "main_only_fileio.moss")
+    moss_file = os.path.join(test_dir, "process_root_test.moss")
     with open(moss_file, "w", encoding="utf-8") as f:
-        f.write(moss_main_src)
+        f.write(moss_root_src)
 
-    rs_out = os.path.join(TMP_DIR, "main_only_fileio.rs")
+    rs_out = os.path.join(TMP_DIR, "process_root_test.rs")
     compile_cmd = [os.path.join(REPO_ROOT, "moss"), moss_file, "-o", rs_out]
     res = subprocess.run(compile_cmd, capture_output=True, text=True)
-    assert res.returncode == 0, f"moss compile failed for main-only FileIO:\n{res.stderr}"
+    assert res.returncode == 0, f"moss compile failed for process root:\n{res.stderr}"
 
     with open(rs_out, "r", encoding="utf-8") as f:
         rs_content = f.read()
-    assert "moss_fileio" in rs_content, "Generated Rust must contain moss_fileio"
-    assert "moss_root_runtime" in rs_content, "Generated Rust must contain moss_root_runtime"
+    assert "moss_root_runtime" in rs_content, "Root executable MUST emit moss_root_runtime"
+    assert "mod moss_fileio" not in rs_content, "Root executable without local FileIO MUST NOT emit mod moss_fileio"
 
     # Verify generated Rust compiles cleanly with rustc
-    res_rustc = subprocess.run(["rustc", "-D", "warnings", rs_out, "-o", os.path.join(TMP_DIR, "main_only_fileio")], capture_output=True, text=True)
+    res_rustc = subprocess.run(["rustc", "-D", "warnings", rs_out, "-o", os.path.join(TMP_DIR, "process_root_test")], capture_output=True, text=True)
     assert res_rustc.returncode == 0, f"Generated Rust failed to compile:\n{res_rustc.stderr}"
-    print("[PASS] Test 34: Main-only FileIO emitted and compiled cleanly")
+    print("[PASS] Test 34: Process-root runtime emission verified (root contains moss_root_runtime without mod moss_fileio)")
 
-    # 2. False-positive hardening (RangeRover / CustomRange identifier without FileIO)
+    # 2. False-positive hardening (declaration names: enum, type, domain, function containing Range/FileIO tokens)
     moss_fp_src = """
+enum Status:
+  Range
+  FileIO
+
 type RangeRover:
   fuel: int
 
-fn drive(rover: RangeRover) -> int:
-  return rover.fuel
+domain RangeDomain:
+  fn Ping() -> int:
+    reply 1
+
+fn Range() -> int:
+  return 1
 
 fn main():
   rover = RangeRover(fuel: 100)
-  drive(rover)
+  x = Range()
+  s = Status.Range
 """
     moss_fp_file = os.path.join(test_dir, "fp_test.moss")
     with open(moss_fp_file, "w", encoding="utf-8") as f:
@@ -1013,8 +1038,8 @@ fn main():
     assert res_fp.returncode == 0, f"moss compile failed:\n{res_fp.stderr}"
     with open(rs_fp_out, "r", encoding="utf-8") as f:
         rs_fp_content = f.read()
-    assert "mod moss_fileio" not in rs_fp_content, "Unrelated RangeRover identifier must not emit moss_fileio"
-    print("[PASS] Test 35: False-positive identifier hardening verified")
+    assert "mod moss_fileio" not in rs_fp_content, "Declaration names containing tokens MUST NOT emit mod moss_fileio"
+    print("[PASS] Test 35: Declaration name false-positive hardening verified")
 
 def run_tests():
     bin_path = compile_test_harness()

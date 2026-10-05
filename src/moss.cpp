@@ -11660,9 +11660,9 @@ class Generator {
     o << handler_runtime_rust();
     if (program_uses_fileio(p_)) {
       o << fileio_runtime_rust();
-      if (!p_.explicit_module || p_.main) {
-        o << fileio_root_runtime_rust();
-      }
+    }
+    if (!p_.explicit_module || p_.main) {
+      o << fileio_root_runtime_rust();
     }
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
