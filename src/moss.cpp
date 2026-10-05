@@ -35,6 +35,7 @@
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
+#include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
 
 using std::string;
@@ -11809,6 +11810,7 @@ class Generator {
     if (!p_.explicit_module || p_.main) {
       o << fileio_root_runtime_rust();
     }
+    o << executor_runtime_rust(p_.explicit_module);
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());

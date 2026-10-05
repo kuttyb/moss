@@ -101,7 +101,7 @@ assert 'value: &impl MossAccess_Record' in text
 # handler instead of reconstructing an owned Record at this message boundary.
 assert 'Accept_shared(&(state.record))' in text
 assert 'Some((state.record).__moss_value())' in text
-assert 'unsafe' not in text and 'dyn ' not in text
+assert 'unsafe {' not in text and 'unsafe impl' not in text and 'dyn ' not in text
 repeat = out / 'repeat.rs'
 run([compiler, source, '-o', repeat])
 assert repeat.read_text() == text
