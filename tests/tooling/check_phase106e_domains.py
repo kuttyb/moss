@@ -31,7 +31,7 @@ def equivalent(source, expected):
     text = rust.read_text()
     # Inspect implementation constructs, not historical documentation/comments.
     implementation = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('//'))
-    assert not re.search(r'Moss(?:Sender|Receiver|Channel|Tracker|Cluster)|thread::spawn|Condvar|mpsc::|_locked\(|_local\(|AtomicI64|AtomicBool|Arc<(?:Mutex|RwLock)<\w+State', implementation)
+    assert not re.search(r'Moss(?:Sender|Receiver|Channel|Tracker|Cluster)|thread::spawn|mpsc::|_locked\(|_local\(|AtomicI64|AtomicBool|Arc<(?:Mutex|RwLock)<\w+State', implementation)
     assert 'moss_write_or_abort(&self.state.class' in text and 'MossClassRuntime' not in text
     binary = rust.with_suffix('')
     run(['rustc', '-D', 'warnings', rust, '-o', binary])

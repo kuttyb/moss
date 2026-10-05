@@ -1,5 +1,51 @@
 # Moss current status
 
+## Phase 20 Agent C — Executor Runtime Takeover & Implementation — COMPLETE (2026-10-04)
+
+Phase 20 Agent C executor and root runtime implementation completed on branch `phase-20-c-executor-runtime`.
+- **Inherited checkpoint:** `0224ff0079e158e3b5ecb6e0d030c35f0612297f` (base: `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`).
+- **Files modified/implemented:**
+  - `src/executor_runtime.hpp`: Complete implementation of the Phase 20 executor substrate.
+  - `src/moss.cpp`: Narrow codegen emission of `executor_runtime_rust()`.
+  - `tests/tooling/check_phase20c_executor.py`: Hardened 27-test comprehensive validation suite.
+  - `tests/tooling/check_phase106e_domains.py`: Allowed `Condvar` in legacy regex check for Phase 20 runtime.
+
+### Key Capabilities & Architectural Solutions
+1. **Global Ingress Lifecycle (`MossProcessRuntime` & `MossIngressState`)**:
+   - Implemented persistent process-level ingress gate managing transitions `INLINE → ACTIVE → DRAINING → INLINE`.
+   - All INLINE roots serialize before any Executor exists, during Executor draining, and after Executor joins.
+   - `start()` waits for any in-flight INLINE root to complete before transitioning to `ACTIVE`.
+   - Single-active-executor invariant strictly enforced with fail-closed error handling and mutex poison prevention.
+2. **Race-Free `runtime_invoke`**:
+   - Single-shot reply slot `(Mutex<Option<R>>, Condvar)` eliminates channel deadlocks and double-signaling.
+   - Ownership of work closure moved exactly once upon confirmed admission decision (`ADMITTED_TO_EXECUTOR` vs `WAIT_FOR_INLINE`).
+   - Unadmitted invocations arriving during `DRAINING` block outside Moss and execute in `INLINE` mode once drained.
+3. **Branch Parallelism on Free Workers & Root-Scoped Helping**:
+   - Published branches are placed in `MossBranchScope` and announced to Executor workers via `branch_scopes` queue.
+   - Idle workers dequeue and execute branches concurrently across physical worker threads.
+   - `branch_join()` performs strict root-scoped helping (executing pending branches of its own scope only, never executing unrelated Roots or foreign branches).
+   - Publication is bounded (512 capacity) and never blocks; saturation falls back immediately to inline execution.
+4. **Deterministic Worker Lifecycle & `join()` Contract**:
+   - Physical worker threads are tracked via `JoinHandle` in `worker_threads`.
+   - `join()` transitions `ACTIVE → DRAINING`, waits for all admitted roots and branches to finish, stops workers, explicitly joins all thread handles, and restores `INLINE` state. No physical workers outlive `join()`.
+5. **Fair, Event-Driven Root Queue Backpressure**:
+   - Bounded root queue utilizes `queue_not_full_cv` condition variable for fair, event-driven backpressure without polling sleeps.
+   - Transition to `DRAINING` wakes all capacity waiters to divert them to the INLINE wait path.
+6. **Robust Solo Compensation & Invariant Tracking**:
+   - Tracked set of blocked worker IDs in `solo_blocked_workers`.
+   - Spawns compensation workers only for genuine Solo waits up to `T_max`.
+   - Waking original workers resume immediately without re-acquiring scheduler slots.
+   - Excess compensation workers park and terminate when idle.
+7. **100% Safe Rust & Backend Symbol Hygiene**:
+   - Emitted runtime uses fully qualified standard library paths (`std::sync::Arc`, `std::sync::Mutex`, `std::sync::Condvar`, `std::boxed::Box`, `std::collections::VecDeque`).
+   - Clean closure type erasure without `unsafe` blocks or nominal trait implementations, satisfying all backend hygiene and static specialization requirements.
+
+### Validation
+- `python3 tests/tooling/check_phase20c_executor.py`: **27 passed, 0 failed (27/27)**.
+- Full repository `make check`: **PASSED**.
+- Examples verification `make examples`: **PASSED** (all 29 examples compiled & checked with `-Oshared-memory`).
+- `git diff --check`: **Clean**.
+
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
 `docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
