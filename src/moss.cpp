@@ -1532,6 +1532,7 @@ class Checker {
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     build_functional_ir();
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
+    warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
     std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
               [](const SemanticUse& left, const SemanticUse& right) {
@@ -1591,6 +1592,9 @@ class Checker {
 
   using TypeEnv = std::unordered_map<string,string>;
   using TypeEnvVisitor = std::function<void(const Stmt&, const TypeEnv&)>;
+
+#include "static_bounds.inc"
+#include "fileio_semantics.inc"
 
   [[noreturn]] void err(int line, const string& msg) const {
     CompileError error(line, msg);
@@ -1664,6 +1668,8 @@ class Checker {
 
   bool valid_type(const string& t) const {
     string type = canonical_type_name(t);
+    if (fileio_forbidden_collection_type(type)) return false;
+    if (type == "FileIO" || type == "Range" || type == "RangeBatch") return true;
     if (type == "int" || type == "float" || type == "bool" || type == "string" ||
         type == "unit") return true;
     if (domains_.count(type) || objects_.count(type) || enums_.count(type)) return true;
@@ -2134,6 +2140,10 @@ class Checker {
       std::set<string> method_signatures;
       for (const auto& field : object.fields) {
         string field_source = field.source_file.empty() ? object.source_file : field.source_file;
+        if (fileio_contains_scoped_type(field.type))
+          err(field.line,
+              "FileIO and scoped ranges cannot be stored in ordinary objects",
+              "FILEIO_COLLECTION_ESCAPE");
         if (!valid_type(field.type)) err(field_source, field.line, "unknown field type '" + field.type + "'");
         if (!field_names.insert(field.name).second)
           err(field_source, field.line, "duplicate object field '" + field.name + "' in " + object.name);
@@ -2448,7 +2458,14 @@ class Checker {
     std::set<string> state_names, handler_names;
     for (const auto& f : d.state) {
       string f_source = f.source_file.empty() ? d.source_file : f.source_file;
+      if (canonical_type_name(f.type) != "FileIO" &&
+          fileio_contains_scoped_type(f.type))
+        err(f.line, "borrowed Range views cannot be stored in domain state",
+            "RANGE_STATE_ESCAPE");
       if (!valid_type(f.type)) err(f_source, f.line, "unknown state type '" + f.type + "'");
+      if (canonical_type_name(f.type) == "FileIO" && !f.init.empty())
+        err(f.line, "domain-field FileIO begins closed and is opened in place",
+            "FILEIO_PINNED_OWNERSHIP");
       if (!state_names.insert(f.name).second) err(f_source, f.line, "duplicate state field '" + f.name + "'");
       if (!f.init.empty()) {
         ObservableEffects initializer_effects =
@@ -2483,6 +2500,10 @@ class Checker {
           "handler:" + d.name + "." + h.name);
       if (!handler_names.insert(h.name).second) err(h_source, h.line, "duplicate handler '" + h.name + "' in domain " + d.name);
       if (h.reply_type && !valid_type(*h.reply_type)) err(h_source, h.line, "unknown reply type '" + *h.reply_type + "'");
+      if (h.reply_type && fileio_contains_scoped_type(*h.reply_type))
+        err(h.line,
+            "handler replies cannot contain FileIO, Range, or RangeBatch capabilities",
+            "FILEIO_BOUNDARY_ESCAPE");
       bool has_reply = std::any_of(h.body.begin(), h.body.end(), [](const Stmt& s) {
         return s.kind == Stmt::Kind::Reply;
       });
@@ -2504,6 +2525,10 @@ class Checker {
           err(h_source, h.line, "cannot infer type for parameter '" + p.name +
               "' in handler '" + d.name + "." + h.name + "'");
         if (!valid_type(p.type)) err(h_source, h.line, "unknown parameter type '" + p.type + "'");
+        if (fileio_contains_scoped_type(p.type))
+          err(h.line,
+              "handler parameters cannot contain FileIO, Range, or RangeBatch capabilities",
+              "FILEIO_BOUNDARY_ESCAPE");
         if (env.count(p.name)) err(h_source, h.line, "duplicate parameter '" + p.name + "'");
         if (route_names.count(p.name))
           err(h_source, h.line, "handler parameter shadows immutable domain route '" + p.name + "'");
@@ -2518,6 +2543,7 @@ class Checker {
       for (const auto& parameter : h.params)
         ownership.message_payloads.insert(parameter.name);
       check_ownership(h.body, std::move(ownership), &d, &h);
+      check_fileio_lifecycle(h.body, env, &d, h.line);
     }
   }
 
@@ -2529,6 +2555,7 @@ class Checker {
     OwnershipEnv ownership;
     ownership.types = std::move(env);
     check_ownership(m.body, std::move(ownership), nullptr, nullptr);
+    check_fileio_lifecycle(m.body, {}, nullptr, m.line);
   }
 
   static bool legacy_spawn_expression(const string& expression) {
@@ -2664,6 +2691,8 @@ class Checker {
             edge.line = statement.line;
             p_.concrete_domain_graph.edges.push_back(std::move(edge));
           } else {
+            if (canonical_type_name(field->type) == "FileIO")
+              fail_at(statement, "domain-field FileIO begins closed and cannot receive a root-local owner");
             if (domains_.count(canonical_type_name(inferred_expr_type(pair.second, binding_types).value_or(""))))
               fail_at(statement, "domain handle '" + pair.second + "' cannot be used as state data");
             // State initialization is part of static composition, not an
@@ -2838,6 +2867,8 @@ class Checker {
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
     infer_statement_expressions(f.body, inferred_env);
+    StaticBindingScope function_bounds(static_bound_bindings_);
+    static_bindings_for_body(f.body, entry_env);
     env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
       if (statement.kind != Stmt::Kind::Match) return false;
@@ -2849,6 +2880,8 @@ class Checker {
     ownership.types = std::move(entry_env);
     OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
         check_ownership(f.body, std::move(ownership), nullptr, nullptr);
+    check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
+                           f.result_expression);
     if (f.result_expression) {
       check_ownership_expression(f.result_line ? f.result_line : f.line,
                                  *f.result_expression, final_ownership,
@@ -3347,6 +3380,7 @@ class Checker {
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
+    if (auto builtin = fileio_result_type(original, env)) return builtin;
     {
       string callee;
       vector<string> arguments;
@@ -3433,6 +3467,7 @@ class Checker {
     if (parse_index(e, index_base, index_expr)) {
       auto bt = inferred_expr_type(index_base, env);
       if (!bt) return std::nullopt;
+      if (canonical_type_name(*bt) == "RangeBatch") return string("Range");
       if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
       if (*bt == "vector" || *bt == "queue") return string("_element:element:" + index_base);
       if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
@@ -5752,6 +5787,26 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
+        if ((canonical_type_name(*receiver_type) == "Range" ||
+             canonical_type_name(*receiver_type) == "RangeBatch") &&
+            method == "length") {
+          analyze_effect_expression(receiver, env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
+        if (canonical_type_name(*receiver_type) == "FileIO" ||
+            (receiver == "FileIO" && method == "open")) {
+          auto effect = fileio_operation_effect(method);
+          if (effect && receiver != "FileIO")
+            analyze_effect_expression(receiver, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, *effect);
+          for (const auto& argument : arguments)
+            if (trim(argument) != "ro" && trim(argument) != "rw" &&
+                trim(argument) != "create" && trim(argument) != "dataonly")
+              analyze_effect_expression(argument, env, params, parameter_effects,
+                                        receiver_effect, receiver_fields, Effect::Read);
+          return;
+        }
         if (canonical_type_name(*receiver_type) == "string" &&
             (((method == "length" || method == "chars") && arguments.empty()) ||
              ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
@@ -6977,12 +7032,28 @@ class Checker {
       }
     }
     if (parse_member_call(value, receiver, method, arguments)) {
-      effects.merge(observable_expression_effects(
-          receiver, env, domain_fields, implicit_object, parameters));
+      if (receiver != "FileIO")
+        effects.merge(observable_expression_effects(
+            receiver, env, domain_fields, implicit_object, parameters));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
             argument, env, domain_fields, implicit_object, parameters));
       auto receiver_type = inferred_expr_type(receiver, env);
+      if (receiver_type &&
+          (canonical_type_name(*receiver_type) == "Range" ||
+           canonical_type_name(*receiver_type) == "RangeBatch") &&
+          method == "length") return effects;
+      if ((receiver == "FileIO" && method == "open") ||
+          (receiver_type && canonical_type_name(*receiver_type) == "FileIO")) {
+        effects.external_io = true;
+        effects.may_fail = true;
+        if (domain_fields.count(receiver)) {
+          if (fileio_operation_effect(method) == Effect::Read)
+            effects.domain_read = true;
+          else effects.domain_write = true;
+        }
+        return effects;
+      }
       if (receiver_type) {
         // Built-in Map reads are resolved by the type checker without an
         // ObjectType method. Their arguments were evaluated above, including
@@ -8080,6 +8151,10 @@ class Checker {
     string value = normalize_pipeline(std::move(original));
     if (value.empty()) return;
     auto requested_type = inferred_expr_type(value, env.types);
+    if (requested == Effect::Consume && requested_type &&
+        fileio_scoped_type(*requested_type))
+      err(line, "FileIO and borrowed ranges cannot be moved or returned",
+          "FILEIO_PINNED_OWNERSHIP");
     if (requested == Effect::Write ||
         (requested == Effect::Consume && requested_type &&
          transfer_type(*requested_type))) {
@@ -8197,6 +8272,15 @@ class Checker {
       auto receiver_type = inferred_expr_type(receiver, env.types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "FileIO") {
+          check_ownership_expression(line, receiver, env,
+              fileio_operation_effect(method).value_or(Effect::Read));
+          for (const auto& argument : arguments)
+            if (trim(argument) != "ro" && trim(argument) != "rw" &&
+                trim(argument) != "create" && trim(argument) != "dataonly")
+              check_ownership_expression(line, argument, env, Effect::Read);
+          return;
+        }
         const auto* builtin = builtin_operation(concrete, method);
         if (builtin && concrete == "string" &&
             (((method == "length" || method == "chars") && arguments.empty()) ||
@@ -8210,6 +8294,12 @@ class Checker {
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
         if (collection && builtin) {
+          if (method == "push" && !arguments.empty()) {
+            auto item = inferred_expr_type(arguments.front(), env.types);
+            if (item && fileio_scoped_type(*item))
+              err(line, "FileIO and ranges cannot enter ordinary collections",
+                  "FILEIO_COLLECTION_ESCAPE");
+          }
           auto location = storage_location(receiver, env.types);
           if ((method == "push" || method == "pop" || method == "delete") && location &&
               active_read_overlap(receiver, env))
@@ -8596,8 +8686,14 @@ class Checker {
         case Stmt::Kind::Var: {
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
+          if (source_type && canonical_type_name(*source_type) == "FileIO" &&
+              source != "FileIO.open" &&
+              storage_location(s.b, env.types))
+            err(s.line, "FileIO ownership is pinned to its original binding",
+                "FILEIO_PINNED_OWNERSHIP");
           bool transfers = storage_location(s.b, env.types) && source_type &&
-              effect_requires_borrow(*source_type);
+              effect_requires_borrow(*source_type) &&
+              !fileio_scoped_type(*source_type);
           if (transfers) {
             if (simple_identifier(source)) {
               require_available(s.line, source, env);
@@ -8622,6 +8718,17 @@ class Checker {
           break;
         }
         case Stmt::Kind::Assign: {
+          auto prior_type = inferred_expr_type(s.a, env.types);
+          auto new_type = inferred_expr_type(s.b, env.types);
+          bool existing_owner = env.binding_identities.count(s.a) ||
+              env.state_fields.count(s.a);
+          if ((existing_owner && prior_type &&
+               canonical_type_name(*prior_type) == "FileIO") ||
+              (new_type && canonical_type_name(*new_type) == "FileIO" &&
+               trim(s.b) != "FileIO.open" &&
+               storage_location(s.b, env.types)))
+            err(s.line, "FileIO ownership is pinned and cannot be reassigned",
+                "FILEIO_PINNED_OWNERSHIP");
           string lhs_base, lhs_index;
           if (parse_index(s.a, lhs_base, lhs_index))
             check_ownership_expression(s.line, s.a, env, Effect::Write);
@@ -8635,7 +8742,8 @@ class Checker {
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
           bool transfers = storage_location(s.b, env.types) && source_type &&
-              effect_requires_borrow(*source_type);
+              effect_requires_borrow(*source_type) &&
+              !fileio_scoped_type(*source_type);
           if (transfers) {
             if (simple_identifier(source)) {
               require_available(s.line, source, env);
@@ -8672,6 +8780,10 @@ class Checker {
           const Handler* handler = check_call(s.line, s.a, s.b, s.args, env.types);
           for (size_t arg_index = 0; arg_index < s.args.size(); ++arg_index) {
             const auto& arg = s.args[arg_index];
+            auto type = inferred_expr_type(arg, env.types);
+            if (type && fileio_scoped_type(*type))
+              err(s.line, "FileIO and ranges cannot cross a message boundary",
+                  "FILEIO_BOUNDARY_ESCAPE");
             check_ownership_expression(s.line, arg, env, Effect::Read);
             if (arg_index < handler->params.size()) {
               require_cross_domain_value(s.line, arg, handler->params[arg_index].type,
@@ -8712,6 +8824,10 @@ class Checker {
           ++index;
           break;
         case Stmt::Kind::Reply: {
+          auto type = inferred_expr_type(s.a, env.types);
+          if (type && fileio_scoped_type(*type))
+            err(s.line, "FileIO and ranges cannot be replied",
+                "FILEIO_BOUNDARY_ESCAPE");
           check_ownership_expression(s.line, s.a, env, Effect::Read);
           if (current_handler && current_handler->reply_type)
             require_cross_domain_value(s.line, s.a, *current_handler->reply_type,
@@ -8776,7 +8892,9 @@ class Checker {
       const Method* method = resolve_method(canonical_type_name(receiver->second),
                                             requirement.detail, argument_types,
                                             false, &failure);
-      if (!method) {
+      auto fileio_builtin = fileio_method_requirement_result(
+          receiver->second, requirement.detail, argument_types.size());
+      if (!method && !fileio_builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
         if (failure == MethodResolutionFailure::WrongArity)
@@ -8791,7 +8909,8 @@ class Checker {
               requirement.detail + "'");
         err(line, prefix + " missing required method '" + requirement.detail + "'");
       }
-      string result = method->return_type.value_or("unit");
+      string result = fileio_builtin.value_or(
+          method ? method->return_type.value_or("unit") : "unit");
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))
           err(line, "conflicting method result expectations in function '" +
@@ -8861,6 +8980,8 @@ class Checker {
     FunctionSpecialization* previous = checking_specialization_;
     checking_specialization_ = &function.specializations.back();
     infer_statement_expressions(function.body, specialized_env);
+    StaticBindingScope specialization_bounds(static_bound_bindings_);
+    static_bindings_for_body(function.body, specialized_env);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
@@ -9451,8 +9572,13 @@ class Checker {
       return;
     }
     if (original.size() >= 2 && original.front() == '[' && original.back() == ']') {
-      for (const auto& element : split_top_level(original.substr(1, original.size() - 2), ','))
+      for (const auto& element : split_top_level(original.substr(1, original.size() - 2), ',')) {
+        auto type = inferred_expr_type(element, env);
+        if (type && fileio_scoped_type(*type))
+          err(line, "FileIO and ranges cannot enter ordinary collections",
+              "FILEIO_COLLECTION_ESCAPE");
         check_expression(line, element, env);
+      }
       return;
     }
     if (check_functional_pipeline(line, original, env)) return;
@@ -9544,6 +9670,7 @@ class Checker {
     string receiver, handler;
     vector<string> args;
     if (parse_member_call(value, receiver, handler, args)) {
+      if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (canonical_type_name(*receiver_type) == "string") {
           if (!builtin_operation(*receiver_type, handler))
@@ -9677,6 +9804,12 @@ class Checker {
       check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
+      if (canonical_type_name(*bt) == "RangeBatch") {
+        auto index_type = inferred_expr_type(ii, env);
+        if (!index_type || canonical_type_name(*index_type) != "int")
+          err(line, "RangeBatch index must be Int", "TYPE_MISMATCH");
+        return;
+      }
       // An untyped parameter carries an indexing requirement. Its key and
       // element types are checked again in each concrete specialization.
       if (starts_with(*bt, "_generic:")) return;
@@ -9784,6 +9917,7 @@ class Checker {
       err(line, "cannot infer the static iterator source type");
     }
     string type = canonical_type_name(*source_type);
+    if (type == "RangeBatch") return string("Range");
     if (starts_with(type, "_generic:"))
       return "_iterator_element:" + type.substr(9);
     if (starts_with(type, "vector[") && ends_with(type, "]"))
@@ -9838,6 +9972,8 @@ class Checker {
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
                       const Domain* current, const Handler* current_handler,
                       const Function* current_function = nullptr) {
+    StaticBindingScope bound_scope(static_bound_bindings_);
+    static_bindings_for_body(statements, env);
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
@@ -9868,6 +10004,7 @@ class Checker {
           if (contains_domain_handle(current_env.at(binding)))
             err(statement.line, "domain handle '" + binding +
                 "' cannot be used as ordinary writable storage");
+        FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env);
         if (statement.kind == Stmt::Kind::Assign &&
             simple_identifier(statement.a) && !current_env.count(statement.a)) {
@@ -9987,6 +10124,7 @@ class Checker {
       }
 
       if (statement.kind == Stmt::Kind::Call) {
+        bool fileio_builtin = false;
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
           if (receiver != current_env.end() &&
@@ -10017,7 +10155,11 @@ class Checker {
                receiver->second == "map" || starts_with(receiver->second, "vector[") ||
                starts_with(receiver->second, "queue[") ||
                starts_with(receiver->second, "map["));
-          if (!collection) {
+          fileio_builtin = receiver != current_env.end() &&
+              (canonical_type_name(receiver->second) == "FileIO" ||
+               canonical_type_name(receiver->second) == "Range" ||
+               canonical_type_name(receiver->second) == "RangeBatch");
+          if (!collection && !fileio_builtin) {
             if (receiver != current_env.end() &&
                 objects_.count(canonical_type_name(receiver->second))) {
               vector<string> argument_types;
@@ -10054,7 +10196,10 @@ class Checker {
         if (!statement.b.empty())
           check_expression(statement.line, statement.text, current_env);
         for (const auto& argument : statement.args)
-          check_expression(statement.line, argument, current_env);
+          if (!(fileio_builtin && (trim(argument) == "ro" ||
+                trim(argument) == "rw" || trim(argument) == "create" ||
+                trim(argument) == "dataonly")))
+            check_expression(statement.line, argument, current_env);
         if (!statement.message_result.empty()) {
           const Domain* target = nullptr;
           auto receiver = current_env.find(statement.a);

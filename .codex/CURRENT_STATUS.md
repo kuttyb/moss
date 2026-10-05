@@ -1,5 +1,66 @@
 # Moss current status
 
+## Phase 20 Agent A — FileIO semantics
+
+The corrective pass from reviewed checkpoint
+`4789563c6ffe6a6612be9444a08a1d1b7afdef23` closes the helper-lifecycle
+failure. The lifecycle walk now follows ordinary synchronous helpers through
+normal returns, final result expressions, nested calls, inferred FileIO
+parameter specializations, and branch joins. It carries open/closed state and
+mode back to the caller; uncertain joined state is rejected when used. `main`
+and ordinary functions retain the explicit-close obligation. Anonymous
+`FileIO.open(...)` without a pinned local owner is rejected.
+
+Offsets are checked as Int and statically negative offsets are rejected;
+runtime-computed Int offsets are legal. The shared `static_bounds.inc` query
+proves overflow-checked integer constant expressions and unchanged local
+single-assignment sources. FileIO uses those facts for read/chunk sizes, String
+literal and fixed byte-vector write payload bounds, batch cardinality, entry
+sizes, and overflow-checked total bytes. A computed local Vector of records
+with exactly `offset: Int` and `size: Int` is accepted when its count and sizes
+are proven. The documented inline `(offset, size)` batch remains accepted.
+Collections passed to a potentially mutating call lose their construction
+bound. General startup-configuration and clamp/range facts are not retained in
+the checker at this phase, so those sources are conservatively rejected until
+general compiler analysis supplies a proof. Ordinary tuple literals also lack
+a first-class Vector element type; a computed batch uses the existing named
+record representation. This is a source-representation limitation, not a new
+FileIO runtime contract.
+
+Structural scoped-type checks now follow nested wrappers and object fields
+without rejecting unrelated `RangeFinder` or `FileIOStats` names. Domain-field
+FileIO READ/WRITE attribution, including inferred and nested helper borrows,
+remains intact. `FILEIO_BLOCKING_WITH_SHARED_WRITE` remains a warning and now
+finds nested helper, `echo`, and chained-view operations while excluding the
+FileIO field's own protection. Native and Fast Debug reject the same focused
+ownership, bound, lifecycle, and collection cases.
+
+Validation: the expanded Agent A focused suite passed; `make check` passed;
+`make examples` passed; `git diff HEAD --check` passed. The pending
+`tests/tooling/fixtures/phase20_fileio_executor_invoke.pending.moss` remains
+for Agent D to enforce the same scoped-capability predicate at executor
+boundaries. Agent B supplies native FileIO runtime/lowering; Agents C/D supply
+Executor scheduling and invoke integration. No B/C/D implementation was
+pulled into this branch, and native FileIO execution remains an integration
+stage concern.
+
+## Root runtime ABI naming contract — names reserved (2026-10-04)
+
+`docs/ROOT_RUNTIME_ABI.md` reserves all six requested interface groups and
+maps their behavior to `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md`:
+FileIO runtime ABI, Executor/root runtime ABI, RootDescriptor representation,
+branch publish/join API, solo-block enter/leave hooks, and the `runtime_invoke`
+host ABI. It fixes the runtime-facing semantic names `FileIO`, `Range`,
+`RangeBatch`, `Executor`, `Root`, and `Branch`, plus the lifecycle
+`INLINE → ACTIVE → DRAINING → INLINE`. Future implementation belongs in new
+`.hpp` / `.inc` modules with only narrow wiring in `src/moss.cpp`.
+
+The phase specification was supplied during this session. It fixes semantic
+behavior but leaves physical Rust signatures, layouts, and error carriers to
+the implementation. Those remain unfinished. No Moss source or compiler code
+changed. Validation: repository bootstrap reported `moss-0.1`; the worktree
+was initially clean; `git diff --check` passed after the documentation edit.
+
 ## Emacs Package Build Hardening (Canonical Artifacts, Toolchains, Spaces) — COMPLETE (2026-10-01)
 
 Hardening pass on Emacs package build integration to consume compiler/Margo-owned canonical artifact metadata without filename guessing, maintain exact build profile tracking across debug and release builds, propagate configured toolchain commands, and parse compilation diagnostics containing spaces.
