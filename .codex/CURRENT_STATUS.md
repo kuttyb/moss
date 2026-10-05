@@ -1,6 +1,11 @@
 # Moss current status
 
-## Phase 20 Agent C — executor/root runtime — validated corrective checkpoint (2026-10-04)
+## Phase 20 Agent C — executor/root runtime — COMPLETE (2026-10-04)
+
+Agent C executor/runtime work complete. Not merged; ready for Phase 20
+integration. Integration should consume the final Agent C HEAD of
+`phase-20-c-executor-runtime` (this closeout), not `de65b182`, `9a1dafbc`,
+or `1b851fa`.
 
 This section is the single authoritative description of Agent C on branch
 `phase-20-c-executor-runtime`. It supersedes the earlier "Final Hardened
@@ -89,6 +94,11 @@ they were preserved, made strict, and included.
   final binary, 0 failures; every suite binary 50× (pre-final tree), 0
   failures.
 - `make check`: **all Moss v0.1 tests passed**.
+- Closeout: `tests/run.sh` now runs the full `check_phase20c_executor.py`
+  suite, so `make check` itself protects the executor runtime. Rerun after
+  wiring: standalone suite 51/51; `make check` passed, including the
+  suite at 51/51; `make examples`, `git diff --check`, and
+  `sh -n tests/run.sh` passed.
 - `make examples`: passed.
 - `git diff --check` and `sh -n tests/run.sh`: clean.
 - No validation was invalidated by later edits (all gates rerun after the
@@ -105,7 +115,6 @@ they were preserved, made strict, and included.
   `branch_scope_new_current`/`branch_publish`/`branch_join` (pub API only; in
   the selected role the runtime lives in a module re-exported by `pub use`).
 - Fast Debug parity for Executor/Root semantics is outstanding.
-- `check_phase20c_executor.py` is not yet wired into `make check`.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
