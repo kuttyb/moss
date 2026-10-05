@@ -1,49 +1,51 @@
 # Moss current status
 
-## Phase 20 Agent C — Executor Runtime Takeover & Implementation — COMPLETE (2026-10-04)
+## Phase 20 Agent C — Final Hardened Executor Runtime — COMPLETE (2026-10-04)
 
-Phase 20 Agent C executor and root runtime implementation completed on branch `phase-20-c-executor-runtime`.
-- **Inherited checkpoint:** `0224ff0079e158e3b5ecb6e0d030c35f0612297f` (base: `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`).
+Final proof-level hardening and concurrency safety completed for Phase 20 Agent C executor and root runtime on branch `phase-20-c-executor-runtime`.
+- **Checkpoint & Base:** HEAD `de65b182b536b33e12deae3e60a900ab75b2d22f` -> hardened implementation (base: `d3cdc52571e6d292f3cdc4e513af39596c7b7b69`).
 - **Files modified/implemented:**
-  - `src/executor_runtime.hpp`: Complete implementation of the Phase 20 executor substrate.
-  - `src/moss.cpp`: Narrow codegen emission of `executor_runtime_rust()`.
-  - `tests/tooling/check_phase20c_executor.py`: Hardened 27-test comprehensive validation suite.
-  - `tests/tooling/check_phase106e_domains.py`: Allowed `Condvar` in legacy regex check for Phase 20 runtime.
+  - `src/executor_runtime.hpp`: Hardened lock hierarchy, ticket FIFO fairness, gate closing, TLS worker context, fail-closed validation, Linux affinity/priority, event-driven branch joins, and cross-crate process-wide runtime symbol export.
+  - `src/moss.cpp`: Propagated module identity `p_.explicit_module` to `executor_runtime_rust(bool is_library)`.
+  - `tests/tooling/check_borrowed_reads.py`: Updated assertion hygiene checks.
+  - `tests/tooling/check_phase20c_executor.py`: Expanded to a 30-test proof-level test suite.
+  - `docs/ROOT_RUNTIME_ABI.md`: Documented physical signatures and Agent B/C FileIO Solo integration seam.
 
-### Key Capabilities & Architectural Solutions
-1. **Global Ingress Lifecycle (`MossProcessRuntime` & `MossIngressState`)**:
-   - Implemented persistent process-level ingress gate managing transitions `INLINE → ACTIVE → DRAINING → INLINE`.
-   - All INLINE roots serialize before any Executor exists, during Executor draining, and after Executor joins.
-   - `start()` waits for any in-flight INLINE root to complete before transitioning to `ACTIVE`.
-   - Single-active-executor invariant strictly enforced with fail-closed error handling and mutex poison prevention.
-2. **Race-Free `runtime_invoke`**:
-   - Single-shot reply slot `(Mutex<Option<R>>, Condvar)` eliminates channel deadlocks and double-signaling.
-   - Ownership of work closure moved exactly once upon confirmed admission decision (`ADMITTED_TO_EXECUTOR` vs `WAIT_FOR_INLINE`).
-   - Unadmitted invocations arriving during `DRAINING` block outside Moss and execute in `INLINE` mode once drained.
-3. **Branch Parallelism on Free Workers & Root-Scoped Helping**:
-   - Published branches are placed in `MossBranchScope` and announced to Executor workers via `branch_scopes` queue.
-   - Idle workers dequeue and execute branches concurrently across physical worker threads.
-   - `branch_join()` performs strict root-scoped helping (executing pending branches of its own scope only, never executing unrelated Roots or foreign branches).
-   - Publication is bounded (512 capacity) and never blocks; saturation falls back immediately to inline execution.
-4. **Deterministic Worker Lifecycle & `join()` Contract**:
-   - Physical worker threads are tracked via `JoinHandle` in `worker_threads`.
-   - `join()` transitions `ACTIVE → DRAINING`, waits for all admitted roots and branches to finish, stops workers, explicitly joins all thread handles, and restores `INLINE` state. No physical workers outlive `join()`.
-5. **Fair, Event-Driven Root Queue Backpressure**:
-   - Bounded root queue utilizes `queue_not_full_cv` condition variable for fair, event-driven backpressure without polling sleeps.
-   - Transition to `DRAINING` wakes all capacity waiters to divert them to the INLINE wait path.
-6. **Robust Solo Compensation & Invariant Tracking**:
-   - Tracked set of blocked worker IDs in `solo_blocked_workers`.
-   - Spawns compensation workers only for genuine Solo waits up to `T_max`.
-   - Waking original workers resume immediately without re-acquiring scheduler slots.
-   - Excess compensation workers park and terminate when idle.
-7. **100% Safe Rust & Backend Symbol Hygiene**:
-   - Emitted runtime uses fully qualified standard library paths (`std::sync::Arc`, `std::sync::Mutex`, `std::sync::Condvar`, `std::boxed::Box`, `std::collections::VecDeque`).
-   - Clean closure type erasure without `unsafe` blocks or nominal trait implementations, satisfying all backend hygiene and static specialization requirements.
+### Key Hardened Capabilities & Fixes
+1. **Single Lock Ownership (Solo Lock-Order Deadlock Eliminated)**:
+   - Moved `solo_blocked_workers` into `MossExecInner`. Both worker scheduling state (`active_workers`, `target_threads`, `max_threads`) and Solo blocked worker set are guarded by the single `gx.inner` mutex.
+   - Completely eliminated lock inversion cycles between `worker_loop` and `solo_enter`/`solo_leave`.
+   - Dedicated concurrency stress test under barriers verified zero deadlocks across repeated iterations.
+2. **Gate-Closing INLINE Admission on `start()`**:
+   - Added `start_pending` gate-closing flag in `MossProcessRuntimeInner`.
+   - `start()` immediately asserts `start_pending = true`, preventing new INLINE admissions from entering.
+   - Any currently running INLINE root finishes cleanly; queued callers wait and automatically re-evaluate once the executor transitions to `ACTIVE`, routing through executor admission.
+3. **Deterministic FIFO Ticket Fairness for INLINE Roots**:
+   - Replaced boolean-only admission with ticket counters (`next_inline_ticket`, `serving_inline_ticket`).
+   - Callers take a monotonic ticket and wait on `ingress_cv` until `my_ticket == serving_inline_ticket`.
+   - Upon completion, `serving_inline_ticket` is incremented and `ingress_cv.notify_all()` wakes waiters in deterministic FIFO order.
+4. **Fair ACTIVE Queue Admission & Unified `admit_root`**:
+   - Ticket admission (`next_admission_ticket`, `serving_admission_ticket`) for root queue capacity in `MossExecInner`.
+   - Unified `admit_root(&gx, desc)` primitive returning `MossAdmissionResult::Admitted` or `MossAdmissionResult::DrainingBeforeAdmission(desc)` without premature work consumption.
+5. **Thread-Local Worker Identity & Agent-B Solo Seam**:
+   - Added `thread_local! { pub static MOSS_CURRENT_WORKER_ID: Cell<Option<usize>> }` with RAII `WorkerTlsGuard`.
+   - Added `solo_enter_current()` and `solo_leave_current()` returning `bool` (safely ignoring non-worker threads).
+   - Added `executor_solo_enter_from_fileio(op_name)` and `executor_solo_leave_from_fileio(op_name)` adapter bridge matching Agent B's exact integration requirements.
+6. **Process-Wide Runtime Across Crates / `.rlib`s**:
+   - Exported `#[no_mangle] pub extern "C" fn __moss_process_runtime_raw() -> *mut ()` from root crates.
+   - Dependency module crates link against the root symbol via `extern "C" { fn __moss_process_runtime_raw() -> *mut (); }`, ensuring all `.rlib` provider crates share the identical process-wide `MossProcessRuntime`.
+7. **Defensive Configuration Validation**:
+   - Validated `threads`, `max_threads`, and `queue_capacity` during `start()`.
+   - Configs with `max_threads < threads`, `threads == 0`, `max_threads == 0`, or `queue_capacity == 0` fail closed immediately via panics.
+8. **Linux Best-Effort Thread Affinity & Priority**:
+   - Configured optional CPU affinity via `libc::sched_setaffinity` and thread scheduling priority via `libc::setpriority` (PRIO_PROCESS) where available.
+9. **Event-Driven Branch Join**:
+   - `MossBranchScope` uses `done_cond` condition variable to signal branch completion, eliminating polling sleeps in `branch_join`.
 
 ### Validation
-- `python3 tests/tooling/check_phase20c_executor.py`: **27 passed, 0 failed (27/27)**.
-- Full repository `make check`: **PASSED**.
-- Examples verification `make examples`: **PASSED** (all 29 examples compiled & checked with `-Oshared-memory`).
+- `python3 tests/tooling/check_phase20c_executor.py`: **30 passed, 0 failed (30/30)**.
+- `sh tests/run.sh ./moss build/tests`: **All Moss v0.1 tests passed**.
+- `make examples`: **PASSED** (all 29 examples compiled and verified).
 - `git diff --check`: **Clean**.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)

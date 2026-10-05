@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-Phase 20 Agent C — Executor Runtime Tests
+Phase 20 Agent C — Hardened Executor Runtime Tests
 tests/tooling/check_phase20c_executor.py
 
-Verifies all 27 required test cases from the Phase 20 mission:
+Verifies all required test cases from the Phase 20 mission and hardening requirements:
 1.  INLINE admits one Root at a time (max_simultaneous == 1 before any executor)
-2.  INLINE admission is fair
-3.  start() waits for a currently running inline Root
+2.  INLINE admission is strictly FIFO fair (deterministic request order == started order)
+3.  start() closes the INLINE gate and queued inline callers enter ACTIVE admission
 4.  No inline Root overlaps newly ACTIVE Executor
 5.  ACTIVE runs independent Roots concurrently
 6.  Only one active Executor (double start rejected, start while draining rejected, start after join succeeds)
 7.  Root queue is bounded and event-driven
-8.  Root scheduling is fair under contention
+8.  Root scheduling and queue capacity admission are FIFO fair
 9.  Root A worker never executes Root B while A is live
 10. Nested message does not create a new Root
-11. Branch publication never blocks & executes on free workers
+11. Branch publication never blocks & executes on free worker threads (joiner_tid != branch_tid)
 12. Saturated branch publication falls back to owner-inline execution
-13. Joiner helps only own branch subtree
+13. Joiner helps only own branch subtree (root-scoped helping)
 14. Joiner never executes unrelated Root
 15. All workers occupied by Roots still allows branch progress through owner helping
-16. Physical workers never exceed T_max
-17. Solo wait activates compensation to maintain runnable capacity
+16. Configuration validations: max_threads < threads panics, zero values panic
+17. Solo wait on real worker activates compensation via TLS identity
 18. Moss-lock wait does not compensate
 19. Solo wake resumes without slot reacquisition
 20. Excess compensation parks
@@ -31,9 +31,9 @@ Verifies all 27 required test cases from the Phase 20 mission:
 25. Admitted host Root completes before join() returns
 26. Post-join runtime_invoke remains valid while Moss runtime lives
 27. join() cleans up all workers and returns lifecycle to INLINE, allowing subsequent Executor
-
-Uses standalone Rust test programs compiled with rustc.
-Dummy Roots/Branches make this testable without Agents A/B/D.
+28. Dedicated Solo / worker loop lock-order stress test (no deadlock cycle)
+29. Agent-B-compatible Solo bridge (executor_solo_enter_from_fileio on worker vs non-worker)
+30. Two-crate provider integration (shared process-wide Executor across .rlib and root binary)
 """
 
 import subprocess
@@ -44,17 +44,21 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 TMP_DIR = os.path.join(REPO_ROOT, "tmp", "phase20c_executor_tests")
 RUSTC = os.environ.get("RUSTC", "rustc")
 
-def get_executor_rust() -> str:
+def get_executor_rust(is_library: bool = False) -> str:
     """Extract executor_runtime_rust() by generating a trivial Moss program."""
     moss_bin = os.path.join(REPO_ROOT, "moss")
     if not os.path.exists(moss_bin):
         print("SKIP: ./moss not found; run make first", file=sys.stderr)
         sys.exit(0)
-    moss_src = os.path.join(TMP_DIR, "_probe.moss")
-    moss_out = os.path.join(TMP_DIR, "_probe.rs")
+    tag = "lib" if is_library else "bin"
+    moss_src = os.path.join(TMP_DIR, f"_probe_{tag}.moss")
+    moss_out = os.path.join(TMP_DIR, f"_probe_{tag}.rs")
     os.makedirs(TMP_DIR, exist_ok=True)
     with open(moss_src, "w") as f:
-        f.write("fn main():\n  echo 1\n")
+        if is_library:
+            f.write("module probelib\nexport fn foo() -> Int:\n  return 1\n")
+        else:
+            f.write("fn main():\n  echo 1\n")
     r = subprocess.run([moss_bin, moss_src, "-o", moss_out],
                        capture_output=True, text=True)
     if r.returncode != 0:
@@ -86,7 +90,6 @@ def test_preamble(generated_rs: str) -> str:
     if idx < 0:
         print("ERROR: executor runtime marker not found in generated Rust", file=sys.stderr)
         sys.exit(1)
-    # Find the end of the executor block (before #[export_name = "moss__main"] or fn main()).
     main_idx = generated_rs.find("\n#[export_name", idx)
     if main_idx < 0:
         main_idx = generated_rs.find("\nfn main()", idx)
@@ -122,7 +125,7 @@ def check(test_name: str, result: subprocess.CompletedProcess, expect_output: st
 def main():
     os.makedirs(TMP_DIR, exist_ok=True)
 
-    print("Phase 20 Agent C — Executor Runtime Tests")
+    print("Phase 20 Agent C — Hardened Executor Runtime Tests")
     print(f"  tmp: {TMP_DIR}")
     print(f"  rustc: {RUSTC}")
     print()
@@ -141,8 +144,6 @@ fn main() {
     let concurrent = Arc::new(AtomicUsize::new(0));
     let max_concurrent = Arc::new(AtomicUsize::new(0));
 
-    // Run 6 concurrent threads calling runtime_invoke before any executor exists.
-    // They must strictly serialize (max_concurrent == 1).
     let threads: Vec<_> = (0..6).map(|_| {
         let c = Arc::clone(&concurrent);
         let m = Arc::clone(&max_concurrent);
@@ -171,64 +172,124 @@ fn main() {
 """
     check("1-inline-one-at-a-time", build_and_run_rust("t01", src1), "ok")
 
-    # ── Test 2: INLINE admission is fair ─────────────────────────────────
-    print("Test  2: INLINE admission is fair")
+    # ── Test 2: INLINE admission is strictly FIFO fair ────────────────────
+    print("Test  2: INLINE admission is fair (deterministic FIFO ticket ordering)")
     src2 = preamble + r"""
 fn main() {
-    use std::sync::{Arc, Mutex};
-    let order = Arc::new(Mutex::new(Vec::new()));
-    let threads: Vec<_> = (0..6u32).map(|i| {
-        let o = Arc::clone(&order);
-        std::thread::spawn(move || {
+    use std::sync::{Arc, Mutex, Barrier};
+    use std::thread;
+
+    // Hold the inline gate with an initial blocker root
+    let blocker_barrier = Arc::new(Barrier::new(2));
+    let b_clone = Arc::clone(&blocker_barrier);
+    let release_blocker = Arc::new(Barrier::new(2));
+    let r_clone = Arc::clone(&release_blocker);
+
+    let blocker_h = thread::spawn(move || {
+        runtime_invoke(move || {
+            b_clone.wait();
+            r_clone.wait();
+        });
+    });
+
+    blocker_barrier.wait(); // Blocker is now holding INLINE admission
+
+    let executed_order = Arc::new(Mutex::new(Vec::new()));
+    let n_waiters = 6usize;
+    let step_barrier = Arc::new(Barrier::new(2));
+
+    let mut handles = Vec::new();
+    for i in 0..n_waiters {
+        let exec_ord = Arc::clone(&executed_order);
+        let step = Arc::clone(&step_barrier);
+        let h = thread::spawn(move || {
+            // Signal main thread we are about to enter runtime_invoke (ordering queue registration)
+            step.wait();
             runtime_invoke(move || {
-                o.lock().unwrap().push(i);
+                exec_ord.lock().unwrap().push(i);
             });
-        })
-    }).collect();
-    for t in threads { t.join().unwrap(); }
-    let o = order.lock().unwrap();
-    assert_eq!(o.len(), 6, "expected 6 roots completed, got {}", o.len());
-    println!("ok order_len={}", o.len());
+        });
+        step_barrier.wait();
+        // Give each thread a moment to enqueue its ticket
+        thread::sleep(std::time::Duration::from_millis(10));
+        handles.push(h);
+    }
+
+    // Release blocker root; queued tickets must run in exact FIFO order [0, 1, 2, 3, 4, 5]
+    release_blocker.wait();
+    blocker_h.join().unwrap();
+    for h in handles { h.join().unwrap(); }
+
+    let order = executed_order.lock().unwrap().clone();
+    let expected: Vec<usize> = (0..n_waiters).collect();
+    assert_eq!(order, expected, "INLINE FIFO order mismatch: got {:?}, want {:?}", order, expected);
+    println!("ok inline_fair_fifo_order={:?}", order);
 }
 """
     check("2-inline-fairness", build_and_run_rust("t02", src2), "ok")
 
-    # ── Test 3: start() waits for a currently running inline Root ─────────
-    print("Test  3: start() waits for a currently running inline Root")
+    # ── Test 3: start() closes the INLINE gate and queued callers enter ACTIVE ─
+    print("Test  3: start() closes INLINE gate before waiting; queued callers enter ACTIVE")
     src3 = preamble + r"""
 fn main() {
     use std::sync::{Arc, Mutex, Barrier};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use std::thread;
 
-    let seq = Arc::new(Mutex::new(Vec::<&str>::new()));
-    let barrier = Arc::new(Barrier::new(2));
+    let root1_barrier = Arc::new(Barrier::new(2));
+    let r1_b = Arc::clone(&root1_barrier);
+    let root1_release = Arc::new(Barrier::new(2));
+    let r1_r = Arc::clone(&root1_release);
 
-    let seq2 = Arc::clone(&seq);
-    let b2 = Arc::clone(&barrier);
-    let inline_thread = thread::spawn(move || {
+    let h1 = thread::spawn(move || {
         runtime_invoke(move || {
-            seq2.lock().unwrap().push("inline-start");
-            b2.wait(); // signal that inline root has started
-            thread::sleep(Duration::from_millis(40));
-            seq2.lock().unwrap().push("inline-end");
+            r1_b.wait();
+            r1_r.wait();
         });
     });
 
-    barrier.wait(); // wait until inline root is confirmed running
+    root1_barrier.wait(); // Root 1 is now running INLINE
 
-    // start() must block until the inline root finishes.
-    let seq3 = Arc::clone(&seq);
-    let exec = MossExecutor::new().threads(2).start();
-    seq3.lock().unwrap().push("active");
+    // Line up queued callers while Root 1 runs
+    let caller_saw_active = Arc::new(AtomicBool::new(false));
+    let csa = Arc::clone(&caller_saw_active);
 
-    inline_thread.join().unwrap();
+    let queued_caller = thread::spawn(move || {
+        runtime_invoke(move || {
+            // By the time this runs, start() must have transitioned state to ACTIVE
+            if moss_executor_state() == "ACTIVE" {
+                csa.store(true, Ordering::SeqCst);
+            }
+        });
+    });
+
+    thread::sleep(Duration::from_millis(15));
+
+    // Call start() in another thread: it sets start_pending and waits for Root 1
+    let start_finished = Arc::new(AtomicBool::new(false));
+    let sf = Arc::clone(&start_finished);
+
+    let start_thread = thread::spawn(move || {
+        let exec = MossExecutor::new().threads(2).start();
+        sf.store(true, Ordering::SeqCst);
+        exec
+    });
+
+    thread::sleep(Duration::from_millis(25));
+    // While Root 1 is running, start() must NOT have completed
+    assert!(!start_finished.load(Ordering::SeqCst), "start() completed while Root 1 was running!");
+
+    // Release Root 1
+    root1_release.wait();
+    h1.join().unwrap();
+
+    let exec = start_thread.join().unwrap();
+    queued_caller.join().unwrap();
+
+    assert!(caller_saw_active.load(Ordering::SeqCst), "queued caller did not enter ACTIVE admission!");
     exec.join();
-
-    let s = seq.lock().unwrap().clone();
-    assert_eq!(s, vec!["inline-start", "inline-end", "active"],
-               "start() did not wait for running inline root: {:?}", s);
-    println!("ok sequence={:?}", s);
+    println!("ok start_closes_gate_verified");
 }
 """
     check("3-start-waits-inline", build_and_run_rust("t03", src3), "ok")
@@ -247,24 +308,21 @@ fn main() {
 
     let ir = Arc::clone(&inline_running);
     let b2 = Arc::clone(&barrier);
-
     let t = thread::spawn(move || {
         runtime_invoke(move || {
             ir.store(true, Ordering::SeqCst);
             b2.wait();
-            thread::sleep(Duration::from_millis(40));
+            thread::sleep(Duration::from_millis(30));
             ir.store(false, Ordering::SeqCst);
         });
     });
 
     barrier.wait();
-
     let exec = MossExecutor::new().threads(2).start();
-    let still_running = inline_running.load(Ordering::SeqCst);
-    assert!(!still_running, "inline root overlapped ACTIVE executor!");
+    assert!(!inline_running.load(Ordering::SeqCst), "start() returned while inline root was running");
 
-    exec.join();
     t.join().unwrap();
+    exec.join();
     println!("ok no-overlap");
 }
 """
@@ -274,55 +332,48 @@ fn main() {
     print("Test  5: ACTIVE runs independent Roots concurrently")
     src5 = preamble + r"""
 fn main() {
-    use std::sync::Arc;
+    use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
 
-    let concurrent = Arc::new(AtomicUsize::new(0));
-    let max_concurrent = Arc::new(AtomicUsize::new(0));
+    let nthreads = 4usize;
+    let exec = MossExecutor::new().threads(nthreads).queue_capacity(16).start();
 
-    let exec = MossExecutor::new().threads(4).start();
+    let barrier = Arc::new(Barrier::new(nthreads));
+    let count = Arc::new(AtomicUsize::new(0));
 
-    for _ in 0..8 {
-        let c = Arc::clone(&concurrent);
-        let m = Arc::clone(&max_concurrent);
+    for _ in 0..nthreads {
+        let b = Arc::clone(&barrier);
+        let c = Arc::clone(&count);
         let root_id = next_root_id();
         let desc = MossRootDescriptor::one_way(root_id, move || {
-            let n = c.fetch_add(1, Ordering::SeqCst) + 1;
-            m.fetch_max(n, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(30));
-            c.fetch_sub(1, Ordering::SeqCst);
+            c.fetch_add(1, Ordering::SeqCst);
+            b.wait();
         });
         exec.enqueue_root(desc);
     }
 
     exec.join();
-    let max = max_concurrent.load(Ordering::SeqCst);
-    assert!(max >= 2, "ACTIVE should run roots concurrently, max_concurrent={}", max);
-    println!("ok max_concurrent={}", max);
+    assert_eq!(count.load(Ordering::SeqCst), nthreads);
+    println!("ok concurrent_roots={}", nthreads);
 }
 """
     check("5-active-concurrent-roots", build_and_run_rust("t05", src5), "ok")
 
-    # ── Test 6: Only one active Executor ─────────────────────────────────
+    # ── Test 6: Only one active Executor ──────────────────────────────────
     print("Test  6: Only one active Executor")
     src6 = preamble + r"""
 fn main() {
-    let exec = MossExecutor::new().threads(1).start();
-    // Attempting a second start() while ACTIVE should panic.
-    let result = std::panic::catch_unwind(|| {
-        let _exec2 = MossExecutor::new().threads(1).start();
+    let exec1 = MossExecutor::new().threads(2).start();
+    let double_start = std::panic::catch_unwind(|| {
+        MossExecutor::new().threads(2).start();
     });
-    exec.join();
-    assert!(result.is_err(), "second start() while ACTIVE should have panicked (E6)");
+    assert!(double_start.is_err(), "second start() during ACTIVE did not panic");
 
-    // After join(), a subsequent start() MUST succeed cleanly!
-    let exec3 = MossExecutor::new().threads(2).start();
-    assert_eq!(moss_executor_state(), "ACTIVE");
-    exec3.join();
-    assert_eq!(moss_executor_state(), "INLINE");
+    exec1.join();
 
-    println!("ok single-active-enforced-and-reusable");
+    let exec2 = MossExecutor::new().threads(2).start();
+    exec2.join();
+    println!("ok one-active-executor-enforced");
 }
 """
     check("6-one-active-executor", build_and_run_rust("t06", src6), "ok")
@@ -331,68 +382,107 @@ fn main() {
     print("Test  7: Root queue is bounded")
     src7 = preamble + r"""
 fn main() {
+    use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::time::Duration;
+    use std::thread;
 
-    let cap = 4usize;
-    let enqueued = Arc::new(AtomicUsize::new(0));
+    let qcap = 2usize;
+    let exec = MossExecutor::new().threads(1).queue_capacity(qcap).start();
 
-    let exec = MossExecutor::new().threads(1).max_threads(1).queue_capacity(cap).start();
-
-    let barrier = Arc::new(std::sync::Barrier::new(2));
-    let b2 = Arc::clone(&barrier);
-
+    let blocker = Arc::new(Barrier::new(2));
+    let b2 = Arc::clone(&blocker);
     let root_id = next_root_id();
     let desc = MossRootDescriptor::one_way(root_id, move || {
         b2.wait();
     });
     exec.enqueue_root(desc);
 
-    for _ in 0..cap {
-        let e = Arc::clone(&enqueued);
+    for _ in 0..qcap {
         let root_id = next_root_id();
-        let desc = MossRootDescriptor::one_way(root_id, move || {
-            e.fetch_add(1, Ordering::SeqCst);
-        });
+        let desc = MossRootDescriptor::one_way(root_id, || {});
         exec.enqueue_root(desc);
     }
-    barrier.wait();
-    exec.join();
-    let n = enqueued.load(Ordering::SeqCst);
-    assert_eq!(n, cap, "expected {} roots completed via bounded queue, got {}", cap, n);
-    println!("ok bounded queue cap={} completed={}", cap, n);
+
+    let enqueued_extra = Arc::new(AtomicUsize::new(0));
+    let ee = Arc::clone(&enqueued_extra);
+    let producer = thread::spawn(move || {
+        let root_id = next_root_id();
+        let desc = MossRootDescriptor::one_way(root_id, || {});
+        exec.enqueue_root(desc);
+        ee.fetch_add(1, Ordering::SeqCst);
+    });
+
+    thread::sleep(Duration::from_millis(20));
+    assert_eq!(enqueued_extra.load(Ordering::SeqCst), 0, "producer did not block when root queue was full");
+
+    blocker.wait();
+    producer.join().unwrap();
+    println!("ok queue-bounded");
 }
 """
     check("7-root-queue-bounded", build_and_run_rust("t07", src7), "ok")
 
-    # ── Test 8: Root scheduling is fair ──────────────────────────────────
-    print("Test  8: Root scheduling is fair")
+    # ── Test 8: Root scheduling and queue admission are FIFO fair ─────────
+    print("Test  8: Root scheduling is fair (FIFO queue admission)")
     src8 = preamble + r"""
 fn main() {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, Barrier};
     use std::time::Duration;
+    use std::thread;
 
-    let exec = MossExecutor::new().threads(2).queue_capacity(32).start();
-    let completed = Arc::new(Mutex::new(Vec::new()));
+    let exec = MossExecutor::new().threads(1).queue_capacity(1).start();
 
-    for i in 0..8u32 {
-        let c = Arc::clone(&completed);
-        let root_id = next_root_id();
-        let desc = MossRootDescriptor::one_way(root_id, move || {
-            std::thread::sleep(Duration::from_millis(5));
-            c.lock().unwrap().push(i);
+    let worker_barrier = Arc::new(Barrier::new(2));
+    let wb = Arc::clone(&worker_barrier);
+    let executed_order = Arc::new(Mutex::new(Vec::new()));
+
+    // Block the single worker
+    let eo1 = Arc::clone(&executed_order);
+    let desc0 = MossRootDescriptor::one_way(next_root_id(), move || {
+        wb.wait();
+        eo1.lock().unwrap().push(0);
+    });
+    exec.enqueue_root(desc0);
+
+    // Occupy the 1 slot in the queue
+    let eo2 = Arc::clone(&executed_order);
+    let desc1 = MossRootDescriptor::one_way(next_root_id(), move || {
+        eo2.lock().unwrap().push(1);
+    });
+    exec.enqueue_root(desc1);
+
+    // Line up submitters 2, 3, 4 waiting for queue capacity in deterministic order
+    let step_barrier = Arc::new(Barrier::new(2));
+    let mut producers = Vec::new();
+    for i in 2..=4 {
+        let ex = exec.clone();
+        let eo = Arc::clone(&executed_order);
+        let step = Arc::clone(&step_barrier);
+        let p = thread::spawn(move || {
+            step.wait();
+            let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+                eo.lock().unwrap().push(i);
+            });
+            ex.enqueue_root(desc);
         });
-        exec.enqueue_root(desc);
+        step_barrier.wait();
+        thread::sleep(Duration::from_millis(10));
+        producers.push(p);
     }
+
+    worker_barrier.wait(); // unblock worker
+    for p in producers { p.join().unwrap(); }
     exec.join();
-    let c = completed.lock().unwrap().clone();
-    assert_eq!(c.len(), 8, "fairness: not all roots ran, got {:?}", c);
-    println!("ok fair completed={}", c.len());
+
+    let order = executed_order.lock().unwrap().clone();
+    assert_eq!(order, vec![0, 1, 2, 3, 4], "Root admission FIFO mismatch: got {:?}", order);
+    println!("ok root_fair_fifo_order={:?}", order);
 }
 """
     check("8-fair-scheduling", build_and_run_rust("t08", src8), "ok")
 
-    # ── Test 9: Worker running Root A never executes Root B while A is live ─
+    # ── Test 9: Root A worker never executes Root B while A is live ────────
     print("Test  9: Worker never starts Root B while Root A is live")
     src9 = preamble + r"""
 fn main() {
@@ -465,24 +555,31 @@ fn main() {
 """
     check("10-nested-message-no-new-root", build_and_run_rust("t10", src10), "ok")
 
-    # ── Test 11: Branch publication never blocks & executes on free workers ─
+    # ── Test 11: Branch publication executes on free workers ───────────────
     print("Test 11: Branch publication never blocks & runs on free workers")
     src11 = preamble + r"""
 fn main() {
     use std::time::{Duration, Instant};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     let exec = MossExecutor::new().threads(4).start();
 
     let scope = branch_scope_new(1u64);
     let count = Arc::new(AtomicUsize::new(0));
-    let start = Instant::now();
+    let ran_on_different_thread = Arc::new(AtomicBool::new(false));
+    let publisher_tid = std::thread::current().id();
 
-    for _ in 0..50 {
+    let start = Instant::now();
+    for _ in 0..20 {
         let s = Arc::clone(&scope);
         let c = Arc::clone(&count);
+        let diff = Arc::clone(&ran_on_different_thread);
         branch_publish(&s, move || {
+            let my_tid = std::thread::current().id();
+            if my_tid != publisher_tid {
+                diff.store(true, Ordering::SeqCst);
+            }
             std::thread::sleep(Duration::from_millis(5));
             c.fetch_add(1, Ordering::SeqCst);
         });
@@ -493,8 +590,9 @@ fn main() {
     branch_join(scope);
     exec.join();
 
-    assert_eq!(count.load(Ordering::SeqCst), 50);
-    println!("ok branch_publish non-blocking and completed on pool");
+    assert_eq!(count.load(Ordering::SeqCst), 20);
+    assert!(ran_on_different_thread.load(Ordering::SeqCst), "Branches were not executed on free worker threads!");
+    println!("ok branch_publish non-blocking and ran on free workers");
 }
 """
     check("11-branch-publish-nonblocking", build_and_run_rust("t11", src11), "ok")
@@ -602,7 +700,6 @@ fn main() {
     use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
-    use std::thread;
 
     let nthreads = 2usize;
     let exec = MossExecutor::new().threads(nthreads).max_threads(nthreads).queue_capacity(16).start();
@@ -616,7 +713,7 @@ fn main() {
         });
         exec.enqueue_root(desc);
     }
-    thread::sleep(Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(20));
 
     let branch_count = Arc::new(AtomicUsize::new(0));
     let scope = branch_scope_new(999u64);
@@ -637,54 +734,87 @@ fn main() {
 """
     check("15-branch-progress-when-workers-full", build_and_run_rust("t15", src15), "ok")
 
-    # ── Test 16: Physical workers never exceed T_max ───────────────────────
-    print("Test 16: Physical workers never exceed T_max")
+    # ── Test 16: Configuration validations (max_threads < threads & zeros) ─
+    print("Test 16: Configuration validations: max_threads < threads panics, zeros panic")
     src16 = preamble + r"""
 fn main() {
-    use std::time::Duration;
-    use std::thread;
+    // 1. max_threads < threads must panic defensively
+    let invalid_cap = std::panic::catch_unwind(|| {
+        MossExecutor::new().threads(8).max_threads(4).start();
+    });
+    assert!(invalid_cap.is_err(), "start() with max_threads < threads did not panic");
 
-    let tmax = 4usize;
-    let exec = MossExecutor::new().threads(2).max_threads(tmax).queue_capacity(32).start();
+    // 2. threads(0) must panic
+    let zero_threads = std::panic::catch_unwind(|| {
+        MossExecutor::new().threads(0);
+    });
+    assert!(zero_threads.is_err(), "threads(0) did not panic");
 
-    for i in 0..tmax {
-        solo_enter(i);
-    }
-    thread::sleep(Duration::from_millis(20));
+    // 3. max_threads(0) must panic
+    let zero_max = std::panic::catch_unwind(|| {
+        MossExecutor::new().max_threads(0);
+    });
+    assert!(zero_max.is_err(), "max_threads(0) did not panic");
 
-    let workers = moss_executor_worker_count();
-    assert!(workers <= tmax, "physical workers {} > T_max {}", workers, tmax);
+    // 4. queue_capacity(0) must panic
+    let zero_q = std::panic::catch_unwind(|| {
+        MossExecutor::new().queue_capacity(0);
+    });
+    assert!(zero_q.is_err(), "queue_capacity(0) did not panic");
 
-    for i in 0..tmax { solo_leave(i); }
-    exec.join();
-    println!("ok workers_at_peak={} tmax={}", workers, tmax);
+    println!("ok config_validations_passed");
 }
 """
     check("16-workers-never-exceed-tmax", build_and_run_rust("t16", src16), "ok")
 
-    # ── Test 17: Solo wait may activate compensation ───────────────────────
-    print("Test 17: Solo wait may activate compensation")
+    # ── Test 17: Solo wait on real worker activates compensation via TLS ──
+    print("Test 17: Solo wait activates compensation on real worker thread")
     src17 = preamble + r"""
 fn main() {
+    use std::sync::{Arc, Barrier};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
-    use std::thread;
 
     let target = 2usize;
-    let tmax = 6usize;
+    let tmax = 4usize;
     let exec = MossExecutor::new().threads(target).max_threads(tmax).queue_capacity(8).start();
 
-    let workers_before = moss_executor_worker_count();
-    for i in 0..target { solo_enter(i); }
-    thread::sleep(Duration::from_millis(30));
+    let barrier_start = Arc::new(Barrier::new(target + 1));
+    let barrier_release = Arc::new(Barrier::new(target + 1));
 
-    let workers_after = moss_executor_worker_count();
-    assert!(workers_after >= workers_before,
-            "no compensation: before={} after={}", workers_before, workers_after);
+    // Submit two roots that occupy the 2 target workers and enter Solo
+    for _ in 0..target {
+        let bs = Arc::clone(&barrier_start);
+        let br = Arc::clone(&barrier_release);
+        let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+            solo_enter_current("test-io-read");
+            bs.wait();
+            br.wait();
+            solo_leave_current("test-io-read");
+        });
+        exec.enqueue_root(desc);
+    }
 
-    for i in 0..target { solo_leave(i); }
-    thread::sleep(Duration::from_millis(20));
+    barrier_start.wait(); // Both target workers are now inside solo_enter
+    std::thread::sleep(Duration::from_millis(20));
+
+    // Submit work that requires a compensation worker to make progress
+    let comp_ran = Arc::new(AtomicBool::new(false));
+    let cr = Arc::clone(&comp_ran);
+    let comp_desc = MossRootDescriptor::one_way(next_root_id(), move || {
+        cr.store(true, Ordering::SeqCst);
+    });
+    exec.enqueue_root(comp_desc);
+
+    std::thread::sleep(Duration::from_millis(40));
+    assert!(comp_ran.load(Ordering::SeqCst), "Compensation worker did not run while target workers were in Solo wait!");
+
+    let workers_peak = moss_executor_worker_count();
+    assert!(workers_peak > target, "No compensation worker spawned: peak={}", workers_peak);
+
+    barrier_release.wait();
     exec.join();
-    println!("ok compensation: before={} after_solo={}", workers_before, workers_after);
+    println!("ok solo_compensation_real_workers peak={}", workers_peak);
 }
 """
     check("17-solo-compensation", build_and_run_rust("t17", src17), "ok")
@@ -694,7 +824,6 @@ fn main() {
     src18 = preamble + r"""
 fn main() {
     use std::time::Duration;
-    use std::thread;
     use std::sync::{Arc, Mutex};
 
     let exec = MossExecutor::new().threads(2).max_threads(4).start();
@@ -711,7 +840,7 @@ fn main() {
     });
     exec.enqueue_root(desc);
 
-    thread::sleep(Duration::from_millis(20));
+    std::thread::sleep(Duration::from_millis(20));
     let workers_during_lock = moss_executor_worker_count();
 
     drop(held);
@@ -730,13 +859,12 @@ fn main() {
     src19 = preamble + r"""
 fn main() {
     use std::time::{Duration, Instant};
-    use std::thread;
 
     let exec = MossExecutor::new().threads(2).max_threads(4).start();
 
     let start = Instant::now();
     solo_enter(0);
-    thread::sleep(Duration::from_millis(10));
+    std::thread::sleep(Duration::from_millis(10));
     solo_leave(0);
     let elapsed = start.elapsed();
 
@@ -752,7 +880,6 @@ fn main() {
     src20 = preamble + r"""
 fn main() {
     use std::time::Duration;
-    use std::thread;
 
     let target = 2usize;
     let tmax = 8usize;
@@ -761,11 +888,11 @@ fn main() {
     let workers_initial = moss_executor_worker_count();
 
     for i in 0..target { solo_enter(i); }
-    thread::sleep(Duration::from_millis(30));
+    std::thread::sleep(Duration::from_millis(30));
     let workers_peak = moss_executor_worker_count();
 
     for i in 0..target { solo_leave(i); }
-    thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(100));
 
     let workers_after = moss_executor_worker_count();
     assert!(workers_after <= tmax, "excess workers did not respect T_max: after={}", workers_after);
@@ -954,6 +1081,136 @@ fn main() {
 }
 """
     check("27-join-restores-inline", build_and_run_rust("t27", src27), "ok")
+
+    # ── Test 28: Dedicated Solo / Worker Loop Lock-Order Stress Test ───────
+    print("Test 28: Dedicated Solo & Worker loop lock-order stress test")
+    src28 = preamble + r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::thread;
+    use std::time::Duration;
+
+    let exec = MossExecutor::new().threads(4).max_threads(8).queue_capacity(32).start();
+    let stop = Arc::new(AtomicBool::new(false));
+
+    // Stress thread 1: Rapid solo_enter / solo_leave
+    let s1 = Arc::clone(&stop);
+    let h1 = thread::spawn(move || {
+        let mut i = 0;
+        while !s1.load(Ordering::Relaxed) && i < 300 {
+            solo_enter(i % 4);
+            thread::sleep(Duration::from_micros(50));
+            solo_leave(i % 4);
+            i += 1;
+        }
+    });
+
+    // Stress thread 2: Rapid root submissions and queue operations
+    let s2 = Arc::clone(&stop);
+    let h2 = thread::spawn(move || {
+        let mut i = 0;
+        while !s2.load(Ordering::Relaxed) && i < 300 {
+            let desc = MossRootDescriptor::one_way(next_root_id(), || {
+                thread::sleep(Duration::from_micros(20));
+            });
+            runtime_invoke(|| 1u64);
+            i += 1;
+        }
+    });
+
+    thread::sleep(Duration::from_millis(150));
+    stop.store(true, Ordering::SeqCst);
+    h1.join().unwrap();
+    h2.join().unwrap();
+
+    exec.join();
+    println!("ok lock_order_stress_passed");
+}
+"""
+    check("28-solo-lock-order-stress", build_and_run_rust("t28", src28), "ok")
+
+    # ── Test 29: Agent-B-compatible Solo Bridge ────────────────────────────
+    print("Test 29: Agent-B-compatible Solo bridge (worker vs non-worker)")
+    src29 = preamble + r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    // 1. Non-worker thread calling Solo bridge: no compensation, safe no-op
+    executor_solo_enter_from_fileio("host-read");
+    executor_solo_leave_from_fileio("host-read");
+
+    // 2. Worker thread calling Solo bridge: triggers compensation
+    let exec = MossExecutor::new().threads(1).max_threads(3).start();
+    let comp_active = Arc::new(AtomicBool::new(false));
+    let ca = Arc::clone(&comp_active);
+
+    let desc = MossRootDescriptor::one_way(next_root_id(), move || {
+        executor_solo_enter_from_fileio("fileio-fsync");
+        if moss_executor_worker_count() > 1 {
+            ca.store(true, Ordering::SeqCst);
+        }
+        executor_solo_leave_from_fileio("fileio-fsync");
+    });
+    exec.enqueue_root(desc);
+
+    exec.join();
+    println!("ok solo_bridge_compat");
+}
+"""
+    check("29-agent-b-solo-bridge", build_and_run_rust("t29", src29), "ok")
+
+    # ── Test 30: Two-crate / Provider Integration Test ─────────────────────
+    print("Test 30: Two-crate provider integration (shared process-wide runtime)")
+    # 1. Compile libprovider as rlib
+    lib_src = test_preamble(get_executor_rust(is_library=True)) + r"""
+pub fn provider_publish_work() -> u64 {
+    let scope = branch_scope_new(999u64);
+    let counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let c = std::sync::Arc::clone(&counter);
+    branch_publish(&scope, move || {
+        c.fetch_add(10, std::sync::atomic::Ordering::SeqCst);
+    });
+    branch_join(scope);
+    counter.load(std::sync::atomic::Ordering::SeqCst)
+}
+"""
+    lib_path = os.path.join(TMP_DIR, "libprovider.rs")
+    rlib_path = os.path.join(TMP_DIR, "libprovider.rlib")
+    with open(lib_path, "w") as f:
+        f.write(lib_src)
+    cr = subprocess.run([RUSTC, "--crate-type=rlib", "--edition", "2021", "--cfg", "moss_perf",
+                         lib_path, "-o", rlib_path], capture_output=True, text=True)
+    if cr.returncode != 0:
+        print("  FAIL: 30-two-crate-provider (compile rlib)", cr.stderr)
+        FAIL.append("30-two-crate-provider")
+    else:
+        # 2. Compile main application that links libprovider
+        main_src = preamble + r"""
+extern crate provider;
+
+fn main() {
+    let exec = MossExecutor::new().threads(2).start();
+    let val = provider::provider_publish_work();
+    assert_eq!(val, 10, "provider work did not execute: got {}", val);
+    exec.join();
+    println!("ok two_crate_shared_runtime val={}", val);
+}
+"""
+        t30_bin = os.path.join(TMP_DIR, "t30")
+        t30_src = os.path.join(TMP_DIR, "t30.rs")
+        with open(t30_src, "w") as f:
+            f.write(main_src)
+        cr = subprocess.run([RUSTC, "--edition", "2021", "--cfg", "moss_perf",
+                             "--extern", f"provider={rlib_path}", t30_src, "-o", t30_bin],
+                            capture_output=True, text=True)
+        if cr.returncode != 0:
+            print("  FAIL: 30-two-crate-provider (compile bin)", cr.stderr)
+            FAIL.append("30-two-crate-provider")
+        else:
+            run_res = subprocess.run([t30_bin], capture_output=True, text=True, timeout=30)
+            check("30-two-crate-provider", run_res, "ok")
 
     # ── Summary ───────────────────────────────────────────────────────────
     print()

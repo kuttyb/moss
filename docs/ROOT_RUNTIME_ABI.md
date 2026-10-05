@@ -124,3 +124,67 @@ entry paths that must implement the same root-ingress semantics.
 
 Record physical signatures and layouts here once defined by their owning
 implementation area from the phase spec, before other areas call them.
+
+## Physical signatures & Integration Seam (Agent C Runtime)
+
+### Process-Wide Ingress and Runtime
+```rust
+// Process runtime accessor (shared across .rlib and bin crates):
+pub fn moss_process_runtime() -> &'static MossProcessRuntime;
+
+// Cross-crate raw pointer symbol (exported by main root, imported by modules):
+#[no_mangle] pub extern "C" fn __moss_process_runtime_raw() -> *mut ();
+```
+
+### Executor API
+```rust
+pub struct MossExecutor { ... }
+impl MossExecutor {
+    pub fn new() -> Self;
+    pub fn threads(self, n: usize) -> Self;
+    pub fn max_threads(self, n: usize) -> Self;
+    pub fn queue_capacity(self, n: usize) -> Self;
+    pub fn affinity(self, cores: &[usize]) -> Self;
+    pub fn priority(self, level: i32) -> Self;
+    pub fn start(self) -> MossExecutorHandle;
+}
+
+#[derive(Clone)]
+pub struct MossExecutorHandle { ... }
+impl MossExecutorHandle {
+    pub fn enqueue_root(&self, desc: MossRootDescriptor);
+    pub fn join(self);
+}
+```
+
+### Branch Publish / Join ABI
+```rust
+pub fn branch_scope_new(root_id: u64) -> MossBranchScope;
+pub fn branch_publish<F: FnOnce() + Send + 'static>(scope: &MossBranchScope, work: F);
+pub fn branch_join(scope: MossBranchScope);
+```
+
+### Solo Compensation Seam (Agent B FileIO Integration)
+```rust
+// Thread-local worker identity established during worker execution:
+thread_local! {
+    pub static MOSS_CURRENT_WORKER_ID: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+// Low-level Solo hooks for known worker ID:
+pub fn solo_enter(worker_id: usize);
+pub fn solo_leave(worker_id: usize);
+
+// Context-aware Solo hooks using TLS (safe for non-worker threads):
+pub fn solo_enter_current() -> bool;
+pub fn solo_leave_current() -> bool;
+
+// FileIO adapter bridge for Agent B integration:
+pub fn executor_solo_enter_from_fileio(op_name: &'static str);
+pub fn executor_solo_leave_from_fileio(op_name: &'static str);
+```
+
+### Synchronous Host Ingress (`runtime_invoke`)
+```rust
+pub fn runtime_invoke<R: Send + 'static, F: FnOnce() -> R + Send + 'static>(work: F) -> R;
+```
