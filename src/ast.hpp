@@ -83,6 +83,10 @@ struct Stmt {
   // Program::root_submission_plans, offset by one so 0 means "none"). See
   // executor_invoke_lowering.inc / executor_invoke_codegen.inc.
   mutable std::size_t root_submission_plan_id = 0;
+  // Phase 20 Agent D: nonzero once the checker has built an ExecutorStartPlan
+  // for this `name = Executor()...start()` statement (index into
+  // Program::executor_start_plans, offset by one).
+  mutable std::size_t executor_start_plan_id = 0;
   string source_file;
 };
 struct Method {
@@ -292,6 +296,22 @@ struct RootSubmissionPlan {
   bool one_way = true;
 };
 
+// Phase 20 Agent D: the checked configuration chain of one
+// `name = Executor().threads(..)...start()` statement. Calls are kept in
+// source order so codegen evaluates each argument exactly once, in that
+// order, before `start()` (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md sec.
+// 3). Built by executor_invoke_lowering.inc, consumed by
+// executor_invoke_codegen.inc.
+struct ExecutorConfigCall {
+  string method;        // threads | max_threads | queue_capacity | affinity | priority
+  string argument;      // checked Moss expression, evaluated once at start
+  string argument_type; // canonical checked type (int, or vector[int] for affinity)
+};
+struct ExecutorStartPlan {
+  string binding;
+  vector<ExecutorConfigCall> calls;
+};
+
 struct Program {
   // Parsed physical source lines retained for compiler-owned editor
   // resolution.  They preserve indentation and file identity, while all
@@ -321,6 +341,7 @@ struct Program {
   // handler parameters were inferred at concrete call sites.
   vector<DomainSpecialization> domain_specializations;
   vector<RootSubmissionPlan> root_submission_plans;
+  vector<ExecutorStartPlan> executor_start_plans;
   ConcreteDomainGraph concrete_domain_graph;
   SynchronizationPlan synchronization_plan;
 };

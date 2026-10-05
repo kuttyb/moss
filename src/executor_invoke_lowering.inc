@@ -34,9 +34,11 @@
 // executor.invoke itself never lowers to a synchronous handler call (see
 // executor_invoke_codegen.inc): there is no valid inline production
 // fallback for "submit an independent Root and continue after submission".
-// The checked RootSubmissionPlan is lowered through one narrow codegen seam
-// that targets Agent C's not-yet-existing root-admission runtime by name;
-// Agent D does not implement a substitute scheduler.
+// The checked ExecutorStartPlan/RootSubmissionPlan are lowered against
+// Agent C's root-admission ABI; Agent D implements no scheduler. Invoked
+// handlers participate in ordinary untyped-parameter inference
+// (infer_statement_expressions / infer_domain_specializations treat an
+// invoke site like a message site).
 
 void check_fileio_mode_argument(int line, const string& mode) const {
   string trimmed = trim(mode);
@@ -45,6 +47,66 @@ void check_fileio_mode_argument(int line, const string& mode) const {
         "FileIO.open mode must be the bare word 'ro', 'rw', or 'create'; found '" +
             trimmed + "'",
         "FILEIO_INVALID_MODE");
+}
+
+// Validates `Executor().<config>*.start()` argument types and statically
+// obvious bounds, and records the ordered configuration in an
+// ExecutorStartPlan so codegen evaluates each argument exactly once, in
+// source order, before start() (corrective-pass items 10-11). Agent C's
+// runtime still validates defensively at start().
+void check_executor_start_plan(
+    const Stmt& statement,
+    const vector<std::pair<string, vector<string>>>& calls,
+    const TypeEnv& env) {
+  ExecutorStartPlan plan;
+  plan.binding = statement.a;
+  std::optional<long long> threads_literal, max_threads_literal;
+  for (size_t index = 0; index + 1 < calls.size(); ++index) {
+    const auto& call = calls[index];
+    if (!executor_config_methods().count(call.first))
+      err(statement.line,
+          "unknown Executor configuration method '" + call.first + "'",
+          "EXECUTOR_UNKNOWN_CONFIG_METHOD");
+    if (call.second.size() != 1)
+      err(statement.line,
+          "Executor." + call.first + " requires exactly one argument",
+          "EXECUTOR_CONFIG_ARITY");
+    const string& argument = call.second.front();
+    check_expression(statement.line, argument, env);
+    auto actual = inferred_expr_type(argument, env);
+    string expected = call.first == "affinity" ? "vector[int]" : "int";
+    if (!actual || !same_type(*actual, expected))
+      err(statement.line,
+          "Executor." + call.first + " requires " +
+              (call.first == "affinity" ? string("a Vector[Int] of core ids")
+                                        : string("an Int")) +
+              "; found '" + (actual ? canonical_type_name(*actual) : string("unresolved")) + "'",
+          "EXECUTOR_CONFIG_TYPE");
+    bool count = call.first == "threads" || call.first == "max_threads" ||
+        call.first == "queue_capacity";
+    string literal = trim(argument);
+    bool is_literal = !literal.empty() &&
+        std::all_of(literal.begin() + (literal[0] == '-' ? 1 : 0), literal.end(),
+                    [](char c) { return std::isdigit(static_cast<unsigned char>(c)); }) &&
+        literal != "-";
+    if (count && is_literal) {
+      long long value = std::stoll(literal);
+      if (value <= 0)
+        err(statement.line,
+            "Executor." + call.first + " must be positive; found " + literal,
+            "EXECUTOR_CONFIG_RANGE");
+      if (call.first == "threads") threads_literal = value;
+      if (call.first == "max_threads") max_threads_literal = value;
+    }
+    plan.calls.push_back({call.first, argument, canonical_type_name(expected)});
+  }
+  if (threads_literal && max_threads_literal && *max_threads_literal < *threads_literal)
+    err(statement.line,
+        "Executor.max_threads (" + std::to_string(*max_threads_literal) +
+            ") cannot be less than threads (" + std::to_string(*threads_literal) + ")",
+        "EXECUTOR_CONFIG_RANGE");
+  p_.executor_start_plans.push_back(std::move(plan));
+  statement.executor_start_plan_id = p_.executor_start_plans.size();
 }
 
 void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
@@ -102,45 +164,40 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
 
   for (size_t index = 0; index < handler_args.size(); ++index) {
     const string& argument = handler_args[index];
-    string trimmed = trim(argument);
-    // Reuse the one narrow Phase 20 capability adapter (moss.cpp) rather
-    // than reimplementing FileIO/Range/Executor ownership rules here --
-    // Agent A owns the general ownership/escape checker.
-    if (phase20_is_nontransferable_capability(env.count(trimmed) ? env.at(trimmed) : ""))
-      err(statement.line,
-          "a Phase 20 capability (Executor/FileIO/Range) cannot be passed "
-          "as an executor.invoke argument",
-          "EXECUTOR_INVOKE_CAPABILITY_ARGUMENT");
     check_expression(statement.line, argument, env);
-    // Reuse the same formal/actual payload type compatibility normal
-    // handler calls use (AGENTS.md corrective-pass item 8), rather than
-    // relying on native rustc to discover a mismatch. executor.invoke
-    // targets must have explicitly typed parameters: unlike `message`,
-    // invoke statements are not visited by infer_statement_expressions, so
-    // an untyped handler parameter would never receive an inferred type
-    // from this call site alone.
-    const Param& formal = handler->params[index];
-    if (formal.type.empty())
-      err(statement.line,
-          "handler '" + domain.name + "." + handler_name +
-              "' parameter '" + formal.name +
-              "' must be explicitly typed to be invoked through "
-              "executor.invoke",
-          "EXECUTOR_INVOKE_UNTYPED_PARAMETER");
+    // Infer the argument's semantic type first, then ask the one narrow
+    // Phase 20 capability adapter (moss.cpp) about that *type* -- this also
+    // catches capability-producing expressions and nested scoped types, not
+    // just a bare capability binding (corrective-pass item 13). Agent A's
+    // checked boundary fact is meant to replace this predicate.
     auto actual = inferred_expr_type(argument, env);
     if (!actual)
       err(statement.line,
           "cannot infer the type of executor.invoke argument '" + argument + "'",
           "EXECUTOR_INVOKE_ARGUMENT_TYPE_UNRESOLVED");
-    if (!starts_with(*actual, "_") && !same_type(formal.type, *actual))
+    if (phase20_is_nontransferable_capability(*actual))
+      err(statement.line,
+          "a Phase 20 capability (Executor/FileIO/Range/chunk source) cannot "
+          "be passed as an executor.invoke argument",
+          "EXECUTOR_INVOKE_CAPABILITY_ARGUMENT");
+    // Same formal/actual payload compatibility as an ordinary handler call
+    // (corrective-pass item 8). An untyped handler parameter receives its
+    // type from this call site through the ordinary inference pass
+    // (infer_statement_expressions / infer_domain_specializations treat
+    // executor.invoke exactly like `message`); Phase 20 adds no
+    // explicit-type requirement for invoked handlers.
+    const Param& formal = handler->params[index];
+    string formal_type = formal.type.empty() ? *actual : formal.type;
+    if (!starts_with(*actual, "_") && !starts_with(formal_type, "_") &&
+        !same_type(formal_type, *actual))
       err(statement.line,
           "argument " + std::to_string(index + 1) + " to executor.invoke(" +
               domain.name + "." + handler_name + "(...)) has type '" +
               canonical_type_name(*actual) + "', expected '" +
-              canonical_type_name(formal.type) + "'",
+              canonical_type_name(formal_type) + "'",
           "EXECUTOR_INVOKE_ARGUMENT_TYPE_MISMATCH");
     plan.argument_expressions.push_back(argument);
-    plan.argument_types.push_back(canonical_type_name(formal.type));
+    plan.argument_types.push_back(canonical_type_name(formal_type));
   }
 
   p_.root_submission_plans.push_back(std::move(plan));
@@ -171,18 +228,10 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
         err(statement.line,
             "Executor configuration must end with '.start()'",
             "EXECUTOR_MISSING_START");
-      for (size_t index = 0; index + 1 < calls.size(); ++index) {
-        const auto& call = calls[index];
-        if (!executor_config_methods().count(call.first))
-          err(statement.line,
-              "unknown Executor configuration method '" + call.first + "'",
-              "EXECUTOR_UNKNOWN_CONFIG_METHOD");
-        if (call.second.size() != 1)
-          err(statement.line,
-              "Executor." + call.first + " requires exactly one argument",
-              "EXECUTOR_CONFIG_ARITY");
-        check_expression(statement.line, call.second.front(), env);
-      }
+      if (!calls.back().second.empty())
+        err(statement.line, "Executor.start() takes no arguments",
+            "EXECUTOR_START_ARITY");
+      check_executor_start_plan(statement, calls, env);
       return true;
     }
 
@@ -202,6 +251,12 @@ bool check_executor_or_fileio_statement(const Stmt& statement,
     if (!parse_functional_pipeline(statement.b) &&
         parse_member_call(statement.b, receiver, method, arguments) &&
         fileio_typed(env, receiver)) {
+      if (method == "chunks")
+        err(statement.line,
+            "file.chunks(size) is a scoped seq[Range] source, not a "
+            "materializable collection; consume it immediately in a "
+            "'chunks(size) |> map(f) |> reduce(initial, combine)' pipeline",
+            "FILEIO_CHUNKS_NOT_MATERIALIZABLE");
       if (method == "read" && arguments.size() == 2) {
         check_expression(statement.line, arguments[0], env);
         check_expression(statement.line, arguments[1], env);

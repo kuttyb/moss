@@ -1,36 +1,39 @@
-// Phase 20 Agent D -- Fast Debug (interpreter) legality/plan-level support
-// for `Executor`/`executor.invoke` and root-local `FileIO`.
+// Phase 20 Agent D -- Fast Debug (interpreter) support for `Executor` /
+// `executor.invoke`, and the FileIO integration boundary.
 //
-// Fast Debug is a *separate* execution engine from native codegen; it does
-// not share Agent D's Rust seams (branch_publish/branch_join, FileIO::open,
-// etc.) and must not invent its own competing runtime to paper over Agent
-// B/C's absence. Per AGENTS.md corrective-pass items 2 and 24:
-//   - `executor.invoke(...)` has no valid inline-execution production
-//     fallback (see executor_invoke_codegen.inc's comment) -- turning it
-//     into Fast Debug's synchronous `message(...)` would just relocate the
-//     same semantic error into a different backend. It throws a clear,
-//     honest "pending Agent C" RuntimeError instead.
-//   - `FileIO.open(...)` (and therefore every chunk pipeline, which needs
-//     real bytes to do anything at all) throws a clear "pending Agent B"
-//     RuntimeError. Chunk-pipeline *algorithm* correctness (bounded-K
-//     ordering, speculative discard, termination) is independently testable
-//     without either agent through native codegen's test-only Rust shim
-//     (tests/tooling/fixtures/), which is in scope for Agent D; a *real*
-//     Fast Debug FileIO path is integration-stage work for whenever Agent B
-//     lands, not something Agent D should re-implement here to look done.
-//   - `Executor()`/`.threads()`/etc. and `.join()` need no runtime at all
-//     (E6: "without [an executor], roots/branches use inline mode" -- a
-//     construct/join with no invoke in between is a legal no-op), so those
-//     remain real, not stubbed.
+// Executor: Fast Debug models Phase 20 roots as a deterministic sequential
+// schedule (corrective item 17), preserving the semantic difference between
+// `executor.invoke` and synchronous `message`:
+//   start  -> create an active logical executor (configuration was already
+//             checked; Fast Debug evaluates it for its effects only);
+//   invoke -> evaluate/snapshot the handler arguments *now*, enqueue an
+//             independent logical root, and return after submission;
+//   join   -> drain the queued roots in submission order through the normal
+//             synchronous handler machinery (run_handler_call), then consume
+//             the executor.
+// This is a valid schedule of Phase 20 roots, not a competing worker pool:
+// it models no physical parallelism, fairness, or timing.
+//
+// FileIO: Agent B owns the FileIO runtime. Fast Debug does not re-implement
+// a POSIX FileIO system here; `FileIO.open(...)` (and therefore any chunk
+// pipeline) raises a clear "pending Agent B" error until A/B integration
+// supplies the Fast Debug path. Native chunk-pipeline lowering is tested
+// against test-only shims instead (tests/tooling/check_phase20_executor_fileio.py).
+
+  std::map<std::string, std::vector<PreparedHandlerCall>> fast_debug_executors_;
 
   bool interp_phase20_statement(const Stmt& statement, Frame& frame,
                                 std::ostream& output) {
-    (void)output;
     if (statement.kind == Stmt::Kind::Assign || statement.kind == Stmt::Kind::Let ||
         statement.kind == Stmt::Kind::Var) {
-      if (interp_is_executor_construction(statement.b)) {
+      std::vector<std::string> config_arguments;
+      if (interp_executor_construction(statement.b, config_arguments)) {
+        for (const auto& argument : config_arguments)
+          eval(argument, frame, statement.line, output);  // source order, once
         frame.locals[statement.a] = Value::unit();
         frame.local_types[statement.a] = "executor";
+        fast_debug_executors_[statement.a].clear();
+        emit("executor_start", frame, statement.line, statement.a);
         return true;
       }
       std::vector<std::string> open_arguments;
@@ -45,25 +48,46 @@
     auto receiver_type = frame.local_types.find(statement.a);
     if (receiver_type == frame.local_types.end() || receiver_type->second != "executor")
       return false;
-    if (statement.b == "join") return true;
+    auto executor = fast_debug_executors_.find(statement.a);
+    if (executor == fast_debug_executors_.end())
+      throw RuntimeError(statement.line, "internal error: unchecked inactive Executor");
     if (statement.b == "invoke") {
-      throw RuntimeError(statement.line,
-          "executor.invoke requires Agent C's Phase 20 root-admission "
-          "runtime; not yet executable in Fast Debug (see "
-          "src/interpreter_phase20.inc)");
+      // Submission: snapshot arguments now, run later at join.
+      executor->second.push_back(
+          prepare_handler_call(statement.args.front(), frame, statement.line, output));
+      emit("root_submit", frame, statement.line, statement.args.front());
+      return true;
+    }
+    if (statement.b == "join") {
+      auto roots = std::move(executor->second);
+      fast_debug_executors_.erase(executor);
+      for (auto& root : roots) run_handler_call(std::move(root), frame, output);
+      emit("executor_join", frame, statement.line, statement.a);
+      return true;
     }
     return false;
   }
 
-  static bool interp_is_executor_construction(const std::string& text) {
+  // Recognizes `Executor()(.config(arg))*.start()` and collects the
+  // configuration arguments in source order.
+  static bool interp_executor_construction(const std::string& text,
+                                           std::vector<std::string>& config_arguments) {
     std::string value = trim_copy(text);
+    std::vector<std::string> reversed;
     while (true) {
       auto member = top_level_member(value);
       if (!member) {
         std::string callee;
         std::vector<std::string> args;
-        return parse_call(value, callee, args) && callee == "Executor" && args.empty();
+        if (!(parse_call(value, callee, args) && callee == "Executor" && args.empty()))
+          return false;
+        config_arguments.assign(reversed.rbegin(), reversed.rend());
+        return true;
       }
+      std::string method;
+      std::vector<std::string> args;
+      if (parse_call(member->second, method, args) && method != "start")
+        for (auto it = args.rbegin(); it != args.rend(); ++it) reversed.push_back(*it);
       value = member->first;
     }
   }

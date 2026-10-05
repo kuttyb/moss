@@ -1,59 +1,119 @@
 // Phase 20 Agent D -- native Rust codegen for `Executor` and
 // `executor.invoke(concrete_domain.Handler(args...))`.
 //
-// There is no valid inline-execution production fallback for
-// `executor.invoke` (unlike a compiler Branch -- see branch_runtime.hpp):
-// "submit an independent Root and continue after submission" is not the
-// same operation as "execute the handler synchronously before continuing".
-// Agent D therefore lowers the checked RootSubmissionPlan (ast.hpp) through
-// exactly one narrow seam targeting three not-yet-defined Rust names that
-// Agent C's root-admission runtime is expected to supply:
+// Lowers the checked ExecutorStartPlan / RootSubmissionPlan (ast.hpp)
+// against Agent C's root-admission ABI (docs/ROOT_RUNTIME_ABI.md, "Physical
+// signatures & Integration Seam (Agent C Runtime)"):
 //
-//   moss_root_start()                        -- emit_executor_start
-//   moss_root_submit(&executor, move || ...) -- emit_root_submit
-//   moss_root_join(executor)                 -- emit_executor_join
+//   MossExecutor::new().threads(n).max_threads(n).queue_capacity(n)
+//       .affinity(cores).priority(level).start() -> MossExecutorHandle
+//   handle.enqueue_root(MossRootDescriptor::with_target(id, target, work))
+//   handle.join()
 //
-// Agent D does not define these names anywhere in src/ and does not guess
-// their final signature beyond this minimal shape (a handle value, and a
-// plain `FnOnce` thunk for the one-way submitted work, with argument
-// snapshotting already complete by the time the thunk is built -- "Arguments
-// are evaluated when invoke executes", sec. 4.2). A standalone native build
-// of a program using executor.invoke is therefore expected to need Agent
-// C's crate at link time; that is an acceptable, documented integration-time
-// dependency (AGENTS.md corrective-pass item 6), not something Agent D
-// hides by substituting synchronous execution.
+// Agent D defines none of these. There is no valid inline production
+// fallback for `executor.invoke`: "submit an independent Root and continue
+// after submission" is not "run the handler now". The submitted work is an
+// owned `FnOnce() + Send + 'static` thunk: argument snapshots are evaluated
+// *at the invoke statement* (sec. 4.2) into owned values via message_arg
+// (the same value-boundary lowering a message payload uses), the target
+// domain reference is cloned, and the thunk lends those owned snapshots to
+// the handler's `_shared` entry when the Root runs.
 //
-// For Agent D's own isolated tests, tests/tooling/fixtures/ supplies a
-// minimal TEST-ONLY deterministic root queue defining these same three
-// names (see check_phase20_executor_fileio.py); it is never emitted by the
-// compiler and is not documented as Phase 20 runtime behavior.
+// Codegen consumes the plans' checked facts only: the target binding,
+// semantic identities, backend handler selector, and formal argument types
+// all come from RootSubmissionPlan; no domain/handler is re-resolved here.
+
+void emit_executor_start(std::ostringstream& o, const Stmt& s, int spaces,
+                         const ExecutorStartPlan& plan, std::set<string>& locals,
+                         std::unordered_map<string,string>& types) {
+  const string pad(spaces, ' ');
+  backend_comment(o, spaces,
+                  "EXECUTOR '" + s.a + "' -- ExecutorStartPlan: configuration "
+                  "arguments evaluated once, in source order, before start()");
+  vector<string> values;
+  for (const auto& call : plan.calls) {
+    string temp = "__moss_executor_cfg_" + std::to_string(executor_invoke_temp_++);
+    o << pad << "let " << temp << " = " << expr(call.argument, nullptr, locals, &types) << ";\n";
+    values.push_back(temp);
+  }
+  o << pad << "let mut " << s.a << " = MossExecutor::new()";
+  for (size_t index = 0; index < plan.calls.size(); ++index) {
+    const auto& call = plan.calls[index];
+    const string& value = values[index];
+    if (call.method == "affinity")
+      o << ".affinity(" << value << ".iter().map(|__moss_core| *__moss_core as usize).collect())";
+    else if (call.method == "priority")
+      o << ".priority(" << value << " as i32)";
+    else
+      o << "." << call.method << "(" << value << " as usize)";
+  }
+  o << ".start();\n";
+  locals.insert(s.a);
+  types[s.a] = "executor";
+}
+
+void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
+                      const RootSubmissionPlan& plan, std::set<string>& locals,
+                      std::unordered_map<string,string>& types) {
+  const string pad(spaces, ' ');
+  backend_comment(o, spaces,
+                  "EXECUTOR INVOKE " + plan.handler_semantic_identity +
+                      " -- RootSubmissionPlan; independent one-way Root, "
+                      "caller continues after submission");
+  o << pad << "{\n";
+  string domain_temp = "__moss_invoke_domain_" + std::to_string(executor_invoke_temp_++);
+  o << pad << "    let " << domain_temp << " = " << plan.target_domain_binding << ".clone();\n";
+  vector<string> argument_locals;
+  for (size_t index = 0; index < plan.argument_expressions.size(); ++index) {
+    string temp = "__moss_invoke_arg_" + std::to_string(executor_invoke_temp_++);
+    o << pad << "    let " << temp << " = "
+      << message_arg(plan.argument_expressions[index], plan.argument_types[index],
+                     nullptr, locals, &types, 0)
+      << ";\n";
+    argument_locals.push_back(temp);
+  }
+  o << pad << "    " << s.a << ".enqueue_root(MossRootDescriptor::with_target(next_root_id(), "
+    << rust_string_literal(plan.handler_semantic_identity) << ", move || {\n";
+  // Forward each owned snapshot to the handler's `_shared` entry exactly as
+  // the route contract's owned `__moss_message_<Handler>` impl does (lend a
+  // borrowed-payload type, pass a copy type by value); this also works for
+  // per-instance specialized domain refs, which carry no route-contract impl.
+  o << pad << "        let _ = " << domain_temp << "." << plan.handler_name << "_shared(";
+  for (size_t index = 0; index < argument_locals.size(); ++index) {
+    if (index) o << ", ";
+    o << shared_message_forward_argument(Param{argument_locals[index], plan.argument_types[index], false}, true);
+  }
+  o << ");\n" << pad << "    }));\n" << pad << "}\n";
+}
+
+void emit_executor_join(std::ostringstream& o, const Stmt& s, int spaces) {
+  backend_comment(o, spaces,
+                  "EXECUTOR '" + s.a + "'.join() -- drains admitted roots, "
+                  "consumes the executor");
+  o << string(spaces, ' ') << s.a << ".join();\n";
+}
 
 bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
                             std::set<string>& locals,
                             std::unordered_map<string,string>& types) {
-  const string pad(spaces, ' ');
   if (s.kind == Stmt::Kind::Assign || s.kind == Stmt::Kind::Let ||
       s.kind == Stmt::Kind::Var) {
     vector<std::pair<string, vector<string>>> calls;
     if (!parse_executor_chain(s.b, calls) || calls.empty() ||
         calls.back().first != "start")
       return false;
-    backend_comment(o, spaces,
-                    "EXECUTOR '" + s.a +
-                        "' -- emit_executor_start seam; Agent C's "
-                        "moss_root_start() is not defined in this build");
-    o << pad << "let mut " << s.a << " = moss_root_start();\n";
-    locals.insert(s.a);
-    types[s.a] = "executor";
+    if (!s.executor_start_plan_id)
+      throw std::runtime_error(
+          "internal error: Executor start reached codegen without a checked "
+          "ExecutorStartPlan");
+    emit_executor_start(o, s, spaces,
+                        semantic_program_->executor_start_plans.at(s.executor_start_plan_id - 1),
+                        locals, types);
     return true;
   }
   if (s.kind != Stmt::Kind::Call || !executor_typed(types, s.a)) return false;
   if (s.b == "join") {
-    backend_comment(o, spaces,
-                    "EXECUTOR '" + s.a +
-                        "'.join() -- emit_executor_join seam; Agent C's "
-                        "moss_root_join() drains admitted roots");
-    o << pad << "moss_root_join(" << s.a << ");\n";
+    emit_executor_join(o, s, spaces);
     return true;
   }
   if (s.b != "invoke")
@@ -62,46 +122,8 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
     throw std::runtime_error(
         "internal error: executor.invoke reached codegen without a checked "
         "RootSubmissionPlan");
-  const RootSubmissionPlan& plan =
-      semantic_program_->root_submission_plans.at(s.root_submission_plan_id - 1);
-  auto receiver_type = types.find(plan.target_domain_binding);
-  if (receiver_type == types.end() ||
-      !domains_.count(canonical_type_name(receiver_type->second)))
-    throw std::runtime_error("internal error: unchecked executor.invoke target");
-  const Domain& target_domain = *domains_.at(canonical_type_name(receiver_type->second));
-  const Handler* target_handler = find_handler(target_domain, plan.handler_name);
-  if (!target_handler)
-    throw std::runtime_error("internal error: unchecked executor.invoke handler");
-  backend_comment(o, spaces,
-                  "EXECUTOR INVOKE '" + target_domain.name + "." + plan.handler_name +
-                      "' -- emit_root_submit seam; RootSubmissionPlan carries "
-                      "the checked target/handler/argument facts, Agent C's "
-                      "moss_root_submit() carries no Moss-specific knowledge");
-  o << pad << "{\n";
-  // A domain reference is an Arc-like shared handle elsewhere in generated
-  // code (e.g. domain_capability clones in gen_block's Let/Var case); clone
-  // it into the submitted thunk rather than moving the caller's binding, so
-  // `main` can still invoke the same domain again afterward.
-  string domain_temp = "__moss_invoke_domain_" + std::to_string(executor_invoke_temp_++);
-  o << pad << "    let " << domain_temp << " = " << plan.target_domain_binding
-    << ".clone();\n";
-  vector<string> argument_locals;
-  for (size_t index = 0; index < plan.argument_expressions.size(); ++index) {
-    string temp = "__moss_invoke_arg_" + std::to_string(executor_invoke_temp_++);
-    o << pad << "    let " << temp << " = "
-      << shared_message_arg(plan.argument_expressions[index],
-                            target_handler->params.at(index).type, nullptr,
-                            locals, &types, 0)
-      << ";\n";
-    argument_locals.push_back(temp);
-  }
-  o << pad << "    moss_root_submit(&" << s.a << ", move || {\n";
-  o << pad << "        let _ = " << domain_temp << "."
-    << plan.handler_name << "_shared(";
-  for (size_t index = 0; index < argument_locals.size(); ++index) {
-    if (index) o << ", ";
-    o << argument_locals[index];
-  }
-  o << ");\n" << pad << "    });\n" << pad << "}\n";
+  emit_root_submit(o, s, spaces,
+                   semantic_program_->root_submission_plans.at(s.root_submission_plan_id - 1),
+                   locals, types);
   return true;
 }

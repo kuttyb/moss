@@ -1,242 +1,99 @@
 # Moss current status
 
-## Phase 20 Agent D — corrective pass: decoupled from Agents A/B/C (2026-10-04)
-
-The "Phase 20 Agent D — Compiler concurrency lowering" entry immediately
-below is superseded by this corrective pass on the same branch
-(`phase-20-d-concurrency-lowering`, now at commit `66b34e3` +
-"Decouple and complete Phase 20 concurrency lowering"). The first pass's
-interim implementation choices duplicated Agents A/B/C and, more
-importantly, changed `executor.invoke`'s Phase 20 semantics by lowering it
-to a synchronous handler call. This pass corrects the architecture so Agent
-D's compiler-side work is genuinely independent of when A/B/C land, without
-redefining what `invoke` means.
-
-**Removed:** Agent D's duplicate production FileIO runtime
-(`src/fileio_runtime.hpp`, deleted) and duplicate Fast Debug FileIO
-implementation (`src/interpreter_fileio.inc`, deleted). FileIO/Range are
-still compiler-recognized (typing, chunk pipelines), but Agent D owns no
-runtime for them. `src/interpreter_phase20.inc` replaces the old file: Fast
-Debug now throws a clear "pending Agent B" error for `FileIO.open(...)` and
-a clear "pending Agent C" error for `executor.invoke`, rather than
-implementing a competing runtime or (the worse bug) silently redefining
-`invoke` as synchronous `message`.
-
-**Fixed -- `executor.invoke` no longer lowers to a synchronous call.** The
-checker builds a `RootSubmissionPlan` (`ast.hpp`: concrete domain instance,
-checked handler semantic identity, evaluated argument snapshot, one-way)
-in `check_executor_invoke`, including full argument type-compatibility
-checking reusing `same_type` the same way an ordinary handler call does
-(invoke targets must have explicitly typed parameters -- unlike `message`,
-invoke statements aren't visited by the untyped-parameter inference pass).
-Native codegen lowers that plan through one narrow seam
-(`moss_root_start`/`moss_root_submit`/`moss_root_join`,
-`src/executor_invoke_codegen.inc`) that Agent D does not define anywhere in
-`src/`; a standalone native build of a program using `executor.invoke` now
-correctly fails to link ("cannot find function `moss_root_start`") until
-Agent C's crate exists, instead of silently compiling to the wrong
-semantics. `tests/tooling/fixtures/phase20_root_queue_shim.rs` (TEST ONLY,
-not documented in `ROOT_RUNTIME_ABI.md`, never emitted by the compiler) is
-a deterministic sequential root queue the test harness links in so Agent
-D's own codegen/plan correctness is independently verifiable.
-
-**Fixed -- real `ChunkParallelPlan` with a bounded-K Branch lowering.**
-`FunctionalPipeline::chunk_plan` (`functional_ir.hpp`) is a structured plan
-(fileio receiver, chunk-size expression, map/combine callables,
-accumulator/mapped types, static eligibility + reason), not just a
-human-readable decision string. An eligible pipeline lowers to the real
-bounded-K read/map algorithm (publish up to K indexed branches, commit
-strictly ascending, parent-only left-to-right fold, discard every later
-speculative outcome once an earlier terminal commits) against
-`branch_publish`/`branch_join`. Unlike Executor, inline execution *is*
-normative Branch fallback behavior (sec. 7.3, E4), so
-`src/branch_runtime.hpp` genuinely implements that pair for real (not a
-test shim, not a placeholder): `branch_publish` runs its work immediately,
-`branch_join` is the identity. Agent C can replace that one file with a
-worker-thread implementation without any generated chunk-pipeline code
-changing. An *ineligible* pipeline (impure/domain-touching map) never uses
-the Branch abstraction at all -- it lowers to the plain sequential
-reference loop -- because wrapping unsafe work in a closure that merely
-looks branch-publishable would be a latent hazard once Agent C's
-`branch_publish` can really hand work to another thread. Eligibility is
-purely static (map/combine purity via the existing
-`ObservableEffects::fusion_safe`), never a function of whether an Executor
-happens to be active in `main`.
-
-**Fixed -- Range, not String.** `file.read(...)`/`file.chunks(...)` now
-type as `Range`/`vector[range]`, not `string`. The only Moss-level Range
-accessor Agent D recognizes is `.length()` (provisional, needed for
-ordering/termination tests; Agent A/B own Range's real surface).
-`tests/tooling/fixtures/phase20_fileio_range_shim.rs` (TEST ONLY) is a
-minimal POSIX-backed `FileIO`/`Range` so native output is runnable in
-isolation; `rust_type("fileio"/"range")` emits the ABI doc's reserved
-`FileIO`/`Range` names without Agent D defining those Rust types anywhere.
-
-**Fixed -- FileIO is legal as an ordinary helper parameter.** The previous
-pass's blanket "not a general type" reasoning incorrectly also rejected
-`fn inspect(file: FileIO) -> Int: ...` (sec. 9.3 explicitly permits ordinary
-synchronous helper borrowing). `phase20_allowed_as_ordinary_parameter`
-(moss.cpp) narrowly allows `fileio`/`range` at the one checked call site
-for ordinary function parameters; every other position (domain fields,
-handler parameters, message/reply, executor.invoke arguments, object/trait
-methods) still rejects them via the pre-existing `valid_type()` checks plus
-the shared `phase20_is_nontransferable_capability` predicate -- the one
-isolated adapter function Agent D added for "is this a Phase 20 capability
-that cannot cross a boundary", ready to be swapped for Agent A's real
-ownership facts in one place.
-
-**Fixed -- lifecycle hardening.** `ExecutorLifecycle` is now one
-per-binding state (`Unstarted`/`Active`/`Consumed`) instead of a separate
-`active` map plus a discarded `joined` set, so a branch that joins on every
-path is correctly remembered as `Consumed` afterward (a later invoke/join
-now reports "already joined", not merely "not active"). `return` is itself
-checked for an unjoined Executor (previously only "falling off the end" of
-`main` was checked); if/match merges now ignore terminated paths rather
-than conflating them with paths that continue; while/for still requires the
-loop body to be a lifecycle no-op (started+joined inside, or neither).
-
-**Two real compiler bugs found and fixed along the way** (both
-`Checker::observable_expression_effects` and
-`Checker::analyze_effect_expression` lacked a FileIO/Range receiver case,
-so a `.chunks()`/`.length()` call -- even one with no domain capture at
-all -- hit an internal assertion/`synchronization_require` failure once
-Range replaced String as the element type).
-
-**Deliberately out of scope**, unchanged from the first pass and still not
-required by Agent D's own test list: domain-field FileIO lock integration,
-Range/RangeBatch borrow scoping, batch reads, the general FileIO
-ownership/escape checker (Agent A/B); a real Agent-C worker pool, root
-admission, fairness, backpressure, INLINE/ACTIVE/DRAINING, or Solo
-compensation; "map/combine makes a FileIO call" (structurally
-unconstructible under this scope, same reasoning as before).
-
-Validation: `tests/tooling/check_phase20_executor_fileio.py` rewritten for
-the new architecture (native + test-only-shim execution rather than
-Fast-Debug differential execution, since Fast Debug now intentionally
-declines to run FileIO/Executor programs), covering the full negative
-legality matrix including the two new early-exit/branch-consumption cases
-and an argument-type-mismatch/untyped-parameter case, plus chunk
-differential coverage (empty/smaller-than-one/exact/exact-multiple/
-short-final/many/domain-capturing-ineligible/handler-scoped) and explicit
-K-independence (K=1, 2, 4, 1000 against the same eligible binary). Full
-`tests/run.sh` (including the 61 Emacs ERT tests), `make examples`,
-`git diff --check`, strict `-std=c++17 -O2 -Wall -Wextra -pedantic` rebuild
-with zero new warnings.
-
 ## Phase 20 Agent D — Compiler concurrency lowering (2026-10-04)
 
-Branch `phase-20-d-concurrency-lowering` starts from `main`
-`d3cdc52571e6d292f3cdc4e513af39596c7b7b69` (the Phase 20 ABI naming
-bootstrap below). It implements the compiler-facing surface assigned to
-Agent D: `executor.invoke(concrete_domain.Handler(args...))` with full
-Executor lifecycle legality, and `file.chunks(size) |> map(f) |>
-reduce(initial, combine)` chunk-pipeline eligibility/sequential lowering,
-plus a minimal root-local `FileIO` capability needed to exercise it. No
-other Phase 20 agent (A/B/C) had landed any code when this branch started
-(verified by grepping `src/` for FileIO/Executor/RootDescriptor/
-branch_publish/branch_join/runtime_invoke/solo_enter/solo_leave — all
-absent), so this branch also supplies the narrowest adapters the spec
-explicitly permits in that situation, each documented in place.
+Branch `phase-20-d-concurrency-lowering` (base `d3cdc52`). Agent D's compiler
+concurrency planning/lowering is complete against the Phase 20 integration
+seams; it was developed without merging Agents A/B/C and targets the
+physical ABIs on their current branches (`phase-20-a-fileio-semantics`,
+`phase-20-b-fileio-runtime`, `phase-20-c-executor-runtime`). Native
+execution of architectural Roots and chunk Branches needs Agent C's runtime;
+production FileIO/Range needs Agent B's; capability boundary facts are meant
+to come from Agent A. Agent D defines none of those runtimes in `src/`.
 
-**`executor.invoke` / Executor lifecycle** (`src/executor_invoke_lowering.inc`,
-`src/executor_invoke_codegen.inc`): `Executor()` and `executor.invoke(...)`
-are compiler-recognized pinned-capability forms, never general nominal
-types — nothing registers an "executor" entry in `valid_type()`, so storage
-in domain state, ordinary function/handler parameters, and message/reply
-boundaries are rejected by the *existing* generic type-validation paths for
-free. A dedicated sequencing pass (`check_executor_lifecycle`, mirroring
-the existing `every_handler_path_replies` indentation-walk) enforces
-configure→start→invoke*→join as an explicit state machine: at most one
-active Executor, invoke/join only on an active binding, use-after-join
-rejected, every normal path after `start()` reaching `join()` (including
-through if/while/match, requiring agreement across branches). `invoke`'s
-target must be a concrete domain instance with a statically known one-way
-handler (value-returning handlers are a compile-time error); its arguments
-reuse the exact same `shared_message_arg` snapshot-by-value lowering as an
-ordinary synchronous `message`. There is no real Agent-C root-admission/
-worker-pool runtime in this tree (out of Agent D's scope), so `invoke` is
-lowered through a narrow, explicitly commented adapter: the target handler
-runs inline and synchronously at the submission point on both native Rust
-and Fast Debug (which reuses `message(...)` directly). This preserves
-one-way semantics, argument snapshotting, and submission order, but not
-physical concurrency — a documented, not hidden, integration gap pending
-Agent C.
+**Executor / `executor.invoke`** (`src/executor_invoke_lowering.inc`,
+`src/executor_invoke_codegen.inc`). `Executor()` and `executor.invoke` are
+main-only, compiler-recognized forms (no `executor` entry in `valid_type()`,
+so storage/parameters/payloads are rejected by ordinary type checks). The
+checker builds an `ExecutorStartPlan` (configuration calls in source order;
+`threads`/`max_threads`/`queue_capacity`/`priority` must be Int,
+`affinity` a Vector[Int]; `start()` takes no arguments; literal counts must
+be positive and `max_threads >= threads`) and, per invoke, a
+`RootSubmissionPlan` (target binding, domain and handler semantic
+identities, handler selector, formal argument types, snapshot expressions,
+one-way). Invoke arguments are type-checked like a handler call and
+rejected if their inferred type is a Phase 20 capability
+(`phase20_is_nontransferable_capability`, the one Agent A adapter point).
+Invoke sites participate in ordinary untyped handler-parameter inference
+(`infer_statement_expressions`, `infer_domain_specializations`).
+Codegen lowers to Agent C's `MossExecutor::new().<config>.start()`,
+`enqueue_root(MossRootDescriptor::with_target(next_root_id(), identity,
+move || ...))`, and `join()`: argument snapshots are owned values evaluated
+at the invoke statement, the domain ref is cloned, and the `Send + 'static`
+thunk lends them to `<Handler>_shared`. Never a synchronous call. The
+lifecycle checker tracks one state per binding (Unstarted/Active/Consumed)
+across if/match/loops, rejects `return` with an Active Executor, ignores
+terminated paths when merging, and requires loop bodies to be lifecycle
+no-ops.
 
-**FileIO chunk pipelines** (`src/file_chunk_lowering.inc`,
-`src/file_chunk_codegen.inc`, `src/fileio_runtime.hpp`,
-`src/interpreter_fileio.inc`): a minimal root-local `FileIO` capability
-(`FileIO.open(path, mode)`, `.read(offset, size)`, `.write(offset, data)`,
-`.sync([dataonly])`, `.close()`, `.chunks(size)`) with real blocking POSIX
-I/O on both native (Rust `std::fs`/`FileExt`) and Fast Debug (`pread`/
-`pwrite`/`fsync`/`fdatasync`), including the `(device, inode)` unique-live-
-FileIO registry, fail-closed. `file.chunks(size) |> map(f) |>
-reduce(initial, combine)` extends the *existing* FunctionalPipeline/
-FunctionalNode IR (`add_functional_pipeline_ir`'s source-type inference
-recognizes a `.chunks()` call on a tracked FileIO local) rather than adding
-a second pipeline representation. Eligibility for the (also unimplemented —
-Agent C's remit) parallel branch lowering is computed by reusing the
-*existing* purity/effect analysis already run for every pipeline stage
-(`ObservableEffects::fusion_safe`) — no FileIO-specific effect machinery was
-needed for "impure map", "map domain READ/WRITE", or "map message"; those
-are already general callable properties, confirmed by a differential test
-where a map stage closes over domain state inside a handler. A FileIO call
-from inside a map/combine callable is structurally unreachable under this
-scope (FileIO cannot be passed into an ordinary helper as a parameter), so
-that eligibility branch is implemented for completeness but not exercised
-by a valid test program — called out explicitly rather than silently
-assumed covered. Since there is no real Agent-C branch runtime, every
-chunk pipeline (eligible or not) always executes the exact sequential
-reference loop (read chunk, map, fold, stop on short/zero-length chunk) on
-both backends; the eligibility outcome and reason are still recorded on
-the pipeline's existing `decision`/`optimization_notes` IR fields,
-distinguishing "ineligible" from "eligible, but no runtime support yet" as
-the spec's own optimization-reporting language anticipates.
+**FileIO / Range typing.** `FileIO.open/read/write/sync/close/chunks` and
+`Range.length()` are typed by the compiler; `read` returns `range`,
+`chunks` returns the scoped `seq[range]` (rejected if bound to a local or
+used other than as `chunks(C) |> map(f) |> reduce(init, combine)`). FileIO
+and Range are legal as ordinary helper parameters (sec. 9.3) but not as
+returns, domain state, handler parameters, or message/invoke payloads.
+Generated calls match Agent B: `FileIO::open`, `read`, `write`, `sync()`,
+`sync_dataonly()`, `close()`, `Range::len()`. FileIO operations set
+`ObservableEffects::fileio` (directly and transitively); `Range.length()`
+does not.
 
-**Scope deliberately not implemented** (Agent A/B's remit per task
-boundaries, not required by Agent D's own test list): domain-field FileIO
-lock integration (R14), Range/RangeBatch borrow scoping, batch reads, the
-general FileIO ownership/escape checker (R13, e.g. compile-time rejection
-of copying/storing/returning a FileIO), and anything resembling a real
-Executor/runtime worker pool, root queue, or branch_publish/branch_join
-scheduler (Agent C's remit; `branch_publish`/`branch_join` identifiers from
-`docs/ROOT_RUNTIME_ABI.md` are not implemented at all). `K`
-(lowering-window) tests, worker-saturation/root-branch-contention tests,
-and "map/combine makes a FileIO call" are consequently not meaningful or
-constructible under this scope and are documented as such in
-`tests/tooling/check_phase20_executor_fileio.py` rather than silently
-skipped.
+**Chunk pipelines** (`src/file_chunk_lowering.inc`,
+`src/file_chunk_codegen.inc`). The checker builds
+`FunctionalPipeline::chunk_plan` (receiver, chunk size, map/initial/combine,
+accumulator/mapped types, `window_k = 4`, static eligibility + reason;
+shown by `--dump-functional-ir`). Eligible = map pure (`fusion_safe`), map
+reaches no FileIO, map captures no parent locals (Branch work must be
+`Send + 'static`), combine reaches no FileIO. Eligible pipelines lower to
+windows of K Branches published into one Agent C join scope
+(`branch_scope_new`/`branch_publish`/`branch_join`) before a single join;
+each Branch reads through an owned compiler-internal
+`moss_fileio_branch_read_borrow(&file)` token and writes its outcome to a
+compiler-owned `Arc<Mutex<Option<..>>>` slot; the parent commits slots in
+index order (zero-length stops without fold, short folds once and stops,
+later speculative slots are discarded). The initializer is evaluated before
+any publication; combine runs only in the parent, left to right.
+Ineligible pipelines lower to the sequential reference loop with no Branch
+calls. Agent C has no current-Root accessor, so `branch_scope_new(0)` is
+passed (its id is instrumentation-only there).
 
-Required executor.invoke positive/negative legality cases and the required
-chunk-pipeline differential coverage (empty file, smaller-than-one-chunk,
-exactly-one-chunk, exact multiple, short final chunk, many chunks, a word
-spanning a chunk boundary, ordered fold with an observable domain-state
-effect, a domain-state-capturing — hence ineligible — map stage, and the
-canonical handler-scoped word-count shape) are implemented as real
-native-vs-Fast-Debug differential tests in
-`tests/tooling/check_phase20_executor_fileio.py`, wired into
-`tests/run.sh`. Validation passed: the full `tests/run.sh` suite (including
-the 61 Emacs ERT tests), `make examples`, `git diff --check`, and
-`sh -n tests/run.sh`, all on a strict `-std=c++17 -O2 -Wall -Wextra
--pedantic` rebuild with zero new warnings. Two existing-test regressions
-were found and fixed during this work, both caused by the new FileIO Rust
-preamble being emitted unconditionally and colliding with other tests'
-broad literal-text greps over the whole generated file (a `Vec::new()` and
-a bare `break;`); the preamble is now emitted only when a program actually
-constructs a FileIO (`Generator::program_uses_fileio`). A third, more
-substantive gap was found and fixed: the handler-level leaf-effect-capture
-synchronization pass (used for 2PL lock derivation) did not know how to
-classify a `FileIO.open(...)` call or a `.chunks()`/`.read()`/etc. call
-through a "fileio"-typed receiver, aborting with an internal error for the
-word-count example's own shape (root-local FileIO used inside a handler) —
-fixed in `analyze_effect_expression`.
+**Fast Debug.** `executor.invoke` is implemented as a deterministic
+sequential schedule: arguments snapshotted at invoke, roots run at join
+through the normal handler machinery, so invoke stays distinct from
+synchronous `message`. FileIO in Fast Debug awaits A/B integration and
+raises a clear error; full native/Fast Debug Phase 20 parity is therefore
+not complete until FileIO is integrated.
 
-Remaining integration dependencies: Agent A's FileIO ownership/effect
-implementation (if it lands, this branch's `fileio_typed`/pinned-capability
-treatment and the minimal POSIX adapter should be reconciled with it, not
-duplicated); Agent C's RootDescriptor/root-admission runtime and
-branch_publish/branch_join scheduler (invoke's inline-adapter and the
-chunk pipeline's always-sequential lowering are the explicit placeholders
-for that integration). No Phase 21 error/result machinery was added.
+**Integration items for A/B/C.** Agent B must provide
+`moss_fileio_branch_read_borrow(&FileIO) -> MossFileIOReadBorrow` (owned,
+read-only, `Send + 'static`; B's current `FileIO` needs shareable backing to
+do so). Agent C should consider a current-Root id accessor for
+`branch_scope_new`. `ObservableEffects::fileio` should eventually be fed by
+Agent A's effect facts, and the capability predicate replaced by A's
+boundary fact. `fileio` is not yet serialized into `.mossi` or effect JSON.
+
+**Validation.** `tests/tooling/check_phase20_executor_fileio.py` (in
+`tests/run.sh`) links generated code with TEST-ONLY shims in
+`tests/tooling/fixtures/` that mirror B/C signatures (including `Send +
+'static` Branch/Root work) and covers: the negative legality matrix
+(lifecycle, early return, branch-consumed state, argument types, config
+types/arity/ranges, chunk materialization/shape); native vs Fast Debug
+parity for invoke programs including deferred execution, untyped-parameter
+inference, and config evaluation order; B-aligned FileIO lowering; K=4
+publish-before-join traces across window boundaries, zero/short terminal
+handling with discarded speculative slots, initializer-before-publication;
+FileIO-in-map/combine and domain-capturing maps lowering sequentially.
+Full `tests/run.sh`, `make examples`, strict rebuild, and
+`git diff --check` pass (see the final commit body).
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 

@@ -21,20 +21,12 @@
 // (phase20_is_nontransferable_capability).
 //
 // `map`/`combine` eligibility for the bounded-K Branch lowering
-// (file_chunk_codegen.inc) is computed by reusing the *existing*
-// purity/effect analysis already run for every functional pipeline stage
-// (ObservableEffects::fusion_safe): no FileIO-specific effect machinery is
-// required for "impure map", "map domain READ/WRITE", or "map message" --
-// those are already general properties of any callable (confirmed by the
-// phase20_chunk_domain differential test, where a map stage closes over
-// domain state inside a handler). A FileIO call from inside a map/combine
-// callable is structurally unreachable under this scope's FileIO (FileIO
-// cannot be passed into an ordinary helper as anything other than a plain
-// borrowed parameter, and a chunk pipeline's map/combine callables are
-// resolved as ordinary functions of the chunk element/accumulator types
-// only), so that eligibility branch is implemented for completeness but not
-// exercised by a valid Moss test program -- called out explicitly rather
-// than silently assumed covered.
+// (file_chunk_codegen.inc) reuses the existing per-stage purity/effect
+// analysis (ObservableEffects::fusion_safe) plus the explicit
+// ObservableEffects::fileio fact, set for every FileIO operation directly or
+// transitively through helpers (a helper may legally borrow a FileIO
+// parameter or open its own root-local FileIO). A FileIO-reaching map or
+// combine is still valid Moss; it simply lowers sequentially.
 
 // Builds the structured ChunkParallelPlan for a checked pipeline whose
 // source is `<fileio-local>.chunks(size)`. Returns false (plan left
@@ -88,19 +80,35 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
   pipeline.deterministic = false;
   const ObservableEffects& map_effects = pipeline.nodes[1].effects;
   const ObservableEffects& combine_effects = pipeline.nodes[2].effects;
-  // Eligibility is purely static (map/combine purity), never a function of
-  // whether an Executor happens to be active in `main` (AGENTS.md
-  // corrective-pass item 23): the exact same bounded-K Branch lowering is
-  // emitted whether or not a runtime ends up actually distributing work.
-  bool eligible = map_effects.fusion_safe() && !combine_effects.external_io;
+  // Eligibility is purely static, never a function of whether an Executor
+  // happens to be active in `main` (corrective-pass item 23):
+  //  - map must be pure w.r.t. Moss/domain state (fusion_safe) and must not
+  //    reach FileIO (the explicit ObservableEffects::fileio fact, which
+  //    fusion_safe also excludes);
+  //  - map must capture nothing: a Branch body is `FnOnce() + Send +
+  //    'static` work that may run on another worker, so it may only carry
+  //    owned values (the chunk index, size, an owned FileIO read-borrow
+  //    token, and its result slot), never a borrow of a parent local;
+  //  - combine runs only in the parent Root and may have ordinary parent/
+  //    domain effects, but must not reach FileIO (sec. 13.2).
+  const auto& map_node = pipeline.nodes[1];
+  string reason;
+  if (map_effects.fileio)
+    reason = "map stage reaches a FileIO operation";
+  else if (!map_effects.fusion_safe())
+    reason = "map stage is not pure: " + observable_barrier(map_effects);
+  else if (!map_node.captures.empty() ||
+           (!starts_with(map_node.callable_identity, "placeholder:") &&
+            map_node.callable_identity.find('.') != string::npos))  // bound method
+    reason = "map stage captures parent-root locals; Branch work must be "
+             "Send + 'static";
+  else if (combine_effects.fileio)
+    reason = "combine stage reaches a FileIO operation";
+  bool eligible = reason.empty();
   pipeline.chunk_plan.eligible = eligible;
+  pipeline.chunk_plan.window_k = 4;
   pipeline.optimization_notes.clear();
   if (!eligible) {
-    string reason = !map_effects.fusion_safe()
-        ? "map stage is not eligible for the Branch lowering: " +
-              observable_barrier(map_effects)
-        : "combine stage makes a FileIO call, which the baseline Phase 20 "
-          "lowering forbids";
     pipeline.chunk_plan.eligibility_reason = reason;
     pipeline.decision = "sequential (ineligible for Branch lowering): " + reason;
     pipeline.optimization_notes.push_back(reason);
@@ -108,9 +116,9 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
     pipeline.chunk_plan.eligibility_reason =
         "pure map, no FileIO call in map or combine, combine runs parent-only";
     pipeline.decision =
-        "eligible for bounded-K Branch lowering (branch_publish/branch_join); "
-        "executes inline today because no worker-thread Branch runtime is "
-        "wired into this build (Agent C integration pending)";
+        "eligible: bounded K=" + std::to_string(pipeline.chunk_plan.window_k) +
+        " read/map Branch lowering (branch_scope_new/branch_publish/branch_join), "
+        "ordered parent commit and fold";
     pipeline.optimization_notes.push_back(pipeline.chunk_plan.eligibility_reason);
   }
 }

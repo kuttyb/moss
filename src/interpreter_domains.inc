@@ -194,7 +194,19 @@
     return false;
   }
 
-  Value message(const std::string& invocation, Frame& caller, int line, std::ostream& output) {
+  // A checked handler call whose argument snapshots have already been
+  // evaluated. Synchronous `message` evaluates and runs immediately; Phase 20
+  // Fast Debug `executor.invoke` evaluates at submission and runs at join
+  // (see interpreter_phase20.inc).
+  struct PreparedHandlerCall {
+    DomainValue* instance = nullptr;
+    const Handler* target = nullptr;
+    std::vector<Value> arguments;
+    int line = 0;
+  };
+
+  PreparedHandlerCall prepare_handler_call(const std::string& invocation, Frame& caller,
+                                           int line, std::ostream& output) {
     std::string callee; std::vector<std::string> arguments;
     if (!parse_call(invocation, callee, arguments)) throw RuntimeError(line, "internal error: malformed checked message");
     auto member = top_level_member(callee);
@@ -206,6 +218,23 @@
     const Handler* target = nullptr;
     for (const auto& handler : instance.definition->handlers) if (handler.name == member->second) target = &handler;
     if (!target || target->params.size() != arguments.size()) throw RuntimeError(line, "internal error: unresolved checked handler");
+    PreparedHandlerCall call;
+    call.instance = &instance;
+    call.target = target;
+    call.line = line;
+    for (const auto& argument : arguments)
+      call.arguments.push_back(independent(eval(argument, caller, line, output)));
+    return call;
+  }
+
+  Value message(const std::string& invocation, Frame& caller, int line, std::ostream& output) {
+    return run_handler_call(prepare_handler_call(invocation, caller, line, output), caller, output);
+  }
+
+  Value run_handler_call(PreparedHandlerCall call, Frame& caller, std::ostream& output) {
+    auto& instance = *call.instance;
+    const Handler* target = call.target;
+    int line = call.line;
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
     frame.functional_context = functional_handler_context(*instance.definition, *target);
@@ -216,8 +245,8 @@
         program_.domain_specializations.at(*instance.concrete->specialization_index);
     auto parameter_types = specialization.handler_parameter_types.find(target->name);
     std::string payload;
-    for (size_t i = 0; i < arguments.size(); ++i) {
-      Value value = independent(eval(arguments[i], caller, line, output));
+    for (size_t i = 0; i < call.arguments.size(); ++i) {
+      Value value = std::move(call.arguments[i]);
       if (i) payload += ", ";
       payload += summary(value);
       frame.locals[target->params[i].name] = std::move(value);

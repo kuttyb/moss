@@ -4,31 +4,27 @@
 // and docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md secs. 8-13, 20 for the
 // normative sequential reference semantics every lowering here must match.
 //
-// Agent D owns this compiler-side lowering, not a FileIO or Branch runtime:
-//  - FileIO statements emit calls against the normative Rust-facing names
-//    reserved in docs/ROOT_RUNTIME_ABI.md ("FileIO", "Range"). Agent B's
-//    crate defines those types; Agent D only assumes their existence. A
-//    standalone compile of a FileIO-using program is therefore expected to
-//    require Agent B's runtime at link time -- that is an acceptable,
-//    documented integration-time dependency (not hidden by a substitute).
-//  - An *eligible* chunk pipeline (ChunkParallelPlan::eligible) lowers to the
-//    real bounded-K read/map Branch algorithm against the Branch abstraction
-//    (`branch_publish`/`branch_join`, src/branch_runtime.hpp) -- publish up to
-//    K indexed branches ahead, commit strictly in ascending index order, fold
-//    left-to-right in the parent only, discard every later speculative
-//    outcome once an earlier terminal (short/zero-length) outcome commits.
-//    `branch_publish`'s only implementation in this tree runs each branch
-//    inline (E4/sec. 7.3's normative fallback), so this always executes
-//    sequentially today, but the *generated code* does not know or care --
-//    swapping in Agent C's real worker-thread branch_publish/branch_join
-//    changes nothing here.
-//  - An *ineligible* pipeline (impure map, map message/domain-state touch, or
-//    a FileIO call inside map/combine) never uses the Branch abstraction at
-//    all: wrapping unsafe work in a closure that merely *looks*
-//    branch-publishable would be a latent correctness hazard once Agent C's
-//    branch_publish can really hand work to another thread. It lowers to the
-//    plain sequential reference loop instead, matching the ineligible but
-//    still-valid-Moss requirement.
+// Agent D owns this compiler-side lowering, not a FileIO or Branch runtime.
+// Generated code targets the physical seams of its sibling agents:
+//  - FileIO/Range: Agent B's `FileIO::open(&str, &str)`, `read(i64, i64) ->
+//    Range`, `write(i64, data)`, `sync()`, `sync_dataonly()`, `close()`, and
+//    `Range::len() -> i64`. Agent D defines none of them.
+//  - Branches: Agent C's join-scope ABI -- `branch_scope_new(owner_root_id)`,
+//    `branch_publish(&scope, work: FnOnce() + Send + 'static)` (nonblocking;
+//    the runtime may execute overflow inline), `branch_join(scope)`. Agent D
+//    emits no Branch scheduler of its own.
+//  - A Branch cannot borrow the parent's `&FileIO` (its work must be
+//    'static), so each Branch receives an owned, compiler-internal FileIO
+//    read-borrow token from `moss_fileio_branch_read_borrow(&file)`: read-only,
+//    never a Moss value, never a second FileIO owner, and dead by the join.
+//    This is a reserved A+B+C+D seam Agent B is expected to implement (see
+//    docs/ROOT_RUNTIME_ABI.md "Agent D compiler seams").
+//  - Branch results flow through compiler-owned result slots
+//    (Arc<Mutex<Option<outcome>>>), never through the scheduler, which needs
+//    no knowledge of the mapped type.
+// An *ineligible* pipeline (impure/FileIO-reaching map, capturing map, or a
+// FileIO-reaching combine) never uses the Branch ABI: it lowers to the plain
+// sequential reference loop in the parent Root.
 
 bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
                           const Domain* d, std::set<string>& locals,
@@ -69,7 +65,7 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   }
   if (s.b == "sync" && s.args.size() <= 1) {
     bool dataonly = !s.args.empty() && trim(s.args[0]) == "dataonly";
-    o << pad << receiver_expr << ".sync(" << (dataonly ? "true" : "false") << ");\n";
+    o << pad << receiver_expr << (dataonly ? ".sync_dataonly();\n" : ".sync();\n");
     return true;
   }
   if (s.b == "close" && s.args.empty()) {
@@ -114,7 +110,7 @@ string gen_chunk_pipeline_sequential(
       << expr(plan.fileio_receiver, domain, locals, types) << ".read("
       << offset << ", " << size_var << ");\n";
   out << "            let __moss_chunk_len_" << id << " = " << bytes
-      << ".length();\n";
+      << ".len();\n";
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
   out << "            let " << mapped << " = "
       << render_functional_callable(
@@ -137,74 +133,94 @@ string gen_chunk_pipeline_sequential(
   return out.str();
 }
 
-// Bounded-K read/map Branch lowering for an eligible pipeline. Publishes up
-// to K indexed branches ahead of the commit point, commits strictly in
-// ascending index order, folds left-to-right in the parent only, and
-// discards every later speculative outcome once an earlier terminal
-// (short/zero-length) outcome has been committed -- the exact algorithm in
-// AGENTS.md corrective-pass item 16, independent of whether branch_publish
-// is backed by inline execution (this tree) or a real worker pool (Agent C).
+// Bounded-K read/map Branch lowering for an eligible pipeline (corrective
+// items 1-7). Each window opens one Branch join scope, publishes K Branches
+// (chunk indices next..next+K-1) *before* joining, joins the scope once, then
+// commits the K result slots strictly in index order: a zero-length outcome
+// terminates without map/fold, a short nonzero outcome folds exactly once and
+// terminates, a full outcome folds and continues. Any later slots in the
+// window -- speculative reads/maps past the first terminal -- are discarded.
+// The initializer is evaluated before the first publication; combine runs
+// only here in the parent, left to right. K comes from the checked
+// ChunkParallelPlan, never from the environment.
 string gen_chunk_pipeline_bounded_k(
     const FunctionalPipeline::ChunkParallelPlan& plan, const Domain* domain,
     const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
   size_t id = fileio_chunk_temp_++;
-  const string size_var = "__moss_chunk_size_" + std::to_string(id);
-  const string k_var = "__moss_chunk_k_" + std::to_string(id);
-  const string acc = "__moss_chunk_acc_" + std::to_string(id);
-  const string next_index = "__moss_chunk_next_" + std::to_string(id);
-  const string window = "__moss_chunk_window_" + std::to_string(id);
-  const string index = "__moss_chunk_index_" + std::to_string(id);
-  const string bytes = "__moss_chunk_bytes_" + std::to_string(id);
-  const string len = "__moss_chunk_len_" + std::to_string(id);
-  const string mapped = "__moss_chunk_mapped_" + std::to_string(id);
-  const string outcome = "__moss_chunk_outcome_" + std::to_string(id);
-  const string slot = "__moss_chunk_slot_" + std::to_string(id);
+  const string n = std::to_string(id);
+  const string size_var = "__moss_chunk_size_" + n;
+  const string acc = "__moss_chunk_acc_" + n;
+  const string next = "__moss_chunk_next_" + n;
+  const string scope = "__moss_chunk_scope_" + n;
+  const string slots = "__moss_chunk_slots_" + n;
+  const string lane = "__moss_chunk_lane_" + n;
+  const string index = "__moss_chunk_index_" + n;
+  const string slot = "__moss_chunk_slot_" + n;
+  const string out_slot = "__moss_chunk_out_" + n;
+  const string borrow = "__moss_chunk_borrow_" + n;
+  const string bytes = "__moss_chunk_bytes_" + n;
+  const string len = "__moss_chunk_len_" + n;
+  const string outcome = "__moss_chunk_outcome_" + n;
+  const string label = "'moss_chunk_commit_" + n;
+  const string k = std::to_string(plan.window_k);
+  const string outcome_type = "(Option<" + rust_type(plan.mapped_type) + ">, i64, bool)";
 
   std::ostringstream out;
   out << "{\n";
-  out << "        // Moss backend: FileIO CHUNK PIPELINE -- eligible for Branch\n";
-  out << "        // lowering; bounded-K read/map, ordered commit, parent-only fold\n";
+  out << "        // Moss backend: FileIO CHUNK PIPELINE -- eligible; bounded K=" << k
+      << " read/map Branches per join scope,\n";
+  out << "        // ordered parent commit, parent-only left-to-right fold\n";
   out << "        let " << size_var << ": i64 = "
       << expr(plan.chunk_size_expression, domain, locals, types) << ";\n";
-  out << "        let " << k_var << ": usize = std::env::var(\"MOSS_CHUNK_WINDOW_K\").ok()\n"
-      << "            .and_then(|__v| __v.parse().ok()).filter(|__k: &usize| *__k > 0).unwrap_or(4);\n";
   out << "        let mut " << acc << " = "
       << expr(plan.initial_expression, domain, locals, types) << ";\n";
-  out << "        let mut " << next_index << ": i64 = 0;\n";
-  out << "        let mut " << window << " = std::collections::VecDeque::new();\n";
-  out << "        'moss_chunk_commit: loop {\n";
-  out << "            while " << window << ".len() < " << k_var << " {\n";
-  out << "                let " << index << " = " << next_index << ";\n";
-  out << "                " << next_index << " += 1;\n";
-  out << "                let " << outcome << " = branch_publish(|| {\n";
-  out << "                    let " << bytes << " = "
-      << expr(plan.fileio_receiver, domain, locals, types) << ".read("
-      << index << " * " << size_var << ", " << size_var << ");\n";
-  out << "                    let " << len << " = " << bytes << ".length();\n";
-  out << "                    if " << len << " == 0 { (None, 0i64, true) } else {\n";
-  out << "                        let " << mapped << " = "
+  out << "        let mut " << next << ": i64 = 0;\n";
+  out << "        " << label << ": loop {\n";
+  out << "            // Agent C's branch_scope_new takes an owner Root id used only\n";
+  out << "            // for instrumentation; no current-Root accessor exists yet.\n";
+  out << "            let " << scope << " = branch_scope_new(0);\n";
+  out << "            let mut " << slots << ": std::vec::Vec<std::sync::Arc<std::sync::Mutex<Option<"
+      << outcome_type << ">>>> = std::vec::Vec::with_capacity(" << k << ");\n";
+  out << "            for " << lane << " in 0.." << k << "usize {\n";
+  out << "                let " << index << " = " << next << " + " << lane << " as i64;\n";
+  out << "                let " << slot << " = std::sync::Arc::new(std::sync::Mutex::new(None));\n";
+  out << "                let " << out_slot << " = std::sync::Arc::clone(&" << slot << ");\n";
+  out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
+      << expr(plan.fileio_receiver, domain, locals, types) << "));\n";
+  out << "                branch_publish(&" << scope << ", move || {\n";
+  out << "                    let " << bytes << " = " << borrow << ".read(" << index
+      << " * " << size_var << ", " << size_var << ");\n";
+  out << "                    let " << len << " = " << bytes << ".len();\n";
+  out << "                    let " << outcome << ": " << outcome_type << " = if " << len
+      << " == 0 { (None, 0i64, true) } else {\n";
+  out << "                        (Some("
       << render_functional_callable(
              plan.map_callable, {FunctionalValue{bytes, "range", false}}, domain,
              locals, types)
-      << ";\n";
-  out << "                        (Some(" << mapped << "), " << len << ", "
-      << len << " < " << size_var << ")\n";
-  out << "                    }\n";
+      << "), " << len << ", " << len << " < " << size_var << ")\n";
+  out << "                    };\n";
+  out << "                    *" << out_slot
+      << ".lock().unwrap_or_else(|_| std::process::abort()) = Some(" << outcome << ");\n";
   out << "                });\n";
-  out << "                " << window << ".push_back(branch_join(" << outcome << "));\n";
+  out << "                " << slots << ".push(" << slot << ");\n";
   out << "            }\n";
-  out << "            let " << slot << " = " << window
-      << ".pop_front().expect(\"internal error: empty chunk Branch window\");\n";
-  out << "            if let Some(__moss_chunk_value) = " << slot << ".0 {\n";
-  out << "                " << acc << " = "
+  out << "            branch_join(" << scope << ");\n";
+  out << "            for " << slot << " in " << slots << " {\n";
+  out << "                let " << outcome << " = " << slot
+      << ".lock().unwrap_or_else(|_| std::process::abort()).take()"
+      << ".unwrap_or_else(|| std::process::abort());\n";
+  out << "                if let Some(__moss_chunk_value) = " << outcome << ".0 {\n";
+  out << "                    " << acc << " = "
       << render_functional_callable(
              plan.combine_callable,
              {FunctionalValue{acc, plan.accumulator_type, false},
               FunctionalValue{"__moss_chunk_value", plan.mapped_type, false}},
              domain, locals, types)
       << ";\n";
+  out << "                }\n";
+  out << "                if " << outcome << ".2 { break " << label << "; }\n";
   out << "            }\n";
-  out << "            if " << slot << ".2 { break 'moss_chunk_commit; }\n";
+  out << "            " << next << " += " << k << ";\n";
   out << "        }\n";
   out << "        " << acc << "\n";
   out << "    }";

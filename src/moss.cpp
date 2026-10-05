@@ -34,7 +34,6 @@
 #include "diagnostics.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
-#include "branch_runtime.hpp"
 #include "synchronization_lowering.hpp"
 
 using std::string;
@@ -3668,7 +3667,7 @@ class Checker {
           return string("executor");
         if (concrete_base == "fileio") {
           if (method_name == "read" && method_args.size() == 2) return string("range");
-          if (method_name == "chunks" && method_args.size() == 1) return string("vector[range]");
+          if (method_name == "chunks" && method_args.size() == 1) return string("seq[range]");
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
@@ -4325,6 +4324,36 @@ class Checker {
                 env[statement.message_result] = *handler->reply_type;
             }
           }
+          // Phase 20: executor.invoke(domain.Handler(args...)) is a statically
+          // known handler call site exactly like `message`, so it participates
+          // in the same untyped handler-parameter inference. Phase 20 adds no
+          // explicit-type requirement for invoked handlers.
+          if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+              executor_typed(current_env, statement.a) && statement.args.size() == 1) {
+            string target, handler_name;
+            vector<string> handler_args;
+            auto receiver = parse_member_call(statement.args.front(), target, handler_name, handler_args)
+                ? current_env.find(target) : current_env.end();
+            if (receiver != current_env.end() && domains_.count(receiver->second)) {
+              if (auto* handler = find_handler(*domains_.at(receiver->second), handler_name)) {
+                for (size_t index = 0;
+                     index < handler_args.size() && index < handler->params.size(); ++index) {
+                  auto actual = inferred_expr_type(handler_args[index], current_env);
+                  if (!actual) continue;
+                  auto& parameter = handler->params[index];
+                  bool inferred_container =
+                      (parameter.type == "vector" && starts_with(*actual, "vector[")) ||
+                      (parameter.type == "queue" && starts_with(*actual, "queue[")) ||
+                      (parameter.type == "map" && starts_with(*actual, "map["));
+                  bool untyped_parameter = parameter.type.empty();
+                  if (untyped_parameter || inferred_container) {
+                    parameter.type = *actual;
+                    parameter.inferred = parameter.inferred || untyped_parameter;
+                  }
+                }
+              }
+            }
+          }
           if (statement.kind == Stmt::Kind::Call && statement.b.empty()) {
             auto function = functions_.find(statement.a);
             if (function != functions_.end()) {
@@ -4510,7 +4539,23 @@ class Checker {
         }
       }
 
-      if (statement.kind == Stmt::Kind::Message) {
+      // Phase 20: executor.invoke(domain.Handler(args...)) is a statically
+      // known handler call site; view it as the equivalent message call so
+      // per-instance handler specialization sees it exactly like `message`.
+      Stmt invoke_view;
+      bool invoke_site = false;
+      if (statement.kind == Stmt::Kind::Call && statement.b == "invoke" &&
+          statement.args.size() == 1 && executor_typed(main_env, statement.a) &&
+          parse_member_call(statement.args.front(), invoke_view.a, invoke_view.b,
+                            invoke_view.args)) {
+        invoke_view.kind = Stmt::Kind::Message;
+        invoke_view.line = statement.line;
+        invoke_view.source_file = statement.source_file;
+        invoke_site = true;
+      }
+      if (statement.kind == Stmt::Kind::Message || invoke_site) {
+        const Stmt& statement_view = invoke_site ? invoke_view : statement;
+        const Stmt& statement = statement_view;
         const string& receiver = statement.a;
         auto binding = bindings.find(receiver);
         if (binding != bindings.end()) {
@@ -6979,6 +7024,7 @@ class Checker {
         left.domain_write == right.domain_write &&
         left.message == right.message &&
         left.external_io == right.external_io &&
+        left.fileio == right.fileio &&
         left.may_fail == right.may_fail &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
@@ -7127,6 +7173,16 @@ class Checker {
         return effects;
       }
     }
+    {
+      vector<string> open_arguments;
+      if (parse_fileio_open(value, open_arguments)) {
+        for (const auto& argument : open_arguments)
+          effects.merge(observable_expression_effects(
+              argument, env, domain_fields, implicit_object, parameters));
+        effects.fileio = true;
+        return effects;
+      }
+    }
     if (parse_member_call(value, receiver, method, arguments)) {
       effects.merge(observable_expression_effects(
           receiver, env, domain_fields, implicit_object, parameters));
@@ -7145,14 +7201,14 @@ class Checker {
           return effects;
         }
         // Phase 20: a root-local FileIO operation touches no domain state by
-        // itself (its arguments were already merged above); only the
-        // Range-length accessor is recognized for Range (see moss.cpp's
-        // Phase 20 capability adapter). external_io intentionally stays
-        // false here: Agent A/B's eventual FileIO effect metadata, not a
-        // generic "did this touch any FileIO" flag, should set it (see
-        // file_chunk_lowering.inc's eligibility comment).
-        if (canonical_type_name(*receiver_type) == "fileio" ||
-            canonical_type_name(*receiver_type) == "range")
+        // itself (its arguments were already merged above) but does set the
+        // explicit `fileio` fact that chunk-pipeline eligibility consumes.
+        // The pure Range length accessor sets nothing.
+        if (canonical_type_name(*receiver_type) == "fileio") {
+          effects.fileio = true;
+          return effects;
+        }
+        if (canonical_type_name(*receiver_type) == "range")
           return effects;
         if (auto map_types = map_key_value_types(*receiver_type)) {
           if ((method == "get" && arguments.size() == 2) ||
@@ -11698,6 +11754,19 @@ static void dump_functional_ir(std::ostream& out, const Program& program,
     }
     for (const auto& note : pipeline.optimization_notes)
       out << "  note: " << note << "\n";
+    if (pipeline.chunk_plan.is_chunk_pipeline) {
+      const auto& plan = pipeline.chunk_plan;
+      out << "  chunk-plan: fileio=" << plan.fileio_receiver
+          << " size=" << plan.chunk_size_expression
+          << " map=" << plan.map_callable
+          << " initial=" << plan.initial_expression
+          << " combine=" << plan.combine_callable
+          << " accumulator=" << plan.accumulator_type
+          << " mapped=" << plan.mapped_type
+          << " window_k=" << plan.window_k
+          << " eligible=" << (plan.eligible ? "yes" : "no")
+          << " reason=" << plan.eligibility_reason << "\n";
+    }
     out << "  decision: " << pipeline.decision << "\n\n";
   }
   for (const auto& group : program.functional_traversal_groups) {
@@ -11839,7 +11908,6 @@ class Generator {
     o << "fn __moss_require_send<T: Send>() {}\n\n";
 
     o << handler_runtime_rust();
-    o << branch_runtime_rust();
     for (const auto& e : p_.enums) gen_enum(o, e);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
@@ -12568,7 +12636,7 @@ class Generator {
           return string("executor");
         if (concrete_receiver == "fileio") {
           if (method_name == "read" && method_args.size() == 2) return string("range");
-          if (method_name == "chunks" && method_args.size() == 1) return string("vector[range]");
+          if (method_name == "chunks" && method_args.size() == 1) return string("seq[range]");
           if ((method_name == "write" && method_args.size() == 2) ||
               (method_name == "sync" && method_args.size() <= 1) ||
               (method_name == "close" && method_args.empty()))
@@ -13885,6 +13953,10 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        // Phase 20: Moss `range.length()` lowers to Agent B's runtime
+        // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.
+        if (concrete == "range" && member_name == "length" && member_arguments.empty())
+          return "(" + receiver_expression + ").len()";
         if (concrete == "string") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "length" && member_arguments.empty())

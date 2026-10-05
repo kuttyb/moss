@@ -1,40 +1,23 @@
 #!/usr/bin/env python3
-"""Phase 20 Agent D corrective pass: executor.invoke RootSubmissionPlan
-lifecycle/argument legality, and FileIO/Range chunk-pipeline ChunkParallelPlan
-(bounded-K Branch lowering with inline fallback, and the plain sequential
-fallback for an ineligible pipeline).
+"""Phase 20 Agent D: compiler concurrency seams.
 
-Architecture under test (see src/executor_invoke_lowering.inc,
-src/executor_invoke_codegen.inc, src/file_chunk_lowering.inc,
-src/file_chunk_codegen.inc, src/branch_runtime.hpp, moss.cpp's Phase 20
-capability adapter):
+Covers executor.invoke (ExecutorStartPlan / RootSubmissionPlan legality and
+lowering against Agent C's root-admission ABI), FileIO/Range typing aligned
+with Agent B's runtime ABI, and FileIO chunk pipelines (structured
+ChunkParallelPlan; bounded-K read/map Branches published into one Agent-C
+join scope per window, compiler-owned result slots, owned FileIO read-borrow
+tokens, ordered parent commit; sequential lowering for ineligible stages).
 
-  - Agent D owns no production FileIO or Executor/Branch-worker-pool
-    runtime. `executor.invoke` never lowers to a synchronous handler call;
-    it lowers to calls against three not-yet-defined Agent-C names
-    (moss_root_start/moss_root_submit/moss_root_join). A standalone native
-    build of a program using executor.invoke or FileIO is therefore
-    *expected* to fail to link without Agent C/B's crates -- these tests
-    supply tests/tooling/fixtures/*.rs TEST-ONLY shims (never emitted by the
-    compiler, never documented as Phase 20 runtime behavior) so Agent D's
-    own compiler output can be exercised end to end.
-  - `branch_publish`/`branch_join` (src/branch_runtime.hpp) *are* real,
-    normative Agent-D-owned production code: the Branch abstraction's
-    inline-execution fallback is itself Phase 20 semantics (sec. 7.3, E4),
-    not a substitute for Agent C's eventual worker-pool implementation.
-  - Fast Debug does not implement a competing Executor/FileIO runtime
-    either: `executor.invoke` and `FileIO.open` both throw a clear "pending
-    Agent C/B integration" RuntimeError in Fast Debug. Chunk-pipeline
-    algorithm correctness (ordering, termination, K-independence) is
-    exercised through native codegen + the test-only Rust shims instead.
+Agent D owns no production FileIO, Executor, or Branch runtime. Generated
+native code names Agent B/C's physical ABI and therefore needs their crates
+to link. These tests append TEST-ONLY shims from tests/tooling/fixtures/
+(never emitted by the compiler) whose signatures mirror Agent B/C closely
+enough to surface integration mismatches -- in particular, Branch and Root
+work must satisfy `FnOnce() + Send + 'static`.
 
-Not covered here (deliberately; see the .inc files' header comments for
-the scope rationale): domain-field FileIO, Range/RangeBatch borrow scoping,
-batch reads, a real Agent-C worker pool, and "map/combine makes a FileIO
-call" (FileIO cannot be passed into an ordinary helper as anything other
-than a ordinary borrowed parameter, so a chunk pipeline's map/combine
-callables -- resolved as plain functions of the element/accumulator types --
-cannot reach one under this scope).
+Fast Debug models executor.invoke as a deterministic sequential schedule of
+deferred roots (compared against native output below). FileIO execution in
+Fast Debug awaits Agent A/B integration; Fast Debug raises a clear error.
 """
 import os
 from pathlib import Path
@@ -47,14 +30,27 @@ compiler = Path(sys.argv[1]).resolve()
 out = Path(sys.argv[2] if len(sys.argv) > 2 else repo / 'build/tests').resolve()
 out.mkdir(parents=True, exist_ok=True)
 
-ROOT_QUEUE_SHIM = repo / 'tests/tooling/fixtures/phase20_root_queue_shim.rs'
-FILEIO_SHIM = repo / 'tests/tooling/fixtures/phase20_fileio_range_shim.rs'
+FIXTURES = repo / 'tests/tooling/fixtures'
+EXECUTOR_SHIM = FIXTURES / 'phase20_executor_runtime_shim.rs'
+BRANCH_SHIM = FIXTURES / 'phase20_branch_runtime_shim.rs'
+FILEIO_SHIM = FIXTURES / 'phase20_fileio_range_shim.rs'
 
 
-def run(args, *, expected=0):
-    p = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=90)
+def run(args, *, expected=0, env=None):
+    p = subprocess.run(list(map(str, args)), text=True, capture_output=True,
+                       timeout=120, env=env)
     assert p.returncode == expected, (args, p.returncode, p.stdout, p.stderr)
     return p
+
+
+def rel(path):
+    return os.path.relpath(path, repo)
+
+
+def write_source(name, text):
+    path = out / (name + '.moss')
+    path.write_text(text)
+    return rel(path)
 
 
 def expect_rejected(source, needle, *, code=None):
@@ -64,38 +60,47 @@ def expect_rejected(source, needle, *, code=None):
         assert code in p.stderr, (source, p.stderr)
 
 
-def expect_interp_pending(source, needle):
-    p = run([compiler, 'run', '--interp', repo / source], expected=1)
-    assert needle in p.stderr, (source, p.stderr)
-
-
 def native_build(name, source, *, shims=()):
-    """Compiles `source` to Rust, concatenates it with the given test-only
-    shim(s) (generated file FIRST: Rust crate-level `#![...]` attributes
-    must lead the file), and links a runnable binary. Returns the combined
-    .rs path and the binary path."""
+    """Compile `source`, append test-only shims (generated file first: its
+    crate-level #![...] attributes must lead), link. Returns (rust, binary)."""
     rust = out / (name + '.rs')
     run([compiler, repo / source, '-o', rust])
-    text = rust.read_text()
-    assert '#![allow(dead_code)]' in text, (source, 'missing expected crate preamble')
     combined = out / (name + '_combined.rs')
-    combined.write_text(text + ''.join(Path(shim).read_text() for shim in shims))
+    combined.write_text(rust.read_text() + ''.join(Path(s).read_text() for s in shims))
     binary = out / (name + '_bin')
     run(['rustc', '-D', 'warnings', combined, '-o', binary])
     return rust, binary
 
 
-def run_binary(binary, *, env=None):
-    full_env = dict(os.environ)
-    if env:
-        full_env.update(env)
-    p = subprocess.run([str(binary)], text=True, capture_output=True, timeout=30, env=full_env)
-    assert p.returncode == 0, (binary, p.returncode, p.stdout, p.stderr)
-    return p.stdout
+def run_binary(binary):
+    return run([binary])
+
+
+def fast_debug(source, *, expected=0):
+    return run([compiler, 'run', '--interp', repo / source], expected=expected)
+
+
+def functional_ir(source):
+    return run([compiler, '--dump-functional-ir', repo / source, '-o',
+                out / 'phase20_ir_scratch.rs']).stdout
 
 
 # ---------------------------------------------------------------------------
-# executor.invoke / Executor lifecycle: required negative legality matrix.
+# Generated code must not define any sibling agent's production runtime.
+# ---------------------------------------------------------------------------
+def code_only(rust_text):
+    return '\n'.join(line for line in rust_text.splitlines() if not line.lstrip().startswith('//'))
+
+
+def assert_no_d_runtime(rust_text, label):
+    for forbidden in (r'\bfn branch_publish\b', r'\bfn branch_join\b', r'\bfn branch_scope_new\b',
+                      r'\bstruct MossExecutor\b', r'\bstruct FileIO\b', r'\bstruct Range\b',
+                      r'\bfn moss_fileio_branch_read_borrow\b', r'MOSS_CHUNK_WINDOW_K'):
+        assert not re.search(forbidden, rust_text), (label, forbidden)
+
+
+# ---------------------------------------------------------------------------
+# executor.invoke / Executor lifecycle: negative legality matrix.
 # ---------------------------------------------------------------------------
 expect_rejected('tests/negative/phase20_executor_invoke_outside_main.moss',
                 'may only be configured and started directly in', code='EXECUTOR_CONSTRUCT_OUTSIDE_MAIN')
@@ -116,147 +121,258 @@ expect_rejected('tests/negative/phase20_executor_domain_boundary.moss',
 expect_rejected('tests/negative/phase20_executor_invoke_capability_argument.moss',
                 'cannot be passed as an executor.invoke argument',
                 code='EXECUTOR_INVOKE_CAPABILITY_ARGUMENT')
-# Corrective-pass item 12: an early `return` with an Executor still active
-# is itself rejected, not merely "falling off the end" of the function.
 expect_rejected('tests/negative/phase20_executor_return_before_join.moss',
                 "'return' leaves Executor", code='EXECUTOR_JOIN_MISSING')
-# Corrective-pass item 13: joining inside both branches of an `if` must be
-# recognized as consuming the Executor on every path, so a later invoke is
-# "already joined", not merely "not active".
 expect_rejected('tests/negative/phase20_executor_branch_join_use_after.moss',
                 'already joined and consumed', code='EXECUTOR_USE_AFTER_JOIN')
-# Corrective-pass item 8: argument type compatibility is checked like an
-# ordinary handler call, not left for rustc to discover.
 expect_rejected('tests/negative/phase20_executor_invoke_argument_type.moss',
                 "has type 'string', expected 'int'",
                 code='EXECUTOR_INVOKE_ARGUMENT_TYPE_MISMATCH')
-# An untyped handler parameter reachable only through executor.invoke (never
-# `message`) never gets an inferred type at all -- still a real rejection,
-# just via the general TYPE_INFERENCE_FAILED diagnostic rather than a
-# Phase-20-specific one.
-expect_rejected('tests/negative/phase20_executor_invoke_untyped_parameter.moss',
-                "cannot infer type for parameter 'amount'", code='TYPE_INFERENCE_FAILED')
+
+CONFIG_PROGRAM = '''domain Worker:
+  fn Process(amount: Int):
+    pass
+
+fn main():
+  worker = Worker()
+  executor = {chain}
+  executor.join()
+'''
+for chain, needle, code in (
+        ('Executor().threads("eight").start()', 'Executor.threads requires an Int', 'EXECUTOR_CONFIG_TYPE'),
+        ('Executor().start(4)', 'Executor.start() takes no arguments', 'EXECUTOR_START_ARITY'),
+        ('Executor().threads(0).start()', 'must be positive', 'EXECUTOR_CONFIG_RANGE'),
+        ('Executor().threads(8).max_threads(4).start()', 'cannot be less than threads', 'EXECUTOR_CONFIG_RANGE'),
+        ('Executor().affinity(3).start()', 'Vector[Int] of core ids', 'EXECUTOR_CONFIG_TYPE'),
+        ('Executor().priority("high").start()', 'Executor.priority requires an Int', 'EXECUTOR_CONFIG_TYPE'),
+        ('Executor().workers(2).start()', "unknown Executor configuration method 'workers'",
+         'EXECUTOR_UNKNOWN_CONFIG_METHOD')):
+    expect_rejected(write_source('phase20_executor_config_negative', CONFIG_PROGRAM.format(chain=chain)),
+                    needle, code=code)
 
 # ---------------------------------------------------------------------------
-# executor.invoke: required positive cases, native (+ test-only root-queue
-# shim) and Fast Debug (expected clean "pending Agent C" rejection).
+# executor.invoke positive: native (Agent-C-shaped test shim) vs Fast Debug.
 # ---------------------------------------------------------------------------
-_, basic_bin = native_build('phase20_executor_basic', 'tests/phase20_executor_basic.moss',
-                            shims=[ROOT_QUEUE_SHIM])
-assert run_binary(basic_bin) == '12\n'
-expect_interp_pending('tests/phase20_executor_basic.moss',
-                      "executor.invoke requires Agent C's")
+def executor_parity(name, source, expected_stdout):
+    rust, binary = native_build(name, source, shims=[EXECUTOR_SHIM])
+    text = rust.read_text()
+    assert_no_d_runtime(text, name)
+    assert 'MossExecutor::new()' in text and '.enqueue_root(MossRootDescriptor::with_target(' in text
+    assert re.search(r'\.join\(\);', text)
+    # Never a synchronous production fallback: the handler is only called
+    # inside the submitted root thunk.
+    native = run_binary(binary)
+    interpreted = fast_debug(source)
+    assert native.stdout == interpreted.stdout == expected_stdout, (name, native.stdout, interpreted.stdout)
+    return text, native
 
-_, multi_bin = native_build('phase20_executor_multi_root', 'tests/phase20_executor_multi_root.moss',
-                            shims=[ROOT_QUEUE_SHIM])
-assert run_binary(multi_bin) == '10\n'
+
+executor_parity('phase20_executor_basic', 'tests/phase20_executor_basic.moss', '12\n')
+executor_parity('phase20_executor_multi_root', 'tests/phase20_executor_multi_root.moss', '10\n')
+# executor.invoke is submission, not a synchronous call: under these
+# deterministic schedules the root runs at join, after "submitted".
+executor_parity('phase20_executor_deferred', 'tests/phase20_executor_deferred.moss',
+                'submitted\nroot ran\n5\n')
+# An untyped handler parameter reachable only through executor.invoke is
+# inferred exactly like a message call site (no explicit-type requirement).
+executor_parity('phase20_executor_untyped_parameter', 'tests/phase20_executor_untyped_parameter.moss', '10\n')
+
+config_source = write_source('phase20_executor_config', '''fn pick(n: Int) -> Int:
+  echo n
+  return n
+
+domain Worker:
+  total = 0
+
+  fn Note(label: String):
+    total = total + label.length()
+
+  fn Read() -> Int:
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(pick(2)).max_threads(pick(8)).queue_capacity(pick(16)).affinity([0, 1]).priority(pick(3)).start()
+  label = "abcd"
+  executor.invoke(worker.Note(label))
+  executor.join()
+  echo message worker.Read()
+''')
+text, native = executor_parity('phase20_executor_config', config_source, '2\n8\n16\n3\n4\n')
+# Evaluated exactly once each, in source order, and passed to start().
+assert 'moss-executor start threads=Some(2) max_threads=Some(8) queue_capacity=Some(16) '\
+       'affinity=Some([0, 1]) priority=Some(3)' in native.stderr, native.stderr
+assert native.stderr.index('moss-executor start') < native.stderr.index('moss-executor enqueue') \
+    < native.stderr.index('moss-executor join'), native.stderr
+assert text.count('__moss_executor_cfg_') >= 10  # 5 temps, each bound then used once
 
 # ---------------------------------------------------------------------------
-# FileIO: root-local open/read/write/sync/close, and the ordinary-helper
-# borrow explicitly required by corrective-pass item 4.
+# FileIO: Agent-B-aligned statement lowering and ordinary helper borrowing.
 # ---------------------------------------------------------------------------
 read_data = out / 'phase20_fileio_read.data'
 read_data.write_bytes(b'hello world')
 write_target = out / 'phase20_fileio_write.data'
 if write_target.exists():
     write_target.unlink()
-fileio_source = out / 'phase20_fileio_basic.moss'
-fileio_source.write_text('''fn main():
+fileio_source = write_source('phase20_fileio_basic', '''fn main():
   file = FileIO.open("%s", ro)
   data = file.read(0, 5)
-  file.close()
   echo data.length()
+  file.close()
 
   out = FileIO.open("%s", create)
   out.write(0, "written bytes")
   out.sync()
+  out.sync(dataonly)
   out.close()
 ''' % (read_data, write_target))
-_, fileio_bin = native_build('phase20_fileio_basic', os.path.relpath(fileio_source, repo),
-                             shims=[FILEIO_SHIM])
-assert run_binary(fileio_bin) == '5\n'
+rust, binary = native_build('phase20_fileio_basic', fileio_source, shims=[FILEIO_SHIM])
+text = code_only(rust.read_text())
+assert_no_d_runtime(text, 'phase20_fileio_basic')
+assert '.sync();' in text and '.sync_dataonly();' in text and 'sync(true' not in text and 'sync(false' not in text
+assert '.len()' in text and '.length()' not in text
+assert run_binary(binary).stdout == '5\n'
 assert write_target.read_text() == 'written bytes', write_target.read_text()
-expect_interp_pending(os.path.relpath(fileio_source, repo),
-                      "FileIO requires Agent B's")
+p = fast_debug(fileio_source, expected=1)
+assert "FileIO requires Agent B's" in p.stderr, p.stderr
 
-# Ordinary synchronous helper borrowing a FileIO parameter must be legal
-# (corrective-pass item 4) -- this was Agent D's own earlier bug.
-_, helper_bin = native_build('phase20_fileio_helper_parameter',
-                             'tests/phase20_fileio_helper_parameter.moss',
-                             shims=[FILEIO_SHIM])
-assert run_binary(helper_bin) == '64\n'
+_, binary = native_build('phase20_fileio_helper_parameter', 'tests/phase20_fileio_helper_parameter.moss',
+                         shims=[FILEIO_SHIM])
+assert run_binary(binary).stdout == '64\n'
 
 # ---------------------------------------------------------------------------
-# FileIO chunk pipelines: structured ChunkParallelPlan, bounded-K Branch
-# lowering for an eligible pipeline, plain sequential lowering for an
-# ineligible one, and K-independence of the correct result.
-#
-# Chunk element type is `Range` (not `String`); the only Moss-level Range
-# accessor Agent D recognizes is `.length()` (see file_chunk_lowering.inc).
-# Ordering is verified by positional-encoding the committed sequence of
-# chunk lengths into one base-10 integer (acc*10+len): a reordering or
-# double-commit bug changes the digit sequence even though same-size full
-# chunks are individually indistinguishable by length alone.
+# FileIO chunk pipelines.
 # ---------------------------------------------------------------------------
-CHUNK_MOSS = '''fn chunk_length(chunk: Range) -> Int:
+CHUNK_SOURCE = '''fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
 fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
+fn start_acc() -> Int:
+  echo "initializer"
+  return 0
+
 fn main():
   file = FileIO.open("{path}", ro)
-  total = file.chunks({size}) |> map(chunk_length) |> reduce(0, positional)
+  total = file.chunks({size}) |> map(chunk_length) |> reduce(start_acc(), positional)
   file.close()
   echo total
 '''
 
 
-def chunk_case(name, content, size, expected, *, check_branch_publish=True):
-    data_path = out / (name + '.data')
-    data_path.write_bytes(content)
-    source_path = out / (name + '.moss')
-    source_path.write_text(CHUNK_MOSS.format(path=data_path, size=size))
-    rust, binary = native_build(name, os.path.relpath(source_path, repo), shims=[FILEIO_SHIM])
-    actual = run_binary(binary)
-    assert actual == expected, (name, actual, expected)
+def split_trace(stdout):
+    lines = stdout.splitlines()
+    trace = [line for line in lines if line.startswith('moss-branch ')]
+    program = [line for line in lines if not line.startswith('moss-branch ')]
+    return lines, trace, program
+
+
+def chunk_case(name, content, size, expected):
+    data = out / (name + '.data')
+    data.write_bytes(content)
+    source = write_source(name, CHUNK_SOURCE.format(path=data, size=size))
+    ir = functional_ir(source)
+    assert 'Source seq[range]' in ir and 'vector[range]' not in ir, ir
+    assert 'window_k=4 eligible=yes' in ir, ir
+    rust, binary = native_build(name, source, shims=[BRANCH_SHIM, FILEIO_SHIM])
     text = rust.read_text()
-    # The preamble *definition* is `fn branch_publish<T>(...)` (generic
-    # params before the parenthesis), so this only matches call sites.
-    call_sites = len(re.findall(r'\bbranch_publish\(', text))
-    if check_branch_publish:
-        assert call_sites >= 1, (name, 'expected the eligible bounded-K Branch lowering')
-    else:
-        assert call_sites == 0, (name, 'ineligible pipeline must not use branch_publish')
-    return binary
+    assert_no_d_runtime(text, name)
+    assert 'branch_scope_new(' in text and 'moss_fileio_branch_read_borrow(&' in text
+    lines, trace, program = split_trace(run_binary(binary).stdout)
+    assert program == ['initializer', expected], (name, program)
+    # The initializer is evaluated before any Branch is published.
+    assert lines[0] == 'initializer', (name, lines)
+    # Every window publishes exactly K=4 Branches before its single join --
+    # never publish/join/publish/join.
+    assert trace and len(trace) % 5 == 0, (name, trace)
+    for window in range(0, len(trace), 5):
+        assert trace[window:window + 5] == ['moss-branch publish'] * 4 + ['moss-branch join'], (name, trace)
+    return trace
 
 
-chunk_case('phase20_chunk_empty', b'', 4, '0\n')
-chunk_case('phase20_chunk_smaller_than_one', b'ab', 4, '2\n')
-chunk_case('phase20_chunk_exact_one_full', b'abcd', 4, '4\n')
-chunk_case('phase20_chunk_exact_multiple', b'123456', 3, '33\n')
-chunk_case('phase20_chunk_short_final', b'1234567', 3, '331\n')
-many_binary = chunk_case('phase20_chunk_many', b'0123456789abcdef', 2, '22222222\n')
+# Zero-length EOF at index 0: contributes nothing; indices 1..3 speculative.
+chunk_case('phase20_chunk_empty', b'', 4, '0')
+# One short nonempty chunk: folded once; later speculative slots discarded.
+chunk_case('phase20_chunk_smaller_than_one', b'ab', 4, '2')
+chunk_case('phase20_chunk_exact_one_full', b'abcd', 4, '4')
+chunk_case('phase20_chunk_exact_multiple', b'123456', 3, '33')
+chunk_case('phase20_chunk_short_final', b'1234567', 3, '331')
+# Spans two K=4 windows; zero-length EOF at index 8 terminates the second.
+trace = chunk_case('phase20_chunk_many', b'0123456789abcdef', 2, '22222222')
+assert len(trace) == 15, trace
+# Short final chunk inside the second window, with an already-produced
+# speculative outcome after it (index 7) that must be discarded.
+trace = chunk_case('phase20_chunk_short_mid_window', b'0123456789abc', 2, '2222221')
+assert len(trace) == 10, trace
 
-# K is just a lowering-window bound, never an observable correctness
-# property (corrective-pass item 23): the same eligible binary must produce
-# the identical correct result for K=1, a small K, and a large K.
-for k in (1, 2, 4, 1000):
-    assert run_binary(many_binary, env={'MOSS_CHUNK_WINDOW_K': str(k)}) == '22222222\n', k
 
-# A map stage that captures domain state (closing over `bonus` inside a
-# handler) is ineligible for the Branch lowering and must fall back to the
-# plain sequential loop -- while still producing the correct result.
-domain_data = out / 'phase20_chunk_domain.data'
-domain_data.write_bytes(b'123456')
-domain_source = out / 'phase20_chunk_domain.moss'
-domain_source.write_text('''fn positional(acc: Int, len: Int) -> Int:
+def ineligible_case(name, source, expected, reason):
+    ir = functional_ir(source)
+    assert 'eligible=no reason=' + reason in ir, (name, ir)
+    rust, binary = native_build(name, source, shims=[FILEIO_SHIM])
+    text = rust.read_text()
+    assert not re.search(r'\bbranch_publish\(', text), name
+    assert run_binary(binary).stdout == expected, name
+
+
+side = out / 'phase20_side.data'
+side.write_bytes(b'xy')
+chunk_data = out / 'phase20_chunk_ineligible.data'
+chunk_data.write_bytes(b'0123456789abc')
+
+# FileIO reached (transitively, through a helper) from map, and from combine:
+# both remain valid Moss and lower sequentially.
+ineligible_case('phase20_chunk_fileio_map', write_source('phase20_chunk_fileio_map', '''fn chunk_len_io(chunk: Range) -> Int:
+  side = FileIO.open("%s", ro)
+  extra = side.read(0, 1).length()
+  side.close()
+  return chunk.length() + extra * 0
+
+fn positional(acc: Int, len: Int) -> Int:
+  return acc * 10 + len
+
+fn main():
+  file = FileIO.open("%s", ro)
+  total = file.chunks(2) |> map(chunk_len_io) |> reduce(0, positional)
+  file.close()
+  echo total
+''' % (side, chunk_data)), '2222221\n', 'map stage reaches a FileIO operation')
+
+ineligible_case('phase20_chunk_fileio_combine', write_source('phase20_chunk_fileio_combine', '''fn chunk_length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn positional_io(acc: Int, len: Int) -> Int:
+  side = FileIO.open("%s", ro)
+  extra = side.read(0, 1).length()
+  side.close()
+  return acc * 10 + len + extra * 0
+
+fn main():
+  file = FileIO.open("%s", ro)
+  total = file.chunks(2) |> map(chunk_length) |> reduce(0, positional_io)
+  file.close()
+  echo total
+''' % (side, chunk_data)), '2222221\n', 'combine stage reaches a FileIO operation')
+
+# Inside a handler: a capture-free placeholder map is eligible (and its
+# Branch closure satisfies Send + 'static); a map closing over domain state
+# is ineligible and lowers sequentially, still producing the right result.
+handler_data = out / 'phase20_chunk_handler.data'
+handler_data.write_bytes(b'123456')
+handler_source = write_source('phase20_chunk_handler', '''fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
 domain Counter:
   bonus = 1
 
-  fn Summarize(path: String) -> Int:
+  fn Plain(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(3) |> map(_.length()) |> reduce(0, positional)
+    file.close()
+    reply total
+
+  fn Bonus(path: String) -> Int:
     file = FileIO.open(path, ro)
     total = file.chunks(3) |> map(_.length() + bonus) |> reduce(0, positional)
     file.close()
@@ -264,41 +380,36 @@ domain Counter:
 
 fn main():
   counter = Counter()
-  result = message counter.Summarize("%s")
-  echo result
-''' % domain_data)
-rust, binary = native_build('phase20_chunk_domain', os.path.relpath(domain_source, repo),
-                            shims=[FILEIO_SHIM])
-assert run_binary(binary) == '44\n'
-assert not re.search(r'\bbranch_publish\(', rust.read_text()), \
-    'ineligible (domain-capturing) pipeline must not use the Branch abstraction'
+  echo message counter.Plain("%s")
+  echo message counter.Bonus("%s")
+''' % (handler_data, handler_data))
+ir = functional_ir(handler_source)
+assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not pure: observable domain READ' in ir, ir
+rust, binary = native_build('phase20_chunk_handler', handler_source, shims=[BRANCH_SHIM, FILEIO_SHIM])
+_, trace, program = split_trace(run_binary(binary).stdout)
+assert program == ['33', '44'], program
+assert trace == ['moss-branch publish'] * 4 + ['moss-branch join'], trace
 
-# The canonical handler-scoped word-count shape from
-# docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md (root-local FileIO opened and
-# closed inside a handler, chunk pipeline with a pure map).
-wc_data = out / 'phase20_chunk_handler.data'
-wc_data.write_bytes(b'123456')
-wc_source = out / 'phase20_chunk_handler.moss'
-wc_source.write_text('''fn chunk_length(chunk: Range) -> Int:
-  return chunk.length()
+# The chunk source is a scoped seq[Range], not a materializable collection.
+expect_rejected(write_source('phase20_chunks_materialize', '''fn main():
+  file = FileIO.open("%s", ro)
+  c = file.chunks(4)
+  file.close()
+''' % chunk_data), 'not a materializable collection', code='FILEIO_CHUNKS_NOT_MATERIALIZABLE')
+expect_rejected(write_source('phase20_chunks_shape', '''fn main():
+  file = FileIO.open("%s", ro)
+  n = file.chunks(4) |> count
+  file.close()
+''' % chunk_data), "must be exactly 'file.chunks(size) |> map(f) |> reduce(initial, combine)'",
+    code='FILEIO_CHUNK_PIPELINE_SHAPE')
 
-fn positional(acc: Int, len: Int) -> Int:
-  return acc * 10 + len
-
-domain WordCount:
-  fn Count(path: String) -> Int:
-    file = FileIO.open(path, ro)
-    total = file.chunks(3) |> map(chunk_length) |> reduce(0, positional)
-    file.close()
-    reply total
-
-fn main():
-  counter = WordCount()
-  result = message counter.Count("%s")
-  echo result
-''' % wc_data)
-_, handler_binary = native_build('phase20_chunk_handler', os.path.relpath(wc_source, repo),
-                                 shims=[FILEIO_SHIM])
-assert run_binary(handler_binary) == '33\n'
+# Production compiler sources define no Branch scheduler or FileIO runtime.
+for path in (repo / 'src').iterdir():
+    if path.suffix in ('.hpp', '.inc', '.cpp'):
+        source_text = path.read_text()
+        assert 'fn branch_publish' not in source_text, path
+        assert 'fn moss_fileio_branch_read_borrow' not in source_text, path
+assert not (repo / 'src/branch_runtime.hpp').exists()
+assert not (repo / 'src/fileio_runtime.hpp').exists()
 
 print('phase20 executor/fileio checks passed')
