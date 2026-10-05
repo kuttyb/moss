@@ -127,17 +127,57 @@ implementation area from the phase spec, before other areas call them.
 
 ## Process-wide FileIO runtime linkage & platform contract
 
-Phase 20 FileIO native runtime targets Linux (`x86_64` / `aarch64` native). Other platforms explicitly fail compilation via `compile_error!`.
+### Platform Support
+The Phase 20 FileIO native runtime strictly supports **Linux x86_64 and aarch64**:
+```rust
+#[cfg(not(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64"
+    )
+)))]
+compile_error!("Moss Phase 20 FileIO runtime is only supported on Linux x86_64 and aarch64.");
+```
+Other platforms and architectures fail compilation with a descriptive `compile_error!`. Note: this is an initial runtime implementation limitation, not a Moss language-semantic restriction.
 
+### Process-Wide Linkage Architecture
 Across all linked crates in a process (compiled provider `.rlib`s and the root executable):
-- Provider `.rlib` crates declare external linkage symbols under `moss_fileio::sys`:
-  * `extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool`
-  * `extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64)`
-  * `extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
-  * `extern "C" fn moss_fileio_registry_reset()`
-  * `extern "Rust" fn moss_solo_enter(reason: &str)`
-  * `extern "Rust" fn moss_solo_leave(reason: &str)`
-- The root executable crate emits `moss_root_runtime` containing the single process-wide `#[no_mangle]` symbol definitions and their leaf-lock synchronized state (`MOSS_FILEIO_REGISTRY`, `MOSS_SOLO_ENTER_HOOK`, `MOSS_SOLO_LEAVE_HOOK`). Provider `.rlib`s import them. Agent C will provide/register the actual Executor-aware implementation through the process bridge.
-- A physical change to these cross-crate signatures after Phase 20 integration requires the appropriate native/provider ABI version change and rebuild of source-free providers.
-- Registration callbacks are never invoked while holding the registration mutex (locks are dropped before hook invocation).
-- Potentially blocking file descriptor operations (`open`, `fstat`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`, cleanup closes, `fstatfs`) are bracketed with RAII `SoloGuard`. Descriptor flag modification `fcntl(F_SETFL)` is in-memory and non-blocking.
+- **Root Executable**: Defines the process-wide `#[no_mangle]` symbol definitions and manages the synchronized process state in `moss_root_runtime`.
+- **Provider Libraries (`.rlib`)**: Consume the runtime symbols via `extern "C"` and `extern "Rust"` declarations under `moss_fileio::sys`.
+- A physical change to cross-crate signatures after Phase 20 integration requires an appropriate native/provider ABI version bump and rebuild of source-free providers.
+
+### Production Runtime ABI
+Normal compiled production execution uses strictly:
+```text
+extern "C":
+  moss_fileio_registry_claim(dev: u64, ino: u64) -> bool
+  moss_fileio_registry_release(dev: u64, ino: u64)
+
+extern "Rust":
+  moss_solo_enter(reason: &str)
+  moss_solo_leave(reason: &str)
+```
+
+### Test/Instrumentation APIs (Non-ABI)
+Test-only fault-injection and inspection APIs are gated behind `#[cfg(any(test, moss_test, moss_perf))]` and are NOT part of the production ABI:
+- `moss_fileio_registry_contains(dev: u64, ino: u64) -> bool`
+- `moss_fileio_registry_reset()`
+- `moss_set_close_override(f: fn(RawFd) -> i32)` / `moss_clear_close_override()`
+- `moss_set_sync_hook(hook: fn(&str, RawFd, &str))` / `moss_clear_sync_hook()`
+
+### Fair Leaf Lock Discipline (Phase 20 R5)
+The process-wide inode registry is synchronized by a fair ticket lock (`FairRegistryLock`):
+1. **FIFO Admission**: Requests are assigned sequential tickets via `AtomicU64::fetch_add` and admitted strictly in ticket order.
+2. **Leaf Discipline**: Critical sections are strictly limited to in-memory `HashSet` manipulation (`insert`/`remove`). No kernel syscalls, no other locks, and no callbacks are executed while holding the registry lock.
+3. **Lock-Dropping Hook Invocation**: Solo hook registration locks and test hook mutexes are released before calling user/executor callbacks, preventing reentrancy deadlocks.
+
+### Agent B ↔ Agent C Solo Bridge & Integration Contract
+- FileIO operations bracket all potentially blocking kernel waits (`open`, `fstat`, `pread`, `pwrite`, `fsync`, `fdatasync`, `close`, `fstatfs`) with RAII `SoloGuard`, which invokes `moss_solo_enter` and `moss_solo_leave`.
+- Agent C registers executor compensation hooks via `moss_set_solo_hooks`.
+- **Integration Test Contract**:
+  - Executor configured with `threads = 1, max_threads >= 2`.
+  - Root A starts and enters a blocking FileIO operation (`moss_solo_enter` fires).
+  - Executor activates compensation worker; independent work (Root B or another branch) makes progress while Root A is blocked in the kernel.
+  - FileIO finishes, `moss_solo_leave` fires without waiting for compute slots.
+  - Active worker count never exceeds `T_max`, and excess workers park cleanly.

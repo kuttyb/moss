@@ -103,11 +103,18 @@ inline bool program_uses_fileio(const Program& p) {
 inline const char* fileio_runtime_rust() {
   return R"RUST(
 // Moss Phase 20 FileIO Runtime (Linux x86_64 / aarch64 native)
-#[cfg(not(target_os = "linux"))]
-compile_error!("Moss Phase 20 FileIO runtime currently supports Linux only (x86_64 / aarch64 linux).");
+#[cfg(not(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64"
+    )
+)))]
+compile_error!("Moss Phase 20 FileIO runtime is only supported on Linux x86_64 and aarch64.");
 
 #[allow(dead_code)]
 pub mod moss_fileio {
+    use std::convert::TryFrom;
     use std::os::unix::fs::MetadataExt;
     use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
     use std::sync::{Arc, Mutex};
@@ -122,7 +129,9 @@ pub mod moss_fileio {
         extern "C" {
             pub fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool;
             pub fn moss_fileio_registry_release(dev: u64, ino: u64);
+            #[cfg(any(test, moss_test, moss_perf))]
             pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool;
+            #[cfg(any(test, moss_test, moss_perf))]
             pub fn moss_fileio_registry_reset();
         }
     }
@@ -171,14 +180,17 @@ pub mod moss_fileio {
         }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     static MOSS_CLOSE_OVERRIDE: Mutex<Option<fn(RawFd) -> i32>> = Mutex::new(None);
 
+    #[cfg(any(test, moss_test, moss_perf))]
     pub fn moss_set_close_override(f: fn(RawFd) -> i32) {
         if let Ok(mut g) = MOSS_CLOSE_OVERRIDE.lock() {
             *g = Some(f);
         }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     pub fn moss_clear_close_override() {
         if let Ok(mut g) = MOSS_CLOSE_OVERRIDE.lock() {
             *g = None;
@@ -187,18 +199,20 @@ pub mod moss_fileio {
 
     #[inline]
     pub unsafe fn sys_close(fd: RawFd) -> i32 {
-        let override_fn = {
-            if let Ok(g) = MOSS_CLOSE_OVERRIDE.lock() {
-                *g
-            } else {
-                None
+        #[cfg(any(test, moss_test, moss_perf))]
+        {
+            let override_fn = {
+                if let Ok(g) = MOSS_CLOSE_OVERRIDE.lock() {
+                    *g
+                } else {
+                    None
+                }
+            };
+            if let Some(f) = override_fn {
+                return f(fd);
             }
-        };
-        if let Some(f) = override_fn {
-            f(fd)
-        } else {
-            posix::close(fd)
         }
+        posix::close(fd)
     }
 
     #[inline]
@@ -259,28 +273,38 @@ pub mod moss_fileio {
         }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     static MOSS_SYNC_HOOK: Mutex<Option<fn(&str, RawFd, &str)>> = Mutex::new(None);
 
     #[inline]
     pub fn moss_sync_event(event: &str, fd: RawFd, path: &str) {
-        let hook = {
-            if let Ok(guard) = MOSS_SYNC_HOOK.lock() {
-                *guard
-            } else {
-                None
+        #[cfg(any(test, moss_test, moss_perf))]
+        {
+            let hook = {
+                if let Ok(guard) = MOSS_SYNC_HOOK.lock() {
+                    *guard
+                } else {
+                    None
+                }
+            };
+            if let Some(h) = hook {
+                h(event, fd, path);
             }
-        };
-        if let Some(h) = hook {
-            h(event, fd, path);
+        }
+        #[cfg(not(any(test, moss_test, moss_perf)))]
+        {
+            let _ = (event, fd, path);
         }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     pub fn moss_set_sync_hook(hook: fn(&str, RawFd, &str)) {
         if let Ok(mut guard) = MOSS_SYNC_HOOK.lock() {
             *guard = Some(hook);
         }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     pub fn moss_clear_sync_hook() {
         if let Ok(mut guard) = MOSS_SYNC_HOOK.lock() {
             *guard = None;
@@ -297,11 +321,13 @@ pub mod moss_fileio {
         unsafe { sys::moss_fileio_registry_release(dev, ino) }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     #[inline]
     pub fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
         unsafe { sys::moss_fileio_registry_contains(dev, ino) }
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     #[inline]
     pub fn moss_fileio_registry_reset() {
         unsafe { sys::moss_fileio_registry_reset() }
@@ -341,7 +367,7 @@ pub mod moss_fileio {
         }
 
         pub fn len(&self) -> i64 {
-            self.len as i64
+            i64::try_from(self.len).unwrap_or(i64::MAX)
         }
 
         pub fn is_empty(&self) -> bool {
@@ -357,19 +383,26 @@ pub mod moss_fileio {
         }
 
         pub fn get(&self, index: i64) -> i64 {
-            if index < 0 || (index as usize) >= self.len {
-                0
-            } else {
-                self.buf[self.start + (index as usize)] as i64
-            }
+            let idx = match usize::try_from(index) {
+                Ok(i) if i < self.len => i,
+                _ => return 0,
+            };
+            self.buf[self.start + idx] as i64
         }
 
         pub fn slice(&self, start: i64, length: i64) -> Self {
-            if start < 0 || length <= 0 || (start as usize) >= self.len {
+            if start < 0 || length <= 0 {
                 return Range::empty();
             }
-            let st = start as usize;
-            let actual_len = std::cmp::min(length as usize, self.len - st);
+            let st = match usize::try_from(start) {
+                Ok(s) if s < self.len => s,
+                _ => return Range::empty(),
+            };
+            let req_len = match usize::try_from(length) {
+                Ok(l) => l,
+                _ => return Range::empty(),
+            };
+            let actual_len = std::cmp::min(req_len, self.len - st);
             Range {
                 buf: self.buf.clone(),
                 start: self.start + st,
@@ -411,7 +444,7 @@ pub mod moss_fileio {
         }
 
         pub fn len(&self) -> i64 {
-            self.ranges.len() as i64
+            i64::try_from(self.ranges.len()).unwrap_or(i64::MAX)
         }
 
         pub fn is_empty(&self) -> bool {
@@ -419,11 +452,11 @@ pub mod moss_fileio {
         }
 
         pub fn get(&self, index: i64) -> Range {
-            if index < 0 || (index as usize) >= self.ranges.len() {
-                Range::empty()
-            } else {
-                self.ranges[index as usize].clone()
-            }
+            let idx = match usize::try_from(index) {
+                Ok(i) if i < self.ranges.len() => i,
+                _ => return Range::empty(),
+            };
+            self.ranges[idx].clone()
         }
 
         pub fn ranges(&self) -> &[Range] {
@@ -577,7 +610,6 @@ pub mod moss_fileio {
             };
 
             // Clear O_NONBLOCK to operate as standard blocking descriptor.
-            // Note: fcntl F_SETFL is an in-memory descriptor flag update without storage I/O.
             let flags = unsafe{ posix::fcntl(fd, posix::F_GETFL) };
             if flags >= 0 {
                 unsafe{ posix::fcntl(fd, posix::F_SETFL, flags & !posix::O_NONBLOCK); }
@@ -676,18 +708,26 @@ pub mod moss_fileio {
                 return Range::empty();
             }
 
-            let mut buf = vec![0u8; size as usize];
+            let target = usize::try_from(size).unwrap_or_else(|_| {
+                eprintln!("[moss-fileio] error: read size {} exceeds address space", size);
+                std::process::abort();
+            });
+            let mut buf = vec![0u8; target];
             let mut total_read = 0usize;
-            let target = size as usize;
             let mut at_eof = false;
             while total_read < target && !at_eof {
+                let current_off = offset.checked_add(i64::try_from(total_read).unwrap_or_else(|_| std::process::abort()))
+                    .unwrap_or_else(|| {
+                        eprintln!("[moss-fileio] error: offset overflow during read");
+                        std::process::abort();
+                    });
                 let guard = SoloGuard::new("read");
                 let res = unsafe{
                     posix::pread(
                         fd,
                         buf[total_read..].as_mut_ptr(),
                         target - total_read,
-                        offset + (total_read as i64),
+                        current_off,
                     )
                 };
                 drop(guard);
@@ -702,7 +742,8 @@ pub mod moss_fileio {
                 if res == 0 {
                     at_eof = true;
                 } else {
-                    total_read += res as usize;
+                    let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
+                    total_read += res_usize;
                 }
             }
             buf.truncate(total_read);
@@ -724,7 +765,8 @@ pub mod moss_fileio {
             if requests.is_empty() {
                 return RangeBatch::new(vec![]);
             }
-            let mut ranges = Vec::with_capacity(requests.len());
+            let batch_len = usize::try_from(requests.len()).unwrap_or_else(|_| std::process::abort());
+            let mut ranges = Vec::with_capacity(batch_len);
             for &(offset, size) in requests {
                 ranges.push(self.read(offset, size));
             }
@@ -742,7 +784,11 @@ pub mod moss_fileio {
                     }
                 }
             };
-            if offset < 0 || (i64::MAX - offset < data.len() as i64) {
+            let data_len_i64 = i64::try_from(data.len()).unwrap_or_else(|_| {
+                eprintln!("[moss-fileio] error: write data length exceeds i64::MAX");
+                std::process::abort();
+            });
+            if offset < 0 || (i64::MAX - offset < data_len_i64) {
                 eprintln!("[moss-fileio] error: invalid write offset {}", offset);
                 std::process::abort();
             }
@@ -753,13 +799,18 @@ pub mod moss_fileio {
             let mut total_written = 0usize;
             let target = data.len();
             while total_written < target {
+                let current_off = offset.checked_add(i64::try_from(total_written).unwrap_or_else(|_| std::process::abort()))
+                    .unwrap_or_else(|| {
+                        eprintln!("[moss-fileio] error: offset overflow during write");
+                        std::process::abort();
+                    });
                 let guard = SoloGuard::new("write");
                 let res = unsafe{
                     posix::pwrite(
                         fd,
                         data[total_written..].as_ptr(),
                         target - total_written,
-                        offset + (total_written as i64),
+                        current_off,
                     )
                 };
                 drop(guard);
@@ -775,7 +826,8 @@ pub mod moss_fileio {
                     eprintln!("[moss-fileio] error: pwrite made no progress");
                     std::process::abort();
                 }
-                total_written += res as usize;
+                let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
+                total_written += res_usize;
             }
         }
 
@@ -816,18 +868,20 @@ pub mod moss_fileio {
                 let guard = SoloGuard::new("sync_dataonly");
                 moss_sync_event("file_fdatasync", fd, &path);
                 let res = unsafe{ posix::fdatasync(fd) };
+                let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
-                if res < 0 {
-                    eprintln!("[moss-fileio] error: fdatasync failed on '{}': {}", path, std::io::Error::last_os_error());
+                if let Some(err) = err_opt {
+                    eprintln!("[moss-fileio] error: fdatasync failed on '{}': {}", path, err);
                     std::process::abort();
                 }
             } else {
                 let guard = SoloGuard::new("sync");
                 moss_sync_event("file_fsync", fd, &path);
                 let res = unsafe{ posix::fsync(fd) };
+                let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
-                if res < 0 {
-                    eprintln!("[moss-fileio] error: fsync failed on '{}': {}", path, std::io::Error::last_os_error());
+                if let Some(err) = err_opt {
+                    eprintln!("[moss-fileio] error: fsync failed on '{}': {}", path, err);
                     std::process::abort();
                 }
             }
@@ -836,16 +890,18 @@ pub mod moss_fileio {
                 let guard = SoloGuard::new("sync_dir");
                 moss_sync_event("dir_fsync", pfd_val, &parent_path);
                 let res = unsafe{ posix::fsync(pfd_val) };
+                let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
-                if res < 0 {
-                    eprintln!("[moss-fileio] error: parent directory fsync failed on '{}': {}", parent_path, std::io::Error::last_os_error());
+                if let Some(err) = err_opt {
+                    eprintln!("[moss-fileio] error: parent directory fsync failed on '{}': {}", parent_path, err);
                     std::process::abort();
                 }
                 let guard = SoloGuard::new("close_parent_dir");
                 let cres = unsafe{ sys_close(pfd_val) };
+                let cerr_opt = if cres < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
-                if cres < 0 {
-                    eprintln!("[moss-fileio] error: failed to close parent directory descriptor: {}", std::io::Error::last_os_error());
+                if let Some(err) = cerr_opt {
+                    eprintln!("[moss-fileio] error: failed to close parent directory descriptor: {}", err);
                     std::process::abort();
                 }
                 let mut guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
@@ -878,29 +934,34 @@ pub mod moss_fileio {
             };
 
             if let Some((fd, pfd, dev, ino)) = to_close {
-                let mut parent_close_err = false;
+                let mut parent_close_err = None;
                 if let Some(parent_fd) = pfd {
                     let guard = SoloGuard::new("close_parent_dir");
                     let pres = unsafe{ sys_close(parent_fd) };
-                    drop(guard);
                     if pres < 0 {
-                        parent_close_err = true;
+                        parent_close_err = Some(std::io::Error::last_os_error());
                     }
+                    drop(guard);
                 }
 
                 let guard = SoloGuard::new("close");
                 let file_res = unsafe{ sys_close(fd) };
+                let file_close_err = if file_res < 0 {
+                    Some(std::io::Error::last_os_error())
+                } else {
+                    None
+                };
                 drop(guard);
 
                 // Inode claim is released after the close attempt
                 moss_fileio_registry_release(dev, ino);
 
-                if parent_close_err {
-                    eprintln!("[moss-fileio] error: close failed on parent directory descriptor: {}", std::io::Error::last_os_error());
+                if let Some(err) = parent_close_err {
+                    eprintln!("[moss-fileio] error: close failed on parent directory descriptor: {}", err);
                     std::process::abort();
                 }
-                if file_res < 0 {
-                    eprintln!("[moss-fileio] error: close failed on descriptor {}: {}", fd, std::io::Error::last_os_error());
+                if let Some(err) = file_close_err {
+                    eprintln!("[moss-fileio] error: close failed on descriptor {}: {}", fd, err);
                     std::process::abort();
                 }
             }
@@ -1023,53 +1084,83 @@ pub mod moss_fileio {
     }
 }
 
-pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_claim, moss_fileio_registry_release, moss_fileio_registry_contains, moss_fileio_registry_reset};
+pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, moss_fileio_registry_claim, moss_fileio_registry_release};
+#[cfg(any(test, moss_test, moss_perf))]
+pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset};
 )RUST";
 }
 
 inline const char* fileio_root_runtime_rust() {
   return R"RUST(
 // Moss Phase 20 FileIO Process-Wide Root Runtime (Linux x86_64 / aarch64 native)
+#[cfg(not(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86_64",
+        target_arch = "aarch64"
+    )
+)))]
+compile_error!("Moss Phase 20 FileIO root runtime is only supported on Linux x86_64 and aarch64.");
+
 #[allow(dead_code)]
 pub mod moss_root_runtime {
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::collections::HashSet;
 
-    static MOSS_FILEIO_REGISTRY: Mutex<Option<HashSet<(u64, u64)>>> = Mutex::new(None);
+    pub struct FairRegistryLock {
+        next_ticket: AtomicU64,
+        serving_ticket: AtomicU64,
+        state: Mutex<Option<HashSet<(u64, u64)>>>,
+    }
+
+    impl FairRegistryLock {
+        pub const fn new() -> Self {
+            FairRegistryLock {
+                next_ticket: AtomicU64::new(0),
+                serving_ticket: AtomicU64::new(0),
+                state: Mutex::new(None),
+            }
+        }
+
+        pub fn with_set<R, F: FnOnce(&mut HashSet<(u64, u64)>) -> R>(&self, f: F) -> R {
+            let ticket = self.next_ticket.fetch_add(1, Ordering::SeqCst);
+            while self.serving_ticket.load(Ordering::Acquire) != ticket {
+                std::thread::yield_now();
+            }
+            let mut guard = self.state.lock().unwrap_or_else(|_| std::process::abort());
+            let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
+            let result = f(set);
+            drop(guard);
+            self.serving_ticket.store(ticket.wrapping_add(1), Ordering::Release);
+            result
+        }
+    }
+
+    pub static MOSS_REGISTRY: FairRegistryLock = FairRegistryLock::new();
     static MOSS_SOLO_ENTER_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
     static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
 
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        let set = guard.get_or_insert_with(|| HashSet::with_capacity(0));
-        set.insert((dev, ino))
+        MOSS_REGISTRY.with_set(|set| set.insert((dev, ino)))
     }
 
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_release(dev: u64, ino: u64) {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_mut() {
-            set.remove(&(dev, ino));
-        }
+        MOSS_REGISTRY.with_set(|set| { set.remove(&(dev, ino)); });
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_contains(dev: u64, ino: u64) -> bool {
-        let guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_ref() {
-            set.contains(&(dev, ino))
-        } else {
-            false
-        }
+        MOSS_REGISTRY.with_set(|set| set.contains(&(dev, ino)))
     }
 
+    #[cfg(any(test, moss_test, moss_perf))]
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_reset() {
-        let mut guard = MOSS_FILEIO_REGISTRY.lock().unwrap_or_else(|_| std::process::abort());
-        if let Some(set) = guard.as_mut() {
-            set.clear();
-        }
+        MOSS_REGISTRY.with_set(|set| { set.clear(); });
     }
 
     #[no_mangle]

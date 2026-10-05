@@ -1,27 +1,27 @@
 # Moss current status
 
-## Phase 20 Agent B — FileIO runtime merge-ready cleanup — COMPLETE (2026-10-04)
+## Phase 20 Agent B — FileIO runtime corrective hardening pass — COMPLETE (2026-10-04)
 
-Completed the merge-ready cleanup pass for Phase 20 synchronous blocking `FileIO`:
-1. **ABI Documentation Alignment (`docs/ROOT_RUNTIME_ABI.md`)**:
-   - Updated documentation to match physical process-wide linkage signatures: `extern "C"` for registry operations (`moss_fileio_registry_claim`, `moss_fileio_registry_release`, `moss_fileio_registry_contains`, `moss_fileio_registry_reset`) and `extern "Rust"` for Solo hooks (`moss_solo_enter(reason: &str)`, `moss_solo_leave(reason: &str)`).
-   - Documented that root executable owns symbol definitions and provider `.rlib`s import them, with note that post-Phase-20 signature changes require native/provider ABI versioning.
-2. **Eliminated Method & Declaration False Positives**:
-   - Hardened `program_uses_fileio` to inspect exact FileIO/Range/RangeBatch type positions and exact constructors (`FileIO.open`, `RangeBatch.new`, `Range.from_str`, `Range.empty`), removing receiver-agnostic method heuristics (`.chunks(`, `.open_in_place(`, `.sync_dataonly(`).
-   - Verified that user types with overlapping method names (e.g. `Dataset.chunks`, `DeviceHolder.open_in_place`, `DeviceHolder.sync_dataonly`) and entities with overlapping declaration names do not trigger FileIO runtime emission.
-3. **Decoupled Root-Runtime Emission for Source-Free Providers**:
-   - Executable root crates unconditionally emit `moss_root_runtime` defining process-wide coordination symbols without `mod moss_fileio` when FileIO is unused locally.
-   - Provider `.rlib` crates consume root symbols and emit `fileio_runtime_rust()` only when locally using FileIO.
-4. **Lifecycle, Durability & Teardown Contracts**:
-   - Explicit `FileIO.close()`: attempts each required close once (parent-dir and main fd), releases inode claim; unexpected close failure fails closed (aborts).
-   - `Drop` / process teardown: best-effort descriptor reclamation; releases inode claim; provides no durability guarantee.
-   - Durability obligation: parent directory synced on first file sync and obligation cleared; uncommitted new files discard parent descriptor on close.
-5. **Validation**:
-   - Expanded test harness `tests/tooling/check_phase20_fileio_runtime.py` covering 36 tests (cross-crate collision & Solo hook propagation, hook lock-dropping discipline, parent close failure handling, process root emission, declaration-name false positives, and overlapping method-name false positives).
-   - Full Moss-source A+B+C package integration is validated during Phase 20 merge; Agent B's process ABI and runtime are complete independently.
+Completed the final corrective hardening pass for Phase 20 synchronous blocking `FileIO`:
+1. **Fair Ticket Leaf Lock (Phase 20 R5 Compliance)**:
+   - Implemented `FairRegistryLock` in `moss_root_runtime` using an atomic ticket counter (`AtomicU64::fetch_add`) and condition variable (`Condvar`) to ensure strict FIFO admission order among contending registry claims/releases.
+   - Preserved strict leaf-lock discipline: critical sections operate exclusively on in-memory `HashSet<(u64, u64)>` without holding locks across kernel waits, without taking any other lock, and without invoking callbacks.
+2. **Production vs. Test/Instrumentation ABI Separation**:
+   - Production ABI strictly exports process-wide coordination symbols: `moss_fileio_registry_claim`, `moss_fileio_registry_release`, `moss_solo_enter`, and `moss_solo_leave`.
+   - Test-only fault-injection and introspection APIs (`moss_fileio_registry_reset`, `moss_fileio_registry_contains`, `moss_set_close_override`, `moss_set_sync_hook`) are gated behind `#[cfg(any(test, moss_test, moss_perf))]` and excluded from normal compiled runtime linkage.
+3. **Platform Target Gating**:
+   - Explicitly gated compiler and root runtime to `Linux x86_64` and `aarch64` via `#[cfg(not(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"))))] compile_error!(...)`.
+   - Clarified in `docs/ROOT_RUNTIME_ABI.md` that platform restrictions are runtime implementation limits, not Moss language restrictions.
+4. **Checked Native Boundary Conversions & Error Preservation**:
+   - Replaced unchecked `as usize` casts with checked `usize::try_from` and `checked_add` arithmetic across `read`, `write`, `read_batch`, `chunks`, `Range::slice`, and `RangeBatch::get`. Negative or overflowing offsets/sizes fail closed.
+   - Close error handling captures OS errno (`std::io::Error::last_os_error()`) immediately after each syscall attempt before dropping `SoloGuard` or making subsequent calls, ensuring accurate error reporting on failure while completing all descriptor cleanup and registry release.
+5. **Agent B ↔ Agent C Solo Bridge & Integration Contract**:
+   - Documented the exact A+B+C integration regression contract in `docs/ROOT_RUNTIME_ABI.md`: single-worker executor (`threads = 1, max_threads >= 2`), Root A enters blocking FileIO -> `moss_solo_enter` activates compensation worker -> independent Root B executes -> FileIO completes -> `moss_solo_leave` resumes without waiting for compute slots.
+6. **Validation**:
+   - Expanded test suite `tests/tooling/check_phase20_fileio_runtime.py` to **40 tests** (added Test 37: fair ticket admission under contention, Test 38: production ABI purity, Test 39: platform target gating, and Test 40: checked conversions and boundary handling). All 40 passed.
    - All 61 Emacs ERT tests, Fast Debug tests, multi-module checks, and compiler tests in `make check` passed.
    - `make examples` built all 29 optimized examples without regression.
-   - `git diff --check` and `sh -n tests/run.sh` passed cleanly.
+   - `git diff --check`, `sh -n tests/run.sh`, and `./moss agent bootstrap --json` passed cleanly.
 
 ## Root runtime ABI naming contract — names reserved (2026-10-04)
 
