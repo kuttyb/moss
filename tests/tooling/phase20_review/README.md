@@ -73,7 +73,7 @@ the four bytes `FF FE 00 41`; `store.dat` starts empty. Outputs go to
 | `bug_map_for_range_index_loop` | §13 | Typed map with an indexed for-range byte loop trips the assertion. | FAIL: checker crashed: assertion `!node.effects.unresolved && !node.callable_identity.empty()` at src/moss.cpp:7867 |
 | `bug_write_batch_entry` | checked-in §12.7 | Batch-entry Range rejected as unbounded. | FAIL: rejected FILEIO_UNBOUNDED_REQUEST: FileIO write payload must have a statically provable finite bound |
 | `bug_write_chunk_copy` | checked-in §12.7 | Chunked copy rejected as unbounded. | FAIL: rejected FILEIO_UNBOUNDED_REQUEST: FileIO write payload must have a statically provable finite bound |
-| `bug_range_eq_string_binary` | Range API | Binary Range `== ""` is true via lossy `as_str()`. | FAIL: stdout 'true'; expected 'false' |
+| `bug_range_eq_string_binary` | Range API | Binary Range `== ""` is rejected as TYPE_MISMATCH (cross-type comparison prohibited). | PASS (rejected TYPE_MISMATCH) |
 | `bug_range_eq_range` | Range API | Equal byte views compare unequal (derived PartialEq on buffer/offset). | FAIL: stdout 'false'; expected 'true' |
 | `bug_batch_index_inline_main` | §12.5 §12.6 | `batch[i].length()` emits vector indexing; rustc fails. | FAIL: rustc failed: error[E0608]: cannot index into a value of type `RangeBatch` |
 | `bug_batch_index_inline_handler` | §12.5 §12.6 | Same inside a handler. | FAIL: rustc failed: error[E0608]: cannot index into a value of type `RangeBatch` |

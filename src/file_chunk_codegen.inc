@@ -113,9 +113,11 @@ string gen_chunk_pipeline_sequential(
   out << "        let mut " << offset << ": i64 = 0;\n";
   out << "        let mut " << acc << " = "
       << expr(plan.initial_expression, domain, locals, types) << ";\n";
+  string receiver_place = method_receiver_place(
+      plan.fileio_receiver, "read", {offset, size_var}, domain, locals, types);
   out << "        loop {\n";
   out << "            let " << bytes << " = "
-      << expr(plan.fileio_receiver, domain, locals, types) << ".read("
+      << receiver_place << ".read("
       << offset << ", " << size_var << ");\n";
   out << "            let __moss_chunk_len_" << id << " = " << bytes
       << ".len();\n";
@@ -194,7 +196,7 @@ string gen_chunk_pipeline_bounded_k(
   out << "                let " << slot << " = std::sync::Arc::new(std::sync::Mutex::new(None));\n";
   out << "                let " << out_slot << " = std::sync::Arc::clone(&" << slot << ");\n";
   out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
-      << expr(plan.fileio_receiver, domain, locals, types) << "));\n";
+      << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";
   out << "                    let " << bytes << " = " << borrow << ".read(" << index
       << " * " << size_var << ", " << size_var << ");\n";

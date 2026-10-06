@@ -2986,14 +2986,14 @@ class Checker {
                                  Effect::Consume);
       check_expression(f.result_line ? f.result_line : f.line, *f.result_expression, env);
       auto actual = inferred_expr_type(*f.result_expression, env);
-      if (!actual)
+      if (!actual && !f.generic && !f.static_dispatch)
         err(f.result_line ? f.result_line : f.line,
             "cannot infer the result type of function '" + f.name + "'");
-      if (!f.return_type) {
+      if (!f.return_type && actual) {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
         const_cast<Function&>(f).return_type = *actual;
-      } else if (!starts_with(*f.return_type, "_") &&
+      } else if (f.return_type && actual && !starts_with(*f.return_type, "_") &&
                  !starts_with(*actual, "_method_") &&
                   !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
@@ -3003,7 +3003,8 @@ class Checker {
             "' but is annotated '" + *f.return_type + "'");
       }
     } else if (!f.return_type) {
-      const_cast<Function&>(f).return_type = "unit";
+      if (!f.generic && !f.static_dispatch)
+        const_cast<Function&>(f).return_type = "unit";
     }
   }
 
@@ -3125,9 +3126,9 @@ class Checker {
           !same_type(expected, input_types[index]))
         return std::nullopt;
     }
-    if (!function->second->return_type) return std::nullopt;
-    string result = canonical_type_name(*function->second->return_type);
-    if (starts_with(result, "_") || traits_.count(result))
+    string result = function->second->return_type
+        ? canonical_type_name(*function->second->return_type) : "";
+    if (result.empty() || starts_with(result, "_") || traits_.count(result))
       return specialized_function_return_type(*function->second, input_types);
     return result;
   }
@@ -3827,9 +3828,8 @@ class Checker {
 
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
-    if (!function.return_type) return std::nullopt;
-    string result = canonical_type_name(*function.return_type);
-    bool requires_concrete_result = starts_with(result, "_") || traits_.count(result);
+    string result = function.return_type ? canonical_type_name(*function.return_type) : "";
+    bool requires_concrete_result = result.empty() || starts_with(result, "_") || traits_.count(result);
     if (requires_concrete_result) {
       auto env = instantiated_function_env(function, parameter_types);
       std::optional<string> inferred_result;
@@ -3906,7 +3906,9 @@ class Checker {
                 !function->second->static_dispatch)
               parameter.type = *actual;
             else if (!function->second->generic && !function->second->static_dispatch &&
-                     !traits_.count(parameter.type) && !same_type(parameter.type, *actual))
+                     !traits_.count(parameter.type) &&
+                     !starts_with(*actual, "_") &&
+                     !same_type(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
                   parameter.type + "'");
@@ -4401,6 +4403,7 @@ class Checker {
                 else if (!function->second->generic &&
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
+                         !starts_with(*actual, "_") &&
                          !same_type(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
@@ -5125,16 +5128,28 @@ class Checker {
         function.generic = false;
       if (!function.generic && function.result_expression) {
         auto binary = split_binary(trim(*function.result_expression), {"+", "-", "*", "/", "%"});
-        if (binary) for (const auto& p : function.params)
-          if (p.type.empty() && trim(binary->first) == p.name && trim(binary->second) == p.name) {
+        if (binary) {
+          bool p1_found = false, p2_found = false;
+          for (const auto& p : function.params) {
+            if (p.type.empty()) {
+              if (trim(binary->first) == p.name) p1_found = true;
+              if (trim(binary->second) == p.name) p2_found = true;
+            }
+          }
+          if (p1_found && p2_found) {
             function.generic = true;
             function.static_dispatch = true;
             string be = trim(*function.result_expression);
             string op = be.find('+') != string::npos ? "+" : be.find('-') != string::npos ? "-" : be.find('*') != string::npos ? "*" : be.find('/') != string::npos ? "/" : "%";
-            function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
-            function.generic_results[p.name] = p.name;
-            function.return_type = "_generic:" + p.name;
+            for (const auto& p : function.params) {
+              if (trim(binary->first) == p.name || trim(binary->second) == p.name) {
+                function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
+                function.generic_results[p.name] = p.name;
+              }
+            }
+            function.return_type = "_generic:" + trim(binary->first);
           }
+        }
       }
       if (!function.generic) {
         for (const auto& parameter : function.params) {
@@ -5155,6 +5170,14 @@ class Checker {
             function.return_type = "_generic:" + parameter.name;
             break;
           }
+        }
+      }
+      if (!function.generic) {
+        bool has_untyped = std::any_of(function.params.begin(), function.params.end(),
+                                       [](const Param& p) { return p.type.empty(); });
+        if (has_untyped) {
+          function.generic = true;
+          function.static_dispatch = true;
         }
       }
       for (const auto& parameter : function.params) {
@@ -7360,7 +7383,7 @@ class Checker {
         return effects;
       }
       if (typed_empty_vector_constructor(value) || objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
-          callee == "Map" || callee == "Queue")
+          callee == "range" || callee == "Map" || callee == "Queue")
         return effects;
       effects.unresolved = true;
       return effects;
@@ -7770,6 +7793,21 @@ class Checker {
       return effects;
     }
     effects = function->second->observable_effects;
+    if (effects.unresolved && !input_types.empty() &&
+        input_types.size() == function->second->params.size() &&
+        std::all_of(input_types.begin(), input_types.end(),
+                    [&](const string& t) { return !unresolved_semantic_type(t); })) {
+      TypeEnv specialized_env;
+      std::set<string> params;
+      for (size_t i = 0; i < input_types.size(); ++i) {
+        specialized_env[function->second->params[i].name] = canonical_type_name(input_types[i]);
+        params.insert(function->second->params[i].name);
+      }
+      auto specialized_effects = observable_body_effects(function->second->body, specialized_env, params);
+      if (function->second->result_expression)
+        specialized_effects.merge(observable_expression_effects(*function->second->result_expression, specialized_env));
+      effects = specialized_effects;
+    }
     return effects;
   }
 
@@ -7850,6 +7888,18 @@ class Checker {
           callback_input_types.insert(
               callback_input_types.begin(),
               inferred_expr_type(parsed_stage.arguments.front(), env).value_or(""));
+        auto fn_it = functions_.find(trim(callable));
+        if (fn_it != functions_.end()) {
+          bool concrete_cb = std::all_of(callback_input_types.begin(), callback_input_types.end(),
+                                         [&](const string& type) {
+                                           return concrete_specialization_type(type) &&
+                                               !traits_.count(canonical_type_name(type));
+                                         });
+          if (concrete_cb && (fn_it->second->generic || fn_it->second->static_dispatch)) {
+            validate_method_requirements(line, *fn_it->second, callback_input_types);
+            register_static_specialization(line, *fn_it->second, callback_input_types);
+          }
+        }
         node.effects = functional_stage_effects(
             callable, callback_input_types, env, node.callable_identity,
             node.captures, domain_fields, implicit_object);
@@ -7863,9 +7913,11 @@ class Checker {
         const bool deferred_generic_callable =
             callable_binding != env.end() &&
             starts_with(callable_binding->second, "_generic:");
-        if (!deferred_generic_callable)
-          assert(!node.effects.unresolved &&
-                 !node.callable_identity.empty());
+        if (!deferred_generic_callable) {
+          if (node.effects.unresolved || node.callable_identity.empty()) {
+            err(stage_line, "cannot resolve observable effects for callable '" + callable + "' in functional pipeline", "FUNCTIONAL_CALLABLE_UNRESOLVED");
+          }
+        }
 #endif
         if (owning_function &&
             !starts_with(node.callable_identity, "placeholder:") &&
@@ -9852,6 +9904,16 @@ class Checker {
                 "ENUM_OPERATOR_UNSUPPORTED");
           if (binary->first.empty() || binary->second.empty())
             err(line, "invalid arithmetic expression");
+          if (split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
+            if (left_type && right_type) {
+              string lt = canonical_type_name(*left_type);
+              string rt = canonical_type_name(*right_type);
+              if ((lt == "Range" && rt == "string") || (lt == "string" && rt == "Range")) {
+                err(line, "cannot compare Range and String; convert explicitly or compare identical types",
+                    "TYPE_MISMATCH");
+              }
+            }
+          }
           if (split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
             auto right = inferred_expr_type(binary->second, env);
@@ -12446,6 +12508,8 @@ class Generator {
     auto type = generated_expr_type(base, types);
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get_mut(&(" + key + ")).expect(\"Moss missing map key\")";
+    if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
+      return "(" + storage + ").get(" + key + ")";
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
@@ -12459,6 +12523,8 @@ class Generator {
     auto type = generated_expr_type(base, types);
     if (type && (starts_with(canonical_type_name(*type), "map[") || canonical_type_name(*type) == "map"))
       return "*(" + storage + ").get(&(" + key + ")).expect(\"Moss missing map key\")";
+    if (type && (canonical_type_name(*type) == "RangeBatch" || canonical_type_name(*type) == "Range"))
+      return "(" + storage + ").get(" + key + ")";
     return "(" + storage + ")[(" + key + ") as usize]";
   }
 
@@ -12810,6 +12876,8 @@ class Generator {
         }
         if (concrete_receiver == "Range" && method_name == "length" && method_args.empty())
           return string("int");
+        if (concrete_receiver == "Range" && method_name == "slice" && method_args.size() == 2)
+          return string("Range");
         if (concrete_receiver == "string") {
           if (method_name == "length" && method_args.empty()) return string("int");
           if (method_name == "char_at" && method_args.size() == 1) return string("string");
@@ -14000,11 +14068,10 @@ class Generator {
       right = value_from_borrowed_message_parameter(comparison->right, right, types);
       auto left_type = generated_expr_type(comparison->left, types);
       auto right_type = generated_expr_type(comparison->right, types);
-      bool is_string_comparison =
-          (left_type && canonical_type_name(*left_type) == "string") ||
-          (right_type && canonical_type_name(*right_type) == "string");
-      if (is_string_comparison) {
+      if (left_type && canonical_type_name(*left_type) == "string") {
         left = "(" + left + ").as_str()";
+      }
+      if (right_type && canonical_type_name(*right_type) == "string") {
         right = "(" + right + ").as_str()";
       }
       if (left_type && canonical_type_name(*left_type) == "float" &&

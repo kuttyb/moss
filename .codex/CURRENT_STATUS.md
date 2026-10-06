@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 20.2 — Reviewer Completeness Hardening
+
+Phase 20.2 complete on branch `phase-20.2-review-completeness`.
+Hardened FileIO, Range semantics, bounds propagation, codegen, generic callback specialization, and pipeline effects against the independent Phase 20 reviewer probe suite (`tests/tooling/phase20_review/`).
+
+Summary of fixes and hardening:
+- **Range byte equality & type separation:** Implemented exact byte-slice equality (`PartialEq, Eq`) for `Range == Range` in `src/fileio_runtime.hpp`. Enforced compile-time rejection of `Range == String` and `String == Range` with diagnostic `TYPE_MISMATCH` in `src/moss.cpp`, preserving strict byte vs text type distinction and prohibiting lossy UTF-8 conversion.
+- **Out-of-bounds indexing diagnostics:** Updated `Range::get` and `RangeBatch::get` in `src/fileio_runtime.hpp` to output diagnostic stderr messages specifying invalid index and size bounds before aborting.
+- **Domain-field FileIO chunk pipeline codegen:** Lowered `plan.fileio_receiver` via `method_receiver_place` in `src/file_chunk_codegen.inc` for both sequential chunk reads and parallel branch borrows (`moss_fileio_branch_read_borrow`).
+- **Batch indexing in expressions:** Updated `write_call_place` and `read_call_place` in `src/moss.cpp` to recognize `RangeBatch` and `Range` receiver types and emit `.get(...)`.
+- **Chained slicing return type:** Registered `Range.slice(start, len) -> Range` in `generated_expr_type` in `src/moss.cpp`.
+- **Pure loop iteration:** Recognized builtin `range` generator as pure in `observable_expression_effects` in `src/moss.cpp`.
+- **Static bounds propagation:** Extended `static_payload_byte_bound` in `src/static_bounds.inc` to propagate bounds through chunk iteration `for chunk in file.chunks(N)`, batch indexing `batch[i]` (exact entry size or max of entries), and sub-slicing `r.slice(start, len)` (`min(bound(r), len)`). Prevented non-mutating `length` and `slice` methods from invalidating bounds in `static_mark_possible_mutation`.
+- **Untyped/generic callback inference & specialization:** In `src/moss.cpp`, enabled signature inference for multi-parameter binary operations (e.g. `fn merge(a, b): a + b`) and flagged unannotated functions for generic static dispatch. Specialized callback return types and observable effects with pipeline input types, and emitted structured diagnostic `FUNCTIONAL_CALLABLE_UNRESOLVED` when callable resolution fails.
+- **Spec & proof debt documentation:**
+  - Updated §12.6 in `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` for Range byte equality, Range vs String rejection, out-of-bounds indexing diagnostics, and Range bounds propagation.
+  - Documented deliberate narrowing of §12.7 to compile-time constants/aliases vs October proposal (deferring startup-configuration bounds and runtime clamps to keep static guarantees intact).
+  - Documented A2 proof debt `SYNC-FAIR-001` in §18.6 for starvation-freedom bounds across interleaved Solo and Moss-lock phases.
+
+Validation:
+- Independent Reviewer Probe Suite: `python3 tests/tooling/phase20_review/run_review_probes.py ./moss --strict`
+  - 21 guard probes: PASS (21/21)
+  - 14 bug probes: PASS (14/14)
+  - 2 pre-existing probes: PASS (2/2) with `--strict`
+  - 8 design probes: INFO (8/8) (informational only; deliberate §12.7 narrowing preserved)
+- Regression suites:
+  - `make check`: all 54 Executor tests, all Phase 10-22 tests, Emacs tests passed.
+  - `git diff --check`: clean.
+
 ## Phase 20.1 — Root Admission Reentrancy Hardening
 
 Phase 20.1 complete. Root admission is structurally restricted to non-Root execution. The compiler prevents `executor.invoke` outside `main`; runtime ingress defensively rejects Root/Branch reentrancy before bounded admission; the deadlock topology is permanently covered by a deterministic full-queue regression. No Moss source semantics were added or changed.

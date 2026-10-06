@@ -309,10 +309,9 @@
    "file": "probes/bug_range_eq_string_binary.moss",
    "category": "bug",
    "spec": "Range API",
-   "note": "Binary Range `== \"\"` is true via lossy `as_str()`.",
-   "run": {
-    "stdout": "false"
-   }
+   "note": "Binary Range `== \"\"` is rejected as a type mismatch.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
   },
   {
    "name": "bug_range_eq_range",

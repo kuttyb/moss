@@ -753,9 +753,9 @@ Results appear in request order as a `RangeBatch`.
 
 The runtime may use io_uring, vectored facilities where applicable, or bounded internal fan-out. Batch implementation does not create Moss roots.
 
-### 12.6 Range lifetime
+### 12.6 Range lifetime and operations
 
-A Range is a borrowed, read-only view into a runtime-owned buffer.
+A Range is a borrowed, read-only view into a runtime-owned buffer of bytes (`[u8]`).
 
 It may be used locally and lent down ordinary synchronous helper calls. It may not be stored in domain state, retained after its owning scope, transferred across a root/domain boundary, or placed in an ordinary collection.
 
@@ -773,14 +773,22 @@ reply batch[0]            # illegal: crosses the root boundary
 
 The runtime reuses a backing buffer only after every Range referring to it is dead.
 
+#### Range operations and semantics
+
+- **Byte Indexing (`range[index]`):** Extracts the byte value at `index` as an `Int`. Out-of-bounds indexing aborts with a diagnostic error message on stderr specifying the invalid index and valid length rather than returning a default or silent EOF.
+- **Byte Equality (`range1 == range2`):** Evaluates exact byte-slice equality (`[u8] == [u8]`) between two `Range` values.
+- **Distinct Byte vs Text Types:** Comparing `Range == String` or `String == Range` is rejected at compile time with a `TYPE_MISMATCH` diagnostic. Moss enforces strict type distinction between binary byte slices and UTF-8 text strings; implicit lossy decoding during equality checks is prohibited.
+- **Slicing (`range.slice(offset, length)`):** Returns a sub-range view bounded by `length`.
+- **Bounds Propagation:** Static payload bounds propagate through `read(offset, size)` (bounded by `size`), batch indexing `batch[i]` (bounded by the statically known batch entry size or maximum of batch entry sizes), chunk iterators `for chunk in file.chunks(C)` (bounded by `C`), and sub-slicing `r.slice(offset, length)` (bounded by `min(bound(r), length)`). Non-mutating methods such as `.length()` and `.slice(...)` do not invalidate static payload bounds.
+
 ### 12.7 Bounded sizes
 
 In Phase 20, request bounds must be established from a nonnegative compile-time
 integer constant or an immutable single-assignment alias of such a constant.
 String payloads use their statically known byte length. A Range payload inherits
-the finite bound of the `read` expression that produced it. This covers:
+the finite bound of the `read` expression that produced it.
 
-This includes:
+This covers:
 
 - direct read/write sizes;
 - batch length;
@@ -788,11 +796,19 @@ This includes:
 - individual batch entry sizes;
 - chunk size.
 
-Startup-configuration bounds and compiler-proven runtime clamps are deferred;
-Moss v0.1 currently defines no startup-bound declaration or clamp primitive.
+#### Deliberate narrowing vs October proposal
+
+Startup-configuration bounds and compiler-proven runtime clamps are deliberately
+deferred; Moss v0.1 defines no startup-bound declaration or clamp primitive.
 Do not pass an unconstrained function parameter as a request size. The canonical
-domain example uses a fixed bounded read, as shown above. This Phase 20 scope
-narrowing keeps the normative bound contract aligned with the implementation.
+domain example uses a fixed bounded read, as shown above.
+
+This Phase 20 narrowing is an intentional language design decision, not an
+unintentional omission: static verification of constant-bounded requests guarantees
+finite buffer memory (Theorem 2) at compile time without relying on runtime clamping
+or dynamic allocations that could fail or alter semantics unexpectedly. Design probes
+probing startup bounds or dynamic clamps remain informational indicators of potential
+future language extensions rather than defects in Phase 20.
 
 ### 12.8 Sync
 
@@ -1164,6 +1180,19 @@ Proof 1 excludes:
 - Phase 21 recovery behavior.
 
 Holding a Moss lock during a slow but Solo disk operation is safe under this proof, but can still be poor for latency and throughput (§22).
+
+### 18.6 Proof debt: SYNC-FAIR-001 (interleaved Solo and Moss-lock fairness)
+
+- **Debt Identifier:** `SYNC-FAIR-001`
+- **Assumptions Implicated:** A2 (fair Moss lock granting) and A4 (finite Solo latency).
+- **Scope:** Roots interleaving Solo I/O operations while holding Moss domain locks.
+- **Proof Obligation:** Formally prove starvation-freedom bounds for queued contenders awaiting a Moss domain lock when the active lock holder performs multiple interleaved Solo kernel operations before releasing the lock. Under Assumption A2, lock acquisition queues are FIFO (using ticket or queue locks) and grant waiters fairly. However, while Theorem 1a (deadlock freedom) and Theorem 1b (progress) demonstrate that every wait ends and every runnable root eventually completes assuming finite Solo kernel operations (A4), they establish qualitative progress rather than a quantitative upper bound on wait latency across interleaved Solo I/O bursts.
+- **Current Mitigation:**
+  1. Moss domain locks use strict FIFO ticket-lock discipline to prevent lock-acquisition overtaking.
+  2. Runtime leaf locks (such as the inode registry mutex) use ticket locks and are never held across kernel waits (A5).
+  3. The Moss compiler emits diagnostic warnings when blocking FileIO calls are executed within domain handlers that hold domain locks.
+  4. Workload guidance advises structuring FileIO around root-local capabilities or short-duration handler operations rather than long-running multi-stage FileIO within exclusive domain lock scopes.
+- **Closeout Criteria:** Formal verification bounding worst-case queuing latency for a Moss lock under a given upper bound on Solo kernel service time ($T_{solo}$) and root contention factor ($N$).
 
 ---
 

@@ -336,12 +336,20 @@ pub mod moss_fileio {
         unsafe { sys::moss_fileio_registry_reset() }
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone)]
     pub struct Range {
         buf: Arc<Vec<u8>>,
         start: usize,
         len: usize,
     }
+
+    impl PartialEq for Range {
+        fn eq(&self, other: &Self) -> bool {
+            self.as_slice() == other.as_slice()
+        }
+    }
+
+    impl Eq for Range {}
 
     impl Range {
         pub fn empty() -> Self {
@@ -388,7 +396,10 @@ pub mod moss_fileio {
         pub fn get(&self, index: i64) -> i64 {
             let idx = match usize::try_from(index) {
                 Ok(i) if i < self.len => i,
-                _ => std::process::abort(),
+                _ => {
+                    eprintln!("[moss-fileio] error: Range index {} out of bounds for length {}", index, self.len);
+                    std::process::abort();
+                }
             };
             self.buf[self.start + idx] as i64
         }
@@ -473,7 +484,10 @@ pub mod moss_fileio {
         pub fn get(&self, index: i64) -> Range {
             let idx = match usize::try_from(index) {
                 Ok(i) if i < self.ranges.len() => i,
-                _ => std::process::abort(),
+                _ => {
+                    eprintln!("[moss-fileio] error: RangeBatch index {} out of bounds for length {}", index, self.ranges.len());
+                    std::process::abort();
+                }
             };
             self.ranges[idx].clone()
         }

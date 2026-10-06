@@ -45,7 +45,8 @@
       bool fileio_borrow = fileio_owners.count(receiver) &&
           (method == "read" || method == "write" || method == "chunks" ||
            method == "open" || method == "sync" || method == "close");
-      if (!fileio_borrow) {
+      bool non_mutating_member = method == "length" || method == "slice";
+      if (!fileio_borrow && !non_mutating_member) {
         string root, index;
         mutated.insert(parse_index(receiver, root, index) ? root : receiver);
         for (const auto& argument : args) {
@@ -150,7 +151,7 @@
           changed = true;
       }
     }
-    for (const auto& statement : statements)
+    for (const auto& statement : statements) {
       if (statement.indent == 0 &&
           (statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
@@ -158,6 +159,17 @@
           simple_identifier(statement.a) && writes[statement.a] == 1 &&
           !entry.count(statement.a) && !mutated.count(statement.a))
         static_bound_bindings_[statement.a] = statement.b;
+      if (statement.kind == Stmt::Kind::For &&
+          simple_identifier(statement.a) && writes[statement.a] == 0 &&
+          !mutated.count(statement.a)) {
+        string receiver, method;
+        vector<string> args;
+        if (parse_member_call(trim(statement.b), receiver, method, args) &&
+            method == "chunks" && args.size() == 1) {
+          static_bound_bindings_[statement.a] = statement.b;
+        }
+      }
+    }
   }
 
   string static_source_expression(string source, int depth = 0) const {
@@ -216,6 +228,15 @@
     return static_cast<uint64_t>(*exact);
   }
 
+  std::optional<vector<string>> static_collection_entries(
+      const string& source) const {
+    string value = static_source_expression(source);
+    if (!starts_with(value, "[") || !ends_with(value, "]"))
+      return std::nullopt;
+    string items = trim(value.substr(1, value.size() - 2));
+    return items.empty() ? vector<string>{} : split_top_level(items, ',');
+  }
+
   std::optional<uint64_t> static_payload_byte_bound(
       const string& source) const {
     string value = static_source_expression(source);
@@ -239,17 +260,50 @@
     if (auto bound = bounded_string(value)) return bound;
     string receiver, method;
     vector<string> arguments;
-    if (parse_member_call(value, receiver, method, arguments) &&
-        method == "read" && arguments.size() == 2)
-      return static_upper_bound(arguments[1]);
+    if (parse_member_call(value, receiver, method, arguments)) {
+      if (method == "read" && arguments.size() == 2)
+        return static_upper_bound(arguments[1]);
+      if (method == "chunks" && arguments.size() == 1)
+        return static_upper_bound(arguments[0]);
+      if (method == "slice" && arguments.size() == 2) {
+        auto source_bound = static_payload_byte_bound(receiver);
+        auto requested_len = static_upper_bound(arguments[1]);
+        if (source_bound && requested_len) return std::min(*source_bound, *requested_len);
+        if (source_bound) return *source_bound;
+        if (requested_len) return *requested_len;
+      }
+    }
+    string base, index_str;
+    if (parse_index(value, base, index_str)) {
+      string base_expr = static_source_expression(base);
+      string b_receiver, b_method;
+      vector<string> b_arguments;
+      if (parse_member_call(base_expr, b_receiver, b_method, b_arguments) &&
+          b_method == "read" && b_arguments.size() == 1) {
+        auto entries = static_collection_entries(b_arguments[0]);
+        if (entries && !entries->empty()) {
+          vector<uint64_t> entry_bounds;
+          for (const auto& entry : *entries) {
+            string pair = trim(entry);
+            vector<string> coordinates;
+            if (starts_with(pair, "(") && ends_with(pair, ")"))
+              coordinates = split_top_level(pair.substr(1, pair.size() - 2), ',');
+            if (coordinates.size() == 2) {
+              if (auto sz = static_upper_bound(coordinates[1]))
+                entry_bounds.push_back(*sz);
+            }
+          }
+          if (!entry_bounds.empty()) {
+            if (auto exact_idx = static_exact_integer(index_str)) {
+              if (*exact_idx >= 0 && static_cast<size_t>(*exact_idx) < entry_bounds.size())
+                return entry_bounds[static_cast<size_t>(*exact_idx)];
+            }
+            uint64_t max_bound = 0;
+            for (auto b : entry_bounds) max_bound = std::max(max_bound, b);
+            return max_bound;
+          }
+        }
+      }
+    }
     return std::nullopt;
-  }
-
-  std::optional<vector<string>> static_collection_entries(
-      const string& source) const {
-    string value = static_source_expression(source);
-    if (!starts_with(value, "[") || !ends_with(value, "]"))
-      return std::nullopt;
-    string items = trim(value.substr(1, value.size() - 2));
-    return items.empty() ? vector<string>{} : split_top_level(items, ',');
   }
