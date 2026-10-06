@@ -117,7 +117,10 @@ pub mod moss_fileio {
     use std::convert::TryFrom;
     use std::os::unix::fs::MetadataExt;
     use std::os::unix::io::{FromRawFd, IntoRawFd, RawFd};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    #[cfg(any(test, moss_perf))]
+    use std::sync::Mutex;
+    use super::MossFairMutex;
     use std::path::Path;
     use std::ffi::CString;
 
@@ -500,22 +503,25 @@ pub mod moss_fileio {
     // (MossFileIOReadBorrow). The FileIO remains the sole owner: only it can
     // write, sync, or close, and a borrow observes close and fails closed.
     pub struct FileIO {
-        inner: Arc<Mutex<Option<FileIOInner>>>,
+        inner: Arc<MossFairMutex<Option<FileIOInner>>>,
     }
 
     impl Default for FileIO {
         fn default() -> Self {
             FileIO {
-                inner: Arc::new(Mutex::new(None)),
+                inner: Arc::new(MossFairMutex::new(None)),
             }
         }
     }
 
     impl std::fmt::Debug for FileIO {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
-            if let Some(inner) = guard.as_ref() {
-                write!(f, "FileIO(path: '{}', dev: {}, ino: {}, open: {})", inner.path, inner.dev, inner.ino, !inner.is_closed)
+            let snapshot = {
+                let guard = self.inner.lock();
+                guard.as_ref().map(|inner| (inner.path.clone(), inner.dev, inner.ino, !inner.is_closed))
+            };
+            if let Some((path, dev, ino, open)) = snapshot {
+                write!(f, "FileIO(path: '{}', dev: {}, ino: {}, open: {})", path, dev, ino, open)
             } else {
                 write!(f, "FileIO(<uninitialized>)")
             }
@@ -681,7 +687,7 @@ pub mod moss_fileio {
             }
 
             FileIO {
-                inner: Arc::new(Mutex::new(Some(FileIOInner {
+                inner: Arc::new(MossFairMutex::new(Some(FileIOInner {
                     fd,
                     parent_dir_fd,
                     dev,
@@ -697,7 +703,7 @@ pub mod moss_fileio {
 
         pub fn open_in_place(&mut self, path: &str, mode: &str) {
             let is_currently_open = {
-                let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let guard = self.inner.lock();
                 guard.as_ref().map_or(false, |i| !i.is_closed)
             };
             if is_currently_open {
@@ -714,7 +720,7 @@ pub mod moss_fileio {
         pub fn read_batch(&self, requests: &[(i64, i64)]) -> RangeBatch {
             // Verify receiver lifecycle
             {
-                let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let guard = self.inner.lock();
                 match guard.as_ref() {
                     Some(inner) if !inner.is_closed => {}
                     _ => {
@@ -736,7 +742,7 @@ pub mod moss_fileio {
 
         pub fn write_bytes(&self, offset: i64, data: &[u8]) {
             let fd = {
-                let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let guard = self.inner.lock();
                 match guard.as_ref() {
                     Some(inner) if !inner.is_closed => inner.fd,
                     _ => {
@@ -810,7 +816,7 @@ pub mod moss_fileio {
 
         fn sync_internal(&self, dataonly: bool) {
             let (fd, pfd, path, parent_path) = {
-                let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let guard = self.inner.lock();
                 match guard.as_ref() {
                     Some(inner) if !inner.is_closed => (
                         inner.fd,
@@ -865,7 +871,7 @@ pub mod moss_fileio {
                     eprintln!("[moss-fileio] error: failed to close parent directory descriptor: {}", err);
                     std::process::abort();
                 }
-                let mut guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let mut guard = self.inner.lock();
                 if let Some(inner) = guard.as_mut() {
                     if inner.dir_obligation {
                         inner.parent_dir_fd = None;
@@ -877,7 +883,7 @@ pub mod moss_fileio {
 
         pub fn close(&self) {
             let to_close = {
-                let mut guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+                let mut guard = self.inner.lock();
                 match guard.as_mut() {
                     Some(inner) if !inner.is_closed => {
                         inner.is_closed = true;
@@ -933,34 +939,34 @@ pub mod moss_fileio {
         }
 
         pub fn is_open(&self) -> bool {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = self.inner.lock();
             guard.as_ref().map_or(false, |i| !i.is_closed)
         }
 
         pub fn device(&self) -> u64 {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = self.inner.lock();
             guard.as_ref().map_or(0, |i| i.dev)
         }
 
         pub fn inode(&self) -> u64 {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = self.inner.lock();
             guard.as_ref().map_or(0, |i| i.ino)
         }
 
         pub fn created_file(&self) -> bool {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = self.inner.lock();
             guard.as_ref().map_or(false, |i| i.created)
         }
 
         pub fn has_directory_obligation(&self) -> bool {
-            let guard = self.inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = self.inner.lock();
             guard.as_ref().map_or(false, |i| i.dir_obligation)
         }
     }
 
-    fn read_shared(inner: &Mutex<Option<FileIOInner>>, offset: i64, size: i64) -> Range {
+    fn read_shared(inner: &MossFairMutex<Option<FileIOInner>>, offset: i64, size: i64) -> Range {
         let fd = {
-            let guard = inner.lock().unwrap_or_else(|_| std::process::abort());
+            let guard = inner.lock();
             match guard.as_ref() {
                 Some(inner) if !inner.is_closed => inner.fd,
                 _ => {
@@ -1024,7 +1030,7 @@ pub mod moss_fileio {
     // descriptor state and never becomes a second FileIO owner. Generated
     // code drops every borrow before the Branch join returns.
     pub struct MossFileIOReadBorrow {
-        inner: Arc<Mutex<Option<FileIOInner>>>,
+        inner: Arc<MossFairMutex<Option<FileIOInner>>>,
     }
 
     impl MossFileIOReadBorrow {
@@ -1040,18 +1046,15 @@ pub mod moss_fileio {
     impl Drop for FileIO {
         fn drop(&mut self) {
             let to_cleanup = {
-                if let Ok(mut guard) = self.inner.lock() {
-                    if let Some(inner) = guard.as_mut() {
-                        if !inner.is_closed {
-                            inner.is_closed = true;
-                            let fd = inner.fd;
-                            let pfd = inner.parent_dir_fd.take();
-                            let dev = inner.dev;
-                            let ino = inner.ino;
-                            Some((fd, pfd, dev, ino))
-                        } else {
-                            None
-                        }
+                let mut guard = self.inner.lock();
+                if let Some(inner) = guard.as_mut() {
+                    if !inner.is_closed {
+                        inner.is_closed = true;
+                        let fd = inner.fd;
+                        let pfd = inner.parent_dir_fd.take();
+                        let dev = inner.dev;
+                        let ino = inner.ino;
+                        Some((fd, pfd, dev, ino))
                     } else {
                         None
                     }
@@ -1141,19 +1144,19 @@ inline const char* fileio_root_runtime_rust() {
 // implementation lives in `moss_fileio`, which carries its own target guard.
 #[allow(dead_code)]
 pub mod moss_root_runtime {
-    use std::sync::{Condvar, Mutex, MutexGuard};
+    use super::{MossFairMutex, MossFairGuard, MossFairCondvar};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::collections::HashSet;
 
-    // R5 fair leaf lock: callers take a FIFO ticket and park on the Condvar
-    // (releasing the state mutex) until their ticket is served.  Critical
+    // R5 fair registry protocol: callers take a FIFO ticket and park on the
+    // fair condition (releasing the fair state lock) until served. Critical
     // sections are only the concrete HashSet operations below: no kernel I/O,
     // no callbacks, no other runtime or Moss lock, and nothing that unwinds,
     // so a served ticket is always advanced.
     struct FairRegistryLock {
         next_ticket: AtomicU64,
-        state: Mutex<RegistryState>,
-        cv: Condvar,
+        state: MossFairMutex<RegistryState>,
+        cv: MossFairCondvar,
     }
 
     struct RegistryState {
@@ -1175,7 +1178,7 @@ pub mod moss_root_runtime {
         const fn new() -> Self {
             FairRegistryLock {
                 next_ticket: AtomicU64::new(0),
-                state: Mutex::new(RegistryState {
+                state: MossFairMutex::new(RegistryState {
                     serving_ticket: 0,
                     inode_set: None,
                     #[cfg(any(test, moss_perf))]
@@ -1183,15 +1186,15 @@ pub mod moss_root_runtime {
                     #[cfg(any(test, moss_perf))]
                     waiting: 0,
                 }),
-                cv: Condvar::new(),
+                cv: MossFairCondvar::new(),
             }
         }
 
-        fn lock_state(&self) -> MutexGuard<'_, RegistryState> {
-            self.state.lock().unwrap_or_else(|_| std::process::abort())
+        fn lock_state(&self) -> MossFairGuard<'_, RegistryState> {
+            self.state.lock()
         }
 
-        fn admit(&self) -> (MutexGuard<'_, RegistryState>, u64) {
+        fn admit(&self) -> (MossFairGuard<'_, RegistryState>, u64) {
             let ticket = self.next_ticket.fetch_add(1, Ordering::SeqCst);
             let mut state = self.lock_state();
             while state.serving_ticket != ticket {
@@ -1199,7 +1202,7 @@ pub mod moss_root_runtime {
                 {
                     state.waiting += 1;
                 }
-                state = self.cv.wait(state).unwrap_or_else(|_| std::process::abort());
+                state = self.cv.wait(state);
                 #[cfg(any(test, moss_perf))]
                 {
                     state.waiting -= 1;
@@ -1208,10 +1211,9 @@ pub mod moss_root_runtime {
             (state, ticket)
         }
 
-        fn finish(&self, mut state: MutexGuard<'_, RegistryState>) {
+        fn finish(&self, mut state: MossFairGuard<'_, RegistryState>) {
             state.serving_ticket = state.serving_ticket.wrapping_add(1);
-            drop(state);
-            self.cv.notify_all();
+            self.cv.notify_all(&state);
         }
 
         fn claim(&self, dev: u64, ino: u64) -> bool {
@@ -1248,8 +1250,8 @@ pub mod moss_root_runtime {
     }
 
     static MOSS_REGISTRY: FairRegistryLock = FairRegistryLock::new();
-    static MOSS_SOLO_ENTER_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
-    static MOSS_SOLO_LEAVE_HOOK: Mutex<Option<fn(&str)>> = Mutex::new(None);
+    static MOSS_SOLO_ENTER_HOOK: MossFairMutex<Option<fn(&str)>> = MossFairMutex::new(None);
+    static MOSS_SOLO_LEAVE_HOOK: MossFairMutex<Option<fn(&str)>> = MossFairMutex::new(None);
 
     #[no_mangle]
     pub extern "C" fn moss_fileio_registry_claim(dev: u64, ino: u64) -> bool {
@@ -1337,13 +1339,7 @@ pub mod moss_root_runtime {
 
     #[no_mangle]
     pub extern "Rust" fn moss_solo_enter(reason: &str) {
-        let hook = {
-            if let Ok(guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-                *guard
-            } else {
-                None
-            }
-        };
+        let hook = *MOSS_SOLO_ENTER_HOOK.lock();
         if let Some(enter) = hook {
             enter(reason);
         }
@@ -1351,34 +1347,20 @@ pub mod moss_root_runtime {
 
     #[no_mangle]
     pub extern "Rust" fn moss_solo_leave(reason: &str) {
-        let hook = {
-            if let Ok(guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-                *guard
-            } else {
-                None
-            }
-        };
+        let hook = *MOSS_SOLO_LEAVE_HOOK.lock();
         if let Some(leave) = hook {
             leave(reason);
         }
     }
 
     pub fn moss_set_solo_hooks(enter: fn(&str), leave: fn(&str)) {
-        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-            *guard = Some(enter);
-        }
-        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-            *guard = Some(leave);
-        }
+        *MOSS_SOLO_ENTER_HOOK.lock() = Some(enter);
+        *MOSS_SOLO_LEAVE_HOOK.lock() = Some(leave);
     }
 
     pub fn moss_clear_solo_hooks() {
-        if let Ok(mut guard) = MOSS_SOLO_ENTER_HOOK.lock() {
-            *guard = None;
-        }
-        if let Ok(mut guard) = MOSS_SOLO_LEAVE_HOOK.lock() {
-            *guard = None;
-        }
+        *MOSS_SOLO_ENTER_HOOK.lock() = None;
+        *MOSS_SOLO_LEAVE_HOOK.lock() = None;
     }
 }
 

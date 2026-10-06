@@ -4,7 +4,8 @@
 
 Phase 20.1 complete. Root admission is structurally restricted to non-Root execution. The compiler prevents `executor.invoke` outside `main`; runtime ingress defensively rejects Root/Branch reentrancy before bounded admission; the deadlock topology is permanently covered by a deterministic full-queue regression. No Moss source semantics were added or changed.
 
-Branch: `phase-20.1-root-admission-hardening` (parent: `dd88e2b` on `phase-20-integration`).
+Integrated from `phase-20.1-root-admission-hardening` at `6eda8f7`
+(parent: `dd88e2b` on `phase-20-integration`).
 
 Validation:
 - `python3 tests/tooling/check_phase20c_executor.py ./moss`: 54/54 passed (including full-queue deadlock regression Test 50, Branch-context Test 51, and active recursive `runtime_invoke` Test 52).
@@ -13,7 +14,7 @@ Validation:
 - `make examples`: all examples compiled with `-Oshared-memory`.
 - `git diff --check`: clean.
 
-## Phase 20 corrective review — implementation not yet complete
+## Phase 20 — implementation complete / Phase 20.5 swarm & soak pending
 
 Branch: `phase-20-integration`. This section is the authoritative integrated
 status; older Agent closeout records below are historical inputs and may
@@ -25,14 +26,13 @@ describe their isolated branches.
 | Agent B — production FileIO runtime and integration | `7d1b05a` plus integration seam |
 | Agent C — process executor runtime | `a099d3e8029c03b7f82030a704001606be532a7a` |
 | Agent D — compiler concurrency lowering | `4cde23ffbb8b4419389f28d546537a12c48dbeb2` |
-| Integration | closeout commit for this pass (parent `ef1fcbd`) |
+| Integration | rebased Phase 20 closeout commit (parent `6eda8f7`; reviewed source base `dd88e2b19716091adc581eae958c3231993378c2`) |
 
-The prior “Phase 20 implementation complete” status is withdrawn after review
-of `ddc6948ce08c05a77595645150db744d9f5eb19a`. Phase 20.5 must not begin until
-the required FileIO backend, pipeline context, callable inference, byte Range,
+The earlier “Phase 20 implementation complete” status was withdrawn after review
+of `ddc6948ce08c05a77595645150db744d9f5eb19a`. The corrective pass has
+closed the FileIO backend, pipeline context, callable inference, byte Range,
 bounded request, diagnostics, runtime fairness, agent discovery, and
-proposal-derived acceptance gaps are corrected and validated. The executor
-design itself is not being redesigned.
+proposal-derived acceptance gaps. The executor design was preserved.
 
 Reviewer findings include domain-field FileIO lowering not using the domain's
 single stored owner; chunk lowering assuming a Root for every eligible call;
@@ -41,8 +41,8 @@ byte-oriented Range source surface and binary-safe display/write behavior;
 incomplete request bound proof; invalid indexes conflating errors with EOF;
 blocking FileIO analysis not traversing nested messages; runtime leaf-lock
 fairness not fully established; and insufficient fresh-agent discoverability
-and proposal-derived executable acceptance programs. These are open until
-corrected below and covered by validation.
+and proposal-derived executable acceptance programs. These are corrected below
+and covered by validation.
 
 FileIO batch reads lower through production `FileIO::read_batch`; `RangeBatch`
 indexing uses checked `get(i64)`, and iteration borrows scoped ranges through
@@ -94,18 +94,67 @@ Corrective-pass progress (2026-10-05):
 - `make examples`, strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror
   -pedantic src/moss.cpp -o tmp/moss-strict`, and `git diff --check`: passed.
 
-Still blocking implementation-complete status: compiler-proven clamp bounds
-and a bound-proven String parameter write; actual overlapping-root tests for
-SHARED Verify and EXCLUSIVE Update/Open/Flush/Close conflicts; and a complete
-R5 audit of every runtime lock on Root/Branch wait paths with fair admission
-where required. Startup-configuration bounds and runtime clamps are explicitly
-deferred in the narrowed §12.7 contract; the requested clamp requirement is
-still open. Performance follow-ups for serial batch preads and fixed K=4 remain
-non-blocking optimization opportunities. Phase 20.5 must not begin.
+At the start of this continuation, the only two blockers were domain-field
+physical concurrency validation and the R5 runtime leaf-lock audit/fairness
+proof. Both are closed below.
+Under the checked-in normative §12.7, request bounds come from compile-time
+constants or immutable single-assignment aliases; statically known Strings
+carry their byte bounds, and Ranges inherit their bounded read size.
+Startup-configuration bounds and runtime clamp bounds are deferred, not Phase 20
+blockers. Performance follow-ups for serial batch preads and fixed K=4 remain
+non-blocking optimization opportunities.
 
-The validation claims in historical closeout text below describe the withdrawn
-pre-review status and are not evidence that these remaining items are closed.
-Do not push this branch.
+Historical closeout text below describes earlier checkpoints; the final
+validation for this integration is recorded in this section. Do not push.
+
+Continuation (2026-10-05): corrected the blocker list to match checked-in
+§12.7. Added `check_phase20_domain_field_physical.py` to the normal test gate.
+In separate production-runtime process instances, its `moss_perf` observer
+holds a generated `Verify` SHARED guard while a second `Verify` acquires the
+same class; `Update`, `Flush`, and `Close` each contend and acquire only after
+release. A valid `Open` emits an EXCLUSIVE acquisition. The focused physical,
+Agent A/B/C/D integration, and agent skill/discovery suites pass.
+
+R5 is closed by the complete inventory in `docs/PHASE20_R5_LOCK_AUDIT.md`.
+Repeated Root/Branch paths use one reusable fair leaf lock with FIFO
+predecessor admission and parking, including the ordinary state lock beneath
+the inode registry ticket protocol. A deterministic held-turn regression
+observes eight queued entrants and their exact critical-section entry order.
+One-shot reply, Branch pending/done, and compiler-owned result-slot mutexes
+have finite-contender dispositions; test-only hooks are excluded. No
+host-mutex-fairness assumption or R5 weakening was introduced. Existing
+process ingress tickets, Executor admission tickets, inode-registry tickets,
+and root FIFO queueing remain intact.
+
+The pre-existing Moss generated handler `RwLock` still carries A2's fair-waiter
+proof premise. The domain-field physical tests prove its required SHARED and
+EXCLUSIVE behavior, but not A2 waiter fairness; that separate Moss
+synchronization-proof issue is outside Phase 20 R5.
+
+Validation before the rebase: Agent A FileIO semantics, Agent B FileIO runtime
+(including inode-registry ticket ordering), Agent C Executor (51/51), Agent
+D/integration and proposal acceptance programs (domain-field Store,
+word-count/untyped summarize, main/helper chunk contexts, binary Range copy,
+and Solo compensation), domain-field physical concurrency, the R5 fair
+admission regression, agent skill/discovery, `tests/run.sh`, `make check`,
+`make examples`, strict C++17 warnings-as-errors compilation, and
+`git diff --check` passed.
+
+Post-rebase validation (2026-10-05): rebased the closeout commit onto the
+current `origin/phase-20-integration` tip `6eda8f7`, incorporating Phase 20.1
+Root admission hardening. Rebuilt `./moss`; Agent A, Agent B, Agent C (54/54),
+Agent D/integration and proposal acceptance, domain-field physical concurrency,
+R5 fair admission, and agent skill/discovery all passed. `tests/run.sh`,
+`make examples`, and strict C++17 warnings-as-errors compilation passed.
+`make check` passed the full Moss v0.1 gate, including Agent C 54/54.
+`git diff --check` passed. The integration is ready for Phase 20.5 swarm and
+soak. No push was performed.
+
+Explicit non-blocking Phase 20 limitations and follow-ups: Fast Debug FileIO
+execution is unsupported; startup-bound FileIO sizes and runtime clamp bounds
+are deferred; source-free `.mossi` FileIO effect remains unknown and lowers
+conservatively sequentially; batch `pread`s are serial; chunk windows remain
+fixed at K=4.
 
 ### Historical integration notes
 

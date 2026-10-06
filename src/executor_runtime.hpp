@@ -50,6 +50,181 @@ enum class ExecutorRuntimeRole {
   SelectedByExecutableBuild,
 };
 
+// Shared by every generated crate, including source-free providers. The
+// runtime block delimiter keeps this implementation out of user lowering.
+inline const char* fair_leaf_runtime_items() {
+  return R"EXECUTOR_RUST(
+// FIFO leaf lock. Each entrant atomically swaps its node into the tail and
+// waits only on its predecessor. No entrant can bypass an enqueued waiter.
+// park/unpark handles spurious wakeups and does not spin. The current holder
+// never parks, joins, or takes another runtime lock while holding this lock.
+struct MossFairNode {
+    released: std::sync::atomic::AtomicBool,
+    waiter: std::sync::atomic::AtomicPtr<std::thread::Thread>,
+}
+
+#[cfg(any(test, moss_perf))]
+static MOSS_FAIR_ENQUEUE_HOOK: std::sync::OnceLock<fn(usize)> = std::sync::OnceLock::new();
+#[cfg(any(test, moss_perf))]
+pub fn moss_fair_set_enqueue_hook(hook: fn(usize)) {
+    let _ = MOSS_FAIR_ENQUEUE_HOOK.set(hook);
+}
+
+pub struct MossFairMutex<T> {
+    tail: std::sync::atomic::AtomicPtr<MossFairNode>,
+    value: std::cell::UnsafeCell<T>,
+    #[cfg(any(test, moss_perf))]
+    parked: std::sync::atomic::AtomicUsize,
+}
+
+// SAFETY: the FIFO turn grants one mutable access at a time. T must be Send
+// because a turn can be acquired on a different thread.
+unsafe impl<T: Send> Send for MossFairMutex<T> {}
+unsafe impl<T: Send> Sync for MossFairMutex<T> {}
+
+pub struct MossFairGuard<'a, T> {
+    lock: &'a MossFairMutex<T>,
+    node: std::sync::Arc<MossFairNode>,
+}
+
+impl<T> MossFairMutex<T> {
+    pub const fn new(value: T) -> Self {
+        Self {
+            tail: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
+            value: std::cell::UnsafeCell::new(value),
+            #[cfg(any(test, moss_perf))]
+            parked: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    pub fn lock(&self) -> MossFairGuard<'_, T> {
+        use std::sync::atomic::Ordering;
+        let node = std::sync::Arc::new(MossFairNode {
+            released: std::sync::atomic::AtomicBool::new(false),
+            waiter: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
+        });
+        let raw = std::sync::Arc::into_raw(std::sync::Arc::clone(&node)) as *mut MossFairNode;
+        let previous = self.tail.swap(raw, Ordering::AcqRel);
+        if !previous.is_null() {
+            // SAFETY: swapping the tail transferred its owned Arc to us.
+            let predecessor = unsafe { std::sync::Arc::from_raw(previous) };
+            let waiter = std::sync::Arc::new(std::thread::current());
+            let waiter_raw = std::sync::Arc::into_raw(waiter) as *mut std::thread::Thread;
+            assert!(predecessor.waiter.compare_exchange(
+                std::ptr::null_mut(), waiter_raw, Ordering::AcqRel, Ordering::Acquire).is_ok());
+            #[cfg(any(test, moss_perf))]
+            self.parked.fetch_add(1, Ordering::SeqCst);
+            #[cfg(any(test, moss_perf))]
+            if let Some(hook) = MOSS_FAIR_ENQUEUE_HOOK.get() { hook(self as *const Self as usize); }
+            while !predecessor.released.load(Ordering::Acquire) {
+                std::thread::park();
+            }
+            let remaining = predecessor.waiter.swap(std::ptr::null_mut(), Ordering::AcqRel);
+            if !remaining.is_null() {
+                // SAFETY: the successful swap transferred the waiter Arc.
+                drop(unsafe { std::sync::Arc::from_raw(remaining) });
+            }
+            #[cfg(any(test, moss_perf))]
+            self.parked.fetch_sub(1, Ordering::SeqCst);
+        }
+        MossFairGuard { lock: self, node }
+    }
+
+    #[cfg(any(test, moss_perf))]
+    pub fn parked_waiters(&self) -> usize {
+        self.parked.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl<T> std::ops::Deref for MossFairGuard<'_, T> {
+    type Target = T;
+    fn deref(&self) -> &T { unsafe { &*self.lock.value.get() } }
+}
+impl<T> std::ops::DerefMut for MossFairGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut T { unsafe { &mut *self.lock.value.get() } }
+}
+impl<T> Drop for MossFairGuard<'_, T> {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        self.node.released.store(true, Ordering::Release);
+        let waiter = self.node.waiter.swap(std::ptr::null_mut(), Ordering::AcqRel);
+        if !waiter.is_null() {
+            // SAFETY: the successful swap transferred the waiter Arc.
+            unsafe { std::sync::Arc::from_raw(waiter) }.unpark();
+        }
+        let raw = std::sync::Arc::as_ptr(&self.node) as *mut MossFairNode;
+        if self.lock.tail.compare_exchange(raw, std::ptr::null_mut(),
+                Ordering::AcqRel, Ordering::Acquire).is_ok() {
+            // SAFETY: the successful CAS removed the tail-owned Arc.
+            drop(unsafe { std::sync::Arc::from_raw(raw) });
+        }
+    }
+}
+
+struct MossFairWaiter {
+    thread: std::thread::Thread,
+    notified: std::sync::atomic::AtomicBool,
+}
+
+pub struct MossFairCondvar {
+    owner: std::sync::atomic::AtomicPtr<()>,
+    waiters: std::cell::UnsafeCell<std::collections::VecDeque<std::sync::Arc<MossFairWaiter>>>,
+}
+// SAFETY: every access to waiters requires a guard of the one bound fair lock.
+unsafe impl Send for MossFairCondvar {}
+unsafe impl Sync for MossFairCondvar {}
+
+impl MossFairCondvar {
+    pub const fn new() -> Self {
+        Self { owner: std::sync::atomic::AtomicPtr::new(std::ptr::null_mut()),
+               waiters: std::cell::UnsafeCell::new(std::collections::VecDeque::new()) }
+    }
+    fn check<T>(&self, guard: &MossFairGuard<'_, T>) {
+        use std::sync::atomic::Ordering;
+        let lock = guard.lock as *const MossFairMutex<T> as *mut ();
+        let owner = self.owner.load(Ordering::Acquire);
+        if owner.is_null() {
+            let _ = self.owner.compare_exchange(std::ptr::null_mut(), lock,
+                                                Ordering::AcqRel, Ordering::Acquire);
+        }
+        assert_eq!(self.owner.load(Ordering::Acquire), lock,
+                   "fair condition used with a different state lock");
+    }
+    pub fn wait<'a, T>(&self, guard: MossFairGuard<'a, T>) -> MossFairGuard<'a, T> {
+        self.check(&guard);
+        let waiter = std::sync::Arc::new(MossFairWaiter {
+            thread: std::thread::current(),
+            notified: std::sync::atomic::AtomicBool::new(false),
+        });
+        // SAFETY: the associated fair guard exclusively protects this queue.
+        unsafe { &mut *self.waiters.get() }.push_back(std::sync::Arc::clone(&waiter));
+        let lock = guard.lock;
+        drop(guard);
+        while !waiter.notified.load(std::sync::atomic::Ordering::Acquire) {
+            std::thread::park();
+        }
+        lock.lock()
+    }
+    pub fn notify_one<T>(&self, guard: &MossFairGuard<'_, T>) {
+        self.check(guard);
+        // SAFETY: the associated fair guard exclusively protects this queue.
+        if let Some(waiter) = unsafe { &mut *self.waiters.get() }.pop_front() {
+            waiter.notified.store(true, std::sync::atomic::Ordering::Release);
+            waiter.thread.unpark();
+        }
+    }
+    pub fn notify_all<T>(&self, guard: &MossFairGuard<'_, T>) {
+        self.check(guard);
+        // SAFETY: the associated fair guard exclusively protects this queue.
+        for waiter in unsafe { &mut *self.waiters.get() }.drain(..) {
+            waiter.notified.store(true, std::sync::atomic::Ordering::Release);
+            waiter.thread.unpark();
+        }
+    }
+}
+)EXECUTOR_RUST";
+}
+
 // Process-root runtime items (without the block delimiters).
 inline const char* executor_runtime_root_items() {
   return R"EXECUTOR_RUST(
@@ -252,20 +427,20 @@ impl MossExecInner {
 // ─── Global executor instance ─────────────────────────────────────────────
 struct MossGlobalExec {
     config: MossExecutorConfig,
-    inner: std::sync::Mutex<MossExecInner>,
-    work_cv: std::sync::Condvar,
-    queue_not_full_cv: std::sync::Condvar,
-    drain_cv: std::sync::Condvar,
+    inner: MossFairMutex<MossExecInner>,
+    work_cv: MossFairCondvar,
+    queue_not_full_cv: MossFairCondvar,
+    drain_cv: MossFairCondvar,
     /// Ready Branch scopes; each scope appears at most once (its `queued` flag).
-    branch_scopes: std::sync::Mutex<std::collections::VecDeque<std::sync::Arc<MossBranchScopeState>>>,
+    branch_scopes: MossFairMutex<std::collections::VecDeque<std::sync::Arc<MossBranchScopeState>>>,
     /// Branch work generation, read by idle workers before they sleep.
     branch_seq: std::sync::atomic::AtomicU64,
-    worker_threads: std::sync::Mutex<std::vec::Vec<std::thread::JoinHandle<()>>>,
+    worker_threads: MossFairMutex<std::vec::Vec<std::thread::JoinHandle<()>>>,
 }
 
 impl MossGlobalExec {
-    fn lock_inner(&self) -> std::sync::MutexGuard<'_, MossExecInner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock_inner(&self) -> MossFairGuard<'_, MossExecInner> {
+        self.inner.lock()
     }
 
     /// Wake one idle worker for newly published Branch work.  Acquiring and
@@ -276,8 +451,8 @@ impl MossGlobalExec {
         self.branch_seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         #[cfg(any(test, moss_perf))]
         moss_rt_ev(MossRtEvent::BranchWakeSignal, 0, 0, usize::MAX);
-        drop(self.lock_inner());
-        self.work_cv.notify_one();
+        let inner = self.lock_inner();
+        self.work_cv.notify_one(&inner);
     }
 
     /// Pop one unstarted Branch from the ready-scope queue.  Lock order is
@@ -285,7 +460,7 @@ impl MossGlobalExec {
     /// then branch_scopes again; no two are ever held together.
     fn take_ready_branch(&self) -> std::option::Option<(std::sync::Arc<MossBranchScopeState>, u64, MossWork)> {
         loop {
-            let scope = self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).pop_front()?;
+            let scope = self.branch_scopes.lock().pop_front()?;
             let (item, requeue) = {
                 let mut pending = scope.lock_pending();
                 let item = pending.items.pop_front();
@@ -308,7 +483,7 @@ impl MossGlobalExec {
     /// the entry was in transit; its join then cleared `queued` but could not
     /// find the entry, so the pusher removes it.
     fn push_ready_scope(&self, scope: &std::sync::Arc<MossBranchScopeState>) {
-        self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).push_back(std::sync::Arc::clone(scope));
+        self.branch_scopes.lock().push_back(std::sync::Arc::clone(scope));
         let stale = {
             let pending = scope.lock_pending();
             pending.joined && !pending.queued
@@ -320,7 +495,7 @@ impl MossGlobalExec {
     /// publication can enqueue the scope again, so any entry is stale.
     fn remove_ready_scope(&self, scope: &std::sync::Arc<MossBranchScopeState>) {
         let removed = {
-            let mut ready = self.branch_scopes.lock().unwrap_or_else(|e| e.into_inner());
+            let mut ready = self.branch_scopes.lock();
             ready.iter().position(|s| std::sync::Arc::ptr_eq(s, scope)).and_then(|index| ready.remove(index))
         };
         // Release the entry's reference after the queue lock.
@@ -339,8 +514,8 @@ struct MossProcessRuntimeInner {
 }
 
 struct MossProcessRuntime {
-    inner: std::sync::Mutex<MossProcessRuntimeInner>,
-    ingress_cv: std::sync::Condvar,
+    inner: MossFairMutex<MossProcessRuntimeInner>,
+    ingress_cv: MossFairCondvar,
     next_root_id: std::sync::atomic::AtomicU64,
     next_branch_id: std::sync::atomic::AtomicU64,
 }
@@ -348,7 +523,7 @@ struct MossProcessRuntime {
 impl MossProcessRuntime {
     fn new() -> Self {
         Self {
-            inner: std::sync::Mutex::new(MossProcessRuntimeInner {
+            inner: MossFairMutex::new(MossProcessRuntimeInner {
                 state: MossIngressState::Inline,
                 start_pending: false,
                 inline_running: false,
@@ -356,14 +531,14 @@ impl MossProcessRuntime {
                 next_inline_ticket: 0,
                 serving_inline_ticket: 0,
             }),
-            ingress_cv: std::sync::Condvar::new(),
+            ingress_cv: MossFairCondvar::new(),
             next_root_id: std::sync::atomic::AtomicU64::new(1),
             next_branch_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
 
-    fn lock_inner(&self) -> std::sync::MutexGuard<'_, MossProcessRuntimeInner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock_inner(&self) -> MossFairGuard<'_, MossProcessRuntimeInner> {
+        self.inner.lock()
     }
 
     fn active_executor(&self) -> std::option::Option<std::sync::Arc<MossGlobalExec>> {
@@ -524,9 +699,8 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
                 inner.active_workers = inner.active_workers.saturating_sub(1);
                 #[cfg(any(test, moss_perf))]
                 moss_rt_ev(MossRtEvent::WorkerExited, 0, 0, worker_id);
-                drop(inner);
                 // Pass on any wakeup this exiting worker may have consumed.
-                gx.work_cv.notify_one();
+                gx.work_cv.notify_one(&inner);
                 return;
             }
             let root = inner.root_queue.pop_front();
@@ -535,7 +709,9 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
         };
 
         if let Some(desc) = root {
-            gx.queue_not_full_cv.notify_all();
+            let inner = gx.lock_inner();
+            gx.queue_not_full_cv.notify_all(&inner);
+            drop(inner);
             let root_id = desc.root_id;
             #[cfg(any(test, moss_perf))]
             moss_rt_ev(MossRtEvent::RootStarted, root_id, 0, worker_id);
@@ -546,7 +722,7 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
             let mut inner = gx.lock_inner();
             inner.running_roots = inner.running_roots.saturating_sub(1);
             if inner.running_roots == 0 && inner.root_queue.is_empty() {
-                gx.drain_cv.notify_all();
+                gx.drain_cv.notify_all(&inner);
             }
             continue;
         }
@@ -572,7 +748,7 @@ fn worker_loop(gx: std::sync::Arc<MossGlobalExec>, worker_id: usize) {
         if idle {
             #[cfg(any(test, moss_perf))]
             if let Some(hook) = MOSS_RT_PREWAIT_HOOK.get() { hook(worker_id); }
-            drop(gx.work_cv.wait(inner).unwrap_or_else(|e| e.into_inner()));
+            drop(gx.work_cv.wait(inner));
         }
     }
 }
@@ -607,7 +783,7 @@ fn spawn_one_worker(gx: &std::sync::Arc<MossGlobalExec>, wid: usize) {
         .expect("failed to spawn worker thread");
     // Reap exited (excess compensation) workers so handles stay bounded.
     let finished: std::vec::Vec<std::thread::JoinHandle<()>> = {
-        let mut threads = gx.worker_threads.lock().unwrap_or_else(|e| e.into_inner());
+        let mut threads = gx.worker_threads.lock();
         let mut finished = std::vec::Vec::new();
         let mut index = 0;
         while index < threads.len() {
@@ -650,7 +826,7 @@ fn admit_root(gx: &std::sync::Arc<MossGlobalExec>, desc: MossRootDescriptor) -> 
         if inner.draining {
             if my_ticket == inner.serving_admission_ticket {
                 inner.serving_admission_ticket += 1;
-                gx.queue_not_full_cv.notify_all();
+                gx.queue_not_full_cv.notify_all(&inner);
             }
             return MossAdmissionResult::DrainingBeforeAdmission(desc);
         }
@@ -661,11 +837,11 @@ fn admit_root(gx: &std::sync::Arc<MossGlobalExec>, desc: MossRootDescriptor) -> 
             moss_rt_ev(MossRtEvent::AdmissionQueued, desc.root_id, 0, usize::MAX);
             inner.root_queue.push_back(desc);
             inner.serving_admission_ticket += 1;
-            gx.work_cv.notify_one();
-            gx.queue_not_full_cv.notify_all();
+            gx.work_cv.notify_one(&inner);
+            gx.queue_not_full_cv.notify_all(&inner);
             return MossAdmissionResult::Admitted;
         }
-        inner = gx.queue_not_full_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+        inner = gx.queue_not_full_cv.wait(inner);
     }
 }
 
@@ -731,7 +907,7 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
 
     let gx = std::sync::Arc::new(MossGlobalExec {
         config,
-        inner: std::sync::Mutex::new(MossExecInner {
+        inner: MossFairMutex::new(MossExecInner {
             root_queue: std::collections::VecDeque::new(),
             active_workers: target,
             live_threads: target,
@@ -743,12 +919,12 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
             next_admission_ticket: 0,
             serving_admission_ticket: 0,
         }),
-        work_cv: std::sync::Condvar::new(),
-        queue_not_full_cv: std::sync::Condvar::new(),
-        drain_cv: std::sync::Condvar::new(),
-        branch_scopes: std::sync::Mutex::new(std::collections::VecDeque::new()),
+        work_cv: MossFairCondvar::new(),
+        queue_not_full_cv: MossFairCondvar::new(),
+        drain_cv: MossFairCondvar::new(),
+        branch_scopes: MossFairMutex::new(std::collections::VecDeque::new()),
         branch_seq: std::sync::atomic::AtomicU64::new(0),
-        worker_threads: std::sync::Mutex::new(std::vec::Vec::new()),
+        worker_threads: MossFairMutex::new(std::vec::Vec::new()),
     });
 
     {
@@ -763,7 +939,7 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
         #[cfg(any(test, moss_perf))]
         moss_rt_ev(MossRtEvent::StartPendingSet, 0, 0, usize::MAX);
         while inner.inline_running {
-            inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+            inner = rt.ingress_cv.wait(inner);
             if inner.state != MossIngressState::Inline || !inner.start_pending {
                 panic!("moss executor: invalid state during start()");
             }
@@ -773,7 +949,7 @@ pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHa
         inner.start_pending = false;
         inner.active_executor = Some(std::sync::Arc::clone(&gx));
         // Waiting callers re-evaluate and use ACTIVE executor admission.
-        rt.ingress_cv.notify_all();
+        rt.ingress_cv.notify_all(&inner);
     }
 
     #[cfg(any(test, moss_perf))]
@@ -825,7 +1001,7 @@ impl MossExecutorHandle {
         {
             let mut exec_inner = self.gx.lock_inner();
             exec_inner.draining = true;
-            self.gx.queue_not_full_cv.notify_all();
+            self.gx.queue_not_full_cv.notify_all(&exec_inner);
         }
 
         #[cfg(any(test, moss_perf))]
@@ -835,15 +1011,17 @@ impl MossExecutorHandle {
         {
             let mut exec_inner = self.gx.lock_inner();
             while exec_inner.running_roots > 0 || !exec_inner.root_queue.is_empty() {
-                exec_inner = self.gx.drain_cv.wait(exec_inner).unwrap_or_else(|e| e.into_inner());
+                exec_inner = self.gx.drain_cv.wait(exec_inner);
             }
             exec_inner.shutdown = true;
         }
-        self.gx.work_cv.notify_all();
+        let exec_inner = self.gx.lock_inner();
+        self.gx.work_cv.notify_all(&exec_inner);
+        drop(exec_inner);
 
         // Step 3: join every physical worker (no runtime lock held).
         let handles: std::vec::Vec<_> = {
-            let mut guard = self.gx.worker_threads.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.gx.worker_threads.lock();
             guard.drain(..).collect()
         };
         for h in handles {
@@ -855,7 +1033,7 @@ impl MossExecutorHandle {
             let mut inner = rt.lock_inner();
             inner.state = MossIngressState::Inline;
             inner.active_executor = None;
-            rt.ingress_cv.notify_all();
+            rt.ingress_cv.notify_all(&inner);
         }
 
         #[cfg(any(test, moss_perf))]
@@ -914,7 +1092,7 @@ fn run_inline_root(rt: &MossProcessRuntime, root_id: u64, work: MossWork) {
     let mut inner = rt.lock_inner();
     inner.inline_running = false;
     inner.serving_inline_ticket += 1;
-    rt.ingress_cv.notify_all();
+    rt.ingress_cv.notify_all(&inner);
 }
 
 /// Synchronous host → Moss ingress (ROOT_RUNTIME_ABI §6).
@@ -959,11 +1137,11 @@ where
                     run_inline_root(rt, root_id, root_work.take().expect("root work already consumed"));
                     break;
                 }
-                inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                inner = rt.ingress_cv.wait(inner);
             }
             MossIngressState::Active => {
                 if ticket != inner.serving_inline_ticket {
-                    inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                    inner = rt.ingress_cv.wait(inner);
                     continue;
                 }
                 let gx = std::sync::Arc::clone(inner.active_executor.as_ref().expect("active executor missing in ACTIVE state"));
@@ -977,7 +1155,7 @@ where
                     MossAdmissionResult::Admitted => {
                         let mut inner = rt.lock_inner();
                         inner.serving_inline_ticket += 1;
-                        rt.ingress_cv.notify_all();
+                        rt.ingress_cv.notify_all(&inner);
                         break;
                     }
                     MossAdmissionResult::DrainingBeforeAdmission(unadmitted) => {
@@ -988,7 +1166,7 @@ where
                 }
             }
             MossIngressState::Draining => {
-                inner = rt.ingress_cv.wait(inner).unwrap_or_else(|e| e.into_inner());
+                inner = rt.ingress_cv.wait(inner);
             }
         }
     }
@@ -1334,7 +1512,8 @@ fn solo_leave_worker(gx: &std::sync::Arc<MossGlobalExec>, worker_id: usize) {
         if unblocked { inner.solo_blocked_workers.remove(&worker_id); }
     }
     // Let one idle worker re-evaluate whether it is now excess.
-    gx.work_cv.notify_one();
+    let inner = gx.lock_inner();
+    gx.work_cv.notify_one(&inner);
 }
 
 /// Enter a Solo wait on behalf of the current thread.  Returns false (and does
@@ -1396,7 +1575,7 @@ pub fn moss_executor_live_threads() -> usize {
 #[cfg(any(test, moss_perf))]
 pub fn moss_executor_physical_threads() -> usize {
     moss_test_exec(|gx| {
-        let threads = gx.worker_threads.lock().unwrap_or_else(|e| e.into_inner());
+        let threads = gx.worker_threads.lock();
         let mut live = 0;
         for h in threads.iter() {
             if !h.is_finished() { live += 1; }
@@ -1460,7 +1639,7 @@ pub fn moss_executor_solo_blocked() -> usize {
 /// Entries in the executor's ready-scope queue (bounded by live scopes).
 #[cfg(any(test, moss_perf))]
 pub fn moss_executor_ready_scopes() -> usize {
-    moss_test_exec(|gx| gx.branch_scopes.lock().unwrap_or_else(|e| e.into_inner()).len()).unwrap_or(0)
+    moss_test_exec(|gx| gx.branch_scopes.lock().len()).unwrap_or(0)
 }
 )EXECUTOR_RUST";
 }
@@ -1590,6 +1769,7 @@ inline std::string executor_runtime_rust(ExecutorRuntimeRole role) {
       s += "}\npub use __moss_executor_runtime::*;\n";
       break;
   }
+  s += fair_leaf_runtime_items();
   s += "// ─── End Phase 20 Executor Runtime ───────────────────────────────────────\n";
   return s;
 }

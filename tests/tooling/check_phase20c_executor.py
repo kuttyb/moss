@@ -1111,7 +1111,10 @@ fn main() {
         let me = current_worker_id().unwrap();
         ARMED.store(true, Ordering::SeqCst);
         // Make the idle worker re-run its predicate so it reaches the hook.
-        process_rt().active_executor().unwrap().work_cv.notify_all();
+        let gx = process_rt().active_executor().unwrap();
+        let inner = gx.lock_inner();
+        gx.work_cv.notify_all(&inner);
+        drop(inner);
         wait_until("idle worker in pre-wait window", || AT_PREWAIT.load(Ordering::SeqCst) != usize::MAX);
         let idle = AT_PREWAIT.load(Ordering::SeqCst);
         assert_ne!(idle, me);

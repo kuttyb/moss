@@ -744,6 +744,18 @@ fn main() {
 }
 """
 
+def extract_fair_leaf_runtime_rust():
+    executor_header = os.path.join(REPO_ROOT, "src/executor_runtime.hpp")
+    with open(executor_header, "r", encoding="utf-8") as f:
+        content = f.read()
+    start_marker = 'inline const char* fair_leaf_runtime_items() {\n  return R"EXECUTOR_RUST(\n'
+    end_marker = '\n)EXECUTOR_RUST";\n}'
+    start_idx = content.find(start_marker)
+    end_idx = content.find(end_marker, start_idx)
+    if start_idx == -1 or end_idx == -1:
+        raise RuntimeError("Failed to extract fair_leaf_runtime_items")
+    return content[start_idx + len(start_marker):end_idx]
+
 def extract_fileio_runtime_rust():
     header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
     with open(header_path, "r", encoding="utf-8") as f:
@@ -754,7 +766,7 @@ def extract_fileio_runtime_rust():
     end_idx = content.find(end_marker, start_idx)
     if start_idx == -1 or end_idx == -1:
         raise RuntimeError("Failed to extract fileio_runtime_rust from src/fileio_runtime.hpp")
-    return content[start_idx + len(start_marker):end_idx]
+    return extract_fair_leaf_runtime_rust() + "\n" + content[start_idx + len(start_marker):end_idx]
 
 def extract_fileio_root_runtime_rust():
     header_path = os.path.join(REPO_ROOT, "src/fileio_runtime.hpp")
