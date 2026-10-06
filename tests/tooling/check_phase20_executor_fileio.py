@@ -404,7 +404,7 @@ assert "Fast Debug FileIO execution is intentionally unsupported in Phase 20" in
 
 # The promoted A+B source fixture exercises dynamic offsets, String write,
 # direct read, inline batch read, get(0), a later valid dynamically computed
-# index, the runtime's empty-Range out-of-range contract, scoped iteration,
+# index, scoped iteration,
 # length, sync, and explicit close against Agent B's production runtime.
 integration_fixture = 'tests/tooling/fixtures/phase20_fileio_runtime_integration.moss'
 fixture_rust, fixture_binary = native_build(
@@ -413,9 +413,44 @@ fixture_text = fixture_rust.read_text()
 assert '.read_batch(&[' in fixture_text, fixture_text
 assert '(batch).get(0_i64)' in fixture_text, fixture_text
 assert '(batch).get(index)' in fixture_text, fixture_text
-assert '(batch).get((index).wrapping_add(1_i64))' in fixture_text, fixture_text
 assert 'in (batch).ranges()' in fixture_text, fixture_text
-assert run_binary(fixture_binary).stdout == '4 4 4 0 8\n'
+assert run_binary(fixture_binary).stdout == '4 4 4 8\n'
+
+# Proposal-shaped domain-field FileIO acceptance program. Open and all later
+# operations use the one FileIO stored in Store's generated state.
+domain_fileio_rust, domain_fileio_binary = native_build(
+    'phase20_domain_fileio_native',
+    'tests/tooling/fixtures/phase20_domain_fileio_native.moss')
+assert '.open_in_place(' in domain_fileio_rust.read_text()
+assert run_binary(domain_fileio_binary).stdout == '100\n4\n'
+
+# The proposal's untyped callback and actual byte indexing exercise all
+# execution contexts: direct main work with and without an Executor, a helper
+# called outside a Root, and that same helper called by a Root handler.
+word_count_rust, word_count_binary = native_build(
+    'phase20_proposal_word_count',
+    'tests/tooling/fixtures/phase20_proposal_word_count.moss')
+word_count_text = word_count_rust.read_text()
+assert '.get(0_i64)' in word_count_text and 'branch_scope_new_current()' in word_count_text
+assert run_binary(word_count_binary).stdout == '2 2 2 2\n'
+
+# Range -> write preserves invalid UTF-8 and embedded NUL bytes unchanged.
+binary_source = repo / 'tmp/phase20-binary-source.data'
+binary_copy = repo / 'tmp/phase20-binary-copy.data'
+binary_payload = bytes([0xFF, 0x00, 0x41, 0xC3, 0x28, 0x80, 0x5A, 0x0A])
+binary_source.write_bytes(binary_payload)
+binary_copy.unlink(missing_ok=True)
+_, binary_copy_program = native_build(
+    'phase20_range_copy', 'tests/tooling/fixtures/phase20_range_copy.moss')
+run_binary(binary_copy_program)
+assert binary_copy.read_bytes() == binary_payload
+
+# Moss `for byte in range` yields byte-valued Ints natively.
+range_iteration_rust, range_iteration_binary = native_build(
+    'phase20_range_iteration',
+    'tests/tooling/fixtures/phase20_range_iteration.moss')
+assert '.bytes()' in range_iteration_rust.read_text()
+assert run_binary(range_iteration_binary).stdout == '294\n'
 
 # Agent A also accepts bounded computed local Vector[record] request batches.
 computed_batch_source = write_source('phase20_fileio_computed_batch', '''type ReadRequest:

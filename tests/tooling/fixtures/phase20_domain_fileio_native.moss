@@ -1,0 +1,37 @@
+domain Store:
+  file: FileIO
+  value = 0
+
+  fn Open():
+    file.open("tmp/phase20-domain-fileio.data", create)
+
+  fn Verify() -> Int:
+    data = file.read(0, 4)
+    reply data[0]
+
+  fn Update():
+    file.write(0, "data")
+
+  fn Flush():
+    file.sync()
+    file.sync(dataonly)
+
+  fn Chunks():
+    for chunk in file.chunks(2):
+      value = value + chunk.length()
+
+  fn Total() -> Int:
+    reply value
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open()
+  message store.Update()
+  echo message store.Verify()
+  message store.Flush()
+  message store.Chunks()
+  echo message store.Total()
+  message store.Close()

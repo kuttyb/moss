@@ -46,7 +46,8 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     if (parse_member_call(s.b, receiver, method, arguments) &&
         fileio_typed(types, receiver) && method == "read" &&
         arguments.size() == 2) {
-      o << pad << "let " << s.a << " = " << expr(receiver, d, locals, &types)
+      o << pad << "let " << s.a << " = "
+        << method_receiver_place(receiver, "read", arguments, d, locals, &types)
         << ".read(" << expr(arguments[0], d, locals, &types) << ", "
         << expr(arguments[1], d, locals, &types) << ");\n";
       locals.insert(s.a);
@@ -56,11 +57,18 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     return false;
   }
   if (s.kind != Stmt::Kind::Call || !fileio_typed(types, s.a)) return false;
-  string receiver_expr = expr(s.a, d, locals, &types);
+  string receiver_expr = method_receiver_place(
+      s.a, s.b, s.args, d, locals, &types);
   if (s.b == "write" && s.args.size() == 2) {
     o << pad << receiver_expr << ".write("
       << expr(s.args[0], d, locals, &types) << ", &("
       << expr(s.args[1], d, locals, &types) << "));\n";
+    return true;
+  }
+  if (s.b == "open" && s.args.size() == 2) {
+    o << pad << receiver_expr << ".open_in_place(&("
+      << expr(s.args[0], d, locals, &types) << "), "
+      << rust_string_literal(trim(s.args[1])) << ");\n";
     return true;
   }
   if (s.b == "sync" && s.args.size() <= 1) {
@@ -240,6 +248,14 @@ std::optional<string> gen_fileio_chunk_pipeline(
     throw std::runtime_error(
         "internal error: unchecked FileIO chunk pipeline (no ChunkParallelPlan)");
   const auto& plan = planned->chunk_plan;
-  return plan.eligible ? gen_chunk_pipeline_bounded_k(plan, domain, locals, types)
-                       : gen_chunk_pipeline_sequential(plan, domain, locals, types);
+  if (!plan.eligible)
+    return gen_chunk_pipeline_sequential(plan, domain, locals, types);
+  // A helper specialization can execute in either ordinary code or a Root.
+  // Executor activity alone is insufficient: only a current Root owns Branch
+  // scopes. Select at runtime so the same helper preserves source semantics
+  // when called from main and uses bounded Branches when called from a Root.
+  return "if current_root_id().is_some() { " +
+      gen_chunk_pipeline_bounded_k(plan, domain, locals, types) +
+      " } else { " +
+      gen_chunk_pipeline_sequential(plan, domain, locals, types) + " }";
 }

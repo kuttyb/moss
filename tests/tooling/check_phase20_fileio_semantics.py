@@ -39,9 +39,13 @@ check('root_write', main('file = FileIO.open("output", create)\n'
 check('byte_vector_write_rejected', main('file = FileIO.open("output", create)\n'
     'file.write(0, [65, 66, 67, 68])\nfile.close()'),
     'FILEIO_INVALID_PAYLOAD')
-check('range_write_rejected', main('src = FileIO.open("input", ro)\n'
+check('range_write', main('src = FileIO.open("input", ro)\n'
     'dst = FileIO.open("output", create)\ndata = src.read(0, 4096)\n'
-    'dst.write(0, data)\nsrc.close()\ndst.close()'), 'FILEIO_INVALID_PAYLOAD')
+    'dst.write(0, data)\nsrc.close()\ndst.close()'))
+check('range_byte_surface', main('file = FileIO.open("input", ro)\n'
+    'data = file.read(0, 16)\nfirst = data[0]\n'
+    'for byte in data:\n  echo byte\n'
+    'part = data.slice(1, 3)\necho first\necho part.length()\nfile.close()'))
 check('borrow', 'fn use(file: FileIO) -> Int:\n  data = file.read(0, 4)\n'
     '  return data.length()\n\n' + main('file = FileIO.open("input", rw)\n'
     'echo use(file)\nfile.close()'))
@@ -134,6 +138,30 @@ assert any('FILEIO_BLOCKING_WITH_SHARED_WRITE' in str(d) and 'table' in str(d)
            for d in diagnostics), diagnostics
 assert sum('FILEIO_BLOCKING_WITH_SHARED_WRITE' in str(d) for d in diagnostics) == 2
 assert any('via borrowed_read' in str(d) for d in diagnostics), diagnostics
+
+nested_message_source = '''domain Storage:
+  file: FileIO
+
+  fn Read():
+    data = file.read(0, 4)
+
+domain Proxy:
+  counter = 0
+  domainroutes(storage: Storage)
+
+  fn Block():
+    counter = counter + 1
+    message storage.Read()
+
+fn main():
+  storage = Storage()
+  proxy = Proxy(storage: storage)
+'''
+_, nested_message_diagnostics = check('nested_message_blocking_warning',
+                                      nested_message_source)
+assert any('FILEIO_BLOCKING_WITH_SHARED_WRITE' in str(d) and
+           'counter' in str(d) and 'message' in str(d)
+           for d in nested_message_diagnostics), nested_message_diagnostics
 query = subprocess.run([str(compiler), 'inspect', 'main', '--source', str(domain_path), '--json'],
                        text=True, capture_output=True, check=True)
 plan = json.loads(query.stdout)['result']['synchronization_plan']['domains'][0]
@@ -144,8 +172,12 @@ for name in ('Read', 'Read2', 'ReadViaNested', 'Batch', 'Chunks'):
 for name in ('Open', 'Write', 'WriteViaHelper', 'Sync', 'Close'):
     assert handlers[name]['normalized_effects'] == {'file': 'WRITE'}, (name, handlers[name])
 assert handlers['Read']['class_modes'] == handlers['Read2']['class_modes']
-assert not any({c['left'].split('.')[-1], c['right'].split('.')[-1]} == {'Read', 'Read2'}
-               for c in plan['conflicts'])
+handler_name = lambda identity: identity.split('::handler:')[-1]
+conflicts = [{handler_name(c['left']), handler_name(c['right'])}
+             for c in plan['conflicts']]
+assert {'Read', 'Read2'} not in conflicts
+for mutating in ('Open', 'Write', 'Sync', 'Close'):
+    assert {mutating, 'Read'} in conflicts, (mutating, conflicts)
 
 inferred_path, inferred_diagnostics = check('inferred_helper_effect',
     'fn leaf(file):\n  data = file.read(0, 4)\n'
@@ -296,6 +328,9 @@ check('constant_expression_size', main('file = FileIO.open("input", ro)\n'
 check('bound_local_size_and_payload', main('file = FileIO.open("input", rw)\n'
     'size = 1024 * 2\npayload = "abcd"\n'
     'data = file.read(0, size)\nfile.write(1, payload)\nfile.close()'))
+check('computed_bounded_string_payload', main(
+    'payload = "ab" + "cd"\nfile = FileIO.open("output", create)\n'
+    'file.write(0, payload)\nfile.close()'))
 check('bound_helper_final_expression', 'fn writer(file: FileIO):\n'
     '  payload = "abcd"\n  file.write(0, payload)\n\n' +
     main('file = FileIO.open("input", rw)\nwriter(file)\nfile.close()'))
@@ -488,7 +523,6 @@ for name, code in (('anonymous_fileio', 'FILEIO_PINNED_OWNERSHIP'),
                    ('fileio_duplicate_write_read_alias_rejected',
                     'OWNERSHIP_CONFLICTING_ACCESS'),
                    ('byte_vector_write_rejected', 'FILEIO_INVALID_PAYLOAD'),
-                   ('range_write_rejected', 'FILEIO_INVALID_PAYLOAD'),
                    ('echo_second_arg_mutates_batch',
                     'FILEIO_UNBOUNDED_REQUEST'),
                    ('echo_mutation_through_local_alias_loses_bound',

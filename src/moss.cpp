@@ -3573,6 +3573,7 @@ class Checker {
       auto bt = inferred_expr_type(index_base, env);
       if (!bt) return std::nullopt;
       if (canonical_type_name(*bt) == "RangeBatch") return string("Range");
+      if (canonical_type_name(*bt) == "Range") return string("int");
       if (starts_with(*bt, "_generic:")) return string("_element:element:" + bt->substr(9));
       if (*bt == "vector" || *bt == "queue") return string("_element:element:" + index_base);
       if (starts_with(*bt, "vector[") && ends_with(*bt, "]")) return trim(bt->substr(7, bt->size()-8));
@@ -3709,6 +3710,8 @@ class Checker {
         // ordering/termination without a materialized byte API.
         if (concrete_base == "Range" && method_name == "length" && method_args.empty())
           return string("int");
+        if (concrete_base == "Range" && method_name == "slice" && method_args.size() == 2)
+          return string("Range");
         const auto* builtin = builtin_operation(concrete_base, method_name);
         if (concrete_base == "string" && builtin) {
           if (method_name == "length" && method_args.empty()) return string("int");
@@ -7758,12 +7761,11 @@ class Checker {
       identity = local->second.substr(9);
     auto function = functions_.find(identity);
     if (function == functions_.end()) {
-#ifndef NDEBUG
-      // The only permitted unresolved callable at this stage is a generic
-      // higher-order declaration awaiting a concrete specialization.
-      assert(deferred_generic_callable &&
-             "unresolved indirect callable reached effect analysis");
-#endif
+      // Callable inference can be incomplete while a higher-order function is
+      // awaiting its concrete input specialization. Preserve that fact for
+      // conservative planning; checked source must never reach an internal
+      // assertion merely because inference has not closed yet.
+      (void)deferred_generic_callable;
       effects.unresolved = true;
       return effects;
     }
@@ -10011,10 +10013,11 @@ class Checker {
       check_expression(line, ii, env);
       auto bt = inferred_expr_type(ib, env);
       if (!bt) err(line, "cannot infer indexed container type");
-      if (canonical_type_name(*bt) == "RangeBatch") {
+      if (canonical_type_name(*bt) == "RangeBatch" ||
+          canonical_type_name(*bt) == "Range") {
         auto index_type = inferred_expr_type(ii, env);
         if (!index_type || canonical_type_name(*index_type) != "int")
-          err(line, "RangeBatch index must be Int", "TYPE_MISMATCH");
+          err(line, "Range and RangeBatch indexes must be Int", "TYPE_MISMATCH");
         return;
       }
       // An untyped parameter carries an indexing requirement. Its key and
@@ -10125,6 +10128,7 @@ class Checker {
     }
     string type = canonical_type_name(*source_type);
     if (type == "RangeBatch") return string("Range");
+    if (type == "Range") return string("int");
     if (starts_with(type, "_generic:"))
       return "_iterator_element:" + type.substr(9);
     if (starts_with(type, "vector[") && ends_with(type, "]"))
@@ -14066,6 +14070,9 @@ class Generator {
       if (base_type && canonical_type_name(*base_type) == "RangeBatch")
         return "(" + expr(ib, d, locals, types) + ").get(" +
             expr(ii, d, locals, types) + ")";
+      if (base_type && canonical_type_name(*base_type) == "Range")
+        return "(" + expr(ib, d, locals, types) + ").get(" +
+            expr(ii, d, locals, types) + ")";
       bool string_index = ii.size() >= 2 && ii.front() == '"' && ii.back() == '"';
       string ir = string_index ? ii : expr(ii, d, locals, types);
       bool map_index = base_type &&
@@ -14231,6 +14238,10 @@ class Generator {
         // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.
         if ((concrete == "Range" || concrete == "RangeBatch") && member_name == "length" && member_arguments.empty())
           return "(" + receiver_expression + ").len()";
+        if (concrete == "Range" && member_name == "slice" && member_arguments.size() == 2)
+          return "(" + receiver_expression + ").slice(" +
+              expr(member_arguments[0], d, locals, types) + ", " +
+              expr(member_arguments[1], d, locals, types) + ")";
         if (concrete == "string") {
           string source = "(" + receiver_expression + ")";
           if (member_name == "length" && member_arguments.empty())
@@ -15651,6 +15662,21 @@ class Generator {
             auto child_types = types;
             child_locals.insert(s.a);
             child_types[s.a] = "Range";
+            ++i;
+            gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
+                      child_locals, child_types, base, in_handler, in_function,
+                      join_assignments, functional_context);
+            o << indent(level) << "}\n";
+            break;
+          }
+          if (source_type && canonical_type_name(*source_type) == "Range") {
+            string collection_expression = expr(source, d, locals, &types);
+            o << indent(level) << "for " << s.a << " in ("
+              << collection_expression << ").bytes() {\n";
+            auto child_locals = locals;
+            auto child_types = types;
+            child_locals.insert(s.a);
+            child_types[s.a] = "int";
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function,
@@ -17894,6 +17920,7 @@ static const vector<AgentCapabilityDescriptor>& agent_capability_catalog() {
   static const vector<AgentCapabilityDescriptor> catalog = {
       {"structured_diagnostics", "Stable machine-readable Moss diagnostics with compiler-owned source, rule, cause, entity, related-location, and guidance facts.", "moss check <source> --json"},
       {"language_surface", "Discover common current Moss source constructs, canonical spellings, and high-frequency semantic distinctions before inferring a capability is absent.", "moss agent bootstrap --json"},
+      {"phase20_fileio_executor", "Discover Phase 20 FileIO, byte Range, request-bound, domain-field ownership, Executor lifecycle, and synchronous message forms.", "moss agent bootstrap --json -> result.source_surface.fileio / executor"},
       {"semantic_queries", "Resolve entities without guessing, then read checked type, ownership, effect, call, reference, symbol, completion, domain, synchronization, explanation, and cost facts.", "moss resolve|inspect|type|effects|ownership|calls|references|symbols|complete|why|cost ... --source <source> --json"},
       {"semantic_editor_queries", "Compiler-owned navigation, workspace symbols, call hierarchy, and context-sensitive completion with strict unsaved-source overlays for editor clients without an LSP server.", "moss resolve|references|symbols|calls|complete ... --source <source> [--overlay-source <temporary-file>] --json"},
       {"durable_semantic_identities", "entity-v1 identities correlate diagnostics, queries, traces, impact, and exact edits.", "semantic query result.target.durable_identity"},
@@ -18514,7 +18541,7 @@ static void write_bootstrap_json(std::ostream& out,
             "first_order_effect_graph", "structured_execution_trace",
             "structured_debug_query",
             "synchronization_schema", "synchronization_plan", "concrete_domain_graph",
-            "domain_ranks", "package_project_driver", "package_dependencies",
+            "domain_ranks", "phase20_fileio_executor", "package_project_driver", "package_dependencies",
             "package_lockfile", "tool_invocation", "agent_benchmark_suite"});
   out << ",\n    \"capability_catalog\": ";
   write_agent_capability_catalog(out, command == "capabilities" || command == "schema");
@@ -18552,7 +18579,9 @@ static void write_bootstrap_json(std::ostream& out,
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
-         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}}}";
+         "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}},"
+         "\"fileio\":{\"root_local\":\"file = FileIO.open(path, mode)\",\"domain_field\":\"file: FileIO; file.open(path, mode) opens the stored field in place\",\"operations\":[\"read(offset, size)\",\"read(requests) -> RangeBatch\",\"write(offset, String|Range)\",\"sync()\",\"sync(dataonly)\",\"close()\",\"chunks(size)\"],\"range\":[\"length() -> Int\",\"range[index] -> byte Int\",\"for byte in range\",\"slice(start, length) -> Range\"],\"bounds\":\"request sizes, batch counts, and write payloads require compiler-proven finite bounds\",\"ownership\":\"pinned single owner; Range is borrowed/read-only; no ordinary storage or message transfer\",\"fast_debug\":\"unsupported; use native execution\"},"
+         "\"executor\":{\"construction\":\"Executor().threads(n).start() in main\",\"invoke\":\"executor.invoke(domain.Handler(args...))\",\"join\":\"executor.join() before leaving scope\",\"messages\":\"top-level ingress creates a Root; nested messages remain synchronous\",\"tasks\":false,\"active_instances\":1,\"chunk_branches\":\"compiler-created bounded internal work, not user tasks\"}}";
   out << ",\n    \"project_surface\": {"
          "\"manifest\": \"Moss.toml\","
          "\"minimal_manifest\": \"[project]\\nname = \\\"app\\\"\\nversion = \\\"0.1.0\\\"\\n\\n[build]\\nsource = \\\"src\\\"\\n\","

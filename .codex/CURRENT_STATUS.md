@@ -1,6 +1,6 @@
 # Moss current status
 
-## Phase 20 — implementation complete / Phase 20.5 validation soak pending
+## Phase 20 corrective review — implementation not yet complete
 
 Branch: `phase-20-integration`. This section is the authoritative integrated
 status; older Agent closeout records below are historical inputs and may
@@ -14,13 +14,22 @@ describe their isolated branches.
 | Agent D — compiler concurrency lowering | `4cde23ffbb8b4419389f28d546537a12c48dbeb2` |
 | Integration | closeout commit for this pass (parent `ef1fcbd`) |
 
-Phase 20 implementation is ready to enter the Phase 20.5 native IO/Executor
-swarm and soak campaign after the validation below. No Phase 20 production
-runtime is owned by D. Main-originated messages use `runtime_invoke` in all
-control-flow positions and in executor-free programs; messages inside a Root
-remain synchronous nested calls. Executor configuration uses checked
-conversions, and eligible chunk pipelines use K=4 Branch windows with ordered
-parent reduction and owned read-borrow tokens.
+The prior “Phase 20 implementation complete” status is withdrawn after review
+of `ddc6948ce08c05a77595645150db744d9f5eb19a`. Phase 20.5 must not begin until
+the required FileIO backend, pipeline context, callable inference, byte Range,
+bounded request, diagnostics, runtime fairness, agent discovery, and
+proposal-derived acceptance gaps are corrected and validated. The executor
+design itself is not being redesigned.
+
+Reviewer findings include domain-field FileIO lowering not using the domain's
+single stored owner; chunk lowering assuming a Root for every eligible call;
+untyped callback inference failing for `summarize(chunk)`; the missing usable
+byte-oriented Range source surface and binary-safe display/write behavior;
+incomplete request bound proof; invalid indexes conflating errors with EOF;
+blocking FileIO analysis not traversing nested messages; runtime leaf-lock
+fairness not fully established; and insufficient fresh-agent discoverability
+and proposal-derived executable acceptance programs. These are open until
+corrected below and covered by validation.
 
 FileIO batch reads lower through production `FileIO::read_batch`; `RangeBatch`
 indexing uses checked `get(i64)`, and iteration borrows scoped ranges through
@@ -37,25 +46,53 @@ The production FileIO→Solo→C compensation regression is in
 `WorkerSpawned` event while the FileIO Root is active. Agent C's separate suite
 continues to prove the `T_max` worker bound.
 
-Validation rerun for closeout:
+Corrective-pass progress (2026-10-05):
 
-- `./moss agent bootstrap --json`: reports `language_version: moss-0.1`.
-- Agent A `check_phase20_fileio_semantics.py`: passed.
-- Agent B `check_phase20_fileio_runtime.py`: all production runtime checks passed.
-- Agent C `check_phase20c_executor.py`: 51/51 passed.
-- Agent D/integration `check_phase20_executor_fileio.py`: passed against the
-  production FileIO and Executor runtimes, including inline and computed batch
-  lowering, indexing/iteration, and the observed Solo compensation activation.
-- `sh tests/run.sh ./moss build/tests`: passed; all four Phase 20 suites are in
-  the normal gate, and all 61 Emacs tests passed.
-- `make check`: passed; all Moss v0.1 tests passed and Emacs reported 61/61.
-- `make examples`: passed.
-- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` compiler build,
-  `sh -n tests/run.sh`, and `git diff --check`: passed.
+- Implemented production lowering for domain-field FileIO calls, using the
+  field state place and `open_in_place`; added a native Store acceptance
+  fixture for Open/Read/Write/Sync/Sync(dataonly)/Chunks/Close.
+- Added runtime Root-context selection for eligible chunk pipelines: Branch
+  lowering runs only with a current Root, otherwise the sequential reference
+  path runs.
+- Added Range byte indexing, iteration, slicing, exact byte Display, and
+  bounded Range write support. Invalid Range and RangeBatch indexes now abort
+  rather than masquerading as byte zero or EOF.
+- Extended blocking-FileIO warning analysis through statically known message
+  targets and added a nested-message regression.
+- Added proposal-derived native programs for untyped `summarize(chunk)`,
+  binary byte inspection, all four main/helper Root contexts, and byte-exact
+  read-to-write copying with invalid UTF-8 and embedded NUL. Added a separate
+  native `for byte in range` regression.
+- Narrowed §12.7 to the implemented constant/immutable-alias bound model;
+  startup configuration and runtime clamp bounds are explicitly deferred.
+- Exposed FileIO/Executor guidance through both skills and bootstrap source
+  surface/capability discovery; added drift checks.
+- `check_phase20_fileio_runtime.py`: passed, including ticket-lock contention
+  coverage and binary Range formatting.
+- `check_phase20_fileio_semantics.py`: passed, including Range source forms
+  and shared/exclusive mode conflict checks.
+- `check_phase20_executor_fileio.py`: passed, including native domain-field
+  FileIO, nested-message warnings, proposal word summary, binary copy, and the
+  Root-context chunk lowering. Rerun after the final word-summary fixture edit:
+  passed.
+- `check_agent_skills.py`: passed.
+- `make check`: all Moss tests passed, including the Phase 20 Agent C 51/51
+  executor suite and 61/61 Emacs tests.
+- `make examples`, strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror
+  -pedantic src/moss.cpp -o tmp/moss-strict`, and `git diff --check`: passed.
 
-Phase 20 implementation is complete. Final native IO/Executor behavior and
-load testing remain the intentional Phase 20.5 swarm/soak campaign. This is a
-local integration closeout; do not push this branch.
+Still blocking implementation-complete status: compiler-proven clamp bounds
+and a bound-proven String parameter write; actual overlapping-root tests for
+SHARED Verify and EXCLUSIVE Update/Open/Flush/Close conflicts; and a complete
+R5 audit of every runtime lock on Root/Branch wait paths with fair admission
+where required. Startup-configuration bounds and runtime clamps are explicitly
+deferred in the narrowed §12.7 contract; the requested clamp requirement is
+still open. Performance follow-ups for serial batch preads and fixed K=4 remain
+non-blocking optimization opportunities. Phase 20.5 must not begin.
+
+The validation claims in historical closeout text below describe the withdrawn
+pre-review status and are not evidence that these remaining items are closed.
+Do not push this branch.
 
 ### Historical integration notes
 

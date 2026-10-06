@@ -385,9 +385,13 @@ pub mod moss_fileio {
         pub fn get(&self, index: i64) -> i64 {
             let idx = match usize::try_from(index) {
                 Ok(i) if i < self.len => i,
-                _ => return 0,
+                _ => std::process::abort(),
             };
             self.buf[self.start + idx] as i64
+        }
+
+        pub fn bytes(&self) -> impl Iterator<Item = i64> + '_ {
+            self.as_slice().iter().map(|byte| *byte as i64)
         }
 
         pub fn slice(&self, start: i64, length: i64) -> Self {
@@ -427,9 +431,21 @@ pub mod moss_fileio {
         }
     }
 
+    impl AsRef<[u8]> for Range {
+        fn as_ref(&self) -> &[u8] {
+            self.as_slice()
+        }
+    }
+
     impl std::fmt::Display for Range {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.as_str())
+            f.write_str("b\"")?;
+            for byte in self.as_slice() {
+                for escaped in std::ascii::escape_default(*byte) {
+                    f.write_str(&(escaped as char).to_string())?;
+                }
+            }
+            f.write_str("\"")
         }
     }
 
@@ -454,7 +470,7 @@ pub mod moss_fileio {
         pub fn get(&self, index: i64) -> Range {
             let idx = match usize::try_from(index) {
                 Ok(i) if i < self.ranges.len() => i,
-                _ => return Range::empty(),
+                _ => std::process::abort(),
             };
             self.ranges[idx].clone()
         }

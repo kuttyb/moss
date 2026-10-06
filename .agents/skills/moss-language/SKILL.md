@@ -56,6 +56,7 @@ moss_skill_contract:
   collection_operations: bootstrap-discoverable
   test_domain_topology: bootstrap-discoverable
   composition_initializers: bootstrap-discoverable
+  fileio_executor: bootstrap-discoverable
   domain_fn: handler
   explicit_let: immutable
   explicit_var: mutable
@@ -424,6 +425,36 @@ Callable diagnostics distinguish an unsupported inline element spelling (use the
 placeholder), an invoked function in callable position (pass its name without
 parentheses), and a callback that writes captured state (return a transformed value
 from a pure callback). These are separate rules, not one generic pipeline failure.
+
+## Phase 20 FileIO and Executor
+
+Discover the complete source shape from `./moss agent bootstrap --json` under
+`result.source_surface.fileio` and `result.source_surface.executor`; query
+`./moss agent capabilities --json` and `./moss agent schema --json` for detailed
+inputs and diagnostics. FileIO is synchronous native I/O and Fast Debug does
+not execute it.
+
+`FileIO.open(path, mode)` creates a pinned root-local owner. A domain may
+instead declare `file: FileIO`; it begins closed and handlers open that same
+field in place with `file.open(path, mode)`. Both forms use explicit offsets:
+`read(offset, size)`, `write(offset, bytes)`, `sync()`, `sync(dataonly)`, and
+`close()`. `read([(offset, size), ...])` returns a `RangeBatch`; `chunks(size)`
+produces bounded chunks. `Range` is borrowed, read-only bytes: `length()`,
+`range[index]` (an Int from 0 through 255), `for byte in range`, and
+`slice(start, length)`. Writes accept statically bounded Strings and bounded
+Ranges. FileIO, Range, and RangeBatch cannot be copied, stored in ordinary
+collections/domain state (except the FileIO field form), or cross a message or
+executor boundary. Request sizes, batch sizes, and write payloads need a
+compiler-proven finite bound. Range byte access does not interpret UTF-8.
+
+Executor is one process-wide active executor. Construct/configure/start it in
+`main` with `Executor().threads(n).start()`, submit one-way static handlers with
+`executor.invoke(domain.Handler(args...))`, and call `executor.join()` before
+leaving its scope. There are no Moss futures or user tasks. Messages remain
+synchronous, including nested messages inside a Root. Compiler-created chunk
+Branches are bounded internal parallel work, not user tasks. FileIO and
+Executor details are in `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` and
+`docs/ROOT_RUNTIME_ABI.md`.
 
 ## Modules and projects
 

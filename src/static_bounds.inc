@@ -219,8 +219,29 @@
   std::optional<uint64_t> static_payload_byte_bound(
       const string& source) const {
     string value = static_source_expression(source);
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
-      return static_cast<uint64_t>(value.size() - 2);
+    std::function<std::optional<uint64_t>(string)> bounded_string =
+        [&](string expression) -> std::optional<uint64_t> {
+      expression = strip_redundant_outer_parentheses(trim(expression));
+      expression = static_source_expression(expression);
+      if (expression.size() >= 2 && expression.front() == '"' &&
+          expression.back() == '"')
+        return static_cast<uint64_t>(expression.size() - 2);
+      if (auto concatenation = split_binary(expression, {"+"})) {
+        auto left = bounded_string(concatenation->first);
+        auto right = bounded_string(concatenation->second);
+        uint64_t total = 0;
+        if (!left || !right || __builtin_add_overflow(*left, *right, &total))
+          return std::nullopt;
+        return total;
+      }
+      return std::nullopt;
+    };
+    if (auto bound = bounded_string(value)) return bound;
+    string receiver, method;
+    vector<string> arguments;
+    if (parse_member_call(value, receiver, method, arguments) &&
+        method == "read" && arguments.size() == 2)
+      return static_upper_bound(arguments[1]);
     return std::nullopt;
   }
 

@@ -88,6 +88,7 @@ moss_workflow_contract:
   collection_operations: bootstrap-discoverable
   test_domain_topology: bootstrap-discoverable
   composition_initializers: bootstrap-discoverable
+  fileio_executor: bootstrap-discoverable
   gap_classification: minimal-reproducer-first
 ```
 
@@ -106,6 +107,12 @@ minimal moss check --json probe
         ↓
 classify
 ```
+
+For Phase 20 FileIO or Executor APIs, route through
+`bootstrap.result.source_surface.fileio` / `.executor`, then the capability
+and schema discovery commands. The moss-language skill summarizes the usable
+source forms; `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` is the full
+proposal and `docs/ROOT_RUNTIME_ABI.md` documents native/runtime boundaries.
 
 For project-layout or manifest questions, use:
 

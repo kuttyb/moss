@@ -642,8 +642,8 @@ For example:
 domain Store:
   file: FileIO
 
-  fn Verify(offset, size, expected):
-    data = file.read(offset, size)
+  fn Verify(offset, expected):
+    data = file.read(offset, 4096)
     assert checksum(data) == expected
 
   fn Update(offset, data):
@@ -739,7 +739,10 @@ The runtime reuses a backing buffer only after every Range referring to it is de
 
 ### 12.7 Bounded sizes
 
-Every FileIO request size is statically bounded by a constant, startup configuration, or compiler-proven clamp.
+In Phase 20, request bounds must be established from a nonnegative compile-time
+integer constant or an immutable single-assignment alias of such a constant.
+String payloads use their statically known byte length. A Range payload inherits
+the finite bound of the `read` expression that produced it. This covers:
 
 This includes:
 
@@ -748,6 +751,12 @@ This includes:
 - total batch byte size;
 - individual batch entry sizes;
 - chunk size.
+
+Startup-configuration bounds and compiler-proven runtime clamps are deferred;
+Moss v0.1 currently defines no startup-bound declaration or clamp primitive.
+Do not pass an unconstrained function parameter as a request size. The canonical
+domain example uses a fixed bounded read, as shown above. This Phase 20 scope
+narrowing keeps the normative bound contract aligned with the implementation.
 
 ### 12.8 Sync
 
@@ -1589,4 +1598,3 @@ The Phase 20 core design is closed.
 
 - Duo I/O such as sockets and pipes;
 - the in-Moss cursor model if future workloads justify its additional language/runtime weight.
-

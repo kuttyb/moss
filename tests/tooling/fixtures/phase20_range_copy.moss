@@ -1,0 +1,7 @@
+fn main():
+  source = FileIO.open("tmp/phase20-binary-source.data", ro)
+  data = source.read(0, 8)
+  destination = FileIO.open("tmp/phase20-binary-copy.data", create)
+  destination.write(0, data)
+  source.close()
+  destination.close()

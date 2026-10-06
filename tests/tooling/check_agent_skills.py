@@ -130,6 +130,7 @@ def main() -> int:
             "collection_operations": "bootstrap-discoverable",
             "test_domain_topology": "bootstrap-discoverable",
             "composition_initializers": "bootstrap-discoverable",
+            "fileio_executor": "bootstrap-discoverable",
             "domain_fn": "handler",
             "explicit_let": "immutable",
             "explicit_var": "mutable",
@@ -159,6 +160,7 @@ def main() -> int:
             "collection_operations": "bootstrap-discoverable",
             "test_domain_topology": "bootstrap-discoverable",
             "composition_initializers": "bootstrap-discoverable",
+            "fileio_executor": "bootstrap-discoverable",
             "gap_classification": "minimal-reproducer-first",
         },
         "moss-agent-workflow",
@@ -277,6 +279,25 @@ def main() -> int:
                for command in ("moss run --interp", "moss debug")):
         fail("live fast_debug discovery lacks a current Fast Debug command")
     surface = bootstrap.get("source_surface", {})
+    if "phase20_fileio_executor" not in bootstrap.get("capabilities", []):
+        fail("bootstrap capabilities no longer route Phase 20 FileIO/Executor discovery")
+    phase20_catalog = catalog.get("phase20_fileio_executor", {})
+    if "source_surface.fileio" not in phase20_catalog.get("entrypoint", ""):
+        fail("Phase 20 capability discovery lacks FileIO/Executor source-surface routing")
+    fileio = surface.get("fileio", {})
+    if (fileio.get("domain_field") != "file: FileIO; file.open(path, mode) opens the stored field in place"
+            or "read(offset, size)" not in fileio.get("operations", [])
+            or "write(offset, String|Range)" not in fileio.get("operations", [])
+            or fileio.get("fast_debug") != "unsupported; use native execution"
+            or "finite bounds" not in fileio.get("bounds", "")):
+        fail("bootstrap source surface no longer exposes Phase 20 FileIO forms and limits")
+    executor = surface.get("executor", {})
+    if (executor.get("invoke") != "executor.invoke(domain.Handler(args...))"
+            or executor.get("join") != "executor.join() before leaving scope"
+            or executor.get("tasks") is not False
+            or "synchronous" not in executor.get("messages", "")
+            or "not user tasks" not in executor.get("chunk_branches", "")):
+        fail("bootstrap source surface no longer exposes Phase 20 Executor lifecycle")
     if surface.get("locals", {}).get("immutable") != "let x = expression":
         fail("bootstrap source surface no longer exposes immutable let syntax")
     if surface.get("locals", {}).get("mutable") != "var x = expression":

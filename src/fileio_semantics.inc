@@ -92,9 +92,12 @@
   static std::optional<string> fileio_method_requirement_result(
       const string& type, const string& method, size_t arity) {
     string concrete = canonical_type_name(type);
-    if (concrete == "Range" || concrete == "RangeBatch")
-      return method == "length" && arity == 0 ?
-          std::optional<string>("int") : std::nullopt;
+    if (concrete == "Range" || concrete == "RangeBatch") {
+      if (method == "length" && arity == 0) return string("int");
+      if (concrete == "Range" && method == "slice" && arity == 2)
+        return string("Range");
+      return std::nullopt;
+    }
     if (concrete != "FileIO") return std::nullopt;
     if (method == "read")
       return arity == 2 ? std::optional<string>("Range") :
@@ -134,6 +137,8 @@
     }
     if (type == "RangeBatch" && method == "length") return string("int");
     if (type == "Range" && method == "length") return string("int");
+    if (type == "Range" && method == "slice" && args.size() == 2)
+      return string("Range");
     return std::nullopt;
   }
 
@@ -160,7 +165,17 @@
       err(line, message, "FILEIO_INVALID_OPERATION");
     };
     if (type == "Range" || type == "RangeBatch") {
-      if (method != "length" || !args.empty()) fail(type + " supports only length()");
+      if (method == "length" && args.empty()) return true;
+      if (type == "Range" && method == "slice" && args.size() == 2) {
+        for (const auto& argument : args) {
+          auto actual = inferred_expr_type(argument, env);
+          if (!actual || canonical_type_name(*actual) != "int")
+            fail("Range.slice start and length must be Int");
+        }
+        return true;
+      }
+      fail(type + (type == "Range" ? " supports length() and slice(Int, Int)" :
+                                      " supports only length()"));
       return true;
     }
     if (!fileio_operation_effect(method)) fail("unknown FileIO operation '" + method + "'");
@@ -206,8 +221,9 @@
       if (!offset || canonical_type_name(*offset) != "int")
         fail("FileIO.write offset must be Int");
       auto payload = inferred_expr_type(args[1], env);
-      if (!payload || canonical_type_name(*payload) != "string")
-        err(line, "FileIO.write data must be a bounded String byte payload",
+      if (!payload || (canonical_type_name(*payload) != "string" &&
+                       canonical_type_name(*payload) != "Range"))
+        err(line, "FileIO.write data must be a bounded String or Range byte payload",
             "FILEIO_INVALID_PAYLOAD");
     }
     auto check_offset = [&](const string& expression) {
@@ -654,10 +670,30 @@
     if (flow.continuing) fileio_require_closed(exit_line, flow);
   }
 
+  string fileio_message_source(const Stmt& statement) const {
+    std::ostringstream source;
+    source << "message " << statement.a << "." << statement.b << "(";
+    for (size_t index = 0; index < statement.args.size(); ++index) {
+      if (index) source << ", ";
+      source << statement.args[index];
+    }
+    source << ")";
+    return source.str();
+  }
+
   std::optional<string> fileio_blocking_expression(
       string expression, const TypeEnv& env,
       std::set<string>& visited) const {
     expression = strip_redundant_outer_parentheses(trim(expression));
+    if (starts_with(expression, "message ")) {
+      string target, handler;
+      vector<string> arguments;
+      if (parse_member_call(trim(expression.substr(8)), target, handler,
+                            arguments))
+        if (auto nested = fileio_blocking_message(
+                target, handler, env, arguments, visited))
+          return *nested + " via message " + target + "." + handler;
+    }
     for (const auto& prefix : vector<string>{"echo ", "reply ",
                                               "return ", "message "})
       if (starts_with(expression, prefix))
@@ -728,16 +764,21 @@
             parameter.type;
     }
     for (const auto& statement : function->second->body) {
-      string expression = statement.kind == Stmt::Kind::Call ||
+      string expression = statement.kind == Stmt::Kind::Message
+          ? fileio_message_source(statement) :
+          statement.kind == Stmt::Kind::Call ||
           statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ||
-          statement.kind == Stmt::Kind::Message ? statement.text :
+          statement.kind == Stmt::Kind::Echo ? statement.text :
           statement.kind == Stmt::Kind::Reply ||
           statement.kind == Stmt::Kind::Return ||
           statement.kind == Stmt::Kind::If ||
           statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
-      if (auto blocking = fileio_blocking_expression(expression, env, visited))
+      auto blocking = statement.kind == Stmt::Kind::Message
+          ? fileio_blocking_message(statement.a, statement.b, env,
+                                    statement.args, visited)
+          : fileio_blocking_expression(expression, env, visited);
+      if (blocking)
         return blocking;
       if (statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var ||
@@ -749,6 +790,77 @@
     if (function->second->result_expression)
       return fileio_blocking_expression(*function->second->result_expression,
                                         env, visited);
+    return std::nullopt;
+  }
+
+  std::optional<string> fileio_blocking_message(
+      const string& receiver, const string& handler_name,
+      const TypeEnv& caller_env, const vector<string>& call_args,
+      std::set<string>& visited) const {
+    auto binding = caller_env.find(receiver);
+    if (binding == caller_env.end()) return std::nullopt;
+    auto domain = domains_.find(canonical_type_name(binding->second));
+    if (domain == domains_.end()) return std::nullopt;
+    const Handler* handler = find_handler(*domain->second, handler_name);
+    if (!handler) return std::nullopt;
+    if (handler->state_effects) {
+      for (const auto& field : domain->second->state) {
+        if (canonical_type_name(field.type) != "FileIO") continue;
+        auto has_leaf = [&](const std::set<string>& leaves) {
+          return std::any_of(leaves.begin(), leaves.end(),
+              [&](const string& leaf) {
+                return leaf.substr(0, leaf.find_first_of(".[")) == field.name;
+              });
+        };
+        if (has_leaf(handler->state_effects->reads) ||
+            has_leaf(handler->state_effects->writes) ||
+            has_leaf(handler->state_effects->consumes))
+          return string("FileIO operation");
+      }
+    }
+    string identity = "message:" + domain->first + "." + handler_name;
+    if (!visited.insert(identity).second) return std::nullopt;
+    struct VisitScope {
+      std::set<string>& visited;
+      const string& identity;
+      ~VisitScope() { visited.erase(identity); }
+    } visit_scope{visited, identity};
+    TypeEnv env;
+    env["self"] = domain->first;
+    for (const auto& field : domain->second->state)
+      env[field.name] = field.type;
+    for (const auto& route : domain->second->routes)
+      env[route.name] = route.type;
+    for (size_t index = 0; index < handler->params.size(); ++index) {
+      const auto& parameter = handler->params[index];
+      env[parameter.name] = parameter.type.empty() && index < call_args.size()
+          ? inferred_expr_type(call_args[index], caller_env).value_or("")
+          : parameter.type;
+    }
+    for (const auto& statement : handler->body) {
+      string expression = statement.kind == Stmt::Kind::Message
+          ? fileio_message_source(statement) :
+          statement.kind == Stmt::Kind::Call ||
+          statement.kind == Stmt::Kind::Raw ||
+          statement.kind == Stmt::Kind::Echo ? statement.text :
+          statement.kind == Stmt::Kind::Reply ||
+          statement.kind == Stmt::Kind::Return ||
+          statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
+      auto blocking = statement.kind == Stmt::Kind::Message
+          ? fileio_blocking_message(statement.a, statement.b, env,
+                                    statement.args, visited)
+          : fileio_blocking_expression(expression, env, visited);
+      if (blocking)
+        return blocking;
+      if (statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign) {
+        auto type = inferred_expr_type(statement.b, env);
+        if (type && simple_identifier(statement.a)) env[statement.a] = *type;
+      }
+    }
     return std::nullopt;
   }
 
@@ -770,26 +882,32 @@
         if (other_state.empty()) continue;
         TypeEnv env;
         for (const auto& field : domain.state) env[field.name] = field.type;
+        for (const auto& route : domain.routes) env[route.name] = route.type;
         for (const auto& param : handler.params) env[param.name] = param.type;
         for (const auto& statement : handler.body) {
-          string operation = statement.kind == Stmt::Kind::Call ||
+          string operation = statement.kind == Stmt::Kind::Message
+              ? fileio_message_source(statement) :
+              statement.kind == Stmt::Kind::Call ||
               statement.kind == Stmt::Kind::Raw ||
-              statement.kind == Stmt::Kind::Echo ||
-              statement.kind == Stmt::Kind::Message ? statement.text :
+              statement.kind == Stmt::Kind::Echo ? statement.text :
               statement.kind == Stmt::Kind::Reply ||
               statement.kind == Stmt::Kind::Return ||
               statement.kind == Stmt::Kind::If ||
               statement.kind == Stmt::Kind::While ||
               statement.kind == Stmt::Kind::Match ? statement.a : statement.b;
           std::set<string> visited;
-          if (auto method = fileio_blocking_expression(operation, env, visited)) {
+          auto blocking = statement.kind == Stmt::Kind::Message
+              ? fileio_blocking_message(statement.a, statement.b, env,
+                                        statement.args, visited)
+              : fileio_blocking_expression(operation, env, visited);
+          if (blocking) {
             string states;
             for (const auto& state : other_state) {
               if (!states.empty()) states += ", ";
               states += state;
             }
             warnings_.push_back(Warning{statement.line,
-                "blocking FileIO " + *method + " may hold WRITE/CONSUME protection of " +
+                "blocking FileIO " + *blocking + " may hold WRITE/CONSUME protection of " +
                 states, "FILEIO_BLOCKING_WITH_SHARED_WRITE", statement.source_file});
           }
           if (statement.kind == Stmt::Kind::Let ||

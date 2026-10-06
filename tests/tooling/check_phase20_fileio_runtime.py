@@ -566,7 +566,10 @@ fn test_range_operations() {
     assert_eq(r.as_str(), "Hello, Moss FileIO!", "Range as_str");
     assert_eq(r.get(0), b'H' as i64, "Range get(0)");
     assert_eq(r.get(18), b'!' as i64, "Range get(18)");
-    assert_eq(r.get(100), 0, "Range get out of bounds returns 0");
+    assert_eq!(format!("{}", r), "b\"Hello, Moss FileIO!\"");
+    let binary = Range::from_slice(&[0xFF, 0, b'A']);
+    assert_eq!(binary.to_bytes(), vec![0xFF, 0, b'A']);
+    assert_eq!(format!("{}", binary), "b\"\\xff\\x00A\"");
 
     let sub = r.slice(7, 4);
     assert_eq(sub.as_str(), "Moss", "Range slice");
@@ -1367,18 +1370,28 @@ def test_checked_conversions_and_boundary_handling(test_dir):
     {root_runtime_rust}
 
     fn main() {{
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() > 1 {{
+            let r = Range::from_str("moss");
+            let batch = RangeBatch::new(vec![r.clone()]);
+            match args[1].as_str() {{
+                "range-index" => {{ r.get(-1); }}
+                "batch-index" => {{ batch.get(1); }}
+                _ => std::process::abort(),
+            }}
+            return;
+        }}
         // 1. Range negative / out-of-bounds slice returns empty safely
         let r = Range::from_str("moss");
         assert_eq!(r.slice(-5, 2).as_str(), "");
         assert_eq!(r.slice(1, -2).as_str(), "");
         assert_eq!(r.slice(100, 2).as_str(), "");
-        assert_eq!(r.get(-1), 0);
-        assert_eq!(r.get(100), 0);
+        assert_eq!(r.get(0), b'm' as i64);
+        assert_eq!(format!("{{}}", r), r#"b"moss""#);
 
-        // 2. RangeBatch get out of bounds returns empty safely
+        // 2. A valid RangeBatch index retains the exact byte data.
         let rb = RangeBatch::new(vec![r]);
-        assert_eq!(rb.get(-1).as_str(), "");
-        assert_eq!(rb.get(5).as_str(), "");
+        assert_eq!(rb.get(0).as_str(), "moss");
 
         println!("[PASS] Checked conversions verified safely");
     }}
@@ -1391,6 +1404,9 @@ def test_checked_conversions_and_boundary_handling(test_dir):
     assert res.returncode == 0, f"Compilation failed:\n{res.stderr}"
     res_run = subprocess.run([bin_path], capture_output=True, text=True)
     assert res_run.returncode == 0, f"Execution failed:\n{res_run.stderr}"
+    for invalid_index in ("range-index", "batch-index"):
+        rejected = subprocess.run([bin_path, invalid_index], capture_output=True, text=True)
+        assert rejected.returncode != 0, f"{invalid_index} must fail closed"
     print("[PASS] Test 40: Checked conversions and boundary handling verified")
 
 def run_tests():

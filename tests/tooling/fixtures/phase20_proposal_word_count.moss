@@ -1,0 +1,38 @@
+fn summarize(chunk):
+  if chunk[0] == 97:
+    return 1
+  return 0
+
+fn add(left: Int, right: Int) -> Int:
+  return left + right
+
+fn measure(file: FileIO) -> Int:
+  return file.chunks(2) |> map(summarize) |> reduce(0, add)
+
+domain Store:
+  file: FileIO
+
+  fn Open():
+    file.open("tmp/phase20-proposal-domain.data", create)
+    file.write(0, "a a ")
+
+  fn Measure() -> Int:
+    reply measure(file)
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  file = FileIO.open("tmp/phase20-proposal-root.data", create)
+  file.write(0, "a a ")
+  direct_without_executor = file.chunks(2) |> map(summarize) |> reduce(0, add)
+  executor = Executor().threads(2).start()
+  direct_with_executor = file.chunks(2) |> map(summarize) |> reduce(0, add)
+  helper_outside_root = measure(file)
+  message store.Open()
+  helper_inside_root = message store.Measure()
+  message store.Close()
+  file.close()
+  executor.join()
+  echo direct_without_executor, direct_with_executor, helper_outside_root, helper_inside_root
