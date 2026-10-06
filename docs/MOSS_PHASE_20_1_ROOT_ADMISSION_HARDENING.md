@@ -100,13 +100,10 @@ root ingress requires:
 In `src/executor_runtime.hpp`, added `assert_external_root_ingress`:
 
 ```rust
-#[inline]
-fn assert_external_root_ingress(op: &str) {
-    if let Some(rid) = current_root_id() {
-        panic!("illegal root ingress ('{}') from within active Root (id={}): running Roots cannot admit new Roots (E12)", op, rid.0);
-    }
-    if let Some(wid) = current_worker_id() {
-        panic!("illegal root ingress ('{}') from within executor worker (id={}): worker threads cannot admit new Roots (E12)", op, wid.0);
+#[inline(always)]
+fn assert_external_root_ingress(operation: &str) {
+    if current_root_id().is_some() || current_worker_id().is_some() {
+        panic!("moss runtime: {} is legal only outside Root execution (E12 / R4)", operation);
     }
 }
 ```

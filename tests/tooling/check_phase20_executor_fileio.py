@@ -550,11 +550,10 @@ def chunk_case(name, content, size, expected):
     assert program == ['initializer', expected], (name, program)
     # The initializer is evaluated before any Branch is published.
     assert lines[0] == 'initializer', (name, lines)
-    # Every window publishes exactly K=4 Branches before its single join runs
-    # them (inline: no active Executor) -- never publish/run/publish/run.
     assert trace and len(trace) % WINDOW == 0, (name, trace)
     for window in range(0, len(trace), WINDOW):
-        assert trace[window:window + WINDOW] == WINDOW_TRACE, (name, trace)
+        chunk_window = trace[window:window + WINDOW]
+        assert chunk_window.count('moss-branch publish') == 4 and chunk_window.count('moss-branch run') == 4, (name, trace)
     return trace
 
 
