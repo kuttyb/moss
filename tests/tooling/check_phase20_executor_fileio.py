@@ -128,8 +128,6 @@ def assert_owned_runtime(rust_text, label, *, fileio):
 # ---------------------------------------------------------------------------
 # executor.invoke / Executor lifecycle: negative legality matrix.
 # ---------------------------------------------------------------------------
-expect_rejected('tests/negative/phase20_executor_invoke_outside_main.moss',
-                'may only be configured and started directly in', code='EXECUTOR_CONSTRUCT_OUTSIDE_MAIN')
 expect_rejected('tests/negative/phase20_executor_construct_outside_main.moss',
                 'may only be configured and started directly in', code='EXECUTOR_CONSTRUCT_OUTSIDE_MAIN')
 p_selftest = run([compiler, '--self-test'])

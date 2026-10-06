@@ -131,7 +131,7 @@ Guarded call sites:
 ### 4.1 Test Suites
 
 1. **`tests/tooling/check_phase20c_executor.py` (54/54 passed)**
-   - **Test 50 (`50-root-admission-full-queue-reentrancy-rejected`):** Configures `threads=1, max_threads=1, queue_capacity=1`. Root A on the only worker attempts root admission when the queue is full; verifies immediate fail-closed rejection without deadlocking.
+   - **Test 50 (`50-root-admission-full-queue-reentrancy-rejected`):** Configures `threads=1, max_threads=1, queue_capacity=1`. Root A starts on the worker, waits on a barrier while `main` enqueues Root B to fill the only queue slot (`queue_len == 1`). Root A then attempts `MossExecutorHandle::enqueue_root` for Root C; verifies immediate fail-closed rejection without deadlocking, verifies admission tickets are unmodified before and after rejection, and verifies Root B runs and completes after Root A finishes.
    - **Test 51 (`51-branch-context-root-ingress-rejected`):** Verifies that a compiler Branch inherits the Root context and rejects root admission while Branch publish/join completes successfully.
    - **Test 52 (`52-active-recursive-runtime-invoke-rejected`):** Verifies that recursive `runtime_invoke` in ACTIVE mode fails closed before admission.
 2. **`tests/tooling/check_phase20_executor_fileio.py` (passed)**

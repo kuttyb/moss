@@ -1425,42 +1425,72 @@ fn main() {
 }
 """))
 
-T.append(RustTest("50-root-admission-full-queue-reentrancy-rejected", "Root A on single-worker single-slot-queue attempting Root admission is rejected immediately without deadlocking", r"""
+T.append(RustTest("50-root-admission-full-queue-reentrancy-rejected", "Root A on single-worker single-slot-queue attempting Root admission while queue is full is rejected immediately without deadlocking", r"""
 fn main() {
     use std::sync::{Arc, Barrier};
     use std::sync::atomic::{AtomicBool, Ordering};
-    // threads=1, max_threads=1, queue_capacity=1
+    std::panic::set_hook(Box::new(|_| {}));
+    // 1 worker, 1 queue slot: the exact topology where reentrant admission would deadlock.
     let exec = MossExecutor::new().threads(1).max_threads(1).queue_capacity(1).start();
     let running = Arc::new(AtomicBool::new(false));
-    let release = Arc::new(Barrier::new(2));
+    let queue_full_barrier = Arc::new(Barrier::new(2));
+    let b_ran = Arc::new(AtomicBool::new(false));
     let reentrancy_rejected = Arc::new(AtomicBool::new(false));
-    let (r1, rel, rej) = (Arc::clone(&running), Arc::clone(&release), Arc::clone(&reentrancy_rejected));
+    let tickets_unmodified = Arc::new(AtomicBool::new(false));
+    let (r1, qb, b_flag, rej, t_ok) = (
+        Arc::clone(&running),
+        Arc::clone(&queue_full_barrier),
+        Arc::clone(&b_ran),
+        Arc::clone(&reentrancy_rejected),
+        Arc::clone(&tickets_unmodified),
+    );
 
     // 1. Root A starts on the only worker
     exec.enqueue_root(MossRootDescriptor::one_way(next_root_id(), move || {
         r1.store(true, Ordering::SeqCst);
-        // While Root A occupies the single worker:
-        // Attempting root admission (e.g. via runtime_invoke or enqueue)
-        // must fail immediately before waiting for queue capacity.
+        // 3. Root A waits for main to enqueue Root B and fill the queue
+        qb.wait();
+
+        // 7. Root B now definitely occupies the 1 available queue slot.
+        let before_tickets = moss_executor_admission_tickets();
+
+        // Root A attempts to submit Root C directly via the executor handle
+        let gx = process_rt().active_executor().unwrap();
+        let handle = std::mem::ManuallyDrop::new(MossExecutorHandle { gx });
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            runtime_invoke(|| 42u8);
+            handle.enqueue_root(MossRootDescriptor::one_way(next_root_id(), || {}));
         }));
         if result.is_err() {
             rej.store(true, Ordering::SeqCst);
         }
-        rel.wait();
+
+        let after_tickets = moss_executor_admission_tickets();
+        if before_tickets == after_tickets {
+            t_ok.store(true, Ordering::SeqCst);
+        }
+        // 9. Root A completes
     }));
 
+    // 2. Wait until Root A starts on the worker
     wait_until("Root A running", || running.load(Ordering::SeqCst));
 
-    // 2. Root B fills the 1 queue capacity slot
-    exec.enqueue_root(MossRootDescriptor::one_way(next_root_id(), || {}));
+    // 4. main enqueues Root B
+    exec.enqueue_root(MossRootDescriptor::one_way(next_root_id(), move || {
+        b_flag.store(true, Ordering::SeqCst);
+    }));
 
-    // 3. Release Root A
-    release.wait();
+    // 5. Verify B is queued and queue is full
+    assert_eq!(moss_executor_queue_len(), 1, "Root B must be queued");
 
+    // 6. Signal Root A that B has filled the queue
+    queue_full_barrier.wait();
+
+    // 10. Root B runs after Root A completes; 11. join completes
     exec.join();
+
     assert!(reentrancy_rejected.load(Ordering::SeqCst), "Root A reentrant admission attempt did not fail closed");
+    assert!(tickets_unmodified.load(Ordering::SeqCst), "Root A admission attempt allocated admission ticket despite being rejected");
+    assert!(b_ran.load(Ordering::SeqCst), "Root B did not run after Root A completed");
     println!("ok");
 }
 """))
