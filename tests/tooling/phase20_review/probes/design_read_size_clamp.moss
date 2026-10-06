@@ -1,0 +1,10 @@
+# Original §12.7 allowed a compiler-proven clamp; now deferred.
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  header = file.read(0, 8)
+  n = header.length() * 100
+  if n > 4096:
+    n = 4096
+  body = file.read(8, n)
+  echo body.length()
+  file.close()

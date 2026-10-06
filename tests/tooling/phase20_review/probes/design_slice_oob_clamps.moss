@@ -1,0 +1,8 @@
+# slice() clamps silently (Python-like) while r[i] aborts. Ratify one policy.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  data = src.read(0, 4)
+  a = data.slice(10, 5)
+  b = data.slice(2, 100)
+  echo a.length(), b.length()
+  src.close()

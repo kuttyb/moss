@@ -1,0 +1,9 @@
+# §12.6: a Range cannot outlive its scope.
+fn first(file: FileIO) -> Range:
+  return file.read(0, 4)
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  r = first(file)
+  echo r.length()
+  file.close()

@@ -1,0 +1,13 @@
+# Front example shape: untyped map callable, expression body.
+# Today: checker assertion at moss.cpp:7867.
+fn summarize(chunk):
+  chunk.length()
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  total = file.chunks(4) |> map(summarize) |> reduce(0, add)
+  file.close()
+  echo total

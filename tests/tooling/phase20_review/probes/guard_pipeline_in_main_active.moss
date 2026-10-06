@@ -1,0 +1,14 @@
+# §13 / §5: same, with an active executor (main is still not a Root).
+fn chunk_length(chunk: Range) -> Int:
+  return chunk.length()
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  executor = Executor().threads(4).start()
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  total = file.chunks(4) |> map(chunk_length) |> reduce(0, add)
+  file.close()
+  echo total
+  executor.join()

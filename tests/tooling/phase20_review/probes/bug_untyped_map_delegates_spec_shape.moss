@@ -1,0 +1,28 @@
+# The proposal's exact shape: untyped summarize delegating to a library helper.
+# Today: TYPE_MISMATCH '_generic:chunk' vs 'Range'.
+fn word_summary(chunk: Range) -> Int:
+  n = 0
+  for b in chunk:
+    if b == 32:
+      n = n + 1
+  return n
+
+fn summarize(chunk):
+  word_summary(chunk)
+
+fn merge(a: Int, b: Int) -> Int:
+  return a + b
+
+domain WordCount:
+  fn Count(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    words = file.chunks(1048576) |> map(summarize) |> reduce(0, merge)
+    file.close()
+    reply words
+
+fn main():
+  counter = WordCount()
+  executor = Executor().threads(8).start()
+  total = message counter.Count("tmp/phase20-review/input.txt")
+  executor.join()
+  echo total

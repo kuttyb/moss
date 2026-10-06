@@ -1,0 +1,10 @@
+# §12.6: a Range cannot be stored.
+type Holder:
+  r: Range
+  n: Int
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  h = Holder(r: file.read(0, 4), n: 1)
+  echo h.n
+  file.close()

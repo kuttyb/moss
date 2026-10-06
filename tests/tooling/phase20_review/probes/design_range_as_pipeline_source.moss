@@ -1,0 +1,8 @@
+# Moss idiom: bytes through a pipeline. Works for Vector, rejected for Range,
+# so byte processing is loop-only today.
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  data = file.read(0, 64)
+  spaces = data |> filter(_ == 32) |> count
+  echo spaces
+  file.close()

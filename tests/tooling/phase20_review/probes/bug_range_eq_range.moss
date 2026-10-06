@@ -1,0 +1,9 @@
+# Two one-byte views of "l" must compare equal by bytes.
+# Today: derived PartialEq compares backing buffer/offset and prints false.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  data = src.read(0, 5)
+  a = data.slice(2, 1)
+  b = data.slice(3, 1)
+  echo a == b
+  src.close()

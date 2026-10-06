@@ -1,0 +1,12 @@
+# Same inside a handler.
+domain Reader:
+  fn Pair(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    batch = file.read([(0, 4), (4, 4)])
+    n = batch[1].length()
+    file.close()
+    reply n
+
+fn main():
+  r = Reader()
+  echo message r.Pair("tmp/phase20-review/input.txt")

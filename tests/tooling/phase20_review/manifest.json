@@ -1,0 +1,454 @@
+{
+ "reviewed_revision": "2f62205",
+ "data_dir": "tmp/phase20-review",
+ "probes": [
+  {
+   "name": "guard_domain_field_lifecycle",
+   "file": "probes/guard_domain_field_lifecycle.moss",
+   "category": "guard",
+   "spec": "§9.2 §11",
+   "note": "Domain-field open/write/sync, two overlapping Verify roots, close.",
+   "run": {
+    "stdout_sorted": [
+     "4",
+     "4"
+    ]
+   }
+  },
+  {
+   "name": "guard_pipeline_in_main",
+   "file": "probes/guard_pipeline_in_main.moss",
+   "category": "guard",
+   "spec": "§13",
+   "note": "Eligible pipeline outside any Root (was a runtime panic).",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "guard_pipeline_in_main_active",
+   "file": "probes/guard_pipeline_in_main_active.moss",
+   "category": "guard",
+   "spec": "§13 §5",
+   "note": "Same with an active executor.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "guard_pipeline_helper_from_main",
+   "file": "probes/guard_pipeline_helper_from_main.moss",
+   "category": "guard",
+   "spec": "§13",
+   "note": "Same inside a helper called from main.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "guard_typed_pipeline_handler",
+   "file": "probes/guard_typed_pipeline_handler.moss",
+   "category": "guard",
+   "spec": "§13 front example",
+   "note": "Typed pipeline in a Root admitted by top-level message.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "guard_untyped_map_index_only",
+   "file": "probes/guard_untyped_map_index_only.moss",
+   "category": "guard",
+   "spec": "§13",
+   "note": "Untyped map callable that only indexes (the fixed shape).",
+   "run": {
+    "stdout": "1160"
+   }
+  },
+  {
+   "name": "guard_range_byte_iteration",
+   "file": "probes/guard_range_byte_iteration.moss",
+   "category": "guard",
+   "spec": "Range API",
+   "note": "`for b in chunk` inside an eligible map.",
+   "run": {
+    "stdout": "9"
+   }
+  },
+  {
+   "name": "guard_range_index_inline",
+   "file": "probes/guard_range_index_inline.moss",
+   "category": "guard",
+   "spec": "Range API",
+   "note": "Range byte indexing inside an expression.",
+   "run": {
+    "stdout": "205"
+   }
+  },
+  {
+   "name": "guard_range_binary_echo",
+   "file": "probes/guard_range_binary_echo.moss",
+   "category": "guard",
+   "spec": "Range API",
+   "note": "Binary-safe echo of invalid UTF-8 and NUL.",
+   "run": {
+    "stdout": "b\"\\xff\\xfe\\x00A\""
+   }
+  },
+  {
+   "name": "guard_range_copy",
+   "file": "probes/guard_range_copy.moss",
+   "category": "guard",
+   "spec": "§12.4 §12.7",
+   "note": "Byte-exact write of a direct read result.",
+   "run": {
+    "file_equals": [
+     [
+      "tmp/phase20-review/out/copy.txt",
+      "tmp/phase20-review/input.txt"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "guard_nested_message_blocking_warning",
+   "file": "probes/guard_nested_message_blocking_warning.moss",
+   "category": "guard",
+   "spec": "§22",
+   "note": "Blocking FileIO reached through a nested message is warned.",
+   "warning": "FILEIO_BLOCKING_WITH_SHARED_WRITE",
+   "run": {
+    "stdout": ""
+   }
+  },
+  {
+   "name": "guard_executor_invoke_loop",
+   "file": "probes/guard_executor_invoke_loop.moss",
+   "category": "guard",
+   "spec": "§23",
+   "note": "Independent roots with root-local FileIO.",
+   "run": {
+    "stdout_sorted": [
+     "4",
+     "4"
+    ]
+   }
+  },
+  {
+   "name": "guard_executor_config",
+   "file": "probes/guard_executor_config.moss",
+   "category": "guard",
+   "spec": "§3",
+   "note": "`threads`/`max_threads`/`queue_capacity`/`affinity`/`priority`.",
+   "run": {
+    "stdout": "1"
+   }
+  },
+  {
+   "name": "guard_sequential_executors",
+   "file": "probes/guard_sequential_executors.moss",
+   "category": "guard",
+   "spec": "§5.3 §5.4",
+   "note": "Two executors, never simultaneously active.",
+   "run": {
+    "stdout": "1\n2"
+   }
+  },
+  {
+   "name": "guard_reject_fileio_alias",
+   "file": "probes/guard_reject_fileio_alias.moss",
+   "category": "guard",
+   "spec": "§9",
+   "note": "No alias or move of a FileIO.",
+   "check": "reject",
+   "code": "FILEIO_PINNED_OWNERSHIP"
+  },
+  {
+   "name": "guard_reject_fileio_return",
+   "file": "probes/guard_reject_fileio_return.moss",
+   "category": "guard",
+   "spec": "§9.1",
+   "note": "No return of a FileIO.",
+   "check": "reject",
+   "code": "FILEIO_PINNED_OWNERSHIP"
+  },
+  {
+   "name": "guard_reject_fileio_in_vector",
+   "file": "probes/guard_reject_fileio_in_vector.moss",
+   "category": "guard",
+   "spec": "§9.1",
+   "note": "No FileIO in collections.",
+   "check": "reject",
+   "code": "FILEIO_COLLECTION_ESCAPE"
+  },
+  {
+   "name": "guard_reject_range_in_record",
+   "file": "probes/guard_reject_range_in_record.moss",
+   "category": "guard",
+   "spec": "§12.6",
+   "note": "No Range in records.",
+   "check": "reject",
+   "code": "FILEIO_COLLECTION_ESCAPE"
+  },
+  {
+   "name": "guard_reject_range_return",
+   "file": "probes/guard_reject_range_return.moss",
+   "category": "guard",
+   "spec": "§12.6",
+   "note": "No Range escape by return.",
+   "check": "reject",
+   "code": "FILEIO_PINNED_OWNERSHIP"
+  },
+  {
+   "name": "guard_reject_field_assign_local_owner",
+   "file": "probes/guard_reject_field_assign_local_owner.moss",
+   "category": "guard",
+   "spec": "§9.2",
+   "note": "A domain field cannot receive a local owner.",
+   "check": "reject",
+   "code": "FILEIO_PINNED_OWNERSHIP"
+  },
+  {
+   "name": "guard_reject_map_returns_range",
+   "file": "probes/guard_reject_map_returns_range.moss",
+   "category": "guard",
+   "spec": "§12.6 §13",
+   "note": "A map stage cannot return the chunk.",
+   "check": "reject",
+   "code": "FILEIO_PINNED_OWNERSHIP"
+  },
+  {
+   "name": "bug_domain_field_chunk_pipeline",
+   "file": "probes/bug_domain_field_chunk_pipeline.moss",
+   "category": "bug",
+   "spec": "§13.1",
+   "note": "Pipeline directly on a domain-field FileIO: generated `*state.file.read(...)` fails rustc.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "bug_domain_field_chunk_pipeline_executor",
+   "file": "probes/bug_domain_field_chunk_pipeline_executor.moss",
+   "category": "bug",
+   "spec": "§13.1",
+   "note": "Same with an active executor.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "bug_untyped_map_length_expr",
+   "file": "probes/bug_untyped_map_length_expr.moss",
+   "category": "bug",
+   "spec": "§13 front example",
+   "note": "`fn summarize(chunk): chunk.length()` trips the checker assertion.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "bug_untyped_map_length_return",
+   "file": "probes/bug_untyped_map_length_return.moss",
+   "category": "bug",
+   "spec": "§13 front example",
+   "note": "Same with an explicit return.",
+   "run": {
+    "stdout": "48"
+   }
+  },
+  {
+   "name": "bug_untyped_map_delegates_spec_shape",
+   "file": "probes/bug_untyped_map_delegates_spec_shape.moss",
+   "category": "bug",
+   "spec": "front example",
+   "note": "`summarize(chunk)` delegating to a typed helper: TYPE_MISMATCH `_generic:chunk` vs `Range`.",
+   "run": {
+    "stdout": "9"
+   }
+  },
+  {
+   "name": "bug_map_for_range_index_loop",
+   "file": "probes/bug_map_for_range_index_loop.moss",
+   "category": "bug",
+   "spec": "§13",
+   "note": "Typed map with an indexed for-range byte loop trips the assertion.",
+   "run": {
+    "stdout": "9"
+   }
+  },
+  {
+   "name": "bug_write_batch_entry",
+   "file": "probes/bug_write_batch_entry.moss",
+   "category": "bug",
+   "spec": "checked-in §12.7",
+   "note": "Batch-entry Range rejected as unbounded.",
+   "run": {
+    "file_content": {
+     "tmp/phase20-review/out/copy3.txt": "hell"
+    }
+   }
+  },
+  {
+   "name": "bug_write_chunk_copy",
+   "file": "probes/bug_write_chunk_copy.moss",
+   "category": "bug",
+   "spec": "checked-in §12.7",
+   "note": "Chunked copy rejected as unbounded.",
+   "run": {
+    "file_equals": [
+     [
+      "tmp/phase20-review/out/copy6.txt",
+      "tmp/phase20-review/input.txt"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "bug_range_eq_string_binary",
+   "file": "probes/bug_range_eq_string_binary.moss",
+   "category": "bug",
+   "spec": "Range API",
+   "note": "Binary Range `== \"\"` is true via lossy `as_str()`.",
+   "run": {
+    "stdout": "false"
+   }
+  },
+  {
+   "name": "bug_range_eq_range",
+   "file": "probes/bug_range_eq_range.moss",
+   "category": "bug",
+   "spec": "Range API",
+   "note": "Equal byte views compare unequal (derived PartialEq on buffer/offset).",
+   "run": {
+    "stdout": "true"
+   }
+  },
+  {
+   "name": "bug_batch_index_inline_main",
+   "file": "probes/bug_batch_index_inline_main.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.6",
+   "note": "`batch[i].length()` emits vector indexing; rustc fails.",
+   "run": {
+    "stdout": "8"
+   }
+  },
+  {
+   "name": "bug_batch_index_inline_handler",
+   "file": "probes/bug_batch_index_inline_handler.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.6",
+   "note": "Same inside a handler.",
+   "run": {
+    "stdout": "4"
+   }
+  },
+  {
+   "name": "bug_slice_length_chained",
+   "file": "probes/bug_slice_length_chained.moss",
+   "category": "bug",
+   "spec": "Range API",
+   "note": "`slice(...).length()` emits `.length()` on the runtime Range; rustc fails.",
+   "run": {
+    "stdout": "2"
+   }
+  },
+  {
+   "name": "bug_oob_index_no_message",
+   "file": "probes/bug_oob_index_no_message.moss",
+   "category": "bug",
+   "spec": "fail-closed",
+   "note": "OOB index aborts (fixed) but prints nothing.",
+   "run": {
+    "exit": "nonzero",
+    "stderr_nonempty": true,
+    "stdout": ""
+   }
+  },
+  {
+   "name": "pre_map_for_range_vector",
+   "file": "probes/pre_map_for_range_vector.moss",
+   "category": "pre-existing",
+   "spec": "functional pipelines",
+   "note": "Any map callable with for-range trips the assertion; reproduces on d3cdc52.",
+   "run": {
+    "stdout": "6"
+   }
+  },
+  {
+   "name": "pre_untyped_merge_inference",
+   "file": "probes/pre_untyped_merge_inference.moss",
+   "category": "pre-existing",
+   "spec": "front example",
+   "note": "Untyped reduce combiner `fn merge(a, b)` never infers.",
+   "run": {
+    "stdout": "6"
+   }
+  },
+  {
+   "name": "design_read_size_param",
+   "file": "probes/design_read_size_param.moss",
+   "category": "design",
+   "spec": "original §11 / §12.7",
+   "note": "Handler-parameter read size; checked-in §12.7 narrowed to constants and the example rewritten.",
+   "proposal": "accept"
+  },
+  {
+   "name": "design_read_size_clamp",
+   "file": "probes/design_read_size_clamp.moss",
+   "category": "design",
+   "spec": "original §12.7",
+   "note": "Compiler-proven clamp; now deferred.",
+   "proposal": "accept, prints 40"
+  },
+  {
+   "name": "design_write_string_param",
+   "file": "probes/design_write_string_param.moss",
+   "category": "design",
+   "spec": "§12.4 / §12.7",
+   "note": "Bounded String parameter (listed open by the corrective pass).",
+   "proposal": "accept"
+  },
+  {
+   "name": "design_write_range_param",
+   "file": "probes/design_write_range_param.moss",
+   "category": "design",
+   "spec": "§12.4 / §12.7",
+   "note": "Range parameter has no static source bound in the callee.",
+   "proposal": "not specified (no static bound in the callee)"
+  },
+  {
+   "name": "design_write_range_slice",
+   "file": "probes/design_write_range_slice.moss",
+   "category": "design",
+   "spec": "Range API",
+   "note": "Does a slice inherit its source read's bound?",
+   "proposal": "not specified (slice is not in the spec)"
+  },
+  {
+   "name": "design_slice_oob_clamps",
+   "file": "probes/design_slice_oob_clamps.moss",
+   "category": "design",
+   "spec": "Range API",
+   "note": "`slice()` clamps silently while `r[i]` aborts.",
+   "proposal": "not specified (slice is not in the spec)"
+  },
+  {
+   "name": "design_range_as_pipeline_source",
+   "file": "probes/design_range_as_pipeline_source.moss",
+   "category": "design",
+   "spec": "Moss idiom",
+   "note": "Range is not a pipeline source; bytes are loop-only.",
+   "proposal": "accept, prints 9"
+  },
+  {
+   "name": "design_spec_multiline_layout",
+   "file": "probes/design_spec_multiline_layout.moss",
+   "category": "design",
+   "spec": "§3 / front example",
+   "note": "The proposal's own multi-line layout does not parse.",
+   "proposal": "accept, prints 1"
+  }
+ ]
+}

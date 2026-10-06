@@ -1,0 +1,7 @@
+# Range byte indexing inside an expression.
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  data = file.read(0, 4)
+  x = data[0] + data[1]
+  echo x
+  file.close()

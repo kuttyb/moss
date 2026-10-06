@@ -1,0 +1,27 @@
+# §13.1 with an active executor (eligible Branch lowering in a Root).
+fn len(chunk: Range) -> Int:
+  return chunk.length()
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, ro)
+
+  fn Total() -> Int:
+    total = file.chunks(3) |> map(len) |> reduce(0, add)
+    reply total
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("tmp/phase20-review/input.txt")
+  executor = Executor().threads(2).start()
+  echo message store.Total()
+  executor.join()
+  message store.Close()

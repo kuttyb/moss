@@ -1,0 +1,21 @@
+# §22: FileIO reached through a nested message while holding WRITE on table.
+domain Disk:
+  fn Load(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    n = file.read(0, 4).length()
+    file.close()
+    reply n
+
+domain Cache:
+  domainroutes(disk: Disk)
+  table = 0
+
+  fn Fill(path: String):
+    table = table + 1
+    n = message disk.Load(path)
+    table = table + n
+
+fn main():
+  disk = Disk()
+  cache = Cache(disk: disk)
+  message cache.Fill("tmp/phase20-review/input.txt")

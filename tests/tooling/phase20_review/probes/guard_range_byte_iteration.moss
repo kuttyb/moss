@@ -1,0 +1,17 @@
+# Range byte iteration inside an eligible map (loop is deliberate: Range is
+# not a pipeline source; see design_range_as_pipeline_source).
+fn spaces(chunk: Range) -> Int:
+  n = 0
+  for b in chunk:
+    if b == 32:
+      n = n + 1
+  return n
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  total = file.chunks(4096) |> map(spaces) |> reduce(0, add)
+  file.close()
+  echo total

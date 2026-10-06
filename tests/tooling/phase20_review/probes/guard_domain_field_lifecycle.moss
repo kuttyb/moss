@@ -1,0 +1,33 @@
+# §9.2 / §11: domain-field FileIO opened in place, written, synced, read by
+# two overlapping one-way Roots, then closed.
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, rw)
+
+  fn Verify(offset: Int, expected: Int):
+    data = file.read(offset, 4)
+    assert(data.length() == expected)
+    echo data.length()
+
+  fn Update(offset: Int):
+    file.write(offset, "abcd")
+
+  fn Flush():
+    file.sync()
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("tmp/phase20-review/store.dat")
+  message store.Update(0)
+  message store.Update(4)
+  message store.Flush()
+  executor = Executor().threads(4).start()
+  executor.invoke(store.Verify(0, 4))
+  executor.invoke(store.Verify(4, 4))
+  executor.join()
+  message store.Close()

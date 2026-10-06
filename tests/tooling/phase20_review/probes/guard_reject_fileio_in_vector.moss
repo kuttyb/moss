@@ -1,0 +1,5 @@
+# §9.1: no FileIO in collections.
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  files = [file]
+  file.close()

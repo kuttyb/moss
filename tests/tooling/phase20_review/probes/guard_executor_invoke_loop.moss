@@ -1,0 +1,14 @@
+# §23: one stateless domain, independent roots with root-local FileIO.
+domain Worker:
+  fn Process(path: String):
+    file = FileIO.open(path, ro)
+    echo file.read(0, 4).length()
+    file.close()
+
+fn main():
+  worker = Worker()
+  files = ["tmp/phase20-review/input.txt", "tmp/phase20-review/input2.txt"]
+  executor = Executor().threads(8).start()
+  for path in files:
+    executor.invoke(worker.Process(path))
+  executor.join()

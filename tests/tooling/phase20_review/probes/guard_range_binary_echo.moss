@@ -1,0 +1,6 @@
+# Binary-safe Range display (invalid UTF-8 and NUL).
+fn main():
+  file = FileIO.open("tmp/phase20-review/binary.dat", ro)
+  data = file.read(0, 4)
+  echo data
+  file.close()

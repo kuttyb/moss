@@ -1,0 +1,12 @@
+# §12.6 / §13: a map stage cannot return the chunk itself.
+fn ident(chunk: Range) -> Range:
+  return chunk
+
+fn add(a: Int, b: Range) -> Int:
+  return a + b.length()
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  total = file.chunks(4) |> map(ident) |> reduce(0, add)
+  file.close()
+  echo total

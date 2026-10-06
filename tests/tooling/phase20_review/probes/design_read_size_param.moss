@@ -1,0 +1,22 @@
+# Original §11 / §12.7 (Oct 4): Verify(offset, size, expected). The checked-in
+# spec was narrowed to constants and the example rewritten to read 4096.
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, rw)
+
+  fn Verify(offset: Int, size: Int, expected: Int):
+    data = file.read(offset, size)
+    assert(data.length() == expected)
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("tmp/phase20-review/store.dat")
+  executor = Executor().threads(4).start()
+  executor.invoke(store.Verify(0, 4, 0))
+  executor.join()
+  message store.Close()

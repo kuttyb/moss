@@ -1,0 +1,15 @@
+# No FileIO: any map callable containing for-range trips the same
+# add_functional_pipeline_ir assertion, before Phase 20 as well.
+fn count3(xs: Vector[Int]) -> Int:
+  n = 0
+  for i in range(0, 3):
+    n = n + 1
+  return n
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  v = [[1], [2]]
+  total = v |> map(count3) |> reduce(0, add)
+  echo total

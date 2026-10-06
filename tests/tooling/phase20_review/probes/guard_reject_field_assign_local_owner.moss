@@ -1,0 +1,14 @@
+# §9.2: a domain field is opened in place, never assigned a local owner.
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file = FileIO.open(path, ro)
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("tmp/phase20-review/input.txt")
+  message store.Close()

@@ -1,0 +1,13 @@
+# §5.3 / §5.4: two executors, never simultaneously active.
+domain Worker:
+  fn Process(n: Int):
+    echo n
+
+fn main():
+  worker = Worker()
+  e1 = Executor().threads(2).start()
+  e1.invoke(worker.Process(1))
+  e1.join()
+  e2 = Executor().threads(2).start()
+  e2.invoke(worker.Process(2))
+  e2.join()

@@ -1,0 +1,11 @@
+# A Range parameter carries no static source bound in the callee.
+fn save(out: FileIO, data: Range):
+  out.write(0, data)
+
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/copy4.txt", create)
+  data = src.read(0, 16)
+  save(dst, data)
+  dst.close()
+  src.close()

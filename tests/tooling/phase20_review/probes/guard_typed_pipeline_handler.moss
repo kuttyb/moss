@@ -1,0 +1,20 @@
+# §13 / front example: typed pipeline inside a Root admitted by a top-level message.
+fn summarize(chunk: Range) -> Int:
+  return chunk.length()
+
+fn merge(a: Int, b: Int) -> Int:
+  return a + b
+
+domain WordCount:
+  fn Count(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    words = file.chunks(4) |> map(summarize) |> reduce(0, merge)
+    file.close()
+    reply words
+
+fn main():
+  counter = WordCount()
+  executor = Executor().threads(8).start()
+  total = message counter.Count("tmp/phase20-review/input.txt")
+  executor.join()
+  echo total

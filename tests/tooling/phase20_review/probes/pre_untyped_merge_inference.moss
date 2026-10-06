@@ -1,0 +1,9 @@
+# The front example's untyped combiner: fn merge(a, b). Inference never
+# closed for an untyped reduce combiner.
+fn merge(a, b):
+  a + b
+
+fn main():
+  xs = [1, 2, 3]
+  total = xs |> reduce(0, merge)
+  echo total

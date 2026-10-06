@@ -1,0 +1,25 @@
+# §13.1: a chunk pipeline directly on a domain-field FileIO (the Root holds
+# the field's READ access). Today: generated Rust fails (*state.file.read).
+fn len(chunk: Range) -> Int:
+  return chunk.length()
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, ro)
+
+  fn Total() -> Int:
+    reply file.chunks(4) |> map(len) |> reduce(0, add)
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("tmp/phase20-review/input.txt")
+  echo message store.Total()
+  message store.Close()

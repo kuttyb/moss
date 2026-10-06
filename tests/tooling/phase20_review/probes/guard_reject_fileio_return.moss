@@ -1,0 +1,8 @@
+# §9.1: a FileIO cannot be returned from the function that opened it.
+fn opener(path: String) -> FileIO:
+  f = FileIO.open(path, ro)
+  return f
+
+fn main():
+  file = opener("tmp/phase20-review/input.txt")
+  file.close()

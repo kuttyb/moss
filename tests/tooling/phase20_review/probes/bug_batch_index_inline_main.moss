@@ -1,0 +1,8 @@
+# RangeBatch index used as a method receiver. Today: emits vector indexing
+# (batch)[i as usize] and rustc rejects it.
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", ro)
+  batch = file.read([(0, 4), (4, 4)])
+  total = batch[0].length() + batch[1].length()
+  echo total
+  file.close()

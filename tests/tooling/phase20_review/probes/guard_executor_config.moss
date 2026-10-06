@@ -1,0 +1,10 @@
+# §3: full configuration surface.
+domain Worker:
+  fn Process(n: Int):
+    echo n
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(2).max_threads(4).queue_capacity(8).affinity([0]).priority(0).start()
+  executor.invoke(worker.Process(1))
+  executor.join()

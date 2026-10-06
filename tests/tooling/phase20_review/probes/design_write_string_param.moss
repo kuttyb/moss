@@ -1,0 +1,8 @@
+# Bounded String parameters (listed as still open by the corrective pass).
+fn save(out: FileIO, text: String):
+  out.write(0, text)
+
+fn main():
+  out = FileIO.open("tmp/phase20-review/out/param.txt", create)
+  save(out, "abc")
+  out.close()

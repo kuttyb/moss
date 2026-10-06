@@ -1,0 +1,10 @@
+# slice() is not in the spec; whether a slice inherits its source's bound is
+# part of ratifying the Range API.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/copy2.txt", create)
+  data = src.read(0, 16)
+  head = data.slice(0, 5)
+  dst.write(0, head)
+  dst.close()
+  src.close()
