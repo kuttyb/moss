@@ -1196,8 +1196,8 @@ Holding a Moss lock during a slow but Solo disk operation is safe under this pro
   - **R5 runtime-leaf fairness is implemented and closed:** Runtime leaf locks (such as the process-local inode registry mutex) use fair ticket locks (`MossFairMutex`) and are never held across kernel waits or branch joins (A5).
   - **Moss domain read/write exclusion:** Lowered domain locking is implemented by `std::sync::RwLock` via `handler_lowering.inc` and `handler_runtime.hpp`. The physical implementation proves mutual exclusion and concurrent readers, but does **not** establish fair waiter admission or FIFO queuing.
 - **Proof Impact:**
-  - Theorem 1a (deadlock freedom) holds unconditionally: domain locks are acquired in global rank order and wait chains remain acyclic.
-  - Consequently Theorem 1b (progress) remains **conditional on A2**: while qualitative progress holds assuming finite Solo latency (A4), starvation freedom under domain lock contention requires fair granting.
+  - The deadlock-freedom part of A2 requires ranked two-phase locking but not fair waiter granting. Therefore the unresolved waiter-fairness portion of A2 does not invalidate Theorem 1a (deadlock freedom), which remains conditional on the other stated environmental and program assumptions A0–A7.
+  - Consequently Theorem 1b (progress) remains strictly **conditional on the fairness premise of A2**: while qualitative progress holds assuming finite Solo latency (A4), starvation freedom under domain lock contention requires fair granting.
 - **Proof Obligation:**
   - `SYNC-FAIR-001` tracks this outstanding broader Moss synchronization-proof and implementation issue: formally modeling and establishing starvation-freedom bounds across interleaved Solo and Moss-lock phases. Replacing generated `RwLock`s with fair domain synchronizers is deferred to a dedicated synchronization design and hardening phase.
 - **Current Mitigations:**

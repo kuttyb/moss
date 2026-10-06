@@ -441,7 +441,8 @@ field in place with `file.open(path, mode)`. Both forms use explicit offsets:
 `close()`. `read([(offset, size), ...])` returns a `RangeBatch`; `chunks(size)`
 produces bounded chunks. `Range` is borrowed, read-only bytes: `length()`,
 `range[index]` (an Int from 0 through 255), `for byte in range`, and
-`slice(start, length)`. Writes accept statically bounded Strings and bounded
+`slice(start, length)` (clips to remaining bytes; negative start,
+non-positive length, or start beyond the Range yields an empty Range). Writes accept statically bounded Strings and bounded
 Ranges. FileIO, Range, and RangeBatch cannot be copied, stored in ordinary
 collections/domain state (except the FileIO field form), or cross a message or
 executor boundary. Request sizes, batch sizes, and write payloads need a
