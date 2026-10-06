@@ -52,27 +52,16 @@ fn merge(a, b):
 domain WordCount:
   fn Count(path) -> Int:
     file = FileIO.open(path, ro)
-
-    words =
-      file.chunks(1048576)
-        |> map(summarize)
-        |> reduce(empty_word_summary(), merge)
-
+    words = file.chunks(1048576) |> map(summarize) |> reduce(empty_word_summary(), merge)
     file.close()
     reply words.count()
 
 
 fn main():
   counter = WordCount()
-
-  executor =
-    Executor()
-      .threads(8)
-      .start()
-
+  executor = Executor().threads(8).start()
   total = message counter.Count("input.txt")
   executor.join()
-
   echo total
 ```
 
@@ -773,12 +762,31 @@ reply batch[0]            # illegal: crosses the root boundary
 
 The runtime reuses a backing buffer only after every Range referring to it is dead.
 
-#### Range operations and semantics
+#### Normative Range byte surface and operations
 
-- **Byte Indexing (`range[index]`):** Extracts the byte value at `index` as an `Int`. Out-of-bounds indexing aborts with a diagnostic error message on stderr specifying the invalid index and valid length rather than returning a default or silent EOF.
-- **Byte Equality (`range1 == range2`):** Evaluates exact byte-slice equality (`[u8] == [u8]`) between two `Range` values.
-- **Distinct Byte vs Text Types:** Comparing `Range == String` or `String == Range` is rejected at compile time with a `TYPE_MISMATCH` diagnostic. Moss enforces strict type distinction between binary byte slices and UTF-8 text strings; implicit lossy decoding during equality checks is prohibited.
-- **Slicing (`range.slice(offset, length)`):** Returns a sub-range view bounded by `length`.
+Moss provides a dedicated, byte-exact surface for `Range`:
+
+```moss
+range.length() -> Int
+range[index] -> Int
+
+for byte in range:
+  ...
+
+range.slice(start, length) -> Range
+```
+
+- **Length (`range.length() -> Int`):** Returns the number of bytes in the range as an `Int`.
+- **Byte Indexing (`range[index] -> Int`):** Extracts the byte at 0-based `index` as an `Int` in the range `0..255`. Out-of-bounds indexing aborts with a diagnostic error message on stderr specifying the invalid index and valid length bounds rather than returning a default or silent EOF.
+- **Byte Iteration (`for byte in range`):** Iterates over the bytes in sequential index order, yielding byte-valued `Int`s in `0..255`.
+- **Slicing (`range.slice(start, length) -> Range`):** Produces a scoped sub-range view. Current slice behavior is exact:
+  - `start < 0` → empty Range;
+  - `length <= 0` → empty Range;
+  - `start >= range.length()` → empty Range;
+  - otherwise length is clipped to the remaining bytes (`min(length, range.length() - start)`).
+- **Exact Byte Equality (`range1 == range2`):** Evaluates exact byte-slice equality (`[u8] == [u8]`) between two `Range` values.
+- **Type Distinction (`Range` vs `String`):** Comparing `Range == String` or `String == Range` is illegal and rejected at compile time with a `TYPE_MISMATCH` diagnostic. Moss enforces a strict type distinction between binary byte slices and UTF-8 text strings; implicit lossy decoding during comparison is prohibited.
+- **Writing Ranges (`FileIO.write(offset, range)`):** `FileIO.write(offset, range)` is legal when the compiler carries a statically known finite bound for that Range (inherited from the originating `read`, slice, batch indexing, or chunk iteration).
 - **Bounds Propagation:** Static payload bounds propagate through `read(offset, size)` (bounded by `size`), batch indexing `batch[i]` (bounded by the statically known batch entry size or maximum of batch entry sizes), chunk iterators `for chunk in file.chunks(C)` (bounded by `C`), and sub-slicing `r.slice(offset, length)` (bounded by `min(bound(r), length)`). Non-mutating methods such as `.length()` and `.slice(...)` do not invalidate static payload bounds.
 
 ### 12.7 Bounded sizes
@@ -853,9 +861,7 @@ The chunk source is a scoped compiler-known view borrowing the FileIO. It is not
 A canonical pipeline is:
 
 ```moss
-summary = file.chunks(1048576)
-  |> map(summarize)
-  |> reduce(empty_word_summary(), merge)
+summary = file.chunks(1048576) |> map(summarize) |> reduce(empty_word_summary(), merge)
 ```
 
 The **source meaning is sequential**:
@@ -1071,7 +1077,7 @@ There are two claims.
 | --- | --- | --- |
 | A0 | A Solo kernel operation never needs another Moss root in this process to make progress. | Environmental Solo contract |
 | A1 | Every root and branch takes finitely many computation steps between waits and does not run forever. | Program assumption |
-| A2 | Moss locks are acquired in one global rank order, held under Moss's two-phase discipline, and grant waiters fairly. | Moss synchronization model |
+| A2 | Moss locks are acquired in one global rank order, held under Moss's two-phase discipline, and grant waiters fairly. | Synchronization-model assumption; implementation fairness tracked by SYNC-FAIR-001 |
 | A3 | A running root waits only on a Moss lock, a runtime leaf lock, a Solo kernel operation (FileIO or console I/O, §1), or a join over its own branches. | Phase 20 restrictions |
 | A4 | Every Solo kernel operation completes or fails in finite time. | Responsive storage assumption |
 | A5 | Runtime leaf-lock holders take no other lock and never hold the leaf lock across a kernel wait or branch join. | R5 |
@@ -1186,13 +1192,19 @@ Holding a Moss lock during a slow but Solo disk operation is safe under this pro
 - **Debt Identifier:** `SYNC-FAIR-001`
 - **Assumptions Implicated:** A2 (fair Moss lock granting) and A4 (finite Solo latency).
 - **Scope:** Roots interleaving Solo I/O operations while holding Moss domain locks.
-- **Proof Obligation:** Formally prove starvation-freedom bounds for queued contenders awaiting a Moss domain lock when the active lock holder performs multiple interleaved Solo kernel operations before releasing the lock. Under Assumption A2, lock acquisition queues are FIFO (using ticket or queue locks) and grant waiters fairly. However, while Theorem 1a (deadlock freedom) and Theorem 1b (progress) demonstrate that every wait ends and every runnable root eventually completes assuming finite Solo kernel operations (A4), they establish qualitative progress rather than a quantitative upper bound on wait latency across interleaved Solo I/O bursts.
-- **Current Mitigation:**
-  1. Moss domain locks use strict FIFO ticket-lock discipline to prevent lock-acquisition overtaking.
-  2. Runtime leaf locks (such as the inode registry mutex) use ticket locks and are never held across kernel waits (A5).
-  3. The Moss compiler emits diagnostic warnings when blocking FileIO calls are executed within domain handlers that hold domain locks.
-  4. Workload guidance advises structuring FileIO around root-local capabilities or short-duration handler operations rather than long-running multi-stage FileIO within exclusive domain lock scopes.
-- **Closeout Criteria:** Formal verification bounding worst-case queuing latency for a Moss lock under a given upper bound on Solo kernel service time ($T_{solo}$) and root contention factor ($N$).
+- **Implementation Status:**
+  - **R5 runtime-leaf fairness is implemented and closed:** Runtime leaf locks (such as the process-local inode registry mutex) use fair ticket locks (`MossFairMutex`) and are never held across kernel waits or branch joins (A5).
+  - **Moss domain read/write exclusion:** Lowered domain locking is implemented by `std::sync::RwLock` via `handler_lowering.inc` and `handler_runtime.hpp`. The physical implementation proves mutual exclusion and concurrent readers, but does **not** establish fair waiter admission or FIFO queuing.
+- **Proof Impact:**
+  - Theorem 1a (deadlock freedom) holds unconditionally: domain locks are acquired in global rank order and wait chains remain acyclic.
+  - Consequently Theorem 1b (progress) remains **conditional on A2**: while qualitative progress holds assuming finite Solo latency (A4), starvation freedom under domain lock contention requires fair granting.
+- **Proof Obligation:**
+  - `SYNC-FAIR-001` tracks this outstanding broader Moss synchronization-proof and implementation issue: formally modeling and establishing starvation-freedom bounds across interleaved Solo and Moss-lock phases. Replacing generated `RwLock`s with fair domain synchronizers is deferred to a dedicated synchronization design and hardening phase.
+- **Current Mitigations:**
+  1. R5 runtime-leaf fairness is implemented and closed with fair ticket mutexes.
+  2. The Moss compiler emits diagnostic warnings when blocking FileIO calls are executed within domain handlers that hold domain locks.
+  3. Workload guidance advises structuring FileIO around root-local capabilities or short-duration handler operations rather than long-running multi-stage FileIO within exclusive domain lock scopes.
+- **Closeout Criteria:** Formal modeling bounding worst-case queuing latency for a Moss lock under a given upper bound on Solo kernel service time ($T_{solo}$) and root contention factor ($N$), backed by fair domain synchronization primitives.
 
 ---
 
@@ -1280,9 +1292,7 @@ Root descriptors are count-bounded by `queue_capacity`; their ordinary value pay
 Consider:
 
 ```moss
-result = file.chunks(C)
-  |> map(f)
-  |> reduce(initial, combine)
+result = file.chunks(C) |> map(f) |> reduce(initial, combine)
 ```
 
 ### 20.1 Sequential reference semantics
@@ -1687,6 +1697,20 @@ The Phase 20 core design is closed.
 ### Phase 20.1 hardening
 
 Phase 20.1 made the no-root-originated-admission rule explicit and added regressions for bounded-admission deadlock. It did not change Phase 20 source semantics or add new concurrency constructs.
+
+### Phase 20.2 reviewer completeness hardening
+
+Phase 20.2 hardened FileIO, Range semantics, request bounds propagation, chunk lowering, and generic callback specialization against the independent reviewer probe suite. The strict suite is permanently integrated into the normal repository gate (`tests/run.sh`).
+
+### Phase 20.5 performance follow-up
+
+Phase 20.5 is scheduled to benchmark the performance and contention characteristics of:
+
+- `MossFairMutex` (ticket lock vs unfair OS mutex under high contender thread counts);
+- executor central lock contention during high root-throughput churn;
+- `FileIO.inner` locking overhead across sequential vs parallel reads;
+- Solo hook locks and compensation worker spawn latency;
+- generated Moss `std::sync::RwLock` read/read scaling and read/write contention under domain lock traffic.
 
 ### Deferred to Phase 21
 

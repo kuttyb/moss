@@ -36,6 +36,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 \
   tests/tooling/check_phase20_fileio_semantics.py \
   "$compiler" "$test_build/phase20_fileio_semantics"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_fileio_runtime.py "$compiler" "$test_build/phase20_fileio"
+PYTHONDONTWRITEBYTECODE=1 \
+python3 tests/tooling/phase20_review/run_review_probes.py "$compiler" --strict
+
 
 # Generated Rust minus the emitted Phase 20 executor runtime, whose work
 # queue, threads, and C Branch ABI are runtime internals rather than lowered

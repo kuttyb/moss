@@ -445,7 +445,9 @@ produces bounded chunks. `Range` is borrowed, read-only bytes: `length()`,
 Ranges. FileIO, Range, and RangeBatch cannot be copied, stored in ordinary
 collections/domain state (except the FileIO field form), or cross a message or
 executor boundary. Request sizes, batch sizes, and write payloads need a
-compiler-proven finite bound. Range byte access does not interpret UTF-8.
+compiler-proven finite bound. Range byte access does not interpret UTF-8;
+Range/Range equality is byte-exact (`Range == Range`), while Range/String
+comparison is rejected at compile time (`TYPE_MISMATCH`).
 
 Executor is one process-wide active executor. Construct/configure/start it in
 `main` with `Executor().threads(n).start()`, submit one-way static handlers with

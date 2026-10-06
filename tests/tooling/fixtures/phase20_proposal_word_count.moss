@@ -3,11 +3,11 @@ fn summarize(chunk):
     return 1
   return 0
 
-fn add(left: Int, right: Int) -> Int:
-  return left + right
+fn merge(a, b):
+  a + b
 
 fn measure(file: FileIO) -> Int:
-  return file.chunks(2) |> map(summarize) |> reduce(0, add)
+  return file.chunks(2) |> map(summarize) |> reduce(0, merge)
 
 domain Store:
   file: FileIO
@@ -26,9 +26,9 @@ fn main():
   store = Store()
   file = FileIO.open("tmp/phase20-proposal-root.data", create)
   file.write(0, "a a ")
-  direct_without_executor = file.chunks(2) |> map(summarize) |> reduce(0, add)
+  direct_without_executor = file.chunks(2) |> map(summarize) |> reduce(0, merge)
   executor = Executor().threads(2).start()
-  direct_with_executor = file.chunks(2) |> map(summarize) |> reduce(0, add)
+  direct_with_executor = file.chunks(2) |> map(summarize) |> reduce(0, merge)
   helper_outside_root = measure(file)
   message store.Open()
   helper_inside_root = message store.Measure()
