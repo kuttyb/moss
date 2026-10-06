@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 20.1 — Root Admission Reentrancy Hardening
+
+Branch: `phase-20.1-root-admission-hardening` (based on `phase-20-integration`).
+
+Phase 20.1 made the no-root-originated root admission safety invariant (`E12`) explicit in specifications and justified `A6` structurally. It centralized runtime root-context checking before admission wait points, added compiler unit test coverage for `EXECUTOR_INVOKE_OUTSIDE_MAIN`, and added deterministic regressions for bounded-admission deadlock topologies.
+
+Implemented:
+- Added invariant `E12 — No root-originated root admission` to `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` (§16).
+- Strengthened assumption `A6` to derive structurally from `E12` in `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` (§18.1).
+- Added bounded-queue deadlock topology diagram and explanation to Proof 1a in `docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md` (§18.2).
+- Clarified `executor.invoke` deadlock safety in §4.1 and `runtime_invoke` external ingress & non-reentrancy rules with Roots vs Branches matrix in §5.
+- Added Phase 20.1 summary statement in §29.
+- Updated `docs/ROOT_RUNTIME_ABI.md` with explicit ABI invariant `current_root_id == None` on root ingress.
+- Centralized `assert_external_root_ingress` in `src/executor_runtime.hpp`, guarding `moss_root_start_with_config`, `MossExecutorHandle::enqueue_root`, `MossExecutorHandle::join`, `runtime_invoke`, and `admit_root` before acquiring tickets or waiting on queues/gates.
+- Added `Checker::unit_test_executor_invoke_outside_main()` exposed via `moss --self-test` to directly test `EXECUTOR_INVOKE_OUTSIDE_MAIN`.
+- Added `tests/negative/phase20_executor_construct_outside_main.moss` for `EXECUTOR_CONSTRUCT_OUTSIDE_MAIN`.
+- Added new regressions in `tests/tooling/check_phase20c_executor.py`:
+  - `50-root-admission-full-queue-reentrancy-rejected` (reproducing `threads=1, max_threads=1, queue_capacity=1` deadlock topology).
+  - `51-branch-context-root-ingress-rejected` (Branch inherits root ID and rejects root admission).
+  - `52-active-recursive-runtime-invoke-rejected` (recursive `runtime_invoke` fails closed before admission).
+- Created `docs/MOSS_PHASE_20_1_ROOT_ADMISSION_HARDENING.md`.
+
+Validation:
+- `python3 tests/tooling/check_phase20c_executor.py ./moss`: 54/54 tests passed.
+- `python3 tests/tooling/check_phase20_executor_fileio.py ./moss`: passed, including `moss --self-test` and negative tests.
+- `make check`: all tests passed (including compiler, diagnostics, skills, tools, and runtime suites).
+- `make examples`: all examples compiled with `-Oshared-memory`.
+- `git diff --check`: clean (no whitespace issues).
+
 ## Phase 20 corrective review — implementation not yet complete
 
 Branch: `phase-20-integration`. This section is the authoritative integrated

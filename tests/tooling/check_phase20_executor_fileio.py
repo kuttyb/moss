@@ -130,6 +130,10 @@ def assert_owned_runtime(rust_text, label, *, fileio):
 # ---------------------------------------------------------------------------
 expect_rejected('tests/negative/phase20_executor_invoke_outside_main.moss',
                 'may only be configured and started directly in', code='EXECUTOR_CONSTRUCT_OUTSIDE_MAIN')
+expect_rejected('tests/negative/phase20_executor_construct_outside_main.moss',
+                'may only be configured and started directly in', code='EXECUTOR_CONSTRUCT_OUTSIDE_MAIN')
+p_selftest = run([compiler, '--self-test'])
+assert 'moss self-test: ok' in p_selftest.stdout, p_selftest.stdout
 expect_rejected('tests/negative/phase20_executor_unknown_handler.moss',
                 'unknown handler', code='EXECUTOR_INVOKE_UNKNOWN_HANDLER')
 expect_rejected('tests/negative/phase20_executor_value_returning.moss',

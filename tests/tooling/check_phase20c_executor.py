@@ -11,7 +11,7 @@ executor runtime, extracted from a generated Moss program) followed by a test
 deadline miss is a failure (hang detector), not a timing assumption.
 
 Coverage:
-  ingress     1-10, 21-27, 31, 32, 44  (INLINE/ACTIVE/DRAINING, fairness, tickets)
+  ingress     1-10, 21-27, 31, 32, 44, 45, 50, 51, 52  (INLINE/ACTIVE/DRAINING, fairness, tickets, reentrancy)
   branches    11-15, 30, 38, 39, 41, 42, 46, 47 (publish/join, helping, ABI ownership)
   solo        17-20, 28, 29, 33, 36, 48 (real-worker compensation, T_max)
   seams       16, 34, 35, 37, 40, 43, 49 (config, linear handle, symbols, TLS, roles)
@@ -1421,6 +1421,100 @@ fn main() {
     println!("path={}", if on_worker { "readmitted" } else { "inline" });
     exec2.join();
     assert_eq!(runtime_invoke(|| 1u8), 1);
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("50-root-admission-full-queue-reentrancy-rejected", "Root A on single-worker single-slot-queue attempting Root admission is rejected immediately without deadlocking", r"""
+fn main() {
+    use std::sync::{Arc, Barrier};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    // threads=1, max_threads=1, queue_capacity=1
+    let exec = MossExecutor::new().threads(1).max_threads(1).queue_capacity(1).start();
+    let running = Arc::new(AtomicBool::new(false));
+    let release = Arc::new(Barrier::new(2));
+    let reentrancy_rejected = Arc::new(AtomicBool::new(false));
+    let (r1, rel, rej) = (Arc::clone(&running), Arc::clone(&release), Arc::clone(&reentrancy_rejected));
+
+    // 1. Root A starts on the only worker
+    exec.enqueue_root(MossRootDescriptor::one_way(next_root_id(), move || {
+        r1.store(true, Ordering::SeqCst);
+        // While Root A occupies the single worker:
+        // Attempting root admission (e.g. via runtime_invoke or enqueue)
+        // must fail immediately before waiting for queue capacity.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime_invoke(|| 42u8);
+        }));
+        if result.is_err() {
+            rej.store(true, Ordering::SeqCst);
+        }
+        rel.wait();
+    }));
+
+    wait_until("Root A running", || running.load(Ordering::SeqCst));
+
+    // 2. Root B fills the 1 queue capacity slot
+    exec.enqueue_root(MossRootDescriptor::one_way(next_root_id(), || {}));
+
+    // 3. Release Root A
+    release.wait();
+
+    exec.join();
+    assert!(reentrancy_rejected.load(Ordering::SeqCst), "Root A reentrant admission attempt did not fail closed");
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("51-branch-context-root-ingress-rejected", "A compiler Branch inherits the Root context and rejects root admission while Branch publish/join succeeds", r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let exec = MossExecutor::new().threads(2).start();
+    let (branch_ran, ingress_rejected) = runtime_invoke(|| {
+        let ran = Arc::new(AtomicBool::new(false));
+        let rej = Arc::new(AtomicBool::new(false));
+        let scope = branch_scope_new_current();
+        let (r, j) = (Arc::clone(&ran), Arc::clone(&rej));
+        branch_publish(&scope, move || {
+            // Check that we have a root context in the branch
+            assert!(current_root_id().is_some(), "Branch should inherit root ID");
+            let ingress_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                runtime_invoke(|| 99u8);
+            }));
+            if ingress_res.is_err() {
+                j.store(true, Ordering::SeqCst);
+            }
+            r.store(true, Ordering::SeqCst);
+        });
+        branch_join(scope);
+        (ran.load(Ordering::SeqCst), rej.load(Ordering::SeqCst))
+    });
+    exec.join();
+    assert!(branch_ran, "Branch did not run");
+    assert!(ingress_rejected, "Root ingress from Branch context was not rejected");
+    println!("ok");
+}
+"""))
+
+T.append(RustTest("52-active-recursive-runtime-invoke-rejected", "Recursive runtime_invoke from inside an active Root fails closed before admission", r"""
+fn main() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let exec = MossExecutor::new().threads(2).start();
+    let rejected = Arc::new(AtomicBool::new(false));
+    let r = Arc::clone(&rejected);
+    let val = runtime_invoke(move || {
+        let nested = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime_invoke(|| 100u8);
+        }));
+        if nested.is_err() {
+            r.store(true, Ordering::SeqCst);
+        }
+        50u8
+    });
+    exec.join();
+    assert_eq!(val, 50);
+    assert!(rejected.load(Ordering::SeqCst), "Recursive runtime_invoke was not rejected");
     println!("ok");
 }
 """))

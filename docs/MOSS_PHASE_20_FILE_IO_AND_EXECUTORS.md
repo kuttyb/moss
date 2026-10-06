@@ -283,6 +283,10 @@ executor.invoke(concrete_domain.Handler(arguments...))
 
 The target domain and handler must resolve statically. Application code cannot manufacture a runtime handler value.
 
+`executor.invoke(...)` is legal only directly from `main`.
+
+This is a deadlock-safety restriction, not merely an ownership or API-shaping rule. `invoke` performs bounded Root admission and may wait for root-queue capacity. Permitting that wait from a running handler could block while the handler holds Moss locks required by Roots that must complete before the queue can drain.
+
 Moss therefore gains explicit root concurrency without gaining first-class tasks or dynamic routing.
 
 ### 4.2 Arguments
@@ -341,6 +345,38 @@ Nested `message` calls from inside an existing root are not root ingress; they r
 | top-level `message domain.Handler(args)` | `main` | root completion | the handler's `reply` |
 | `runtime_invoke` | Rust host | root completion | the handler's `reply` |
 | nested `message domain.Handler(args)` | a running root | handler completion | the handler's `reply`; not root ingress |
+
+`runtime_invoke` is an **external ingress API**.
+
+It may be called by a Rust host thread that is outside Moss Root execution. It may not be called recursively from code currently executing a Moss Root or one of its Branches. Recursive use fails before admission begins.
+
+### 5.0 Roots versus Branches inside execution
+
+| Operation while inside a Root | Phase 20 |
+| --- | --- |
+| ordinary function call | allowed |
+| synchronous nested `message` | allowed |
+| compiler-created Branch | allowed |
+| `branch_join` on own Root | allowed |
+| Solo blocking FileIO | allowed |
+| submit another Root | forbidden |
+| recursive `runtime_invoke` | forbidden |
+| executor start/join | forbidden |
+
+The distinction to preserve is:
+
+```text
+Nested message:
+    same Root
+
+Compiler Branch:
+    child work of same Root
+
+executor.invoke / runtime_invoke:
+    new independent Root
+```
+
+Only the third category is forbidden from Root execution.
 
 None of these creates a future, task handle, or result queue. The reply returned by `runtime_invoke` is the host's control channel from Moss: Moss cannot call Rust, so Moss tells the host what to do next by replying (§26.2).
 
@@ -958,6 +994,23 @@ The following are mandatory Phase 20 runtime/compiler invariants.
 | E9 | While an executor is active, every concurrent Moss root—Moss- or host-originated—uses the same root-admission mechanism. |
 | E10 | Root-queue backpressure is encountered only by callers that hold no Moss locks as part of root ingress. |
 | E11 | Once a root starts, it retains one root worker until completion; branch workers are additional workers from the same finite physical population. |
+| E12 | A running Moss Root may never enter root admission. While executing a Root, or a compiler-generated Branch belonging to that Root, execution may not synchronously submit, admit, or start another independent Root. The rejection must occur before waiting for queue capacity, an ingress gate, executor lifecycle state, or any other root-admission resource. |
+
+### E12 — No root-originated root admission
+
+> **A running Moss Root may never enter root admission.**
+>
+> While executing a Root, or a compiler-generated Branch belonging to that Root, execution may not synchronously submit, admit, or start another independent Root.
+>
+> This prohibition includes:
+>
+> - `executor.invoke(...)`;
+> - internal executor root submission;
+> - recursive `runtime_invoke`;
+> - executor `start()` or `join()` from Root execution;
+> - any future API that enters the root-admission mechanism.
+>
+> The rejection must occur **before** waiting for queue capacity, an ingress gate, executor lifecycle state, or any other root-admission resource.
 
 ---
 
@@ -1006,7 +1059,7 @@ There are two claims.
 | A3 | A running root waits only on a Moss lock, a runtime leaf lock, a Solo kernel operation (FileIO or console I/O, §1), or a join over its own branches. | Phase 20 restrictions |
 | A4 | Every Solo kernel operation completes or fails in finite time. | Responsive storage assumption |
 | A5 | Runtime leaf-lock holders take no other lock and never hold the leaf lock across a kernel wait or branch join. | R5 |
-| A6 | A root waiting for admission holds no Moss lock; admitted runnable roots are scheduled fairly; a waking Solo-blocked worker does not wait for a slot. | E5, E8–E10, R2, R4 |
+| A6 | Admission waits occur only outside Root execution (a caller waiting for root admission is not currently executing a Moss Root and therefore holds no Moss lock as part of Moss execution; by E12, bounded root-queue backpressure cannot block a Root while that Root holds Moss locks); admitted runnable roots are scheduled fairly; a waking Solo-blocked worker does not wait for a slot. | E5, E8–E10, E12, R2, R4 |
 | A7 | Branches take no Moss locks, wait only on leaf locks or Solo kernel operations, and a joining root can execute its own unstarted branches. | E3, E4, R9 |
 
 ### 18.2 Theorem 1a — no deadlock
@@ -1046,6 +1099,32 @@ Eventually the chain reaches a root that is running, a leaf lock, a Solo kernel 
 **Admission adds no cycle.**
 
 A root that is waiting to start holds no Moss locks (A6). `executor.invoke`, top-level synchronous ingress, and host `runtime_invoke` all reach the same admission mechanism; there is no hidden host thread running an uncounted Moss root while bypassing the executor.
+
+Consider the motivating deadlock topology that would arise if a running Root could enter admission:
+
+```text
+Root A holds Moss lock L
+        |
+        v
+Root A attempts root admission
+        |
+        v
+bounded root queue is full
+        |
+        v
+Root A waits for queue capacity
+        |
+        v
+queued/running Root B needs L
+        |
+        v
+B cannot complete until A releases L
+        |
+        +----------------------+
+                deadlock
+```
+
+E12 removes the edge from a running Root to root admission. Therefore this cycle cannot arise.
 
 Host callers add no edge back into Moss either. A `runtime_invoke` caller, including one waiting on the ingress gate during DRAINING, waits outside Moss holding no Moss lock and receives its reply after the root completes. No Moss root ever waits on a host thread, because Moss cannot call Rust.
 
@@ -1575,6 +1654,10 @@ The design introduces no second programming model. The programmer still writes s
 ## 29. Status and deferred work
 
 The Phase 20 core design is closed.
+
+### Phase 20.1 hardening
+
+Phase 20.1 made the no-root-originated-admission rule explicit and added regressions for bounded-admission deadlock. It did not change Phase 20 source semantics or add new concurrency constructs.
 
 ### Deferred to Phase 21
 

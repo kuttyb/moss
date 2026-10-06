@@ -10566,6 +10566,12 @@ class Checker {
 #include "file_chunk_lowering.inc"
 };
 
+static bool run_compiler_self_tests() {
+  if (!Checker::unit_test_executor_invoke_outside_main())
+    return false;
+  return true;
+}
+
 // This is a Moss-level optimization plan over the authoritative typed
 // functional/dataflow IR. Phase 4.5 augments those semantic nodes with
 // terminal, liveness/materialization, cross-binding, and shared-source DAG
@@ -27416,6 +27422,15 @@ int main(int argc, char** argv) {
                        << error.what() << "\n";
         return 1;
       }
+    }
+
+    if (argc >= 2 && string(argv[1]) == "--self-test") {
+      if (!moss::run_compiler_self_tests()) {
+        std::cerr << "moss: compiler self-test failed\n";
+        return 1;
+      }
+      std::cout << "moss self-test: ok\n";
+      return 0;
     }
 
     static const std::set<string> project_commands = {

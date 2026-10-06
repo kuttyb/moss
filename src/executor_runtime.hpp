@@ -629,7 +629,17 @@ enum MossAdmissionResult {
     DrainingBeforeAdmission(MossRootDescriptor),
 }
 
+/// Centralized ingress guard (E12 / R4): running Roots and Branches may never
+/// enter root admission.
+#[inline(always)]
+fn assert_external_root_ingress(operation: &str) {
+    if current_root_id().is_some() || current_worker_id().is_some() {
+        panic!("moss runtime: {} is legal only outside Root execution (E12 / R4)", operation);
+    }
+}
+
 fn admit_root(gx: &std::sync::Arc<MossGlobalExec>, desc: MossRootDescriptor) -> MossAdmissionResult {
+    assert_external_root_ingress("admit_root");
     let mut inner = gx.lock_inner();
     let my_ticket = inner.next_admission_ticket;
     inner.next_admission_ticket += 1;
@@ -715,9 +725,7 @@ impl Default for MossExecutor { fn default() -> Self { Self::new() } }
 /// the exclusive activation reservation makes a concurrent start() fail.
 pub fn moss_root_start_with_config(config: MossExecutorConfig) -> MossExecutorHandle {
     config.validate();
-    if current_root_id().is_some() || current_worker_id().is_some() {
-        panic!("moss executor: start() is legal only from main, outside any Root (R15)");
-    }
+    assert_external_root_ingress("start");
     let rt = process_rt();
     let target = config.threads;
 
@@ -788,9 +796,7 @@ impl MossExecutorHandle {
     /// Enqueue a one-way root (executor.invoke, §4 / E9 / E10).
     /// Waits for queue capacity; caller holds no Moss lock as part of ingress.
     pub fn enqueue_root(&self, desc: MossRootDescriptor) {
-        if current_root_id().is_some() || current_worker_id().is_some() {
-            panic!("moss executor: a running Root cannot enqueue new roots (§4.1 / E2)");
-        }
+        assert_external_root_ingress("enqueue_root");
         match admit_root(&self.gx, desc) {
             MossAdmissionResult::Admitted => {},
             MossAdmissionResult::DrainingBeforeAdmission(_) => {
@@ -804,9 +810,7 @@ impl MossExecutorHandle {
 
     /// ACTIVE → DRAINING → INLINE (§5.4 / join()).
     pub fn join(self) {
-        if current_root_id().is_some() || current_worker_id().is_some() {
-            panic!("moss executor: join() is legal only from main, outside any Root (R15)");
-        }
+        assert_external_root_ingress("join");
         let rt = process_rt();
 
         // Step 1: ACTIVE → DRAINING and close executor admission.
@@ -929,9 +933,7 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    if current_root_id().is_some() || current_worker_id().is_some() {
-        panic!("moss runtime: runtime_invoke is host ingress and cannot run inside a Root (§7.1 / E2)");
-    }
+    assert_external_root_ingress("runtime_invoke");
     let rt = process_rt();
     let root_id = next_root_id();
 

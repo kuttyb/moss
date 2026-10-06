@@ -64,7 +64,30 @@ workers, consumes the executor, and returns ingress to inline mode. Top-level
 `message` from `main` and host `runtime_invoke` use the same admission path;
 nested `message` remains inside its caller's Root. Preserve fair admission,
 finite `T_max`, one active executor, and no root running another root (§§3–7,
-E1–E11).
+E1–E12).
+
+Every root-ingress entry point must reject invocation from an active Moss Root context before entering bounded admission.
+
+This includes executor submission and host `runtime_invoke`.
+
+The runtime must maintain enough execution context to distinguish:
+
+```text
+external/non-Root caller
+versus
+current Root / current Branch
+```
+
+A Branch is considered part of its owning Root for this rule.
+
+Explicit ABI invariant:
+
+```text
+root ingress requires:
+    current_root_id == None
+```
+
+Worker identity may also be checked defensively, but Root identity is the semantic rule.
 
 ### 3. RootDescriptor representation
 
@@ -100,8 +123,11 @@ wait. Moss-lock waits do not use these hooks (§15; R1–R5).
 ### 6. `runtime_invoke` host ABI
 
 `runtime_invoke` is the Rust host's synchronous ingress for a statically known
-handler invocation. It shares root admission, waits for completion, and returns
-the handler's reply. During draining, an unadmitted host caller waits outside
+handler invocation. It is an **external ingress API** called by a Rust host thread
+outside Moss Root execution. It shares root admission, waits for completion, and returns
+the handler's reply. It may not be called recursively from code currently executing
+a Moss Root or one of its Branches; recursive use fails before admission begins.
+During draining, an unadmitted host caller waits outside
 Moss for inline ingress, holding no Moss lock. The host entry remains valid
 after executor `join()` while the Moss runtime/program instance lives. No
 dynamic handler lookup, future, result queue, or host-only Moss execution pool

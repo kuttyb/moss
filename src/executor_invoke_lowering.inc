@@ -458,3 +458,24 @@ void check_executor_lifecycle(const vector<Stmt>& body) const {
           "Executor.join(); '" + entry.first + "' is never joined",
           "EXECUTOR_JOIN_MISSING");
 }
+
+public:
+static bool unit_test_executor_invoke_outside_main() {
+  Program prog;
+  Checker checker(prog);
+  Stmt s;
+  s.line = 1;
+  s.kind = Stmt::Kind::Call;
+  s.a = "executor";
+  s.b = "invoke";
+  TypeEnv env;
+  env["executor"] = "executor";
+  try {
+    checker.check_executor_invoke(s, env, false);
+    return false;
+  } catch (const CompileError& e) {
+    return e.code == "EXECUTOR_INVOKE_OUTSIDE_MAIN" &&
+           string(e.what()).find("executor.invoke is legal only directly in main's body") != string::npos;
+  }
+}
+private:
