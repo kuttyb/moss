@@ -1,0 +1,335 @@
+{
+  "twice_multi": {
+    "stdout": "4\nabab\n",
+    "negative": false,
+    "fileio": false,
+    "target": "twice"
+  },
+  "twice_string": {
+    "stdout": "abab\n",
+    "negative": false,
+    "fileio": false,
+    "target": "twice"
+  },
+  "twice_local_return": {
+    "stdout": "abab\nab\n",
+    "negative": false,
+    "fileio": false,
+    "target": "twice"
+  },
+  "identity": {
+    "stdout": "ab\n2\ncd\n",
+    "negative": false,
+    "fileio": false,
+    "target": "ident",
+    "effects": {
+      "fn:ident<string>": [
+        "CONSUME"
+      ],
+      "fn:ident<int>": [
+        "READ"
+      ]
+    }
+  },
+  "numeric": {
+    "stdout": "4\n3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "twice"
+  },
+  "length": {
+    "stdout": "3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "size",
+    "effects": {
+      "fn:size<string>": [
+        "READ"
+      ]
+    }
+  },
+  "length_map": {
+    "stdout": "5\n",
+    "negative": false,
+    "fileio": false,
+    "target": "size"
+  },
+  "char_at": {
+    "stdout": "a\n",
+    "negative": false,
+    "fileio": false,
+    "target": "first"
+  },
+  "split": {
+    "stdout": "3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "parts"
+  },
+  "vector_push": {
+    "stdout": "1\n",
+    "negative": false,
+    "fileio": false,
+    "target": "push_one",
+    "effects": {
+      "fn:push_one<vector[int]>": [
+        "WRITE"
+      ]
+    }
+  },
+  "queue_pop": {
+    "stdout": "7\n",
+    "negative": false,
+    "fileio": false,
+    "target": "take",
+    "effects": {
+      "fn:take<queue[int]>": [
+        "WRITE"
+      ]
+    }
+  },
+  "map_keys": {
+    "stdout": "2\n",
+    "negative": false,
+    "fileio": false,
+    "target": "keys_of",
+    "effects": {
+      "fn:keys_of<map[string,int]>": [
+        "READ"
+      ]
+    }
+  },
+  "object_length": {
+    "stdout": "3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "size"
+  },
+  "missing_method": {
+    "stdout": null,
+    "negative": true,
+    "fileio": false,
+    "target": "bad"
+  },
+  "tuple_string_first": {
+    "stdout": "ab\n3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "cat"
+  },
+  "tuple_int_first": {
+    "stdout": "3\nab\n",
+    "negative": false,
+    "fileio": false,
+    "target": "cat"
+  },
+  "mixed_tuples": {
+    "stdout": "a\n1\n2\n1\n3\nb\n",
+    "negative": false,
+    "fileio": false,
+    "target": "choose",
+    "effects": {
+      "fn:choose<int,string>": [
+        "READ",
+        "READ"
+      ],
+      "fn:choose<int,int>": [
+        "READ",
+        "READ"
+      ],
+      "fn:choose<string,int>": [
+        "CONSUME",
+        "READ"
+      ]
+    }
+  },
+  "key_count": {
+    "stdout": "2\n2\n",
+    "negative": false,
+    "fileio": false,
+    "target": "key_count",
+    "effects": {
+      "fn:key_count<map[string,int]>": [
+        "READ"
+      ]
+    }
+  },
+  "value_count": {
+    "stdout": "2\n2\n",
+    "negative": false,
+    "fileio": false,
+    "target": "value_count",
+    "effects": {
+      "fn:value_count<map[string,int]>": [
+        "READ"
+      ]
+    }
+  },
+  "string_pipeline": {
+    "stdout": "3\n",
+    "negative": false,
+    "fileio": false,
+    "target": "part_count"
+  },
+  "domain_write": {
+    "stdout": "2000\n",
+    "negative": false,
+    "fileio": false,
+    "target": "Store.Add",
+    "interp_unsupported": true
+  },
+  "domain_write_typed": {
+    "stdout": "2000\n",
+    "negative": false,
+    "fileio": false,
+    "target": "Store.Add",
+    "interp_unsupported": true
+  },
+  "range_fileio": {
+    "stdout": "4\n",
+    "negative": false,
+    "fileio": true,
+    "target": "size"
+  },
+  "identity_expr": {
+    "stdout": "ab\n2\n",
+    "target": "ident",
+    "negative": false,
+    "fileio": false
+  },
+  "identity_vector": {
+    "stdout": "2\n",
+    "target": "ident",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:ident<vector[int]>": [
+        "CONSUME"
+      ]
+    }
+  },
+  "identity_consumed": {
+    "stdout": null,
+    "target": "ident",
+    "negative": true,
+    "fileio": false,
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_pop": {
+    "stdout": "2\n1\n",
+    "target": "take",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:take<vector[int]>": [
+        "WRITE"
+      ]
+    }
+  },
+  "queue_push": {
+    "stdout": "7\n1\n",
+    "target": "push_one",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:push_one<queue[int]>": [
+        "WRITE"
+      ]
+    }
+  },
+  "map_delete": {
+    "stdout": "7\ntrue\n0\n",
+    "target": "erase",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:erase<map[string,int],string,int,bool>": [
+        "WRITE",
+        "READ",
+        "READ",
+        "WRITE"
+      ]
+    }
+  },
+  "tuple_pipeline": {
+    "stdout": "2\n1\nx\n1\ntrue\n1\n",
+    "target": "tally",
+    "negative": false,
+    "fileio": false
+  },
+  "typed_twice": {
+    "stdout": "abab\nab\n",
+    "target": "twice",
+    "negative": false,
+    "fileio": false
+  },
+  "range_direct": {
+    "stdout": "4\n",
+    "target": "size",
+    "negative": false,
+    "fileio": true
+  },
+  "fileio_direct": {
+    "stdout": "4\n",
+    "target": "read_size",
+    "negative": false,
+    "fileio": true
+  },
+  "domain_write_debug": {
+    "stdout": "2\n",
+    "target": "Store.Add",
+    "negative": false,
+    "fileio": false
+  },
+  "invalid_arity": {
+    "stdout": null,
+    "target": "bad",
+    "negative": true,
+    "fileio": false,
+    "code": "TYPE_MISMATCH"
+  },
+  "invalid_argument": {
+    "stdout": null,
+    "target": "bad",
+    "negative": true,
+    "fileio": false,
+    "code": "TYPE_MISMATCH"
+  },
+  "local_map_tuples": {
+    "stdout": "1\n1\n",
+    "target": "tally",
+    "negative": false,
+    "fileio": false
+  },
+  "local_pipeline_tuples": {
+    "stdout": "3\n",
+    "target": "size",
+    "negative": false,
+    "fileio": false
+  },
+  "nested_write": {
+    "stdout": "1\n",
+    "target": "delegate",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:delegate<vector[int]>": [
+        "WRITE"
+      ]
+    }
+  },
+  "index_snapshot": {
+    "stdout": "ab\nab\n1\n",
+    "target": "first",
+    "negative": false,
+    "fileio": false,
+    "effects": {
+      "fn:first<vector[string]>": [
+        "READ"
+      ],
+      "typed": [
+        "READ"
+      ]
+    }
+  }
+}

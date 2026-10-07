@@ -1,0 +1,7 @@
+fn twice(x):
+  return x + x
+
+fn main():
+  text = "ab"
+  echo twice(text)
+  echo text

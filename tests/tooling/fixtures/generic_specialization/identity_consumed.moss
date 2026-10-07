@@ -1,0 +1,7 @@
+fn ident(x):
+  return x
+
+fn main():
+  x = "ab"
+  echo ident(x)
+  echo x

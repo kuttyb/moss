@@ -62,6 +62,9 @@ struct Stmt {
   string message_result;
   vector<int> continuation_lines;
   string semantic_type;
+  // Concrete receiver after collection element inference, keyed by the exact
+  // callable/specialization context. Native lowering projects this checked fact.
+  std::unordered_map<string,string> receiver_types_by_context;
   // A generic body can be checked at several concrete call sites. Preserve
   // the inferred binding type for each checked specialization.
   std::unordered_map<string,string> semantic_types_by_context;
@@ -144,6 +147,9 @@ struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // Ownership is checked in this complete concrete parameter environment.
+  vector<Effect> parameter_effects;
+  vector<bool> parameter_mutations;
   // Static calls observed while checking this concrete body.  Artifact
   // projection closes this graph so an owned specialization never references
   // a specialization that exists only in some other artifact.

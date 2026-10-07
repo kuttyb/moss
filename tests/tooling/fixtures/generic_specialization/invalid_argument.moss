@@ -1,0 +1,5 @@
+fn bad(x):
+  return x.char_at("x")
+
+fn main():
+  echo bad("abc")

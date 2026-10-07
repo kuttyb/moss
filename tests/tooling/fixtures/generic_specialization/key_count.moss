@@ -1,0 +1,12 @@
+fn key_count(m):
+  return m.keys() |> count
+
+fn typed(m: Map[String, Int]) -> Int:
+  return m.keys() |> count
+
+fn main():
+  m = Map()
+  m["a"] = 1
+  m["b"] = 2
+  echo key_count(m)
+  echo typed(m)

@@ -1,0 +1,5 @@
+fn twice(x):
+  x + x
+
+fn main():
+  echo twice("ab")

@@ -1125,8 +1125,10 @@ class FastInterpreter {
     if (specialization)
       frame.specialization_identity = frame.functional_context + "@" +
           std::to_string(target.line);
-    bind_parameters(target.params, target.parameter_effects, arguments, caller, frame,
-                    line, output, specialization ? &specialization->parameter_types : nullptr);
+    bind_parameters(target.params,
+                    specialization ? specialization->parameter_effects : target.parameter_effects,
+                    arguments, caller, frame, line, output,
+                    specialization ? &specialization->parameter_types : nullptr);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
     Flow flow = execute(target.body, frame, output);

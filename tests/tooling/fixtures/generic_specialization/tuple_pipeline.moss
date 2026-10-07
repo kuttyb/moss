@@ -1,0 +1,12 @@
+fn tally(m, x):
+  echo x
+  return m.keys() |> count
+
+fn main():
+  a = Map()
+  a["a"] = 1
+  b = Map()
+  b[1] = "b"
+  echo tally(a, 2)
+  echo tally(a, "x")
+  echo tally(b, true)

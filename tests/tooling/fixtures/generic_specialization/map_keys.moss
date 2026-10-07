@@ -1,0 +1,8 @@
+fn keys_of(m):
+  return m.keys()
+
+fn main():
+  m = Map()
+  m["a"] = 1
+  m["b"] = 2
+  echo keys_of(m) |> count

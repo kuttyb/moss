@@ -1,0 +1,10 @@
+fn ident(x):
+  return x
+
+fn typed(x: String) -> String:
+  return x
+
+fn main():
+  echo ident("ab")
+  echo ident(2)
+  echo typed("cd")

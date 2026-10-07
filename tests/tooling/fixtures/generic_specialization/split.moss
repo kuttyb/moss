@@ -1,0 +1,5 @@
+fn parts(x):
+  return x.split(",")
+
+fn main():
+  echo parts("a,b,c") |> count

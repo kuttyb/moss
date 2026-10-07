@@ -1,0 +1,10 @@
+fn size(x):
+  return x.length()
+
+fn read_size(f):
+  return size(f.read(0, 4))
+
+fn main():
+  f = FileIO.open("tmp/generic-specialization/input.txt", ro)
+  echo read_size(f)
+  f.close()

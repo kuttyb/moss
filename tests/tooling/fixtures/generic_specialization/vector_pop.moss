@@ -1,0 +1,7 @@
+fn take(v):
+  return v.pop()
+
+fn main():
+  v = [1, 2]
+  echo take(v)
+  echo v |> count

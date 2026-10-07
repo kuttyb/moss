@@ -1,5 +1,175 @@
 # Moss current status
 
+## Generic specialization semantics fixed — 2026-10-07
+
+Base: `4645e3a78edee822cd858bc286a8bba13daa4a44` on `main`.
+Completed compiler repair of A–D; no new syntax or language design. The
+baseline checkpoint below was written before implementation. All original
+reviewer probe sources and expectations are unchanged. No push was performed.
+
+Root causes and repair:
+
+- A: native call lowering treated generic operator parameters as Copy values
+  while concrete signatures borrowed non-Copy types. Source-only effect inference
+  also treated a returned unresolved parameter as READ. Each complete tuple now
+  retains concrete parameter effects and mutation facts, inferred using the same
+  body effect walker and concrete parameter TypeEnv as an equivalent typed helper.
+  One concrete parameter ABI decision controls signatures, ordinary calls,
+  functional calls, view selection, borrows, and write-through bookkeeping.
+  READ Copy arguments remain values; existing primitive WRITE semantics and
+  their mutable write-through ABI remain unchanged. String and Vector identity
+  specializations are CONSUME and return owned values; later use rejects.
+- B: generic requirements resolved user objects and FileIO/Range, omitting the
+  normal builtin receiver descriptors. The existing builtin table now owns result
+  types, arity, receiver/argument ownership effects and failure effects. Generic
+  validation, ordinary inferred result typing, ownership/effect analysis, native
+  type/receiver lowering, and completion project that shared table. No second
+  builtin method whitelist was introduced. Unknown methods/invalid arguments
+  reject with TYPE_MISMATCH. User-object and FileIO/Range guards remain valid.
+- C: call-based inference ran before some untyped functions were marked static,
+  freezing shared parameter types at the first call. Untyped templates are now
+  recognized before call inference. Cached instances continue to use the full
+  canonical parameter tuple, with independent effects, return types, dependencies,
+  and generated names. Binding/receiver types and existing functional/join metadata
+  are selected by exact specialization context, including Map locals of different
+  key/value types in the same program.
+- D: an unresolved builtin method result made functional analysis fall through
+  to scalar pipeline normalization, interpreting `count` as a local callable.
+  Source templates retain deferred return/pipeline requirements; each concrete
+  body validates expressions and ownership in its concrete TypeEnv. The existing
+  environment walker now infers specialized local types, including indexed Map
+  writes, before concrete results and functional IR are built. No keys/count
+  special case was added. Keys, values and split pipelines all have native parity.
+  Unresolved template operator checks are likewise deferred to concrete instances.
+  Concrete effects also honor the existing indexed-result materialization rule:
+  returning an indexed result reads its container, while returning the parameter
+  itself consumes a non-Copy value. The shared effect walker now agrees with the
+  existing ownership walker for both typed and untyped indexing helpers.
+
+C and D are fixed generic-specialization defects, not owner decisions. Earlier
+status wording about pending specialization breadth is superseded and corrected.
+Canonical documentation note: Phase 20 §29 still describes specialization breadth
+as pending owner review and attributes recognition to finalization. This repair
+applies the user-confirmed existing static-specialization model; the remaining
+§29 wording is historical/inaccurate for C/D and early template recognition.
+It was explicitly identified here without changing canonical language semantics
+or silently editing language-design documentation.
+
+Coverage and baseline evidence:
+
+- 40 permanent general probes: 36 accepted, 4 structured negative guards.
+  The original reference compiler fails 31 final expectations, while 9 guards
+  pass (`--baseline`; full disposable records in tmp/generic-specialization).
+  The original A–D sources, both tuple call orders, and mixed tuples are retained.
+  Direct Range/FileIO baseline guards pass; the extra nested helper originally
+  failed unresolved result inference and now passes. Initial FileIO guard setup
+  was corrected to the documented `ro` token before the expanded baseline rerun;
+  no A–D reproducer or existing reviewer source was changed.
+- Accepted probes run check, native lowering, rustc -O -D warnings, execution,
+  Fast Debug, and type/effects/ownership/calls/inspect. All 31 supported non-FileIO
+  accepted probes have exact expected/native/Fast Debug stdout parity.
+  Three FileIO and two Executor/for sources run natively; the latter explicitly
+  encounter Fast Debug's existing unsupported-for diagnostic. An ordinary-message
+  domain WRITE source separately verifies Fast Debug/native parity.
+- Both 4-worker, 2000-invocation domain helpers print 2000. Store.Add effects
+  identify items in WRITE/LockSet with EXCLUSIVE acquisition. Typed and untyped
+  helpers have identical complete target-specific synchronization plans.
+- Supplemental reference comparison: all 185 baseline-accepted top-level fixtures
+  remain accepted; all 147 negative fixtures retain their outcomes and diagnostic
+  codes. Native compilation comparison finds no new failures among those 185
+  sources (existing check-only/interpreter-only fixtures keep their existing
+  default-native limitations).
+- Three new Phase 20 reviewer guards cover String native parity, builtin callback
+  specialization and generic WRITE synchronization. Existing untyped chunk
+  expression/return probes already cover chunk callables and remain unchanged.
+  All 73 original reviewer sources and manifest expectations were compared
+  against the reference commit without modification.
+
+Final validation, on the final compiler/test revision:
+
+- ./moss agent bootstrap --json: moss-0.1 confirmed.
+- python3 tests/tooling/check_generic_specialization.py ./moss: 40/40 passed.
+- python3 tests/tooling/phase20_review/run_review_probes.py ./moss --strict:
+  36 bug, 30 guard and 2 pre-existing probes passed; 8 design cases informational.
+- python3 tests/tooling/check_phase20_executor_fileio.py ./moss build/tests: passed.
+- sh tests/run.sh ./moss build/tests: passed.
+- make check: passed.
+- make examples: passed.
+- g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic src/moss.cpp -o tmp/moss-strict:
+  passed; this final strict binary was used as ./moss for all final gates.
+- git diff --check: passed.
+
+The earlier full-suite attempt caught an invalid typed Executor helper's diagnostic
+precedence regression from overly broad return placeholder inference. It was fixed
+by restricting deferred result inference to static specializations. A later run
+identified generic remainder operand validation occurring in an unresolved template;
+that check now runs in its concrete instance. The reference comparison then found
+an indexed String snapshot incorrectly consuming the whole vector in the concrete
+parameter summary; the effect walker was aligned with existing index ownership.
+No previous test source or expectation was changed. The initial
+attempt and earlier focused/strict results are superseded by the final gates above.
+No source changes occurred after final validation. No unfinished work or blockers
+remain for this repair. One local completion commit records the implementation,
+coverage, parity and synchronization validation; it has not been pushed.
+
+
+## Generic specialization repair — baseline 2026-10-07 (implementation pending)
+
+Base: `4645e3a78edee822cd858bc286a8bba13daa4a44`, clean `main`.
+Mandatory skills/startup loaded; live bootstrap confirms `moss-0.1`.
+All 23 exact sources are preserved in `tests/tooling/fixtures/generic_specialization/`.
+Before compiler changes each received structured check, native lowering,
+`rustc -O -D warnings` and execution when lowering/compilation succeeded,
+and Fast Debug execution. Type/effects/ownership/calls/inspect were queried
+for every source's relevant callable. Disposable full outputs: `tmp/generic-specialization/baseline.json`.
+
+| Probe | Moss check | Native | Fast Debug |
+| --- | --- | --- | --- |
+| `twice_multi` | accept | rustc failure | pass |
+| `twice_string` | accept | rustc failure | pass |
+| `twice_local_return` | accept | rustc failure | pass |
+| `identity` | accept | rustc failure | pass |
+| `numeric` | accept | pass | pass |
+| `length` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `length_map` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `char_at` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `split` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `vector_push` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `queue_pop` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `map_keys` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `object_length` | accept | pass | pass |
+| `missing_method` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `tuple_string_first` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `tuple_int_first` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `mixed_tuples` | accept | rustc failure | pass |
+| `key_count` | UNKNOWN_SYMBOL_OR_TYPE | rejected | rejected/unsupported |
+| `value_count` | UNKNOWN_SYMBOL_OR_TYPE | rejected | rejected/unsupported |
+| `string_pipeline` | UNKNOWN_SYMBOL_OR_TYPE | rejected | rejected/unsupported |
+| `domain_write` | TYPE_MISMATCH | rejected | rejected/unsupported |
+| `domain_write_typed` | accept | pass | rejected/unsupported |
+| `range_fileio` | TYPE_INFERENCE_FAILED | rejected | rejected/unsupported |
+
+A: String twice passes checking but call passes String to an &String signature;
+identity's semantic source summary remains READ and its &String parameter cannot
+return owned String. Fast Debug already returns the expected outputs.
+B: builtin receiver requirements reject String, Vector, Queue and Map with
+TYPE_MISMATCH even though normal concrete methods exist; typed domain helper
+returns 2000 natively and its semantic effects report EXCLUSIVE.
+C: both tuple call orders reject the second tuple as incompatible with the first;
+these are generic-specialization compiler defects, not owner decisions.
+D: builtin-result pipelines reject `count` as an unknown local function in the
+unresolved source context; these are generic-specialization compiler defects,
+not owner decisions. Shared analysis must be fixed for native and Fast Debug.
+The mixed tuple probe checks and interprets successfully but fails native ABI.
+The initial combined Range/FileIO guard exposes unresolved nested result inference;
+retain it and supplement it with direct previously supported guards.
+Fast Debug for iteration is unsupported, so the 2000-invocation domain probe
+requires native execution and semantic synchronization comparison; ordinary
+non-FileIO cases require exact native/Fast Debug stdout parity.
+
+No implementation or final validation performed at this baseline checkpoint.
+
+
 ## Canonical Phase 20 documentation synchronized — 2026-10-07
 
 Base: `50d3a2b25119242c2a954d3c16e27aab902960d5` on `main`, containing the
@@ -85,8 +255,9 @@ Phase 20 semantics: negative start, non-positive length, or start at/past the
 end yields an empty Range; otherwise length is clipped to remaining bytes.
 Theorem 1a explicitly depends on the ranked two-phase-locking portion of A2,
 without its fair-waiter premise; Theorem 1b retains that fairness condition.
-Range/String equality, breadth of untyped specialization, and startup/clamp
-bounds remain open owner decisions. Compiler/runtime sources, tests, and
+Range/String equality and startup/clamp bounds remain open owner decisions.
+Generic multi-specialization and builtin-result pipeline failures are compiler defects
+addressed by the generic-specialization repair above. Compiler/runtime sources, tests, and
 language skill guidance are unchanged.
 
 Validation: strict reviewer probes passed (30 bug, 26 guard, 2 pre-existing;
@@ -137,13 +308,12 @@ single Executor stress timeout under simultaneous C++ compilation, and the
 same 54-test suite passed in isolation and in the final `tests/run.sh` run.
 
 Owner decisions still pending, explicitly surfaced in §29 of the Phase 20
-spec: (A) provisional Range/String equality rejection; (B) existing
-language-wide generic/static dispatch for any remaining untyped parameter,
-with a narrower contextual specialization alternative documented but not
-implemented; (C) constant/immutable-alias bound implementation scope, with
-startup declarations and proven dynamic clamps deferred (clamps are compatible
-with the memory proof). Range.slice clipping/empty behavior is settled Phase
-20 semantics. R5, E12, serial batch preads,
+spec: (A) provisional Range/String equality rejection; (C) constant/immutable-alias
+bound implementation scope, with startup declarations and proven dynamic clamps
+deferred (clamps are compatible with the memory proof). The former item (B)
+concerned generic/static specialization defects, including multi-parameter tuples
+and builtin-result pipelines, fixed by the generic-specialization repair above.
+Range.slice clipping/empty behavior is settled Phase 20 semantics. R5, E12, serial batch preads,
 fixed K=4 windows, Fast Debug FileIO scope, and Range as a generic pipeline
 source were not reopened. A2 remains tracked under `SYNC-FAIR-001`;
 performance work remains in Phase 20.5.

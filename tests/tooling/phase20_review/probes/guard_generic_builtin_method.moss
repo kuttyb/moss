@@ -1,0 +1,9 @@
+fn size(x):
+  x.length()
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  words = ["ab", "cde"]
+  echo words |> map(size) |> reduce(0, add)

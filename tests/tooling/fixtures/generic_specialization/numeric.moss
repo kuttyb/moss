@@ -1,0 +1,6 @@
+fn twice(x):
+  x + x
+
+fn main():
+  echo twice(2)
+  echo twice(1.5)

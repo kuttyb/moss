@@ -220,6 +220,17 @@ def main():
             detail += " | proposal: " + entry.get("proposal", "-")
         else:
             problems = evaluate(entry, checked, run)
+            if checked["status"] == "accept" and entry.get("fast_debug_parity"):
+                debug = subprocess.run([str(compiler), "run", "--interp", str(probe)],
+                                       cwd=REPO, capture_output=True, text=True, timeout=120)
+                if debug.returncode != 0 or run is None or run.get("stdout") != debug.stdout:
+                    problems.append("native/Fast Debug parity failed")
+            if checked["status"] == "accept" and entry.get("exclusive_effects"):
+                effects = subprocess.run([str(compiler), "effects", entry["exclusive_effects"],
+                                          "--source", str(probe), "--json"],
+                                         cwd=REPO, capture_output=True, text=True, timeout=120)
+                if effects.returncode != 0 or '"EXCLUSIVE"' not in effects.stdout:
+                    problems.append("missing EXCLUSIVE state acquisition")
             verdict = "PASS" if not problems else "FAIL"
             detail = "; ".join(problems) if problems else ""
             gating = category in ("guard", "bug") or (args.strict and category == "pre-existing")

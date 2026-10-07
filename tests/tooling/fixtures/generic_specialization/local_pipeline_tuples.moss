@@ -1,0 +1,6 @@
+fn size(x):
+  parts = x.split(",")
+  return parts |> count
+
+fn main():
+  echo size("a,b,c")

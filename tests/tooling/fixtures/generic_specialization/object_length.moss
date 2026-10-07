@@ -1,0 +1,11 @@
+type Text:
+  value: String
+
+  fn length() -> Int:
+    return value.length()
+
+fn size(x):
+  x.length()
+
+fn main():
+  echo size(Text(value: "abc"))

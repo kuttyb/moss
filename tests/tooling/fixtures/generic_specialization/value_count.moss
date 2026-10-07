@@ -1,0 +1,12 @@
+fn value_count(m):
+  return m.values() |> count
+
+fn typed(m: Map[String, Int]) -> Int:
+  return m.values() |> count
+
+fn main():
+  m = Map()
+  m["a"] = 1
+  m["b"] = 2
+  echo value_count(m)
+  echo typed(m)

@@ -79,8 +79,11 @@
     string emitted = emitted_function_name(name, args, types);
     auto found = functions_.find(name);
     if (found == functions_.end()) return emitted;
+    const auto* specialization = call_specialization(*found->second, args, types);
     for (size_t i = 0; i < args.size(); ++i)
-      if (function_effect(*found->second, i) != Effect::Consume && is_object_view(args[i], d, locals, types))
+      if (function_effect(*found->second, i,
+              generated_expr_type(args[i], types).value_or(""), specialization) != Effect::Consume &&
+          is_object_view(args[i], d, locals, types))
         return "__moss_view_" + emitted;
     return emitted;
   }
@@ -93,9 +96,10 @@
     const Method* method = type ? resolve_object_method(objects_, canonical_type_name(*type), name,
                                                        argument_types, true, nullptr) : nullptr;
     bool writes = method && method->receiver_effect == Effect::Write;
-    if (!method && type && (name == "push" || name == "pop" || name == "push_back" || name == "pop_front")) {
-      string concrete = canonical_type_name(*type);
-      writes = concrete == "vector" || concrete == "queue" || starts_with(concrete, "vector[") || starts_with(concrete, "queue[");
+    if (!method && type) {
+      const auto* builtin = builtin_operation(*type,
+          name == "push_back" ? "push" : name == "pop_front" ? "pop" : name);
+      if (builtin) writes = builtin->receiver_effect == Effect::Write;
     }
     string result = writes ? write_call_place(receiver, d, locals, types) : read_call_place(receiver, d, locals, types);
     return starts_with(result, "*") ? "(" + result + ")" : result;

@@ -1,0 +1,7 @@
+fn push_one(v):
+  v.push(1)
+
+fn main():
+  v = Vector[Int]()
+  push_one(v)
+  echo v |> count

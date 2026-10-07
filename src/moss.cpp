@@ -220,25 +220,29 @@ struct BuiltinOperationDescriptor {
   BuiltinReceiverFamily receiver;
   const char* name;
   const char* signature;
+  const char* result;
+  Effect receiver_effect;
+  vector<Effect> argument_effects;
+  bool may_fail = false;
 };
 
 // Authoritative compiler-owned surface for receiver builtins.  Type checking
 // owns the operation set; editor completion projects these same descriptors.
 static const vector<BuiltinOperationDescriptor>& builtin_operations() {
   static const vector<BuiltinOperationDescriptor> operations = {
-      {BuiltinReceiverFamily::Vector, "push", "push(item)"},
-      {BuiltinReceiverFamily::Vector, "pop", "pop()"},
-      {BuiltinReceiverFamily::Map, "get", "get(key, default)"},
-      {BuiltinReceiverFamily::Map, "keys", "keys()"},
-      {BuiltinReceiverFamily::Map, "values", "values()"},
-      {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)"},
-      {BuiltinReceiverFamily::Queue, "push", "push(item)"},
-      {BuiltinReceiverFamily::Queue, "pop", "pop()"},
-      {BuiltinReceiverFamily::String, "length", "length()"},
-      {BuiltinReceiverFamily::String, "char_at", "char_at(index)"},
-      {BuiltinReceiverFamily::String, "chars", "chars()"},
-      {BuiltinReceiverFamily::String, "split", "split(separator)"},
-      {BuiltinReceiverFamily::String, "join", "join(parts)"},
+      {BuiltinReceiverFamily::Vector, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}},
+      {BuiltinReceiverFamily::Vector, "pop", "pop()", "$element", Effect::Write, {}, true},
+      {BuiltinReceiverFamily::Map, "get", "get(key, default)", "$value", Effect::Read, {Effect::Read, Effect::Read}},
+      {BuiltinReceiverFamily::Map, "keys", "keys()", "$keys", Effect::Read, {}},
+      {BuiltinReceiverFamily::Map, "values", "values()", "$values", Effect::Read, {}},
+      {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}},
+      {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}},
+      {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, true},
+      {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}},
+      {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, true},
+      {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}},
+      {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, true},
+      {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}},
   };
   return operations;
 }
@@ -266,6 +270,49 @@ static const BuiltinOperationDescriptor* builtin_operation(
         return candidate.receiver == *family && candidate.name == name;
       });
   return operation == builtin_operations().end() ? nullptr : &*operation;
+}
+
+static std::optional<string> builtin_operation_result(
+    const string& receiver_type, const string& name, size_t arity) {
+  const auto* operation = builtin_operation(receiver_type, name);
+  if (!operation || operation->argument_effects.size() != arity) return std::nullopt;
+  string result = operation->result;
+  if (result == "$element") {
+    string concrete = canonical_type_name(receiver_type);
+    auto open = concrete.find('[');
+    if (open == string::npos || !ends_with(concrete, "]")) return std::nullopt;
+    return concrete.substr(open + 1, concrete.size() - open - 2);
+  }
+  if (!result.empty() && result.front() == '$') {
+    auto types = map_key_value_types(receiver_type);
+    if (!types) return std::nullopt;
+    if (result == "$value") return types->second;
+    return "vector[" + (result == "$keys" ? types->first : types->second) + "]";
+  }
+  return result;
+}
+
+// The concrete effect is semantic metadata; both native sides derive their
+// passing mode from this one decision. Primitive WRITE retains Moss's existing
+// write-through ABI; ordinary Copy arguments are values.
+enum class ParameterPassingMode { Value, SharedBorrow, MutableBorrow };
+struct ConcreteParameterABI {
+  Effect effect;
+  ParameterPassingMode passing;
+};
+static ConcreteParameterABI concrete_parameter_abi(Effect effect,
+                                                   const string& type) {
+  return {effect, effect == Effect::Write ? ParameterPassingMode::MutableBorrow :
+      effect == Effect::Consume || copy_type_name(canonical_type_name(type))
+          ? ParameterPassingMode::Value : ParameterPassingMode::SharedBorrow};
+}
+static const FunctionSpecialization* concrete_specialization(
+    const Function& function, const vector<string>& types) {
+  auto found = std::find_if(function.specializations.begin(),
+      function.specializations.end(), [&](const FunctionSpecialization& candidate) {
+        return candidate.parameter_types == types;
+      });
+  return found == function.specializations.end() ? nullptr : &*found;
 }
 
 static bool parse_index(const string& text, string& base, string& index) {
@@ -1637,6 +1684,16 @@ class Checker {
     check_objects();
     check_local_call_cycles();
     { CompilerStageTimer timer("effects"); infer_effects(); infer_observable_effects(); }
+    // Discard early summaries together so dependencies cannot reuse another
+    // instance's pre-fixed-point effects while these are rebuilt.
+    for (auto& function : p_.functions)
+      for (auto& specialization : function.specializations)
+        specialization.parameter_effects.clear();
+    for (auto& function : p_.functions)
+      for (auto& specialization : function.specializations) {
+        specialization.parameter_effects = concrete_function_effects(
+            function, specialization.parameter_types, &specialization.parameter_mutations);
+      }
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
@@ -3774,35 +3831,9 @@ class Checker {
           return string("int");
         if (concrete_base == "Range" && method_name == "slice" && method_args.size() == 2)
           return string("Range");
-        const auto* builtin = builtin_operation(concrete_base, method_name);
-        if (concrete_base == "string" && builtin) {
-          if (method_name == "length" && method_args.empty()) return string("int");
-          if (method_name == "char_at" && method_args.size() == 1) return string("string");
-          if ((method_name == "chars" && method_args.empty()) ||
-              (method_name == "split" && method_args.size() == 1))
-            return string("vector[string]");
-          if (method_name == "join" && method_args.size() == 1) return string("string");
-        }
-        if (builtin && (concrete_base == "vector" || starts_with(concrete_base, "vector[") ||
-             concrete_base == "queue" || starts_with(concrete_base, "queue["))) {
-          if (method_name == "push" && method_args.size() == 1)
-            return string("unit");
-          if (method_name == "pop" && method_args.empty()) {
-            size_t open = concrete_base.find('[');
-            if (open != string::npos && ends_with(concrete_base, "]"))
-              return trim(concrete_base.substr(open + 1, concrete_base.size() - open - 2));
-          }
-        }
-        if (auto map_types = map_key_value_types(*base); map_types && builtin) {
-          if (method_name == "get" && method_args.size() == 2)
-            return map_types->second;
-          if (method_name == "delete" && method_args.size() == 3)
-            return map_types->second;
-          if (method_name == "keys" && method_args.empty())
-            return "vector[" + map_types->first + "]";
-          if (method_name == "values" && method_args.empty())
-            return "vector[" + map_types->second + "]";
-        }
+        if (auto result = builtin_operation_result(concrete_base, method_name,
+                                                    method_args.size()))
+          return result;
         vector<string> argument_types;
         for (const auto& arg : method_args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
         if (auto method = resolve_method(canonical_type_name(*base), method_name, argument_types))
@@ -3860,13 +3891,8 @@ class Checker {
     for (size_t index = 0;
          index < function.params.size() && index < parameter_types.size(); ++index)
       env[function.params[index].name] = canonical_type_name(parameter_types[index]);
-    for (const auto& statement : function.body) {
-      if (statement.kind != Stmt::Kind::Assign && statement.kind != Stmt::Kind::Let &&
-          statement.kind != Stmt::Kind::Var)
-        continue;
-      if (auto type = inferred_expr_type(statement.b, env))
-        env[statement.a] = canonical_type_name(*type);
-    }
+    env = walk_type_environment(function.body, std::move(env),
+        [](const Stmt&, const TypeEnv&) {}, false);
     return env;
   }
 
@@ -4087,7 +4113,8 @@ class Checker {
 
   void advance_type_environment(const Stmt& statement, TypeEnv& env,
                                 const vector<Stmt>& statements,
-                                bool record_semantic_types) const {
+                                bool record_semantic_types,
+                                const string& join_context = {}) const {
     if (statement.kind == Stmt::Kind::Let || statement.kind == Stmt::Kind::Var ||
         statement.kind == Stmt::Kind::Assign) {
       if (statement.kind != Stmt::Kind::Assign || simple_identifier(statement.a)) {
@@ -4112,8 +4139,11 @@ class Checker {
               container->second = "map[" + *key_type + "," + *value_type + "]";
               if (record_semantic_types) {
                 for (auto& prior : const_cast<vector<Stmt>&>(statements))
-                  if (prior.a == base && prior.b == "Map()")
+                  if (prior.a == base && prior.b == "Map()") {
                     prior.semantic_type = container->second;
+                    if (!join_context.empty())
+                      prior.semantic_types_by_context[join_context] = container->second;
+                  }
               }
             }
           } else if (container != env.end() && value_type &&
@@ -4336,7 +4366,12 @@ class Checker {
       }
 
       visitor(statement, env);
-      advance_type_environment(statement, env, statements, record_semantic_types);
+      advance_type_environment(statement, env, statements, record_semantic_types, join_context);
+      if (record_semantic_types && statement.kind == Stmt::Kind::Call &&
+          !statement.b.empty()) {
+        if (auto receiver = inferred_expr_type(statement.a, env))
+          const_cast<Stmt&>(statement).receiver_types_by_context[join_context] = *receiver;
+      }
       if (record_semantic_types && !join_context.empty() &&
           !statement.semantic_type.empty())
         const_cast<Stmt&>(statement).semantic_types_by_context[join_context] =
@@ -4922,6 +4957,11 @@ class Checker {
   void infer_function_signatures(bool finalize) {
     for (auto& function : p_.functions) {
       SourceFileScope function_source(current_source_file_, function.source_file);
+      if (std::any_of(function.params.begin(), function.params.end(),
+                      [](const Param& parameter) { return parameter.type.empty(); })) {
+        function.generic = true;
+        function.static_dispatch = true;
+      }
       for (const auto& statement : function.body)
         if (statement.kind == Stmt::Kind::Match)
           for (const auto& parameter : function.params)
@@ -5251,6 +5291,10 @@ class Checker {
             [](const Stmt& statement) {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
+        if ((has_value_return || function.result_expression) && function.static_dispatch) {
+          function.return_type = "_specialized_result:" + function.name;
+          continue;
+        }
         if (has_value_return)
           err(function.line, "cannot infer return type for function '" + function.name + "'");
         function.return_type = "unit";
@@ -5271,11 +5315,54 @@ class Checker {
         ? function.parameter_effects[index] : Effect::Read;
   }
 
+  vector<Effect> concrete_function_effects(const Function& function,
+                                           const vector<string>& types,
+                                           vector<bool>* mutations = nullptr) const {
+    if (const auto* specialization = concrete_specialization(function, types);
+        specialization && !specialization->parameter_effects.empty()) {
+      if (mutations) *mutations = specialization->parameter_mutations;
+      return specialization->parameter_effects;
+    }
+    if (!function.static_dispatch || types.size() != function.params.size())
+      return function.parameter_effects;
+    TypeEnv env;
+    vector<Param> concrete_params = function.params;
+    for (size_t index = 0; index < types.size(); ++index) {
+      env[concrete_params[index].name] = types[index];
+      concrete_params[index].type = types[index];
+    }
+    vector<Effect> effects(types.size(), Effect::Read);
+    vector<bool> writes(types.size(), false);
+    auto* previous = parameter_mutation_capture_;
+    parameter_mutation_capture_ = &writes;
+    // This analysis derives parameter effects, independent of any surrounding
+    // synchronization leaf capture. The latter separately expands this body.
+    LeafCaptureScope no_leaves(leaf_effect_capture_, nullptr);
+    Effect receiver = Effect::Read;
+    size_t index = 0;
+    analyze_effect_block(function.body, index, 0, env, concrete_params,
+                         effects, receiver, {});
+    if (function.result_expression)
+      analyze_effect_expression(*function.result_expression, env, concrete_params,
+                                effects, receiver, {}, Effect::Consume);
+    parameter_mutation_capture_ = previous;
+    if (mutations) *mutations = std::move(writes);
+    return effects;
+  }
+
   Effect concrete_function_parameter_effect(const Function& function,
                                             size_t index,
-                                            const string& concrete_type) const {
-    return specialized_iterator_parameter_effect(
-        function, index, concrete_type, objects_);
+                                            const vector<string>& types) const {
+    auto effects = concrete_function_effects(function, types);
+    return index < effects.size() ? effects[index] : Effect::Read;
+  }
+
+  vector<string> concrete_argument_types(const vector<string>& arguments,
+                                         const TypeEnv& env) const {
+    vector<string> types;
+    for (const auto& argument : arguments)
+      types.push_back(inferred_expr_type(argument, env).value_or(""));
+    return types;
   }
 
   static Effect method_parameter_effect(const Method& method, size_t index) {
@@ -5822,6 +5909,10 @@ class Checker {
   Effect projection_effect(const string& expression, Effect requested,
                            const std::unordered_map<string,string>& env) const {
     if (requested != Effect::Consume) return requested;
+    // Indexed reads materialize their checked result; they do not transfer the
+    // collection. Match the ownership walker when deriving concrete effects.
+    string base, index;
+    if (parse_index(expression, base, index)) return Effect::Read;
     auto type = inferred_expr_type(expression, env);
     return type && transfer_type(*type) ? Effect::Consume : Effect::Read;
   }
@@ -6080,32 +6171,16 @@ class Checker {
                                         receiver_effect, receiver_fields, Effect::Read);
           return;
         }
-        if (canonical_type_name(*receiver_type) == "string" &&
-            (((method == "length" || method == "chars") && arguments.empty()) ||
-             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
-          analyze_effect_expression(receiver, env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Read);
-          for (const auto& argument : arguments)
-            analyze_effect_expression(argument, env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Read);
-          return;
-        }
         string concrete = canonical_type_name(*receiver_type);
-        bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
-            starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
-            starts_with(concrete, "map[");
-        if (collection) {
-          Effect receiver_use = (method == "push" || method == "pop" || method == "delete")
-              ? Effect::Write : Effect::Read;
+        if (const auto* builtin = builtin_operation(concrete, method);
+            builtin && builtin->argument_effects.size() == arguments.size()) {
           analyze_effect_expression(receiver, env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, receiver_use);
+                                    receiver_effect, receiver_fields,
+                                    builtin->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             analyze_effect_expression(arguments[index], env, params, parameter_effects,
                                       receiver_effect, receiver_fields,
-                                      method == "delete" && index == 2 ? Effect::Write :
-                                      method == "delete" && index == 1 ? Effect::Consume :
-                                      method == "push" && index == 0
-                                          ? Effect::Consume : Effect::Read);
+                                      builtin->argument_effects[index]);
           return;
         }
         vector<string> concrete_arguments;
@@ -6193,11 +6268,9 @@ class Checker {
         }
         return;
       }
-      if (leaf_effect_capture_) {
-        auto callable = env.find(callee);
-        if (callable != env.end() && starts_with(callable->second, "callable:"))
-          callee = callable->second.substr(9);
-      }
+      if (auto callable = env.find(callee);
+          callable != env.end() && starts_with(callable->second, "callable:"))
+        callee = callable->second.substr(9);
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
         if (leaf_effect_capture_) {
@@ -6216,7 +6289,7 @@ class Checker {
         for (size_t index = 0; index < call_arguments.size(); ++index) {
           Effect argument_effect = concrete_function_parameter_effect(
               *function->second, index,
-              inferred_expr_type(call_arguments[index], env).value_or(""));
+              concrete_argument_types(call_arguments, env));
           analyze_effect_expression(call_arguments[index], env, params,
                                     parameter_effects, receiver_effect,
                                     receiver_fields, argument_effect);
@@ -7328,39 +7401,27 @@ class Checker {
         return effects;
       }
       if (receiver_type) {
-        // Built-in Map reads are resolved by the type checker without an
-        // ObjectType method. Their arguments were evaluated above, including
-        // the eager default passed to get.
-        if (canonical_type_name(*receiver_type) == "string" &&
-            (((method == "length" || method == "chars") && arguments.empty()) ||
-             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
-          if (method == "char_at" || method == "split") effects.may_fail = true;
-          return effects;
-        }
-        // Phase 20: a root-local FileIO operation touches no domain state by
-        // itself (its arguments were already merged above) but does set the
-        // explicit `fileio` fact that chunk-pipeline eligibility consumes.
-        // The pure Range length accessor sets nothing.
-        if (canonical_type_name(*receiver_type) == "FileIO") {
-          effects.fileio = true;
+        if (const auto* builtin = builtin_operation(*receiver_type, method);
+            builtin && builtin->argument_effects.size() == arguments.size()) {
+          effects.may_fail = effects.may_fail || builtin->may_fail;
+          auto mark_write = [&](const string& expression) {
+            auto location = storage_location(expression, env);
+            if (location && domain_fields.count(location->root)) effects.domain_write = true;
+            else if (location && (parameters.count(location->root) ||
+                     builtin->receiver == BuiltinReceiverFamily::Map ||
+                     (implicit_object && (location->root == "self" ||
+                      std::any_of(implicit_object->fields.begin(), implicit_object->fields.end(),
+                          [&](const Field& field) { return field.name == location->root; })))))
+              effects.local_mutation = true;
+          };
+          if (builtin->receiver_effect != Effect::Read) mark_write(receiver);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            if (builtin->argument_effects[index] == Effect::Write) mark_write(arguments[index]);
           return effects;
         }
         if (canonical_type_name(*receiver_type) == "Range" ||
             canonical_type_name(*receiver_type) == "RangeBatch")
           return effects;
-        if (auto map_types = map_key_value_types(*receiver_type)) {
-          if ((method == "get" && arguments.size() == 2) ||
-              ((method == "keys" || method == "values") && arguments.empty()))
-            return effects;
-          if (method == "delete" && arguments.size() == 3) {
-            auto flag_location = storage_location(arguments[2], env);
-            if (domain_fields.count(receiver) ||
-                (flag_location && domain_fields.count(flag_location->root)))
-              effects.domain_write = true;
-            else effects.local_mutation = true;
-            return effects;
-          }
-        }
         vector<string> argument_types;
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env).value_or(""));
@@ -7373,31 +7434,6 @@ class Checker {
         if (domains_.count(canonical_type_name(*receiver_type))) {
           effects.domain_read = true;
           return effects;
-        }
-        string concrete = canonical_type_name(*receiver_type);
-        if (starts_with(concrete, "vector") ||
-            starts_with(concrete, "queue") ||
-            starts_with(concrete, "map")) {
-          bool mutating = method == "push" || method == "pop" || method == "pop_front" || method == "delete";
-          bool query = method == "get" || method == "keys" || method == "values";
-          if (mutating || query) {
-            if (method == "pop" || method == "pop_front") {
-              effects.may_fail = true;
-            }
-            if (domain_fields.count(receiver)) {
-              if (mutating) effects.domain_write = true;
-              else effects.domain_read = true;
-            } else if (parameters.count(receiver) ||
-                       (implicit_object && (receiver == "self" ||
-                        std::any_of(implicit_object->fields.begin(),
-                                    implicit_object->fields.end(),
-                                    [&](const Field& field) {
-                                      return field.name == receiver;
-                                    })))) {
-              if (mutating) effects.local_mutation = true;
-            }
-            return effects;
-          }
         }
       }
       effects.unresolved = true;
@@ -7984,7 +8020,7 @@ class Checker {
         auto function = functions_.find(node.callable_identity);
         if (function != functions_.end() && !callback_input_types.empty())
           node.ownership = concrete_function_parameter_effect(
-              *function->second, 0, callback_input_types.front());
+              *function->second, 0, callback_input_types);
         string bound_receiver, bound_method;
         if (parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
@@ -8432,7 +8468,7 @@ class Checker {
                      index < function->second->params.size();
                  ++index) {
               Effect effect = concrete_function_parameter_effect(
-                  *function->second, index, callback_inputs[index]);
+                  *function->second, index, callback_inputs);
               bool element_input =
                   stage.kind != FunctionalNodeKind::Reduce || index == 1;
               if (element_input && !copy_type(callback_inputs[index]) &&
@@ -8600,17 +8636,17 @@ class Checker {
         }
         const auto* builtin = builtin_operation(concrete, method);
         if (builtin && concrete == "string" &&
-            (((method == "length" || method == "chars") && arguments.empty()) ||
-             ((method == "char_at" || method == "split" || method == "join") && arguments.size() == 1))) {
-          check_ownership_expression(line, receiver, env, Effect::Read);
-          for (const auto& argument : arguments)
-            check_ownership_expression(line, argument, env, Effect::Read);
+            builtin->argument_effects.size() == arguments.size()) {
+          check_ownership_expression(line, receiver, env, builtin->receiver_effect);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            check_ownership_expression(line, arguments[index], env,
+                                       builtin->argument_effects[index]);
           return;
         }
         bool collection = concrete == "vector" || concrete == "queue" || concrete == "map" ||
             starts_with(concrete, "vector[") || starts_with(concrete, "queue[") ||
             starts_with(concrete, "map[");
-        if (collection && builtin) {
+        if (collection && builtin && builtin->argument_effects.size() == arguments.size()) {
           if (method == "push" && !arguments.empty()) {
             auto item = inferred_expr_type(arguments.front(), env.types);
             if (item && fileio_scoped_type(*item))
@@ -8618,29 +8654,23 @@ class Checker {
                   "FILEIO_COLLECTION_ESCAPE");
           }
           auto location = storage_location(receiver, env.types);
-          if ((method == "push" || method == "pop" || method == "delete") && location &&
+          if (builtin->receiver_effect != Effect::Read && location &&
               active_read_overlap(receiver, env))
             err(line, "cannot structurally mutate collection '" + location->root +
                 "' during an active READ traversal");
           vector<string> access_expressions{receiver};
-          vector<Effect> access_effects{
-              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read};
+          vector<Effect> access_effects{builtin->receiver_effect};
           for (size_t index = 0; index < arguments.size(); ++index) {
             access_expressions.push_back(arguments[index]);
-            access_effects.push_back(method == "delete" && index == 2 ? Effect::Write :
-                method == "delete" && index == 1 ? Effect::Consume :
-                method == "push" && index == 0
-                ? Effect::Consume : Effect::Read);
+            access_effects.push_back(builtin->argument_effects.at(index));
           }
           check_conflicting_call_accesses(line, method, access_expressions,
                                           access_effects, env);
           check_ownership_expression(line, receiver, env,
-              (method == "push" || method == "pop" || method == "delete") ? Effect::Write : Effect::Read);
+              builtin->receiver_effect);
           for (size_t index = 0; index < arguments.size(); ++index)
             check_ownership_expression(line, arguments[index], env,
-                method == "delete" && index == 2 ? Effect::Write :
-                method == "delete" && index == 1 ? Effect::Consume :
-                method == "push" && index == 0 ? Effect::Consume : Effect::Read);
+                builtin->argument_effects.at(index));
           return;
         }
         vector<string> argument_types;
@@ -8741,7 +8771,7 @@ class Checker {
         for (size_t index = 0; index < call_arguments.size(); ++index)
           effects.push_back(concrete_function_parameter_effect(
               *function->second, index,
-              inferred_expr_type(call_arguments[index], env.types).value_or("")));
+              concrete_argument_types(call_arguments, env.types)));
         check_conflicting_call_accesses(line, callee, call_arguments, effects, env);
       } else if (current_object_) {
         vector<string> argument_types;
@@ -8769,7 +8799,7 @@ class Checker {
         Effect argument_effect = function == functions_.end()
             ? Effect::Read : concrete_function_parameter_effect(
                   *function->second, index,
-                  inferred_expr_type(call_arguments[index], env.types).value_or(""));
+                  concrete_argument_types(call_arguments, env.types));
         check_ownership_expression(line, call_arguments[index], env, argument_effect);
       }
       return;
@@ -9215,7 +9245,9 @@ class Checker {
                                             false, &failure);
       auto fileio_builtin = fileio_method_requirement_result(
           receiver->second, requirement.detail, argument_types.size());
-      if (!method && !fileio_builtin) {
+      auto builtin = builtin_operation_result(receiver->second, requirement.detail,
+                                               argument_types.size());
+      if (!method && !fileio_builtin && !builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
         if (failure == MethodResolutionFailure::WrongArity)
@@ -9230,8 +9262,8 @@ class Checker {
               requirement.detail + "'");
         err(line, prefix + " missing required method '" + requirement.detail + "'");
       }
-      string result = fileio_builtin.value_or(
-          method ? method->return_type.value_or("unit") : "unit");
+      string result = builtin.value_or(fileio_builtin.value_or(
+          method ? method->return_type.value_or("unit") : "unit"));
       if (!requirement.result.empty()) {
         if (related_function_result && !same_type(*related_function_result, result))
           err(line, "conflicting method result expectations in function '" +
@@ -9292,6 +9324,8 @@ class Checker {
         std::to_string(function.specializations.size());
     specialization.parameter_types = canonical_types;
     specialization.return_type = canonical_type_name(*result);
+    specialization.parameter_effects = concrete_function_effects(
+        function, canonical_types, &specialization.parameter_mutations);
     function.specializations.push_back(specialization);
     record_dependency();
 
@@ -9304,7 +9338,11 @@ class Checker {
     static_bound_bindings_.clear();
     infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
-    check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
+    Function concrete_function = function;
+    concrete_function.return_type = specialization.return_type;
+    for (size_t index = 0; index < concrete_function.params.size(); ++index)
+      concrete_function.params[index].type = canonical_types[index];
+    check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
@@ -9312,8 +9350,11 @@ class Checker {
       SourceFileScope source_scope(current_source_file_, function.source_file);
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
-      check_ownership(function.body, std::move(specialized_ownership), nullptr,
-                      nullptr);
+      auto final_ownership = check_ownership(
+          function.body, std::move(specialized_ownership), nullptr, nullptr);
+      if (function.result_expression)
+        check_ownership_expression(function.result_line ? function.result_line : function.line,
+                                   *function.result_expression, final_ownership, Effect::Consume);
     }
     if (function.result_expression)
       check_expression(function.result_line ? function.result_line : function.line,
@@ -9684,6 +9725,10 @@ class Checker {
     if (!parsed) return false;
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) return false;
+    if (unresolved_semantic_type(*source_type)) {
+      check_expression(line, parsed->source, env);
+      return true;  // Rechecked with the specialization's concrete TypeEnv.
+    }
     auto element = functional_element_type(*source_type, parsed->source);
     if (!element) return false;  // General/scalar pipeline compatibility.
 
@@ -9970,6 +10015,10 @@ class Checker {
                 "ENUM_OPERATOR_UNSUPPORTED");
           if (binary->first.empty() || binary->second.empty())
             err(line, "invalid arithmetic expression");
+          // A template records operator requirements; operand legality is
+          // decided when this expression is checked in a concrete TypeEnv.
+          if ((left_type && unresolved_semantic_type(*left_type)) ||
+              (right_type && unresolved_semantic_type(*right_type))) return;
           if (split_binary(value, {"==", "!=", "<=", ">=", "<", ">"})) {
             if (left_type && right_type) {
               string lt = canonical_type_name(*left_type);
@@ -10013,10 +10062,10 @@ class Checker {
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
         if (canonical_type_name(*receiver_type) == "string") {
-          if (!builtin_operation(*receiver_type, handler))
-            err(line, "unknown String method '" + handler + "'");
-          bool one = handler == "char_at" || handler == "split" || handler == "join";
-          if (args.size() != (one ? 1u : 0u))
+          const auto* builtin = builtin_operation(*receiver_type, handler);
+          if (!builtin) err(line, "unknown String method '" + handler + "'");
+          bool one = builtin->argument_effects.size() == 1;
+          if (args.size() != builtin->argument_effects.size())
             err(line, "String " + handler + " expects " + (one ? "one" : "no") + " argument(s)");
           if (one) {
             auto arg_type = inferred_expr_type(args[0], env);
@@ -10654,6 +10703,8 @@ class Checker {
         // checked before suggesting a statically typed expression.
         check_expression(statement.line, statement.a, current_env);
         auto actual = inferred_expr_type(statement.a, current_env);
+        if (!actual && current_function->static_dispatch && !checking_specialization_)
+          return;  // The source has requirements; each concrete instance checks its return.
         if (!actual) {
           vector<DiagnosticEntity> entities = {
               {"expression", statement.a, {}, statement.a, {}, 0},
@@ -12527,10 +12578,28 @@ class Generator {
     return true;
   }
 
+  ConcreteParameterABI function_parameter_abi(
+      const Function& function, size_t index, const string& concrete_type,
+      const FunctionSpecialization* specialization = nullptr) const {
+    Effect effect = specialization && index < specialization->parameter_effects.size()
+        ? specialization->parameter_effects[index]
+        : specialized_iterator_parameter_effect(function, index, concrete_type, objects_);
+    if (specialization) return concrete_parameter_abi(effect, concrete_type);
+    // Preserve unspecialized/explicitly typed ABI, including primitive WRITE.
+    bool borrow = effect == Effect::Write ||
+        (effect != Effect::Consume && borrowable_type(concrete_type));
+    auto ops = constraint_ops(function, function.params[index].name);
+    if (effect == Effect::Read && function.params[index].type.empty() &&
+        !ops.empty() && !ops.count("[]")) borrow = false;
+    return {effect, !borrow ? ParameterPassingMode::Value :
+        effect == Effect::Write ? ParameterPassingMode::MutableBorrow :
+                                 ParameterPassingMode::SharedBorrow};
+  }
+
   Effect function_effect(const Function& function, size_t index,
-                         const string& concrete_type = {}) const {
-    return specialized_iterator_parameter_effect(
-        function, index, concrete_type, objects_);
+                         const string& concrete_type = {},
+                         const FunctionSpecialization* specialization = nullptr) const {
+    return function_parameter_abi(function, index, concrete_type, specialization).effect;
   }
 
   static Effect method_effect(const Method& method, size_t index) {
@@ -12538,19 +12607,13 @@ class Generator {
         ? method.parameter_effects[index] : Effect::Read;
   }
 
-  bool should_borrow_function_parameter(const Function& function, size_t index,
-                                        const string& parameter_type,
-                                        const string& actual_type) const {
-    Effect effect = function_effect(function, index, actual_type);
-    if (effect == Effect::Consume) return false;
-    if (effect == Effect::Write) return true;
-    const auto& parameter = function.params[index];
-    auto ops = constraint_ops(function, parameter.name);
-    if (parameter.type.empty() && !ops.empty() && !ops.count("[]")) return false;
-    string candidate = parameter_type.empty() ? actual_type : parameter_type;
-    if (candidate.empty() || starts_with(candidate, "_") ||
-        (parameter.type.empty() && ops.empty() && !function.static_dispatch)) return false;
-    return borrowable_type(candidate);
+  const FunctionSpecialization* call_specialization(
+      const Function& function, const vector<string>& arguments,
+      const std::unordered_map<string,string>* types) const {
+    vector<string> concrete_types;
+    for (const auto& argument : arguments)
+      concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
+    return concrete_specialization(function, concrete_types);
   }
 
   string nominal_domain_handle_argument(
@@ -12619,16 +12682,16 @@ class Generator {
                                 const string& argument, const Domain* d,
                                 const std::set<string>& locals,
                                 const std::unordered_map<string,string>* types,
-                                size_t functional_pipeline_id = 0) const {
+                                size_t functional_pipeline_id = 0,
+                                const FunctionSpecialization* specialization = nullptr) const {
     string rendered = nominal_domain_handle_argument(
         argument, index < function.params.size() ? function.params[index].type : "",
         d, locals, types, functional_pipeline_id);
     if (index >= function.params.size()) return rendered;
-    string parameter_type = function.params[index].type;
     string actual_type = generated_expr_type(argument, types).value_or("");
-    Effect effect = function_effect(function, index, actual_type);
-    if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
-      return rendered;
+    auto abi = function_parameter_abi(function, index, actual_type, specialization);
+    Effect effect = abi.effect;
+    if (abi.passing == ParameterPassingMode::Value) return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
     // Preserve that borrow when handing it to a READ helper. Object payloads
     // retain the extra reference below because view helpers take
@@ -12965,34 +13028,9 @@ class Generator {
           return string("int");
         if (concrete_receiver == "Range" && method_name == "slice" && method_args.size() == 2)
           return string("Range");
-        if (concrete_receiver == "string") {
-          if (method_name == "length" && method_args.empty()) return string("int");
-          if (method_name == "char_at" && method_args.size() == 1) return string("string");
-          if ((method_name == "chars" && method_args.empty()) ||
-              (method_name == "split" && method_args.size() == 1)) return string("vector[string]");
-          if (method_name == "join" && method_args.size() == 1) return string("string");
-        }
-        if ((concrete_receiver == "vector" || starts_with(concrete_receiver, "vector[") ||
-             concrete_receiver == "queue" || starts_with(concrete_receiver, "queue["))) {
-          if (method_name == "push" && method_args.size() == 1)
-            return string("unit");
-          if (method_name == "pop" && method_args.empty()) {
-            size_t open = concrete_receiver.find('[');
-            if (open != string::npos && ends_with(concrete_receiver, "]"))
-              return trim(concrete_receiver.substr(open + 1,
-                  concrete_receiver.size() - open - 2));
-          }
-        }
-        if (auto map_types = map_key_value_types(*receiver_type)) {
-          if (method_name == "get" && method_args.size() == 2)
-            return map_types->second;
-          if (method_name == "delete" && method_args.size() == 3)
-            return map_types->second;
-          if (method_name == "keys" && method_args.empty())
-            return "vector[" + map_types->first + "]";
-          if (method_name == "values" && method_args.empty())
-            return "vector[" + map_types->second + "]";
-        }
+        if (auto result = builtin_operation_result(concrete_receiver, method_name,
+                                                    method_args.size()))
+          return result;
         vector<string> argument_types;
         for (const auto& argument : method_args)
           argument_types.push_back(nominalized_generated_argument_type(
@@ -13142,13 +13180,14 @@ class Generator {
       const Function& function, const string& name, const vector<string>& arguments,
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
+    const auto* specialization = call_specialization(function, arguments, types);
     vector<string> temporaries(arguments.size());
     if (domain) {
       for (size_t write_index = 0;
            write_index < arguments.size() && write_index < function.params.size();
            ++write_index) {
         if (function_effect(function, write_index,
-                generated_expr_type(arguments[write_index], types).value_or(""))
+                generated_expr_type(arguments[write_index], types).value_or(""), specialization)
             != Effect::Write) continue;
         string written = trim(arguments[write_index]);
         bool writes_direct_field = !locals.count(written) &&
@@ -13188,7 +13227,7 @@ class Generator {
       if (emitted_arguments++) call << ", ";
       if (!temporaries[index].empty()) call << temporaries[index];
       else call << function_call_argument(function, index, arguments[index],
-                                          domain, locals, types);
+                                          domain, locals, types, 0, specialization);
     }
     call << ")";
     bool needs_prelude = std::any_of(
@@ -13366,6 +13405,7 @@ class Generator {
     string emitted = identity;
     vector<string> argument_types;
     for (const auto& argument : arguments) argument_types.push_back(argument.type);
+    const auto* concrete = concrete_specialization(*function->second, argument_types);
     if (function->second->static_dispatch) {
       auto specialization = std::find_if(
           function->second->specializations.begin(),
@@ -13383,8 +13423,9 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      Effect effect = function_effect(*function->second, index, argument.type);
-      bool borrow = effect != Effect::Consume && (effect == Effect::Write || borrowable_type(argument.type));
+      auto abi = function_parameter_abi(*function->second, index, argument.type, concrete);
+      Effect effect = abi.effect;
+      bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
         if (argument.reference)
           rendered << "(*" << argument.expression << ").clone()";
@@ -15084,19 +15125,19 @@ class Generator {
       } else {
         parameter_rust_type = rust_type(pt);
       }
-      Effect effect = function_effect(f, index, pt);
+      auto abi = function_parameter_abi(f, index, pt, specialization);
+      Effect effect = abi.effect;
       if (view && effect != Effect::Consume && view_object_type(pt)) {
         o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
         continue;
       }
-      bool generic_copy_value = !specialization && f.params[index].type.empty() &&
-          !ops.empty() && !ops.count("[]");
-      bool borrow = effect == Effect::Write || (!generic_copy_value && effect != Effect::Consume &&
-          borrowable_type(pt.empty() ? parameter_rust_type : pt));
+      bool borrow = abi.passing != ParameterPassingMode::Value;
       if (borrow && !copy_type(pt))
         borrowed_function_parameters_.insert(f.params[index].name);
       bool mutates_owned_parameter = effect == Effect::Consume && !view &&
-          index < f.parameter_mutations.size() && f.parameter_mutations[index];
+          (specialization ? index < specialization->parameter_mutations.size() &&
+              specialization->parameter_mutations[index] :
+              index < f.parameter_mutations.size() && f.parameter_mutations[index]);
       o << ((borrow && effect == Effect::Write) || mutates_owned_parameter ? "mut " : "")
         << f.params[index].name << ": "
         << (borrow ? (effect == Effect::Write ? "&mut " : "&") : "")
@@ -15133,9 +15174,9 @@ class Generator {
     }
     write_through_parameters_.clear(); view_parameters_.clear();
     for (size_t index = 0; index < f.params.size(); ++index) {
-      if (view && function_effect(f, index, types.at(f.params[index].name)) != Effect::Consume && view_object_type(types.at(f.params[index].name)))
+      if (view && function_effect(f, index, types.at(f.params[index].name), specialization) != Effect::Consume && view_object_type(types.at(f.params[index].name)))
         view_parameters_.insert(f.params[index].name);
-      else if (function_effect(f, index, types.at(f.params[index].name)) == Effect::Write)
+      else if (function_effect(f, index, types.at(f.params[index].name), specialization) == Effect::Write)
         write_through_parameters_.insert(f.params[index].name);
     }
     string functional_context = functional_function_context(f, specialization);
@@ -15152,7 +15193,7 @@ class Generator {
                                      [&](const Param& p) { return p.name == expr_trimmed; });
         if (param_it != f.params.end()) {
           size_t p_idx = std::distance(f.params.begin(), param_it);
-          if (function_effect(f, p_idx, types.at(f.params[p_idx].name)) != Effect::Consume) {
+          if (function_effect(f, p_idx, types.at(f.params[p_idx].name), specialization) != Effect::Consume) {
             if (view) rendered = expr_trimmed + ".__moss_value()";
             else rendered = "(" + rendered + ").clone()";
           }
@@ -15166,7 +15207,7 @@ class Generator {
     borrowed_function_parameters_.clear();
     bool needs_view = false;
     for (size_t i = 0; i < f.params.size(); ++i)
-      needs_view |= function_effect(f, i, types.at(f.params[i].name)) != Effect::Consume &&
+      needs_view |= function_effect(f, i, types.at(f.params[i].name), specialization) != Effect::Consume &&
           view_object_type(specialization ? specialization->parameter_types[i] : f.params[i].type);
     if (!view && needs_view) gen_function_instance(o, f, specialization, true);
   }
@@ -15549,6 +15590,9 @@ class Generator {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
+      auto concrete_binding = s.semantic_types_by_context.find(functional_context);
+      const string& statement_type = concrete_binding == s.semantic_types_by_context.end()
+          ? s.semantic_type : concrete_binding->second;
       if (s.indent < level) return;
       if (s.indent > level) throw std::runtime_error("internal error: unexpected statement indentation");
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
@@ -15986,7 +16030,7 @@ class Generator {
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
-            if (starts_with(s.semantic_type, "map[") && ends_with(s.semantic_type, "]")) annotation = rust_type(s.semantic_type);
+            if (starts_with(statement_type, "map[") && ends_with(statement_type, "]")) annotation = rust_type(statement_type);
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
@@ -15997,7 +16041,7 @@ class Generator {
             locals.insert(s.a);
             auto generated_type = generated_expr_type(s.b, &types);
             types[s.a] = generated_type ? *generated_type
-                : !s.semantic_type.empty() ? s.semantic_type
+                : !statement_type.empty() ? statement_type
                 : s.b == "Map()" ? "map"
                 : s.b == "Queue()" ? "queue"
                 : (s.b.size() && s.b.front() == '[' ? "vector" : "_value");
@@ -16046,6 +16090,11 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
+          auto checked_receiver = s.receiver_types_by_context.find(functional_context);
+          if (checked_receiver == s.receiver_types_by_context.end())
+            checked_receiver = s.receiver_types_by_context.find("");
+          if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+            types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
               ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
           if (!s.b.empty() &&
@@ -16191,7 +16240,9 @@ class Generator {
               o << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
-                                              s, functional_context, k));
+                                              s, functional_context, k),
+                                          call_specialization(*functions_.at(function_name),
+                                                              s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method)
                 o << method_call_argument(
@@ -16252,7 +16303,7 @@ class Generator {
             auto generated_type = generated_expr_type(s.b, &types);
             types[s.a] = domain_capability ? source->second
                 : generated_type ? *generated_type
-                : !s.semantic_type.empty() ? s.semantic_type : "_value";
+                : !statement_type.empty() ? statement_type : "_value";
             if (domain_capability) {
               auto source_binding = domain_instance_bindings_.find(trim(s.b));
               if (source_binding != domain_instance_bindings_.end())
@@ -17220,6 +17271,9 @@ static vector<SemanticTargetFact> semantic_target_facts(
         if (index < specialized.parameters.size())
           specialized.parameters[index].type =
               specialization.parameter_types[index];
+        if (index < specialized.parameters.size() &&
+            index < specialization.parameter_effects.size())
+          specialized.parameters[index].ownership = specialization.parameter_effects[index];
       }
       context << ">";
       specialized.context = context.str();

@@ -1,0 +1,9 @@
+fn push_one(q):
+  q.push(1)
+
+fn main():
+  q = Queue()
+  q.push(7)
+  push_one(q)
+  echo q.pop()
+  echo q.pop()

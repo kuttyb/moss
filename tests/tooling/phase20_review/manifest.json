@@ -693,6 +693,39 @@
    "code": "FILEIO_UNBOUNDED_REQUEST",
    "spec": "§12.7",
    "note": "Both calls in a compound RHS are visited before call recognition."
+  },
+  {
+   "name": "guard_generic_string_native",
+   "file": "probes/guard_generic_string_native.moss",
+   "category": "guard",
+   "spec": "existing static specialization semantics",
+   "note": "Concrete generic semantics used by Phase 20 untyped helpers.",
+   "run": {
+    "stdout": "4\nabab"
+   },
+   "fast_debug_parity": true
+  },
+  {
+   "name": "guard_generic_builtin_method",
+   "file": "probes/guard_generic_builtin_method.moss",
+   "category": "guard",
+   "spec": "existing static specialization semantics",
+   "note": "Concrete generic semantics used by Phase 20 untyped helpers.",
+   "run": {
+    "stdout": "5"
+   },
+   "fast_debug_parity": true
+  },
+  {
+   "name": "guard_generic_write_exclusive",
+   "file": "probes/guard_generic_write_exclusive.moss",
+   "category": "guard",
+   "spec": "existing static specialization semantics",
+   "note": "Concrete generic semantics used by Phase 20 untyped helpers.",
+   "run": {
+    "stdout": "2000"
+   },
+   "exclusive_effects": "Store.Add"
   }
  ]
 }

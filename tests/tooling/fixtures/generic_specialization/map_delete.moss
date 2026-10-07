@@ -1,0 +1,10 @@
+fn erase(m, key, fallback, found):
+  return m.delete(key, fallback, found)
+
+fn main():
+  m = Map()
+  m["a"] = 7
+  var found = false
+  echo erase(m, "a", 0, found)
+  echo found
+  echo m.keys() |> count

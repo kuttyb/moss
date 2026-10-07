@@ -1,0 +1,5 @@
+fn bad(x):
+  x.no_such_method()
+
+fn main():
+  echo bad("abc")

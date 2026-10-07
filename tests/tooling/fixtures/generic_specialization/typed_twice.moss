@@ -1,0 +1,7 @@
+fn twice(x: String) -> String:
+  return x + x
+
+fn main():
+  x = "ab"
+  echo twice(x)
+  echo x

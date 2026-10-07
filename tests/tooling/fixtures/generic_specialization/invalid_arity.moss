@@ -1,0 +1,5 @@
+fn bad(x):
+  return x.length(1)
+
+fn main():
+  echo bad("abc")

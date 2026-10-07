@@ -1,0 +1,7 @@
+fn take(q):
+  return q.pop()
+
+fn main():
+  q = Queue()
+  q.push(7)
+  echo take(q)

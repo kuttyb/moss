@@ -1,0 +1,21 @@
+fn push_one(v):
+  v.push(1)
+
+domain Store:
+  items = Vector[Int]()
+
+  fn Add():
+    push_one(items)
+
+  fn Count() -> Int:
+    reply items |> count
+
+fn main():
+  s = Store()
+  executor = Executor().threads(4).start()
+
+  for i in range(0, 2000):
+    executor.invoke(s.Add())
+
+  executor.join()
+  echo message s.Count()

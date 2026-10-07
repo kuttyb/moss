@@ -1,0 +1,8 @@
+fn choose(a, b):
+  echo b
+  return a
+
+fn main():
+  echo choose(1, "a")
+  echo choose(1, 2)
+  echo choose("b", 3)

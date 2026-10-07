@@ -1,0 +1,5 @@
+fn first(x):
+  return x.char_at(0)
+
+fn main():
+  echo first("abc")

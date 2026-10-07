@@ -1,0 +1,8 @@
+fn tally(key, value):
+  m = Map()
+  m[key] = value
+  return m.keys() |> count
+
+fn main():
+  echo tally("a", 1)
+  echo tally(2, "b")

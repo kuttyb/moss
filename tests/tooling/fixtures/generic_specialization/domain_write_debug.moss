@@ -1,0 +1,17 @@
+fn push_one(v):
+  v.push(1)
+
+domain Store:
+  items = Vector[Int]()
+
+  fn Add():
+    push_one(items)
+
+  fn Count() -> Int:
+    reply items |> count
+
+fn main():
+  s = Store()
+  message s.Add()
+  message s.Add()
+  echo message s.Count()

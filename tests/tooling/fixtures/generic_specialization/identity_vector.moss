@@ -1,0 +1,7 @@
+fn ident(x):
+  return x
+
+fn main():
+  v = [1, 2]
+  out = ident(v)
+  echo out |> count

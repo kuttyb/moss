@@ -1,0 +1,5 @@
+fn size(x):
+  x.length()
+
+fn main():
+  echo size("abc")
