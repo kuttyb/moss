@@ -558,10 +558,7 @@ fn normalize(value: Int):
 fn main():
   values = [1, 2, 3, 4]
 
-  total = values
-    |> map(normalize)
-    |> filter(_ > 4)
-    |> sum
+  total = values |> map(normalize) |> filter(_ > 4) |> sum
 
   echo total
 ```
@@ -581,15 +578,13 @@ all
 The placeholder `_` keeps small expressions small:
 
 ```moss
-values
-  |> map(_ * 2)
-  |> filter(_ > 10)
+values |> map(_ * 2) |> filter(_ > 10)
 ```
 
-For larger logic, use a named function. A named function that is used only as
-a pipeline stage currently needs its parameter annotated, like
-`normalize(value: Int)` above; the stage does not yet supply the element type
-to an untyped function.
+For larger logic, use a named function. A concrete parameter annotation,
+like `normalize(value: Int)` above, documents the stage interface. The current
+compiler also specializes untyped named stages at concrete uses; types and
+call targets must still close statically before native generation.
 
 ### Pipelines are eager in the language
 
@@ -598,11 +593,7 @@ You can think of each operation as happening in order and producing its normal v
 The compiler is free to make the implementation cheaper. For example:
 
 ```moss
-values
-  |> map(normalize)
-  |> filter(_ > 4)
-  |> map(score)
-  |> sum
+values |> map(normalize) |> filter(_ > 4) |> map(score) |> sum
 ```
 
 may compile into one loop without allocating the intermediate vectors.
@@ -954,7 +945,196 @@ As a Moss programmer, you write the message semantics, not locks.
 
 ---
 
-## 11. Modules
+## 11. Blocking File I/O and Concurrent Roots
+
+Reading a regular file starts with an ordinary synchronous program:
+
+```moss
+fn main():
+  file = FileIO.open("input.txt", ro)
+  data = file.read(0, 4096)
+  echo data.length()
+  file.close()
+```
+
+A call to `read` returns the bytes. There is no future, promise, callback, or
+`await`. Moss deliberately makes regular-file I/O blocking: execution continues
+when the operation completes. A short returned range means end-of-file.
+
+Normal regular-file I/O is **Solo**: completing it does not require another
+Moss Root in this process to run. A pipe that needs another handler to write
+before a read can finish is a counterexample. Such cooperative **Duo** I/O,
+including sockets and pipes, is deferred to later protocol work. Solo is an
+assumption about the environment, not a guarantee that every file operation
+will finish promptly.
+
+### Bytes, bounds, and explicit offsets
+
+`read(offset, size)` returns a read-only `Range` of bytes, not a `String` or an
+implicit UTF-8 interpretation. `data.length()` counts bytes; `data[index]`
+returns one byte as an `Int` from 0 through 255. Invalid indexing fails rather
+than returning a default byte. You can iterate and slice while the file remains
+open:
+
+```moss
+for byte in data:
+  echo byte
+
+part = data.slice(16, 32)
+echo part.length()
+```
+
+`slice(start, length)` returns an empty Range for a negative start, a
+non-positive length, or a start at/past the end. Otherwise it clips the length
+to the remaining bytes. Equality between two Ranges is byte-exact.
+
+A Range stays within its owning buffer/FileIO lifetime. It can be used locally
+or lent to an ordinary synchronous helper, but cannot be retained in domain
+state or ordinary collections, returned from its owning scope, or sent across
+a message or independent Root boundary. FileIO itself is a pinned capability:
+you open it in place, use it, and explicitly close it on every normal exit
+from the function that opened it.
+
+Reads and writes need compiler-known finite bounds. Constants and immutable
+aliases are the current supported request-size forms; an unconstrained size
+parameter is rejected. A Range carries the bound of its originating read.
+
+Every read and write names its offset explicitly:
+
+```moss
+first = file.read(0, 4096)
+second = file.read(4096, 4096)
+```
+
+There is no implicit shared cursor. `ro` opens an existing file for reads;
+`rw` opens an existing file for reads and writes; `create` also creates a file
+if needed. None of these modes truncates an existing file.
+
+### Writing and durability
+
+Here is a bounded copy to an existing output file:
+
+```moss
+fn main():
+  source = FileIO.open("input.txt", ro)
+  data = source.read(0, 4096)
+  file = FileIO.open("output.dat", rw)
+  file.write(0, data)
+  file.sync()
+  file.close()
+  source.close()
+```
+
+`write` waits until all the bytes have been written or the operation fails.
+`close()` releases the resource but does not imply durability. Call `sync()`
+when durability matters; `sync(dataonly)` is available when only data and the
+metadata needed to read it back must be forced. Unexpected I/O failure aborts
+in the current model; recoverable errors belong to Phase 21.
+
+### An Executor starts independent Roots
+
+The Executor is useful independently of FileIO:
+
+```moss
+domain Worker:
+  fn Process(id: Int):
+    echo id
+
+fn main():
+  a = Worker()
+  b = Worker()
+
+  executor = Executor().threads(4).start()
+  executor.invoke(a.Process(1))
+  executor.invoke(b.Process(2))
+  executor.join()
+```
+
+`executor.invoke(...)` starts an independent Moss **Root**: one execution
+entering a handler. A domain owns state; a Root performs an execution. Two
+Roots can target the same domain, and the compiler's usual synchronization
+decides whether their state accesses can overlap. The Executor supplies
+workers; it does not replace Moss locking. The two printed IDs above may
+appear in either order.
+
+`invoke` is legal only directly from `main`. Its concrete target handler must
+be one-way, meaning it returns no value. Arguments cross by value; FileIO,
+Ranges, and other pinned or scoped capabilities cannot be sent. Handlers
+cannot call `executor.invoke`, and a running Root cannot recursively enter
+Root admission. A handler may already hold Moss-generated locks, so allowing
+it to block while submitting another Root could create a queue/lock deadlock.
+Moss prevents that structure rather than asking the programmer to reason
+about it.
+
+`join()` waits for submitted Roots and consumes the Executor. At most one
+Executor is active at a time. Its lifecycle is statically checked: every
+normal exit after `start()` must reach `join()`, and there is no use after
+join. `threads(n)` chooses target compute parallelism; `max_threads(n)` caps
+workers including blocking compensation, and `queue_capacity(n)` bounds
+waiting Roots. Submission can wait for queue space.
+
+Three operations have different purposes:
+
+- `message` calls a handler synchronously, waits, and may return a reply.
+  From `main` it enters a Root; nested messages remain in the current Root.
+- `executor.invoke` expresses architectural concurrency: it submits another
+  independent Root and produces no result value.
+- Compiler **Branches** are internal child work of one Root, used for proven
+  independent computation. They are not user-visible task values or handles.
+
+### File processing without tasks or futures
+
+This program counts bytes in a file using ordered chunk summaries:
+
+```moss
+fn summarize(chunk: Range) -> Int:
+  return chunk.length()
+
+fn empty_summary() -> Int:
+  return 0
+
+fn merge(left: Int, right: Int) -> Int:
+  return left + right
+
+domain FileStats:
+  fn Count(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    result = file.chunks(1048576) |> map(summarize) |> reduce(empty_summary(), merge)
+    file.close()
+    reply result
+
+fn main():
+  stats = FileStats()
+  executor = Executor().threads(4).start()
+  result = message stats.Count("input.txt")
+  executor.join()
+  echo result
+```
+
+The pipeline's language meaning is sequential and ordered. The compiler may
+execute eligible reads/maps concurrently as Branches, then commit results and
+fold them in original chunk order. The fold keeps its left-to-right meaning;
+you do not write tasks, futures, or async functions. Without an active
+Executor, the same computation still runs correctly inline. Expressions stay
+on one source line; Moss does not use the indented continuation form for
+these pipelines or Executor configuration chains.
+
+```text
+executor.invoke(...)       architectural concurrency -> Roots
+chunks |> map |> reduce    compiler parallelism      -> Branches
+message                    synchronous composition   -> same Root when nested
+```
+
+When a worker is blocked in a known Solo FileIO kernel operation, the Executor
+may temporarily activate another worker, up to its configured maximum;
+Moss-lock waits do not trigger compensation.
+
+For domain-field FileIO, detailed restrictions, and the complete design and
+proofs, see [Blocking FileIO and Executors](MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md).
+
+---
+
+## 12. Modules
 
 The easiest way to think about a Moss module is:
 
@@ -1034,7 +1214,7 @@ You normally do not need to think about either file while writing application co
 
 ---
 
-## 12. Projects
+## 13. Projects
 
 A Moss package has a `Moss.toml` manifest and optional deterministic `Moss.lock`.
 
@@ -1096,7 +1276,7 @@ rejected with `FAST_DEBUG_NATIVE_DEPENDENCY`.
 
 ---
 
-## 13. Testing
+## 14. Testing
 
 Tests are ordinary top-level Moss declarations.
 
@@ -1125,7 +1305,7 @@ margo test --interp --trace
 ```
 
 This discovers tests across the project's files and modules and does not invoke
-`rustc`. Fast Debug's current limits (Section 14) apply, so a test that uses
+`rustc`. Fast Debug's current limits (Section 15) apply, so a test that uses
 `for` still needs native `margo test`.
 
 There are two simple assertion forms:
@@ -1139,7 +1319,7 @@ Failures are reported against Moss source and Moss values rather than forcing yo
 
 ---
 
-## 14. Fast Debug
+## 15. Fast Debug
 
 Moss has two ways to execute checked code.
 
@@ -1206,7 +1386,7 @@ margo debug --trace
 ```
 
 To trace a project's tests instead, use `margo test --interp --trace`
-(Section 13).
+(Section 14).
 
 A reachable source-free `.mossi`/rlib provider cannot be mixed into Fast Debug.
 Use native execution or make that dependency's Moss source available through
@@ -1221,11 +1401,13 @@ traversal still requires the production backend. Supported collection operations
 including those reached through object fields, and the current eager functional
 pipeline surface execute directly in Fast Debug.
 
+FileIO requires native execution; Fast Debug does not perform FileIO operations.
+
 A program accepted and executed by Fast Debug has passed Moss's own static checks. Native compilation additionally passes the generated Rust through Rust's type and borrow checker before machine code is produced.
 
 ---
 
-## 15. What Moss Intentionally Does Not Make You Learn
+## 16. What Moss Intentionally Does Not Make You Learn
 
 Moss v0.1 deliberately keeps several features out of the language surface.
 
@@ -1247,11 +1429,15 @@ value.
 
 There is no requirement to write locks around domain state.
 
+There are no user-created threads, futures, task handles, or arbitrary spawn
+operations. Use independent Roots and compiler-discovered Branches as described
+in Section 11.
+
 These are not all statements about what a compiler could theoretically support. They are choices about keeping the everyday Moss programming model small.
 
 ---
 
-## 16. A Small Program Putting the Pieces Together
+## 17. A Small Program Putting the Pieces Together
 
 Here is a compact example using an ordinary type, a function, a collection, branching, and a pipeline:
 
@@ -1272,9 +1458,7 @@ fn discount(item: Item):
 fn main():
   items = [Item(name: "book", price: 15), Item(name: "keyboard", price: 50), Item(name: "cable", price: 10)]
 
-  total = items
-    |> map(discount)
-    |> sum
+  total = items |> map(discount) |> sum
 
   echo "total", total
 ```
@@ -1293,7 +1477,7 @@ That is the basic Moss idea.
 
 ---
 
-## 17. The Beginner Mental Model
+## 18. The Beginner Mental Model
 
 If you already know Python, the shortest useful way to approach Moss is:
 
@@ -1306,10 +1490,12 @@ If you already know Python, the shortest useful way to approach Moss is:
 6. Use pipelines for collection transformations.
 7. Use domains when mutable state needs to be isolated and shared safely.
 8. Connect domains explicitly with `domainroutes`.
-9. Use modules as named namespaces and compilation units.
-10. Use Margo for package/project testing and package-aware Fast Debug; use
+9. Use blocking FileIO for regular files and an Executor when independent
+   Roots should run concurrently; nested messages remain synchronous.
+10. Use modules as named namespaces and compilation units.
+11. Use Margo for package/project testing and package-aware Fast Debug; use
     `moss debug` or `moss run --interp` for direct same-project or standalone
     interpreted execution.
-11. Let the compiler worry about native lowering, synchronization, and the Rust backend.
+12. Let the compiler worry about native lowering, synchronization, and the Rust backend.
 
 Moss is meant to let a programmer begin near Python's level of ceremony while retaining a much more static, native, systems-oriented execution model underneath.

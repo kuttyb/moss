@@ -1,5 +1,29 @@
 # Moss current status
 
+## Canonical Phase 20 documentation synchronized — 2026-10-07
+
+Base: `50d3a2b25119242c2a954d3c16e27aab902960d5` on `main`, containing the
+completed Phase 20 / 20.1 / 20.2 implementation and closeouts below.
+
+The Gentle Introduction, language-design document, and syntax reference now
+document the implemented FileIO/Range, Executor/Root ingress, Solo blocking,
+and ordered compiler Branch contract at their respective levels. Obsolete
+ingress and milestone statements are corrected. The detailed Phase 20 document
+remains authoritative for proofs, restrictions, and deferred work. Open owner
+decisions and later-phase work remain open; no compiler/runtime/test changes
+or language redesign were needed.
+
+Validation passed: `./moss agent bootstrap --json` confirmed `moss-0.1`;
+`python3 tests/tooling/check_phase20_doc_examples.py`, `make check`,
+`make examples`, and `git diff --check` passed. All 19 introduced or materially
+changed Moss blocks were checked, compiled natively with warnings denied, and
+executed using repository-local fixtures and explicit context for fragments.
+Section numbering, local/new Markdown links, and source continuation checks
+passed across all three documents. No unfinished work or blockers remain.
+
+Compiler-agent self-report: structured checks and native execution verified
+the examples, including Root submission and ordered chunk processing.
+
 ## Phase 20.2 final review findings closed — 2026-10-07
 
 Branch: `phase-20.2-review-completeness`; base:

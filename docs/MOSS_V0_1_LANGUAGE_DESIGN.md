@@ -13,7 +13,7 @@ September 2026
 
 ## Abstract
 
-Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. The central concurrency abstraction is the domain: a statically composed owner of mutable state entered only through synchronous message. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives a conservative static `ClassSet`, partitions protected state into synchronization classes, and emits direct typed RwLock<ClassState> fields. The compiler selects static acquisition placement; touched classes remain held through completion, while Phase 15.3 can defer and cancel branch-only untouched classes in a bounded conditional shape. This supports a structural deadlock-freedom argument for Moss-managed locks and whole-execution conflict serializability for failure-free same-domain handler executions that dynamically conflict on domain-owned semantic locations. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, zero-copy borrowed lowering for eligible synchronous inter-domain message payloads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
+Moss is a compiled language designed to feel closer to Julia than to a traditional systems language while still producing a statically closed native program. Programmers can omit many type annotations, use structural traits without writing implements declarations, and rely on specialization instead of runtime dynamic dispatch. Before native code generation, however, Moss closes the concrete types, call targets, ownership effects, domain topology, and synchronization requirements of the reachable program. Moss compiles to safe Rust, deliberately reusing Rust's mature memory-safety discipline and native backend while restricting selected concurrency patterns further so that lock choice, lock ownership, and Moss-managed lock order become compiler facts rather than programmer decisions. A domain is a statically composed owner of mutable state. Independent handler executions are Roots, admitted through synchronous message, main-only Executor invocation, or Rust-host ingress; nested messages remain synchronous within one Root. Implemented FileIO is blocking under the Solo contract, and eligible chunk pipelines expose compiler Branch parallelism without user-visible tasks. Programmers write neither mutexes nor atomics. For each concrete handler, the compiler infers read/write/consume effects, derives a conservative static `ClassSet`, partitions protected state into synchronization classes, and emits direct typed RwLock<ClassState> fields. The compiler selects static acquisition placement; touched classes remain held through completion, while Phase 15.3 can defer and cancel branch-only untouched classes in a bounded conditional shape. This supports a structural deadlock-freedom argument for Moss-managed locks and whole-execution conflict serializability for failure-free same-domain handler executions that dynamically conflict on domain-owned semantic locations. The paper separates four concerns. Part I presents Moss as a language: “infer all the way, then close statically,” structural traits, ownership effects, domains, synchronous messaging, FileIO and Executor semantics, the programmer-visible consistency model, and features that make the language unusually tractable for AI-assisted and agentic coding. Part II states the formal model, including observable non-domain effects, conservative path-insensitive effect inference, synchronization classes, static-footprint strict two-phase locking, global lock ranking, and proof assumptions. Part III describes the v0.1 implementation and its design corrections, including the replacement of mailbox/await semantics, closure of the domain-handle universe, zero-copy protected reads, zero-copy borrowed lowering for eligible synchronous inter-domain message payloads, and the final static typed lowering that reduced lock-wrapper overhead to the same cost class as equivalent handwritten Rust. Part IV places Moss against prior lock inference, effect systems, actors, DPJ, Pony, Julia, and Rust, and states the limits of the current claims.
 
 ## Contents
 
@@ -27,14 +27,17 @@ Moss is a compiled language designed to feel closer to Julia than to a tradition
   - [7. Synchronous message and terminating reply](#7-synchronous-message-and-terminating-reply)
   - [8. Programmer-visible consistency and ordering](#8-programmer-visible-consistency-and-ordering)
   - [9. By-value domain boundaries](#9-by-value-domain-boundaries)
-  - [10. Observable effects beyond domain state](#10-observable-effects-beyond-domain-state)
-  - [11. Safety by restriction: Rust strengths plus additional static concurrency constraints](#11-safety-by-restriction-rust-strengths-plus-additional-static-concurrency-constraints)
-  - [12. Diagnostics are part of the language product](#12-diagnostics-are-part-of-the-language-product)
-  - [13. Modules and semantic interfaces](#13-modules-and-semantic-interfaces)
-  - [14. One frontend, two execution engines](#14-one-frontend-two-execution-engines)
-  - [15. Features for AI-assisted and agentic coding](#15-features-for-ai-assisted-and-agentic-coding)
-  - [16. Intentional v0.1 boundaries](#16-intentional-v01-boundaries)
-  - [17. Future domain scopes: an intentionally open breadcrumb](#17-future-domain-scopes-an-intentionally-open-breadcrumb)
+  - [10. FileIO and blocking external effects](#10-fileio-and-blocking-external-effects)
+  - [11. Executor, Roots, and compiler Branches](#11-executor-roots-and-compiler-branches)
+  - [12. Ordered chunk pipelines](#12-ordered-chunk-pipelines)
+  - [13. Observable effects beyond domain state](#13-observable-effects-beyond-domain-state)
+  - [14. Safety by restriction: Rust strengths plus additional static concurrency constraints](#14-safety-by-restriction-rust-strengths-plus-additional-static-concurrency-constraints)
+  - [15. Diagnostics are part of the language product](#15-diagnostics-are-part-of-the-language-product)
+  - [16. Modules and semantic interfaces](#16-modules-and-semantic-interfaces)
+  - [17. One frontend, two execution engines](#17-one-frontend-two-execution-engines)
+  - [18. Features for AI-assisted and agentic coding](#18-features-for-ai-assisted-and-agentic-coding)
+  - [19. Intentional v0.1 boundaries](#19-intentional-v01-boundaries)
+  - [20. Future domain scopes: an intentionally open breadcrumb](#20-future-domain-scopes-an-intentionally-open-breadcrumb)
 - [Part II - Formal Model and Safety Arguments](#part-ii---formal-model-and-safety-arguments)
 - [Part III - Implementation Design, Corrections, and Measurements](#part-iii---implementation-design-corrections-and-measurements)
 - [Part IV - Related Work and Positioning](#part-iv---related-work-and-positioning)
@@ -236,14 +239,21 @@ Chapel also uses the term domain, but for a different language construct: Chapel
 
 ### 7 Synchronous message and terminating reply
 
-`message` is the only operation that enters a domain handler. It is synchronous, blocking, and expression-valued:
+`message` is Moss's synchronous handler-call operation. Independent Root
+ingress is provided separately by `executor.invoke` from `main`, while Rust
+hosts may enter through `runtime_invoke`. A `message` is blocking and may
+produce a reply value:
 
 ```moss
 stats = message account.read_stats()
 message logger.record(stats)
 ```
 
-There is no domain-level `await` and no fire-and-forget send in v0.1. A `message` in statement position simply discards the result; it remains synchronous.
+There is no domain-level `await` or asynchronous `message`. A `message` in
+statement position discards the result and remains synchronous. A top-level
+message from `main` enters a Root and waits for its completion; nested messages
+continue within that Root. `executor.invoke` is the separate no-result Root
+submission operation, not an asynchronous spelling of `message`.
 
 `reply` is terminating. Its expression is evaluated before handler completion; an independent semantic result is established; the handler terminates; then the caller resumes. The implementation must retain any synchronization required to preserve the whole-execution serializability guarantee of Section 8, and any guard that physically backs a borrowed lowering, through reply materialization. In the current lowering, every touched guard remains held until the independent reply result has been established and the handler completes. A guard backing a borrowed payload remains held for the complete dynamic extent of that nested message. Phase 15.3 may cancel a guard only when it is proven untouched on the realized path. No statement after a taken reply executes.
 
@@ -290,14 +300,207 @@ Replies are different: the caller uses the result after the callee has returned,
 
 A Rust borrow used to implement a message is therefore a **physical lowering detail**, not a source-level Moss reference. If the borrowed payload is backed by protected domain state, the guard protecting that storage must remain held for the complete dynamic extent of the synchronous message call; a guard may not be dropped while a borrowed view derived from it remains live. Moss exposes no cross-domain mutable alias, source-level lifetime, or borrowed-message type. Callables themselves do not cross message or reply. This keeps the cross-domain boundary first-order while allowing the native backend to avoid unnecessary copies.
 
-### 10 Observable effects beyond domain state
+### 10 FileIO and blocking external effects
 
-Synchronization effects and all observable effects are not the same thing. Moss derives `read`/`write`/`consume` over domain-owned state because those effects drive synchronization. We separately write $O(h)$ for the observable non-domain-state effects of handler h: output such as `echo`, and in future versions foreign I/O or system effects crossing an interoperability boundary.
+FileIO is an implemented built-in **pinned-owner capability** for a regular
+file. It may be root-local, including ordinary use in `main`, or a domain field.
+Its ownership cannot be copied or transferred, and it cannot cross `message`,
+`reply`, or `executor.invoke`, enter ordinary collections or objects, or escape
+its allowed scope. A root-local owner must be explicitly closed on every
+normal exit from the function that opened it. A domain field begins closed,
+opens/closes in place, and may remain open for the domain's lifetime; resource
+teardown implies no durability.
+
+Ordinary checked synchronous helpers may temporarily borrow either owner
+form. The borrow ends before the helper returns and cannot be stored or
+returned. Effects through a domain-field borrow retain provenance to that
+field. User-written lifetime annotations are unnecessary.
+
+The source surface is:
+
+```text
+FileIO.open(path, mode)           root-local owner
+file.open(path, mode)             domain field opened in place
+file.read(offset, size) -> Range
+file.read(requests) -> RangeBatch
+file.write(offset, bytes)         bounded String or Range
+file.chunks(size)                 scoped chunk source
+file.sync()
+file.sync(dataonly)
+file.close()
+```
+
+Modes are `ro` (existing file, read-only), `rw` (existing file, read/write),
+and `create` (read/write, create if absent). No current mode truncates. The
+runtime permits only one live FileIO per `(device,inode)` process-wide, even
+when different paths name the same file. This is a runtime identity rule,
+not static path comparison.
+
+All operations are synchronous. Reads and writes specify offsets explicitly;
+there is no shared file-position cursor. A read completes its requested region
+or establishes EOF; a short Range means EOF. A write completes all its bytes
+or fails. `close()` releases the resource but provides no durability guarantee.
+`sync()` forces prior data and required metadata; `sync(dataonly)` forces data
+and metadata needed to read it back. For a newly created file, either sync
+also discharges the required parent-directory durability obligation.
+
+Regular FileIO blocking is permitted under the **Solo environmental contract**:
+completion must not require another Moss Root in this process to run. This
+permits a Root to perform FileIO while holding generated domain locks.
+Duo/cooperative I/O, such as sockets or pipes whose completion depends on
+another participant, is outside this contract and the Phase 20 proof.
+
+Root-local FileIO requires no Moss domain lock. Domain-field `read`/`chunks`
+are READ effects; `open`/`write`/`sync`/`close` are WRITE effects under the
+ordinary compiler-derived synchronization model.
+
+#### Range and bounded FileIO values
+
+`Range` is borrowed read-only bytes backed by runtime-owned FileIO storage,
+scoped to its owning buffer/FileIO lifetime. It is byte-exact, not UTF-8 text.
+Local use and synchronous helper borrows are permitted; ordinary storage,
+return escape, and transfer across domain/Root boundaries are forbidden.
+`RangeBatch` is the special scoped container for ordered batch results;
+indexing and iteration produce borrowed Range views within that batch's
+lifetime, not copied or transferred byte storage.
+
+```text
+range.length() -> Int
+range[index] -> Int              byte value 0..255; invalid index fails
+for byte in range                sequential byte traversal
+range.slice(start, length) -> Range
+Range == Range                  byte-exact equality (also !=)
+```
+
+Slicing returns empty for a negative start, non-positive length, or start
+at/past the end; otherwise it clips to remaining bytes. Range/String equality
+is currently rejected, with no implicit conversion; that cross-type equality
+policy remains provisional pending the owner decision.
+
+Read sizes, individual and total batch sizes, batch cardinality, chunk sizes,
+and write payloads require compiler-proven finite bounds. Compile-time constants
+and immutable single-assignment aliases are the current request-bound scope;
+unconstrained size parameters are rejected. Bounds follow read results, batch
+indexing/iteration, chunk traversal, and slices. Mutations invalidate facts
+that no longer describe the storage. Startup-declared bounds and arbitrary
+dynamic clamp narrowing are deferred, not implemented guarantees.
+
+### 11 Executor, Roots, and compiler Branches
+
+A **Root** is an independent Moss handler execution admitted through Root
+admission. A domain owns state; a Root is an execution and may synchronously
+call further handlers. An **Executor** is the optional single active worker
+pool for concurrent Root admission, compiler Branch execution, and managed
+Solo blocking. A **Branch** is compiler-generated child work belonging to
+exactly one Root and join scope, never a first-class Moss value.
+
+```moss
+domain Worker:
+  fn Process(id: Int):
+    echo id
+
+fn main():
+  a = Worker()
+  b = Worker()
+  executor = Executor().threads(4).max_threads(16).queue_capacity(128).start()
+  executor.invoke(a.Process(1))
+  executor.invoke(b.Process(2))
+  executor.join()
+```
+
+Construction, configuration, and `start()` belong directly in `main`.
+`threads(n)` selects target compute parallelism, `max_threads(n)` caps the
+finite physical worker population including compensation, and
+`queue_capacity(n)` bounds waiting Roots. Omitted settings receive finite
+runtime defaults. Optional `affinity(cores)` and `priority(level)` are
+best-effort scheduling hints; refusal warns and preserves language semantics.
+Configuration is immutable after start. Chains occupy one source line.
+
+`executor.invoke(concrete_domain.Handler(args...))` is legal only directly
+from `main`. The target is statically known and must be one-way: submission
+produces no handler reply, future, or task handle. Arguments are evaluated at
+submission and cross by value, subject to ordinary payload eligibility;
+FileIO, Range, and other pinned/scoped capabilities cannot cross this boundary.
+Admission may apply bounded-queue backpressure.
+
+At most one Executor is active. Every normal path after start must reach
+`join()`, which waits for admitted Roots, stops the pool, and consumes the
+Executor; use after join is rejected. Unexpected Root failure is fail-closed,
+and join carries no failure result in Phase 20.
+
+There are three ingress forms: `executor.invoke` submits an independent Root;
+a top-level `message` from `main` waits for its Root and may obtain a reply;
+Rust-host `runtime_invoke` likewise enters synchronously and returns the
+handler's reply. All use the same Root-admission mechanism while the Executor
+is active. Without an active Executor, synchronous ingress is serialized
+inline, and Branch work executes inline; no ambient worker pool is implied.
+Executor join returns ingress to inline mode while the program/runtime lives.
+
+A running Root, or a Branch belonging to it, may never recursively enter Root
+admission. Handlers cannot invoke independent Roots; executor start/join and
+recursive host `runtime_invoke` are also prohibited from Root execution.
+Rejection precedes admission waits. Nested synchronous `message` stays within
+the current Root and continues to follow the closed domain routing graph.
+
+Moss intentionally separates **architectural concurrency** (`invoke` creates
+Roots) from **compiler-discovered parallelism** (eligible decomposition creates
+Branches). Branches join within their owning Root; publication never blocks,
+and a parent waiting at a join may help only its own Branches. Phase 20 Branch
+work takes no Moss locks. Root scheduling decides when work runs; effect-derived
+domain synchronization decides whether state accesses conflict, including
+when multiple Roots target one domain.
+
+When a worker blocks in a known Solo FileIO kernel operation, the Executor
+may activate compensation workers up to `max_threads`. A waking worker resumes
+without waiting for an executor slot, even if it still holds Moss locks.
+Moss-lock waits do not trigger compensation.
+
+### 12 Ordered chunk pipelines
+
+`file.chunks(C) |> map(f) |> reduce(init, combine)` has normative sequential
+source meaning: read increasing offsets, map each nonempty chunk, and fold
+left to right. A short final chunk is included; zero-length EOF ends traversal.
+The chunk source is scoped to FileIO, not an ordinary storable collection.
+
+The compiler may parallelize eligible reads/maps using a bounded K-sized
+window (currently K=4). The map must be pure with respect to Moss state
+and make no FileIO calls; Branch work
+must require no Moss locks. The initializer is evaluated before publication.
+Results commit in chunk order and `combine` runs in the parent Root in the
+original left-to-right order. It may have ordinary parent/domain effects,
+but no FileIO calls in the baseline parallel lowering. No associativity
+assumption is required; parallel tree reduction is separate deferred work.
+
+FileIO ownership stays with the parent Root or its domain field. Branches
+receive only compiler-created scoped read borrows that end by the join.
+For a domain field, the parent's generated READ access protects the complete
+operation; Branches do not reacquire Moss locks. Equivalence also assumes
+the file is not concurrently modified by another process or host code.
+Parallel lowering is an optimization, not a source guarantee; ineligible
+pipelines and execution without an Executor retain sequential/inline meaning.
+
+The full contract, eligibility details, proofs, implementation restrictions,
+and deferred work are in
+[Blocking FileIO and Executors](MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md).
+
+### 13 Observable effects beyond domain state
+
+Synchronization effects and all observable effects are not the same thing.
+Moss derives `read`/`write`/`consume` over domain-owned state because those
+effects drive synchronization. We separately write $O(h)$ for observable
+non-domain-state effects of handler h: output such as `echo` and implemented
+FileIO operations. A domain-field FileIO operation also contributes its READ
+or WRITE effect to the owning field's synchronization footprint.
 
 The v0.1 lock planner does not partition on $O(h)$; observable effects are not themselves synchronization-footprint elements. They are nevertheless part of the **whole execution** defined in Section 8. Therefore, when two same-domain handler executions dynamically conflict on a domain-owned semantic location, the observed behavior of their $O(h)$ actions, nested messages, state accesses, and reply materialization must be equivalent to a whole-execution order consistent with the domain's single conflict-serialization order. Observable actions such as `echo` must therefore appear in an order compatible with that serialization position even though commuting internal state accesses may physically overlap.
 
 This does not create a global order on observable effects. Nonconflicting executions may overlap and their $O(h)$ actions may interleave; independently executing handlers in different domains may expose $O(h)$ effects in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. The current implementation preserves the stronger same-domain guarantee by preventing a potentially ordering-relevant deferred acquisition from crossing an earlier observable barrier. Once a guard is touched, it remains held through completion, including later nested messages and `echo`.
-### 11 Safety by restriction: Rust strengths plus additional static concurrency constraints
+Solo FileIO is intentionally legal while a Root holds generated domain locks.
+The deadlock extension depends on the Solo environmental contract: that wait
+does not require another Moss Root in this process. Duo/cooperative I/O is
+outside the extension, not implicitly made safe by worker compensation.
+
+### 14 Safety by restriction: Rust strengths plus additional static concurrency constraints
 
 Moss compiles to safe Rust and relies on Rust's memory-safety and data-race guarantees in safe code. The contribution is not that Moss somehow makes Rust's existing guarantees conditional or stronger in every dimension. Rather, Moss removes additional concurrency choices from normal source code.
 
@@ -316,7 +519,7 @@ Moss compiles to safe Rust and relies on Rust's memory-safety and data-race guar
 
 The useful edge over Rust is therefore concentrated in the middle of the table: a programmer cannot forget the Moss-managed lock, choose the wrong one, or establish an inconsistent Moss lock order, because those operations are not part of the Moss source language.
 
-### 12 Diagnostics are part of the language product
+### 15 Diagnostics are part of the language product
 
 A language that removes programmer-written locks must explain the restrictions and rewrites that make the proof possible. Representative diagnostics should be concrete and teach the model.
 
@@ -349,7 +552,7 @@ Moss requires the concrete domain routing graph to be acyclic.
 
 These are not merely nicer error messages. They are the mechanism by which a restricted safety model remains usable.
 
-### 13 Modules and semantic interfaces
+### 16 Modules and semantic interfaces
 
 Moss v0.1 supports explicit modules, project builds, typed exports, semantic interfaces, and source-free production providers. The module system is usable but intentionally not declared final; dogfooding is expected to reveal where import ergonomics, package discovery, and cross-module specialization need improvement.
 
@@ -357,7 +560,7 @@ The key separation is semantic versus physical ABI. A provider can export checke
 
 Phase 15.9 closes the native artifact-boundary gap for static specialization. `.mossi` preserves the semantic IR, structural requirements, trait contracts, and private dependency closure required for source-free specialization. A checked specialization is projected into the module artifact containing its concrete call: provider wrappers own the specializations they invoke, while consumer-originated uses of a source-free generic are emitted in the consumer artifact. Provider source is not folded into the consumer and there is no runtime or graph-wide specialization dispatch mechanism.
 
-### 14 One frontend, two execution engines
+### 17 One frontend, two execution engines
 
 Moss has one checked semantic frontend and two execution engines:
 
@@ -377,7 +580,7 @@ typed Rust + 2PL
 
 Production assumes concurrent handler entry may occur and therefore uses physical synchronization. Fast Debug executes the same checked domain semantics directly and deterministically without simulating locks, threads, or alternative schedules. Its structured trace exposes source identity, concrete instance identity, handler entry/exit, state reads/writes, messages, replies, and branches.
 
-### 15 Features for AI-assisted and agentic coding
+### 18 Features for AI-assisted and agentic coding
 
 Moss is not designed around the premise that an AI agent should be trusted to generate more low-level machinery. The opposite is more useful: the language removes choices that are expensive for both humans and agents to get right, then exposes the compiler's semantic knowledge in forms an agent can inspect. The result is a smaller legal program space, a deterministic debug loop, and fewer multi-step stateful interactions with external debuggers.
 
@@ -421,22 +624,28 @@ Several v0.1 restrictions are useful to agents for the same reason they are usef
 
 The claim is deliberately modest: Moss does not make an agent correct, and v0.1 is not presented as an "AI programming language." Rather, Moss gives an agent a more constrained target language and richer compiler feedback. The expectation is that this can improve first-attempt validity, reduce repair turns, and make debugging less dependent on fragile interactive state. Phase 22 is reserved for measuring and improving those properties after the language has first been dogfooded as a language.
 
-### 16 Intentional v0.1 boundaries
+### 19 Intentional v0.1 boundaries
 
 The following are deliberate v0.1 limits, not accidental omissions hidden by the paper:
 
 - no runtime dynamic dispatch or general first-class closures;
 - no ordinary recursion yet (an implementation/language-surface restriction, not a synchronization-proof requirement);
 - no dynamic domain creation, first-class domain handles, or topology-affecting runtime control flow;
-- no source-level thread/task ingress construct yet;
+- no general thread API, first-class tasks, futures, or arbitrary spawn;
 - no asynchronous domain messaging;
 - no programmer-written Moss lock/atomic syntax;
 - no finalized Rust interoperability or supervision/error-recovery model;
 - no dynamic key-based lock partitioning inside runtime-indexed aggregates.
 
-Concurrent ingress is a deliberate exclusion. v0.1 specifies what is true once control enters a domain handler; it does not yet specify a source-level mechanism that creates independent concurrent roots. The production backend nevertheless assumes concurrent handler entry is possible and may not erase synchronization merely because main appears sequential.
+Source-level independent concurrent Roots are implemented through
+`executor.invoke` directly from `main`; host `runtime_invoke` is external
+synchronous Root ingress. Handlers and executing Roots cannot perform Root
+admission, and nested messages stay in the same Root. This restricted ingress
+does not introduce general task spawning or dynamic domain topology.
+Production synchronization remains necessary even when `main` itself waits
+for a synchronous message.
 
-### 17 Future domain scopes: an intentionally open breadcrumb
+### 20 Future domain scopes: an intentionally open breadcrumb
 
 Current v0.1 composition effectively creates domains for the lifetime of the enclosing program scope. The synchronization plan is intentionally graph-relative rather than process-global so that future work can explore lexical domain scopes and repeated graph activations.
 
@@ -452,7 +661,7 @@ does not prohibit concrete uses of built-in collection types: `Vector[Int]`,
 programming. Locals are normally inferred; `Vector[T]()` is the supported typed
 empty-vector constructor, while local declaration annotations remain unsupported.
 
-### 18 Static objects of the model
+### 21 Static objects of the model
 
 For a checked graph context $G$, let $D$ range over concrete domain instances. Each instance has a concrete specialization and a finite set of handlers $H_D$.
 
@@ -467,7 +676,7 @@ A deterministic topological linearization assigns each concrete instance a uniqu
 $$
 \operatorname{domain\_rank}(D) < \operatorname{domain\_rank}(E).
 $$
-### 19 State effects and observable effects
+### 22 State effects and observable effects
 
 For handler $h \in H_D$, static effect analysis derives may-effect sets over the finite analysis leaves:
 
@@ -488,7 +697,7 @@ $$
 $$
 
 `consume` remains distinct from `write` for ownership, even though both require exclusive synchronization.
-### 20 Mutable universe and protected reads
+### 23 Mutable universe and protected reads
 
 Define the exclusive leaf set for a handler:
 
@@ -516,7 +725,7 @@ $$
 \operatorname{LockSet}_D(h) = X_D(h) \cup \operatorname{ProtectedRead}_D(h).
 $$
 
-### 21 Synchronization modes and class partition
+### 24 Synchronization modes and class partition
 
 For synchronization, normalized effects map to modes:
 
@@ -546,7 +755,7 @@ For a class in a handler's `ClassSet`, the handler mode is exclusive if the sign
 
 The signature partition preserves every statically visible distinction in handler synchronization behavior. It does not optimize a workload-dependent contention objective. More classes can expose more independent concurrency, but each acquired class still costs a native lock acquisition. The baseline partition is therefore contention-oblivious: it favors preserving potential independence rather than minimizing lock count under an observed workload. Profile-guided coarsening or alternative class objectives are future optimization questions, not v0.1 semantics.
 
-### 22 Running Account derivation
+### 25 Running Account derivation
 
 For the `Account` example:
 
@@ -579,7 +788,7 @@ The signatures are distinct:
 
 Therefore `record_fill` acquires A and B exclusively and C shared. `rename` is synchronization-disjoint from `record_fill`; `read_stats` can overlap another `read_stats` but conflicts with `record_fill`.
 
-### 23 Path-insensitive locking: the cache-populate bound
+### 26 Path-insensitive locking: the cache-populate bound
 
 Suppose a cache handler is conceptually:
 
@@ -593,18 +802,18 @@ fn get(key):
 The v0.1 analysis may map the runtime-indexed `entries[key]` locations to one aggregate analysis leaf `entries`. Because the handler may write that leaf, its normalized synchronization mode for the resulting class is exclusive on every invocation, even when the requested key is already present or another invocation addresses a different key. Moss v0.1 deliberately accepts this conservative cost in exchange for a complete precomputed `ClassSet`, no lock upgrade, and simple whole-handler 2PL.
 
 This aggregate coarsening is not source semantics. Phase 15.3 implements bounded class-path precision for an eligible leading top-level conditional: its branch-only classes may be deferred, and rank-forced untouched guards may be cancelled, using typed continuation splitting. Mode path ignorance, aggregate coarsening, and general CFG path precision remain conservative/future work. Any further refinement must preserve Section 8's single conflict-serialization order, whole-execution serializability for every realized dynamic conflict, and the deadlock argument. The paper does not claim v0.1 produces the weakest lock mode, smallest lock set, or finest aggregate partition for each dynamic execution.
-### 24 Static-footprint strict two-phase locking
+### 27 Static-footprint strict two-phase locking
 
 Each handler knows a conservative complete `ClassSet` before the body begins. Baseline handlers acquire it at entry. Phase 15.3 may assign statically proven branch acquisition sites to branch-only classes in an eligible leading conditional; every executed protected access remains covered before access, new acquisitions remain rank-ordered, touched guards stay through reply/completion, and a guard may cancel only when statically untouched. There are no shared-to-exclusive upgrades.
 
 This has the static-footprint property often associated with conservative 2PL: the required lock set is known before body execution. However, Moss acquires locks sequentially rather than atomically preclaiming an all-or-none set. Consequently, local class order remains necessary for deadlock freedom.
 
-**Theorem 24.1 (Whole-execution conflict serializability).** Assume the static state-effect summaries soundly cover every executed semantic state access; accesses to the same domain-owned semantic location are covered by a common analysis leaf; every executed protected access is preceded by its covering class in sufficient mode; every touched acquisition obeys two-phase locking; untouched acquisitions may be cancelled only when no reaching path touched them and no remaining path can access them; every actual Moss-managed acquisition precedes the execution's first observable action; touched classes remain held through reply materialization or completion; and nested messages are synchronous. Then the failure-free completed handler executions on any one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair is whole-execution serializable consistently with that same order, in the observational sense of Section 8.
+**Theorem 27.1 (Whole-execution conflict serializability).** Assume the static state-effect summaries soundly cover every executed semantic state access; accesses to the same domain-owned semantic location are covered by a common analysis leaf; every executed protected access is preceded by its covering class in sufficient mode; every touched acquisition obeys two-phase locking; untouched acquisitions may be cancelled only when no reaching path touched them and no remaining path can access them; every actual Moss-managed acquisition precedes the execution's first observable action; touched classes remain held through reply materialization or completion; and nested messages are synchronous. Then the failure-free completed handler executions on any one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair is whole-execution serializable consistently with that same order, in the observational sense of Section 8.
 
 **Argument.** Remove cancelled untouched acquisitions from the logical execution. The remaining touched history is strict 2PL, so standard 2PL supplies an acyclic precedence graph and one serial order for protected state [3]. Let the **lock point** be an execution's final actual Moss-managed acquisition. The observable-action barrier puts that lock point before `message`, `echo`, and every other $O(h)$ action. If two executions dynamically conflict, sound semantic-location coverage maps their access to a common class with incompatible modes. A later conflicting execution cannot acquire that class until the earlier execution releases it at completion; therefore its observable portion cannot pass its own lock point until the earlier conflicting execution has completed. Nested messages are synchronous and reply materialization occurs before completion. Thus the observed behavior is equivalent to whole executions ordered consistently with the same 2PL serialization order. Class rank establishes deadlock freedom, not this serialization argument.
 
 Static may-footprints, coarse aggregate leaves, and class partitioning can make the implementation serialize executions that would not dynamically conflict on their realized semantic locations. That extra ordering is permitted but is not source-level conflict semantics. Conversely, this theorem does not turn the synchronous descendant call tree into a transaction with respect to unrelated third-party executions in descendant domains, nor does it impose a total order on $O(h)$ across independent domains.
-### 25 Global lock rank and deadlock freedom
+### 28 Global lock rank and deadlock freedom
 
 Each synchronization class has a deterministic local `class_rank_D(C)`. Define:
 
@@ -616,7 +825,7 @@ with lexicographic order.
 
 Within a handler, classes are acquired in increasing class rank. Across a nested message, the target lies on an outgoing concrete route edge and therefore has greater domain rank. Parent locks remain held while the child acquires its classes.
 
-**Theorem 25.1 (Deadlock freedom for Moss-managed domain locks).** Under the closed acyclic concrete routing graph, deterministic increasing local class acquisition, no lock upgrades, and nested messages only along declared route edges, Moss-managed domain locks cannot participate in a wait-for cycle.
+**Theorem 28.1 (Deadlock freedom for Moss-managed domain locks).** Under the closed acyclic concrete routing graph, deterministic increasing local class acquisition, no lock upgrades, and nested messages only along declared route edges, Moss-managed domain locks cannot participate in a wait-for cycle.
 
 **Proof sketch.** Every newly acquired Moss-managed lock has strictly greater `LockRank` than every Moss-managed lock still held by the current thread. A deadlock cycle would imply
 
@@ -626,13 +835,33 @@ $$
 
 which is impossible for a strict total order. Within one domain, local class rank is sufficient; across nesting, domain rank is the load-bearing component. The ordering applies to currently held locks, not historical acquisitions, so a caller may return from a higher-ranked sibling and then enter a lower-ranked sibling provided that sibling still ranks above the held ancestor locks.
 
-### 26 Why the concrete graph must be closed
+#### Extension to Root admission, joins, and Solo FileIO
+
+The Phase 20 deadlock argument extends the ranked 2PL model: Root admission
+occurs outside Root execution, where ingress holds no Moss locks; bounded
+admission cannot block a lock-holding Root. A Root joins only its own
+lock-free Branches and can help unstarted child work. FileIO waits terminate
+in Solo external operations rather than a dependency on another Moss Root.
+Moss locks still obey the same ranked two-phase discipline. This structural
+no-deadlock claim does not require fair lock admission.
+
+Progress is conditional on finite Solo completion, terminating Root/Branch
+computation, fair Root scheduling and runtime waits, and fair Moss lock
+admission. `SYNC-FAIR-001` remains the debt for domain-lock fairness; the
+generated domain `RwLock`s establish mutual exclusion, not an unconditional
+starvation-freedom guarantee. The detailed assumptions and non-claims remain
+in [the Phase 20 proof](MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md#18-proof-1--deadlock-freedom-and-progress).
+
+### 29 Why the concrete graph must be closed
 
 The deadlock proof depends on every legal cross-domain message target appearing in the concrete route graph. That is why domain handles are not first-class values. If a handler could receive a domain handle in a payload and later call it, runtime execution could introduce a lock-acquisition edge that the static topology and rank assignment never saw.
 
-Moss therefore restricts handles to concrete composition bindings, declared route bindings, and message receivers. This is not merely an ergonomic restriction; it is part of the proof boundary.
+Moss therefore restricts handles to concrete composition bindings, declared
+route bindings, message receivers, and statically resolved Root-ingress
+targets from `main`. An `invoke` target creates no new domain-to-domain route
+edge. This restriction is part of the proof boundary.
 
-### 27 Publication and immutable reads
+### 30 Publication and immutable reads
 
 Construction and publication must satisfy a happens-before condition:
 
@@ -640,20 +869,20 @@ Construction and publication must satisfy a happens-before condition:
 
 This formulation is stronger and more precise than saying merely that "construction finishes first." It is the reason leaves outside $X_D^*$ may be read without a domain lock: the compiler has established that checked handlers never mutate them, while the runtime establishes safe publication of their initialized values.
 
-### 28 Ownership, aliases, and domain boundaries
+### 31 Ownership, aliases, and domain boundaries
 
 Ordinary calls may preserve caller storage identity according to inferred parameter effects. The compiler checks `read`/`write`/`consume` capabilities and rejects overlapping aliases when one side may write or consume.
 
 Domain boundaries deliberately break ordinary Moss alias identity. A message argument establishes an independent semantic value; so does a reply result. For an eligible synchronous message, the backend may represent that semantic value temporarily with an immutable Rust borrow or typed borrowed view when it can prove observational equivalence and non-escape. This physical borrow does not become a Moss alias and cannot outlive the message call. Replies remain owned results. Cross-domain mutable aliases are not part of the language model.
 
-### 29 Failure model and proof scope
+### 32 Failure model and proof scope
 
 Unexpected failure semantics are not yet a language-level supervision model. v0.1 **fails closed**: the production backend aborts on unexpected handler failure or poisoned synchronization rather than releasing possibly inconsistent protected state and continuing Moss execution.
 
 More specifically, a failing handler does not release or weaken guards protecting state it has modified and then permit another Moss handler to observe those partial protected-state updates before process termination. v0.1 does not provide rollback: nested synchronous messages, `echo`, or other observable effects that completed before the unexpected failure may already have occurred.
 
 All serializability and normal-exit state-validity arguments in this paper are scoped to failure-free completed handlers. The fail-closed rule above is a separate failure-containment property of the v0.1 lowering. Phase 21 is reserved for explicit error propagation, supervision, rollback/recovery choices, and their interaction with synchronization.
-### 30 Claims and non-claims
+### 33 Claims and non-claims
 
 #### Claims
 
@@ -662,6 +891,16 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Moss derives domain-state synchronization from specialized may-effects rather than user-written locks.
 - Failure-free completed executions on one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair—defined by actually accessing the same domain-owned semantic location with at least one write/consume—is whole-execution serializable consistently with that order: the observed behavior is equivalent to one in which the whole execution of one precedes the whole execution of the other, including nested synchronous messages, reply materialization, and $O(h)$ effects.
 - Moss-managed domain lock deadlock is structurally excluded under the closed-graph/rank assumptions.
+- Root admission, root-scoped joins over lock-free Branches, and Solo FileIO
+  preserve the extended deadlock argument under the Phase 20 environmental
+  and runtime assumptions. Progress additionally requires finite completion
+  and fairness assumptions; `SYNC-FAIR-001` remains open.
+- Runtime-owned FileIO buffers are bounded using compiler-proven request,
+  batch, and chunk bounds, scoped Range lifetimes, finite worker counts, and
+  bounded Branch windows. This claim covers FileIO buffer memory, not total
+  application memory.
+- Eligible chunk reads/maps may execute concurrently while retaining ordered
+  commit and the source's original left-to-right fold.
 - Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values. A guard backing a borrowed protected payload remains held for the complete synchronous call.
 - In the v0.1 fail-closed lowering, an unexpectedly failing handler does not release modified protected state and allow another Moss handler to observe those partial protected-state updates before process termination.
 
@@ -670,15 +909,21 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Moss does not improve on every safety property of Rust; it is more restrictive and obtains additional guarantees in selected concurrency dimensions.
 - Moss does not promise global sequential consistency across the entire domain graph.
 - Moss does not provide one transaction spanning descendant domains or arbitrary external effects.
-- Moss does not guarantee fairness, starvation freedom, lock-free progress, or bounded waiting.
-- v0.1 does not define a source-level concurrent-ingress mechanism.
+- Moss does not unconditionally guarantee fairness, starvation freedom,
+  lock-free progress, or bounded waiting; the Phase 20 progress theorem is
+  conditional on its synchronization and environmental assumptions.
+- FileIO buffer bounds do not bound arbitrary application collections,
+  accumulator growth, or total process memory.
+- Solo blocking does not cover Duo I/O or hidden dependencies back on another
+  Moss Root. Worker compensation does not repair such dependencies or
+  compensate Moss-lock contention.
 - v0.1 does not yet define supervision, rollback, restart, or recovery after unexpected handler failure; already-completed nested messages or observable effects are not rolled back by fail-closed abort.
 - The deadlock proof covers Moss-managed locks, not arbitrary future foreign locks acquired invisibly by external code.
 - Static may-effect footprints, analysis-leaf boundaries, `ClassSet` overlap, synchronization-class boundaries, aggregate coarsening, and compiler-selected acquisition placement are not the source-level definition of handler conflict; they may conservatively serialize executions that do not dynamically conflict.
 - The synchronization partition is not guaranteed workload-optimal, path-minimal, or aggregate-element-minimal.
 ## Part III - Implementation Design, Corrections, and Measurements
 
-### 31 Compilation pipeline
+### 34 Compilation pipeline
 
 The final v0.1 pipeline is conceptually:
 
@@ -703,7 +948,7 @@ generate typed Rust class state + direct RwLock acquisitions
 
 The design deliberately keeps semantic artifacts separate from physical lowering. Module interfaces carry checked semantic information; the final application generates its own synchronization partition and physical Rust layout.
 
-### 32 Final production lowering: locks own their protected state
+### 35 Final production lowering: locks own their protected state
 
 The final backend emits one typed Rust state structure per synchronization class. A representative shape is:
 
@@ -742,13 +987,13 @@ result
 
 Rust RAII retains the guards for the handler scope. Nested messages run while parent guards remain live.
 
-### 33 Why the first generic runtime was rejected
+### 36 Why the first generic runtime was rejected
 
 The first correct 2PL backend interpreted synchronization metadata at runtime using handler descriptors, class/leaf maps, guard maps, and generic take/restore scaffolding. It was safe and useful while the architecture was changing, but Phase 10.6F measured avoidable fixed overhead on tiny handlers.
 
 That overhead was classified as a v0.1 blocker because the compiler already knew every class, mode, and leaf statically. Phase 10.6F.1 replaced runtime plan interpretation with static typed lowering. The result is an important implementation lesson: the compiler should execute the planning work at compile time and emit ordinary direct Rust, not carry a generic synchronization interpreter into the production hot path.
 
-### 34 Borrowed protected reads and zero-copy message lowering
+### 37 Borrowed protected reads and zero-copy message lowering
 
 One correction removed hidden deep copies of protected READ state. Protected reads borrow directly from the data owned by the retained shared guard; immutable-after-publication reads borrow directly from immutable storage. Whole and nested objects are represented with typed borrowed views when needed.
 
@@ -777,19 +1022,19 @@ The language-level distinction is therefore:
 
 This optimization introduces no Moss reference syntax, no user-visible lifetimes, and no cross-domain mutable aliases. Retaining a guard that backs a borrowed protected payload is a lowering invariant even if a future synchronization optimizer otherwise permits earlier release of unrelated guards. Safe Rust remains responsible for validating the generated physical borrow relationships.
 
-### 35 From asynchronous actors to synchronous domains
+### 38 From asynchronous actors to synchronous domains
 
 The design began with actor-like mailboxes, queues, worker loops, await, sender FIFO, and a per-domain total commit-order concept. That machinery became unnecessary once shared-memory message was made synchronous.
 
-The final model removed await, mailboxes, queues, worker threads, sender FIFO semantics, commit-order machinery, alternate atomic-domain lowering, batching, coalescing, and domain-cluster execution. This simplification sharpened the actual abstraction: a domain is protected state with statically known routing, not a promise of independent scheduling.
+The synchronous domain model removed await, actor mailboxes and queues, per-domain worker threads, sender FIFO semantics, commit-order machinery, alternate atomic-domain lowering, message batching, coalescing, and domain-cluster execution. This simplification sharpened the actual abstraction: a domain is protected state with statically known routing, not a promise of independent scheduling. Phase 20's optional Executor schedules Roots and compiler Branches separately; it does not restore per-domain mailboxes or workers.
 
-### 36 Closing the domain-handle universe
+### 39 Closing the domain-handle universe
 
 Static routing was initially incomplete because domain handles could still behave like values in some paths. Phase 10.6B.1 closed that hole: handles cannot cross message/reply, ordinary parameters, aggregates, or mutable state. Every legal cross-domain call is now statically attributable to a route edge.
 
 This implementation correction was proof-relevant rather than cosmetic. Without it, domain_rank would not describe the actual nested lock-acquisition graph.
 
-### 37 Fast Debug as a semantic engine
+### 40 Fast Debug as a semantic engine
 
 Fast Debug interprets the already-checked program. It constructs logical concrete domain instances, follows checked routes, executes messages as nested interpreter frames, mutates logical state, and terminates on reply. It intentionally does not simulate `RwLock`s, contention, or thread interleavings.
 
@@ -806,7 +1051,7 @@ This creates a useful separation:
 | Locks | Physical compiler-derived `RwLock`s | None |
 | Purpose | Native execution | Fast semantic debugging/tracing |
 
-### 38 Performance validation: codegen overhead, not a scalability claim
+### 41 Performance validation: codegen overhead, not a scalability claim
 
 The strongest v0.1 performance evidence answers a narrow implementation question: after static typed lowering, does a known Moss lock footprint cost materially more than equivalent handwritten Rust using the same `std::sync::RwLock`? On the Phase 10.6F.1 environment, the answer was no for the one-to-three-lock microcases.
 
@@ -830,7 +1075,7 @@ A submission-quality scalability study should use uniform physical cores, affini
 
 The current paper therefore treats the threaded measurements as implementation validation rather than a headline performance result.
 
-### 39 Class count, nested hold time, and other measured costs
+### 42 Class count, nested hold time, and other measured costs
 
 More synchronization classes expose more potential parallelism but also mean more native lock acquisitions. The v0.1 signature partition is intentionally workload-agnostic. Dogfooding may reveal domains where class coarsening would outperform maximal static separation under realistic contention.
 
@@ -842,8 +1087,8 @@ That imposes constraints on **both sides** of an observable effect. Deferred acq
 
 The optimizer must also preserve the ordinary **two-phase rule** explicitly: once any touched guard is released or downgraded, that handler execution may perform no later Moss-managed guard acquisition or mode upgrade. Releasing or downgrading the first touched guard therefore begins the shrinking phase. By contrast, a guard known to be untouched on the realized execution may be **cancelled at any point**. Such cancellation does not begin the shrinking phase and does not itself forbid later acquisitions, provided the remaining rank-order and observable-effect constraints are still satisfied.
 
-Early release must also preserve Section 29's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the conservative full-hold baseline would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. Early release of touched guards and aggregate refinement remain future work. The bounded branch-local deferred acquisition and proven-untouched cancellation described above are part of the current v0.1 implementation.
-### 40 Modules: semantic ABI, graph-relative synchronization, and artifact-local specialization
+Early release must also preserve Section 32's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the conservative full-hold baseline would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. Early release of touched guards and aggregate refinement remain future work. The bounded branch-local deferred acquisition and proven-untouched cancellation described above are part of the current v0.1 implementation.
+### 43 Modules: semantic ABI, graph-relative synchronization, and artifact-local specialization
 
 Source-free providers export semantic information needed for downstream specialization and effect analysis. The final consumer builds the concrete graph, derives synchronization, and emits typed lock-owned state. Physical classes and Rust lifetimes are deliberately absent from the semantic module ABI.
 
@@ -851,13 +1096,13 @@ Static callable specialization and graph-relative synchronization have different
 
 ABI version 6 preserves statically dispatched export IR and exported trait contracts required for that source-free specialization. Old provider interfaces must be rebuilt. There is no graph-wide specialization crate, no runtime dictionary or trait-object dispatch, and no provider-source folding.
 
-### 41 Reachability and other conservative bounds
+### 44 Reachability and other conservative bounds
 
 The current synchronization plan includes checked handlers in the concrete specialization even if whole-program analysis could prove some are unreachable. Such a handler can enlarge $X_D^*$ and split/introduce synchronization classes unnecessarily. This is a straightforward optimization opportunity: prune unreachable handlers before constructing the partition, while preserving diagnostics for declared but unused code.
 
 Other conservative bounds include path-insensitive may-effects and coarse treatment of runtime-indexed aggregates. These are engineering tradeoffs in v0.1, not weaknesses in the deadlock argument.
 
-### 42 Design evolution summary
+### 45 Design evolution summary
 
 | Stage | Earlier idea | v0.1 resolution |
 |---|---|---|
@@ -872,9 +1117,9 @@ Other conservative bounds include path-insensitive may-effects and coarse treatm
 | Debugging | Native debugger required for domains | Deterministic Fast Debug semantic engine |
 | Language growth | Continue adding features | Phase 15 dogfooding before expansion |
 
-### 43 Dogfooding before expansion
+### 46 Dogfooding before expansion
 
-Phase 10 defines the Moss v0.1 usable-language milestone. The current post-v0.1 milestone is Phase 15: dogfooding. The goal is to write real programs and let concrete friction drive subsequent work.
+Phase 10 defines the Moss v0.1 usable-language milestone. Phase 15 established dogfooding: write real programs and let concrete friction drive subsequent work. Phase 20 has since added the FileIO/Executor contract described in Part I; dogfooding remains the basis for evaluating further expansion.
 
 Already-known questions include ordinary recursion, remaining module/package ergonomics after the Phase 15.9 static-specialization convergence, trace slicing, domain lifetime scopes, and standard-library gaps. None should be solved merely because the roadmap has room. The language should now earn its next features through use.
 
@@ -882,43 +1127,51 @@ Phase 15 swarm findings are classified in an issue ledger (`examples/swarm/ISSUE
 
 ## Part IV - Related Work and Positioning
 
-### 44 Synchronization inference and lock allocation
+### 47 Synchronization inference and lock allocation
 
 Compiler-assisted lock inference is direct prior art. Autolocker infers synchronization for atomic sections [5]. Emmi et al.'s lock allocation infers lock assignments and instrumentation intended to preserve atomicity and deadlock freedom [6]. Cherem, Chilimbi, and Gulwani infer locks for atomic sections using program analysis [7].
 
 Moss should therefore not claim novelty merely because the compiler derives locks. The distinction is the surrounding language contract. Moss does not start from arbitrary shared-memory code annotated with atomic regions. It starts from statically composed source-level domains, closes the concrete instance routing graph, derives effects after specialization, partitions domain-owned state from exact concrete handler signatures, and uses the same instance graph to establish inter-domain lock rank. Domain handles cannot escape and create unseen runtime edges. In that sense, the synchronization inference is one component of a deliberately restricted language rather than a retrofit onto unrestricted shared memory.
 
-### 45 Effect systems and Deterministic Parallel Java
+### 48 Effect systems and Deterministic Parallel Java
 
 Effect systems provide a long history of static reasoning about program behavior [4]. Deterministic Parallel Java (DPJ) uses a type-and-effect system to provide strong compile-time guarantees for deterministic parallel programming [8]. Moss shares the idea that effects can turn concurrency properties into compile-time facts, but pursues a different user model: structural specialization, source-level state-owning domains, compiler-derived lock partitioning, and static concrete routing rather than programmer-managed regions as the primary architecture.
 
 The important comparison is not “effects versus no effects,” but how much of the concurrency structure the language makes statically recoverable from ordinary source.
 
-### 46 Actors and capability-based race freedom
+### 49 Actors and capability-based race freedom
 
 Actors traditionally isolate mutable state behind asynchronous message processing [10, 11]. Pony's deny capabilities show how a carefully designed capability system can support race-free actor programming with strong static properties [9].
 
 Moss deliberately diverges from classical actor scheduling. A Moss domain is not a mailbox/worker abstraction, messages are synchronous, and multiple compatible handlers on one domain may overlap under compiler-derived shared-memory synchronization. The common idea is to make ownership boundaries explicit enough for the language to reason about concurrency; the execution model is different.
 
-### 47 Rust and Julia as complementary influences
+### 50 Rust and Julia as complementary influences
 
 Rust supplies the physical safety substrate and a reference point for systems-programming guarantees [2]. Moss's goal is not to weaken Rust's model, but to make a narrower concurrency discipline easier to use by removing lock selection and order from application source.
 
 Julia supplies a different influence: concise source, specialization, and the idea that high-level generic code need not imply slow generic execution [1]. Moss borrows that design attitude while statically closing behavior that Julia may leave to runtime dispatch. The resulting combination is intentionally asymmetric: Julia-like ergonomic ambition at the source level, Rust-backed safety/native execution at the implementation level, and additional compile-time restrictions around Moss-managed concurrency.
 
-### 48 Open questions
+### 51 Open questions
 
 The v0.1 paper leaves several questions deliberately open:
 
 - whether ordinary recursion should be introduced once specialization termination and diagnostics are designed;
 - how lexical domain scopes should compose with outer routing anchors and repeated activations;
 - whether profile-guided synchronization-class coarsening is worthwhile;
-- how to add concurrent ingress without corrupting the static domain model;
+- the provisional rejection of Range/String equality and any future explicit
+  byte/text conversion semantics;
+- the breadth of untyped static specialization versus a narrower contextual
+  policy, without changing current accepted concrete calls silently;
+- startup-declared bounds and broader proven dynamic clamp narrowing;
+- Duo I/O and Receive-Moss-Send protocol design beyond the Solo contract;
+- recoverable I/O/Root failure and result-carrying joins under Phase 21;
+- later conflict-aware Root admission and other scheduler optimizations;
+- the FileIO/Executor contention and performance work reserved for Phase 20.5;
 - how Rust interoperability should constrain foreign aliases and foreign lock acquisition;
 - how supervision/restart semantics interact with state validity and synchronous message chains;
 - which module/package improvements are justified by Phase 15 dogfooding.
 
-### 49 Conclusion
+### 52 Conclusion
 
 Moss's central wager is that a language can feel lighter by making the compiler responsible for facts programmers usually restate manually. The surface aims for Julia-like economy: structural constraints, specialization, and aggressive inference. The implementation deliberately leans on Rust rather than rebuilding a memory-safe native backend. And the concurrency model narrows the space further so that domains, routes, effects, synchronization classes, and lock order are statically established before code generation.
 
@@ -951,7 +1204,13 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Deadlock order | Lexicographic `(domain_rank, class_rank)` for currently held Moss locks |
 | Physical backend | Static typed safe Rust, `RwLock<ClassState>` per synchronization class, borrowed protected READs, and borrowed synchronous message payloads where safe |
 | Fast Debug | Deterministic semantic interpreter; no lock/thread simulation |
-| Ingress | Source-level concurrent root creation intentionally deferred |
+| FileIO | Pinned single owner, root-local or domain field; synchronous explicit-offset regular-file operations; one live owner per `(device,inode)` |
+| Range | Scoped borrowed read-only bytes; exact Range equality, bounded reads/writes; no ordinary storage or domain/Root transfer; Range/String equality remains provisional |
+| Executor | At most one active pool; configured/started in `main`, consumed by explicit `join` on normal exit; finite workers and bounded Root queue |
+| Root | Independent admitted handler execution; may hold domain locks and synchronously issue nested messages |
+| Branch | Compiler-generated child of one Root; scoped join, no Moss locks, nonblocking publication, ordered source meaning preserved |
+| Root ingress | `main`'s `executor.invoke` submits a one-way Root; top-level `message` and Rust-host `runtime_invoke` wait for Root completion/reply; no recursive admission from a Root/Branch |
+| Solo blocking | Known kernel waits may activate bounded worker compensation; completion must not depend on another Moss Root; Moss-lock waits are not compensated |
 | Failure | Unexpected failure is fail-closed: modified protected state is not released for observation by another Moss handler before process termination; prior nested/observable effects are not rolled back; supervision deferred |
 
 ## Appendix B - Proof assumptions checklist
@@ -973,6 +1232,16 @@ The formal claims rely on the following conditions:
 13. Normal handler exit leaves every domain-owned value ownership-valid.
 14. Serializability claims are for failure-free completed handlers. For unexpected failure, the v0.1 fail-closed lowering does not release or weaken guards protecting modified state and then permit another Moss handler to observe those partial protected-state updates before process termination; already-completed nested messages or observable effects are not rolled back.
 15. Foreign code does not acquire hidden Moss-state aliases or violate Moss-managed lock-order assumptions; detailed interop remains future work.
+16. Independent Root ingress occurs outside Root/Branch execution; active
+    Executor ingress shares one bounded admission mechanism. Joins help only
+    the owning Root's lock-free Branches.
+17. FileIO satisfies the Solo environmental contract. Progress additionally
+    assumes finite external completion, Root/Branch termination, and scheduler,
+    runtime-wait, and domain-lock fairness; `SYNC-FAIR-001` remains proof debt.
+18. FileIO buffer bounds assume proven request/chunk bounds, scoped non-escaping
+    Ranges, and finite workers/Branch windows. Parallel chunk equivalence also
+    excludes concurrent external file mutation. These are not total-memory,
+    arbitrary-filesystem, or unconditional progress guarantees.
 ## Appendix C - Moss v0.1 milestone map
 
 | Milestone | Result |
@@ -999,7 +1268,10 @@ The formal claims rely on the following conditions:
 | 15.13 | Swarm stabilization checkpoint: corrective fixes rebased into a quasi-stable baseline; static callable parameters for ordinary functions |
 | 15.14 | Full stabilization closeout: corrective pass over swarm-ledger implementation and tooling defects; control-flow-scoped local bindings; domain state initializer effect checks; project-wide Fast Debug tests |
 | 15.15 | Complete: SWARM-043/044 and EXPRESS-003/004/005 fixed; EXPRESS-002/006/008 rejected; SWARM-040 and EXPRESS-007/009 deferred to Phase 21 |
-| Phase 20 | Rust interoperability; proposal has open design questions to settle |
+| Phase 20 | Implemented blocking FileIO, explicit Root ingress via Executor, managed Solo blocking, and compiler Branch parallelism |
+| 20.1 | Completed Root-admission safety hardening; executing Roots cannot recursively submit/admit another Root |
+| 20.2 | Completed bounds analysis, FileIO/Range semantics, lowering, and reviewer-completeness hardening |
+| 20.5 | Reserved FileIO/Executor performance and contention follow-up |
 | Phase 21 | Error propagation and supervision; clean-slate design after current contracts settle |
 | Phase 22 | Agent agency tooling; Phase 22.1 teaching diagnostics, Phase 22.2 benchmark/baseline, Phase 22.3 static semantic queries, and Phase 22.4 structured runtime debugging complete |
 | Phase 23 | Static Compiler Optimizations; LLM proposals are one possible technique |

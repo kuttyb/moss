@@ -272,7 +272,9 @@ local, intra-domain call. It has no mailbox, request/reply, or domain scheduling
 a compatibility spelling while existing programs migrate. A `fn` declared directly
 inside a `domain` is a domain message handler; `fn Handler(...)` is the canonical
 spelling. Legacy `on Handler(...)` may remain accepted for migration compatibility.
-Handlers are entered only through synchronous `message`; the declaration does not imply
+Handlers are entered through synchronous `message` or independent Root ingress;
+`executor.invoke` submits Roots only from `main`, and host `runtime_invoke`
+is external synchronous ingress. The declaration does not imply
 that all handlers on one domain are globally serialized. The production compiler may
 allow compatible executions to overlap under compiler-derived synchronization.
 A top-level `fn` declares an ordinary local function. Domain and handler headers may carry a trailing `:` when using indentation
@@ -362,11 +364,7 @@ Pipelines are typed expressions. The Phase 4 functional operations are `map`, `f
 `reduce`, `sum`, `count`, `any`, and `all`:
 
 ```moss
-result = values
-  |> map(normalize)
-  |> filter(_ > 0)
-  |> map(_ * scale)
-  |> sum
+result = values |> map(normalize) |> filter(_ > 0) |> map(_ * scale) |> sum
 
 total = values |> reduce(0, add)
 ```
@@ -429,7 +427,7 @@ Every call site must close the parameter to one statically known named function,
 `apply(double, 5)`; an unqualified sibling function and its module-qualified spelling
 name the same function. Moss emits one concrete specialization per function identity
 rather than a function object, function pointer, vtable, or runtime lookup. The passed
-function currently needs annotated parameter types, as a pipeline stage does. A
+function currently needs annotated parameter types. A
 callable parameter cannot be returned, stored in a field or collection, or passed
 across `message` or `reply`, and forwarding it into another helper's callable parameter
 is not currently supported. Placeholder expressions and bound methods such as
@@ -482,7 +480,8 @@ handler's value and terminates it immediately. A value-returning handler must re
 every normal path; a no-value handler may complete normally. Source-level `await` is
 retired and rejected with a migration diagnostic directing users to `message`.
 
-A naked dotted call whose receiver is a domain reference is a compile-time error. Self-
+A naked dotted call whose receiver is a domain reference, outside a recognized
+`executor.invoke` target, is a compile-time error. Self-
 send and same-domain handler chaining are also errors; reusable handler logic belongs in
 an ordinary statically resolved helper. Domains own mutable state, handlers run to
 completion without re-entrancy, and ownership boundaries are checked statically.
@@ -535,7 +534,8 @@ only when the checker can prove it bounded. The accepted shape is a counting loo
 
 A domain handle is not an ordinary Moss value. Its only source-level roles are
 a concrete binding in `main`'s initial composition prefix, the target of a named
-`domainroutes` binding, and the receiver of `message`. Route slots cannot be
+`domainroutes` binding, the receiver of `message`, and a statically known
+`executor.invoke` target in `main`. Route slots cannot be
 shadowed or reassigned.
 
 Handles cannot be function/method/handler parameters, message payloads, reply
@@ -566,6 +566,215 @@ Calls from `main` use its concrete composition bindings; they do not create
 additional domain-to-domain edges. Multiple slots may target the same instance.
 Ordinary execution cannot introduce another instance or routing capability.
 
+## File I/O
+
+FileIO is a built-in pinned owner for regular files. Operations are synchronous
+and use explicit offsets; no implicit shared file cursor exists.
+
+```moss
+fn main():
+  file = FileIO.open("input.dat", ro)
+  data = file.read(0, 4096)
+
+  for byte in data:
+    echo byte
+
+  part = data.slice(16, 32)
+  echo part.length()
+  file.close()
+```
+
+`path` is a `String`; modes are source tokens `ro`, `rw`, and `create`.
+`ro` opens an existing file for reads, `rw` an existing file for reads/writes,
+and `create` opens read/write and creates a file if absent. None truncates.
+
+| Form | Result/rule |
+|---|---|
+| `FileIO.open(path, mode)` | Constructs and opens a root-local owner |
+| `file.open(path, mode)` | Opens a closed domain field in place |
+| `file.read(offset, size)` | Borrowed `Range`; offset and size are `Int` |
+| `file.read(requests)` | Ordered scoped `RangeBatch` from bounded requests |
+| `file.write(offset, bytes)` | Synchronously writes a bounded `String` or `Range` |
+| `file.chunks(size)` | Special scoped FileIO source, not a storable collection |
+| `file.sync()` | Forces prior data and required metadata |
+| `file.sync(dataonly)` | Forces data and metadata needed to read it back |
+| `file.close()` | Releases the open owner; does not imply durability |
+
+Use explicit sync for durability. Either sync also makes the directory entry
+durable when this open created the file and that obligation is still pending.
+For example, writing to an existing output file:
+
+```moss
+fn main():
+  file = FileIO.open("output.dat", rw)
+  file.write(0, "Moss")
+  file.sync()
+  file.sync(dataonly)
+  file.close()
+```
+
+### Range and RangeBatch
+
+- `range.length() -> Int` counts bytes.
+- `range[index] -> Int` yields a byte in `0..255`; invalid indexing fails.
+- `for byte in range` visits bytes in index order.
+- `range.slice(start, length) -> Range` returns empty for negative start,
+  non-positive length, or start at/past the end; otherwise it clips to the
+  remaining bytes.
+- `Range == Range` and `Range != Range` compare bytes exactly. Range is not
+  UTF-8 text. Range/String comparisons are currently rejected, with no
+  implicit conversion; that cross-type equality policy remains provisional.
+- `batch[index]` yields a scoped borrowed Range, with checked indexing.
+  `for range in batch` traverses Ranges in request order. Views cannot outlive
+  the batch or enter ordinary storage.
+
+Batch tuple requests use `(offset, size)` pairs:
+
+```moss
+fn main():
+  file = FileIO.open("input.dat", ro)
+  batch = file.read([(0, 16), (4096, 32)])
+  first = batch[0]
+  echo first.length()
+  for data in batch:
+    echo data.length()
+  file.close()
+```
+
+A request vector may instead contain records with exactly the fields
+`offset: Int` and `size: Int`:
+
+```moss
+type Request:
+  offset: Int
+  size: Int
+
+fn main():
+  file = FileIO.open("input.dat", ro)
+  requests = [Request(offset: 0, size: 16), Request(offset: 4096, size: 32)]
+  batch = file.read(requests)
+  echo batch[0].length()
+  file.close()
+```
+
+### Ownership, bounds, and domain fields
+
+- FileIO is non-copyable/non-transferable. A root-local owner cannot be
+  aliased, returned, moved into domain state, or stored in ordinary objects
+  or collections. It must be explicitly closed on every normal exit from
+  the function that opened it, including `main` or a handler.
+- FileIO, Range, RangeBatch, and chunk sources cannot cross `message`, `reply`,
+  or `executor.invoke`. Scoped values cannot escape their owning lifetime.
+  Ordinary checked synchronous helpers may borrow FileIO/Range temporarily.
+- Request sizes, batch cardinality/total bytes, chunk sizes, and write
+  payloads require compiler-proven finite bounds. Current request-bound scope
+  is compile-time constants and immutable single-assignment aliases;
+  unconstrained size parameters are rejected. Bounds propagate through read,
+  batch indexing/iteration, chunks, and slice, and are invalidated by mutation.
+  Startup bounds and general dynamic clamp narrowing are deferred.
+- At runtime, only one live FileIO per `(device,inode)` is permitted
+  process-wide. Different path spellings do not create separate identities.
+- Open requires a closed owner; read/write/chunks/sync/close require an open
+  owner. Unexpected I/O/lifecycle failure is fail-closed in Phase 20.
+- Blocking regular-file I/O is allowed under the Solo contract: completion
+  must not require another Moss Root in this process. Duo I/O, including
+  sockets and pipes, is outside the implemented FileIO model.
+
+A domain field starts closed and is opened/closed in place. It is not supplied
+by transferring a root-local owner:
+
+```moss
+domain Store:
+  file: FileIO
+
+  fn Open(path: String):
+    file.open(path, ro)
+
+  fn Show():
+    data = file.read(0, 4096)
+    echo data.length()
+
+  fn Close():
+    file.close()
+
+fn main():
+  store = Store()
+  message store.Open("input.dat")
+  message store.Show()
+  message store.Close()
+```
+
+Domain-field read/chunks contribute READ; open/write/sync/close contribute
+WRITE, including through helper borrows. Root-local FileIO needs no Moss
+domain lock. A domain field may remain open until teardown; teardown is not
+durability. FileIO operations require native execution, not Fast Debug.
+
+## Executor and Root ingress
+
+```moss
+domain Worker:
+  fn Process(id: Int):
+    echo id
+
+fn main():
+  a = Worker()
+  b = Worker()
+  executor = Executor().threads(4).start()
+  executor.invoke(a.Process(1))
+  executor.invoke(b.Process(2))
+  executor.join()
+```
+
+Executor construction/configuration/start and `executor.invoke` belong
+directly in `main`. Configuration chains occupy one source line:
+
+```moss
+fn main():
+  executor = Executor().threads(8).max_threads(32).queue_capacity(128).affinity([0, 1]).priority(3).start()
+  executor.join()
+```
+
+| Configuration | Meaning |
+|---|---|
+| `threads(n)` | Positive `Int` target compute parallelism |
+| `max_threads(n)` | Positive `Int` finite worker cap, including Solo compensation; cannot be less than `threads` |
+| `queue_capacity(n)` | Positive `Int` limit on waiting Roots |
+| `affinity(cores)` | `Vector[Int]` of core IDs; best-effort scheduling hint |
+| `priority(level)` | `Int` priority hint; refusal warns without changing semantics |
+
+Settings are fixed before start; omitted settings use finite runtime defaults.
+Configuration values known at compile time are checked statically; runtime
+values are validated when starting the Executor.
+
+- `executor.invoke(concrete_domain.Handler(args...))` requires a statically
+  known concrete handler returning no value. The enclosed call is a target
+  description, not a synchronous call evaluated before submission.
+- Invoke evaluates arguments at submission, crosses a by-value boundary,
+  and returns no result or task handle. Payload eligibility excludes pinned
+  and scoped capabilities, including FileIO and Range.
+- Invoke may wait for bounded Root-queue admission. It is forbidden in
+  handlers and ordinary helpers, even helpers called from `main`.
+- At most one Executor is active. Every normal exit after start must reach
+  explicit `executor.join()`. Join waits for admitted Roots and consumes the
+  Executor; there is no implicit join or use after join.
+- A running Root/Branch cannot recursively perform Root admission, including
+  host ingress; start/join are also prohibited from Root execution.
+- A top-level `message` from `main` is synchronous Root ingress; a nested
+  `message` stays in the current Root. Without an active Executor, ingress
+  and compiler Branch execution use inline semantics.
+- A domain owns state; a Root is one independent handler execution. Scheduler
+  admission does not replace effect-derived domain synchronization.
+
+`result = message worker.Compute(x)` waits synchronously and may return a
+reply. `executor.invoke(worker.Compute(x))` is valid only if that handler is
+one-way; it creates an independent Root and has no result. Neither form
+introduces futures, task handles, user-created threads, or async syntax.
+Known Solo FileIO kernel waits may trigger bounded worker compensation;
+Moss-lock waits do not.
+
+For the complete contract and deferred work, see
+[Blocking FileIO and Executors](MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md).
+
 ## Rust boundary
 
 Moss source does not expose lifetimes, borrow annotations, `Arc`, `Mutex`, `Send`,
@@ -593,10 +802,17 @@ Self-send and same-domain handler chaining are rejected. Put shared handler
 logic in ordinary statically resolved helpers; earlier queued self-message designs
 are historical and superseded.
 
+Rust-host `runtime_invoke` is external synchronous Root ingress and returns
+the handler's reply. It uses the same Root-admission mechanism while the
+Executor is active; without one it uses serialized inline ingress. Host
+ingress is not Moss syntax and cannot be recursively invoked from an executing
+Root or Branch. Executor join does not itself end the program/runtime lifetime.
+
 ## Static iteration
 
 `for` is the statically resolved iteration form. Its source is resolved at compile
-time to a compiler-native traversal for `Vector` and `range`, or to a concrete
+time to a compiler-native traversal for `Vector`, `range`, `Range`, `RangeBatch`,
+or scoped `file.chunks(size)`, or to a concrete
 `Iterator` shape with `next() -> option[element]`:
 
 ```moss
@@ -619,6 +835,15 @@ Ordinary collection traversal is READ traversal. Structural collection mutation,
 such as `values.push(x)`, is rejected while that traversal is active. A user-defined
 iterator may mutate its own concrete iterator state through its statically resolved
 `next` method; that ownership effect is checked normally.
+
+`file.chunks(C)` borrows FileIO for consecutive explicit-offset chunks,
+including a short final chunk and stopping at zero-length EOF. It cannot be
+stored as an ordinary collection or cross a domain/Root boundary. The special
+immediate `file.chunks(C) |> map(f) |> reduce(init, combine)` form means
+sequential ordered processing. Eligible native lowering may read/map in a
+bounded window of compiler Branches, then commit and fold in source order;
+it creates no source-level Branch handle and does not require an associative
+combiner. See [the chunk contract](MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md#13-chunk-pipelines).
 
 ## Migration status and compatibility
 
