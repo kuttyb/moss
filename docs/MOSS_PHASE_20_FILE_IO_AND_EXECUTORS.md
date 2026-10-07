@@ -775,7 +775,7 @@ range.slice(start, length) -> Range
 - **Length (`range.length() -> Int`):** Returns the number of bytes in the range as an `Int`.
 - **Byte Indexing (`range[index] -> Int`):** Extracts the byte at 0-based `index` as an `Int` in the range `0..255`. Out-of-bounds indexing aborts with a diagnostic error message on stderr specifying the invalid index and valid length bounds rather than returning a default or silent EOF.
 - **Byte Iteration (`for byte in range`):** Iterates over the bytes in sequential index order, yielding byte-valued `Int`s in `0..255`.
-- **Slicing (`range.slice(start, length) -> Range`):** Produces a scoped sub-range view. The current compatibility behavior below is an explicit surface decision pending owner confirmation:
+- **Slicing (`range.slice(start, length) -> Range`):** Produces a scoped sub-range view. Phase 20 defines the following behavior:
   - `start < 0` → empty Range;
   - `length <= 0` → empty Range;
   - `start >= range.length()` → empty Range;
@@ -1187,7 +1187,7 @@ Holding a Moss lock during a slow but Solo disk operation is safe under this pro
   - **R5 runtime-leaf fairness is implemented and closed:** Runtime leaf locks (such as the process-local inode registry mutex) use fair ticket locks (`MossFairMutex`) and are never held across kernel waits or branch joins (A5).
   - **Moss domain read/write exclusion:** Lowered domain locking is implemented by `std::sync::RwLock` via `handler_lowering.inc` and `handler_runtime.hpp`. The physical implementation proves mutual exclusion and concurrent readers, but does **not** establish fair waiter admission or FIFO queuing.
 - **Proof Impact:**
-  - The deadlock-freedom part of A2 requires ranked two-phase locking but not fair waiter granting. Therefore the unresolved waiter-fairness portion of A2 does not invalidate Theorem 1a (deadlock freedom), which remains conditional on the other stated environmental and program assumptions A0–A7.
+  - Theorem 1a remains conditional on A0, A1, the ranked two-phase-locking portion of A2, and A3–A7; it does not depend on A2's fair-waiter premise.
   - Consequently Theorem 1b (progress) remains strictly **conditional on the fairness premise of A2**: while qualitative progress holds assuming finite Solo latency (A4), starvation freedom under domain lock contention requires fair granting.
 - **Proof Obligation:**
   - `SYNC-FAIR-001` tracks this outstanding broader Moss synchronization-proof and implementation issue: formally modeling and establishing starvation-freedom bounds across interleaved Solo and Moss-lock phases. Replacing generated `RwLock`s with fair domain synchronizers is deferred to a dedicated synchronization design and hardening phase.
@@ -1711,9 +1711,6 @@ Phase 20.2 hardened FileIO, Range semantics, request bounds propagation, chunk l
    current implementation scope. Startup-declared bounds and compiler-proven
    dynamic clamps remain deferred. A proven clamp can satisfy a static upper
    bound and is compatible with the bounded-memory proof.
-4. **`Range.slice` clamping.** The current empty/clipped behavior in §12.6 is
-   kept for compatibility during this pass and requires explicit owner
-   confirmation as the public surface rule.
 
 ### Phase 20.5 performance follow-up
 

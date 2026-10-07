@@ -1,11 +1,30 @@
 # Moss current status
 
+## Phase 20.2 documentation consistency
+
+Base: `a9be72e0bd38a96791cacf234fa1aaacccc5effc` on
+`phase-20.2-review-completeness`. This work has not been merged to `main`.
+
+Documentation-only cleanup restores `Range.slice(start, length)` as settled
+Phase 20 semantics: negative start, non-positive length, or start at/past the
+end yields an empty Range; otherwise length is clipped to remaining bytes.
+Theorem 1a explicitly depends on the ranked two-phase-locking portion of A2,
+without its fair-waiter premise; Theorem 1b retains that fairness condition.
+Range/String equality, breadth of untyped specialization, and startup/clamp
+bounds remain open owner decisions. Compiler/runtime sources, tests, and
+language skill guidance are unchanged.
+
+Validation: strict reviewer probes passed (30 bug, 26 guard, 2 pre-existing;
+8 design cases remain informational). The documentation example check,
+`make check`, and `git diff --check` passed. Bootstrap confirmed `moss-0.1`;
+the cleanup required no semantic changes.
+
 ## Phase 20.2 reopened reviewer completeness — 2026-10-06
 
 Branch: `phase-20.2-review-completeness`; reviewed starting HEAD:
 `e0094600096fe8734d69a1238f3faab4cd1010ec`. The earlier Phase 20.2
-"complete" entry below is superseded by this reopened review. Changes are
-committed locally at the owner's request; no merge to `main` or push was made.
+"complete" entry below is superseded by this reopened review. This work has
+not been merged to `main`.
 
 Implemented:
 
@@ -48,8 +67,8 @@ language-wide generic/static dispatch for any remaining untyped parameter,
 with a narrower contextual specialization alternative documented but not
 implemented; (C) constant/immutable-alias bound implementation scope, with
 startup declarations and proven dynamic clamps deferred (clamps are compatible
-with the memory proof); (D) current Range.slice clipping/empty behavior kept
-for compatibility pending owner confirmation. R5, E12, serial batch preads,
+with the memory proof). Range.slice clipping/empty behavior is settled Phase
+20 semantics. R5, E12, serial batch preads,
 fixed K=4 windows, Fast Debug FileIO scope, and Range as a generic pipeline
 source were not reopened. A2 remains tracked under `SYNC-FAIR-001`;
 performance work remains in Phase 20.5.
@@ -236,7 +255,7 @@ R5 fair admission, and agent skill/discovery all passed. `tests/run.sh`,
 `make examples`, and strict C++17 warnings-as-errors compilation passed.
 `make check` passed the full Moss v0.1 gate, including Agent C 54/54.
 `git diff --check` passed. The integration is ready for Phase 20.5 swarm and
-soak. No push was performed.
+soak.
 
 Explicit non-blocking Phase 20 limitations and follow-ups: Fast Debug FileIO
 execution is unsupported; startup-bound FileIO sizes and runtime clamp bounds
@@ -412,8 +431,7 @@ Validation (final tree):
 
 Remaining dependency: the end-to-end A+B+C executor compensation regression
 (contract in `docs/ROOT_RUNTIME_ABI.md`) has **not** run on this branch. It
-needs Agent C's executor and Agent A's FileIO source semantics. Not merged, not
-pushed.
+needs Agent C's executor and Agent A's FileIO source semantics.
 ## Historical Phase 20 Agent C — Final Hardened Executor Runtime — COMPLETE (2026-10-04)
 
 Final proof-level hardening and concurrency safety completed for Phase 20 Agent C executor and root runtime on branch `phase-20-c-executor-runtime`.
@@ -762,8 +780,7 @@ editor overlays, and discovery schema were used. Exact `at:` probes exposed the
 line-only resolver and missing embedded-message edges before implementation.
 Two full-suite compatibility repairs preserved bare-name ambiguity while
 keeping token-at-point declaration selection exact. No generated Rust was used
-to infer Moss semantics, no LSP server or Phase 22.6 work was added, and no push
-was performed.
+to infer Moss semantics, and no LSP server or Phase 22.6 work was added.
 
 ## Phase 22.5 pipeline completion legality — COMPLETE (2026-09-29)
 
@@ -1263,8 +1280,8 @@ The full suite includes the ownership, borrowed-value, message, native,
 interpreter, and agent/bootstrap coverage. Optional live LLDB CLI and
 lldb-dap checks were skipped because process tracing is unavailable in this
 environment; this is not an enum product failure. No known EXPRESS-005
-semantic blocker remains. EXPRESS-005 is closed on `main`; no push was performed
-by this session. Compiler-first bootstrap and structured diagnostics made the
+semantic blocker remains. EXPRESS-005 is closed on `main`.
+Compiler-first bootstrap and structured diagnostics made the
 READ-versus-CONSUME distinction clear; focused tests found the field-borrow
 overlap issue before the full suite. Impact/affected-test selection was not
 used because full validation was required. A useful future agent improvement
