@@ -40,8 +40,7 @@ Final validation succeeded:
 The earlier partial `make check` was interrupted for the compound-RHS bounds
 refinement and is superseded by the complete final run. Earlier focused
 results likewise do not substitute for the final runs above. No blockers or
-unfinished work remain for these three findings. Bounds and codegen fixes
-land together in the local closeout commit; no push is authorized or made.
+unfinished work remain for these three findings. Bounds and codegen fixes landed together in the Phase 20.2 closeout and have been rebased into main.
 Existing Phase 20 semantics and open owner decisions below remain unchanged.
 
 Compiler-agent self-report: bootstrap confirmed `moss-0.1`; structured
