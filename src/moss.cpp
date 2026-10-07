@@ -173,6 +173,34 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+// Iterator ownership is a concrete specialization fact. Built-in Range and
+// Vector traversal read their source; a custom Iterator uses next()'s actual
+// receiver effect. The checker and native lowering share this decision.
+template <typename ObjectMap>
+static Effect specialized_iterator_parameter_effect(
+    const Function& function, size_t index, const string& concrete_type,
+    const ObjectMap& objects) {
+  Effect effect = index < function.parameter_effects.size()
+      ? function.parameter_effects[index] : Effect::Read;
+  if (index >= function.params.size() || concrete_type.empty()) return effect;
+  const string& parameter = function.params[index].name;
+  bool iterates = std::any_of(
+      function.constraints.begin(), function.constraints.end(),
+      [&](const Constraint& constraint) {
+        return constraint.kind == ConstraintKind::Iterable &&
+            constraint.subject == parameter &&
+            constraint.detail == "static iterator";
+      });
+  if (!iterates) return effect;
+  auto object = objects.find(canonical_type_name(concrete_type));
+  if (object == objects.end()) return effect;
+  for (const auto& method : object->second->methods)
+    if (method.name == "next" && method.params.empty() &&
+        static_cast<int>(method.receiver_effect) > static_cast<int>(effect))
+      effect = method.receiver_effect;
+  return effect;
+}
+
 // Map built-ins need the concrete key/value types in the checker and native
 // backend. Keep that decoding in one place so their type and lowering rules
 // cannot drift apart.
@@ -2964,8 +2992,9 @@ class Checker {
     }
     TypeEnv entry_env = env;
     TypeEnv inferred_env = env;
-    infer_statement_expressions(f.body, inferred_env);
     StaticBindingScope function_bounds(static_bound_bindings_);
+    static_bound_bindings_.clear();
+    infer_statement_expressions(f.body, inferred_env);
     static_bindings_for_body(f.body, entry_env);
     env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
@@ -3476,6 +3505,57 @@ class Checker {
     return std::nullopt;
   }
 
+  struct BuiltinCallSemantics {
+    string result_type;
+    ObservableEffects observable_effects;
+    BuiltinCallSemantics(string result, bool may_fail)
+        : result_type(std::move(result)) {
+      observable_effects.unresolved = false;
+      observable_effects.may_fail = may_fail;
+    }
+    bool pure() const { return observable_effects.fusion_safe(); }
+  };
+
+  // One checked source for built-in call typing and observable effects.
+  // Constructors are recognized by declaration/type structure, not by a
+  // separate purity whitelist. Unknown calls have no metadata and stay
+  // unresolved in effect analysis.
+  std::optional<BuiltinCallSemantics> builtin_call_semantics(
+      const string& callee, const vector<string>& args,
+      const TypeEnv& env) const {
+    if (objects_.count(callee)) return BuiltinCallSemantics{callee, false};
+    if (callee == "Map" && args.empty())
+      return BuiltinCallSemantics{"map", false};
+    if (callee == "Queue" && args.empty())
+      return BuiltinCallSemantics{"queue", false};
+    if (callee == "range" && (args.size() == 2 || args.size() == 3))
+      return BuiltinCallSemantics{"range[int]", false};
+    if (callee == "sqrt" && args.size() == 1)
+      return BuiltinCallSemantics{"float", false};
+    if (callee == "Some" && args.size() == 1) {
+      auto element = inferred_expr_type(args.front(), env);
+      return BuiltinCallSemantics{
+          "option[" + element.value_or("_") + "]", false};
+    }
+    if (callee == "sum" && args.size() == 1) {
+      auto argument = inferred_expr_type(args.front(), env);
+      if (!argument) return std::nullopt;
+      if ((starts_with(*argument, "seq[") ||
+           starts_with(*argument, "vector[")) && ends_with(*argument, "]")) {
+        size_t opening = argument->find('[');
+        return BuiltinCallSemantics{
+            trim(argument->substr(opening + 1,
+                                  argument->size() - opening - 2)), false};
+      }
+      return BuiltinCallSemantics{*argument, false};
+    }
+    if (callee == "assert" && args.size() == 1)
+      return BuiltinCallSemantics{"unit", true};
+    if (callee == "assertEqual" && args.size() == 2)
+      return BuiltinCallSemantics{"unit", true};
+    return std::nullopt;
+  }
+
   std::optional<string> inferred_expr_type(const string& expression,
                                            const std::unordered_map<string,string>& env) const {
     string original = strip_redundant_outer_parentheses(expression);
@@ -3531,8 +3611,6 @@ class Checker {
     if (plain_identifier(e) && functions_.count(e))
       return "callable:" + e;
     if (auto typed_vector = typed_empty_vector_constructor(e)) return *typed_vector;
-    if (e == "Map()") return string("map");
-    if (e == "Queue()") return string("queue");
     // Phase 20: `Executor()` begins a compiler-recognized configuration chain
     // (see parse_executor_chain); it is not a general object construction.
     if (e == "Executor()") return string("executor");
@@ -3589,25 +3667,8 @@ class Checker {
       string callee;
       vector<string> args;
       if (!parse_simple_call(e, callee, args)) return std::nullopt;
-      if (objects_.count(callee)) return callee;
-      if (callee == "assert" || callee == "assertEqual")
-        return string("unit");
-      if (callee == "sqrt") return string("float");
-      if (callee == "sum" && args.size() == 1) {
-        auto argument_type = inferred_expr_type(args.front(), env);
-        if (argument_type && starts_with(*argument_type, "seq[") && ends_with(*argument_type, "]"))
-          return trim(argument_type->substr(4, argument_type->size() - 5));
-        if (argument_type && starts_with(*argument_type, "vector[") && ends_with(*argument_type, "]"))
-          return trim(argument_type->substr(7, argument_type->size() - 8));
-        return argument_type;
-      }
-      if (callee == "Some" && args.size() == 1) {
-        auto value_type = inferred_expr_type(args.front(), env);
-        if (value_type) return "option[" + *value_type + "]";
-        return "option[_]";
-      }
-      if (callee == "range" && (args.size() == 2 || args.size() == 3))
-        return "range[int]";
+      if (auto builtin = builtin_call_semantics(callee, args, env))
+        return builtin->result_type;
       string target = callee;
       auto binding = env.find(callee);
       if (binding != env.end()) {
@@ -5210,6 +5271,13 @@ class Checker {
         ? function.parameter_effects[index] : Effect::Read;
   }
 
+  Effect concrete_function_parameter_effect(const Function& function,
+                                            size_t index,
+                                            const string& concrete_type) const {
+    return specialized_iterator_parameter_effect(
+        function, index, concrete_type, objects_);
+  }
+
   static Effect method_parameter_effect(const Method& method, size_t index) {
     return index < method.parameter_effects.size()
         ? method.parameter_effects[index] : Effect::Read;
@@ -6145,7 +6213,9 @@ class Checker {
           return;
         }
         for (size_t index = 0; index < call_arguments.size(); ++index) {
-          Effect argument_effect = function_parameter_effect(*function->second, index);
+          Effect argument_effect = concrete_function_parameter_effect(
+              *function->second, index,
+              inferred_expr_type(call_arguments[index], env).value_or(""));
           analyze_effect_expression(call_arguments[index], env, params,
                                     parameter_effects, receiver_effect,
                                     receiver_fields, argument_effect);
@@ -7018,23 +7088,9 @@ class Checker {
           analyze_effect_expression(*function.result_expression, env, function.params,
                                     inferred, receiver, no_fields, Effect::Consume);
         parameter_mutation_capture_ = previous_mutation_capture;
-        for (const auto& constraint : function.constraints) {
-          if (constraint.kind != ConstraintKind::Iterable ||
-              constraint.detail != "static iterator")
-            continue;
-          auto parameter = std::find_if(
-              function.params.begin(), function.params.end(),
-              [&](const Param& candidate) {
-                return candidate.name == constraint.subject;
-              });
-          if (parameter != function.params.end()) {
-            size_t parameter_index = static_cast<size_t>(
-                parameter - function.params.begin());
-            if (parameter_index < inferred.size())
-              inferred[parameter_index] = join_effect(
-                  inferred[parameter_index], Effect::Write);
-          }
-        }
+        // Iterability alone carries no WRITE effect. analyze_effect_block
+        // records the source access (READ for Range/Vector traversal, or the
+        // concrete Iterator.next receiver effect). The loop binding is local.
         if (inferred != function.parameter_effects) {
           function.parameter_effects = std::move(inferred);
           changed = true;
@@ -7378,12 +7434,11 @@ class Checker {
           return effects;
         }
       }
-      if (callee == "assert" || callee == "assertEqual") {
-        effects.may_fail = true;
+      if (auto builtin = builtin_call_semantics(callee, arguments_call, env)) {
+        effects.merge(builtin->observable_effects);
         return effects;
       }
-      if (typed_empty_vector_constructor(value) || objects_.count(callee) || callee == "sqrt" || callee == "sum" ||
-          callee == "range" || callee == "Map" || callee == "Queue")
+      if (typed_empty_vector_constructor(value))
         return effects;
       effects.unresolved = true;
       return effects;
@@ -7903,7 +7958,6 @@ class Checker {
         node.effects = functional_stage_effects(
             callable, callback_input_types, env, node.callable_identity,
             node.captures, domain_fields, implicit_object);
-#ifndef NDEBUG
         // Generic higher-order bodies are intentionally unresolved until a
         // concrete call site specializes them.  Every other pipeline reaching
         // the checked functional IR must have a concrete callable identity;
@@ -7918,7 +7972,6 @@ class Checker {
             err(stage_line, "cannot resolve observable effects for callable '" + callable + "' in functional pipeline", "FUNCTIONAL_CALLABLE_UNRESOLVED");
           }
         }
-#endif
         if (owning_function &&
             !starts_with(node.callable_identity, "placeholder:") &&
             !node.callable_identity.empty() &&
@@ -7928,8 +7981,9 @@ class Checker {
                 owning_function->callable_dependencies.end())
           owning_function->callable_dependencies.push_back(node.callable_identity);
         auto function = functions_.find(node.callable_identity);
-        if (function != functions_.end() && !function->second->parameter_effects.empty())
-          node.ownership = function->second->parameter_effects.front();
+        if (function != functions_.end() && !callback_input_types.empty())
+          node.ownership = concrete_function_parameter_effect(
+              *function->second, 0, callback_input_types.front());
         string bound_receiver, bound_method;
         if (parse_bound_method_callable(node.callable_identity, bound_receiver,
                                         bound_method)) {
@@ -8376,7 +8430,8 @@ class Checker {
                  index < callback_inputs.size() &&
                      index < function->second->params.size();
                  ++index) {
-              Effect effect = function_parameter_effect(*function->second, index);
+              Effect effect = concrete_function_parameter_effect(
+                  *function->second, index, callback_inputs[index]);
               bool element_input =
                   stage.kind != FunctionalNodeKind::Reduce || index == 1;
               if (element_input && !copy_type(callback_inputs[index]) &&
@@ -8683,7 +8738,9 @@ class Checker {
       if (function != functions_.end()) {
         vector<Effect> effects;
         for (size_t index = 0; index < call_arguments.size(); ++index)
-          effects.push_back(function_parameter_effect(*function->second, index));
+          effects.push_back(concrete_function_parameter_effect(
+              *function->second, index,
+              inferred_expr_type(call_arguments[index], env.types).value_or("")));
         check_conflicting_call_accesses(line, callee, call_arguments, effects, env);
       } else if (current_object_) {
         vector<string> argument_types;
@@ -8709,7 +8766,9 @@ class Checker {
       }
       for (size_t index = 0; index < call_arguments.size(); ++index) {
         Effect argument_effect = function == functions_.end()
-            ? Effect::Read : function_parameter_effect(*function->second, index);
+            ? Effect::Read : concrete_function_parameter_effect(
+                  *function->second, index,
+                  inferred_expr_type(call_arguments[index], env.types).value_or(""));
         check_ownership_expression(line, call_arguments[index], env, argument_effect);
       }
       return;
@@ -9240,8 +9299,9 @@ class Checker {
       specialized_env[function.params[index].name] = canonical_types[index];
     FunctionSpecialization* previous = checking_specialization_;
     checking_specialization_ = &function.specializations.back();
-    infer_statement_expressions(function.body, specialized_env);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
+    static_bound_bindings_.clear();
+    infer_statement_expressions(function.body, specialized_env);
     static_bindings_for_body(function.body, specialized_env);
     check_stmts(function.body, specialized_env, nullptr, nullptr, &function);
     OwnershipEnv specialized_ownership;
@@ -9324,7 +9384,7 @@ class Checker {
     }
     auto function = functions_.find(target);
     if (function == functions_.end()) {
-      if (name == "sqrt" || name == "sum") return;
+      if (builtin_call_semantics(name, args, env)) return;
       if (current_object_) {
         vector<string> argument_types;
         for (const auto& arg : args) argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
@@ -9890,6 +9950,11 @@ class Checker {
             "UNSUPPORTED_STRING_ORDERING");
         return;
       }
+      if ((left && canonical_type_name(*left) == "Range") ||
+          (right && canonical_type_name(*right) == "Range")) {
+        err(line, "Range ordering operators are unsupported", "TYPE_MISMATCH");
+        return;
+      }
     }
     for (const auto& operators : vector<vector<string>>{{"==", "!=", "<=", ">=", "<", ">"},
                                                          {"+", "-", "*", "/", "%"}}) {
@@ -9908,11 +9973,14 @@ class Checker {
             if (left_type && right_type) {
               string lt = canonical_type_name(*left_type);
               string rt = canonical_type_name(*right_type);
-              if ((lt == "Range" && rt == "string") || (lt == "string" && rt == "Range")) {
-                err(line, "cannot compare Range and String; convert explicitly or compare identical types",
+              if ((lt == "Range" || rt == "Range") && lt != rt) {
+                err(line, "Range equality requires two Range operands",
                     "TYPE_MISMATCH");
               }
             }
+          } else if ((left_type && canonical_type_name(*left_type) == "Range") ||
+                     (right_type && canonical_type_name(*right_type) == "Range")) {
+            err(line, "Range arithmetic is unsupported", "TYPE_MISMATCH");
           }
           if (split_binary(value, {"%"})) {
             auto left = inferred_expr_type(binary->first, env);
@@ -10247,9 +10315,12 @@ class Checker {
                       const Function* current_function = nullptr,
                       bool main_body = false) {
     StaticBindingScope bound_scope(static_bound_bindings_);
-    static_bindings_for_body(statements, env);
+    auto bound_snapshots = static_bindings_for_body(statements, env);
     TypeEnvVisitor check_statement = [&](const Stmt& statement,
                                          const TypeEnv& current_env) {
+      if (auto snapshot = bound_snapshots.find(&statement);
+          snapshot != bound_snapshots.end())
+        static_bound_bindings_ = snapshot->second;
       if (!statement.source_file.empty()) current_source_file_ = statement.source_file;
       // The type-environment walker visits nested statements with this same
       // visitor, so every message under main (including branch and loop
@@ -12455,9 +12526,10 @@ class Generator {
     return true;
   }
 
-  static Effect function_effect(const Function& function, size_t index) {
-    return index < function.parameter_effects.size()
-        ? function.parameter_effects[index] : Effect::Read;
+  Effect function_effect(const Function& function, size_t index,
+                         const string& concrete_type = {}) const {
+    return specialized_iterator_parameter_effect(
+        function, index, concrete_type, objects_);
   }
 
   static Effect method_effect(const Method& method, size_t index) {
@@ -12468,7 +12540,7 @@ class Generator {
   bool should_borrow_function_parameter(const Function& function, size_t index,
                                         const string& parameter_type,
                                         const string& actual_type) const {
-    Effect effect = function_effect(function, index);
+    Effect effect = function_effect(function, index, actual_type);
     if (effect == Effect::Consume) return false;
     if (effect == Effect::Write) return true;
     const auto& parameter = function.params[index];
@@ -12537,9 +12609,9 @@ class Generator {
         argument, index < function.params.size() ? function.params[index].type : "",
         d, locals, types, functional_pipeline_id);
     if (index >= function.params.size()) return rendered;
-    Effect effect = function_effect(function, index);
     string parameter_type = function.params[index].type;
     string actual_type = generated_expr_type(argument, types).value_or("");
+    Effect effect = function_effect(function, index, actual_type);
     if (!should_borrow_function_parameter(function, index, parameter_type, actual_type))
       return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
@@ -13060,7 +13132,9 @@ class Generator {
       for (size_t write_index = 0;
            write_index < arguments.size() && write_index < function.params.size();
            ++write_index) {
-        if (function_effect(function, write_index) != Effect::Write) continue;
+        if (function_effect(function, write_index,
+                generated_expr_type(arguments[write_index], types).value_or(""))
+            != Effect::Write) continue;
         string written = trim(arguments[write_index]);
         bool writes_direct_field = !locals.count(written) &&
             std::any_of(domain->state.begin(), domain->state.end(),
@@ -13294,7 +13368,7 @@ class Generator {
     for (size_t index = 0; index < arguments.size(); ++index) {
       if (index) rendered << ", ";
       const auto& argument = arguments[index];
-      Effect effect = function_effect(*function->second, index);
+      Effect effect = function_effect(*function->second, index, argument.type);
       bool borrow = effect != Effect::Consume && (effect == Effect::Write || borrowable_type(argument.type));
       if (domains_.count(canonical_type_name(argument.type))) {
         if (argument.reference)
@@ -14995,7 +15069,7 @@ class Generator {
       } else {
         parameter_rust_type = rust_type(pt);
       }
-      Effect effect = function_effect(f, index);
+      Effect effect = function_effect(f, index, pt);
       if (view && effect != Effect::Consume && view_object_type(pt)) {
         o << f.params[index].name << ": " << (effect == Effect::Write ? "&mut " : "&") << "impl " << access_trait(pt);
         continue;
@@ -15044,9 +15118,9 @@ class Generator {
     }
     write_through_parameters_.clear(); view_parameters_.clear();
     for (size_t index = 0; index < f.params.size(); ++index) {
-      if (view && function_effect(f, index) != Effect::Consume && view_object_type(types.at(f.params[index].name)))
+      if (view && function_effect(f, index, types.at(f.params[index].name)) != Effect::Consume && view_object_type(types.at(f.params[index].name)))
         view_parameters_.insert(f.params[index].name);
-      else if (function_effect(f, index) == Effect::Write)
+      else if (function_effect(f, index, types.at(f.params[index].name)) == Effect::Write)
         write_through_parameters_.insert(f.params[index].name);
     }
     string functional_context = functional_function_context(f, specialization);
@@ -15063,7 +15137,7 @@ class Generator {
                                      [&](const Param& p) { return p.name == expr_trimmed; });
         if (param_it != f.params.end()) {
           size_t p_idx = std::distance(f.params.begin(), param_it);
-          if (function_effect(f, p_idx) != Effect::Consume) {
+          if (function_effect(f, p_idx, types.at(f.params[p_idx].name)) != Effect::Consume) {
             if (view) rendered = expr_trimmed + ".__moss_value()";
             else rendered = "(" + rendered + ").clone()";
           }
@@ -15077,7 +15151,7 @@ class Generator {
     borrowed_function_parameters_.clear();
     bool needs_view = false;
     for (size_t i = 0; i < f.params.size(); ++i)
-      needs_view |= function_effect(f, i) != Effect::Consume &&
+      needs_view |= function_effect(f, i, types.at(f.params[i].name)) != Effect::Consume &&
           view_object_type(specialization ? specialization->parameter_types[i] : f.params[i].type);
     if (!view && needs_view) gen_function_instance(o, f, specialization, true);
   }

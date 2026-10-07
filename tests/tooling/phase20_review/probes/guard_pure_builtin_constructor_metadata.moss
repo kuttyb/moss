@@ -1,0 +1,23 @@
+# Callable effects use the same constructor/builtin typing metadata.
+enum Tag:
+  Tagged(value: Int)
+
+fn square_root(x: Float) -> Float:
+  return sqrt(x)
+
+fn pure_ops(x: Int) -> Int:
+  option = Some(x)
+  tag = Tag.Tagged(value: x)
+  for index in range(0, 2):
+    pass
+  map_value = Map()
+  map_value[1] = 2
+  queue_value = Queue()
+  queue_value.push(1)
+  root = square_root(4.0)
+  return x
+
+fn main():
+  values = [1, 2]
+  mapped = values |> map(pure_ops)
+  echo mapped |> sum

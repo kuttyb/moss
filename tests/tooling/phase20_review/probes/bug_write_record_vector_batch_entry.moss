@@ -1,0 +1,13 @@
+# A bounded request-record vector carries per-entry Range bounds.
+type Request:
+  offset: Int
+  size: Int
+
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/record-batch.txt", create)
+  requests = [Request(offset: 0, size: 4), Request(offset: 4, size: 8)]
+  batch = src.read(requests)
+  dst.write(0, batch[1])
+  dst.close()
+  src.close()

@@ -1,5 +1,59 @@
 # Moss current status
 
+## Phase 20.2 reopened reviewer completeness — 2026-10-06
+
+Branch: `phase-20.2-review-completeness`; reviewed starting HEAD:
+`e0094600096fe8734d69a1238f3faab4cd1010ec`. The earlier Phase 20.2
+"complete" entry below is superseded by this reopened review. Changes are
+committed locally at the owner's request; no merge to `main` or push was made.
+
+Implemented:
+
+- Replaced the function-wide textual bound alias map with statement snapshots
+  of binding-origin facts. Rebinding, shadowing, branch joins, loop body scope,
+  loop-carried writes, function scope, and specialization scope now control
+  fact lifetime. Request-record vectors capture size facts at construction;
+  batch legality and Range propagation share one normalized request parser.
+- Bounded RangeBatch entry indexing and iteration use exact entry bounds or a
+  conservative maximum. Unbounded entries fail closed. Added negative probes
+  for both stale chunk-name exploits, loop-carried rebinding, and request-size
+  alias rebinding.
+- Kept `FUNCTIONAL_CALLABLE_UNRESOLVED` outside `NDEBUG` and added a normal vs
+  `-DNDEBUG` semantic comparison gate. Builtin/constructor typing and
+  observable effects query shared metadata; unknown calls remain unresolved.
+- Completed Range equality, inequality, ordering, and arithmetic rejection
+  checks and added an operator matrix. Iteration effects now distinguish
+  read-only Range/Vector traversal from custom `Iterator.next()` WRITE effects
+  at each concrete function specialization, including native call signatures.
+- Rewrote §3 and §23 Executor snippets into current single-line Moss syntax,
+  added a documentation continuation check, and corrected §12.7 proof wording.
+  The permanent strict reviewer suite now has 30 bug, 26 guard, and 2
+  pre-existing passing probes; 8 design probes remain informational. Original
+  passing reviewer probes were preserved.
+
+Validation on the final source: `tests/run.sh ./moss build/tests` passed,
+including Agent A FileIO semantics, Agent B FileIO runtime, Agent C Executor
+54/54, Agent D integration, domain-field physical concurrency, R5 leaf
+fairness, Phase 20.1 E12 cases, agent skills/discovery, strict reviewer probes,
+and normal/`-DNDEBUG` semantic equivalence. `make examples` passed. A strict
+C++17 `-Wall -Wextra -Werror -pedantic` build and `make check` passed.
+`git diff --check` passed. Earlier `tests/run.sh`
+attempts were invalidated by later source edits; one pre-final run also had a
+single Executor stress timeout under simultaneous C++ compilation, and the
+same 54-test suite passed in isolation and in the final `tests/run.sh` run.
+
+Owner decisions still pending, explicitly surfaced in §29 of the Phase 20
+spec: (A) provisional Range/String equality rejection; (B) existing
+language-wide generic/static dispatch for any remaining untyped parameter,
+with a narrower contextual specialization alternative documented but not
+implemented; (C) constant/immutable-alias bound implementation scope, with
+startup declarations and proven dynamic clamps deferred (clamps are compatible
+with the memory proof); (D) current Range.slice clipping/empty behavior kept
+for compatibility pending owner confirmation. R5, E12, serial batch preads,
+fixed K=4 windows, Fast Debug FileIO scope, and Range as a generic pipeline
+source were not reopened. A2 remains tracked under `SYNC-FAIR-001`;
+performance work remains in Phase 20.5.
+
 ## Phase 20.2 — Reviewer Completeness Hardening
 
 Phase 20.2 complete on branch `phase-20.2-review-completeness`.

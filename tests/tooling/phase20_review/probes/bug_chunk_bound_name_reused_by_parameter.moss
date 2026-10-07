@@ -1,0 +1,12 @@
+# Reviewer completeness variant: a loop binding must not bound its parameter.
+fn copy(item: String):
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/stale-param.txt", create)
+  for item in src.chunks(8):
+    pass
+  dst.write(0, item)
+  dst.close()
+  src.close()
+
+fn main():
+  copy("unbounded parameter payload")

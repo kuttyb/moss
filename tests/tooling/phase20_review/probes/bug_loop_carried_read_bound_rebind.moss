@@ -1,0 +1,11 @@
+# A bound used by an iterated read can change before the next iteration.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/loop-carried.txt", create)
+  size = 4
+  for index in range(0, 2):
+    r = src.read(0, size)
+    size = 40
+    dst.write(0, r)
+  dst.close()
+  src.close()

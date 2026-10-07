@@ -1,0 +1,9 @@
+# The first chunk loop remains bounded; its fact ends at the loop boundary.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/chunk-guard.txt", create)
+  for item in src.chunks(8):
+    dst.write(0, item)
+  dst.close()
+  src.close()
+  echo 1

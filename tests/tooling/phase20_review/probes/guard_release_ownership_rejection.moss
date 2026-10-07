@@ -1,0 +1,8 @@
+fn change(first: FileIO, second: FileIO):
+  first.write(0, "x")
+  data = second.read(0, 4)
+
+fn main():
+  file = FileIO.open("tmp/phase20-review/input.txt", rw)
+  change(file, file)
+  file.close()

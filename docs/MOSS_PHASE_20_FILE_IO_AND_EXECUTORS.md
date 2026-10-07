@@ -161,11 +161,7 @@ The Moss-facing executor is configured in `main`.
 fn main():
   worker = Worker()
 
-  executor = Executor()
-    .threads(8)
-    .max_threads(32)
-    .queue_capacity(128)
-    .start()
+  executor = Executor().threads(8).max_threads(32).queue_capacity(128).start()
 
   executor.invoke(worker.Process("input.txt"))
 
@@ -779,13 +775,13 @@ range.slice(start, length) -> Range
 - **Length (`range.length() -> Int`):** Returns the number of bytes in the range as an `Int`.
 - **Byte Indexing (`range[index] -> Int`):** Extracts the byte at 0-based `index` as an `Int` in the range `0..255`. Out-of-bounds indexing aborts with a diagnostic error message on stderr specifying the invalid index and valid length bounds rather than returning a default or silent EOF.
 - **Byte Iteration (`for byte in range`):** Iterates over the bytes in sequential index order, yielding byte-valued `Int`s in `0..255`.
-- **Slicing (`range.slice(start, length) -> Range`):** Produces a scoped sub-range view. Current slice behavior is exact:
+- **Slicing (`range.slice(start, length) -> Range`):** Produces a scoped sub-range view. The current compatibility behavior below is an explicit surface decision pending owner confirmation:
   - `start < 0` → empty Range;
   - `length <= 0` → empty Range;
   - `start >= range.length()` → empty Range;
   - otherwise length is clipped to the remaining bytes (`min(length, range.length() - start)`).
 - **Exact Byte Equality (`range1 == range2`):** Evaluates exact byte-slice equality (`[u8] == [u8]`) between two `Range` values.
-- **Type Distinction (`Range` vs `String`):** Comparing `Range == String` or `String == Range` is illegal and rejected at compile time with a `TYPE_MISMATCH` diagnostic. Moss enforces a strict type distinction between binary byte slices and UTF-8 text strings; implicit lossy decoding during comparison is prohibited.
+- **Type Distinction (`Range` vs `String`):** The current implementation rejects `Range == String` and `String == Range` with `TYPE_MISMATCH`. This remains a provisional design choice pending owner confirmation; no implicit conversion is implemented.
 - **Writing Ranges (`FileIO.write(offset, range)`):** `FileIO.write(offset, range)` is legal when the compiler carries a statically known finite bound for that Range (inherited from the originating `read`, slice, batch indexing, or chunk iteration).
 - **Bounds Propagation:** Static payload bounds propagate through `read(offset, size)` (bounded by `size`), batch indexing `batch[i]` (bounded by the statically known batch entry size or maximum of batch entry sizes), chunk iterators `for chunk in file.chunks(C)` (bounded by `C`), and sub-slicing `r.slice(offset, length)` (bounded by `min(bound(r), length)`). Non-mutating methods such as `.length()` and `.slice(...)` do not invalidate static payload bounds.
 
@@ -804,19 +800,14 @@ This covers:
 - individual batch entry sizes;
 - chunk size.
 
-#### Deliberate narrowing vs October proposal
+#### Current implementation scope
 
-Startup-configuration bounds and compiler-proven runtime clamps are deliberately
-deferred; Moss v0.1 defines no startup-bound declaration or clamp primitive.
-Do not pass an unconstrained function parameter as a request size. The canonical
-domain example uses a fixed bounded read, as shown above.
-
-This Phase 20 narrowing is an intentional language design decision, not an
-unintentional omission: static verification of constant-bounded requests guarantees
-finite buffer memory (Theorem 2) at compile time without relying on runtime clamping
-or dynamic allocations that could fail or alter semantics unexpectedly. Design probes
-probing startup bounds or dynamic clamps remain informational indicators of potential
-future language extensions rather than defects in Phase 20.
+Phase 20 implementation currently supports compile-time constants and immutable
+aliases. Startup-declared bounds and compiler-proven dynamic clamps are deferred
+implementation and design work. A compiler-proven clamp is also a static upper
+bound and is compatible with the bounded-memory proof. Do not pass an
+unconstrained function parameter as a request size. The canonical domain
+example uses a fixed bounded read, as shown above.
 
 ### 12.8 Sync
 
@@ -1480,9 +1471,7 @@ A stateless domain instance may service many independent roots, each with its ow
 fn main():
   worker = Worker()
 
-  executor = Executor()
-    .threads(8)
-    .start()
+  executor = Executor().threads(8).start()
 
   for path in files:
     executor.invoke(worker.Process(path))
@@ -1701,6 +1690,30 @@ Phase 20.1 made the no-root-originated-admission rule explicit and added regress
 ### Phase 20.2 reviewer completeness hardening
 
 Phase 20.2 hardened FileIO, Range semantics, request bounds propagation, chunk lowering, and generic callback specialization against the independent reviewer probe suite. The strict suite is permanently integrated into the normal repository gate (`tests/run.sh`).
+
+#### Owner decisions pending after completeness review
+
+1. **Range/String equality.** The checker currently rejects `Range == String`
+   and `String == Range` with `TYPE_MISMATCH`. This is a provisional design
+   choice, not a settled owner decision. Confirm the strict byte/text type
+   distinction or specify explicit conversion semantics.
+2. **Untyped function specialization.** Current finalization marks every
+   function with any remaining untyped parameter as generic with static
+   dispatch, including functions unrelated to FileIO. This broadens
+   acceptance and can increase specialization count, generated code size, and
+   compilation work. Existing concrete calls remain statically closed; the
+   review suite and repository gates audit their behavior. A narrower
+   alternative is contextual specialization only for untyped functions used
+   as functional callables or reached with a concrete Range/Vector argument
+   on the Phase 20 path. That alternative needs an explicit owner decision
+   before replacing current behavior.
+3. **Bound narrowing.** Compile-time constants and immutable aliases are the
+   current implementation scope. Startup-declared bounds and compiler-proven
+   dynamic clamps remain deferred. A proven clamp can satisfy a static upper
+   bound and is compatible with the bounded-memory proof.
+4. **`Range.slice` clamping.** The current empty/clipped behavior in §12.6 is
+   kept for compatibility during this pass and requires explicit owner
+   confirmation as the public surface rule.
 
 ### Phase 20.5 performance follow-up
 

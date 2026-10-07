@@ -1,0 +1,10 @@
+# An inline request list carries its bound into a RangeBatch loop binding.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/inline-batch.txt", create)
+  off = 0
+  for r in src.read([(0, 4), (4, 8)]):
+    dst.write(off, r)
+    off = off + r.length()
+  dst.close()
+  src.close()

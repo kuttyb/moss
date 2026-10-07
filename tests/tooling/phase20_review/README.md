@@ -1,7 +1,11 @@
 # Phase 20 review probes
 
-Probe programs from the review of `phase-20-integration` at `2f62205`.
-Unzip at the repository root; everything lands in `tests/tooling/phase20_review/`.
+The original probe programs came from the independent review of
+`phase-20-integration` at `2f62205`. The reviewer-completeness variants added
+after `e009460` were written from the owner's reopened review findings; no
+updated reviewer probe archive was supplied. Existing passing probe sources and
+expectations were preserved. `manifest.json` is the current suite inventory;
+the tables below retain the original review's historical observations.
 
 ```sh
 make
@@ -24,9 +28,15 @@ At `2f62205` the full run takes about 25 seconds.
 | `pre-existing` | Reproduces on `d3cdc52` (before Phase 20); the Phase 20 surface makes it easy to hit | with `--strict` |
 | `design` | Outcome depends on an open design decision; prints what the compiler does and what the Oct 4 proposal implied | never |
 
-Loops appear only where the loop is the subject of the probe (the for-range
-assertion, byte iteration). `design_range_as_pipeline_source` records that a
-Range cannot be a pipeline source today, so byte processing is loop-only.
+The new variants exercise lexical chunk bounds, RangeBatch iteration, the
+Range operator matrix, pure constructor effects, and typed/untyped loop
+ownership. `design_range_as_pipeline_source` remains an informational design
+record.
+
+`bug_range_eq_string_binary` retains its historical expectation as a passing
+review probe. The `Range` versus `String` equality rule itself is a provisional
+owner decision, recorded separately in §29 of the Phase 20 spec and in
+`.codex/CURRENT_STATUS.md`; passing this probe does not settle that decision.
 
 Test data, rewritten before every probe: `input.txt` holds
 `hello world this is a test file with some words` and a newline (48 bytes,

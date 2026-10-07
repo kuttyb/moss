@@ -1,0 +1,14 @@
+# A request record captures its size before the local size name is rebound.
+fn run(size: Int):
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  requests = [Request(offset: 0, size: size)]
+  size = 4
+  batch = src.read(requests)
+  src.close()
+
+type Request:
+  offset: Int
+  size: Int
+
+fn main():
+  run(8)

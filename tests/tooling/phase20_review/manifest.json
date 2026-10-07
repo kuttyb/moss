@@ -305,6 +305,187 @@
    }
   },
   {
+   "name": "bug_chunk_bound_name_reused_by_vector_loop",
+   "file": "probes/bug_chunk_bound_name_reused_by_vector_loop.moss",
+   "category": "bug",
+   "spec": "§12.7",
+   "note": "A later String vector loop must not inherit a prior chunk binding's byte bound.",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST"
+  },
+  {
+   "name": "bug_chunk_bound_name_reused_by_parameter",
+   "file": "probes/bug_chunk_bound_name_reused_by_parameter.moss",
+   "category": "bug",
+   "spec": "§12.7",
+   "note": "A shadowed parameter must not inherit a chunk loop's byte bound.",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST"
+  },
+  {
+   "name": "bug_loop_carried_read_bound_rebind",
+   "file": "probes/bug_loop_carried_read_bound_rebind.moss",
+   "category": "bug",
+   "spec": "§12.7",
+   "note": "A loop-carried reassignment invalidates the next iteration's read-size proof.",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST"
+  },
+  {
+   "name": "bug_request_size_alias_rebound",
+   "file": "probes/bug_request_size_alias_rebound.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.7",
+   "note": "A request-record size fact is captured when the vector is built, before alias rebinding.",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST"
+  },
+  {
+   "name": "bug_condition_mutates_request_vector",
+   "file": "probes/bug_condition_mutates_request_vector.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.7",
+   "note": "A control-expression call invalidates a bounded request vector before the branch.",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST"
+  },
+  {
+   "name": "bug_unresolved_callable_release_build",
+   "file": "probes/bug_unresolved_callable_release_build.moss",
+   "category": "bug",
+   "spec": "functional semantics",
+   "note": "Unknown functional callable is rejected in debug and NDEBUG builds.",
+   "check": "reject",
+   "code": "UNKNOWN_SYMBOL_OR_TYPE"
+  },
+  {
+   "name": "bug_range_eq_int",
+   "file": "probes/bug_range_eq_int.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range equality with Int is rejected during checking.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_range_ordering",
+   "file": "probes/bug_range_ordering.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range ordering is rejected during checking.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "guard_range_ne_range",
+   "file": "probes/guard_range_ne_range.moss",
+   "category": "guard",
+   "spec": "Range operator surface",
+   "note": "Range inequality compares byte slices.",
+   "run": {"stdout": "true"}
+  },
+  {
+   "name": "bug_range_ne_int",
+   "file": "probes/bug_range_ne_int.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range inequality with Int is rejected by the checker.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_range_le_range",
+   "file": "probes/bug_range_le_range.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range <= Range is unsupported.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_range_gt_range",
+   "file": "probes/bug_range_gt_range.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range > Range is unsupported.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_range_ge_range",
+   "file": "probes/bug_range_ge_range.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range >= Range is unsupported.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_range_add_range",
+   "file": "probes/bug_range_add_range.moss",
+   "category": "bug",
+   "spec": "Range operator surface",
+   "note": "Range arithmetic is unsupported.",
+   "check": "reject",
+   "code": "TYPE_MISMATCH"
+  },
+  {
+   "name": "bug_write_batch_iteration",
+   "file": "probes/bug_write_batch_iteration.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.7",
+   "note": "RangeBatch iteration carries the maximum request byte bound within the loop.",
+   "run": {"file_content": {"tmp/phase20-review/out/batch-iteration.txt": "hello world "}}
+  },
+  {
+   "name": "bug_write_record_vector_batch_entry",
+   "file": "probes/bug_write_record_vector_batch_entry.moss",
+   "category": "bug",
+   "spec": "§12.5 §12.7",
+   "note": "Request-record vector entries carry their bounded read sizes.",
+   "run": {"file_content": {"tmp/phase20-review/out/record-batch.txt": "o world "}}
+  },
+  {
+   "name": "bug_untyped_looping_helper_in_map",
+   "file": "probes/bug_untyped_looping_helper_in_map.moss",
+   "category": "bug",
+   "spec": "§13",
+   "note": "Untyped map helper iterates over a Range with READ access.",
+   "run": {"stdout": "9"}
+  },
+  {
+   "name": "guard_chunk_bound_does_not_escape_loop",
+   "file": "probes/guard_chunk_bound_does_not_escape_loop.moss",
+   "category": "guard",
+   "spec": "§12.7",
+   "note": "A chunk binding is bounded only inside its own loop body.",
+   "run": {"stdout": "1"}
+  },
+  {
+   "name": "guard_pure_builtin_constructor_metadata",
+   "file": "probes/guard_pure_builtin_constructor_metadata.moss",
+   "category": "guard",
+   "spec": "functional effects",
+   "note": "Option/enum construction and builtins use checked purity metadata.",
+   "run": {"stdout": "3"}
+  },
+  {
+   "name": "guard_loop_ownership_matrix",
+   "file": "probes/guard_loop_ownership_matrix.moss",
+   "category": "guard",
+   "spec": "§13",
+   "note": "Typed and untyped Range/Vector read traversal remains READ-only.",
+   "run": {"stdout": "102"}
+  },
+  {
+   "name": "guard_inline_batch_iteration",
+   "file": "probes/guard_inline_batch_iteration.moss",
+   "category": "guard",
+   "spec": "§12.5 §12.7",
+   "note": "Inline tuple-list RangeBatch iteration carries a bounded loop element.",
+   "run": {"file_content": {"tmp/phase20-review/out/inline-batch.txt": "hello world "}}
+  },
+  {
    "name": "bug_range_eq_string_binary",
    "file": "probes/bug_range_eq_string_binary.moss",
    "category": "bug",

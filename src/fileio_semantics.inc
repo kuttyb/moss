@@ -260,38 +260,28 @@
             requests ? std::optional<uint64_t>(requests->size()) : std::nullopt);
         uint64_t total = 0;
         bool total_known = requests.has_value();
+        auto request_sizes = static_request_size_values(args[0]);
+        size_t request_index = 0;
         for (const auto& entry : requests.value_or(vector<string>{})) {
-          string pair = trim(entry);
-          vector<string> coordinates;
-          if (starts_with(pair, "(") && ends_with(pair, ")"))
-            coordinates = split_top_level(pair.substr(1, pair.size() - 2), ',');
-          else {
-            string constructor;
-            vector<string> fields;
-            if (parse_simple_call(pair, constructor, fields) &&
-                fileio_request_record_type(constructor)) {
-              std::map<string, string> named;
-              for (const auto& field : fields) {
-                string name, value;
-                if (parse_named_argument(field, name, value)) named[name] = value;
-              }
-              if (named.count("offset") && named.count("size") &&
-                  fields.size() == 2)
-                coordinates = {named["offset"], named["size"]};
-            }
-          }
-          if (coordinates.size() != 2) {
+          auto request = static_batch_request(entry);
+          if (!request) {
             fail("batch entries must be (offset, size) pairs");
             continue;
           }
-          for (const auto& coordinate : coordinates) {
+          for (const auto& coordinate :
+               vector<string>{request->first, request->second}) {
             auto actual = inferred_expr_type(coordinate, env);
             if (!actual || canonical_type_name(*actual) != "int")
               fail("batch offset and size must be Int");
           }
-          check_offset(coordinates[0]);
-          auto exact = static_exact_integer(coordinates[1]);
-          auto size = static_upper_bound(coordinates[1]);
+          check_offset(request->first);
+          auto exact = request_sizes && request_index < request_sizes->size()
+              ? (*request_sizes)[request_index]
+              : static_exact_integer(request->second);
+          auto size = exact && *exact >= 0
+              ? std::optional<uint64_t>(static_cast<uint64_t>(*exact))
+              : std::nullopt;
+          ++request_index;
           if (exact && *exact < 0)
             err(line, "FileIO batch entry size must be nonnegative",
                 "FILEIO_INVALID_BOUND");

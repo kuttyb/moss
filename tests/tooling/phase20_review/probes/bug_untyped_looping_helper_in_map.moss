@@ -1,0 +1,16 @@
+# Untyped callable specialization must treat source iteration as READ.
+fn word_summary(chunk):
+  n = 0
+  for b in chunk:
+    if b == 32:
+      n = n + 1
+  return n
+
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  total = src.chunks(8) |> map(word_summary) |> reduce(0, add)
+  src.close()
+  echo total

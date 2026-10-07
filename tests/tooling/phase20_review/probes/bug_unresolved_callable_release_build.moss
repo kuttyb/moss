@@ -1,0 +1,4 @@
+# Unknown functional callables must be rejected in normal and NDEBUG builds.
+fn main():
+  values = [1, 2]
+  echo values |> map(unknown_callable)

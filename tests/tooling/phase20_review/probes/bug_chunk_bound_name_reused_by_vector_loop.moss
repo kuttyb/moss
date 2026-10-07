@@ -1,0 +1,11 @@
+# Reviewer completeness variant: a later loop shadows a bounded chunk name.
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  dst = FileIO.open("tmp/phase20-review/out/stale-vector.txt", create)
+  for item in src.chunks(8):
+    pass
+  texts = ["this payload is not bounded by the chunk size"]
+  for item in texts:
+    dst.write(0, item)
+  dst.close()
+  src.close()
