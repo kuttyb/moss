@@ -1,0 +1,13 @@
+type Request:
+  offset: Int
+  size: Int
+
+fn exercise(n: Int):
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  reqs = [Request(offset: 0, size: 4)]
+  reqs[0].size = n
+  batch = src.read(reqs)
+  src.close()
+
+fn main():
+  exercise(40)

@@ -629,6 +629,70 @@
    "spec": "§3 / front example",
    "note": "The proposal's own multi-line layout does not parse.",
    "proposal": "accept, prints 1"
+  },
+  {
+   "name": "bug_loop_rhs_mutation_while",
+   "file": "probes/bug_loop_rhs_mutation_while.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "Assignment RHS mutation invalidates facts across a while back edge."
+  },
+  {
+   "name": "bug_loop_rhs_mutation_for",
+   "file": "probes/bug_loop_rhs_mutation_for.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "Assignment RHS mutation invalidates facts across a for back edge."
+  },
+  {
+   "name": "bug_loop_rhs_mutation_let",
+   "file": "probes/bug_loop_rhs_mutation_let.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "Let RHS mutation participates in loop pre-analysis."
+  },
+  {
+   "name": "bug_nested_loop_rhs_mutation",
+   "file": "probes/bug_nested_loop_rhs_mutation.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "An inner loop mutation invalidates the outer loop incoming request bound."
+  },
+  {
+   "name": "bug_indexed_field_request_invalidation",
+   "file": "probes/bug_indexed_field_request_invalidation.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "A store through an indexed record field invalidates the request vector root."
+  },
+  {
+   "name": "guard_read_only_request_loops",
+   "file": "probes/guard_read_only_request_loops.moss",
+   "category": "guard",
+   "spec": "§12.7",
+   "note": "Read-only while and for loops retain the request vector bound.",
+   "run": {
+    "stdout": "4 4\n4 4\n4 4\n4 4"
+   }
+  },
+  {
+   "name": "bug_loop_rhs_mutation_binary",
+   "file": "probes/bug_loop_rhs_mutation_binary.moss",
+   "category": "bug",
+   "check": "reject",
+   "code": "FILEIO_UNBOUNDED_REQUEST",
+   "spec": "§12.7",
+   "note": "Both calls in a compound RHS are visited before call recognition."
   }
  ]
 }

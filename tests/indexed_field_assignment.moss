@@ -1,0 +1,39 @@
+type P:
+  a: Int
+  b: Int
+
+type Outer:
+  items: Vector[P]
+
+fn set_field(p: P, value: Int):
+  p.b = value
+
+fn set_item(outer: Outer, value: Int):
+  outer.items[0].b = value
+
+fn main():
+  ps = [P(a: 1, b: 2)]
+  ps[0].b = 9
+  echo ps[0].b
+  nested = [Outer(items: [P(a: 3, b: 4)])]
+  nested[0].items[0].b = 12
+  echo nested[0].items[0].b
+  m = Map()
+  m["key"] = P(a: 5, b: 6)
+  m["key"].b = 15
+  echo m["key"].b
+  # WRITE helper calls must use the same places as assignment lowering.
+  set_field(ps[0], 18)
+  set_field(nested[0].items[0], 21)
+  set_field(m["key"], 24)
+  echo ps[0].b, nested[0].items[0].b, m["key"].b
+  # Key/index evaluation remains an ordinary read expression.
+  keys = ["key"]
+  m[keys[0]].b = ps[0].b + 9
+  echo m["key"].b
+  set_item(nested[0], 30)
+  echo nested[0].items[0].b
+  mixed = Map()
+  mixed[7] = Outer(items: [P(a: 8, b: 9)])
+  mixed[7].items[0].b = 33
+  echo mixed[7].items[0].b

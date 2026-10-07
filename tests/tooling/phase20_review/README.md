@@ -33,6 +33,16 @@ Range operator matrix, pure constructor effects, and typed/untyped loop
 ownership. `design_range_as_pipeline_source` remains an informational design
 record.
 
+The final reopened findings add six negative bounds probes: RHS mutations
+in while/for/let, compound expressions and nested loops, and an indexed
+request-field store. The read-only while/for guard retains bounds and runs
+natively. The general
+compiler fixture `tests/indexed_field_assignment.moss` separately checks
+vector, nested field/index, and Map field stores, including WRITE helpers.
+The Agent D suite checks a deterministic one-worker publication window and
+a generated-code mutation that moves the join into the publication loop;
+Agent C's separate concurrent Branch tests remain unchanged.
+
 `bug_range_eq_string_binary` retains its historical expectation as a passing
 review probe. The `Range` versus `String` equality rule itself is a provisional
 owner decision, recorded separately in §29 of the Phase 20 spec and in

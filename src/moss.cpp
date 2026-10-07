@@ -5308,10 +5308,11 @@ class Checker {
 
   std::optional<StorageLocation> storage_location(
       const string& expression,
-      const std::unordered_map<string,string>& env) const {
+      const std::unordered_map<string,string>& env,
+      bool require_known_root = true) const {
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (simple_identifier(value)) {
-      if (!env.count(value)) return std::nullopt;
+      if (require_known_root && !env.count(value)) return std::nullopt;
       if (current_object_ && value != "self" &&
           std::any_of(current_object_->fields.begin(), current_object_->fields.end(),
                       [&](const Field& field) { return field.name == value; }))
@@ -5320,14 +5321,14 @@ class Checker {
     }
     string base, index;
     if (parse_index(value, base, index)) {
-      auto location = storage_location(base, env);
+      auto location = storage_location(base, env, require_known_root);
       if (!location) return std::nullopt;
       location->path.push_back("[]");
       return location;
     }
     auto dot = value.rfind('.');
     if (dot != string::npos && simple_identifier(trim(value.substr(dot + 1)))) {
-      auto location = storage_location(value.substr(0, dot), env);
+      auto location = storage_location(value.substr(0, dot), env, require_known_root);
       if (!location) return std::nullopt;
       location->path.push_back(trim(value.substr(dot + 1)));
       return location;
@@ -12573,8 +12574,22 @@ class Generator {
   string write_call_place(const string& argument, const Domain* d,
                           const std::set<string>& locals,
                           const std::unordered_map<string,string>* types) const {
+    string value = strip_redundant_outer_parentheses(trim(argument));
+    // Borrowed object views need their mutable accessors. For paths that
+    // cross a container, recursively lower the base as a place, never as an
+    // owned read expression (index reads may clone non-Copy elements).
+    if (view_place(value, d, locals, types))
+      return place_expr(value, d, locals, types);
     string base, index;
-    if (!parse_index(trim(argument), base, index)) return place_expr(argument, d, locals, types);
+    if (!parse_index(value, base, index)) {
+      auto dot = value.rfind('.');
+      if (dot != string::npos && plain_identifier(trim(value.substr(dot + 1)))) {
+        string field = trim(value.substr(dot + 1));
+        return "(" + write_call_place(value.substr(0, dot), d, locals, types) +
+            ")." + rust_identifier(field);
+      }
+      return place_expr(value, d, locals, types);
+    }
     string storage = write_call_place(base, d, locals, types);
     string key = expr(index, d, locals, types);
     auto type = generated_expr_type(base, types);
@@ -15962,9 +15977,9 @@ class Generator {
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
-            lhs = "(" + place_expr(lhs_base, d, locals, &types) + ")[" + ir + "]";
+            lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
           }
-          else lhs = place_expr(s.a, d, locals, &types);
+          else lhs = write_call_place(s.a, d, locals, &types);
           bool state_field = d && std::any_of(d->state.begin(), d->state.end(),
                                               [&](const Field& field) { return field.name == s.a; });
           if (plain_identifier(s.a) && !locals.count(s.a) && !state_field) {
@@ -16011,7 +16026,7 @@ class Generator {
                   statement_functional_pipeline_id(s, functional_context, 0));
               if (borrowed_function_parameters_.count(trim(s.b)))
                 inserted = "(" + inserted + ").clone()";
-              o << indent(level) << "(" << place_expr(mb, d, locals, &types)
+              o << indent(level) << "(" << write_call_place(mb, d, locals, &types)
                 << ").insert(" << key << ", "
                 << inserted
                 << ");\n";

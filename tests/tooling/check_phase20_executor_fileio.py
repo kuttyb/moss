@@ -646,7 +646,7 @@ domain Counter:
 
 fn main():
   counter = Counter()
-  executor = Executor().threads(2).start()
+  executor = Executor().threads(1).start()
   echo message counter.Plain("%s")
   echo message counter.Bonus("%s")
   executor.join()
@@ -656,7 +656,37 @@ assert 'window_k=4 eligible=yes' in ir and 'eligible=no reason=map stage is not 
 rust, binary = native_build('phase20_chunk_handler', handler_source, observe=True)
 _, trace, program = split_trace(run_binary(binary).stdout)
 assert program == ['33', '44'], program
+# With the only worker occupied by this Root, its four publications precede
+# the join where it helps its own Branches. Free workers in the other fixtures
+# (and Agent C's runtime suite) may execute Branches during publication.
 assert trace == WINDOW_TRACE, trace
+
+# Sensitivity check: moving scope creation/join into the publication loop
+# must break this exact trace while retaining the same ordered fold result.
+# Scopes are one-shot, so the mutant needs a fresh scope for each lane.
+text = rust.read_text()
+join = re.search(r'(?m)^([ \t]*)branch_join\((__moss_chunk_scope_\d+)\);$', text)
+assert join, text
+scope = join.group(2)
+creation = re.search(r'(?m)^[ \t]*let ' + scope + r' = branch_scope_new_current\(\);$', text)
+assert creation, text
+publication_loop = re.search(r'(?m)^([ \t]*)for __moss_chunk_lane_\d+ in 0\.\.4usize \{$', text)
+assert publication_loop, text
+push = re.search(r'(?m)^([ \t]*)(__moss_chunk_slots_\d+\.push\(__moss_chunk_slot_\d+\);)$', text)
+assert push, text
+mutated = text.replace(join.group(0), '', 1).replace(creation.group(0), '', 1)
+mutated = mutated.replace(publication_loop.group(0), publication_loop.group(0) + '\n' +
+                          push.group(1) + 'let ' + scope + ' = branch_scope_new_current();', 1)
+mutated = mutated.replace(push.group(0), push.group(0) + '\n' + push.group(1) +
+                          'branch_join(' + scope + ');', 1)
+mutant_rust = out / 'phase20_chunk_handler_join_in_loop.rs'
+mutant_rust.write_text(mutated + RUNTIME_OBSERVER.read_text())
+mutant_binary = out / 'phase20_chunk_handler_join_in_loop_bin'
+run(['rustc', '-D', 'warnings', '--cfg', 'moss_perf', mutant_rust, '-o', mutant_binary])
+_, mutant_trace, mutant_program = split_trace(run_binary(mutant_binary).stdout)
+assert mutant_program == ['33', '44'], mutant_program
+assert mutant_trace == ['moss-branch publish', 'moss-branch run'] * 4, mutant_trace
+assert mutant_trace != WINDOW_TRACE, mutant_trace
 
 # A source-free .mossi provider has no authoritative FileIO effect bit. The
 # consumer runs with the real process-root runtime: its local combine is

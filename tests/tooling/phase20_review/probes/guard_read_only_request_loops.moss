@@ -1,0 +1,16 @@
+type Request:
+  offset: Int
+  size: Int
+
+fn main():
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  reqs = [Request(offset: 0, size: 4)]
+  k = 0
+  while k < 2:
+    batch = src.read(reqs)
+    echo batch[0].length(), reqs[0].size
+    k = k + 1
+  for i in range(0, 2):
+    batch = src.read(reqs)
+    echo batch[0].length(), reqs[0].size
+  src.close()

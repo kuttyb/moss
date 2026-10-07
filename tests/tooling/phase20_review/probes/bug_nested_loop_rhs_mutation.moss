@@ -1,0 +1,19 @@
+type Request:
+  offset: Int
+  size: Int
+
+fn grow(reqs: Vector[Request], n: Int) -> Int:
+  reqs.push(Request(offset: 0, size: n))
+  return 1
+
+fn exercise(n: Int):
+  src = FileIO.open("tmp/phase20-review/input.txt", ro)
+  reqs = [Request(offset: 0, size: 4)]
+  for i in range(0, 2):
+    batch = src.read(reqs)
+    for j in range(0, 2):
+      k = grow(reqs, n)
+  src.close()
+
+fn main():
+  exercise(40)

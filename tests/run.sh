@@ -336,6 +336,7 @@ python3 tests/tooling/check_swarm_050_targets.py \
 python3 tests/tooling/check_swarm_050_targets.py \
   "$test_build/swarm_050_join_specialization.rs" outer_reversed inner First,Second
 run_case swarm_054_indexed_field tests/swarm_054_indexed_field.moss '9'
+run_case indexed_field_assignment tests/indexed_field_assignment.moss "$(printf '9\n12\n15\n18 21 24\n27\n30\n33')"
 run_case swarm_044_index_specialization tests/swarm_044_index_specialization.moss "$(printf 'old\n1\n2\nnew\n3\nb\n5\nc')"
 run_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'
 run_fast_debug_case swarm_044_typed_string_map_index tests/swarm_044_typed_string_map_index.moss '7'

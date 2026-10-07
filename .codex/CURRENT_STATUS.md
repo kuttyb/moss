@@ -1,5 +1,57 @@
 # Moss current status
 
+## Phase 20.2 final review findings closed — 2026-10-07
+
+Branch: `phase-20.2-review-completeness`; base:
+`b84ff42a47a4dc58c128fed3430a7ec29f515bed`.
+All three final reopened findings are closed after validation on the final
+compiler and tests. This closeout supersedes the older reopened status below.
+
+- Bounds analysis shares statement mutation roots between the loop pre-pass
+  and forward walk, including RHS calls and canonical indexed-field roots.
+  Six new permanent negative reviewer probes and a read-only loop guard
+  supplement all previous probes without changing their expectations.
+- Indexed-field stores recurse through the existing mutable-place lowering,
+  preserving vector/Map storage identity and mutable object accessors. A
+  general native compiler regression covers field/index chains and WRITE
+  helpers while retaining ordinary index/key/RHS read lowering.
+- The exact Branch publication window fixture uses one worker. Its permanent
+  lowering mutation moves scope/join inside publication and demonstrates that
+  the exact trace detects the regression. Separate concurrent runtime tests
+  remain unchanged.
+
+Final validation succeeded:
+
+- `python3 tests/tooling/phase20_review/run_review_probes.py ./moss --strict`:
+  36 bug, 27 guard, and 2 pre-existing probes passed; 8 design cases remain
+  informational. All 66 previous probe sources and manifest expectations
+  were verified unchanged; seven permanent probes were added.
+- `python3 tests/tooling/check_phase20_executor_fileio.py ./moss`: passed,
+  including independent `window_k=4 eligible=yes`, the exact one-worker
+  publish-before-join trace, and the join-in-publication-loop mutation.
+- `python3 tests/tooling/check_phase20c_executor.py ./moss`: 54/54 passed,
+  including existing concurrent free-worker Branch tests.
+- `python3 tests/tooling/stress_phase20_branch_window.py
+  tmp/phase20-final-review/agent-d/phase20_chunk_handler_bin --runs 1000`:
+  1,000 isolated executions passed with zero failures on the final compiler.
+- `make check`, `make examples`, and `git diff --check`: passed. The general
+  native indexed-field fixture passed both separately and in `make check`.
+
+The earlier partial `make check` was interrupted for the compound-RHS bounds
+refinement and is superseded by the complete final run. Earlier focused
+results likewise do not substitute for the final runs above. No blockers or
+unfinished work remain for these three findings. Bounds and codegen fixes
+land together in the local closeout commit; no push is authorized or made.
+Existing Phase 20 semantics and open owner decisions below remain unchanged.
+
+Compiler-agent self-report: bootstrap confirmed `moss-0.1`; structured
+diagnostics, canonical formatting checks for accepted fixtures, native
+regressions, and the runtime observer resolved the relevant uncertainties.
+Three compiler edit/check rounds were needed, including compound expression
+coverage. Full required gates were used rather than impact/affected-test
+selection for these checker/backend changes. A compiler-owned expression
+mutation query would reduce future reliance on textual expression parsing.
+
 ## Phase 20.2 documentation consistency
 
 Base: `a9be72e0bd38a96791cacf234fa1aaacccc5effc` on

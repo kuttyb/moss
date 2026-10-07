@@ -55,6 +55,16 @@
         static_mark_possible_mutation(item, fileio_owners, mutated);
       return;
     }
+    // Split compound expressions before call recognition: the textual call
+    // parsers must not swallow `first() + grow(reqs, n)` as one call.
+    for (const auto& operators : vector<vector<string>>{
+             {" or ", " xor ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
+             {"+", "-"}, {"*", "/", "%"}})
+      if (auto binary = split_binary(expression, operators)) {
+        static_mark_possible_mutation(binary->first, fileio_owners, mutated);
+        static_mark_possible_mutation(binary->second, fileio_owners, mutated);
+        return;
+      }
     string receiver, method;
     vector<string> args;
     if (parse_member_call(expression, receiver, method, args)) {
@@ -63,31 +73,36 @@
            method == "open" || method == "sync" || method == "close");
       bool non_mutating_member = method == "length" || method == "slice";
       if (!fileio_borrow && !non_mutating_member) {
-        string root, index;
-        mutated.insert(parse_index(receiver, root, index) ? root : receiver);
+        if (auto place = storage_location(receiver, {}, false))
+          mutated.insert(place->root);
         for (const auto& argument : args) {
-          string argument_name, argument_value, root, index;
+          string argument_name, argument_value;
           string actual = parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
-          if (simple_identifier(actual) || parse_index(actual, root, index))
-            mutated.insert(parse_index(actual, root, index) ? root : actual);
+          if (auto place = storage_location(actual, {}, false))
+            mutated.insert(place->root);
         }
       }
-      for (const auto& argument : args)
-        static_mark_possible_mutation(argument, fileio_owners, mutated);
+      static_mark_possible_mutation(receiver, fileio_owners, mutated);
+      for (const auto& argument : args) {
+        string name, value;
+        static_mark_possible_mutation(
+            parse_named_argument(argument, name, value) ? value : argument,
+            fileio_owners, mutated);
+      }
       return;
     }
     string callee;
     if (parse_simple_call(expression, callee, args)) {
       if (!objects_.count(callee) && callee != "range" && callee != "Some")
         for (const auto& argument : args) {
-          string argument_name, argument_value, root, index;
+          string argument_name, argument_value;
           string actual = parse_named_argument(argument, argument_name,
                                                 argument_value) ?
               trim(argument_value) : trim(argument);
-          if (simple_identifier(actual) || parse_index(actual, root, index))
-            mutated.insert(parse_index(actual, root, index) ? root : actual);
+          if (auto place = storage_location(actual, {}, false))
+            mutated.insert(place->root);
         }
       for (const auto& argument : args) {
         string name, value;
@@ -97,18 +112,68 @@
       }
       return;
     }
-    for (const auto& operators : vector<vector<string>>{
-             {" or ", " and "}, {"==", "!=", "<=", ">=", "<", ">"},
-             {"+", "-"}, {"*", "/", "%"}})
-      if (auto binary = split_binary(expression, operators)) {
-        static_mark_possible_mutation(binary->first, fileio_owners, mutated);
-        static_mark_possible_mutation(binary->second, fileio_owners, mutated);
-        return;
-      }
+    if (starts_with(expression, "not ") || starts_with(expression, "-")) {
+      static_mark_possible_mutation(expression.substr(
+          starts_with(expression, "not ") ? 4 : 1), fileio_owners, mutated);
+      return;
+    }
+    string base, index;
+    if (parse_index(expression, base, index)) {
+      static_mark_possible_mutation(base, fileio_owners, mutated);
+      static_mark_possible_mutation(index, fileio_owners, mutated);
+      return;
+    }
+    auto dot = expression.rfind('.');
+    if (dot != string::npos && simple_identifier(trim(expression.substr(dot + 1)))) {
+      static_mark_possible_mutation(expression.substr(0, dot), fileio_owners, mutated);
+      return;
+    }
     if (starts_with(expression, "[") && ends_with(expression, "]"))
       for (const auto& item : split_top_level(
                expression.substr(1, expression.size() - 2), ','))
         static_mark_possible_mutation(item, fileio_owners, mutated);
+  }
+
+  // One statement-level mutation contract for both loop back-edge analysis
+  // and the forward walk. Storage roots follow the ownership place parser,
+  // including arbitrary alternating field/index projections.
+  std::set<string> static_statement_mutation_roots(
+      const Stmt& statement, const std::set<string>& fileio_owners) const {
+    std::set<string> mutated;
+    string expression;
+    switch (statement.kind) {
+      case Stmt::Kind::Let:
+      case Stmt::Kind::Var:
+      case Stmt::Kind::Assign:
+        if (auto target = storage_location(statement.a, {}, false))
+          mutated.insert(target->root);
+        // Index expressions in a target are evaluated too.
+        static_mark_possible_mutation(statement.a, fileio_owners, mutated);
+        expression = statement.b;
+        break;
+      case Stmt::Kind::Call:
+      case Stmt::Kind::Raw:
+      case Stmt::Kind::Echo:
+      case Stmt::Kind::Message:
+        expression = statement.text;
+        if (!statement.message_result.empty())
+          mutated.insert(statement.message_result);
+        break;
+      case Stmt::Kind::Return:
+      case Stmt::Kind::Reply:
+      case Stmt::Kind::If:
+      case Stmt::Kind::While:
+      case Stmt::Kind::Match:
+        expression = statement.a;
+        break;
+      case Stmt::Kind::For:
+        expression = statement.b;
+        break;
+      default:
+        break;
+    }
+    static_mark_possible_mutation(expression, fileio_owners, mutated);
+    return mutated;
   }
 
   static StaticBoundEnv static_join_bounds(const StaticBoundEnv& left,
@@ -122,31 +187,27 @@
     return joined;
   }
 
+  void static_invalidate_mutation_roots(
+      StaticBoundEnv& facts, const std::set<string>& roots) const {
+    for (auto it = facts.begin(); it != facts.end();) {
+      auto place = storage_location(it->first, {}, false);
+      // Object method facts can use an implicit field name while canonical
+      // ownership storage is rooted at self. Invalidate both spellings.
+      if (roots.count(it->first) || (place && roots.count(place->root)))
+        it = facts.erase(it);
+      else
+        ++it;
+    }
+  }
+
   std::set<string> static_loop_writes(const vector<Stmt>& statements,
                                      size_t first, int level,
                                      const std::set<string>& fileio_owners) const {
     std::set<string> writes;
     for (size_t i = first; i < statements.size() &&
                          statements[i].indent > level; ++i) {
-      const auto& nested = statements[i];
-      if (nested.kind == Stmt::Kind::Assign ||
-          nested.kind == Stmt::Kind::Let || nested.kind == Stmt::Kind::Var) {
-        string base, index;
-        if (simple_identifier(nested.a)) writes.insert(nested.a);
-        else if (parse_index(nested.a, base, index)) writes.insert(base);
-      }
-      if (nested.kind == Stmt::Kind::Call ||
-          nested.kind == Stmt::Kind::Raw ||
-          nested.kind == Stmt::Kind::Echo ||
-          nested.kind == Stmt::Kind::Message)
-        static_mark_possible_mutation(nested.text, fileio_owners, writes);
-      if (nested.kind == Stmt::Kind::If ||
-          nested.kind == Stmt::Kind::While ||
-          nested.kind == Stmt::Kind::Match ||
-          nested.kind == Stmt::Kind::For)
-        static_mark_possible_mutation(
-            nested.kind == Stmt::Kind::For ? nested.b : nested.a,
-            fileio_owners, writes);
+      auto mutations = static_statement_mutation_roots(statements[i], fileio_owners);
+      writes.insert(mutations.begin(), mutations.end());
     }
     return writes;
   }
@@ -165,17 +226,14 @@
         loop_writes = static_loop_writes(statements, index + 1, level,
                                          fileio_owners);
         if (statement.kind == Stmt::Kind::While)
-          for (const auto& name : loop_writes) facts.erase(name);
+          static_invalidate_mutation_roots(facts, loop_writes);
       }
       if (statement.kind == Stmt::Kind::If ||
           statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For ||
           statement.kind == Stmt::Kind::Match) {
-        std::set<string> control_mutations;
-        static_mark_possible_mutation(
-            statement.kind == Stmt::Kind::For ? statement.b : statement.a,
-            fileio_owners, control_mutations);
-        for (const auto& name : control_mutations) facts.erase(name);
+        auto control_mutations = static_statement_mutation_roots(statement, fileio_owners);
+        static_invalidate_mutation_roots(facts, control_mutations);
         if (!control_mutations.empty())
           for (auto it = facts.begin(); it != facts.end();) {
             if (it->second.entries || it->second.batch_entries)
@@ -207,7 +265,7 @@
         }
         if (statement.kind == Stmt::Kind::For ||
             statement.kind == Stmt::Kind::While)
-          for (const auto& name : loop_writes) body.erase(name);
+          static_invalidate_mutation_roots(body, loop_writes);
         ++index;
         if (statement.kind == Stmt::Kind::Match) {
           bool first = true;
@@ -255,6 +313,7 @@
         }
         continue;
       }
+      std::optional<StaticBoundFact> new_fact;
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
@@ -286,25 +345,20 @@
           }
           fact.batch_entries = static_batch_entry_bounds(value);
         }
-        facts.erase(statement.a);
         if (fact.integer || fact.bytes || fact.entries ||
             fact.request_sizes || fact.batch_entries) {
           fact.binding_origin = &statement;
-          facts[statement.a] = std::move(fact);
+          new_fact = std::move(fact);
         }
       }
-      std::set<string> mutated;
-      string expression = statement.kind == Stmt::Kind::Call ||
-          statement.kind == Stmt::Kind::Raw ||
-          statement.kind == Stmt::Kind::Echo ||
-          statement.kind == Stmt::Kind::Message ? statement.text :
-          statement.kind == Stmt::Kind::Return ||
-          statement.kind == Stmt::Kind::Reply ? statement.a : statement.b;
-      static_mark_possible_mutation(expression, fileio_owners, mutated);
-      string base, subscript;
-      if (statement.kind == Stmt::Kind::Assign &&
-          parse_index(statement.a, base, subscript)) mutated.insert(base);
-      for (const auto& name : mutated) facts.erase(name);
+      auto mutated = static_statement_mutation_roots(statement, fileio_owners);
+      static_invalidate_mutation_roots(facts, mutated);
+      // Rebinding a plain name replaces its fact without mutating aliases.
+      // A projected store or call can mutate shared collection storage.
+      bool binding = (statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var || statement.kind == Stmt::Kind::Assign) &&
+          simple_identifier(statement.a);
+      if (binding) mutated.erase(statement.a);
       if (!mutated.empty()) {
         // A collection alias may refer to the same mutable storage. Drop all
         // collection construction facts rather than guessing alias identity.
@@ -314,6 +368,7 @@
           else ++it;
         }
       }
+      if (new_fact) facts[statement.a] = std::move(*new_fact);
       if ((statement.kind == Stmt::Kind::Let ||
            statement.kind == Stmt::Kind::Var ||
            statement.kind == Stmt::Kind::Assign) &&
