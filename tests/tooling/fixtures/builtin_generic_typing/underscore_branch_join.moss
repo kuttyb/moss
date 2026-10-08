@@ -1,0 +1,9 @@
+type _Payload:
+  value: Int
+
+fn main():
+  if true:
+    p = _Payload(value = 6)
+  else:
+    p = _Payload(value = 9)
+  echo p.value

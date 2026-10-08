@@ -1,0 +1,11 @@
+type _Payload:
+  value: Int
+
+fn rebuild(x: _Payload) -> _Payload:
+  return _Payload(value = x.value)
+
+fn main():
+  p = _Payload(value = 3)
+  items = [p]
+  mapped = items |> map(rebuild)
+  echo mapped[0].value

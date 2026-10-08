@@ -1,0 +1,10 @@
+type _Payload:
+  value: Int
+
+type Box:
+  payload: _Payload
+
+fn main():
+  p = _Payload(value = 1)
+  b = Box(payload = p)
+  echo b.payload.value

@@ -1,0 +1,12 @@
+type _Payload:
+  value: Int
+
+domain Store:
+  payload = _Payload(value = 5)
+
+  fn Read() -> Int:
+    reply payload.value
+
+fn main():
+  store = Store()
+  echo message store.Read()

@@ -1,0 +1,10 @@
+type _Payload:
+  value: Int
+
+fn read(p: _Payload) -> Int:
+  return p.value
+
+fn main():
+  p = _Payload(value = 4)
+  echo read(p)
+  echo read(p)

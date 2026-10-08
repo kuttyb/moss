@@ -111,7 +111,7 @@
     for (size_t i = 0; i < arguments.size(); ++i) {
       std::string type = concrete_types && i < concrete_types->size()
           ? (*concrete_types)[i] : parameters[i].type;
-      if ((type.empty() || type.front() == '_') && identifier(trim_copy(arguments[i]))) {
+      if ((type.empty() || internal_semantic_placeholder(type)) && identifier(trim_copy(arguments[i]))) {
         auto caller_type = caller.local_types.find(trim_copy(arguments[i]));
         if (caller_type != caller.local_types.end()) type = caller_type->second;
       }

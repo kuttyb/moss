@@ -178,7 +178,7 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
     // explicit-type requirement for invoked handlers.
     const Param& formal = handler->params[index];
     string formal_type = formal.type.empty() ? *actual : formal.type;
-    if (!starts_with(*actual, "_") && !starts_with(formal_type, "_") &&
+    if (!contains_internal_placeholder(*actual) && !contains_internal_placeholder(formal_type) &&
         !same_type(formal_type, *actual))
       err(statement.line,
           "argument " + std::to_string(index + 1) + " to executor.invoke(" +

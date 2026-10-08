@@ -1,0 +1,9 @@
+type _Payload:
+  value: Int
+
+type Box:
+  s: String
+
+fn main():
+  p = _Payload(value = 1)
+  b = Box(s = p)

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "ast.hpp"
+#include "type_placeholders.hpp"
 
 namespace moss {
 

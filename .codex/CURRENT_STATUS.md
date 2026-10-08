@@ -1,5 +1,110 @@
 # Moss current status
 
+## Internal semantic placeholders and underscore nominal types — follow-up 2026-10-07
+
+Base: `7cf3f69208e0a0d89b7310931364a609b51aa3c9`, clean `main`.
+Review found that legal `_`-prefixed user nominal types collided with the new
+constructor placeholder predicate. Startup skills loaded; live bootstrap confirms
+`moss-0.1`. Placeholder classification is now explicit rather than based on a
+leading underscore. User `_Type` names remain ordinary concrete nominal types;
+constructor deferral remains limited to real compiler-internal unresolved markers.
+No identifier/parser or generic specialization design changes.
+
+Source audit found these compiler-generated unresolved type markers:
+`_`, `_value`, `_none`, `_method_value`, `_generic:`, `_element:`, `_field:`,
+`_method_result:`, `_specialized_result:`, `_iterator_element:`,
+`_functional_result:`, `_functional_element:`, `_functional_collection:`, and
+`_functional_callable_result:`. Bare `_` occurs in the synthetic Iterator
+`option[_]` signature and codegen fallback `option[_]`. `_method_value` has
+only an exact spelling; `_method_` is not an open marker namespace. Generated
+Rust identifiers (`__moss_*`, `__specialized_*`, suffixes, etc.) are symbols,
+not unresolved semantic type markers, and remain unchanged.
+
+Every broad underscore type check was inspected before replacement. All were
+category B (unresolved semantic evidence), including contexts where that evidence
+controls eligibility rather than direct type comparison:
+
+- Inference and checking: constructor/builtin deferral, expected results, function
+  signatures/returns/arguments, indexed assignments, branch environment merges,
+  and enum diagnostic wording.
+- Specialization and functional analysis: concrete input/result eligibility,
+  callback results, pipeline sources, and iterator element validation.
+- Effects and synchronization: borrow eligibility, possible receiver method
+  effects/call targets, and concrete state leaf layouts.
+- Native lowering and interfaces: borrow eligibility, generated expression and
+  callback type recovery, joined bindings, closed typed exports, and executor
+  payload compatibility.
+
+The shared `type_placeholders.hpp` owns the precise
+`internal_semantic_placeholder` spelling classifier. Checker/native paths use
+recursive `contains_internal_placeholder`; Fast Debug parameter binding uses the
+same outer classifier for its caller-type fallback. Empty types, bare
+collections, traits, domains, and Copy checks retain their separate existing
+rules. Marker-specific resolution tests remain specific; broad `_method_`
+return exemptions now recognize exactly `_method_value` or `_method_result:`.
+No category A type namespace rule or category C broad type check was found.
+The equivalent Fast Debug `type.front()` test is also category B and now uses
+the shared classifier. Other underscore checks concern source placeholders,
+identifier syntax, or generated symbols (category C) and remain unchanged.
+
+Permanent probes added to the general builtin/generic suite cover direct and
+generic constructors, Vector including nested template evidence, inferred Map
+and Queue fields, typed nominal-result pipelines, repeat READ borrows, nominal domain
+state and handler payloads, branch joins, typed return rejection, builtin push
+rejection, and nominal names resembling marker families. Original 83 fixture expectations are unchanged.
+
+Final validation on the final compiler/test revision:
+
+- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic` build passed;
+  `./moss` is copied from the final `tmp/moss-strict` binary.
+- `./moss agent bootstrap --json`: `moss-0.1` confirmed.
+- `python3 tests/tooling/check_builtin_generic_typing.py ./moss`: 104/104 passed
+  (83 original expectations unchanged plus 21 new underscore probes).
+- The same full 104-probe suite rerun with `tmp/moss-strict`: passed. All 12
+  accepted new probes have exact native/Fast Debug stdout parity; all 9 rejected
+  new probes fail at check/lowering/Fast Debug before backend execution.
+- `python3 tests/tooling/check_generic_specialization.py ./moss`: 40/40 passed.
+- Phase 20 review `--strict`: 36 bug, 30 guard, 2 pre-existing passed;
+  8 design probes informational.
+- Phase 20 Executor/FileIO gate: passed.
+- `sh tests/run.sh ./moss build/tests`: passed via the unchanged `make check`
+  recipe under `taskset -c 0`; the entire suite and all expectations ran.
+- `make check`: passed under `taskset -c 0` (see harness race below).
+- `make examples`: passed.
+- Direct classifier probes for nominal/marker-like names, Vector/Map/Queue
+  nesting, `_generic:x`, nested method/field markers, and `option[_]`: passed.
+- `git diff --check`: passed. Parser/assertion fixtures and effects/sync guards
+  retain their existing behavior. No compiler edits followed the final build.
+
+Earlier build/probe results are superseded by these final gates. Two unrestricted
+final full-run attempts timed out in unchanged Executor probe `38-branch-lost-wakeup` waiting
+for its publisher signal (53/54 runtime probes passed). The same binary passed
+in isolation, then passed three captured-output trials pinned to CPU 0.
+The harness arms its lock-held pre-wait hook before the publisher obtains the
+executor lock for its preparatory notification: an idle worker can enter the hook
+first and block that publisher. This is separate from type placeholders; runtime
+and harness sources/expectations are unchanged. Final full-suite validation used
+CPU affinity to stabilize scheduling, retaining every assertion and worker test.
+An earlier unrestricted full run also passed, before the shared-header edit.
+The remaining limitation is this intermittent existing harness race; hardware
+parallel validation of the final full suite was not clean in this session.
+The generated minimal root Rust source is byte-for-byte identical with a compiler
+built from the reviewed HEAD, confirming unchanged runtime emission.
+
+A separate pre-existing native lowering issue was reduced and confirmed with a
+compiler built from reviewed HEAD: `fn wrap(x): return Box(items = [x])` with a
+non-Copy `Payload` parameter infers READ, then emits that borrowed parameter into
+an owned vector (`&Payload` vs `Payload`, including its view wrapper). Ordinary
+`Payload` has the same failure. This needs a separate ownership/effect repair;
+this follow-up does not change it. New generic Vector probes transfer an
+already-owned vector; original `[x]` Int template probes remain unchanged/green.
+
+No unfinished work or blockers remain within this follow-up's scope. One local
+commit records the repair; it is not pushed. The prior repair is already on main.
+Compiler-agent self-report: bootstrap, structured diagnostics, effects queries,
+reduced probes, reviewed-HEAD reproduction, native/Fast Debug parity, and final
+full gates resolved the requested behavior without specialization redesign.
+
 ## Builtin/generic typing and assertion correctness repairs — 2026-10-07
 
 Base: `a975db321cc53dadcbee3d0aeefee868888da7d7` on `main`.
@@ -73,7 +178,9 @@ diagnostic priority preserved, and direct constructor projection checking fixed.
 No compiler changes followed the final strict build. The environment change
 broke the sandbox launcher; approved validation used repository-local TMPDIR.
 No unfinished work or blockers remain for these repairs. One local completion
-commit records implementation, coverage, parity, and final validation; no push.
+commit `7cf3f69208e0a0d89b7310931364a609b51aa3c9` records implementation,
+coverage, parity, and final validation and is already on `main`.
+
 Compiler-agent self-report: bootstrap, structured checks, concrete semantic
 queries, native/Fast Debug parity, and full gates resolved the checked behavior.
 The final gates supersede all validation invalidated by earlier compiler edits.

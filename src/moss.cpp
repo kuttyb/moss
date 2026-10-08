@@ -32,6 +32,7 @@
 #include "ast.hpp"
 #include "debug_map.hpp"
 #include "diagnostics.hpp"
+#include "type_placeholders.hpp"
 #include "interpreter.hpp"
 #include "handler_runtime.hpp"
 #include "fileio_runtime.hpp"
@@ -299,12 +300,13 @@ static std::optional<string> builtin_operation_result(
   return builtin_operation_type(receiver_type, operation->result);
 }
 
-static bool contains_specialization_placeholder(const string& type) {
-  if (starts_with(type, "_")) return true;
-  auto open = type.find('[');
-  if (open == string::npos || !ends_with(type, "]")) return false;
-  for (const auto& part : split_top_level(type.substr(open + 1, type.size() - open - 2), ','))
-    if (contains_specialization_placeholder(trim(part))) return true;
+static bool contains_internal_placeholder(const string& type) {
+  string value = trim(type);
+  if (internal_semantic_placeholder(value)) return true;
+  auto open = value.find('[');
+  if (open == string::npos || !ends_with(value, "]")) return false;
+  for (const auto& part : split_top_level(value.substr(open + 1, value.size() - open - 2), ','))
+    if (contains_internal_placeholder(part)) return true;
   return false;
 }
 
@@ -1951,7 +1953,7 @@ class Checker {
       if (!parameter.type.empty() && !traits_.count(parameter.type))
         env[parameter.name] = parameter.type;
     auto type = obvious_expr_type(expression, env);
-    if (!type || starts_with(*type, "_")) return std::nullopt;
+    if (!type || contains_internal_placeholder(*type)) return std::nullopt;
     return canonical_type_name(*type);
   }
 
@@ -1978,7 +1980,7 @@ class Checker {
       requirement.result = method_result_marker(index);
       if (!function.return_type || starts_with(*function.return_type, "_method_result:"))
         function.return_type = requirement.result;
-    } else if (!expected_result.empty() && !starts_with(expected_result, "_")) {
+    } else if (!expected_result.empty() && !contains_internal_placeholder(expected_result)) {
       string expected = canonical_type_name(expected_result);
       if (!requirement.result_expectations.empty() &&
           !same_type(requirement.result_expectations.front(), expected))
@@ -2053,7 +2055,7 @@ class Checker {
       // callable parameters are specialized. Concrete pipelines can use the
       // typed inference pass below to derive their terminal type.
       if (function.generic && expected_result == "$function_result" &&
-          (!function.return_type || starts_with(*function.return_type, "_")))
+          (!function.return_type || contains_internal_placeholder(*function.return_type)))
         function.return_type = "_functional_result:" + function.name;
       return;
     }
@@ -2071,7 +2073,7 @@ class Checker {
         constrain_boolean_operand(binary->first);
         constrain_boolean_operand(binary->second);
         if (expected_result == "$function_result" &&
-            (!function.return_type || starts_with(*function.return_type, "_")))
+            (!function.return_type || contains_internal_placeholder(*function.return_type)))
           function.return_type = "bool";
         return;
       }
@@ -2079,7 +2081,7 @@ class Checker {
     if (starts_with(e, "not ")) {
       constrain_boolean_operand(trim(e.substr(4)));
       if (expected_result == "$function_result" &&
-          (!function.return_type || starts_with(*function.return_type, "_")))
+          (!function.return_type || contains_internal_placeholder(*function.return_type)))
         function.return_type = "bool";
       return;
     }
@@ -3059,13 +3061,13 @@ class Checker {
         current_semantic_context_, "fn:" + f.name);
     std::unordered_map<string,string> env;
     std::set<string> names;
-    if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !starts_with(*f.return_type, "_"))
+    if (f.return_type && *f.return_type != "unit" && !valid_type(*f.return_type) && !contains_internal_placeholder(*f.return_type))
       err(f.source_file, f.line, "unknown return type '" + *f.return_type + "' in function '" + f.name + "'");
     for (const auto& param : f.params) {
       if (param.type.empty() && !f.generic && !has_constraint(f, param.name))
         err(f.source_file, f.line, "cannot infer type for parameter '" + param.name +
             "' in function '" + f.name + "'");
-      if (!param.type.empty() && !valid_type(param.type) && !starts_with(param.type, "_") &&
+      if (!param.type.empty() && !valid_type(param.type) && !contains_internal_placeholder(param.type) &&
           !phase20_allowed_as_ordinary_parameter(param.type))
         err(f.source_file, f.line, "unknown parameter type '" + param.type + "'");
       if (!names.insert(param.name).second) err(f.source_file, f.line, "duplicate parameter: " + param.name);
@@ -3103,8 +3105,8 @@ class Checker {
         // The signature pass normally fills this in. Keep this assignment as a
         // defensive fallback for a function whose result was inferred late.
         const_cast<Function&>(f).return_type = *actual;
-      } else if (f.return_type && actual && !starts_with(*f.return_type, "_") &&
-                 !starts_with(*actual, "_method_") &&
+      } else if (f.return_type && actual && !contains_internal_placeholder(*f.return_type) &&
+                 !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
                   !starts_with(*actual, "_functional_callable_result:") &&
                  !option_none_compatible(*actual, *f.return_type) &&
                  canonical_type_name(*f.return_type) != canonical_type_name(*actual)) {
@@ -3177,7 +3179,7 @@ class Checker {
   }
 
   static bool unresolved_semantic_type(const string& type) {
-    return type.empty() || starts_with(type, "_") || type == "vector" ||
+    return type.empty() || contains_internal_placeholder(type) || type == "vector" ||
         type == "queue" || type == "map";
   }
 
@@ -3238,7 +3240,7 @@ class Checker {
     }
     string result = function->second->return_type
         ? canonical_type_name(*function->second->return_type) : "";
-    if (result.empty() || starts_with(result, "_") || traits_.count(result))
+    if (result.empty() || contains_internal_placeholder(result) || traits_.count(result))
       return specialized_function_return_type(*function->second, input_types);
     return result;
   }
@@ -3775,7 +3777,7 @@ class Checker {
           bool concrete = actual_types.size() == function->second->params.size() &&
               std::all_of(actual_types.begin(), actual_types.end(),
                           [](const string& type) {
-                            return !type.empty() && !starts_with(type, "_");
+                            return !type.empty() && !contains_internal_placeholder(type);
                           });
           if (concrete) {
             auto specialized = specialized_function_return_type(
@@ -3940,13 +3942,13 @@ class Checker {
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
-    bool requires_concrete_result = result.empty() || starts_with(result, "_") || traits_.count(result);
+    bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) || traits_.count(result);
     if (requires_concrete_result) {
       auto env = instantiated_function_env(function, parameter_types);
       std::optional<string> inferred_result;
       auto include_result = [&](const string& expression) {
         auto actual = inferred_expr_type(expression, env);
-        if (!actual || starts_with(*actual, "_")) return true;
+        if (!actual || contains_internal_placeholder(*actual)) return true;
         string concrete = canonical_type_name(*actual);
         if (inferred_result && !same_type(*inferred_result, concrete)) return false;
         inferred_result = concrete;
@@ -4018,7 +4020,7 @@ class Checker {
               parameter.type = *actual;
             else if (!function->second->generic && !function->second->static_dispatch &&
                      !traits_.count(parameter.type) &&
-                     !starts_with(*actual, "_") &&
+                     !contains_internal_placeholder(*actual) &&
                      !same_type(parameter.type, *actual))
               err(line, "argument " + std::to_string(index + 1) + " to function '" +
                   constructor + "' has type '" + *actual + "', expected '" +
@@ -4046,7 +4048,7 @@ class Checker {
       // A nominal field has one layout. Template placeholders are neither
       // concrete inference evidence nor a type conflict; concrete body checking
       // revisits this constructor once the specialization TypeEnv is available.
-      if (!actual || contains_specialization_placeholder(*actual)) continue;
+      if (!actual || contains_internal_placeholder(*actual)) continue;
       string inferred = canonical_type_name(*actual);
       if (field->type.empty()) field->type = inferred;
       else if ((inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
@@ -4062,7 +4064,7 @@ class Checker {
   }
 
   static bool concrete_environment_type(const string& type) {
-    return !type.empty() && !starts_with(type, "_");
+    return !type.empty() && !contains_internal_placeholder(type);
   }
 
   void refine_map_index_assignment_type(const string& target,
@@ -4229,7 +4231,7 @@ class Checker {
             (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
         if (!deferred && (!scrutinee_type ||
             !enums_.count(canonical_type_name(*scrutinee_type))))
-          err(statement.line, scrutinee_type && !starts_with(*scrutinee_type, "_")
+          err(statement.line, scrutinee_type && !contains_internal_placeholder(*scrutinee_type)
                   ? "match requires an enum scrutinee; found " + *scrutinee_type
                   : "match scrutinee has an unknown or unresolved enum type",
               "MATCH_REQUIRES_ENUM");
@@ -4526,7 +4528,7 @@ class Checker {
                 else if (!function->second->generic &&
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
-                         !starts_with(*actual, "_") &&
+                         !contains_internal_placeholder(*actual) &&
                          !same_type(parameter.type, *actual))
                   err(statement.line, "argument " + std::to_string(i + 1) + " to function '" +
                       function->second->name + "' has type '" + *actual +
@@ -5128,7 +5130,7 @@ class Checker {
         for (const auto& s : function.body) if (s.kind == Stmt::Kind::Return && !s.a.empty()) mark(s.a);
       }
       auto result_expectation = [&]() {
-        if (function.return_type && !starts_with(*function.return_type, "_"))
+        if (function.return_type && !contains_internal_placeholder(*function.return_type))
           return *function.return_type;
         return string("$function_result");
       };
@@ -5178,7 +5180,7 @@ class Checker {
           derive_expression_constraints(function, source->second,
                                         result_expectation());
       }
-      if (!function.return_type || starts_with(*function.return_type, "_"))
+      if (!function.return_type || contains_internal_placeholder(*function.return_type))
         for (const auto& kv : function.generic_results)
           function.return_type = kv.first.rfind("element:", 0) == 0 ? "_element:" + kv.first : kv.first.rfind("field:", 0) == 0 ? "_field:" + kv.first : "_generic:" + kv.first;
     }
@@ -5197,8 +5199,8 @@ class Checker {
           constrain_constructor_fields(function.result_line, *function.result_expression, env);
           if (auto result = inferred_expr_type(*function.result_expression, env)) {
             if (!function.return_type) function.return_type = *result;
-            else if (!starts_with(*function.return_type, "_") &&
-                     !starts_with(*result, "_method_") &&
+            else if (!contains_internal_placeholder(*function.return_type) &&
+                     !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
                       !starts_with(*result, "_functional_callable_result:") &&
                      !same_type(*function.return_type, *result))
               err(function.result_line, "function '" + function.name + "' returns '" + *result +
@@ -5211,7 +5213,7 @@ class Checker {
             if (!result) continue;
             if (!function.return_type) function.return_type = *result;
             else if (!starts_with(*function.return_type, "_method_result:") &&
-                     !starts_with(*result, "_method_") &&
+                     !(*result == "_method_value" || starts_with(*result, "_method_result:")) &&
                      !same_type(*function.return_type, *result))
               err(statement.line, "function '" + function.name + "' returns '" + *result +
                   "' but another return path has type '" + *function.return_type + "'");
@@ -5403,7 +5405,7 @@ class Checker {
 
   bool effect_requires_borrow(const string& type) const {
     string t = canonical_type_name(type);
-    if (t.empty() || starts_with(t, "_") || copy_type(t) || domains_.count(t)) return false;
+    if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
     return true;
   }
 
@@ -5469,7 +5471,7 @@ class Checker {
   void checked_state_leaves(const string& path, const string& type,
                             StateLeafSet& leaves, std::set<string> active = {}) const {
     string concrete = canonical_type_name(type);
-    synchronization_require(!concrete.empty() && !starts_with(concrete, "_") &&
+    synchronization_require(!concrete.empty() && !contains_internal_placeholder(concrete) &&
                             !traits_.count(concrete), "unresolved state layout");
     auto object = objects_.find(concrete);
     if (object == objects_.end()) {
@@ -5953,10 +5955,10 @@ class Checker {
     bool found = false;
     string type = canonical_type_name(receiver_type);
     for (const auto& object : p_.objects) {
-      if (!starts_with(type, "_") && traits_.count(type) &&
+      if (!contains_internal_placeholder(type) && traits_.count(type) &&
           !trait_conforms(object.name, type))
         continue;
-      if (!starts_with(type, "_") && !traits_.count(type) &&
+      if (!contains_internal_placeholder(type) && !traits_.count(type) &&
           object.name != type)
         continue;
       for (const auto& method : object.methods) {
@@ -6745,7 +6747,7 @@ class Checker {
                 "method:" + type + "." + method->name, arguments,
                 argument_types});
           }
-        } else if (traits_.count(type) || starts_with(type, "_")) {
+        } else if (traits_.count(type) || contains_internal_placeholder(type)) {
           for (const auto& object : p_.objects) {
             if (traits_.count(type) && !trait_conforms(object.name, type)) continue;
             for (const auto& method : object.methods)
@@ -7944,7 +7946,7 @@ class Checker {
     auto source_type = inferred_expr_type(parsed->source, env);
     if (!source_type) return std::nullopt;
     auto element = functional_element_type(*source_type, parsed->source);
-    if (!element || starts_with(*source_type, "_")) return std::nullopt;
+    if (!element || contains_internal_placeholder(*source_type)) return std::nullopt;
 
     FunctionalPipeline pipeline;
     pipeline.transient_id = next_pipeline_id++;
@@ -9240,7 +9242,7 @@ class Checker {
   }
 
   static bool concrete_specialization_type(const string& type) {
-    return !type.empty() && !starts_with(type, "_");
+    return !type.empty() && !contains_internal_placeholder(type);
   }
 
   static string type_list(const vector<string>& types) {
@@ -9271,8 +9273,8 @@ class Checker {
       const string& actual = argument_types[index];
       // Empty collections acquire element evidence through the existing type
       // environment walker. Generic arguments are checked in the concrete body.
-      if (!expected || contains_specialization_placeholder(*expected) ||
-          contains_specialization_placeholder(actual)) continue;
+      if (!expected || contains_internal_placeholder(*expected) ||
+          contains_internal_placeholder(actual)) continue;
       if (actual.empty() || !same_type(*expected, actual)) {
         string message = operation->receiver == BuiltinReceiverFamily::String
             ? "String " + method + " expects " + *expected
@@ -9520,9 +9522,9 @@ class Checker {
           ((param.type == "vector" && starts_with(actual_type, "vector[")) ||
            (param.type == "map" && starts_with(actual_type, "map[")) ||
            (param.type == "queue" && starts_with(actual_type, "queue[")));
-      if (!actual_type.empty() && !starts_with(actual_type, "_") &&
+      if (!actual_type.empty() && !contains_internal_placeholder(actual_type) &&
           !function->second->generic && !param.type.empty() &&
-          !starts_with(param.type, "_") && !traits_.count(param.type) &&
+          !contains_internal_placeholder(param.type) && !traits_.count(param.type) &&
           !container_match && !same_type(param.type, actual_type))
         err(line, "argument " + std::to_string(index + 1) + " to function '" + name +
             "' has type '" + actual_type + "', expected '" +
@@ -10176,7 +10178,7 @@ class Checker {
               std::to_string(named->params.size()) + " arguments");
         for (size_t index = 0; index < args.size(); ++index) {
           auto actual = inferred_expr_type(args[index], env);
-          if (actual && !starts_with(*actual, "_") &&
+          if (actual && !contains_internal_placeholder(*actual) &&
               !method->params[index].type.empty() &&
               !same_type(*actual, method->params[index].type))
             err(line, "argument " + std::to_string(index + 1) +
@@ -10339,7 +10341,7 @@ class Checker {
         err(line, "iterator type '" + iterator_type + "' has next() without an Option result");
       string result = canonical_type_name(*next->return_type);
       string element = trim(result.substr(7, result.size() - 8));
-      if (element.empty() || starts_with(element, "_"))
+      if (element.empty() || contains_internal_placeholder(element))
         err(line, "iterator type '" + iterator_type + "' has an unresolved next() element type");
       return element;
     };
@@ -10450,8 +10452,8 @@ class Checker {
               check_expression(statement.line, statement.a, current_env);
               auto element_type = inferred_expr_type(statement.a, current_env);
               if (element_type && value_type &&
-                  !starts_with(*element_type, "_") &&
-                  !starts_with(*value_type, "_") &&
+                  !contains_internal_placeholder(*element_type) &&
+                  !contains_internal_placeholder(*value_type) &&
                   !same_type(*element_type, *value_type))
                 err(statement.line, "indexed assignment requires value of type '" +
                     canonical_type_name(*element_type) + "', found '" +
@@ -10739,9 +10741,9 @@ class Checker {
             concrete_specialization_type(*actual) &&
             trait_conforms(*actual, *current_function->return_type);
         if (current_function->return_type &&
-            !starts_with(*current_function->return_type, "_") &&
+            !contains_internal_placeholder(*current_function->return_type) &&
             !starts_with(*actual, "_generic:") &&
-            !starts_with(*actual, "_method_") &&
+            !(*actual == "_method_value" || starts_with(*actual, "_method_result:")) &&
             !starts_with(*actual, "_functional_callable_result:") &&
             !trait_result_match &&
             !option_none_compatible(*actual, *current_function->return_type) &&
@@ -12585,7 +12587,7 @@ class Generator {
 
   bool borrowable_type(const string& type) const {
     string t = canonical_type_name(type);
-    if (t.empty() || starts_with(t, "_") || copy_type(t) || domains_.count(t)) return false;
+    if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
     return true;
   }
 
@@ -12886,7 +12888,7 @@ class Generator {
       return std::nullopt;
     }
     if (function->second->return_type &&
-        !starts_with(*function->second->return_type, "_"))
+        !contains_internal_placeholder(*function->second->return_type))
       return canonical_type_name(*function->second->return_type);
     return std::nullopt;
   }
@@ -12980,7 +12982,7 @@ class Generator {
     if (types) {
       auto local = types->find(value);
       if (local != types->end() && !local->second.empty() &&
-          !starts_with(local->second, "_"))
+          !contains_internal_placeholder(local->second))
         return canonical_type_name(local->second);
     }
     if (starts_with(value, "not ")) {
@@ -13088,7 +13090,7 @@ class Generator {
               return argument_types[index];
           return std::nullopt;
         }
-        if (!starts_with(result, "_")) return result;
+        if (!contains_internal_placeholder(result)) return result;
       }
     }
 
@@ -15671,7 +15673,7 @@ class Generator {
               ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
           for (const auto& entry : joined_types)
-            if (!types.count(entry.first) && !starts_with(entry.second, "_"))
+            if (!types.count(entry.first) && !contains_internal_placeholder(entry.second))
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
@@ -15763,7 +15765,7 @@ class Generator {
               ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
           for (const auto& entry : joined_types)
-            if (!types.count(entry.first) && !starts_with(entry.second, "_"))
+            if (!types.count(entry.first) && !contains_internal_placeholder(entry.second))
               joined_bindings.push_back(entry.first);
           std::sort(joined_bindings.begin(), joined_bindings.end());
           for (const auto& binding : joined_bindings) {
@@ -22191,14 +22193,14 @@ static void prepare_and_validate_module_exports(Program& program,
     if (!finalize) continue;
     for (const auto& parameter : function.params) {
       if (parameter.type == "vector" || parameter.type == "map" ||
-          parameter.type == "queue" || starts_with(parameter.type, "_")) {
+          parameter.type == "queue" || contains_internal_placeholder(parameter.type)) {
         CompileError error(function.line,
             "typed export '" + function.name + "' has an unresolved parameter type");
         error.source_file = function.source_file;
         throw error;
       }
     }
-    if (!function.return_type || starts_with(*function.return_type, "_") ||
+    if (!function.return_type || contains_internal_placeholder(*function.return_type) ||
         *function.return_type == "vector" || *function.return_type == "map" ||
         *function.return_type == "queue") {
       CompileError error(function.line,

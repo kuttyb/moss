@@ -1,0 +1,8 @@
+type _Payload:
+  value: Int
+
+fn bad() -> _Payload:
+  return 1
+
+fn main():
+  p = bad()

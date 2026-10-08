@@ -296,5 +296,73 @@
   },
   "map_generic_wrong_default": {
     "code": "TYPE_MISMATCH"
+  },
+  "underscore_direct_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_direct_valid": {
+    "stdout": "1\n"
+  },
+  "underscore_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_generic_valid": {
+    "stdout": "7\n"
+  },
+  "underscore_vector_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_vector_valid": {
+    "stdout": "1\n"
+  },
+  "underscore_vector_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_vector_generic_valid": {
+    "stdout": "1\n"
+  },
+  "underscore_map_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_map_valid": {
+    "stdout": "1\n"
+  },
+  "underscore_queue_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_queue_valid": {
+    "stdout": "1\n"
+  },
+  "underscore_typed_read": {
+    "stdout": "4\n4\n"
+  },
+  "underscore_domain_state": {
+    "stdout": "5\n"
+  },
+  "underscore_branch_join": {
+    "stdout": "6\n"
+  },
+  "underscore_typed_return_invalid": {
+    "code": "MOSS_COMPILE_ERROR"
+  },
+  "underscore_push_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_push_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "underscore_marker_like_nominals": {
+    "stdout": "8\n"
+  },
+  "underscore_pipeline": {
+    "stdout": "3\n",
+    "effects": {
+      "fn:rebuild": [
+        "READ"
+      ]
+    }
+  },
+  "underscore_handler_payload": {
+    "stdout": "9\n"
   }
 }

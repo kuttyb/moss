@@ -1,0 +1,11 @@
+type _Payload:
+  value: Int
+
+domain Reader:
+  fn Read(p: _Payload) -> Int:
+    reply p.value
+
+fn main():
+  reader = Reader()
+  p = _Payload(value = 9)
+  echo message reader.Read(p)

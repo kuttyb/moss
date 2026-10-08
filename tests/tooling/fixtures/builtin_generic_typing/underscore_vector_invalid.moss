@@ -1,0 +1,9 @@
+type _Payload:
+  value: Int
+
+type Box:
+  items: Vector[String]
+
+fn main():
+  p = _Payload(value = 1)
+  b = Box(items = [p])

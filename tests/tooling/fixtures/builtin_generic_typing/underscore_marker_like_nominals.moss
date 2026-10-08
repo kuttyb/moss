@@ -1,0 +1,13 @@
+type _method_valueExtra:
+  value: Int
+
+type _functional_resultExtra:
+  payload: _method_valueExtra
+
+fn wrap(x):
+  return _functional_resultExtra(payload = x)
+
+fn main():
+  p = _method_valueExtra(value = 8)
+  b = wrap(p)
+  echo b.payload.value

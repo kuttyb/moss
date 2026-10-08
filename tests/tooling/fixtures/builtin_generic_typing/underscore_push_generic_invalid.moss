@@ -1,0 +1,10 @@
+type _Payload:
+  value: Int
+
+fn add(items, x):
+  items.push(x)
+
+fn main():
+  items = ["a"]
+  p = _Payload(value = 1)
+  add(items, p)
