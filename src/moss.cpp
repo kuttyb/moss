@@ -570,6 +570,30 @@ static string strip_redundant_outer_parentheses(string value) {
   return value;
 }
 
+static std::optional<vector<string>> parse_vector_literal(const string& expression) {
+  string value = strip_redundant_outer_parentheses(expression);
+  if (value.size() < 2 || value.front() != '[' || value.back() != ']')
+    return std::nullopt;
+  int depth = 0;
+  bool in_str = false, esc = false;
+  for (size_t i = 0; i < value.size(); ++i) {
+    char c = value[i];
+    if (in_str) {
+      if (esc) esc = false;
+      else if (c == '\\') esc = true;
+      else if (c == '"') in_str = false;
+      continue;
+    }
+    if (c == '"') { in_str = true; continue; }
+    if (c == '[') ++depth;
+    else if (c == ']' && --depth == 0 && i != value.size() - 1)
+      return std::nullopt;  // For example, [x][0] is an indexed expression.
+  }
+  if (in_str || depth != 0) return std::nullopt;
+  string inside = trim(value.substr(1, value.size() - 2));
+  return inside.empty() ? vector<string>{} : split_top_level(inside, ',');
+}
+
 static size_t top_level_assignment(const string& text) {
   int par = 0, br = 0, sq = 0;
   bool in_str = false, esc = false;
@@ -5409,6 +5433,13 @@ class Checker {
     return true;
   }
 
+  Effect vector_element_effect(const string& expression,
+                                const TypeEnv& env) const {
+    auto type = inferred_expr_type(expression, env);
+    // Unresolved template evidence is revisited with concrete element types.
+    return type && effect_requires_borrow(*type) ? Effect::Consume : Effect::Read;
+  }
+
   struct StorageLocation {
     string root;
     vector<string> path;
@@ -6052,6 +6083,15 @@ class Checker {
     // parameter summary collapses projections to their root.
     string value = strip_expression_parens(normalize_pipeline(trim(expression)));
     if (value.empty()) return;
+    if (auto elements = parse_vector_literal(value)) {
+      // Construction owns its elements, even when the new vector is READ.
+      // Use the same rule for parameter summaries and state-leaf observation.
+      for (const auto& element : *elements)
+        analyze_effect_expression(element, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields,
+                                  vector_element_effect(element, env));
+      return;
+    }
     if (leaf_effect_capture_) {
       if (auto location = storage_location(value, env)) {
         observe_leaf_access(*location, projection_effect(value, requested, env));
@@ -6072,12 +6112,6 @@ class Checker {
     }
 
     if (leaf_effect_capture_) {
-      if (value.front() == '[' && value.back() == ']') {
-        for (const auto& item : split_top_level(value.substr(1, value.size() - 2), ','))
-          analyze_effect_expression(item, env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Read);
-        return;
-      }
       for (const auto& op : vector<string>{" or ", " xor ", " and "}) {
         if (auto binary = split_binary(value, {op})) {
           analyze_effect_expression(binary->first, env, params, parameter_effects,
@@ -8530,8 +8564,14 @@ class Checker {
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
     string original = trim(expression);
     if (check_functional_pipeline_ownership(line, original, env)) return;
-    string value = normalize_pipeline(std::move(original));
+    string value = strip_expression_parens(normalize_pipeline(std::move(original)));
     if (value.empty()) return;
+    if (auto elements = parse_vector_literal(value)) {
+      for (const auto& element : *elements)
+        check_ownership_expression(line, element, env,
+                                   vector_element_effect(element, env.types));
+      return;
+    }
     auto requested_type = inferred_expr_type(value, env.types);
     if (requested == Effect::Consume && requested_type &&
         fileio_scoped_type(*requested_type))

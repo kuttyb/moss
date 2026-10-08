@@ -364,5 +364,151 @@
   },
   "underscore_handler_payload": {
     "stdout": "9\n"
+  },
+  "vector_literal_direct": {
+    "stdout": "1\n"
+  },
+  "vector_literal_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_duplicate": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_typed": {
+    "stdout": "7\n",
+    "effects": {
+      "fn:singleton": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_generic": {
+    "stdout": "7\n",
+    "effects": {
+      "fn:singleton<Payload>": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_generic_call_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_constructor_typed": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:wrap": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_constructor_generic": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:wrap<Payload>": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_string": {
+    "stdout": "hello\n",
+    "effects": {
+      "fn:singleton<string>": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_string_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_copy_typed": {
+    "stdout": "4\n4\n",
+    "effects": {
+      "fn:singleton": [
+        "READ"
+      ]
+    }
+  },
+  "vector_literal_copy_generic": {
+    "stdout": "4\n4\n",
+    "effects": {
+      "fn:singleton<int>": [
+        "READ"
+      ]
+    }
+  },
+  "vector_literal_nested": {
+    "stdout": "1\n"
+  },
+  "vector_literal_nested_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_fresh": {
+    "stdout": "1\n"
+  },
+  "vector_literal_read_context": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:count_items": [
+        "READ"
+      ],
+      "fn:count_literal": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_read_context_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_consume_context": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:take": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_grouped": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:singleton": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_copy_state": {
+    "stdout": "3\n",
+    "leaf_effects": {
+      "handler:Store.Snapshot": {
+        "value": "READ"
+      }
+    }
+  },
+  "vector_literal_owned_state_reject": {
+    "code": "MOSS_COMPILE_ERROR"
+  },
+  "vector_literal_state_replace": {
+    "stdout": "old\nnew\n",
+    "leaf_effects": {
+      "handler:Store.Take": {
+        "name": "WRITE"
+      },
+      "handler:Store.Read": {
+        "name": "READ"
+      }
+    }
+  },
+  "vector_literal_grouped_element": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:singleton": [
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_literal_grouped_element_reuse": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "vector_literal_grouped_element_duplicate": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
   }
 }

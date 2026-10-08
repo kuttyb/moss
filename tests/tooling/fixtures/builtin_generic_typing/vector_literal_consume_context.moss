@@ -1,0 +1,10 @@
+type Payload:
+  value: Int
+
+fn take(xs: Vector[Payload]) -> Vector[Payload]:
+  return xs
+
+fn main():
+  p = Payload(value = 1)
+  xs = take([p])
+  echo xs[0].value

@@ -1,0 +1,10 @@
+type Payload:
+  value: Int
+
+fn singleton(x: Payload) -> Vector[Payload]:
+  return [x]
+
+fn main():
+  p = Payload(value = 7)
+  xs = singleton(p)
+  echo xs[0].value

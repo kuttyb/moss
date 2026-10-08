@@ -1,0 +1,8 @@
+fn singleton(x):
+  return [x]
+
+fn main():
+  x = 4
+  xs = singleton(x)
+  echo x
+  echo xs[0]

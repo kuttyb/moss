@@ -1,0 +1,14 @@
+domain Store:
+  name = "old"
+
+  fn Take() -> Vector[String]:
+    reply [replace(name, "new")]
+
+  fn Read() -> String:
+    reply name
+
+fn main():
+  store = Store()
+  xs = message store.Take()
+  echo xs[0]
+  echo message store.Read()

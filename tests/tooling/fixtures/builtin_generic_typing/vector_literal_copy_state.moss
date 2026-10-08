@@ -1,0 +1,10 @@
+domain Store:
+  value = 3
+
+  fn Snapshot() -> Vector[Int]:
+    reply [value]
+
+fn main():
+  store = Store()
+  xs = message store.Snapshot()
+  echo xs[0]

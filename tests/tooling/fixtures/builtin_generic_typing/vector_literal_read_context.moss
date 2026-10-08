@@ -1,0 +1,12 @@
+type Payload:
+  value: Int
+
+fn count_items(xs: Vector[Payload]) -> Int:
+  return xs |> count
+
+fn count_literal(x: Payload) -> Int:
+  return count_items([x])
+
+fn main():
+  p = Payload(value = 1)
+  echo count_literal(p)

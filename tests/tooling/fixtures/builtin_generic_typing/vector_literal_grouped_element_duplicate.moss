@@ -1,0 +1,6 @@
+type Payload:
+  value: Int
+
+fn main():
+  p = Payload(value = 1)
+  xs = [(p), p]

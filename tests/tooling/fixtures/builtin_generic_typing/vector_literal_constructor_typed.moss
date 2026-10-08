@@ -1,0 +1,13 @@
+type Payload:
+  value: Int
+
+type Box:
+  items: Vector[Payload]
+
+fn wrap(x: Payload) -> Box:
+  return Box(items = [x])
+
+fn main():
+  p = Payload(value = 1)
+  b = wrap(p)
+  echo b.items[0].value

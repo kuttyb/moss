@@ -1,0 +1,7 @@
+fn singleton(x):
+  return [x]
+
+fn main():
+  s = "hello"
+  xs = singleton(s)
+  echo s
