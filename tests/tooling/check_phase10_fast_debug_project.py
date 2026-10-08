@@ -20,7 +20,7 @@ def main() -> int:
         (root / "src" / "main.moss").write_text(
             "module app\nimport helper\n\n"
             "fn main():\n"
-            "  assert helper.double(3) == 6\n"
+             "  assert(helper.double(3) == 6)\n"
             "  echo helper.double(4)\n"
         )
         (root / "src" / "helper.moss").write_text(

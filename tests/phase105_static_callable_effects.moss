@@ -19,6 +19,6 @@ proc main():
   named = transform(values, announce)
   bound = values |> map(scaler.apply)
   placeholder = values |> map(_ + 1)
-  assert named[0] == 1
-  assert bound[1] == 6
-  assert placeholder[0] == 2
+  assert(named[0] == 1)
+  assert(bound[1] == 6)
+  assert(placeholder[0] == 2)

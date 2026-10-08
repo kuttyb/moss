@@ -1,0 +1,8 @@
+fn main():
+  x = 1
+  assertion_count = 1
+  assert(x == 1)
+  assert(true)
+  assertEqual(1, 1)
+  assertEqual(x, 1)
+  echo assertion_count

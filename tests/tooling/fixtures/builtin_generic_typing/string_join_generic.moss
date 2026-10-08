@@ -1,0 +1,6 @@
+fn call(s):
+  return s.join([1])
+
+fn main():
+  s = "abc"
+  echo call("abc")

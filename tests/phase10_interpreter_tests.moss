@@ -2,11 +2,11 @@ fn double(value: Int) -> Int:
   return value * 2
 
 test "double":
-  assert double(21) == 42
+  assert(double(21) == 42)
   assertEqual(double(3), 6)
 
 test "other":
-  assert true
+  assert(true)
 
 fn main():
   echo "interpreter tests"

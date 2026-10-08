@@ -1,0 +1,4 @@
+fn main():
+  q = [1]
+  q.push(2)
+  echo q.pop()

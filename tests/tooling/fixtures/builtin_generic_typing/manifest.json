@@ -1,0 +1,300 @@
+{
+  "push_direct": {
+    "code": "TYPE_MISMATCH"
+  },
+  "push_typed": {
+    "code": "TYPE_MISMATCH"
+  },
+  "push_generic": {
+    "code": "TYPE_MISMATCH"
+  },
+  "push_queue": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_generic": {
+    "stdout": "hello\n",
+    "effects": {
+      "fn:wrap<string>": [
+        "CONSUME"
+      ]
+    }
+  },
+  "constructor_typed": {
+    "stdout": "hello\n"
+  },
+  "constructor_projection": {
+    "stdout": "hi\n"
+  },
+  "assert_bare_comparison": {
+    "code": "INVALID_ASSERT_SYNTAX"
+  },
+  "assert_equal_bare": {
+    "code": "INVALID_ASSERT_SYNTAX"
+  },
+  "vector_valid": {
+    "stdout": "2\n"
+  },
+  "vector_int_direct_valid": {
+    "stdout": "2\n"
+  },
+  "vector_int_generic_valid": {
+    "stdout": "2\n",
+    "effects": {
+      "fn:add<vector[int],int>": [
+        "WRITE",
+        "READ"
+      ]
+    }
+  },
+  "vector_int_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_string_direct_valid": {
+    "stdout": "2\n"
+  },
+  "vector_string_direct_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_string_generic_valid": {
+    "stdout": "2\n",
+    "effects": {
+      "fn:add<vector[string],string>": [
+        "WRITE",
+        "CONSUME"
+      ]
+    }
+  },
+  "vector_string_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_valid": {
+    "stdout": "1\n"
+  },
+  "queue_int_direct_valid": {
+    "stdout": "1\n"
+  },
+  "queue_int_generic_valid": {
+    "stdout": "1\n",
+    "effects": {
+      "fn:add<queue[int],int>": [
+        "WRITE",
+        "READ"
+      ]
+    }
+  },
+  "queue_int_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_string_direct_valid": {
+    "stdout": "a\n"
+  },
+  "queue_string_direct_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_string_generic_valid": {
+    "stdout": "a\n",
+    "effects": {
+      "fn:add<queue[string],string>": [
+        "WRITE",
+        "CONSUME"
+      ]
+    }
+  },
+  "queue_string_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_tuples_valid": {
+    "stdout": "2\n2\n"
+  },
+  "string_char_at_direct": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_char_at_generic": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_split_direct": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_split_generic": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_join_direct": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_join_generic": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_valid": {
+    "stdout": "3\nb\n2\na-b\n"
+  },
+  "map_get_key": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_get_default": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_key": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_fallback": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_flag_type": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_flag_literal": {
+    "code": "INVALID_WRITE_ARGUMENT"
+  },
+  "map_get_arity": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_arity": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_keys_arity": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_values_arity": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_delete_immutable": {
+    "code": "IMMUTABLE_LOCAL_MUTATION"
+  },
+  "map_valid": {
+    "stdout": "1\n1\n1\n7\n1\ntrue\n9\nfalse\n"
+  },
+  "map_generic_valid": {
+    "stdout": "value\nvalue\ntrue\n",
+    "effects": {
+      "fn:erase<map[string,string],string,string,bool>": [
+        "WRITE",
+        "READ",
+        "CONSUME",
+        "WRITE"
+      ],
+      "fn:lookup<map[string,string],string,string>": [
+        "READ",
+        "READ",
+        "READ"
+      ]
+    }
+  },
+  "constructor_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_typed_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_expression": {
+    "stdout": "hi\n"
+  },
+  "constructor_nested": {
+    "stdout": "a!\n"
+  },
+  "constructor_multiple": {
+    "stdout": "a\n2\nc\n"
+  },
+  "constructor_later_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_uninferred": {
+    "code": "TYPE_INFERENCE_FAILED"
+  },
+  "assert_bare_word": {
+    "code": "INVALID_ASSERT_SYNTAX"
+  },
+  "assert_bare_true": {
+    "code": "INVALID_ASSERT_SYNTAX"
+  },
+  "assert_bare_tab": {
+    "code": "MOSS_COMPILE_ERROR"
+  },
+  "assert_non_bool": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_empty": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_two": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_equal_empty": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_equal_one": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_equal_three": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_equal_types": {
+    "code": "TEST_ASSERTION_CONFIGURATION_ERROR"
+  },
+  "assert_valid": {
+    "stdout": "1\n"
+  },
+  "queue_typed_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_partial_generic_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_inferred_field": {
+    "stdout": "seed\nhello\n"
+  },
+  "constructor_collection_placeholder": {
+    "stdout": "1\n"
+  },
+  "constructor_collection_invalid": {
+    "code": "TYPE_MISMATCH"
+  },
+  "constructor_nested_consumed": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "constructor_nested_consumed_typed": {
+    "code": "OWNERSHIP_USE_AFTER_CONSUME"
+  },
+  "constructor_collection_uninferred": {
+    "code": "TYPE_INFERENCE_FAILED"
+  },
+  "domain_push": {
+    "stdout": "2\n",
+    "effects": {
+      "fn:add<vector[int],int>": [
+        "WRITE",
+        "READ"
+      ]
+    },
+    "synchronization": "Store.Add"
+  },
+  "vector_push_arity_0": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_push_arity_4": {
+    "code": "TYPE_MISMATCH"
+  },
+  "vector_pop_arity_1": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_push_arity_0": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_push_arity_4": {
+    "code": "TYPE_MISMATCH"
+  },
+  "queue_pop_arity_1": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_statement_char_at": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_statement_split": {
+    "code": "TYPE_MISMATCH"
+  },
+  "string_statement_join": {
+    "code": "TYPE_MISMATCH"
+  },
+  "map_generic_wrong_default": {
+    "code": "TYPE_MISMATCH"
+  }
+}

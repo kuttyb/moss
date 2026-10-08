@@ -1,0 +1,4 @@
+fn main():
+  v = ["a"]
+  v.push("a")
+  echo v |> count

@@ -1,0 +1,10 @@
+fn add(v, x):
+  v.push(x)
+
+fn main():
+  ints = [1]
+  strings = ["a"]
+  add(ints, 2)
+  add(strings, "b")
+  echo ints |> count
+  echo strings |> count

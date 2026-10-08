@@ -1,0 +1,12 @@
+fn main():
+  m = Map()
+  m["a"] = 1
+  var found = false
+  echo m.keys() |> count
+  echo m.values() |> sum
+  echo m.get("a", 0)
+  echo m.get("missing", 7)
+  echo m.delete("a", 0, found)
+  echo found
+  echo m.delete("missing", 9, found)
+  echo found

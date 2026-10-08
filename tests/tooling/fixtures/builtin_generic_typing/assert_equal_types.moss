@@ -1,0 +1,2 @@
+fn main():
+  assertEqual(1, "x")

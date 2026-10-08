@@ -1,0 +1,5 @@
+fn main():
+  q = Queue()
+  q.push(1)
+  q.push(2)
+  echo q.pop()

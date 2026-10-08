@@ -223,6 +223,7 @@ struct BuiltinOperationDescriptor {
   const char* result;
   Effect receiver_effect;
   vector<Effect> argument_effects;
+  vector<string> argument_types;
   bool may_fail = false;
 };
 
@@ -230,19 +231,19 @@ struct BuiltinOperationDescriptor {
 // owns the operation set; editor completion projects these same descriptors.
 static const vector<BuiltinOperationDescriptor>& builtin_operations() {
   static const vector<BuiltinOperationDescriptor> operations = {
-      {BuiltinReceiverFamily::Vector, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}},
-      {BuiltinReceiverFamily::Vector, "pop", "pop()", "$element", Effect::Write, {}, true},
-      {BuiltinReceiverFamily::Map, "get", "get(key, default)", "$value", Effect::Read, {Effect::Read, Effect::Read}},
-      {BuiltinReceiverFamily::Map, "keys", "keys()", "$keys", Effect::Read, {}},
-      {BuiltinReceiverFamily::Map, "values", "values()", "$values", Effect::Read, {}},
-      {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}},
-      {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}},
-      {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, true},
-      {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}},
-      {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, true},
-      {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}},
-      {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, true},
-      {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}},
+      {BuiltinReceiverFamily::Vector, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
+      {BuiltinReceiverFamily::Vector, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::Map, "get", "get(key, default)", "$value", Effect::Read, {Effect::Read, Effect::Read}, {"$key", "$value"}},
+      {BuiltinReceiverFamily::Map, "keys", "keys()", "$keys", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Map, "values", "values()", "$values", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}, {"$key", "$value", "bool"}},
+      {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
+      {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::String, "length", "length()", "int", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "char_at", "char_at(index)", "string", Effect::Read, {Effect::Read}, {"int"}, true},
+      {BuiltinReceiverFamily::String, "chars", "chars()", "vector[string]", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::String, "split", "split(separator)", "vector[string]", Effect::Read, {Effect::Read}, {"string"}, true},
+      {BuiltinReceiverFamily::String, "join", "join(parts)", "string", Effect::Read, {Effect::Read}, {"vector[string]"}},
   };
   return operations;
 }
@@ -272,24 +273,39 @@ static const BuiltinOperationDescriptor* builtin_operation(
   return operation == builtin_operations().end() ? nullptr : &*operation;
 }
 
-static std::optional<string> builtin_operation_result(
-    const string& receiver_type, const string& name, size_t arity) {
-  const auto* operation = builtin_operation(receiver_type, name);
-  if (!operation || operation->argument_effects.size() != arity) return std::nullopt;
-  string result = operation->result;
-  if (result == "$element") {
+// Instantiate both argument and result relationships from the same receiver.
+static std::optional<string> builtin_operation_type(
+    const string& receiver_type, const string& pattern) {
+  if (pattern == "$element") {
     string concrete = canonical_type_name(receiver_type);
     auto open = concrete.find('[');
     if (open == string::npos || !ends_with(concrete, "]")) return std::nullopt;
     return concrete.substr(open + 1, concrete.size() - open - 2);
   }
-  if (!result.empty() && result.front() == '$') {
+  if (!pattern.empty() && pattern.front() == '$') {
     auto types = map_key_value_types(receiver_type);
     if (!types) return std::nullopt;
-    if (result == "$value") return types->second;
-    return "vector[" + (result == "$keys" ? types->first : types->second) + "]";
+    if (pattern == "$key") return types->first;
+    if (pattern == "$value") return types->second;
+    return "vector[" + (pattern == "$keys" ? types->first : types->second) + "]";
   }
-  return result;
+  return pattern;
+}
+
+static std::optional<string> builtin_operation_result(
+    const string& receiver_type, const string& name, size_t arity) {
+  const auto* operation = builtin_operation(receiver_type, name);
+  if (!operation || operation->argument_types.size() != arity) return std::nullopt;
+  return builtin_operation_type(receiver_type, operation->result);
+}
+
+static bool contains_specialization_placeholder(const string& type) {
+  if (starts_with(type, "_")) return true;
+  auto open = type.find('[');
+  if (open == string::npos || !ends_with(type, "]")) return false;
+  for (const auto& part : split_top_level(type.substr(open + 1, type.size() - open - 2), ','))
+    if (contains_specialization_placeholder(trim(part))) return true;
+  return false;
 }
 
 // The concrete effect is semantic metadata; both native sides derive their
@@ -1505,6 +1521,14 @@ class Parser {
       return s;
     }
 
+    for (const string& assertion : {string("assert"), string("assertEqual")}) {
+      if (L.text == assertion ||
+          (starts_with(L.text, assertion) && L.text.size() > assertion.size() &&
+           std::isspace(static_cast<unsigned char>(L.text[assertion.size()]))))
+        throw CompileError(L.no,
+            assertion + " uses call syntax; write " + assertion + "(...)",
+            "INVALID_ASSERT_SYNTAX");
+    }
     s.kind = Stmt::Kind::Raw;
     return s;
   }
@@ -4019,7 +4043,10 @@ class Checker {
         err(line, "unknown field '" + field_arg.first + "' in " + constructor + " constructor");
       constrain_constructor_fields(line, field_arg.second, env);
       auto actual = inferred_expr_type(field_arg.second, env);
-      if (!actual) continue;
+      // A nominal field has one layout. Template placeholders are neither
+      // concrete inference evidence nor a type conflict; concrete body checking
+      // revisits this constructor once the specialization TypeEnv is available.
+      if (!actual || contains_specialization_placeholder(*actual)) continue;
       string inferred = canonical_type_name(*actual);
       if (field->type.empty()) field->type = inferred;
       else if ((inferred == "map" && starts_with(canonical_type_name(field->type), "map[")) ||
@@ -4030,7 +4057,7 @@ class Checker {
       }
       else if (!same_type(field->type, inferred))
         err(line, "field '" + constructor + "." + field->name + "' has conflicting inferred types '" +
-            field->type + "' and '" + inferred + "'");
+            field->type + "' and '" + inferred + "'", "TYPE_MISMATCH");
     }
   }
 
@@ -9225,6 +9252,38 @@ class Checker {
     return out.str();
   }
 
+  const BuiltinOperationDescriptor* validate_builtin_argument_types(
+      int line, const string& receiver_type, const string& method,
+      const vector<string>& argument_types) const {
+    const auto* operation = builtin_operation(receiver_type, method);
+    if (!operation)
+      err(line, "invalid builtin operation '" + receiver_type + "." + method + "'",
+          "TYPE_MISMATCH");
+    if (argument_types.size() != operation->argument_types.size())
+      err(line, "builtin " + string(operation->signature) + " expects " +
+          std::to_string(operation->argument_types.size()) + " arguments, got " +
+          std::to_string(argument_types.size()), "TYPE_MISMATCH");
+    string signature = operation->signature;
+    auto names = split_top_level(signature.substr(signature.find('(') + 1,
+        signature.size() - signature.find('(') - 2), ',');
+    for (size_t index = 0; index < argument_types.size(); ++index) {
+      auto expected = builtin_operation_type(receiver_type, operation->argument_types[index]);
+      const string& actual = argument_types[index];
+      // Empty collections acquire element evidence through the existing type
+      // environment walker. Generic arguments are checked in the concrete body.
+      if (!expected || contains_specialization_placeholder(*expected) ||
+          contains_specialization_placeholder(actual)) continue;
+      if (actual.empty() || !same_type(*expected, actual)) {
+        string message = operation->receiver == BuiltinReceiverFamily::String
+            ? "String " + method + " expects " + *expected
+            : canonical_type_name(receiver_type).substr(0, receiver_type.find('[')) +
+                " " + method + " " + trim(names[index]) + " type mismatch";
+        err(line, message, "TYPE_MISMATCH");
+      }
+    }
+    return operation;
+  }
+
   void validate_method_requirements(int line, const Function& function,
                                     const vector<string>& parameter_types) const {
     auto instantiated = instantiated_function_env(function, parameter_types);
@@ -9247,6 +9306,9 @@ class Checker {
           receiver->second, requirement.detail, argument_types.size());
       auto builtin = builtin_operation_result(receiver->second, requirement.detail,
                                                argument_types.size());
+      if (builtin_receiver_family(receiver->second))
+        validate_builtin_argument_types(line, receiver->second, requirement.detail,
+                                        argument_types);
       if (!method && !fileio_builtin && !builtin) {
         string prefix = "argument to function '" + function.name + "' has type '" +
             canonical_type_name(receiver->second) + "'";
@@ -10061,64 +10123,20 @@ class Checker {
     if (parse_member_call(value, receiver, handler, args)) {
       if (check_fileio_operation(line, receiver, handler, args, env)) return;
       if (auto receiver_type = inferred_expr_type(receiver, env)) {
-        if (canonical_type_name(*receiver_type) == "string") {
-          const auto* builtin = builtin_operation(*receiver_type, handler);
-          if (!builtin) err(line, "unknown String method '" + handler + "'");
-          bool one = builtin->argument_effects.size() == 1;
-          if (args.size() != builtin->argument_effects.size())
-            err(line, "String " + handler + " expects " + (one ? "one" : "no") + " argument(s)");
-          if (one) {
-            auto arg_type = inferred_expr_type(args[0], env);
-            string expected = handler == "char_at" ? "int" :
-                handler == "split" ? "string" : "vector[string]";
-            if (!arg_type || !same_type(*arg_type, expected))
-              err(line, "String " + handler + " expects " + expected, "TYPE_MISMATCH");
-          }
+        if (builtin_receiver_family(*receiver_type)) {
           check_expression(line, receiver, env);
           for (const auto& arg : args) check_expression(line, arg, env);
+          vector<string> argument_types;
+          for (const auto& arg : args)
+            argument_types.push_back(inferred_expr_type(arg, env).value_or(""));
+          const auto* operation = validate_builtin_argument_types(
+              line, *receiver_type, handler, argument_types);
+          for (size_t index = 0; index < args.size(); ++index)
+            if (operation->argument_effects[index] == Effect::Write &&
+                !storage_location(args[index], env))
+              err(line, "builtin " + handler + " argument '" + args[index] +
+                  "' must be a writable location", "INVALID_WRITE_ARGUMENT");
           return;
-        }
-        if (auto map_types = map_key_value_types(*receiver_type)) {
-          if (!builtin_operation(*receiver_type, handler))
-            err(line, "invalid collection operation '" + handler + "'");
-          if (handler == "delete") {
-            if (args.size() != 3)
-              err(line, "map delete expects key, fallback, and writable Bool flag");
-            auto key_type = inferred_expr_type(args[0], env);
-            auto fallback_type = inferred_expr_type(args[1], env);
-            auto flag_type = inferred_expr_type(args[2], env);
-            if (!key_type || !same_type(map_types->first, *key_type))
-              err(line, "map delete key type mismatch", "TYPE_MISMATCH");
-            if (!fallback_type || !same_type(map_types->second, *fallback_type))
-              err(line, "map delete fallback type mismatch", "TYPE_MISMATCH");
-            if (!flag_type || !same_type(*flag_type, "bool"))
-              err(line, "map delete flag must be Bool", "TYPE_MISMATCH");
-            if (!storage_location(args[2], env))
-              err(line, "map delete flag must be a writable Bool location",
-                  "INVALID_WRITE_ARGUMENT");
-            check_expression(line, receiver, env);
-            for (const auto& arg : args) check_expression(line, arg, env);
-            return;
-          }
-          if (handler == "get") {
-            if (args.size() != 2)
-              err(line, "map get expects key and default arguments");
-            auto key_type = inferred_expr_type(args[0], env);
-            auto default_type = inferred_expr_type(args[1], env);
-            if (!key_type || !same_type(map_types->first, *key_type))
-              err(line, "map get key type mismatch");
-            if (!default_type || !same_type(map_types->second, *default_type))
-              err(line, "map get default type mismatch");
-            check_expression(line, receiver, env);
-            for (const auto& arg : args) check_expression(line, arg, env);
-            return;
-          }
-          if (handler == "keys" || handler == "values") {
-            if (!args.empty())
-              err(line, "map " + handler + " expects no arguments");
-            check_expression(line, receiver, env);
-            return;
-          }
         }
       }
       auto it = env.find(receiver);
@@ -10139,13 +10157,6 @@ class Checker {
             "use-message",
             "write 'message " + receiver + "." + handler +
                 "(...)' for this synchronous cross-domain call");
-      }
-      if (it != env.end() && (it->second == "vector" || it->second == "queue" || it->second == "map" ||
-          starts_with(it->second, "vector[") || starts_with(it->second, "queue[") || starts_with(it->second, "map["))) {
-        const auto* builtin = builtin_operation(it->second, handler);
-        if (builtin && handler == "push" && args.size() == 1) { check_expression(line, args[0], env); return; }
-        if (builtin && handler == "pop" && args.empty() && (starts_with(it->second, "queue[") || starts_with(it->second, "vector["))) return;
-        err(line, "invalid collection operation '" + handler + "'");
       }
       if (it != env.end() && traits_.count(it->second)) {
         const Trait* trait = traits_.at(it->second);
@@ -10223,6 +10234,8 @@ class Checker {
         if (receiver_type && enums_.count(canonical_type_name(*receiver_type)))
           err(line, "enum payload fields require match; field projection is unsupported",
               "ENUM_FIELD_PROJECTION_UNSUPPORTED");
+        if (receiver_type && objects_.count(canonical_type_name(*receiver_type)))
+          check_expression(line, value.substr(0, dot), env);
       }
     }
     string callee;
@@ -10260,6 +10273,7 @@ class Checker {
         return;
       }
       if (objects_.count(callee)) {
+        constrain_constructor_fields(line, value, env);
         std::set<string> supplied;
         for (const auto& arg : args) {
           string field_name, field_value;
@@ -10566,16 +10580,13 @@ class Checker {
                 "write 'message " + statement.a + "." + statement.b +
                     "(...)' for this synchronous cross-domain call");
           }
-          bool collection = receiver != current_env.end() &&
-              (receiver->second == "vector" || receiver->second == "queue" ||
-               receiver->second == "map" || starts_with(receiver->second, "vector[") ||
-               starts_with(receiver->second, "queue[") ||
-               starts_with(receiver->second, "map["));
+          bool receiver_builtin = receiver != current_env.end() &&
+              builtin_receiver_family(receiver->second).has_value();
           fileio_builtin = receiver != current_env.end() &&
               (canonical_type_name(receiver->second) == "FileIO" ||
                canonical_type_name(receiver->second) == "Range" ||
                canonical_type_name(receiver->second) == "RangeBatch");
-          if (!collection && !fileio_builtin) {
+          if (!receiver_builtin && !fileio_builtin) {
             if (receiver != current_env.end() &&
                 objects_.count(canonical_type_name(receiver->second))) {
               vector<string> argument_types;

@@ -1,0 +1,6 @@
+fn add(v: Vector[Int], x):
+  v.push(x)
+
+fn main():
+  v = [1]
+  add(v, "x")

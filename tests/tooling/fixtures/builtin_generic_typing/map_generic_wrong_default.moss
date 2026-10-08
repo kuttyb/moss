@@ -1,0 +1,7 @@
+fn lookup(m, key, fallback):
+  return m.get(key, fallback)
+
+fn main():
+  m = Map()
+  m["a"] = 1
+  echo lookup(m, "a", "wrong")

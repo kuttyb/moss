@@ -1,0 +1,14 @@
+fn erase(m, key, fallback, found):
+  return m.delete(key, fallback, found)
+
+fn lookup(m, key, fallback):
+  return m.get(key, fallback)
+
+fn main():
+  m = Map()
+  m["a"] = "value"
+  var found = false
+  echo lookup(m, "a", "fallback")
+  fallback = "default"
+  echo erase(m, "a", fallback, found)
+  echo found

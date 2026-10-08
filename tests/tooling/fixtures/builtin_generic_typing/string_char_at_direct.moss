@@ -1,0 +1,3 @@
+fn main():
+  s = "abc"
+  echo s.char_at("x")

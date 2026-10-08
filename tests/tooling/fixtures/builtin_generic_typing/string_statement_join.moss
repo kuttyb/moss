@@ -1,0 +1,3 @@
+fn main():
+  s = "abc"
+  s.join([1])

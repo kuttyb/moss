@@ -1,5 +1,114 @@
 # Moss current status
 
+## Builtin/generic typing and assertion correctness repairs — 2026-10-07
+
+Base: `a975db321cc53dadcbee3d0aeefee868888da7d7` on `main`.
+These are pre-existing compiler correctness bugs exposed during Phase 20.5
+review. All three were independently reproduced on pre-Phase-20 `8b9e668`;
+the baseline checkpoint below preserves the original sources and outcomes.
+Phase 20 FileIO/Executor and concurrency semantics are unchanged.
+
+Root causes and implementation:
+
+- Builtin push checked its expression without comparing its type with the
+  concrete element type. Authoritative builtin descriptors now carry
+  receiver-relative argument type relationships as well as results, effects,
+  arity, and failure facts. Ordinary member calls and generic requirements share
+  validation for Vector/Queue, String, and Map. Argument expressions are checked
+  first to preserve domain-handle diagnostics. Writable arguments still require
+  storage and normal ownership checks. Statement calls use the same path.
+- Constructor inference mistook unresolved specialization evidence for a
+  concrete field conflict or could commit it to a nominal layout. Placeholder
+  evidence, including nested collection types, is deferred until concrete body
+  checking revisits the constructor. Expression bodies use the same check;
+  object projections check their receiver so helper calls specialize before
+  native lowering. Concrete field conflicts report TYPE_MISMATCH. Nominal
+  fields retain one globally inferred layout; missing concrete field evidence
+  still reports TYPE_INFERENCE_FAILED. No generic object types were introduced.
+- Bare reserved assertion statements fell through to Raw. The parser rejects
+  malformed assert/assertEqual word forms with INVALID_ASSERT_SYNTAX before
+  that fallback. Canonical assertions and their existing type/arity diagnostics
+  remain unchanged; prefix identifiers remain valid. Four existing interpreter/
+  callable fixtures and two project-test generators were migrated to documented
+  parenthesized assertions without changing expressions or expected results.
+
+The tooling missing-map probe now uses repository-local tmp instead of a
+hardcoded /tmp path denied by the current environment; its diagnostic expectation
+is unchanged.
+
+Permanent coverage: `tests/tooling/check_builtin_generic_typing.py` and its
+83 fixture/manifest cases are wired into `tests/run.sh`. The original eight
+baseline sources remain unchanged. All 24 accepted cases have exact native/
+Fast Debug stdout parity; all 59 negative cases reject in check, native lowering,
+and Fast Debug at the shared front end. Coverage includes direct, typed and
+generic collection mutations, builtin argument/arity and writable-flag guards,
+constructor statement/expression bodies, direct result projection, independent
+nominal wrappers and repeated calls, nested placeholder inference, and assertion
+syntax/type/arity checks. Type/effects/ownership/inspect guards verify container
+WRITE, non-Copy push CONSUME, Map get READ and delete READ/CONSUME/WRITE arguments,
+and EXCLUSIVE synchronization for a generic domain-state push helper.
+
+The nested Pair guard uses `left = x + ""` and `right = x + "!"` to construct
+two owned values. The illustrative `left = x` followed by `x + "!"` consumes then
+rereads x; typed and untyped forms retain OWNERSHIP_USE_AFTER_CONSUME.
+Expression bodies use the existing `fn wrap(x) = Box(s = x)` spelling.
+
+Final validation on the final compiler/test revision:
+
+- `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic src/moss.cpp -o tmp/moss-strict`: passed.
+- `./moss agent bootstrap --json`: moss-0.1 confirmed; ./moss is the strict binary.
+- `python3 tests/tooling/check_builtin_generic_typing.py tmp/moss-strict`: 83/83 passed.
+- `python3 tests/tooling/check_generic_specialization.py ./moss`: original 40/40 passed.
+- `python3 tests/tooling/phase20_review/run_review_probes.py ./moss --strict`:
+  36 bug, 30 guard, and 2 pre-existing probes passed; 8 design cases informational.
+- `python3 tests/tooling/check_phase20_executor_fileio.py ./moss build/tests`: passed.
+- `sh tests/run.sh ./moss build/tests`: passed, including the new suite.
+- `make check`: passed, including the new suite.
+- `make examples`: passed.
+- `git diff --check`: passed, including final status/commit review.
+
+Earlier focused/full-gate attempts are superseded: fixture spelling/ownership
+assumptions were corrected, legacy assertion generators migrated, domain-handle
+diagnostic priority preserved, and direct constructor projection checking fixed.
+No compiler changes followed the final strict build. The environment change
+broke the sandbox launcher; approved validation used repository-local TMPDIR.
+No unfinished work or blockers remain for these repairs. One local completion
+commit records implementation, coverage, parity, and final validation; no push.
+Compiler-agent self-report: bootstrap, structured checks, concrete semantic
+queries, native/Fast Debug parity, and full gates resolved the checked behavior.
+The final gates supersede all validation invalidated by earlier compiler edits.
+
+
+## Builtin/generic typing and assertion repair — baseline 2026-10-07
+
+Base: `a975db321cc53dadcbee3d0aeefee868888da7d7`, clean `main`.
+Startup skills loaded; live bootstrap confirms `moss-0.1`. These are classified
+as pre-existing compiler correctness bugs exposed during Phase 20.5 review,
+not defects in Phase 20 concurrency or FileIO/Executor semantics. All three were
+independently reproduced using a compiler built from `8b9e668`, the revision
+immediately preceding the Phase 20 bootstrap commit: wrong-type push and bare
+assert check/interpret successfully but fail Rust compilation; the generic Box
+constructor fails with the same unresolved-parameter field conflict.
+
+Before any compiler edits, eight permanent minimal sources were added under
+`tests/tooling/fixtures/builtin_generic_typing/` and run through structured check,
+native lowering, `rustc -O -D warnings`, native execution when compilation
+succeeded, and Fast Debug. Direct manual commands reconfirmed all three bugs.
+
+- Direct, typed-helper, and generic-helper Vector[Int] pushes of String all
+  pass Moss checking/lowering, fail Rust type checking, and execute in Fast Debug.
+  Queue() followed by Int then String pushes has the same outcome.
+- Generic `wrap(x)` returning `Box(s = x)` rejects before either backend with
+  `MOSS_COMPILE_ERROR`: String conflicts with `_generic:x`. Its typed String
+  equivalent checks, compiles, and prints `hello` in both native and Fast Debug.
+- Bare `assert x == 1` and `assertEqual x, 1` pass Moss checking/lowering and
+  fail Rust compilation. Fast Debug executes the former; the latter reaches
+  an unsupported-expression interpreter error rather than front-end rejection.
+
+Full disposable baseline records: `tmp/builtin-generic-typing/baseline.json`.
+The original sources are retained unchanged. Implementation and final validation
+remain pending at this baseline checkpoint.
+
 ## Phase 20 specialization documentation synchronized — 2026-10-07
 
 Base: `0d42c71e5cfc98c088efffe1560bee8c8f1625c9` on `main`.

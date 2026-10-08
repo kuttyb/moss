@@ -1,0 +1,16 @@
+fn add(v, x):
+  v.push(x)
+
+domain Store:
+  items = [1]
+
+  fn Add(x: Int):
+    add(items, x)
+
+  fn Count() -> Int:
+    reply items |> count
+
+fn main():
+  store = Store()
+  message store.Add(2)
+  echo message store.Count()

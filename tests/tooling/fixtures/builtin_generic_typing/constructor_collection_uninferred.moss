@@ -1,0 +1,8 @@
+type Box:
+  items
+
+fn wrap(x):
+  return Box(items = [x])
+
+fn main():
+  pass

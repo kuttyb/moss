@@ -1,0 +1,7 @@
+fn add(q: Queue[Int]):
+  q.push("x")
+
+fn main():
+  q = Queue()
+  q.push(1)
+  add(q)

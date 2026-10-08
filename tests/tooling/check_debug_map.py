@@ -324,8 +324,9 @@ class FakeResult:
 
 
 missing_map = FakeResult()
+missing_map_path = pathlib.Path(__file__).resolve().parents[2] / "tmp" / "moss-phase5-definitely-missing.mossmap"
 module.moss_map_load(
-    None, '"/tmp/moss-phase5-definitely-missing.mossmap"', missing_map, None
+    None, json.dumps(str(missing_map_path)), missing_map, None
 )
 if "Moss debug map not found" not in missing_map.error:
     fail("missing map did not produce the focused Moss tooling diagnostic")

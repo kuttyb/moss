@@ -1,0 +1,4 @@
+fn main():
+  v = Queue()
+  v.push(1)
+  v.push()

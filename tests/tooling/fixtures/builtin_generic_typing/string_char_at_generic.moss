@@ -1,0 +1,6 @@
+fn call(s):
+  return s.char_at("x")
+
+fn main():
+  s = "abc"
+  echo call("abc")

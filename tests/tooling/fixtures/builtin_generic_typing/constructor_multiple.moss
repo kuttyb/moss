@@ -1,0 +1,18 @@
+type SBox:
+  value: String
+
+type IBox:
+  value: Int
+
+fn swrap(x):
+  return SBox(value = x)
+
+fn iwrap(x) = IBox(value = x)
+
+fn main():
+  a = swrap("a")
+  b = iwrap(2)
+  c = swrap("c")
+  echo a.value
+  echo b.value
+  echo c.value

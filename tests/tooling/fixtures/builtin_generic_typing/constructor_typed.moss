@@ -1,0 +1,9 @@
+type Box:
+  s: String
+
+fn wrap(x: String):
+  return Box(s = x)
+
+fn main():
+  b = wrap("hello")
+  echo b.s

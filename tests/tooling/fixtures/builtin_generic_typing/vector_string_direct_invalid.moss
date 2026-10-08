@@ -1,0 +1,3 @@
+fn main():
+  v = ["a"]
+  v.push(1)

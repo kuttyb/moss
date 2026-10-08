@@ -1,0 +1,9 @@
+type Box:
+  s: String
+
+fn wrap(x):
+  return Box(s = x)
+
+fn main():
+  a = wrap("a")
+  b = wrap(1)

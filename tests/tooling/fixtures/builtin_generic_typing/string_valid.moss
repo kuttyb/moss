@@ -1,0 +1,6 @@
+fn main():
+  s = "abc"
+  echo s.length()
+  echo s.char_at(1)
+  echo s.split("b") |> count
+  echo "-".join(["a", "b"])

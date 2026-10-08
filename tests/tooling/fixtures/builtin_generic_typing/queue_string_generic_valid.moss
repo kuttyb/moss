@@ -1,0 +1,8 @@
+fn add(v, x):
+  v.push(x)
+
+fn main():
+  v = Queue()
+  v.push("a")
+  add(v, "a")
+  echo v.pop()

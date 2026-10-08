@@ -1,0 +1,10 @@
+type Pair:
+  left: String
+  right: String
+
+fn make(x):
+  return Pair(left = x + "", right = x + "!")
+
+fn main():
+  p = make("a")
+  echo p.right

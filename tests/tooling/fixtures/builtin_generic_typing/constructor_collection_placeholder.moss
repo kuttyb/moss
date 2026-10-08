@@ -1,0 +1,9 @@
+type Box:
+  items: Vector[Int]
+
+fn wrap(x):
+  return Box(items = [x])
+
+fn main():
+  b = wrap(1)
+  echo b.items |> count

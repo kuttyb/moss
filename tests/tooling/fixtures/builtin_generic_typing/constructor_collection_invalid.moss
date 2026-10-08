@@ -1,0 +1,8 @@
+type Box:
+  items: Vector[Int]
+
+fn wrap(x):
+  return Box(items = [x])
+
+fn main():
+  b = wrap("a")

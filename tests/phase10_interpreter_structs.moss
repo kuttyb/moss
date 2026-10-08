@@ -10,6 +10,6 @@ fn adjust(counter: Counter) -> Int:
 
 fn main():
   counter = Counter(value = 4)
-  assert counter.bump(2) == 6
-  assert adjust(counter) == 9
+  assert(counter.bump(2) == 6)
+  assert(adjust(counter) == 9)
   echo counter.value

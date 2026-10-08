@@ -5,6 +5,6 @@ fn transform(x: Int) -> Int:
   return y - 1
 
 fn main():
-  assert transform(6) == 13
-  assert transform(3) == 5
+  assert(transform(6) == 13)
+  assert(transform(3) == 5)
   echo transform(6), transform(3)

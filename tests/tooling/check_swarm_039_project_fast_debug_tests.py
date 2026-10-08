@@ -67,17 +67,17 @@ def test_multifile_project_fast_debug_tests(compiler):
             'module test_add\n'
             'import math_ops\n'
             'test "add_positive":\n'
-            '  assert math_ops.add_two(10, 20) == 30\n'
+            '  assert(math_ops.add_two(10, 20) == 30)\n'
             'test "add_zero":\n'
-            '  assert math_ops.add_two(5, 0) == 5\n', encoding="utf-8")
+            '  assert(math_ops.add_two(5, 0) == 5)\n', encoding="utf-8")
 
         (tests / "test_mul.moss").write_text(
             'module test_mul\n'
             'import math_ops\n'
             'test "mul_positive":\n'
-            '  assert math_ops.mul_two(6, 7) == 42\n'
+            '  assert(math_ops.mul_two(6, 7) == 42)\n'
             'test "mul_zero":\n'
-            '  assert math_ops.mul_two(10, 0) == 0\n', encoding="utf-8")
+            '  assert(math_ops.mul_two(10, 0) == 0)\n', encoding="utf-8")
 
         no_rustc_env = env_for(compiler, RUSTC="/definitely/not/rustc")
 
@@ -139,9 +139,9 @@ def test_fast_debug_test_failures(compiler):
 
         (tests / "test_checks.moss").write_text(
             'test "passing_one":\n'
-            '  assert 1 + 1 == 2\n'
+            '  assert(1 + 1 == 2)\n'
             'test "failing_one":\n'
-            '  assert 1 + 1 == 3\n', encoding="utf-8")
+            '  assert(1 + 1 == 3)\n', encoding="utf-8")
 
         no_rustc_env = env_for(compiler, RUSTC="/definitely/not/rustc")
 

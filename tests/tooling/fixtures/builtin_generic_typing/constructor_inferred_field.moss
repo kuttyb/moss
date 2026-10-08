@@ -1,0 +1,11 @@
+type Box:
+  s
+
+fn wrap(x):
+  return Box(s = x)
+
+fn main():
+  seed = Box(s = "seed")
+  b = wrap("hello")
+  echo seed.s
+  echo b.s
