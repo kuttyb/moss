@@ -1,5 +1,58 @@
 # Moss current status
 
+## Executor lost-wakeup harness ordering — 2026-10-07
+
+Base: `0d0f96990f483360967af8d51ebac070034f57ef`, clean `main`.
+Startup guidance loaded; live bootstrap confirms `moss-0.1`.
+This is a test-harness repair, not an Executor runtime semantics change.
+
+Unrestricted isolated baseline reproduced the historical failure on run 4:
+exit 3, `timed out waiting for publisher signalled` (8 CPUs available). The
+hook was armed before the Root publisher acquired the executor mutex for its
+preparatory notification. An idle worker could enter that hook holding the
+same mutex and wait for a publisher that was blocked acquiring it.
+
+Probe 38 now completes the preparatory notification with the hook unarmed,
+records completion, then arms the hook while still holding that mutex. Only
+releasing the mutex permits the target worker to enter the tested window.
+Channel handshakes announce window entry, publication, and Branch execution;
+20-second watchdogs remain unchanged. This probe no longer polls or sleeps.
+The hook still holds the executor mutex after its idle predicate check and
+before Condvar wait until publication bumps the Branch generation. No later
+Root/publication/wake rescues it; the original different-worker and exact
+worker assertions remain. No global Executor serialization was added.
+
+The runtime suite supports `--probe NAME --repeat COUNT`, compiling once and
+stopping on the first failed process/timeout/assertion. Default full-suite
+coverage and expectations are unchanged. The repaired probe passed 1000
+consecutive captured-output runs under unrestricted multicore scheduling.
+A disposable generated-Rust mutant suppressing only the Branch wake after
+publication compiled, then failed at `idle worker woke and ran the Branch`;
+it passed the preparation/publication handshakes. The mutant is not committed.
+All production source files and the generated minimal root Rust are byte-for-
+byte unchanged. No compiler rebuild or runtime behavior change is needed.
+
+Final validation, all without affinity or scheduler restrictions:
+
+- `./moss agent bootstrap --json`: `moss-0.1` confirmed.
+- `python3 tests/tooling/check_phase20c_executor.py ./moss --probe
+  38-branch-lost-wakeup --repeat 1000`: 1000/1000 passed; repeated after gates.
+- Full standalone Phase 20 runtime suite: 54/54 passed.
+- `python3 tests/tooling/check_phase20_executor_fileio.py ./moss build/tests`: passed.
+- `sh tests/run.sh ./moss build/tests`: passed normally.
+- `make check`: passed normally.
+- `make examples`: passed.
+- `git diff --check`: passed.
+
+The old CPU-affinity workaround is no longer needed. Historical timeout and
+pinned-run evidence below is retained; ordinary multicore validation now
+passes with the deterministic harness handshake. No unfinished work or
+blockers remain in this harness repair. One local completion commit records
+implementation, stress, sensitivity, runtime integrity, and full validation;
+no push. The separate non-Copy vector-literal issue remains outside this task.
+Compiler-agent self-report: bootstrap and source-guided test reduction isolated
+a harness ordering bug; stress and a missing-wake mutant validate its repair.
+
 ## Internal semantic placeholders and underscore nominal types — follow-up 2026-10-07
 
 Base: `7cf3f69208e0a0d89b7310931364a609b51aa3c9`, clean `main`.
@@ -86,8 +139,10 @@ first and block that publisher. This is separate from type placeholders; runtime
 and harness sources/expectations are unchanged. Final full-suite validation used
 CPU affinity to stabilize scheduling, retaining every assertion and worker test.
 An earlier unrestricted full run also passed, before the shared-header edit.
-The remaining limitation is this intermittent existing harness race; hardware
-parallel validation of the final full suite was not clean in this session.
+At that closeout, hardware-parallel validation was not clean because of
+this harness race. The Executor harness follow-up above supersedes that
+CPU-affinity limitation with ordinary multicore validation; the observed
+timeouts and historical pinned results remain recorded here.
 The generated minimal root Rust source is byte-for-byte identical with a compiler
 built from the reviewed HEAD, confirming unchanged runtime emission.
 
@@ -99,8 +154,8 @@ an owned vector (`&Payload` vs `Payload`, including its view wrapper). Ordinary
 this follow-up does not change it. New generic Vector probes transfer an
 already-owned vector; original `[x]` Int template probes remain unchanged/green.
 
-No unfinished work or blockers remain within this follow-up's scope. One local
-commit records the repair; it is not pushed. The prior repair is already on main.
+No unfinished work or blockers remain within this follow-up's scope. Commit `0d0f96990f483360967af8d51ebac070034f57ef` records the repair and
+is already on `main`. The prior repair is also on `main`.
 Compiler-agent self-report: bootstrap, structured diagnostics, effects queries,
 reduced probes, reviewed-HEAD reproduction, native/Fast Debug parity, and final
 full gates resolved the requested behavior without specialization redesign.

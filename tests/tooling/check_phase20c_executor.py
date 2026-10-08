@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Phase 20 Agent C — Executor / root runtime tests
-tests/tooling/check_phase20c_executor.py [compiler]
+tests/tooling/check_phase20c_executor.py [compiler] [--probe NAME --repeat COUNT]
 
 Each Rust test program is the compiler-emitted runtime (handler runtime plus
 executor runtime, extracted from a generated Moss program) followed by a test
@@ -17,6 +17,7 @@ Coverage:
   seams       16, 34, 35, 37, 40, 43, 49 (config, linear handle, symbols, TLS, roles)
 """
 
+import argparse
 import concurrent.futures
 import json
 import os
@@ -28,7 +29,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TMP_DIR = REPO_ROOT / "tmp" / "phase20c_executor_tests"
 RUSTC = os.environ.get("RUSTC", "rustc")
-COMPILER = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else REPO_ROOT / "moss"
+COMPILER = REPO_ROOT / "moss"
 RUN_TIMEOUT = 60
 
 PASS = []
@@ -178,7 +179,7 @@ class RustTest:
         self.prelude = prelude
 
 
-def run_rust_tests(tests, preamble):
+def run_rust_tests(tests, preamble, repeat=1):
     def compile_one(t):
         source = (t.prelude if t.prelude is not None else preamble) + TEST_PRELUDE + t.body
         return write_and_compile(f"t_{t.name.split('-')[0]}", source, t.extra_flags)
@@ -190,17 +191,23 @@ def run_rust_tests(tests, preamble):
         if cr.returncode != 0:
             report(t.name, False, "compile failed:\n" + cr.stderr)
             continue
-        try:
-            r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            report(t.name, False, f"timed out after {RUN_TIMEOUT}s (hang)")
-            continue
-        if t.expect_abort is not None:
-            ok = r.returncode != 0 and t.expect_abort in r.stderr
-            report(t.name, ok, f"exit={r.returncode}\nstderr: {r.stderr}\nstdout: {r.stdout}")
-            continue
-        ok = r.returncode == 0 and t.expect in r.stdout
-        report(t.name, ok, f"exit={r.returncode}\nstderr: {r.stderr}\nstdout: {r.stdout}")
+        for iteration in range(1, repeat + 1):
+            try:
+                r = subprocess.run([str(binary)], capture_output=True, text=True, timeout=RUN_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                report(t.name, False, f"run {iteration}/{repeat}: timed out after {RUN_TIMEOUT}s (hang)")
+                break
+            if t.expect_abort is not None:
+                ok = r.returncode != 0 and t.expect_abort in r.stderr
+            else:
+                ok = r.returncode == 0 and t.expect in r.stdout
+            if not ok:
+                report(t.name, False, f"run {iteration}/{repeat}: exit={r.returncode}\nstderr: {r.stderr}\nstdout: {r.stdout}")
+                break
+            if repeat > 1 and iteration % 100 == 0:
+                print(f"  {t.name}: {iteration}/{repeat} consecutive passes", flush=True)
+        else:
+            report(t.name, True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1083,49 +1090,66 @@ fn main() {
 """))
 
 T.append(RustTest("38-branch-lost-wakeup", "Publication between an idle worker's predicate check and wait is not lost", r"""
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex, OnceLock};
 static ARMED: AtomicBool = AtomicBool::new(false);
-static AT_PREWAIT: AtomicUsize = AtomicUsize::new(usize::MAX);
-static SIGNALLED: AtomicBool = AtomicBool::new(false);
+static PREPARED: AtomicBool = AtomicBool::new(false);
+static AT_PREWAIT: OnceLock<mpsc::Sender<usize>> = OnceLock::new();
+static SIGNAL_TX: OnceLock<mpsc::Sender<()>> = OnceLock::new();
+static SIGNAL_RX: OnceLock<Mutex<mpsc::Receiver<()>>> = OnceLock::new();
+
+fn receive<T>(receiver: &mpsc::Receiver<T>, what: &str) -> T {
+    receiver.recv_timeout(std::time::Duration::from_secs(20))
+        .unwrap_or_else(|error| panic!("timed out waiting for {}: {}", what, error))
+}
 
 fn on_event(ev: MossRtEvent, _a: u64, _b: u64, _w: usize) {
-    if ev == MossRtEvent::BranchWakeSignal { SIGNALLED.store(true, Ordering::SeqCst); }
+    if ev == MossRtEvent::BranchWakeSignal {
+        SIGNAL_TX.get().unwrap().send(()).unwrap();
+    }
 }
 
 // Runs with the idle worker holding the executor lock, after its predicate
 // check and before its Condvar wait: the exact lost-wakeup window.
 fn prewait(worker: usize) {
     if ARMED.swap(false, Ordering::SeqCst) {
-        AT_PREWAIT.store(worker, Ordering::SeqCst);
-        // Let the publisher push the Branch and bump the generation now.
-        wait_until("publisher signalled", || SIGNALLED.load(Ordering::SeqCst));
+        assert!(PREPARED.load(Ordering::SeqCst), "hook entered before preparatory notification");
+        AT_PREWAIT.get().unwrap().send(worker).unwrap();
+        // Keep the executor lock until the publisher pushes the Branch and
+        // bumps its generation. The production wake must cross this lock
+        // after we enter Condvar wait; no later wake can rescue the Branch.
+        receive(&SIGNAL_RX.get().unwrap().lock().unwrap(), "publisher signalled");
     }
 }
 
 fn main() {
-    use std::sync::Arc;
+    let (window_tx, window_rx) = mpsc::channel();
+    let (signal_tx, signal_rx) = mpsc::channel();
+    AT_PREWAIT.set(window_tx).unwrap();
+    SIGNAL_TX.set(signal_tx).unwrap();
+    SIGNAL_RX.set(Mutex::new(signal_rx)).unwrap();
     moss_rt_set_hook(on_event);
     moss_rt_set_prewait_hook(prewait);
     let exec = MossExecutor::new().threads(2).max_threads(2).start();
-    let ran_on = runtime_invoke(|| {
+    let ran_on = runtime_invoke(move || {
         let me = current_worker_id().unwrap();
-        ARMED.store(true, Ordering::SeqCst);
-        // Make the idle worker re-run its predicate so it reaches the hook.
         let gx = process_rt().active_executor().unwrap();
         let inner = gx.lock_inner();
+        // Complete the preparatory notification while the hook is unarmed.
+        // Holding the same mutex used by prewait makes completion -> arm ->
+        // worker entry explicit: an idle worker cannot block this publisher.
         gx.work_cv.notify_all(&inner);
+        PREPARED.store(true, Ordering::SeqCst);
+        ARMED.store(true, Ordering::SeqCst);
         drop(inner);
-        wait_until("idle worker in pre-wait window", || AT_PREWAIT.load(Ordering::SeqCst) != usize::MAX);
-        let idle = AT_PREWAIT.load(Ordering::SeqCst);
+        let idle = receive(&window_rx, "idle worker in pre-wait window");
         assert_ne!(idle, me);
-        let ran_on = Arc::new(AtomicUsize::new(usize::MAX));
-        let r2 = Arc::clone(&ran_on);
+        let (ran_tx, ran_rx) = mpsc::channel();
         let scope = branch_scope_new_current();
-        branch_publish(&scope, move || r2.store(current_worker_id().unwrap(), Ordering::SeqCst));
+        branch_publish(&scope, move || ran_tx.send(current_worker_id().unwrap()).unwrap());
         // No further publication or Root: only the original wake can run it.
-        wait_until("idle worker woke and ran the Branch", || ran_on.load(Ordering::SeqCst) != usize::MAX);
+        let worker = receive(&ran_rx, "idle worker woke and ran the Branch");
         branch_join(scope);
-        let worker = ran_on.load(Ordering::SeqCst);
         assert_eq!(worker, idle);
         worker
     });
@@ -1893,30 +1917,46 @@ fn main() {
 
 
 def main():
+    global COMPILER
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("compiler", nargs="?", default=str(REPO_ROOT / "moss"))
+    parser.add_argument("--probe", choices=[test.name for test in T],
+                        help="compile and run only this Rust runtime probe")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="consecutive runs of --probe (compiled once)")
+    args = parser.parse_args()
+    if args.repeat < 1 or (args.repeat != 1 and not args.probe):
+        parser.error("--repeat must be positive and requires --probe")
+    COMPILER = Path(args.compiler).resolve()
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     print("Phase 20 Agent C — Executor runtime tests")
     print(f"  compiler: {COMPILER}\n  tmp: {TMP_DIR}\n  rustc: {RUSTC}\n")
 
     root_rs = generate("root", "fn main():\n  echo 1\n")
-    module_root_rs = generate("module_root", "module app\nfn main():\n  echo 1\n")
-    # A single-file explicit module without main is a unit without main.
-    selected_rs = generate("library_unit", "module probelib\nexport fn foo() -> Int:\n  return 1\n")
-    _, provider_rs = build_role_project()
     preamble = runtime_preamble(root_rs)
-
-    test_symbol_ownership(root_rs, module_root_rs, provider_rs, selected_rs)
-    run_rust_tests(T, preamble)
-    test_handle_not_clone(preamble)
-    test_cross_crate_provider(runtime_preamble(module_root_rs), runtime_preamble(provider_rs))
-    test_explicit_module_pipeline()
-    test_library_only_unit(preamble)
+    if args.probe:
+        run_rust_tests([test for test in T if test.name == args.probe], preamble, args.repeat)
+    else:
+        module_root_rs = generate("module_root", "module app\nfn main():\n  echo 1\n")
+        # A single-file explicit module without main is a unit without main.
+        selected_rs = generate("library_unit", "module probelib\nexport fn foo() -> Int:\n  return 1\n")
+        _, provider_rs = build_role_project()
+        test_symbol_ownership(root_rs, module_root_rs, provider_rs, selected_rs)
+        run_rust_tests(T, preamble)
+        test_handle_not_clone(preamble)
+        test_cross_crate_provider(runtime_preamble(module_root_rs), runtime_preamble(provider_rs))
+        test_explicit_module_pipeline()
+        test_library_only_unit(preamble)
 
     print()
     print(f"Results: {len(PASS)} passed, {len(FAIL)} failed out of {len(PASS) + len(FAIL)} tests")
     if FAIL:
         print("FAILED:", ", ".join(FAIL))
         sys.exit(1)
-    print("All Phase 20 Agent C executor runtime tests PASSED.")
+    if args.probe:
+        print(f"Executor probe {args.probe}: {args.repeat} consecutive runs PASSED.")
+    else:
+        print("All Phase 20 Agent C executor runtime tests PASSED.")
 
 
 if __name__ == "__main__":
