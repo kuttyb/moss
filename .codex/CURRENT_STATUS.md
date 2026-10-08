@@ -1,5 +1,76 @@
 # Moss current status
 
+## Non-Copy vector-literal ownership repair — closeout 2026-10-08
+
+Implementation: `dbe62d3c88aad7a052a856a8deb1f695f54b1c76` (`changes`),
+reviewed and already on `main`. Closeout began from that exact clean HEAD.
+Startup skills loaded; live bootstrap confirms `moss-0.1`. This session makes
+bookkeeping changes only; no compiler/test refactor or language redesign.
+
+Baseline bug: non-Copy `x` in `[x]` was inferred READ, so native lowering
+emitted a borrowed `&Payload` into an owned `Vec<Payload>`. Vector construction
+was not modeled as an ownership boundary in general effect/ownership analysis;
+leaf-effect handling separately treated vector elements as READ.
+
+The repair shares `parse_vector_literal` and concrete `vector_element_effect`:
+Copy elements are READ and owned non-Copy elements are CONSUME. Parameter
+effect inference, ownership checking, and leaf observation use the same rule.
+Static specialization re-evaluates unresolved generic element ownership under
+concrete types. Native lowering and Fast Debug follow the checked ownership
+contract; no implicit cloning was introduced.
+
+Permanent regression coverage adds 25 vector-literal probes to
+`tests/tooling/check_builtin_generic_typing.py`: direct Payload construction,
+use-after-consume, duplicate use, typed helper, generic helper, constructor
+`[x]`, String CONSUME, Int READ, nested literals, parenthesized literals and
+elements, fresh temporaries, READ/CONSUME call contexts, domain state,
+`replace(state, ...)`, and leaf effects. The suite now has 129 probes (104
+previous plus 25 new), with 52 accepted and 77 rejected. All 16 accepted new
+cases have exact native/Fast Debug stdout parity; all 9 rejected new cases
+fail at the shared front end in check, lowering, and Fast Debug.
+
+Explicit semantic-query guards on the reviewed HEAD passed: both `effects`
+and `ownership` report `x: Payload` CONSUME for typed `fn:singleton` returning
+`[x]` and generic `fn:singleton<Payload>`. Both report `x: Int` READ for typed
+`fn:singleton` returning `[x]`. The suite also checks generic Int READ and
+String CONSUME, plus domain-state leaf READ and replacement WRITE effects.
+
+Final validation from the reviewed HEAD, without CPU pinning or scheduler
+restrictions (scratch files/logs use repository-local `tmp/`):
+
+- `./moss agent bootstrap --json`: passed, `moss-0.1` confirmed.
+- `python3 tests/tooling/check_builtin_generic_typing.py ./moss`: 129/129 passed.
+- `python3 tests/tooling/check_generic_specialization.py ./moss`: 40/40 passed.
+- Phase 20 review `--strict`: 36 bug, 30 guard, 2 pre-existing probes passed;
+  8 design probes informational.
+- `python3 tests/tooling/check_phase20c_executor.py ./moss`: 54/54 passed.
+- `python3 tests/tooling/check_phase20_executor_fileio.py ./moss build/tests`: passed.
+- `sh tests/run.sh ./moss build/tests`: passed normally, including 129 typing
+  probes, 40 specialization probes, and all 54 Executor runtime probes.
+- `make check`: passed normally with the same complete suite and expectations.
+- `make examples`: passed; intentional negative example skipped as expected.
+- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic
+  src/moss.cpp -o tmp/moss-strict`: passed.
+- `python3 tests/tooling/check_builtin_generic_typing.py tmp/moss-strict`:
+  129/129 passed, including native/Fast Debug parity and semantic-query guards.
+- `git diff --check` and staged diff check: passed on the final status revision.
+
+Both full runs passed all 61 editor ERT tests. Optional live LLDB CLI/DAP
+checks used the unchanged suite's skip for unavailable sandbox process tracing;
+no CPU-affinity workaround or test-expectation changes were used. No compiler
+or test changes followed these gates, so none of these results are invalidated.
+No unfinished work or blockers remain for the vector-literal repair. The
+closeout commit records this status and final validation; published history
+is not rewritten and this session does not push.
+
+Compiler-agent self-report: bootstrap confirmed the current language contract;
+explicit effects/ownership queries removed ambiguity about typed and concrete
+specialized element ownership. Existing probes established native/Fast Debug
+parity, rejection behavior, and leaf effects without any edit/check/repair cycle
+or remaining semantic guess. Impact/affected tests were unnecessary for this
+bookkeeping closeout; the requested full gates ran. No new compiler-agent
+improvement is proposed by this validation-only session.
+
 ## Executor lost-wakeup harness ordering — 2026-10-07
 
 Base: `0d0f96990f483360967af8d51ebac070034f57ef`, clean `main`.
@@ -47,9 +118,11 @@ Final validation, all without affinity or scheduler restrictions:
 The old CPU-affinity workaround is no longer needed. Historical timeout and
 pinned-run evidence below is retained; ordinary multicore validation now
 passes with the deterministic harness handshake. No unfinished work or
-blockers remain in this harness repair. One local completion commit records
-implementation, stress, sensitivity, runtime integrity, and full validation;
-no push. The separate non-Copy vector-literal issue remains outside this task.
+blockers remain in this harness repair. Completion commit
+`8d1922d3e1fb0479cdead1a1a685b99238997cd4` records implementation, stress,
+sensitivity, runtime integrity, and full validation and is already on `main`.
+The separate non-Copy vector-literal issue was outside that harness repair;
+it was subsequently fixed by the vector-literal ownership repair above.
 Compiler-agent self-report: bootstrap and source-guided test reduction isolated
 a harness ordering bug; stress and a missing-wake mutant validate its repair.
 
@@ -150,9 +223,12 @@ A separate pre-existing native lowering issue was reduced and confirmed with a
 compiler built from reviewed HEAD: `fn wrap(x): return Box(items = [x])` with a
 non-Copy `Payload` parameter infers READ, then emits that borrowed parameter into
 an owned vector (`&Payload` vs `Payload`, including its view wrapper). Ordinary
-`Payload` has the same failure. This needs a separate ownership/effect repair;
-this follow-up does not change it. New generic Vector probes transfer an
-already-owned vector; original `[x]` Int template probes remain unchanged/green.
+`Payload` had the same failure. This follow-up left it for a separate
+ownership/effect repair. It was subsequently fixed by
+`dbe62d3c88aad7a052a856a8deb1f695f54b1c76`, the vector-literal ownership repair
+recorded above, and is no longer outstanding. At discovery, the new generic
+Vector probes transferred an already-owned vector; original `[x]` Int template
+probes remained unchanged/green.
 
 No unfinished work or blockers remain within this follow-up's scope. Commit `0d0f96990f483360967af8d51ebac070034f57ef` records the repair and
 is already on `main`. The prior repair is also on `main`.
