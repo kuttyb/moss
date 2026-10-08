@@ -1160,8 +1160,6 @@ The v0.1 paper leaves several questions deliberately open:
 - whether profile-guided synchronization-class coarsening is worthwhile;
 - the provisional rejection of Range/String equality and any future explicit
   byte/text conversion semantics;
-- the breadth of untyped static specialization versus a narrower contextual
-  policy, without changing current accepted concrete calls silently;
 - startup-declared bounds and broader proven dynamic clamp narrowing;
 - Duo I/O and Receive-Moss-Send protocol design beyond the Solo contract;
 - recoverable I/O/Root failure and result-carrying joins under Phase 21;

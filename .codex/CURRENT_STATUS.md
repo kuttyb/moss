@@ -1,11 +1,29 @@
 # Moss current status
 
+## Phase 20 specialization documentation synchronized — 2026-10-07
+
+Base: `0d42c71e5cfc98c088efffe1560bee8c8f1625c9` on `main`.
+Documentation/status-only cleanup records the settled language-wide static
+specialization model and Phase 20.5 A–D correctness repair alongside the retained
+performance follow-up. The former specialization-breadth owner-decision item is
+retired in Phase 20 §29 and the formal language-design open-question list.
+Range/String equality and startup/dynamic-clamp bound narrowing remain open.
+Repair integration wording is current; historical baseline evidence is preserved.
+
+Validation passed: `./moss agent bootstrap --json` confirmed `moss-0.1`;
+`python3 tests/tooling/check_phase20_doc_examples.py`, `make check`, and
+`git diff --check` passed. Final diff review confirms documentation/status changes
+only; no compiler/runtime/test files changed. No unfinished work or blockers remain.
+Compiler-agent self-report: live discovery and existing gates were sufficient;
+no semantic probes or implementation changes were needed.
+
 ## Generic specialization semantics fixed — 2026-10-07
 
 Base: `4645e3a78edee822cd858bc286a8bba13daa4a44` on `main`.
 Completed compiler repair of A–D; no new syntax or language design. The
 baseline checkpoint below was written before implementation. All original
-reviewer probe sources and expectations are unchanged. No push was performed.
+reviewer probe sources and expectations are unchanged. The completed repair is
+now incorporated into `main` at `0d42c71e5cfc98c088efffe1560bee8c8f1625c9`.
 
 Root causes and repair:
 
@@ -48,12 +66,10 @@ Root causes and repair:
 
 C and D are fixed generic-specialization defects, not owner decisions. Earlier
 status wording about pending specialization breadth is superseded and corrected.
-Canonical documentation note: Phase 20 §29 still describes specialization breadth
-as pending owner review and attributes recognition to finalization. This repair
-applies the user-confirmed existing static-specialization model; the remaining
-§29 wording is historical/inaccurate for C/D and early template recognition.
-It was explicitly identified here without changing canonical language semantics
-or silently editing language-design documentation.
+The detailed Phase 20 document has now been synchronized with this settled
+model: language-wide static specialization remains the existing Moss rule, and
+the former §29 specialization-breadth owner-decision item has been retired.
+Range/String equality and broader bound narrowing remain open owner decisions.
 
 Coverage and baseline evidence:
 
@@ -109,8 +125,8 @@ parameter summary; the effect walker was aligned with existing index ownership.
 No previous test source or expectation was changed. The initial
 attempt and earlier focused/strict results are superseded by the final gates above.
 No source changes occurred after final validation. No unfinished work or blockers
-remain for this repair. One local completion commit records the implementation,
-coverage, parity and synchronization validation; it has not been pushed.
+remain for this repair. One completion commit records the implementation,
+coverage, parity, and synchronization validation and is now present on `main`.
 
 
 ## Generic specialization repair — baseline 2026-10-07 (implementation pending)

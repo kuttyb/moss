@@ -1691,28 +1691,34 @@ Phase 20.1 made the no-root-originated-admission rule explicit and added regress
 
 Phase 20.2 hardened FileIO, Range semantics, request bounds propagation, chunk lowering, and generic callback specialization against the independent reviewer probe suite. The strict suite is permanently integrated into the normal repository gate (`tests/run.sh`).
 
-#### Owner decisions pending after completeness review
+Generic specialization is now settled as a language-wide rule: a function
+with any remaining untyped parameter is statically specialized at concrete
+uses. Each concrete call is checked as a concrete semantic specialization.
+Specializations are keyed by the complete concrete parameter tuple and carry
+concrete type, result, ownership/effect, callable, and functional-pipeline
+semantics. The Phase 20.5 generic-specialization repair corrected implementation
+defects in that model; it did not introduce a new language rule.
+
+#### Owner decisions still pending
 
 1. **Range/String equality.** The checker currently rejects `Range == String`
    and `String == Range` with `TYPE_MISMATCH`. This is a provisional design
    choice, not a settled owner decision. Confirm the strict byte/text type
    distinction or specify explicit conversion semantics.
-2. **Untyped function specialization.** Current finalization marks every
-   function with any remaining untyped parameter as generic with static
-   dispatch, including functions unrelated to FileIO. This broadens
-   acceptance and can increase specialization count, generated code size, and
-   compilation work. Existing concrete calls remain statically closed; the
-   review suite and repository gates audit their behavior. A narrower
-   alternative is contextual specialization only for untyped functions used
-   as functional callables or reached with a concrete Range/Vector argument
-   on the Phase 20 path. That alternative needs an explicit owner decision
-   before replacing current behavior.
-3. **Bound narrowing.** Compile-time constants and immutable aliases are the
+2. **Bound narrowing.** Compile-time constants and immutable aliases are the
    current implementation scope. Startup-declared bounds and compiler-proven
    dynamic clamps remain deferred. A proven clamp can satisfy a static upper
    bound and is compatible with the bounded-memory proof.
 
-### Phase 20.5 performance follow-up
+### Phase 20.5 correctness repair and performance follow-up
+
+Phase 20.5 also closed four pre-existing generic-specialization defects exposed
+on the normal Phase 20 path, whose canonical functional examples exercise untyped
+callbacks: native ABI disagreement for non-Copy specializations, builtin-method
+requirement/effect resolution, complete-tuple multi-specialization, and functional
+pipelines over builtin-method results. These were compiler defects under Moss's
+existing static-specialization model, not changes to Phase 20 concurrency or
+FileIO semantics.
 
 Phase 20.5 is scheduled to benchmark the performance and contention characteristics of:
 
