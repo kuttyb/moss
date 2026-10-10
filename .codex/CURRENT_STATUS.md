@@ -1,5 +1,48 @@
 # Moss current status
 
+## Machine-transfer checkpoint — 2026-10-10
+
+This checkpoint was requested so work can resume on a more powerful machine.
+Before this note was added, `main` was clean at
+`ed0b3d23596e189dec7c259319dd3d570a2120b0` and exactly matched
+`origin/main`; there were no staged, unstaged, or untracked implementation
+changes to preserve. Live startup discovery passed and confirmed
+`moss-0.1`. No build or test job was started on this laptop because the
+checkpoint is documentation-only and the transfer is specifically intended
+to move subsequent concurrent/heavy work elsewhere.
+
+The work to resume is **Moss Phase 21 error handling**. Its two durable inputs
+are already committed:
+
+- `080f6edb50ca530f7626e0d51e00e69abf4915fd` adds the consolidated normative
+  design, `docs/MOSS_PHASE_21_ERROR_HANDLING.md` (v4.5.2).
+- `ed0b3d23596e189dec7c259319dd3d570a2120b0` adds the independent review and
+  implementation plan, `docs/MOSS_PHASE_21_IMPLEMENTATION_HANDOFF.md`.
+
+Implementation has **not** started. Resume with the repository startup
+sequence (load both Moss skills, run `./moss agent bootstrap --json`, and
+confirm `moss-0.1`), then read the two Phase 21 documents above. The first
+implementation milestone is the hard dependency **Phase 21.0 shared
+representation/ABI contract**: freeze the concrete `ObservableEffects`
+raise-set representation, tagged outcomes, Root/nested wrapper roles, failure
+arm capture/D7 ABI, `.mossi` records/versioning, and exceptional-CFG schema.
+Commit and review 21.0 before starting or integrating workstreams 21.A–21.D.
+Do not claim the phase complete from design-level proofs; the handoff's O1–O9
+and integration matrix require implementation evidence.
+
+Important open contract checks from the review must remain visible during
+21.0: synchronization-class repartitioning can change normal-handler lock
+counts without changing its per-leaf write footprint; the tutorial cross-enum
+example needs a genuinely reachable `FileError.Full` path; and Float
+shortest-roundtrip tie-breaking plus the accepted finite-decimal grammar need
+explicit freeze decisions rather than agent invention.
+
+Transfer note: the commit containing this checkpoint is local until the user
+pushes it. Repository instructions prohibit Codex from running `git push`.
+After the user pushes this commit, the other machine can pull `main`, open
+this file, and resume at Phase 21.0. No earlier validation result below should
+be treated as Phase 21 implementation validation.
+
 ## Non-Copy vector-literal ownership repair — closeout 2026-10-08
 
 Implementation: `dbe62d3c88aad7a052a856a8deb1f695f54b1c76` (`changes`),
