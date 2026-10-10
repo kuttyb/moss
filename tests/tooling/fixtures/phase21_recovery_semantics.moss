@@ -1,0 +1,47 @@
+enum WorkError:
+  Missing
+  Failed(code: Int)
+  Unused
+
+fn may_fail(flag: Bool):
+  if flag:
+    raise WorkError.Missing
+  else:
+    raise WorkError.Failed(code: 7)
+
+fn handled(flag: Bool):
+  try:
+    may_fail(flag)
+  recover WorkError.Missing:
+    echo "missing"
+  recover WorkError.Unused:
+    echo "unused"
+  recover:
+    echo "failed"
+
+fn reraised():
+  try:
+    raise WorkError.Missing
+  recover WorkError.Missing:
+    raise
+
+fn handle_reraised():
+  try:
+    reraised()
+  recover err:
+    echo err
+
+test "local typed recovery":
+  handled(true)
+
+domain FailureOwner:
+  fn Run():
+    raise WorkError.Missing
+
+  on_fail WorkError.Missing:
+    echo "handled at Root"
+
+fn main():
+  handled(true)
+  handled(false)
+  handle_reraised()

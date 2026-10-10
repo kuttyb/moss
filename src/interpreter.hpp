@@ -209,6 +209,11 @@ class FastInterpreter {
     Value value;
   };
 
+  struct RaisedSignal {
+    RaisedIdentity identity;
+    Value value;
+  };
+
   const Program& program_;
   Options options_;
   std::vector<TraceEvent> trace_;
@@ -217,7 +222,22 @@ class FastInterpreter {
   std::vector<int> message_stack_;
   std::vector<int> handler_stack_;
   std::vector<int> control_stack_;
+  std::vector<RaisedSignal> selected_errors_;
   std::map<std::string, std::unique_ptr<DomainValue>> instances_;
+
+  static bool recovery_matches(const std::string& selector,
+                               const RaisedIdentity& identity) {
+    if (selector.empty() || selector.find('.') == std::string::npos)
+      return true;
+    for (const auto& alternative : split_arguments(selector)) {
+      const auto dot = alternative.find('.');
+      if (dot != std::string::npos &&
+          trim_copy(alternative.substr(0, dot)) == identity.type &&
+          trim_copy(alternative.substr(dot + 1)) == identity.variant)
+        return true;
+    }
+    return false;
+  }
 
   static std::string checked_binding_type(const Stmt& statement,
                                           const Frame& frame) {
@@ -1215,6 +1235,78 @@ class FastInterpreter {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = statements[index];
+      if (statement.kind == Stmt::Kind::Try) {
+        size_t try_end = index + 1;
+        while (try_end < end && statements[try_end].indent > statement.indent)
+          ++try_end;
+        size_t after = try_end;
+        while (after < end &&
+               statements[after].kind == Stmt::Kind::Recover &&
+               statements[after].indent == statement.indent) {
+          ++after;
+          while (after < end &&
+                 statements[after].indent > statement.indent)
+            ++after;
+        }
+        try {
+          Flow flow = execute(statements, frame, output, index + 1, try_end);
+          if (flow.returned) return flow;
+        } catch (const RaisedSignal& raised) {
+          size_t arm = try_end;
+          bool handled = false;
+          while (arm < after) {
+            const Stmt& recovery = statements[arm];
+            size_t arm_end = arm + 1;
+            while (arm_end < after &&
+                   statements[arm_end].indent > recovery.indent)
+              ++arm_end;
+            if (!handled && recovery_matches(recovery.a, raised.identity)) {
+              handled = true;
+              emit("recover", frame, recovery.line,
+                   raised.identity.canonical());
+              const bool bound = !recovery.a.empty() &&
+                  recovery.a.find('.') == std::string::npos;
+              std::optional<Value> saved_local;
+              std::optional<std::string> saved_type;
+              if (bound) {
+                auto prior = frame.locals.find(recovery.a);
+                if (prior != frame.locals.end()) saved_local = prior->second;
+                auto prior_type = frame.local_types.find(recovery.a);
+                if (prior_type != frame.local_types.end())
+                  saved_type = prior_type->second;
+                frame.locals[recovery.a] = independent(raised.value);
+                frame.local_types[recovery.a] = raised.identity.type;
+              }
+              selected_errors_.push_back(raised);
+              try {
+                Flow flow = execute(
+                    statements, frame, output, arm + 1, arm_end);
+                selected_errors_.pop_back();
+                if (bound) {
+                  frame.locals.erase(recovery.a);
+                  frame.local_types.erase(recovery.a);
+                  if (saved_local) frame.locals[recovery.a] = *saved_local;
+                  if (saved_type) frame.local_types[recovery.a] = *saved_type;
+                }
+                if (flow.returned) return flow;
+              } catch (...) {
+                selected_errors_.pop_back();
+                if (bound) {
+                  frame.locals.erase(recovery.a);
+                  frame.local_types.erase(recovery.a);
+                  if (saved_local) frame.locals[recovery.a] = *saved_local;
+                  if (saved_type) frame.local_types[recovery.a] = *saved_type;
+                }
+                throw;
+              }
+            }
+            arm = arm_end;
+          }
+          if (!handled) throw;
+        }
+        index = after;
+        continue;
+      }
       if (statement.kind == Stmt::Kind::Match) {
         Value selected = eval(statement.a, frame, statement.line, output);
         if (selected.kind != Value::Kind::Struct || !selected.object ||
@@ -1381,8 +1473,28 @@ class FastInterpreter {
           flow.value = independent(eval(statement.a, frame, statement.line, output));
           emit("reply", frame, statement.line, summary(flow.value));
           return flow;
+        case Stmt::Kind::Raise: {
+          if (statement.a.empty()) {
+            if (selected_errors_.empty())
+              throw RuntimeError(statement.line,
+                                 "bare raise has no selected recovery error");
+            emit("raise", frame, statement.line,
+                 selected_errors_.back().identity.canonical());
+            throw selected_errors_.back();
+          }
+          if (statement.exceptional_alternatives.size() != 1)
+            throw RuntimeError(statement.line,
+                               "checked raise lacks one concrete error identity");
+          RaisedSignal raised{*statement.exceptional_alternatives.begin(),
+                              independent(eval(statement.a, frame,
+                                               statement.line, output))};
+          emit("raise", frame, statement.line, raised.identity.canonical());
+          throw raised;
+        }
         case Stmt::Kind::For:
           throw RuntimeError(statement.line, "Fast Debug does not support for iteration yet");
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:

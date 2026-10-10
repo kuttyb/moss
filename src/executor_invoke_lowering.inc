@@ -311,6 +311,47 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
       err(statement.line, "indentation jumps more than one block level");
     if (statement.kind == Stmt::Kind::Else) return state;
 
+    if (statement.kind == Stmt::Kind::Try) {
+      const auto incoming = state;
+      ++index;
+      bool normal_continuing = true;
+      auto normal_state = check_executor_lifecycle_block(
+          statements, index, level + 1, incoming, normal_continuing);
+      if (!normal_continuing && normal_state != incoming)
+        err(statement.line,
+            "an Executor lifecycle change before a typed raise cannot cross "
+            "into recover; construct and join the complete Executor lifecycle "
+            "outside the try, or leave its state unchanged",
+            "EXECUTOR_LIFECYCLE_EXCEPTIONAL_MISMATCH");
+      vector<std::pair<std::map<string, ExecutorLifecycle>, bool>> paths;
+      paths.push_back({std::move(normal_state), normal_continuing});
+      bool saw_recover = false;
+      while (index < statements.size() &&
+             statements[index].indent == level &&
+             statements[index].kind == Stmt::Kind::Recover) {
+        saw_recover = true;
+        ++index;
+        bool recover_continuing = true;
+        auto recover_state = check_executor_lifecycle_block(
+            statements, index, level + 1, incoming, recover_continuing);
+        if (!recover_continuing && recover_state != incoming)
+          err(statement.line,
+              "an Executor lifecycle change before a typed raise cannot escape "
+              "a recover arm; keep its lifecycle unchanged on that path",
+              "EXECUTOR_LIFECYCLE_EXCEPTIONAL_MISMATCH");
+        paths.push_back({std::move(recover_state), recover_continuing});
+      }
+      if (!saw_recover)
+        err(statement.line, "try must be followed by at least one recover arm",
+            "TRY_REQUIRES_RECOVER");
+      state = merge_executor_lifecycle_paths(statement.line, paths);
+      continuing = std::any_of(
+          paths.begin(), paths.end(), [](const auto& path) {
+            return path.second;
+          });
+      continue;
+    }
+
     if (statement.kind == Stmt::Kind::If) {
       ++index;
       bool then_continuing = true;
@@ -383,6 +424,11 @@ std::map<string, ExecutorLifecycle> check_executor_lifecycle_block(
                   ") active and unjoined; call Executor.join() on every "
                   "normal exit path, including 'return'",
               "EXECUTOR_JOIN_MISSING");
+      ++index;
+      continuing = false;
+      continue;
+    }
+    if (statement.kind == Stmt::Kind::Raise) {
       ++index;
       continuing = false;
       continue;

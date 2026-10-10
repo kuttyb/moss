@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
@@ -53,7 +54,14 @@ struct Param {
   bool inferred = false;
 };
 struct Stmt {
-  enum class Kind { Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case, Let, Var, Reply, Return } kind = Kind::Raw;
+  enum class Kind {
+    Raw, Pass, Assign, Call, Message, Echo, If, Else, While, For, Match, Case,
+    Let, Var, Reply, Return,
+    // Phase 21 exceptional control-flow is represented explicitly.  These
+    // nodes are consumed by the same semantic walkers as ordinary branches;
+    // code generation never rediscovers them from source text.
+    Try, Recover, Raise
+  } kind = Kind::Raw;
   int line = 0; int indent = 0; string text, a, b; vector<string> args;
   // A synchronous message may be used as an expression initializer.  The
   // receiver/handler remain in `a`/`b` (the canonical domain-call slots),
@@ -96,7 +104,25 @@ struct Stmt {
   // not a nested message inside an existing Root. Codegen and Fast Debug
   // select their lowering from this checked fact, never from source text.
   mutable bool message_root_ingress = false;
+  // Checked Phase 21 exceptional IR.  `exceptional_alternatives` is the
+  // complete normalized set produced by this source node after concrete
+  // resolution; the node/scope identities feed ABI-v8 CFG verification and
+  // every downstream consumer.
+  RaiseSet exceptional_alternatives;
+  std::uint32_t exceptional_node = 0;
+  std::uint32_t exceptional_scope = 0;
   string source_file;
+};
+
+struct FailureArm {
+  int line = 0;
+  string source_file;
+  // Canonical source patterns (for example `FileError.Full`).  An empty list
+  // denotes the final catch-all.  `binding` is present only for the approved
+  // single-concrete-error-type catch-all form.
+  vector<string> patterns;
+  string binding;
+  vector<Stmt> body;
 };
 struct Method {
   string owner, name;
@@ -121,6 +147,7 @@ struct Handler {
   vector<Param> params;
   std::optional<string> reply_type;
   vector<Stmt> body;
+  vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
   int line = 0;
   string source_file;

@@ -89,6 +89,26 @@
     return std::nullopt;
   }
 
+  // Audited Phase 21 origin sets. These are intentionally operation-precise:
+  // programmer misuse (closed owners, invalid bounds/modes) stays on the fatal
+  // panic channel and is not represented here.
+  static RaiseSet fileio_operation_raise_set(const string& method) {
+    auto variant = [](const char* name) {
+      return RaisedIdentity::enum_variant("FileError", name);
+    };
+    if (method == "open")
+      return {variant("NotFound"), variant("PermissionDenied"),
+              variant("NotRegularFile"), variant("InUse"),
+              variant("Full"), variant("IO")};
+    if (method == "read" || method == "chunks")
+      return {variant("IO")};
+    if (method == "write" || method == "sync")
+      return {variant("Full"), variant("IO")};
+    if (method == "close")
+      return {variant("IO")};
+    return {};
+  }
+
   static std::optional<string> fileio_method_requirement_result(
       const string& type, const string& method, size_t arity) {
     string concrete = canonical_type_name(type);
@@ -554,6 +574,54 @@
         flow = any_case ? joined : incoming;
         continue;
       }
+      if (s.kind == Stmt::Kind::Try) {
+        FileIOFlow incoming = flow;
+        auto leave_arm_scope = [&](FileIOFlow& arm) {
+          if (!arm.continuing) return;
+          for (auto owner = arm.local_owners.begin();
+               owner != arm.local_owners.end();) {
+            if (incoming.local_owners.count(*owner)) {
+              ++owner;
+              continue;
+            }
+            if (arm.state[*owner] != 0)
+              err(s.line, "root-local FileIO '" + *owner +
+                  "' must be explicitly closed before normal exit",
+                  "FILEIO_MUST_CLOSE");
+            arm.state.erase(*owner);
+            arm.mode.erase(*owner);
+            arm.types.erase(*owner);
+            arm.uncertain_state.erase(*owner);
+            arm.may_be_read_only.erase(*owner);
+            owner = arm.local_owners.erase(owner);
+          }
+        };
+        ++index;
+        FileIOFlow normal = incoming;
+        check_fileio_lifecycle_block(body, index, indent + 1, normal,
+                                     normal_exits);
+        leave_arm_scope(normal);
+        FileIOFlow joined = normal;
+        bool saw_recover = false;
+        while (index < body.size() && body[index].indent == indent &&
+               body[index].kind == Stmt::Kind::Recover) {
+          saw_recover = true;
+          ++index;
+          // The try suite's lexical frame has ended on this exceptional edge.
+          // Owners first bound there are therefore absent in the sibling arm;
+          // owners that predate the try retain their incoming state.
+          FileIOFlow recovered = incoming;
+          check_fileio_lifecycle_block(body, index, indent + 1, recovered,
+                                       normal_exits);
+          leave_arm_scope(recovered);
+          joined = fileio_join_flow(joined, recovered);
+        }
+        if (!saw_recover)
+          err(s.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        flow = joined;
+        continue;
+      }
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While ||
           s.kind == Stmt::Kind::For) {
         fileio_lifecycle_expression(s.line,
@@ -639,6 +707,13 @@
         fileio_require_closed(s.line, flow);
         if (normal_exits) normal_exits->push_back(flow);
         flow.continuing = false;
+      } else if (s.kind == Stmt::Kind::Raise) {
+        // Raised exits are compiler-managed abnormal scope exits. Root-local
+        // owners are closed after dependent Branches quiesce; unlike an
+        // ordinary return they do not trigger FILEIO_MUST_CLOSE.
+        flow.continuing = false;
+      } else if (s.kind == Stmt::Kind::Recover) {
+        return;
       }
       ++index;
     }
