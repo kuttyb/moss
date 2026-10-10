@@ -13,6 +13,10 @@ Updated: 2026-10-10 (America/Los_Angeles)
 - Integration disposition: workstreams remain isolated and use checkpoint commits;
   integration stops for human approval at the Phase 21 checkpoint before any merge
   to `main`.
+- Continuity recovery: the coordinator resumed the existing worktrees after an
+  interrupted session. A–C's in-progress, uncommitted changes were preserved and
+  their native subagents relaunched in place; D remains queued for the first
+  available native worker slot. No worktree was reset or rebased.
 
 ## Frozen preparation baseline
 
