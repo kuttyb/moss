@@ -12,6 +12,7 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 python3 tests/tooling/check_agent_skills.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_shared_abi.py "$test_build/phase21-shared-abi"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py "$compiler" "$test_build/phase21-source-free"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_semantics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test

@@ -1138,6 +1138,8 @@ class Parser {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "on"));
       } else if (starts_with(L.text, "fn ")) {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "fn"));
+      } else if (starts_with(L.text, "on_fail")) {
+        fail(L, "on_fail must immediately follow the handler it attaches to");
       } else {
         // Julia-like state declarations omit both the var keyword and, when
         // inferable, the type annotation: `value = 0`.
@@ -1247,6 +1249,34 @@ class Parser {
     h.line = head.no;
     h.body = parse_stmt_block(member_indent + indent_unit_);
     if (h.body.empty()) fail(head, "handler body may not be empty");
+    while (i_ < lines_.size() && lines_[i_].indent == member_indent &&
+           starts_with(lines_[i_].text, "on_fail")) {
+      Line arm_head = lines_[i_++];
+      if (!ends_with(arm_head.text, ":"))
+        fail(arm_head, "on_fail arm must end with ':'");
+      string selector = trim(arm_head.text.substr(
+          std::string("on_fail").size(),
+          arm_head.text.size() - std::string("on_fail").size() - 1));
+      FailureArm arm;
+      arm.line = arm_head.no;
+      arm.source_file = arm_head.source_file;
+      if (!selector.empty()) {
+        auto alternatives = split_top_level(selector, ',');
+        bool all_qualified = std::all_of(
+            alternatives.begin(), alternatives.end(), [](const string& value) {
+              return trim(value).find('.') != string::npos;
+            });
+        if (all_qualified) arm.patterns = std::move(alternatives);
+        else if (alternatives.size() == 1 && plain_identifier(selector))
+          arm.binding = selector;
+        else
+          fail(arm_head,
+               "on_fail requires qualified error variants, a single error binding, or a catch-all");
+      }
+      arm.body = parse_stmt_block(member_indent + indent_unit_);
+      if (arm.body.empty()) fail(arm_head, "on_fail arm body may not be empty");
+      h.failure_arms.push_back(std::move(arm));
+    }
     return h;
   }
 
@@ -1377,6 +1407,29 @@ class Parser {
     static const vector<string> forbidden = {"async ", "yield ", "lock ", "shared ", "thread "};
     for (const auto& k : forbidden) if (starts_with(L.text, k)) fail(L, "'" + trim(k) + "' is not part of Moss's concurrency model");
     if (L.text == "pass") { s.kind = Stmt::Kind::Pass; return s; }
+
+    if (L.text == "try" || L.text == "try:") {
+      if (L.text != "try:") fail(L, "try statement must end with ':'");
+      s.kind = Stmt::Kind::Try;
+      return s;
+    }
+    if (starts_with(L.text, "recover")) {
+      if (!ends_with(L.text, ":")) fail(L, "recover arm must end with ':'");
+      s.kind = Stmt::Kind::Recover;
+      s.a = trim(L.text.substr(std::string("recover").size(),
+                               L.text.size() - std::string("recover").size() - 1));
+      return s;
+    }
+    if (L.text == "raise") {
+      s.kind = Stmt::Kind::Raise;
+      return s;
+    }
+    if (starts_with(L.text, "raise ")) {
+      s.kind = Stmt::Kind::Raise;
+      s.a = trim(L.text.substr(6));
+      if (s.a.empty()) fail(L, "raise requires an error value");
+      return s;
+    }
 
     if (starts_with(L.text, "echo ")) {
       s.kind = Stmt::Kind::Echo;
@@ -2461,6 +2514,27 @@ class Checker {
       if (statement.kind == Stmt::Kind::Reply) {
         ++index;
         return true;
+      }
+      if (statement.kind == Stmt::Kind::Raise) {
+        ++index;
+        return true;  // no normally completing path continues past a raise.
+      }
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        bool normal_replies = every_handler_path_replies(
+            statements, index, level + 1);
+        bool all_recover_reply = true;
+        bool any_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          any_recover = true;
+          ++index;
+          all_recover_reply &= every_handler_path_replies(
+              statements, index, level + 1);
+        }
+        if (normal_replies && any_recover && all_recover_reply) return true;
+        continue;
       }
       if (statement.kind == Stmt::Kind::If) {
         ++index;
@@ -4339,6 +4413,52 @@ class Checker {
       if (statement.kind == Stmt::Kind::Case)
         err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
+      if (statement.kind == Stmt::Kind::Try) {
+        visitor(statement, env);
+        TypeEnv incoming = env;
+        ++index;
+        if (index >= statements.size() || statements[index].indent != level + 1)
+          err(statement.line, "try requires a statement body", "EMPTY_TRY_BODY");
+        TypeEnv normal = incoming;
+        walk_type_environment_block(statements, index, level + 1, normal,
+                                    visitor, reject_conflicts,
+                                    record_join_types, record_semantic_types,
+                                    join_context);
+        vector<TypeEnv> paths{std::move(normal)};
+        bool saw_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = statements[index];
+          saw_recover = true;
+          visitor(arm, incoming);
+          ++index;
+          if (index >= statements.size() || statements[index].indent != level + 1)
+            err(arm.line, "recover requires a statement body",
+                "EMPTY_RECOVER_BODY");
+          TypeEnv recovered = incoming;
+          walk_type_environment_block(statements, index, level + 1, recovered,
+                                      visitor, reject_conflicts,
+                                      record_join_types, record_semantic_types,
+                                      join_context);
+          paths.push_back(std::move(recovered));
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        env = merge_type_environments(paths, statement.line, reject_conflicts);
+        if (record_join_types) {
+          const_cast<Stmt&>(statement).joined_types = env;
+          if (!join_context.empty())
+            const_cast<Stmt&>(statement)
+                .joined_types_by_context[join_context] = env;
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Recover)
+        err(statement.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
+
       if (statement.kind == Stmt::Kind::If) {
         visitor(statement, env);
         TypeEnv incoming = env;
@@ -4569,6 +4689,7 @@ class Checker {
           break;
         case Stmt::Kind::Reply:
         case Stmt::Kind::Return:
+        case Stmt::Kind::Raise:
           if (!statement.a.empty())
             constrain_constructor_fields(statement.line, statement.a, current_env);
           break;
@@ -4577,6 +4698,8 @@ class Checker {
           break;
         case Stmt::Kind::Pass:
         case Stmt::Kind::Else:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           break;
       }
     };
@@ -5657,6 +5780,21 @@ class Checker {
     return specialized_handler_effects(domain, fragment, specialization);
   }
 
+  StateLeafEffects specialized_handler_failure_effects(
+      const Domain& domain, const Handler& handler,
+      const DomainSpecialization* specialization) const {
+    StateLeafEffects result;
+    for (const auto& arm : handler.failure_arms) {
+      auto arm_effects = specialized_handler_body_effects(
+          domain, handler, arm.body, specialization);
+      result.reads.insert(arm_effects.reads.begin(), arm_effects.reads.end());
+      result.writes.insert(arm_effects.writes.begin(), arm_effects.writes.end());
+      result.consumes.insert(arm_effects.consumes.begin(),
+                             arm_effects.consumes.end());
+    }
+    return result;
+  }
+
   StateLeafEffects specialized_handler_expression_effects(
       const Domain& domain, const Handler& handler, const string& expression,
       const DomainSpecialization* specialization) const {
@@ -5845,12 +5983,33 @@ class Checker {
           for (const auto& leaf : *leaves)
             synchronization_require(planned.state_leaves.count(leaf), "semantic effect outside specialization");
         planned.handlers.push_back(std::move(h));
+        if (!handler.failure_arms.empty()) {
+          HandlerSynchronizationPlan failure;
+          failure.name = handler.name + "$fail";
+          failure.handler_identity = specialization.identity() +
+              "::pseudo-handler:" + handler.name + "$fail";
+          failure.effects = specialized_handler_failure_effects(
+              domain, handler, &specialization);
+          for (const auto* leaves : {&failure.effects.reads,
+                                     &failure.effects.writes,
+                                     &failure.effects.consumes})
+            for (const auto& leaf : *leaves)
+              synchronization_require(planned.state_leaves.count(leaf),
+                                      "failure-arm effect outside specialization");
+          planned.handlers.push_back(std::move(failure));
+        }
       }
       derive_domain_synchronization(planned);
       for (auto& handler : planned.handlers) {
         auto source = std::find_if(domain.handlers.begin(), domain.handlers.end(),
             [&](const Handler& candidate) { return candidate.name == handler.name; });
-        synchronization_require(source != domain.handlers.end(), "missing source handler for path placement");
+        if (source == domain.handlers.end()) {
+          synchronization_require(ends_with(handler.name, "$fail"),
+                                  "missing source handler for path placement");
+          handler.path_placement.reason =
+              "failure pseudo-handler always uses a fresh complete entry plan";
+          continue;
+        }
         derive_path_placement(domain, *source, specialization, planned, handler);
       }
       plan.domains.push_back(std::move(planned));
@@ -6493,6 +6652,38 @@ class Checker {
       }
       if (statement.kind == Stmt::Kind::Case)
         err(statement.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        auto normal = env;
+        analyze_effect_block(statements, index, level + 1, normal, params,
+                             parameter_effects, receiver_effect,
+                             receiver_fields);
+        vector<TypeEnv> paths{normal};
+        bool saw_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          saw_recover = true;
+          const Stmt& arm = statements[index++];
+          auto recovered = env;
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos)
+            recovered[arm.a] = "_selected_error";
+          analyze_effect_block(statements, index, level + 1, recovered,
+                               params, parameter_effects, receiver_effect,
+                               receiver_fields);
+          paths.push_back(std::move(recovered));
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        if (leaf_effect_capture_)
+          env = merge_type_environments(paths, statement.line, false);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Recover)
+        err(statement.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
       if (statement.kind == Stmt::Kind::If || statement.kind == Stmt::Kind::While ||
           statement.kind == Stmt::Kind::For) {
         Effect iteration_effect = Effect::Read;
@@ -6636,6 +6827,13 @@ class Checker {
                                       receiver_effect, receiver_fields, Effect::Consume);
           ++index;
           break;
+        case Stmt::Kind::Raise:
+          if (!statement.a.empty())
+            analyze_effect_expression(statement.a, env, params,
+                                      parameter_effects, receiver_effect,
+                                      receiver_fields, Effect::Consume);
+          ++index;
+          break;
         case Stmt::Kind::Raw:
           analyze_effect_expression(statement.text, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
@@ -6650,6 +6848,8 @@ class Checker {
         case Stmt::Kind::For:
         case Stmt::Kind::Match:
         case Stmt::Kind::Case:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           return;
       }
     }
@@ -6896,6 +7096,7 @@ class Checker {
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
+      case Stmt::Kind::Raise:
         if (!statement.a.empty()) expressions.push_back(statement.a);
         break;
       case Stmt::Kind::Raw:
@@ -6903,6 +7104,8 @@ class Checker {
         break;
       case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
+      case Stmt::Kind::Try:
+      case Stmt::Kind::Recover:
         break;
     }
     return expressions;
@@ -6937,6 +7140,7 @@ class Checker {
         break;
       case Stmt::Kind::Reply:
       case Stmt::Kind::Return:
+      case Stmt::Kind::Raise:
         if (!statement.a.empty()) expressions.push_back(statement.a);
         break;
       case Stmt::Kind::Raw:
@@ -6944,6 +7148,8 @@ class Checker {
         break;
       case Stmt::Kind::Pass:
       case Stmt::Kind::Else:
+      case Stmt::Kind::Try:
+      case Stmt::Kind::Recover:
         break;
     }
     return expressions;
@@ -7266,12 +7472,296 @@ class Checker {
       }
       if (!changed) break;
     }
+    // Tests are independent checked execution roots: validate lexical
+    // recovery patterns and selected-error scoping, but deliberately do not
+    // reject a typed error that reaches the test harness.
+    for (auto& test : p_.tests) {
+      SourceFileScope test_source(current_source_file_, test.source_file);
+      TypeEnv env;
+      (void)phase21_raise_set(test.body, std::move(env));
+    }
+    if (p_.main) {
+      SourceFileScope main_source(current_source_file_, p_.main->source_file);
+      TypeEnv env;
+      for (const auto& statement : p_.main->body)
+        if (auto domain = domain_constructor(statement.b))
+          env[statement.a] = *domain;
+      RaiseSet escaping = phase21_raise_set(p_.main->body, env);
+      if (!escaping.empty())
+        err(p_.main->source_file, p_.main->line,
+            "main may not let typed errors escape; handle every raised variant with try/recover");
+    }
   }
 
   static ObservableEffects no_observable_effects() {
     ObservableEffects effects;
     effects.unresolved = false;
     return effects;
+  }
+
+  bool phase21_bounded_error_type(const string& type,
+                                  std::set<string>& visiting) const {
+    const string concrete = canonical_type_name(type);
+    if (concrete == "int" || concrete == "float" || concrete == "bool" ||
+        concrete == "Int" || concrete == "Float" || concrete == "Bool")
+      return true;
+    auto declaration = enums_.find(concrete);
+    if (declaration == enums_.end() || !visiting.insert(concrete).second)
+      return false;
+    for (const auto& item : declaration->second->cases)
+      for (const auto& field : item.fields)
+        if (!phase21_bounded_error_type(field.type, visiting)) return false;
+    visiting.erase(concrete);
+    return true;
+  }
+
+  bool phase21_bounded_error_type(const string& type) const {
+    std::set<string> visiting;
+    return phase21_bounded_error_type(type, visiting);
+  }
+
+  RaisedIdentity phase21_pattern_identity(int line, string pattern) const {
+    pattern = trim(std::move(pattern));
+    const auto open = pattern.find('(');
+    if (open != string::npos) pattern = trim(pattern.substr(0, open));
+    const auto dot = pattern.find('.');
+    if (dot == string::npos || pattern.find('.', dot + 1) != string::npos)
+      err(line, "recovery patterns must name a qualified enum variant",
+          "RECOVERY_PATTERN_REQUIRES_VARIANT");
+    const string type = canonical_type_name(trim(pattern.substr(0, dot)));
+    const string variant = trim(pattern.substr(dot + 1));
+    auto declaration = enums_.find(type);
+    if (declaration == enums_.end())
+      err(line, "unknown error enum '" + type + "'",
+          "UNKNOWN_ERROR_TYPE");
+    auto item = std::find_if(
+        declaration->second->cases.begin(), declaration->second->cases.end(),
+        [&](const EnumCase& candidate) { return candidate.name == variant; });
+    if (item == declaration->second->cases.end())
+      err(line, "unknown error variant '" + type + "." + variant + "'",
+          "UNKNOWN_ERROR_VARIANT");
+    for (const auto& field : item->fields)
+      if (!phase21_bounded_error_type(field.type))
+        err(line, "raised error payload field '" + field.name +
+                      "' must be an owned bounded scalar or enum value",
+            "RAISE_PAYLOAD_NOT_OWNED_BOUNDED");
+    return {RaisedIdentityKind::EnumVariant, type, variant};
+  }
+
+  RaisedIdentity phase21_raised_identity(int line, const string& expression,
+                                         const TypeEnv& env) const {
+    string enum_name, case_name;
+    vector<string> fields;
+    bool called = false;
+    if (parse_enum_case_expression(expression, enum_name, case_name, fields,
+                                   called) &&
+        enums_.count(canonical_type_name(enum_name)))
+      return phase21_pattern_identity(line, enum_name + "." + case_name);
+    auto type = inferred_expr_type(expression, env);
+    if (!type || contains_internal_placeholder(*type))
+      err(line, "raise requires a statically typed error value",
+          "RAISE_REQUIRES_TYPED_VALUE");
+    const string concrete = canonical_type_name(*type);
+    if (!phase21_bounded_error_type(concrete))
+      err(line, "raised values must be owned bounded scalar or enum values",
+          "RAISE_PAYLOAD_NOT_OWNED_BOUNDED");
+    return {RaisedIdentityKind::ScalarType, concrete, {}};
+  }
+
+  RaiseSet phase21_recovery_pattern(int line, const string& selector,
+                                    const RaiseSet& remaining,
+                                    string* binding_type = nullptr) const {
+    const string value = trim(selector);
+    if (value.empty()) return remaining;
+    auto alternatives = split_top_level(value, ',');
+    const bool qualified = std::all_of(
+        alternatives.begin(), alternatives.end(), [](const string& item) {
+          return trim(item).find('.') != string::npos;
+        });
+    if (qualified) {
+      RaiseSet result;
+      for (const auto& alternative : alternatives) {
+        auto identity = phase21_pattern_identity(line, alternative);
+        if (!result.insert(identity).second)
+          err(line, "duplicate error variant in recovery arm",
+              "DUPLICATE_RECOVERY_VARIANT");
+      }
+      return result;
+    }
+    if (alternatives.size() != 1 || !plain_identifier(value))
+      err(line, "recover requires qualified variants, one error binding, or an unbound catch-all",
+          "INVALID_RECOVERY_PATTERN");
+    std::set<string> types;
+    for (const auto& identity : remaining) types.insert(identity.type);
+    if (types.size() != 1)
+      err(line, "a bound recovery catch-all requires one concrete error type; use recover:",
+          "AMBIGUOUS_RECOVERY_BINDING");
+    if (binding_type && !types.empty()) *binding_type = *types.begin();
+    return remaining;
+  }
+
+  RaiseSet phase21_raise_set_block(const vector<Stmt>& body, size_t& index,
+                                   int level, TypeEnv env,
+                                   const RaiseSet& selected = {}) {
+    RaiseSet result;
+    while (index < body.size()) {
+      const Stmt& statement = body[index];
+      if (statement.indent < level) return result;
+      if (statement.indent > level || statement.kind == Stmt::Kind::Else ||
+          statement.kind == Stmt::Kind::Recover ||
+          statement.kind == Stmt::Kind::Case)
+        return result;
+      if (statement.kind == Stmt::Kind::Try) {
+        ++index;
+        RaiseSet attempted = phase21_raise_set_block(
+            body, index, level + 1, env);
+        RaiseSet remaining = attempted;
+        RaiseSet recovered_raises;
+        bool saw_recover = false;
+        bool saw_catch_all = false;
+        std::set<RaisedIdentity> named;
+        while (index < body.size() && body[index].indent == level &&
+               body[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = body[index++];
+          saw_recover = true;
+          if (saw_catch_all)
+            err(arm.line, "no recover arm may follow a catch-all",
+                "RECOVER_AFTER_CATCH_ALL");
+          string binding_type;
+          RaiseSet matched = phase21_recovery_pattern(
+              arm.line, arm.a, remaining, &binding_type);
+          const bool catch_all = arm.a.empty() ||
+              (arm.a.find('.') == string::npos && arm.a.find(',') == string::npos);
+          if (catch_all) saw_catch_all = true;
+          for (const auto& identity : matched) {
+            if (!named.insert(identity).second)
+              err(arm.line, "overlapping recovery alternatives",
+                  "OVERLAPPING_RECOVERY_PATTERN");
+            if (!remaining.count(identity)) {
+              const string message = "recovery alternative '" +
+                  identity.canonical() + "' is unreachable in this try";
+              if (std::none_of(warnings_.begin(), warnings_.end(),
+                               [&](const Warning& warning) {
+                                 return warning.line == arm.line &&
+                                     warning.code == "RECOVER_UNREACHABLE_VARIANT" &&
+                                     warning.message == message;
+                               }))
+                warnings_.push_back({arm.line, message,
+                                     "RECOVER_UNREACHABLE_VARIANT",
+                                     arm.source_file});
+              continue;
+            }
+            remaining.erase(identity);
+          }
+          if (catch_all && matched.empty()) {
+            const string message = "catch-all recovery arm cannot receive a typed error from this try";
+            if (std::none_of(warnings_.begin(), warnings_.end(),
+                             [&](const Warning& warning) {
+                               return warning.line == arm.line &&
+                                   warning.code == "RECOVER_EMPTY_CATCH_ALL";
+                             }))
+              warnings_.push_back({arm.line, message,
+                                   "RECOVER_EMPTY_CATCH_ALL",
+                                   arm.source_file});
+          }
+          TypeEnv arm_env = env;
+          if (!binding_type.empty() && plain_identifier(trim(arm.a)))
+            arm_env[trim(arm.a)] = binding_type;
+          RaiseSet arm_raises = phase21_raise_set_block(
+              body, index, level + 1, std::move(arm_env), matched);
+          recovered_raises = raise_set_union(
+              std::move(recovered_raises), arm_raises);
+        }
+        if (!saw_recover)
+          err(statement.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        result = raise_set_union(std::move(result), remaining);
+        result = raise_set_union(std::move(result), recovered_raises);
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Raise) {
+        RaiseSet alternatives;
+        if (statement.a.empty()) {
+          if (selected.empty())
+            err(statement.line, "bare raise is legal only inside an active recover arm",
+                "BARE_RAISE_OUTSIDE_RECOVER");
+          alternatives = selected;
+        } else {
+          alternatives.insert(
+              phase21_raised_identity(statement.line, statement.a, env));
+          auto expression = observable_expression_effects(statement.a, env);
+          alternatives = raise_set_union(
+              std::move(alternatives), expression.raise_set);
+        }
+        const_cast<Stmt&>(statement).exceptional_alternatives = alternatives;
+        result = raise_set_union(std::move(result), alternatives);
+        ++index;
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::If ||
+          statement.kind == Stmt::Kind::While ||
+          statement.kind == Stmt::Kind::For ||
+          statement.kind == Stmt::Kind::Match) {
+        const string expression = statement.kind == Stmt::Kind::For
+            ? statement.b : statement.a;
+        result = raise_set_union(
+            std::move(result),
+            observable_expression_effects(expression, env).raise_set);
+        const auto parent_kind = statement.kind;
+        ++index;
+        if (parent_kind == Stmt::Kind::Match) {
+          while (index < body.size() && body[index].indent == level + 1 &&
+                 body[index].kind == Stmt::Kind::Case) {
+            ++index;
+            result = raise_set_union(
+                std::move(result), phase21_raise_set_block(
+                    body, index, level + 2, env, selected));
+          }
+        } else {
+          result = raise_set_union(
+              std::move(result), phase21_raise_set_block(
+                  body, index, level + 1, env, selected));
+          if (parent_kind == Stmt::Kind::If && index < body.size() &&
+              body[index].indent == level &&
+              body[index].kind == Stmt::Kind::Else) {
+            ++index;
+            result = raise_set_union(
+                std::move(result), phase21_raise_set_block(
+                    body, index, level + 1, env, selected));
+          }
+        }
+        continue;
+      }
+      if (statement.kind == Stmt::Kind::Message) {
+        auto receiver = env.find(statement.a);
+        if (receiver != env.end() && domains_.count(receiver->second))
+          if (const Handler* target =
+                  find_handler(*domains_.at(receiver->second), statement.b))
+            result = raise_set_union(
+                std::move(result), target->observable_effects.raise_set);
+      }
+      for (const auto& expression : statement_expressions(statement))
+        result = raise_set_union(
+            std::move(result),
+            observable_expression_effects(expression, env).raise_set);
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(statement.b, env))
+          env[statement.a] = *type;
+      }
+      ++index;
+    }
+    return result;
+  }
+
+  RaiseSet phase21_raise_set(const vector<Stmt>& body, TypeEnv env) {
+    size_t index = 0;
+    RaiseSet result = phase21_raise_set_block(body, index, 0, std::move(env));
+    if (index != body.size())
+      err(body[index].line, "malformed exceptional control-flow nesting",
+          "INVALID_EXCEPTIONAL_CFG");
+    return result;
   }
 
   static bool same_observable_effects(const ObservableEffects& left,
@@ -7439,7 +7929,11 @@ class Checker {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters));
+        effects.external_io = true;
         effects.fileio = true;
+        effects.may_panic = true;  // invalid resource/mode use remains fatal.
+        effects.raise_set = raise_set_union(
+            std::move(effects.raise_set), fileio_operation_raise_set("open"));
         return effects;
       }
     }
@@ -7458,7 +7952,10 @@ class Checker {
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO")) {
         effects.external_io = true;
+        effects.fileio = true;
         effects.may_panic = true;
+        effects.raise_set = raise_set_union(
+            std::move(effects.raise_set), fileio_operation_raise_set(method));
         if (domain_fields.count(receiver)) {
           if (fileio_operation_effect(method) == Effect::Read)
             effects.domain_read = true;
@@ -7788,6 +8285,7 @@ class Checker {
         }
         auto inferred = observable_body_effects(
             function.body, env, parameters);
+        inferred.raise_set = phase21_raise_set(function.body, env);
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
               *function.result_expression, env));
@@ -7813,6 +8311,7 @@ class Checker {
           }
           auto inferred = observable_body_effects(
               method.body, env, parameters, {}, &object);
+          inferred.raise_set = phase21_raise_set(method.body, env);
           if (method.result_expression)
             inferred.merge(observable_expression_effects(
                 *method.result_expression, env, {}, &object));
@@ -7838,6 +8337,7 @@ class Checker {
           }
           auto inferred = observable_body_effects(
               handler.body, env, parameters, domain_fields);
+          inferred.raise_set = phase21_raise_set(handler.body, env);
           if (!same_observable_effects(inferred,
                                        handler.observable_effects)) {
             handler.observable_effects = inferred;
@@ -9015,6 +9515,48 @@ class Checker {
       if (s.kind == Stmt::Kind::Case)
         err(s.line, "case requires an enclosing match", "CASE_OUTSIDE_MATCH");
 
+      if (s.kind == Stmt::Kind::Try) {
+        OwnershipEnv incoming = env;
+        ++index;
+        OwnershipEnv normal = incoming;
+        check_ownership_block(statements, index, level + 1, normal,
+                              current_domain, current_handler);
+        vector<OwnershipEnv> paths;
+        if (normal.can_continue) paths.push_back(normal);
+        bool saw_recover = false;
+        while (index < statements.size() &&
+               statements[index].indent == level &&
+               statements[index].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = statements[index++];
+          saw_recover = true;
+          OwnershipEnv recovered = incoming;
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos) {
+            recovered.types[arm.a] = "_selected_error";
+            recovered.immutable_locals.insert(arm.a);
+          }
+          check_ownership_block(statements, index, level + 1, recovered,
+                                current_domain, current_handler);
+          if (recovered.can_continue) paths.push_back(std::move(recovered));
+        }
+        if (!saw_recover)
+          err(s.line, "try must be followed by at least one recover arm",
+              "TRY_REQUIRES_RECOVER");
+        env = incoming;
+        env.can_continue = !paths.empty();
+        if (!paths.empty()) {
+          vector<TypeEnv> path_types;
+          for (const auto& path : paths) path_types.push_back(path.types);
+          env.types = merge_type_environments(path_types, s.line, false);
+          env.moved.clear();
+          for (const auto& path : paths) merge_moved(env, path);
+        }
+        continue;
+      }
+      if (s.kind == Stmt::Kind::Recover)
+        err(s.line, "recover requires an immediately preceding try",
+            "RECOVER_OUTSIDE_TRY");
+
       if (s.kind == Stmt::Kind::If || s.kind == Stmt::Kind::While) {
         check_ownership_expression(s.line, s.a, env, Effect::Read);
         bool is_if = s.kind == Stmt::Kind::If;
@@ -9275,12 +9817,20 @@ class Checker {
           ++index;
           env.can_continue = false;
           break;
+        case Stmt::Kind::Raise:
+          if (!s.a.empty())
+            check_ownership_expression(s.line, s.a, env, Effect::Consume);
+          ++index;
+          env.can_continue = false;
+          break;
         case Stmt::Kind::If:
         case Stmt::Kind::Else:
         case Stmt::Kind::While:
         case Stmt::Kind::For:
         case Stmt::Kind::Match:
         case Stmt::Kind::Case:
+        case Stmt::Kind::Try:
+        case Stmt::Kind::Recover:
           return;
       }
     }
@@ -24584,7 +25134,7 @@ static void complete_phase21_owned_type_shapes(ProviderHandlerAbi& abi) {
 }
 
 static ProviderHandlerAbi source_provider_handler_abi(
-    const Domain& domain, const Handler& handler) {
+    const Program& provider, const Domain& domain, const Handler& handler) {
   if (handler.provider_abi) {
     ProviderHandlerAbi abi = *handler.provider_abi;
     complete_phase21_owned_type_shapes(abi);
@@ -24611,8 +25161,75 @@ static ProviderHandlerAbi source_provider_handler_abi(
         "__moss_project_" + suffix,
         "__moss_rebuild_" + suffix,
     };
+    std::vector<OwnedPayloadFieldAbi> payload;
+    if (identity.kind == RaisedIdentityKind::ScalarType) {
+      const string type = canonical_type_name(identity.type);
+      ResolvedTypeAbi shape;
+      shape.canonical_type = type;
+      shape.kind = ResolvedTypeKind::Scalar;
+      payload.push_back({"value", type,
+                         OwnedPayloadFieldAbi::Kind::Scalar, true, true,
+                         std::move(shape)});
+    } else {
+      auto enumeration = std::find_if(
+          provider.enums.begin(), provider.enums.end(),
+          [&](const EnumType& candidate) {
+            return canonical_type_name(candidate.name) ==
+                canonical_type_name(identity.type);
+          });
+      if (enumeration != provider.enums.end()) {
+        auto variant = std::find_if(
+            enumeration->cases.begin(), enumeration->cases.end(),
+            [&](const EnumCase& candidate) {
+              return candidate.name == identity.variant;
+            });
+        if (variant != enumeration->cases.end())
+          for (const auto& field : variant->fields) {
+            ResolvedTypeAbi shape =
+                resolve_phase21_owned_type(provider, field.type);
+            const auto kind = shape.kind == ResolvedTypeKind::ErrorEnum
+                ? OwnedPayloadFieldAbi::Kind::ErrorEnum
+                : OwnedPayloadFieldAbi::Kind::Scalar;
+            payload.push_back({field.name, field.type, kind, true, true,
+                               std::move(shape)});
+          }
+      }
+    }
     abi.outcome.raised.push_back(
-        {identity, tag++, {}, std::move(projection)});
+        {identity, tag++, std::move(payload), std::move(projection)});
+  }
+  std::uint32_t node = 1;
+  std::uint32_t destination = 1;
+  for (const auto& identity : handler.observable_effects.raise_set) {
+    const std::uint32_t node_id = node++;
+    const std::uint32_t destination_id = destination++;
+    RaisingNodeAbi raising;
+    raising.node = node_id;
+    raising.possible_alternatives.insert(identity);
+    abi.raising_nodes.push_back(std::move(raising));
+    ExceptionalDestinationAbi exit;
+    exit.node = destination_id;
+    exit.kind = ExceptionalDestinationKind::HandlerExit;
+    exit.accepted_alternatives.insert(identity);
+    abi.exceptional_destinations.push_back(std::move(exit));
+    abi.exceptional_edges.push_back(
+        {node_id, destination_id, ExceptionalEdgeKind::RaiseToHandlerExit,
+         RaiseSet{identity}, kAllExceptionalCfgConsumers});
+  }
+  std::uint32_t arm_order = 0;
+  for (const auto& source_arm : handler.failure_arms) {
+    FailureArmAbi arm;
+    arm.source_order = arm_order++;
+    arm.pattern.kind = source_arm.patterns.empty()
+        ? FailurePatternKind::CatchAll : FailurePatternKind::Variant;
+    for (const auto& pattern : source_arm.patterns) {
+      FailurePatternAbi parsed = parse_failure_pattern_text(pattern);
+      arm.pattern.variants.insert(parsed.variants.begin(),
+                                  parsed.variants.end());
+    }
+    arm.callable_symbol = "__moss_on_fail_" + domain.name + "_" +
+        handler.name + "_" + std::to_string(arm.source_order);
+    abi.failure_arms.push_back(std::move(arm));
   }
   abi.reply.moss_type = handler.reply_type.value_or("unit");
   abi.reply.one_way = !handler.reply_type.has_value();
@@ -25056,7 +25673,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         out << slot.str();
       }
       ProviderHandlerAbi provider_abi =
-          source_provider_handler_abi(domain, handler);
+          source_provider_handler_abi(program, domain, handler);
       synchronization_require(provider_handler_abi_valid(provider_abi),
                               "invalid exported handler ABI-v8 contract");
       synchronization_require(tagged_outcome_matches_raise_set(

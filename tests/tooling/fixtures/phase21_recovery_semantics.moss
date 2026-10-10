@@ -1,0 +1,23 @@
+enum WorkError:
+  Missing
+  Failed(code: Int)
+  Unused
+
+fn may_fail(flag: Bool):
+  if flag:
+    raise WorkError.Missing
+  else:
+    raise WorkError.Failed(code: 7)
+
+fn handled(flag: Bool):
+  try:
+    may_fail(flag)
+  recover WorkError.Missing:
+    echo "missing"
+  recover WorkError.Unused:
+    echo "unused"
+  recover:
+    echo "failed"
+
+test "local typed recovery":
+  handled(true)
