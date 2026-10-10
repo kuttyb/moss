@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 21.I source-free `on_fail` fail-closed guard — 2026-10-10
+
+A real provider with a typed `on_fail` trailer builds and runs when its Moss
+source is present (`4`, then reply `5`). After removing that source, its
+ABI-v8 `.mossi` still names failure-arm callables, but the provider `.rlib`
+does not export them and the consumer cannot construct the Root wrapper.
+Previously the consumer could mis-handle this path by letting caller-side
+`recover` bypass the trailer. The checker now reports
+`SOURCE_FREE_ON_FAIL_UNMATERIALIZED` for such imports until executable arm
+materialization and Root dispatch are implemented. The source-free ABI test
+checks both direct Root and caller-side `recover` cases, while the real
+source-free handler without a trailer remains executable.
+
+Focused source-free ABI validation, `make examples`, and strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation pass. The repository-wide
+`make check` rerun also passes (`all Moss v0.1 tests passed`).
+This is a safety guard, not A acceptance: the
+source-free trailer callable/capture/Root work remains necessary.
+
 ## Phase 21.I source-free handler effect checkpoint — 2026-10-10
 
 The integration checker now preserves the checked observable effects from an

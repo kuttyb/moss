@@ -109,6 +109,51 @@ fn main():
     assert "main may not let typed errors escape" in unhandled.stderr
 
 
+def assert_unmaterialized_on_fail(main, cwd):
+    checked = run([compiler, "--check", main], cwd=cwd, expected=1)
+    assert "compiled provider on_fail callable bodies are not yet available" in checked.stderr
+
+
+def run_source_free_on_fail_gap_fixture():
+    """Reject a real trailer whose provider callable is absent from the rlib."""
+    trailer_out = out / "on-fail-gap"
+    (trailer_out / "src").mkdir(parents=True)
+    (trailer_out / "moss.toml").write_text(
+        '[project]\nname="phase21_on_fail_gap"\nversion="0.1.0"\n')
+    provider = trailer_out / "src/service.moss"
+    provider.write_text('''module service
+export enum ServiceError:
+  Bad(code: Int)
+export domain Worker:
+  fn Run() -> Int:
+    raise ServiceError.Bad(code: 4)
+  on_fail ServiceError.Bad(code):
+    echo code
+    reply code + 1
+''')
+    main = trailer_out / "src/main.moss"
+    main.write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  echo message worker.Run()
+''')
+    source_backed = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
+    assert run([source_backed["result"]["artifacts"]["executable"]]).stdout == "4\n5\n"
+    provider.rename(provider.with_suffix(".removed"))
+    assert_unmaterialized_on_fail(main, trailer_out)
+    main.write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  try:
+    echo message worker.Run()
+  recover service.ServiceError.Bad(code):
+    echo code
+''')
+    assert_unmaterialized_on_fail(main, trailer_out)
+
+
 if out.exists():
     shutil.rmtree(out)
 (out / "src").mkdir(parents=True)
@@ -235,7 +280,7 @@ synthetic = synthetic.replace(
 assert synthetic != original
 interface_path.write_text(synthetic)
 provider.rename(provider.with_suffix(".removed"))
-run([compiler, "--check", main], cwd=out)
+assert_unmaterialized_on_fail(main, out)
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
@@ -268,7 +313,7 @@ missing_effect = run([compiler, "--check", main], cwd=out, expected=1)
 assert "lacks Phase 21 observable effects" in missing_effect.stderr
 
 interface_path.write_text(synthetic)
-run([compiler, "--check", main], cwd=out)
+assert_unmaterialized_on_fail(main, out)
 
 invalid_destination = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1',
@@ -347,7 +392,7 @@ owned_string_capture = owned_string_capture.replace(
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 interface_path.write_text(owned_string_capture)
-run([compiler, "--check", main], cwd=out)
+assert_unmaterialized_on_fail(main, out)
 
 # A provider-private aggregate remains legal source-free when its complete,
 # counted declaration includes every dependency. The loader independently
@@ -365,11 +410,12 @@ private_capture = private_capture.replace(
     '"2:15:ProviderPrivate:2:0:3:Int:0:3:6:String:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 interface_path.write_text(private_capture)
-run([compiler, "--check", main], cwd=out)
+assert_unmaterialized_on_fail(main, out)
 
 interface_path.write_text(synthetic)
 run_two_crate_rust_abi_fixture()
 run_source_free_raised_handler_fixture()
+run_source_free_on_fail_gap_fixture()
 print(
-    "Phase 21.0 source-free ABI-v8 metadata, fail-closed loader, and "
+    "Phase 21.0 source-free ABI-v8 metadata, fail-closed trailer, and "
     "native raised-handler checks passed.")

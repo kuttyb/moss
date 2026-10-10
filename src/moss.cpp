@@ -7899,6 +7899,17 @@ class Checker {
   }
 
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
+    if (handler.provider_abi &&
+        !handler.provider_abi->failure_arms.empty()) {
+      // The v8 loader validates these records, but provider codegen does not
+      // yet export their callable bodies. Accepting them would let a Root
+      // caller recover the raised outcome without executing on_fail.
+      err(handler.line,
+          "compiled provider on_fail callable bodies are not yet available "
+          "for source-free Root dispatch",
+          "SOURCE_FREE_ON_FAIL_UNMATERIALIZED");
+      return;
+    }
     if (handler.failure_arms.empty()) return;
     RaiseSet remaining = handler.observable_effects.raise_set;
     std::set<RaisedIdentity> named;
