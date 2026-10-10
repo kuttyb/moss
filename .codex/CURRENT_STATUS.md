@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 21.C native Branch read-fault checkpoint — 2026-10-10
+
+The ordered-Branch focused gate now runs generated native Rust with a real
+one-shot `FileIO` `ReadBefore`/`IO` fault while bounded-K chunk reads are
+outstanding. Every input byte is a successful mapper value, so whichever lane
+consumes the fault, the first Root recovers `FileError.IO`; a second Root then
+raises its expected parent-fold error. The test checks zero live Branch scopes
+between Roots and before executor join, and repeats the native run 32 times.
+The existing owned read-token harness still checks all tokens drop before a
+terminal decision. The focused Phase 21.C suite and the complete `make check`
+gate pass after this edit (`all Moss v0.1 tests passed`). This strengthens the
+O9/quiescence evidence but does not close the remaining final C proof review
+or Phase 21 acceptance.
+
 ## Phase 21.A source-free failure-arm state effects — 2026-10-10
 
 In isolated branch `phase-21-a-source-free`, each checked source `on_fail`

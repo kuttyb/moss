@@ -353,4 +353,36 @@ run(["rustc", "--edition=2021", "-D", "warnings", native_rust,
 for _ in range(32):
     assert run([native_bin]).stdout == "11\n21\n"
 
+# Exercise a real checked FileIO read fault while bounded-K Branch reads are
+# outstanding. Every byte maps successfully, so whichever lane consumes the
+# one-shot fault, the first Root must recover FileError.IO. The second Root
+# proves that the executor and FileIO owner remain usable after quiescence.
+native_data.write_bytes(b"AAAA")
+fault_marker = "    // Moss line 48: try:"
+between_roots = "    // Moss line 56: try:"
+before_join = "    // Moss line 64: executor.join()"
+for marker in (fault_marker, between_roots, before_join):
+    assert native_text.count(marker) == 1, marker
+fault_text = native_text.replace(
+    fault_marker,
+    "    moss_inject_fileio_fault(MossFileIoFaultSite::ReadBefore, "
+    "MossFileError::IO, 0);\n" + fault_marker,
+    1,
+).replace(
+    between_roots,
+    "    assert_eq!(moss_live_branch_scopes(), 0);\n" + between_roots,
+    1,
+).replace(
+    before_join,
+    "    assert_eq!(moss_live_branch_scopes(), 0);\n" + before_join,
+    1,
+)
+fault_rs = OUT / "phase21c_native_read_fault.rs"
+fault_rs.write_text(fault_text)
+fault_bin = OUT / "phase21c_native_read_fault"
+run(["rustc", "--edition=2021", "-D", "warnings", "--cfg", "moss_perf",
+     fault_rs, "-o", fault_bin])
+for _ in range(32):
+    assert run([fault_bin]).stdout == "13\n21\n"
+
 print("phase21c branch-error checks passed")
