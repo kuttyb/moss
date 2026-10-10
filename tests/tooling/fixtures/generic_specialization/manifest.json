@@ -32,7 +32,7 @@
     }
   },
   "numeric": {
-    "stdout": "4\n3\n",
+    "stdout": "4\n3.0\n",
     "negative": false,
     "fileio": false,
     "target": "twice"

@@ -17,6 +17,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_native.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_handler_failure_native.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_errors.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_root_cleanup.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_float_ieee.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
@@ -301,8 +303,8 @@ run_case swarm_021_map_get_fallback_owned tests/swarm_021_map_get_fallback_owned
 run_case swarm_022_fast_debug_map_state tests/swarm_022_fast_debug_map_state.moss '0'
 run_case swarm_023_fast_debug_pipelines tests/swarm_023_fast_debug_pipelines.moss "$(printf '12\n3\n6\ntrue\ntrue')"
 run_case swarm_023_eager_terminals tests/swarm_023_eager_terminals.moss "$(printf '1\n2\n3\ntrue\n1\n2\n3\nfalse')"
-run_case swarm_023_empty_map_types tests/swarm_023_empty_map_types.moss '0 0 0'
-run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_identity.moss "$(printf '0\n0\n0\n0\n0\n0 0')"
+run_case swarm_023_empty_map_types tests/swarm_023_empty_map_types.moss '0.0 0 0.0'
+run_case swarm_023_pipeline_context_identity tests/swarm_023_pipeline_context_identity.moss "$(printf '0.0\n0.0\n0.0\n0.0\n0.0\n0.0 0')"
 run_case swarm_023_pipeline_test_context tests/swarm_023_pipeline_test_context.moss 'test context'
 run_case swarm_025_fast_debug_sibling_method tests/swarm_025_fast_debug_sibling_method.moss '25'
 reject_case swarm_026_in_expression "binary 'in' expression is not supported"
@@ -422,7 +424,7 @@ run_phase4_differential phase4_map_map tests/phase4_map_map.moss '3 7'
 run_phase4_differential phase4_object tests/phase4_object_smoke.moss '12'
 run_phase4_differential phase4_bound_method tests/phase4_bound_method.moss '24'
 run_phase4_differential phase4_callable_specialization \
-  tests/phase4_callable_specialization.moss '6 8'
+  tests/phase4_callable_specialization.moss '6 8.0'
 run_phase4_differential phase4_hof tests/phase4_hof_smoke.moss '6 4'
 run_phase4_differential phase4_effect_order tests/phase4_effect_smoke.moss \
   "$(printf 'first 1\nfirst 2\nfirst 3\nsecond 1\nsecond 2\nsecond 3\ntotal 6')"
@@ -1204,7 +1206,7 @@ overflow_expected=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s' \
   '-9223372036854775808' '9223372036854775807' \
   '-9223372036854775808' '9223372036854775807' \
   '-9223372036854775808' '-9223372036854775808' \
-  '-9223372036854775808' '3' \
+  '-9223372036854775808' '3.0' \
   '-9223372036854775808')
 "$compiler" --check tests/phase25_integer_overflow.moss
 "$compiler" -O0 tests/phase25_integer_overflow.moss \
