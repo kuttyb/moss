@@ -1039,7 +1039,6 @@ class FastInterpreter {
     if (op == "-") return Value::float_value(l - r);
     if (op == "*") return Value::float_value(l * r);
     if (op == "%") throw RuntimeError(line, "integer remainder requires Int operands");
-    if (r == 0.0) throw RuntimeError(line, "floating-point division by zero");
     return Value::float_value(l / r);
   }
 
@@ -1452,7 +1451,14 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Unit: return "()";
     case Kind::Bool: return boolean ? "true" : "false";
     case Kind::Int: return std::to_string(integer);
-    case Kind::Float: out << std::setprecision(15) << floating; return out.str();
+    case Kind::Float:
+      if (std::isnan(floating)) return "NaN";
+      if (std::isinf(floating)) return std::signbit(floating) ? "-inf" : "inf";
+      if (floating == 0.0 && std::signbit(floating)) return "-0.0";
+      out << std::setprecision(15) << floating;
+      if (out.str().find_first_of(".eE") == std::string::npos)
+        out << ".0";
+      return out.str();
     case Kind::String: return string;
     case Kind::Callable: return "<callable:" + string + ">";
     case Kind::Struct:

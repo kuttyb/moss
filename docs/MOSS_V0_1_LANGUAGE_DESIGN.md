@@ -877,11 +877,9 @@ Domain boundaries deliberately break ordinary Moss alias identity. A message arg
 
 ### 32 Failure model and proof scope
 
-Unexpected failure semantics are not yet a language-level supervision model. v0.1 **fails closed**: the production backend aborts on unexpected handler failure or poisoned synchronization rather than releasing possibly inconsistent protected state and continuing Moss execution.
+Moss distinguishes **panics** from **typed raises**. A panic, including poisoned synchronization or programmer misuse, fails closed by aborting the process. A typed `raise` is a checked, recoverable handler exit: it materializes an owned error outcome, releases that handler's guards at completion, and may expose earlier state mutations to later executions. `recover` handles a typed outcome locally; a Root-only `on_fail` trailer runs after the abandoned Root's cleanup and acquires a fresh lock plan. Neither construct rolls back domain state, nested messages, `echo`, or other observable effects that completed before the raise. The programmer remains responsible for the validity of partially modified state.
 
-More specifically, a failing handler does not release or weaken guards protecting state it has modified and then permit another Moss handler to observe those partial protected-state updates before process termination. v0.1 does not provide rollback: nested synchronous messages, `echo`, or other observable effects that completed before the unexpected failure may already have occurred.
-
-All serializability and normal-exit state-validity arguments in this paper are scoped to failure-free completed handlers. The fail-closed rule above is a separate failure-containment property of the v0.1 lowering. Phase 21 is reserved for explicit error propagation, supervision, rollback/recovery choices, and their interaction with synchronization.
+Theorem 27.1's whole-execution serializability claim includes completed handler executions that exit by typed raise (Phase 21 Theorem A2). State-validity arguments remain scoped to failure-free completion. Panicking executions do not complete and remain outside the serializability claim.
 ### 33 Claims and non-claims
 
 #### Claims
@@ -889,7 +887,7 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Safe Rust remains the physical memory-safety substrate for generated production code.
 - Moss statically closes concrete domain routing in v0.1.
 - Moss derives domain-state synchronization from specialized may-effects rather than user-written locks.
-- Failure-free completed executions on one domain admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair—defined by actually accessing the same domain-owned semantic location with at least one write/consume—is whole-execution serializable consistently with that order: the observed behavior is equivalent to one in which the whole execution of one precedes the whole execution of the other, including nested synchronous messages, reply materialization, and $O(h)$ effects.
+- Completed executions on one domain, including those that exit by typed raise, admit a single conflict-serialization order for domain-owned state. Every dynamically conflicting pair—defined by actually accessing the same domain-owned semantic location with at least one write/consume—is whole-execution serializable consistently with that order: the observed behavior is equivalent to one in which the whole execution of one precedes the whole execution of the other, including nested synchronous messages, reply materialization, and $O(h)$ effects.
 - Moss-managed domain lock deadlock is structurally excluded under the closed-graph/rank assumptions.
 - Root admission, root-scoped joins over lock-free Branches, and Solo FileIO
   preserve the extended deadlock argument under the Phase 20 environmental
@@ -902,7 +900,7 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Eligible chunk reads/maps may execute concurrently while retaining ordered
   commit and the source's original left-to-right fold.
 - Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values. A guard backing a borrowed protected payload remains held for the complete synchronous call.
-- In the v0.1 fail-closed lowering, an unexpectedly failing handler does not release modified protected state and allow another Moss handler to observe those partial protected-state updates before process termination.
+- A panic aborts the process; a typed raise releases the handler's guards at completion and may expose partial mutations. Neither typed raises nor Root failure trailers imply rollback or state-validity guarantees.
 
 #### Non-claims
 
@@ -917,7 +915,7 @@ All serializability and normal-exit state-validity arguments in this paper are s
 - Solo blocking does not cover Duo I/O or hidden dependencies back on another
   Moss Root. Worker compensation does not repair such dependencies or
   compensate Moss-lock contention.
-- v0.1 does not yet define supervision, rollback, restart, or recovery after unexpected handler failure; already-completed nested messages or observable effects are not rolled back by fail-closed abort.
+- Moss does not provide automatic rollback, restart, or state repair after a typed raise; already-completed nested messages and observable effects remain visible.
 - The deadlock proof covers Moss-managed locks, not arbitrary future foreign locks acquired invisibly by external code.
 - Static may-effect footprints, analysis-leaf boundaries, `ClassSet` overlap, synchronization-class boundaries, aggregate coarsening, and compiler-selected acquisition placement are not the source-level definition of handler conflict; they may conservatively serialize executions that do not dynamically conflict.
 - The synchronization partition is not guaranteed workload-optimal, path-minimal, or aggregate-element-minimal.
@@ -1087,7 +1085,7 @@ That imposes constraints on **both sides** of an observable effect. Deferred acq
 
 The optimizer must also preserve the ordinary **two-phase rule** explicitly: once any touched guard is released or downgraded, that handler execution may perform no later Moss-managed guard acquisition or mode upgrade. Releasing or downgrading the first touched guard therefore begins the shrinking phase. By contrast, a guard known to be untouched on the realized execution may be **cancelled at any point**. Such cancellation does not begin the shrinking phase and does not itself forbid later acquisitions, provided the remaining rank-order and observable-effect constraints are still satisfied.
 
-Early release must also preserve Section 32's fail-closed property. A touched guard may not be released while later code can still fail under the modeled Moss failure semantics if doing so could allow another handler to observe a partial update that the conservative full-hold baseline would keep hidden until process termination. A guard that backs a borrowed protected message payload must in all cases remain held for the complete dynamic extent of that synchronous call. Early release of touched guards and aggregate refinement remain future work. The bounded branch-local deferred acquisition and proven-untouched cancellation described above are part of the current v0.1 implementation.
+Early release must also preserve Section 32's panic fail-closed property. The failure-specific barrier applies when later code may panic; a possible typed raise alone does not require process-termination containment. This does not authorize arbitrary early release: conventional two-phase locking (no acquisition after shrinking), whole-execution conflict ordering, barriers at observable actions, rank ordering, and protected borrowed-payload lifetimes still apply. A guard that backs a borrowed protected message payload must remain held for the complete dynamic extent of that synchronous call. Early release of touched guards and aggregate refinement remain future work. The bounded branch-local deferred acquisition and proven-untouched cancellation described above are part of the current v0.1 implementation.
 ### 43 Modules: semantic ABI, graph-relative synchronization, and artifact-local specialization
 
 Source-free providers export semantic information needed for downstream specialization and effect analysis. The final consumer builds the concrete graph, derives synchronization, and emits typed lock-owned state. Physical classes and Rust lifetimes are deliberately absent from the semantic module ABI.
@@ -1209,7 +1207,7 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Branch | Compiler-generated child of one Root; scoped join, no Moss locks, nonblocking publication, ordered source meaning preserved |
 | Root ingress | `main`'s `executor.invoke` submits a one-way Root; top-level `message` and Rust-host `runtime_invoke` wait for Root completion/reply; no recursive admission from a Root/Branch |
 | Solo blocking | Known kernel waits may activate bounded worker compensation; completion must not depend on another Moss Root; Moss-lock waits are not compensated |
-| Failure | Unexpected failure is fail-closed: modified protected state is not released for observation by another Moss handler before process termination; prior nested/observable effects are not rolled back; supervision deferred |
+| Failure | Panics abort the process; typed raises release guards at handler completion and can expose partial mutations; no automatic rollback or state-validity guarantee |
 
 ## Appendix B - Proof assumptions checklist
 
@@ -1228,7 +1226,7 @@ The formal claims rely on the following conditions:
 11. Initialization writes happen-before concurrent handler execution observes the domain instance.
 12. Message/reply value boundaries do not leak Moss-visible mutable aliases between domains; any physical Rust borrow used to lower a synchronous message is immutable, non-escaping, and bounded by the call. If such a borrow is backed by protected state, its protecting guard remains held for the complete call.
 13. Normal handler exit leaves every domain-owned value ownership-valid.
-14. Serializability claims are for failure-free completed handlers. For unexpected failure, the v0.1 fail-closed lowering does not release or weaken guards protecting modified state and then permit another Moss handler to observe those partial protected-state updates before process termination; already-completed nested messages or observable effects are not rolled back.
+14. Theorem 27.1 serializability covers completed handlers that exit normally or by typed raise. State-validity arguments remain limited to failure-free completion. Panics abort the process; typed raises release guards and may expose partial mutations. Neither path rolls back already-completed nested messages or observable effects.
 15. Foreign code does not acquire hidden Moss-state aliases or violate Moss-managed lock-order assumptions; detailed interop remains future work.
 16. Independent Root ingress occurs outside Root/Branch execution; active
     Executor ingress shares one bounded admission mechanism. Joins help only

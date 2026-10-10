@@ -1744,6 +1744,7 @@ class Checker {
         specialization.parameter_effects = concrete_function_effects(
             function, specialization.parameter_types, &specialization.parameter_mutations);
       }
+    validate_borrowed_view_write_effects();
     { CompilerStageTimer timer("concrete_graph"); build_concrete_domain_graph(); }
     check_method_ownership();
     for (const auto& f : p_.functions) check_function(f);
@@ -1824,6 +1825,7 @@ class Checker {
 
 #include "static_bounds.inc"
 #include "fileio_semantics.inc"
+#include "borrowed_view_write.inc"
 
   [[noreturn]] void err(int line, const string& msg) const {
     CompileError error(line, msg);
@@ -16028,11 +16030,20 @@ class Generator {
             o << "println!(\"";
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
-            for (size_t argument = 0; argument < s.args.size(); ++argument)
-              o << ", "
-                << expr(s.args[argument], d, locals, &types,
-                        statement_functional_pipeline_id(
-                            s, functional_context, argument));
+            for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              string rendered = expr(
+                  s.args[argument], d, locals, &types,
+                  statement_functional_pipeline_id(s, functional_context,
+                                                   argument));
+              auto type = generated_expr_type(s.args[argument], &types);
+              if (type && canonical_type_name(*type) == "float")
+                rendered = "{ let __moss_echo_float = (" + rendered +
+                    "); if __moss_echo_float == 0.0 && "
+                    "__moss_echo_float.is_sign_negative() { "
+                    "\"-0.0\".to_string() } else { "
+                    "__moss_echo_float.to_string() } }";
+              o << ", " << rendered;
+            }
             o << ");\n";
           }
           ++i;
