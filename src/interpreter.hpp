@@ -821,6 +821,15 @@ class FastInterpreter {
           auto value = eval(args.front(), frame, line, output);
           return Value::float_value(std::sqrt(value.kind == Value::Kind::Int ? value.integer : value.floating));
         }
+        if (callee == "is_nan" || callee == "is_finite") {
+          if (args.size() != 1)
+            throw RuntimeError(line, callee + " expects one Float argument");
+          auto value = eval(args.front(), frame, line, output);
+          if (value.kind != Value::Kind::Float)
+            throw RuntimeError(line, callee + " argument must have type Float");
+          return Value::boolean_value(callee == "is_nan"
+              ? std::isnan(value.floating) : std::isfinite(value.floating));
+        }
         if (auto fn = function(callee)) return call(*fn, args, frame, line, output);
         auto callable_local = frame.locals.find(callee);
         const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;

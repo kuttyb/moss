@@ -3773,6 +3773,8 @@ class Checker {
       return BuiltinCallSemantics{"range[int]", false};
     if (callee == "sqrt" && args.size() == 1)
       return BuiltinCallSemantics{"float", false};
+    if ((callee == "is_nan" || callee == "is_finite") && args.size() == 1)
+      return BuiltinCallSemantics{"bool", false};
     if (callee == "Some" && args.size() == 1) {
       auto element = inferred_expr_type(args.front(), env);
       return BuiltinCallSemantics{
@@ -10507,6 +10509,15 @@ class Checker {
       if (args.size() != 1) err(line, "Some expects one value");
       return;
     }
+    if (name == "is_nan" || name == "is_finite") {
+      if (args.size() != 1)
+        err(line, name + " expects one Float argument", "INVALID_ARITY");
+      auto actual = inferred_expr_type(args.front(), env);
+      if (!actual || (!unresolved_semantic_type(*actual) &&
+                      canonical_type_name(*actual) != "float"))
+        err(line, name + " argument must have type 'Float'", "TYPE_MISMATCH");
+      return;
+    }
     if (name == "assert") {
       if (args.size() != 1)
         err(line, "assert expects 1 argument, got " +
@@ -15816,6 +15827,11 @@ class Generator {
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
         return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
+      if ((builtin == "is_nan" || builtin == "is_finite") &&
+          builtin_args.size() == 1)
+        return "{ let __moss_float_value: f64 = " +
+            expr(builtin_args.front(), d, locals, types) +
+            "; __moss_float_value." + builtin + "() }";
       if (builtin == "sum" && builtin_args.size() == 1) {
         auto argument_type = generated_expr_type(builtin_args.front(), types);
         string element_type;
@@ -20357,6 +20373,7 @@ static void write_bootstrap_json(std::ostream& out,
          "\"control_flow\":{\"if_else\":true,\"while\":true,\"for_in\":true,\"pass\":true,\"range_forms\":[\"range(start, end)\",\"range(start, end, step)\"],\"exhaustive_enum_match\":\"match expression: / match consume <owned enum expression>:\"},"
          "\"enums\":{\"declaration\":\"enum Name: with closed named-field cases\",\"construction\":\"Name.Case(field: value)\",\"read_match\":\"match expression:\",\"consume_match\":\"match consume <owned enum expression>:\",\"pattern_ownership_modifiers\":false,\"replace\":\"replace(place, replacement)\"},"
          "\"operators\":{\"overloading\":false,\"closed_builtin_set\":true,\"arithmetic\":[\"+\",\"-\",\"*\",\"/\",\"%\"],\"integer_remainder\":\"%\",\"boolean_negation\":\"not expression\",\"boolean\":[\"and\",\"or\",\"xor\",\"not\"],\"boolean_precedence_high_to_low\":[\"not\",\"and\",\"xor\",\"or\"],\"short_circuit\":[\"and\",\"or\"],\"comparison\":[\"==\",\"!=\",\"<\",\"<=\",\">\",\">=\"],\"string_builtin\":{\"concatenation\":\"+\",\"equality\":[\"==\",\"!=\"],\"ordering\":[],\"methods\":[\"length()\",\"char_at(index)\",\"chars()\",\"split(separator)\",\"join(parts)\"],\"index_unit\":\"Unicode code point\"}},"
+         "\"numeric\":{\"float_predicates\":[\"is_nan(Float) -> Bool\",\"is_finite(Float) -> Bool\"]},"
          "\"domains\":{\"fn_inside_domain\":\"handler\",\"ordinary_helper\":\"non-domain function\",\"composition\":{\"domain_instances\":\"constructed statically in main's initial composition prefix\",\"initializer_rule\":\"domain state initializer expressions must be side-effect-free; pure helper calls are accepted, but messages, domain access, I/O, failing, divergent, and unresolved work are rejected; unresolved means relevant observable effects cannot be statically established, not ordinary locals, local computation, normal allocation, or multi-statement pure helpers\"}},"
          "\"tests\":{\"syntax\":\"test \\\"name\\\":\",\"assertions\":[\"assert(condition)\",\"assertEqual(actual, expected)\"],\"domain_topology\":{\"test_blocks_are_composition_roots\":false,\"composition_root\":\"main initial composition prefix\"}},"
          "\"collections\":{\"builtins\":[\"Vector\",\"Map\",\"Queue\"],\"concrete_type_positions\":\"Vector[T], Map[K, V], and Queue[T] are concrete built-in types, not source generics\",\"vector_literal\":\"[a, b, c]\",\"empty_typed_vector\":\"Vector[T]()\",\"local_type_annotations\":false,\"Vector\":{\"construction\":{\"literal\":\"[a, b, c]\",\"empty_typed\":\"Vector[T]()\"},\"methods\":[\"push(item)\",\"pop()\"],\"indexing\":{\"read\":\"vec[i]\",\"write\":\"vec[i] = item\"},\"cardinality\":\"vec |> count\"},\"Map\":{\"construction\":{\"inferred\":\"Map()\"},\"indexing\":{\"read\":\"map[key]\",\"write\":\"map[key] = value\"},\"methods\":[\"get(key, default)\",\"keys()\",\"values()\",\"delete(key, fallback, found)\"],\"iteration_note\":\"keys() and values() return eager owned Vector snapshots\",\"deletion_supported\":true},\"Queue\":{\"construction\":{\"inferred\":\"Queue()\"},\"methods\":[\"push(item)\",\"pop()\"]}},"
@@ -23321,7 +23338,8 @@ static string rewrite_module_expression(
     if (token == "assert" || token == "assertEqual" ||
         functional_stage_kind(token).has_value() ||
         token == "Map" || token == "Queue" || token == "Vector" ||
-        token == "Some" || token == "sqrt" || token == "range") {
+        token == "Some" || token == "sqrt" || token == "range" ||
+        token == "is_nan" || token == "is_finite") {
       result += token;
       i = end;
       continue;
@@ -23515,6 +23533,7 @@ static void rewrite_module_program(
               !functional_stage_kind(callee).has_value() &&
               callee != "Map" && callee != "Queue" && callee != "Vector" &&
               callee != "Some" && callee != "sqrt" && callee != "range" &&
+              callee != "is_nan" && callee != "is_finite" &&
               !starts_with(callee, module + "__") &&
               callee.find("__") == string::npos)
             statement.a = module_symbol(module, callee);

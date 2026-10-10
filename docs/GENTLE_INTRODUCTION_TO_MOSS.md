@@ -109,6 +109,10 @@ Moss is statically checked even when you leave the annotation out. Omitting a
 type does not make the value dynamically typed. Local annotations such as
 `var count: Int = 10` are not part of v0.1; use inference instead.
 
+`Float` uses IEEE binary64 values. `is_nan(value)` and `is_finite(value)`
+accept a `Float` and return a `Bool` without raising; use them to distinguish
+NaN and infinity from finite values.
+
 Explicit local declarations are available when mutability matters:
 
 ```moss
