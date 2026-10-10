@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 21.C bounded Branch offset arithmetic checkpoint — 2026-10-10
+
+An eligible FileIO chunk pipeline could generate raw signed `next + lane`,
+`index * chunk_size`, and `next += K` arithmetic in bounded Branch lowering.
+The compiler accepts a maximum-Int chunk-size probe as eligible. Its native
+run aborted on the enormous first read allocation before reaching offset
+arithmetic, so that run is not an overflow witness. The lowering now uses
+checked index/offset arithmetic; a nonrepresentable offset publishes an
+ordered EOF outcome without a read. The focused Branch gate inspects the
+generated checked operations and runs the ordinary native ordering cases.
+
+After this edit, the focused Branch gate, complete `make check` (`all Moss
+v0.1 tests passed`), and strict C++17 `-Wall -Wextra -Werror -pedantic`
+compilation pass. This closes the generated signed-arithmetic hazard, not
+the entire O9 review: the extreme-size allocation path and final speculative
+panic audit remain open. A's source-free `on_fail` callable/capture/Root
+dispatch, B's final FileIO audit, and D's numeric parsing/conversion/formatter
+work also remain open. No Phase 21 acceptance or merge to `main` is claimed.
+
 ## Phase 21.D Float predicates checkpoint — 2026-10-10
 
 `is_nan(Float) -> Bool` and `is_finite(Float) -> Bool` are implemented as

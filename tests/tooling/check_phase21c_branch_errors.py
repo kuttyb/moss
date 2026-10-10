@@ -155,10 +155,20 @@ assert observe, text[join_at:]
 observe_at = join_at + observe.start()
 assert join_at < observe_at
 assert re.search(
-    r"if __moss_chunk_outcome_index != __moss_chunk_next_\d+ \+ "
-    r"__moss_chunk_lane_\d+ as i64 \{ std::process::abort\(\); \}",
+    r"if __moss_chunk_outcome_index != __moss_chunk_next_\d+"
+    r"\.checked_add\(__moss_chunk_lane_\d+ as i64\)"
+    r"\.unwrap_or\(i64::MAX\) \{ std::process::abort\(\); \}",
     text[observe_at:]
 ), text[observe_at:]
+assert re.search(
+    r"let __moss_chunk_index_\d+ = __moss_chunk_next_\d+"
+    r"\.checked_add\(__moss_chunk_lane_\d+ as i64\)"
+    r"\.unwrap_or\(i64::MAX\);", text[scope_match.start():join_at]
+), text[scope_match.start():join_at]
+assert re.search(
+    r"match __moss_chunk_index_\d+\.checked_mul\(__moss_chunk_size_\d+\)"
+    r" \{\s*None => __MossChunkOutcome_\d+::Eof", text[scope_match.start():join_at]
+), text[scope_match.start():join_at]
 assert "MossFileError" in text
 assert "::Raised { index:" in text
 assert "::Eof { index:" in text

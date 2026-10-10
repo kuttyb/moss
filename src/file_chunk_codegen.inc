@@ -172,6 +172,7 @@ string gen_chunk_pipeline_bounded_k(
   const string slots = "__moss_chunk_slots_" + n;
   const string lane = "__moss_chunk_lane_" + n;
   const string index = "__moss_chunk_index_" + n;
+  const string offset = "__moss_chunk_offset_" + n;
   const string slot = "__moss_chunk_slot_" + n;
   const string out_slot = "__moss_chunk_out_" + n;
   const string borrow = "__moss_chunk_borrow_" + n;
@@ -202,15 +203,19 @@ string gen_chunk_pipeline_bounded_k(
   out << "            let mut " << slots << ": std::vec::Vec<std::sync::Arc<std::sync::Mutex<Option<"
       << outcome_type << ">>>> = std::vec::Vec::with_capacity(" << k << ");\n";
   out << "            for " << lane << " in 0.." << k << "usize {\n";
-  out << "                let " << index << " = " << next << " + " << lane << " as i64;\n";
+  out << "                let " << index << " = " << next
+      << ".checked_add(" << lane << " as i64).unwrap_or(i64::MAX);\n";
   out << "                let " << slot << " = std::sync::Arc::new(std::sync::Mutex::new(None));\n";
   out << "                let " << out_slot << " = std::sync::Arc::clone(&" << slot << ");\n";
   out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
       << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";
   out << "                    let " << outcome << ": " << outcome_type
-      << " = match " << borrow << ".read_checked(" << index << " * " << size_var
-      << ", " << size_var << ") {\n";
+      << " = match " << index << ".checked_mul(" << size_var << ") {\n"
+      << "                        None => " << chunk_outcome << "::Eof { index: "
+      << index << " },\n"
+      << "                        Some(" << offset << ") => match " << borrow
+      << ".read_checked(" << offset << ", " << size_var << ") {\n";
   out << "                        Err(error) => " << chunk_outcome
       << "::Raised { index: " << index
       << ", error: __moss_raise_fileio(error) },\n";
@@ -231,7 +236,8 @@ string gen_chunk_pipeline_bounded_k(
         << mapped << ", len: " << len << ", short: " << len << " < "
         << size_var << " }";
   }
-  out << " } }\n";
+  out << " } },\n";
+  out << "                    }\n";
   out << "                    };\n";
   out << "                    *" << out_slot
       << ".lock().unwrap_or_else(|_| std::process::abort()) = Some(" << outcome << ");\n";
@@ -248,8 +254,9 @@ string gen_chunk_pipeline_bounded_k(
       << " { " << chunk_outcome << "::Value { index, .. } | " << chunk_outcome
       << "::Raised { index, .. } | " << chunk_outcome
       << "::Eof { index } => *index };\n";
-  out << "                if __moss_chunk_outcome_index != " << next << " + "
-      << lane << " as i64 { std::process::abort(); }\n";
+  out << "                if __moss_chunk_outcome_index != " << next
+      << ".checked_add(" << lane
+      << " as i64).unwrap_or(i64::MAX) { std::process::abort(); }\n";
   out << "                match " << outcome << " {\n";
   out << "                    " << chunk_outcome
       << "::Raised { error, .. } => return Err(error),\n";
@@ -268,7 +275,8 @@ string gen_chunk_pipeline_bounded_k(
   out << "                        if short { break " << label << "; }\n";
   out << "                    }\n                }\n";
   out << "            }\n";
-  out << "            " << next << " += " << k << ";\n";
+  out << "            " << next << " = " << next << ".checked_add(" << k
+      << ").unwrap_or(i64::MAX);\n";
   out << "        }\n";
   out << "        " << acc << "\n";
   out << "    }";
