@@ -39,7 +39,7 @@ Updated: 2026-10-10 (America/Los_Angeles)
 | 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | `f27b2629` | created, verified, native subagent active |
 | 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | `f27b2629` | created, verified, native subagent active |
 | 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | `f27b2629` | created and verified; native launch queued for first available thread |
-| Integration | `phase-21-integration` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-integration` | pending approved integration base | not created |
+| Integration | `phase-21-integration` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | created clean; accepts reviewed checkpoints only |
 
 A–D must all branch from the exact approved commit
 `f27b2629efa2c321bef953e62ca73d230e56f96f`.
