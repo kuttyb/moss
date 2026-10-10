@@ -14,7 +14,19 @@ fn handled(missing: Bool) -> Int:
   recover WorkError.Missing:
     value = 10
   recover WorkError.Failed(code):
-    value = 20
+    value = code + 13
+  return value
+
+type MethodWorker:
+  fn Fail() -> Int:
+    raise WorkError.Failed(code: 9)
+
+fn handled_method(worker: MethodWorker) -> Int:
+  var value = 0
+  try:
+    value = worker.Fail()
+  recover WorkError.Failed(code):
+    value = code + 21
   return value
 
 fn reraised():
@@ -32,4 +44,6 @@ fn handle_reraised():
 fn main():
   echo handled(true)
   echo handled(false)
+  worker = MethodWorker()
+  echo handled_method(worker)
   handle_reraised()

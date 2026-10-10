@@ -122,6 +122,10 @@ struct FailureArm {
   // single-concrete-error-type catch-all form.
   vector<string> patterns;
   string binding;
+  // Reachable identities selected from the owning handler's fixed-point
+  // raise set. Populated by the checker; code generation must not reconstruct
+  // reachability from source spelling.
+  RaiseSet exceptional_alternatives;
   vector<Stmt> body;
 };
 struct Method {
