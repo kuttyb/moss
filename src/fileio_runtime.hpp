@@ -153,7 +153,17 @@ pub mod moss_fileio {
         pub const F_SETFL: i32 = 4;
 
         pub const EINTR: i32 = 4;
+        pub const EPERM: i32 = 1;
+        pub const ENOENT: i32 = 2;
+        pub const EACCES: i32 = 13;
+        pub const EBUSY: i32 = 16;
         pub const EEXIST: i32 = 17;
+        pub const ENOTDIR: i32 = 20;
+        pub const EISDIR: i32 = 21;
+        pub const ETXTBSY: i32 = 26;
+        pub const ENOSPC: i32 = 28;
+        pub const EROFS: i32 = 30;
+        pub const EDQUOT: i32 = 122;
 
         #[repr(C)]
         pub struct statfs {
@@ -181,6 +191,142 @@ pub mod moss_fileio {
             pub fn fcntl(fd: i32, cmd: i32, ...) -> i32;
             pub fn fstatfs(fd: i32, buf: *mut statfs) -> i32;
         }
+    }
+
+    // Phase 21's checked FileIO origin type. Generated fallible bodies convert
+    // this closed runtime result into their specialization-local ABI-v8 frame;
+    // this enum never crosses a provider boundary as a generic Result.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum MossFileError {
+        NotFound,
+        PermissionDenied,
+        NotRegularFile,
+        InUse,
+        Full,
+        IO,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum MossFileIoFaultSite {
+        OpenBefore,
+        OpenAfterDescriptor,
+        ParentDirectoryOpen,
+        ReadBefore,
+        ReadAfterPrefix,
+        WriteBefore,
+        WriteAfterPrefix,
+        FileSync,
+        ParentDirectorySync,
+        ParentDirectoryClose,
+        FileClose,
+    }
+
+    #[cfg(any(test, moss_perf))]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct MossFileIoFault {
+        site: MossFileIoFaultSite,
+        cause: MossFileError,
+        // Read/write prefix length for the two AfterPrefix sites.
+        progress: usize,
+    }
+
+    #[cfg(any(test, moss_perf))]
+    static MOSS_FILEIO_FAULT: Mutex<Option<MossFileIoFault>> = Mutex::new(None);
+
+    #[inline]
+    fn fault_cause_allowed(site: MossFileIoFaultSite, cause: MossFileError) -> bool {
+        use self::MossFileError::*;
+        use self::MossFileIoFaultSite::*;
+        match site {
+            OpenBefore | OpenAfterDescriptor => true,
+            ParentDirectoryOpen => matches!(cause, NotFound | PermissionDenied | NotRegularFile | IO),
+            ReadBefore | ReadAfterPrefix => cause == IO,
+            WriteBefore | WriteAfterPrefix | FileSync | ParentDirectorySync =>
+                matches!(cause, Full | IO),
+            ParentDirectoryClose | FileClose => cause == IO,
+        }
+    }
+
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_inject_fileio_fault(
+        site: MossFileIoFaultSite,
+        cause: MossFileError,
+        progress: usize,
+    ) {
+        if !fault_cause_allowed(site, cause) {
+            panic!("invalid FileIO fault cause {:?} for site {:?}", cause, site);
+        }
+        let mut fault = MOSS_FILEIO_FAULT.lock().unwrap_or_else(|_| std::process::abort());
+        *fault = Some(MossFileIoFault { site, cause, progress });
+    }
+
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_clear_fileio_fault() {
+        let mut fault = MOSS_FILEIO_FAULT.lock().unwrap_or_else(|_| std::process::abort());
+        *fault = None;
+    }
+
+    #[inline]
+    fn take_fileio_fault(site: MossFileIoFaultSite) -> Option<(MossFileError, usize)> {
+        #[cfg(any(test, moss_perf))]
+        {
+            let mut slot = MOSS_FILEIO_FAULT.lock().unwrap_or_else(|_| std::process::abort());
+            if slot.as_ref().map_or(false, |fault| fault.site == site) {
+                return slot.take().map(|fault| (fault.cause, fault.progress));
+            }
+        }
+        #[cfg(not(any(test, moss_perf)))]
+        let _ = site;
+        None
+    }
+
+    #[inline]
+    fn map_os_error(err: &std::io::Error, open_site: bool) -> MossFileError {
+        match err.raw_os_error() {
+            Some(posix::ENOENT) | Some(posix::ENOTDIR) if open_site => MossFileError::NotFound,
+            Some(posix::EACCES) | Some(posix::EPERM) | Some(posix::EROFS) =>
+                MossFileError::PermissionDenied,
+            Some(posix::ENOSPC) | Some(posix::EDQUOT) => MossFileError::Full,
+            Some(posix::EISDIR) if open_site => MossFileError::NotRegularFile,
+            Some(posix::EBUSY) | Some(posix::ETXTBSY) if open_site => MossFileError::InUse,
+            _ => MossFileError::IO,
+        }
+    }
+
+    #[inline]
+    fn map_data_os_error(err: &std::io::Error, full_allowed: bool) -> MossFileError {
+        match err.raw_os_error() {
+            Some(posix::ENOSPC) | Some(posix::EDQUOT) if full_allowed => MossFileError::Full,
+            _ => MossFileError::IO,
+        }
+    }
+
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_fileio_map_open_errno_for_test(errno: i32) -> MossFileError {
+        map_os_error(&std::io::Error::from_raw_os_error(errno), true)
+    }
+
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_fileio_map_data_errno_for_test(
+        errno: i32,
+        full_allowed: bool,
+    ) -> MossFileError {
+        map_data_os_error(
+            &std::io::Error::from_raw_os_error(errno),
+            full_allowed,
+        )
+    }
+
+    #[cold]
+    fn abort_fileio_error(operation: &str, cause: MossFileError) -> ! {
+        match cause {
+            MossFileError::NotRegularFile =>
+                eprintln!("[moss-fileio] error: path is not a regular file"),
+            MossFileError::InUse =>
+                eprintln!("[moss-fileio] error: duplicate live FileIO (InUse)"),
+            _ => eprintln!("[moss-fileio] error: {} failed: {:?}", operation, cause),
+        }
+        std::process::abort();
     }
 
     #[cfg(any(test, moss_perf))]
@@ -544,10 +690,18 @@ pub mod moss_fileio {
 
     impl FileIO {
         pub fn open(path: &str, mode: &str) -> Self {
+            Self::open_checked(path, mode)
+                .unwrap_or_else(|cause| abort_fileio_error("open", cause))
+        }
+
+        pub fn open_checked(path: &str, mode: &str) -> Result<Self, MossFileError> {
             let c_path = CString::new(path).unwrap_or_else(|_| {
                 eprintln!("[moss-fileio] error: invalid null byte in path: '{}'", path);
                 std::process::abort();
             });
+            if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::OpenBefore) {
+                return Err(cause);
+            }
 
             let (fd, created) = match mode {
                 "create" => {
@@ -559,11 +713,16 @@ pub mod moss_fileio {
                             0o666,
                         )
                     };
+                    let open_err = if fd < 0 {
+                        Some(std::io::Error::last_os_error())
+                    } else {
+                        None
+                    };
                     drop(guard);
                     if fd >= 0 {
                         (fd, true)
                     } else {
-                        let err = std::io::Error::last_os_error();
+                        let err = open_err.unwrap_or_else(std::io::Error::last_os_error);
                         if err.raw_os_error() == Some(posix::EEXIST) {
                             let guard = SoloGuard::new("open_existing");
                             let res = unsafe{
@@ -572,15 +731,19 @@ pub mod moss_fileio {
                                     posix::O_RDWR | posix::O_NONBLOCK | posix::O_CLOEXEC,
                                 )
                             };
+                            let open_err = if res < 0 {
+                                Some(std::io::Error::last_os_error())
+                            } else {
+                                None
+                            };
                             drop(guard);
                             if res < 0 {
-                                eprintln!("[moss-fileio] error: failed to open existing file '{}': {}", path, std::io::Error::last_os_error());
-                                std::process::abort();
+                                let err = open_err.unwrap_or_else(std::io::Error::last_os_error);
+                                return Err(map_os_error(&err, true));
                             }
                             (res, false)
                         } else {
-                            eprintln!("[moss-fileio] error: failed to create file '{}': {}", path, err);
-                            std::process::abort();
+                            return Err(map_os_error(&err, true));
                         }
                     }
                 }
@@ -592,10 +755,15 @@ pub mod moss_fileio {
                             posix::O_RDONLY | posix::O_NONBLOCK | posix::O_CLOEXEC,
                         )
                     };
+                    let open_err = if fd < 0 {
+                        Some(std::io::Error::last_os_error())
+                    } else {
+                        None
+                    };
                     drop(guard);
                     if fd < 0 {
-                        eprintln!("[moss-fileio] error: failed to open read-only file '{}': {}", path, std::io::Error::last_os_error());
-                        std::process::abort();
+                        let err = open_err.unwrap_or_else(std::io::Error::last_os_error);
+                        return Err(map_os_error(&err, true));
                     }
                     (fd, false)
                 }
@@ -607,10 +775,15 @@ pub mod moss_fileio {
                             posix::O_RDWR | posix::O_NONBLOCK | posix::O_CLOEXEC,
                         )
                     };
+                    let open_err = if fd < 0 {
+                        Some(std::io::Error::last_os_error())
+                    } else {
+                        None
+                    };
                     drop(guard);
                     if fd < 0 {
-                        eprintln!("[moss-fileio] error: failed to open read-write file '{}': {}", path, std::io::Error::last_os_error());
-                        std::process::abort();
+                        let err = open_err.unwrap_or_else(std::io::Error::last_os_error);
+                        return Err(map_os_error(&err, true));
                     }
                     (fd, false)
                 }
@@ -619,6 +792,13 @@ pub mod moss_fileio {
                     std::process::abort();
                 }
             };
+
+            if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::OpenAfterDescriptor) {
+                let guard = SoloGuard::new("cleanup_close");
+                let _ = unsafe{ sys_close(fd) };
+                drop(guard);
+                return Err(cause);
+            }
 
             // Validate regular file via metadata and extract (dev, ino)
             let (dev, ino) = {
@@ -633,8 +813,7 @@ pub mod moss_fileio {
                             let cguard = SoloGuard::new("cleanup_close");
                             unsafe{ sys_close(fd); }
                             drop(cguard);
-                            eprintln!("[moss-fileio] error: path '{}' is not a regular file", path);
-                            std::process::abort();
+                            return Err(MossFileError::NotRegularFile);
                         }
                         (meta.dev(), meta.ino())
                     }
@@ -642,8 +821,7 @@ pub mod moss_fileio {
                         let cguard = SoloGuard::new("cleanup_close");
                         unsafe{ sys_close(fd); }
                         drop(cguard);
-                        eprintln!("[moss-fileio] error: fstat failed on '{}': {}", path, err);
-                        std::process::abort();
+                        return Err(map_os_error(&err, true));
                     }
                 }
             };
@@ -666,6 +844,12 @@ pub mod moss_fileio {
                 let parent_str = if parent.as_os_str().is_empty() { "." } else { parent.to_str().unwrap_or(".") };
                 parent_path_str = parent_str.to_string();
                 let c_parent = CString::new(parent_str).unwrap_or_else(|_| std::process::abort());
+                if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::ParentDirectoryOpen) {
+                    let cguard = SoloGuard::new("cleanup_close");
+                    let _ = unsafe{ sys_close(fd) };
+                    drop(cguard);
+                    return Err(cause);
+                }
                 let guard = SoloGuard::new("open_parent_dir");
                 let pfd = unsafe{
                     posix::open(
@@ -674,6 +858,11 @@ pub mod moss_fileio {
                         0,
                     )
                 };
+                let parent_open_err = if pfd < 0 {
+                    Some(std::io::Error::last_os_error())
+                } else {
+                    None
+                };
                 drop(guard);
                 if pfd >= 0 {
                     parent_dir_fd = Some(pfd);
@@ -681,8 +870,8 @@ pub mod moss_fileio {
                     let cguard = SoloGuard::new("cleanup_close");
                     unsafe{ sys_close(fd); }
                     drop(cguard);
-                    eprintln!("[moss-fileio] error: failed to open parent directory '{}': {}", parent_str, std::io::Error::last_os_error());
-                    std::process::abort();
+                    let err = parent_open_err.unwrap_or_else(std::io::Error::last_os_error);
+                    return Err(map_os_error(&err, true));
                 }
             }
 
@@ -696,11 +885,10 @@ pub mod moss_fileio {
                     }
                 }
                 drop(cguard);
-                eprintln!("[moss-fileio] error: duplicate live FileIO for (dev: {}, ino: {})", dev, ino);
-                std::process::abort();
+                return Err(MossFileError::InUse);
             }
 
-            FileIO {
+            Ok(FileIO {
                 inner: Arc::new(MossFairMutex::new(Some(FileIOInner {
                     fd,
                     parent_dir_fd,
@@ -712,10 +900,15 @@ pub mod moss_fileio {
                     path: path.to_string(),
                     parent_path: parent_path_str,
                 }))),
-            }
+            })
         }
 
         pub fn open_in_place(&mut self, path: &str, mode: &str) {
+            self.open_in_place_checked(path, mode)
+                .unwrap_or_else(|cause| abort_fileio_error("open", cause));
+        }
+
+        pub fn open_in_place_checked(&mut self, path: &str, mode: &str) -> Result<(), MossFileError> {
             let is_currently_open = {
                 let guard = self.inner.lock();
                 guard.as_ref().map_or(false, |i| !i.is_closed)
@@ -724,14 +917,25 @@ pub mod moss_fileio {
                 eprintln!("[moss-fileio] error: open_in_place on already-open FileIO");
                 std::process::abort();
             }
-            let new_file = FileIO::open(path, mode);
+            let new_file = FileIO::open_checked(path, mode)?;
             *self = new_file;
+            Ok(())
         }
 
         pub fn read(&self, offset: i64, size: i64) -> Range {
-            read_shared(&self.inner, offset, size)
+            self.read_checked(offset, size)
+                .unwrap_or_else(|cause| abort_fileio_error("read", cause))
+        }
+
+        pub fn read_checked(&self, offset: i64, size: i64) -> Result<Range, MossFileError> {
+            read_shared_checked(&self.inner, offset, size)
         }
         pub fn read_batch(&self, requests: &[(i64, i64)]) -> RangeBatch {
+            self.read_batch_checked(requests)
+                .unwrap_or_else(|cause| abort_fileio_error("read", cause))
+        }
+
+        pub fn read_batch_checked(&self, requests: &[(i64, i64)]) -> Result<RangeBatch, MossFileError> {
             // Verify receiver lifecycle
             {
                 let guard = self.inner.lock();
@@ -744,17 +948,22 @@ pub mod moss_fileio {
                 }
             }
             if requests.is_empty() {
-                return RangeBatch::new(vec![]);
+                return Ok(RangeBatch::new(vec![]));
             }
             let batch_len = usize::try_from(requests.len()).unwrap_or_else(|_| std::process::abort());
             let mut ranges = Vec::with_capacity(batch_len);
             for &(offset, size) in requests {
-                ranges.push(self.read(offset, size));
+                ranges.push(self.read_checked(offset, size)?);
             }
-            RangeBatch::new(ranges)
+            Ok(RangeBatch::new(ranges))
         }
 
         pub fn write_bytes(&self, offset: i64, data: &[u8]) {
+            self.write_bytes_checked(offset, data)
+                .unwrap_or_else(|cause| abort_fileio_error("write", cause));
+        }
+
+        pub fn write_bytes_checked(&self, offset: i64, data: &[u8]) -> Result<(), MossFileError> {
             let fd = {
                 let guard = self.inner.lock();
                 match guard.as_ref() {
@@ -774,11 +983,16 @@ pub mod moss_fileio {
                 std::process::abort();
             }
             if data.is_empty() {
-                return;
+                return Ok(());
             }
+            if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::WriteBefore) {
+                return Err(cause);
+            }
+            let after_fault = take_fileio_fault(MossFileIoFaultSite::WriteAfterPrefix);
 
             let mut total_written = 0usize;
-            let target = data.len();
+            let target = after_fault
+                .map_or(data.len(), |(_, progress)| std::cmp::min(progress, data.len()));
             while total_written < target {
                 let current_off = offset.checked_add(i64::try_from(total_written).unwrap_or_else(|_| std::process::abort()))
                     .unwrap_or_else(|| {
@@ -794,41 +1008,55 @@ pub mod moss_fileio {
                         current_off,
                     )
                 };
+                let write_err = if res < 0 {
+                    Some(std::io::Error::last_os_error())
+                } else {
+                    None
+                };
                 drop(guard);
                 if res < 0 {
-                    let err = std::io::Error::last_os_error();
+                    let err = write_err.unwrap_or_else(std::io::Error::last_os_error);
                     if err.raw_os_error() == Some(posix::EINTR) {
                         continue;
                     }
-                    eprintln!("[moss-fileio] error: pwrite failed: {}", err);
-                    std::process::abort();
+                    return Err(map_data_os_error(&err, true));
                 }
                 if res == 0 {
-                    eprintln!("[moss-fileio] error: pwrite made no progress");
-                    std::process::abort();
+                    return Err(MossFileError::IO);
                 }
                 let res_usize = usize::try_from(res).unwrap_or_else(|_| std::process::abort());
                 total_written += res_usize;
             }
+            if let Some((cause, _)) = after_fault {
+                return Err(cause);
+            }
+            Ok(())
         }
 
         pub fn write<T: AsRef<[u8]>>(&self, offset: i64, data: T) {
             self.write_bytes(offset, data.as_ref());
         }
 
+        pub fn write_checked<T: AsRef<[u8]>>(&self, offset: i64, data: T) -> Result<(), MossFileError> {
+            self.write_bytes_checked(offset, data.as_ref())
+        }
+
         pub fn sync(&self) {
-            self.sync_internal(false);
+            self.sync_checked(false)
+                .unwrap_or_else(|cause| abort_fileio_error("sync", cause));
         }
 
         pub fn sync_dataonly(&self) {
-            self.sync_internal(true);
+            self.sync_checked(true)
+                .unwrap_or_else(|cause| abort_fileio_error("sync", cause));
         }
 
         pub fn sync_with_mode(&self, dataonly: bool) {
-            self.sync_internal(dataonly);
+            self.sync_checked(dataonly)
+                .unwrap_or_else(|cause| abort_fileio_error("sync", cause));
         }
 
-        fn sync_internal(&self, dataonly: bool) {
+        pub fn sync_checked(&self, dataonly: bool) -> Result<(), MossFileError> {
             let (fd, pfd, path, parent_path) = {
                 let guard = self.inner.lock();
                 match guard.as_ref() {
@@ -845,6 +1073,10 @@ pub mod moss_fileio {
                 }
             };
 
+            if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::FileSync) {
+                return Err(cause);
+            }
+
             if dataonly {
                 let guard = SoloGuard::new("sync_dataonly");
                 moss_sync_event("file_fdatasync", fd, &path);
@@ -852,8 +1084,7 @@ pub mod moss_fileio {
                 let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
                 if let Some(err) = err_opt {
-                    eprintln!("[moss-fileio] error: fdatasync failed on '{}': {}", path, err);
-                    std::process::abort();
+                    return Err(map_data_os_error(&err, true));
                 }
             } else {
                 let guard = SoloGuard::new("sync");
@@ -862,40 +1093,67 @@ pub mod moss_fileio {
                 let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
                 if let Some(err) = err_opt {
-                    eprintln!("[moss-fileio] error: fsync failed on '{}': {}", path, err);
-                    std::process::abort();
+                    return Err(map_data_os_error(&err, true));
                 }
             }
 
             if let Some(pfd_val) = pfd {
+                if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::ParentDirectorySync) {
+                    return Err(cause);
+                }
                 let guard = SoloGuard::new("sync_dir");
                 moss_sync_event("dir_fsync", pfd_val, &parent_path);
                 let res = unsafe{ posix::fsync(pfd_val) };
                 let err_opt = if res < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
                 if let Some(err) = err_opt {
-                    eprintln!("[moss-fileio] error: parent directory fsync failed on '{}': {}", parent_path, err);
-                    std::process::abort();
+                    return Err(map_data_os_error(&err, true));
+                }
+
+                // Directory durability is established. Move the descriptor out
+                // before attempting close so an explicit close failure is never
+                // retried by Drop and cannot double-release the resource.
+                {
+                    let mut guard = self.inner.lock();
+                    if let Some(inner) = guard.as_mut() {
+                        if inner.dir_obligation {
+                            inner.parent_dir_fd = None;
+                            inner.dir_obligation = false;
+                        }
+                    }
                 }
                 let guard = SoloGuard::new("close_parent_dir");
                 let cres = unsafe{ sys_close(pfd_val) };
                 let cerr_opt = if cres < 0 { Some(std::io::Error::last_os_error()) } else { None };
                 drop(guard);
-                if let Some(err) = cerr_opt {
-                    eprintln!("[moss-fileio] error: failed to close parent directory descriptor: {}", err);
-                    std::process::abort();
+                if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::ParentDirectoryClose) {
+                    return Err(cause);
                 }
-                let mut guard = self.inner.lock();
-                if let Some(inner) = guard.as_mut() {
-                    if inner.dir_obligation {
-                        inner.parent_dir_fd = None;
-                        inner.dir_obligation = false;
-                    }
+                if let Some(err) = cerr_opt {
+                    let _ = err;
+                    return Err(MossFileError::IO);
                 }
             }
+            Ok(())
         }
 
         pub fn close(&self) {
+            self.close_checked()
+                .unwrap_or_else(|cause| abort_fileio_error("close", cause));
+        }
+
+        pub fn close_checked(&self) -> Result<(), MossFileError> {
+            self.close_impl(true)
+        }
+
+        // Raised-path cleanup is idempotent, never syncs, and deliberately
+        // ignores a secondary close failure so the selected typed error remains
+        // authoritative. The registry claim is still released exactly once.
+        pub fn abandon_for_raise(&self) {
+            let _ = self.close_impl(false);
+        }
+
+        fn close_impl(&self, closed_is_misuse: bool) -> Result<(), MossFileError> {
             let to_close = {
                 let mut guard = self.inner.lock();
                 match guard.as_mut() {
@@ -908,8 +1166,11 @@ pub mod moss_fileio {
                         Some((fd, pfd, dev, ino))
                     }
                     _ => {
-                        eprintln!("[moss-fileio] error: close on closed or uninitialized FileIO");
-                        std::process::abort();
+                        if closed_is_misuse {
+                            eprintln!("[moss-fileio] error: close on closed or uninitialized FileIO");
+                            std::process::abort();
+                        }
+                        None
                     }
                 }
             };
@@ -937,15 +1198,24 @@ pub mod moss_fileio {
                 // Inode claim is released after the close attempt
                 moss_fileio_registry_release(dev, ino);
 
-                if let Some(err) = parent_close_err {
-                    eprintln!("[moss-fileio] error: close failed on parent directory descriptor: {}", err);
-                    std::process::abort();
+                let injected_parent =
+                    take_fileio_fault(MossFileIoFaultSite::ParentDirectoryClose).map(|v| v.0);
+                let injected_file =
+                    take_fileio_fault(MossFileIoFaultSite::FileClose).map(|v| v.0);
+                if injected_parent.is_some() || parent_close_err.is_some() {
+                    if closed_is_misuse {
+                        eprintln!("[moss-fileio] error: close failed on parent directory descriptor");
+                    }
+                    return Err(injected_parent.unwrap_or(MossFileError::IO));
                 }
-                if let Some(err) = file_close_err {
-                    eprintln!("[moss-fileio] error: close failed on descriptor {}: {}", fd, err);
-                    std::process::abort();
+                if injected_file.is_some() || file_close_err.is_some() {
+                    if closed_is_misuse {
+                        eprintln!("[moss-fileio] error: close failed on descriptor {}", fd);
+                    }
+                    return Err(injected_file.unwrap_or(MossFileError::IO));
                 }
             }
+            Ok(())
         }
 
         pub fn chunks(&self, size: i64) -> MossChunks<'_> {
@@ -978,7 +1248,11 @@ pub mod moss_fileio {
         }
     }
 
-    fn read_shared(inner: &MossFairMutex<Option<FileIOInner>>, offset: i64, size: i64) -> Range {
+    fn read_shared_checked(
+        inner: &MossFairMutex<Option<FileIOInner>>,
+        offset: i64,
+        size: i64,
+    ) -> Result<Range, MossFileError> {
         let fd = {
             let guard = inner.lock();
             match guard.as_ref() {
@@ -994,13 +1268,19 @@ pub mod moss_fileio {
             std::process::abort();
         }
         if size == 0 {
-            return Range::empty();
+            return Ok(Range::empty());
+        }
+        if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::ReadBefore) {
+            return Err(cause);
         }
 
         let target = usize::try_from(size).unwrap_or_else(|_| {
             eprintln!("[moss-fileio] error: read size {} exceeds address space", size);
             std::process::abort();
         });
+        let after_fault = take_fileio_fault(MossFileIoFaultSite::ReadAfterPrefix);
+        let target = after_fault
+            .map_or(target, |(_, progress)| std::cmp::min(progress, target));
         let mut buf = vec![0u8; target];
         let mut total_read = 0usize;
         let mut at_eof = false;
@@ -1019,14 +1299,19 @@ pub mod moss_fileio {
                     current_off,
                 )
             };
+            let read_err = if res < 0 {
+                Some(std::io::Error::last_os_error())
+            } else {
+                None
+            };
             drop(guard);
             if res < 0 {
-                let err = std::io::Error::last_os_error();
+                let err = read_err.unwrap_or_else(std::io::Error::last_os_error);
                 if err.raw_os_error() == Some(posix::EINTR) {
                     continue;
                 }
-                eprintln!("[moss-fileio] error: pread failed: {}", err);
-                std::process::abort();
+                let _ = err;
+                return Err(MossFileError::IO);
             }
             if res == 0 {
                 at_eof = true;
@@ -1036,7 +1321,10 @@ pub mod moss_fileio {
             }
         }
         buf.truncate(total_read);
-        Range::from_vec(buf)
+        if let Some((cause, _)) = after_fault {
+            return Err(cause);
+        }
+        Ok(Range::from_vec(buf))
     }
 
     // Compiler-created, read-only branch borrow (spec sec. 13.1). Owned and
@@ -1049,7 +1337,12 @@ pub mod moss_fileio {
 
     impl MossFileIOReadBorrow {
         pub fn read(&self, offset: i64, size: i64) -> Range {
-            read_shared(&self.inner, offset, size)
+            self.read_checked(offset, size)
+                .unwrap_or_else(|cause| abort_fileio_error("read", cause))
+        }
+
+        pub fn read_checked(&self, offset: i64, size: i64) -> Result<Range, MossFileError> {
+            read_shared_checked(&self.inner, offset, size)
         }
     }
 
@@ -1059,34 +1352,7 @@ pub mod moss_fileio {
 
     impl Drop for FileIO {
         fn drop(&mut self) {
-            let to_cleanup = {
-                let mut guard = self.inner.lock();
-                if let Some(inner) = guard.as_mut() {
-                    if !inner.is_closed {
-                        inner.is_closed = true;
-                        let fd = inner.fd;
-                        let pfd = inner.parent_dir_fd.take();
-                        let dev = inner.dev;
-                        let ino = inner.ino;
-                        Some((fd, pfd, dev, ino))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            };
-            if let Some((fd, pfd, dev, ino)) = to_cleanup {
-                if let Some(parent_fd) = pfd {
-                    let guard = SoloGuard::new("close_parent_dir");
-                    let _ = unsafe{ sys_close(parent_fd) };
-                    drop(guard);
-                }
-                let guard = SoloGuard::new("close");
-                let _ = unsafe{ sys_close(fd) };
-                drop(guard);
-                moss_fileio_registry_release(dev, ino);
-            }
+            self.abandon_for_raise();
         }
     }
 
@@ -1116,13 +1382,21 @@ pub mod moss_fileio {
         }
 
         pub fn next_chunk(&mut self) -> Option<Range> {
+            self.next_chunk_checked()
+                .unwrap_or_else(|cause| abort_fileio_error("read", cause))
+        }
+
+        // Phase 21 generated chunk lowering uses this checked path so a read
+        // failure becomes an indexed typed outcome instead of a process abort.
+        // The iterator adapter above retains Phase 20's fail-closed behavior.
+        pub fn next_chunk_checked(&mut self) -> Result<Option<Range>, MossFileError> {
             if self.finished {
-                return None;
+                return Ok(None);
             }
-            let range = self.file.read(self.offset, self.chunk_size);
+            let range = self.file.read_checked(self.offset, self.chunk_size)?;
             if range.is_empty() {
                 self.finished = true;
-                return None;
+                return Ok(None);
             }
             let len = range.len();
             self.offset = self.offset.checked_add(len).unwrap_or_else(|| {
@@ -1132,7 +1406,7 @@ pub mod moss_fileio {
             if len < self.chunk_size {
                 self.finished = true;
             }
-            Some(range)
+            Ok(Some(range))
         }
     }
 
@@ -1144,9 +1418,9 @@ pub mod moss_fileio {
     }
 }
 
-pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, MossFileIOReadBorrow, moss_fileio_branch_read_borrow, moss_fileio_registry_claim, moss_fileio_registry_release};
+pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, MossFileError, MossFileIoFaultSite, MossFileIOReadBorrow, moss_fileio_branch_read_borrow, moss_fileio_registry_claim, moss_fileio_registry_release};
 #[cfg(any(test, moss_perf))]
-pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset};
+pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset, moss_inject_fileio_fault, moss_clear_fileio_fault, moss_fileio_map_open_errno_for_test, moss_fileio_map_data_errno_for_test};
 )RUST";
 }
 
