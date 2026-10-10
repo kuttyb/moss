@@ -330,7 +330,11 @@
     emit_path_values_and_state(o, d, then_fragment, plan, d.name + h.name + "ThenState");
     o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Then(&mut state";
     for (const auto& p : h.params) o << ", " << p.name;
-    o << ");\n";
+    o << ")";
+    if (!h.observable_effects.raise_set.empty() &&
+        phase21_external_module_for_symbol(d.name))
+      o << ".map_err(__MossRaised::from)";
+    o << ";\n";
     if (h.reply_type) {
       if (h.observable_effects.raise_set.empty())
         o << "        if result.is_none() { std::process::abort(); }\n";
@@ -354,7 +358,11 @@
     emit_path_values_and_state(o, d, else_fragment, plan, d.name + h.name + "ElseState");
     o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Else(&mut state";
     for (const auto& p : h.params) o << ", " << p.name;
-    o << ");\n";
+    o << ")";
+    if (!h.observable_effects.raise_set.empty() &&
+        phase21_external_module_for_symbol(d.name))
+      o << ".map_err(__MossRaised::from)";
+    o << ";\n";
     if (h.reply_type) {
       if (h.observable_effects.raise_set.empty())
         o << "        if result.is_none() { std::process::abort(); }\n";
@@ -382,6 +390,55 @@
     return RaisedIdentity::enum_variant(
         canonical_type_name(trim(pattern.substr(0, dot))),
         trim(pattern.substr(dot + 1)));
+  }
+
+  vector<std::pair<string,string>> generated_error_pattern_bindings(
+      const string& pattern, const RaisedIdentity& identity) const {
+    const auto open = pattern.find('(');
+    if (open == string::npos) return {};
+    const auto close = matching_paren(pattern, open);
+    if (close == string::npos) return {};
+    string enum_key = canonical_type_name(identity.type);
+    if (!enums_.count(enum_key)) {
+      for (size_t separator = enum_key.find("::");
+           separator != string::npos;
+           separator = enum_key.find("::"))
+        enum_key.replace(separator, 2, "__");
+    }
+    auto declaration = enums_.find(enum_key);
+    if (declaration == enums_.end()) return {};
+    auto item = std::find_if(
+        declaration->second->cases.begin(), declaration->second->cases.end(),
+        [&](const EnumCase& candidate) {
+          return candidate.name == identity.variant;
+        });
+    if (item == declaration->second->cases.end()) return {};
+    auto names = split_top_level(
+        pattern.substr(open + 1, close - open - 1), ',');
+    vector<std::pair<string,string>> result;
+    for (size_t index = 0;
+         index < names.size() && index < item->fields.size(); ++index)
+      result.push_back({trim(names[index]), item->fields[index].type});
+    return result;
+  }
+
+  void emit_generated_error_payload_bindings(
+      std::ostringstream& o, int spaces, const string& inner,
+      const RaisedIdentity& identity,
+      const vector<std::pair<string,string>>& bindings,
+      std::set<string>& locals,
+      std::unordered_map<string,string>& types) const {
+    if (bindings.empty()) return;
+    const string padding(static_cast<size_t>(spaces), ' ');
+    for (const auto& binding : bindings) {
+      o << padding << "let " << binding.first << " = match &" << inner
+        << " { " << phase21_rust_error_type(identity) << "::"
+        << rust_identifier(identity.variant) << " { " << binding.first
+        << ", .. } => std::clone::Clone::clone(" << binding.first
+        << "), _ => std::process::abort() };\n";
+      locals.insert(binding.first);
+      types[binding.first] = binding.second;
+    }
   }
 
   void emit_failure_root_wrapper(
@@ -417,13 +474,7 @@
     RaiseSet remaining = h.observable_effects.raise_set;
     for (size_t arm_index = 0; arm_index < h.failure_arms.size(); ++arm_index) {
       const auto& arm = h.failure_arms[arm_index];
-      RaiseSet matched;
-      if (arm.patterns.empty()) {
-        matched = remaining;
-      } else {
-        for (const auto& pattern : arm.patterns)
-          matched.insert(generated_failure_pattern_identity(pattern));
-      }
+      RaiseSet matched = arm.exceptional_alternatives;
       for (const auto& identity : matched) remaining.erase(identity);
       for (const auto& identity : matched) {
         const string variant = phase21_rust_variant(identity);
@@ -465,6 +516,12 @@
           locals.insert(arm.binding);
           types[arm.binding] = identity.type;
         }
+        if (arm.patterns.size() == 1)
+          emit_generated_error_payload_bindings(
+              o, 24, inner, identity,
+              generated_error_pattern_bindings(
+                  arm.patterns.front(), identity),
+              locals, types);
         view_domain_ = true;
         view_domain_access_ = true;
         write_through_parameters_.clear();
@@ -588,7 +645,11 @@
       for (const auto& r : d.routes) o << "            " << r.name << ": &self." << r.name << ",\n";
       o << "            __lifetime: std::marker::PhantomData,\n        };\n        let result = __moss_body_" << d.name << "_" << h.name << "(&mut state";
       for (const auto& p : h.params) o << ", " << p.name;
-      o << ");\n";
+      o << ")";
+      if (!h.observable_effects.raise_set.empty() &&
+          phase21_external_module_for_symbol(d.name))
+        o << ".map_err(__MossRaised::from)";
+      o << ";\n";
       if (h.reply_type) {
         if (h.observable_effects.raise_set.empty())
           o << "        if result.is_none() { std::process::abort(); }\n";
@@ -761,6 +822,20 @@
   void gen_route_contract(std::ostringstream& o, const Domain& d, const string& handle) {
     o << "impl " << d.name << "Messages for " << handle << " {\n";
     for (const auto& h : d.handlers) {
+      const auto external_module =
+          phase21_external_module_for_symbol(d.name);
+      const bool external_raises = external_module.has_value() &&
+          !h.observable_effects.raise_set.empty();
+      auto contract_return_type = [&](string type) {
+        if (external_raises) {
+          const string local = "__MossRaised";
+          const auto position = type.rfind(local);
+          if (position != string::npos)
+            type.replace(position, local.size(),
+                         phase21_external_raised_type(*external_module));
+        }
+        return type;
+      };
       bool compatible = true;
       if (handle == d.name + "Handle") for (const auto& candidate : specialized_domains_) {
         if (specialization_sources_.at(candidate.name) != d.name) continue;
@@ -775,8 +850,9 @@
         for (const auto& p : h.params)
           o << ", " << (shared ? shared_message_parameter(p)
                                  : p.name + ": " + rust_type(p.type));
-        o << ") -> " << (prefix.empty() ? handler_internal_return_type(h)
-                                         : handler_message_return_type(h))
+        o << ") -> " << contract_return_type(
+            prefix.empty() ? handler_internal_return_type(h)
+                           : handler_message_return_type(h))
           << " { ";
         if (!compatible) { o << "std::process::abort() }\n"; continue; }
         o << "self." << h.name << "_shared(";
@@ -789,6 +865,9 @@
           else
             o << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
         }
+        if (external_raises)
+          o << ".map_err(" << phase21_external_raised_type(*external_module)
+            << "::from)";
         o << " }\n";
       }
     }

@@ -2849,6 +2849,33 @@ class Checker {
         ownership.message_payloads.insert(parameter.name);
       check_ownership(h.body, std::move(ownership), &d, &h);
       check_fileio_lifecycle(h.body, env, &d, h.line);
+      for (const auto& arm : h.failure_arms) {
+        SourceFileScope arm_source(current_source_file_, arm.source_file);
+        TypeEnv arm_env = env;
+        if (!arm.binding.empty()) {
+          std::set<string> error_types;
+          for (const auto& identity : arm.exceptional_alternatives)
+            error_types.insert(identity.type);
+          if (error_types.size() != 1)
+            err(arm.line,
+                "bound on_fail catch-all requires one concrete error type",
+                "AMBIGUOUS_RECOVERY_BINDING");
+          arm_env[arm.binding] = *error_types.begin();
+        }
+        if (arm.patterns.size() == 1)
+          for (const auto& binding :
+               phase21_pattern_bindings(arm.line, arm.patterns.front()))
+            arm_env[binding.first] = binding.second;
+        check_stmts(arm.body, arm_env, &d, &h);
+        OwnershipEnv arm_ownership;
+        arm_ownership.types = arm_env;
+        for (const auto& field : d.state)
+          arm_ownership.state_fields.insert(field.name);
+        for (const auto& parameter : h.params)
+          arm_ownership.message_payloads.insert(parameter.name);
+        check_ownership(arm.body, std::move(arm_ownership), &d, &h);
+        check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
+      }
     }
   }
 
@@ -4441,6 +4468,13 @@ class Checker {
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
               arm.a.find(',') == string::npos)
             recovered[arm.a] = "_selected_error";
+          else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                recovered[binding.first] = binding.second;
+          }
           walk_type_environment_block(statements, index, level + 1, recovered,
                                       visitor, reject_conflicts,
                                       record_join_types, record_semantic_types,
@@ -6673,6 +6707,13 @@ class Checker {
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
               arm.a.find(',') == string::npos)
             recovered[arm.a] = "_selected_error";
+          else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                recovered[binding.first] = binding.second;
+          }
           analyze_effect_block(statements, index, level + 1, recovered,
                                params, parameter_effects, receiver_effect,
                                receiver_fields);
@@ -7505,6 +7546,56 @@ class Checker {
     return phase21_bounded_error_type(type, visiting);
   }
 
+  vector<std::pair<string,string>> phase21_pattern_bindings(
+      int line, string pattern) const {
+    pattern = trim(std::move(pattern));
+    const auto open = pattern.find('(');
+    if (open == string::npos) return {};
+    const auto close = matching_paren(pattern, open);
+    if (close == string::npos || close + 1 != pattern.size())
+      err(line, "error payload patterns support only plain field bindings",
+          "INVALID_RECOVERY_PATTERN");
+    const string qualified = trim(pattern.substr(0, open));
+    const auto dot = qualified.rfind('.');
+    if (dot == string::npos)
+      err(line, "error payload patterns require a qualified enum variant",
+          "RECOVERY_PATTERN_REQUIRES_VARIANT");
+    const string type = canonical_type_name(trim(qualified.substr(0, dot)));
+    const string variant = trim(qualified.substr(dot + 1));
+    auto declaration = enums_.find(type);
+    if (declaration == enums_.end()) return {};
+    auto item = std::find_if(
+        declaration->second->cases.begin(), declaration->second->cases.end(),
+        [&](const EnumCase& candidate) { return candidate.name == variant; });
+    if (item == declaration->second->cases.end()) return {};
+    vector<string> names;
+    const string inside = trim(pattern.substr(open + 1, close - open - 1));
+    if (!inside.empty()) names = split_top_level(inside, ',');
+    if (names.size() != item->fields.size())
+      err(line, "error variant '" + type + "." + variant +
+                    "' must bind all " +
+                    std::to_string(item->fields.size()) + " payload field(s)",
+          "RECOVERY_BINDING_COUNT");
+    vector<std::pair<string,string>> result;
+    std::set<string> seen;
+    for (size_t index = 0; index < names.size(); ++index) {
+      const string name = trim(names[index]);
+      if (!plain_identifier(name))
+        err(line, "error payload patterns support only plain field bindings",
+            "INVALID_RECOVERY_PATTERN");
+      if (name != item->fields[index].name)
+        err(line, "error variant '" + type + "." + variant +
+                      "' requires payload field '" +
+                      item->fields[index].name + "' in declaration order",
+            "RECOVERY_FIELD_NAME_MISMATCH");
+      if (!seen.insert(name).second)
+        err(line, "duplicate error payload binding '" + name + "'",
+            "DUPLICATE_PATTERN_BINDING");
+      result.push_back({name, item->fields[index].type});
+    }
+    return result;
+  }
+
   RaisedIdentity phase21_pattern_identity(int line, string pattern) const {
     pattern = trim(std::move(pattern));
     const auto open = pattern.find('(');
@@ -7567,6 +7658,11 @@ class Checker {
       RaiseSet result;
       for (const auto& alternative : alternatives) {
         auto identity = phase21_pattern_identity(line, alternative);
+        auto bindings = phase21_pattern_bindings(line, alternative);
+        if (alternatives.size() > 1 && !bindings.empty())
+          err(line,
+              "grouped recovery alternatives must be tag-only variants",
+              "GROUPED_RECOVERY_PAYLOAD_BINDING");
         if (!result.insert(identity).second)
           err(line, "duplicate error variant in recovery arm",
               "DUPLICATE_RECOVERY_VARIANT");
@@ -7660,6 +7756,13 @@ class Checker {
           TypeEnv arm_env = env;
           if (!binding_type.empty() && plain_identifier(trim(arm.a)))
             arm_env[trim(arm.a)] = binding_type;
+          if (!arm.a.empty() && arm.a.find('.') != string::npos) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front()))
+                arm_env[binding.first] = binding.second;
+          }
           RaiseSet arm_raises = phase21_raise_set_block(
               body, index, level + 1, std::move(arm_env), matched);
           recovered_raises = raise_set_union(
@@ -7729,9 +7832,15 @@ class Checker {
         auto receiver = env.find(statement.a);
         if (receiver != env.end() && domains_.count(receiver->second))
           if (const Handler* target =
-                  find_handler(*domains_.at(receiver->second), statement.b))
-            result = raise_set_union(
-                std::move(result), target->observable_effects.raise_set);
+                  find_handler(*domains_.at(receiver->second), statement.b)) {
+            // A message evaluated by main is a Root ingress. An exhaustive,
+            // checked on_fail trailer consumes that Root's raised outcome;
+            // nested messages never do.
+            if (!(statement.message_root_ingress &&
+                  !target->failure_arms.empty()))
+              result = raise_set_union(
+                  std::move(result), target->observable_effects.raise_set);
+          }
       }
       for (const auto& expression : statement_expressions(statement))
         result = raise_set_union(
@@ -7785,6 +7894,95 @@ class Checker {
       const ProvenIndexAccesses* proven, const string& base,
       const string& index) {
     return proven && proven->count({trim(base), trim(index)}) != 0;
+
+  void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
+    if (handler.failure_arms.empty()) return;
+    RaiseSet remaining = handler.observable_effects.raise_set;
+    std::set<RaisedIdentity> named;
+    bool saw_catch_all = false;
+    for (auto& arm : handler.failure_arms) {
+      SourceFileScope source(current_source_file_, arm.source_file);
+      if (saw_catch_all)
+        err(arm.line, "no on_fail arm may follow a catch-all",
+            "ON_FAIL_AFTER_CATCH_ALL");
+      string selector;
+      if (!arm.patterns.empty()) {
+        for (const auto& pattern : arm.patterns) {
+          if (!selector.empty()) selector += ", ";
+          selector += pattern;
+        }
+      } else {
+        selector = arm.binding;
+      }
+      string binding_type;
+      RaiseSet matched = phase21_recovery_pattern(
+          arm.line, selector, remaining, &binding_type);
+      RaiseSet reachable;
+      for (const auto& identity : matched)
+        if (remaining.count(identity)) reachable.insert(identity);
+      arm.exceptional_alternatives = reachable;
+      const bool catch_all = arm.patterns.empty();
+      if (catch_all) saw_catch_all = true;
+      for (const auto& identity : matched) {
+        if (!named.insert(identity).second)
+          err(arm.line, "overlapping on_fail alternatives",
+              "OVERLAPPING_ON_FAIL_PATTERN");
+        if (!remaining.count(identity)) {
+          const string message = "on_fail alternative '" +
+              identity.canonical() + "' is unreachable for handler '" +
+              domain.name + "." + handler.name + "'";
+          if (phase21_warnings_enabled_ &&
+              std::none_of(warnings_.begin(), warnings_.end(),
+                           [&](const Warning& warning) {
+                             return warning.line == arm.line &&
+                                 warning.code == "ON_FAIL_UNREACHABLE_VARIANT" &&
+                                 warning.message == message;
+                           }))
+            warnings_.push_back({arm.line, message,
+                                 "ON_FAIL_UNREACHABLE_VARIANT",
+                                 arm.source_file});
+          continue;
+        }
+        remaining.erase(identity);
+      }
+
+      TypeEnv env;
+      env["self"] = domain.name;
+      for (const auto& field : domain.state) env[field.name] = field.type;
+      for (const auto& route : domain.routes) env[route.name] = route.type;
+      for (const auto& parameter : handler.params)
+        env[parameter.name] = parameter.type;
+      if (!arm.binding.empty()) env[arm.binding] = binding_type;
+      if (arm.patterns.size() == 1)
+        for (const auto& binding :
+             phase21_pattern_bindings(arm.line, arm.patterns.front()))
+          env[binding.first] = binding.second;
+      RaiseSet escaping = phase21_raise_set(arm.body, std::move(env));
+      if (!escaping.empty())
+        err(arm.line, "on_fail arm may not let typed errors escape",
+            "ON_FAIL_MUST_HANDLE_ERRORS");
+      if (handler.reply_type) {
+        size_t reply_index = 0;
+        if (!every_handler_path_replies(arm.body, reply_index, 0))
+          err(arm.line, "on_fail arm for value-returning handler '" +
+              domain.name + "." + handler.name +
+              "' must reply on every normal control-flow path",
+              "ON_FAIL_REPLY_REQUIRED");
+      }
+    }
+    if (!remaining.empty()) {
+      std::ostringstream missing;
+      bool first = true;
+      for (const auto& identity : remaining) {
+        if (!first) missing << ", ";
+        missing << identity.canonical();
+        first = false;
+      }
+      err(handler.line, "non-exhaustive on_fail trailer for handler '" +
+              domain.name + "." + handler.name + "'; missing: " +
+              missing.str(),
+          "NONEXHAUSTIVE_ON_FAIL");
+    }
   }
 
   ObservableEffects observable_expression_effects(
@@ -8515,6 +8713,7 @@ class Checker {
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
         (void)phase21_raise_set(handler.body, std::move(env));
+        phase21_validate_failure_arms(domain, handler);
       }
     }
     // Tests are independent checked execution roots: validate lexical
@@ -8528,6 +8727,8 @@ class Checker {
     if (p_.main) {
       SourceFileScope source(current_source_file_, p_.main->source_file);
       TypeEnv env;
+      for (auto& statement : p_.main->body)
+        statement.message_root_ingress = true;
       for (const auto& statement : p_.main->body)
         if (auto domain = domain_constructor(statement.b))
           env[statement.a] = *domain;
@@ -9724,6 +9925,14 @@ class Checker {
               arm.a.find(',') == string::npos) {
             recovered.types[arm.a] = "_selected_error";
             recovered.immutable_locals.insert(arm.a);
+          } else if (!arm.a.empty()) {
+            auto alternatives = split_top_level(arm.a, ',');
+            if (alternatives.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, alternatives.front())) {
+                recovered.types[binding.first] = binding.second;
+                recovered.immutable_locals.insert(binding.first);
+              }
           }
           check_ownership_block(statements, index, level + 1, recovered,
                                 current_domain, current_handler);
@@ -13062,6 +13271,7 @@ class Generator {
     o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
     gen_phase21_raised_type(o);
+    gen_phase21_external_raised_bridges(o);
     for (const auto& t : p_.objects) gen_object(o, t);
     std::map<string, const ObjectType*> view_objects(objects_.begin(), objects_.end());
     for (const auto& entry : view_objects) {
@@ -13211,6 +13421,66 @@ class Generator {
       o << "),\n";
     }
     o << "}\n\n";
+  }
+
+  std::optional<string> phase21_external_module_for_symbol(
+      const string& symbol) const {
+    for (const auto& module : p_.external_modules)
+      if (starts_with(symbol, module + "__")) return module;
+    for (const auto& module : rust_dependencies_)
+      if (module != "__moss_specializations__" &&
+          starts_with(symbol, module + "__"))
+        return module;
+    return std::nullopt;
+  }
+
+  string phase21_external_raised_type(const string& module) const {
+    return tooling_name("moss_" + module) + "::__MossRaised";
+  }
+
+  void gen_phase21_external_raised_bridges(std::ostringstream& o) const {
+    if (phase21_program_raise_set().empty()) return;
+    std::map<string, RaiseSet> by_module;
+    for (const auto& function : p_.functions)
+      if (auto module = phase21_external_module_for_symbol(function.name))
+        by_module[*module].insert(function.observable_effects.raise_set.begin(),
+                                  function.observable_effects.raise_set.end());
+    for (const auto& object : p_.objects)
+      if (auto module = phase21_external_module_for_symbol(object.name))
+        for (const auto& method : object.methods)
+          by_module[*module].insert(method.observable_effects.raise_set.begin(),
+                                    method.observable_effects.raise_set.end());
+    for (const auto& domain : p_.domains)
+      if (auto module = phase21_external_module_for_symbol(domain.name))
+        for (const auto& handler : domain.handlers)
+          by_module[*module].insert(handler.observable_effects.raise_set.begin(),
+                                    handler.observable_effects.raise_set.end());
+    for (const auto& entry : by_module) {
+      if (entry.second.empty()) continue;
+      const string provider = phase21_external_raised_type(entry.first);
+      o << "impl From<" << provider << "> for __MossRaised {\n"
+        << "    fn from(value: " << provider << ") -> Self {\n"
+        << "        #[allow(unreachable_patterns)]\n"
+        << "        match value {\n";
+      for (const auto& identity : entry.second) {
+        const string variant = phase21_rust_variant(identity);
+        o << "            " << provider << "::" << variant
+          << "(payload) => __MossRaised::" << variant << "(payload),\n";
+      }
+      o << "            _ => std::process::abort(),\n"
+        << "        }\n    }\n}\n";
+      o << "impl From<__MossRaised> for " << provider << " {\n"
+        << "    fn from(value: __MossRaised) -> Self {\n"
+        << "        #[allow(unreachable_patterns)]\n"
+        << "        match value {\n";
+      for (const auto& identity : entry.second) {
+        const string variant = phase21_rust_variant(identity);
+        o << "            __MossRaised::" << variant << "(payload) => "
+          << provider << "::" << variant << "(payload),\n";
+      }
+      o << "            _ => std::process::abort(),\n"
+        << "        }\n    }\n}\n\n";
+    }
   }
 
   bool owns_specialization(const Domain& specialized) const {
@@ -16744,6 +17014,17 @@ class Generator {
                   << ";\n";
                 arm_locals.insert(arm.a);
                 arm_types[arm.a] = identity.type;
+              } else if (!arm.a.empty()) {
+                auto alternatives = split_top_level(arm.a, ',');
+                for (const auto& pattern : alternatives) {
+                  if (!(generated_failure_pattern_identity(pattern) == identity))
+                    continue;
+                  emit_generated_error_payload_bindings(
+                      o, (base + level + 2) * 4, inner, identity,
+                      generated_error_pattern_bindings(pattern, identity),
+                      arm_locals, arm_types);
+                  break;
+                }
               }
               auto arm_join_assignments = join_assignments;
               arm_join_assignments.insert(joined_bindings.begin(),
@@ -25793,9 +26074,17 @@ static ProviderHandlerAbi source_provider_handler_abi(
     arm.pattern.kind = source_arm.patterns.empty()
         ? FailurePatternKind::CatchAll : FailurePatternKind::Variant;
     for (const auto& pattern : source_arm.patterns) {
-      FailurePatternAbi parsed = parse_failure_pattern_text(pattern);
-      arm.pattern.variants.insert(parsed.variants.begin(),
-                                  parsed.variants.end());
+      string qualified = trim(pattern);
+      const auto open = qualified.find('(');
+      if (open != string::npos)
+        qualified = trim(qualified.substr(0, open));
+      const auto dot = qualified.rfind('.');
+      synchronization_require(
+          dot != string::npos,
+          "checked on_fail pattern lost its qualified enum variant");
+      arm.pattern.variants.insert(RaisedIdentity::enum_variant(
+          canonical_type_name(trim(qualified.substr(0, dot))),
+          trim(qualified.substr(dot + 1))));
     }
     arm.callable_symbol = "__moss_on_fail_" + domain.name + "_" +
         handler.name + "_" + std::to_string(arm.source_order);

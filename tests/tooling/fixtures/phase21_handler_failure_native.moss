@@ -1,12 +1,13 @@
 enum JobError:
-  Bad
+  Bad(code: Int)
 
 domain Worker:
   fn Run() -> Int:
-    raise JobError.Bad
+    raise JobError.Bad(code: 7)
 
-  on_fail JobError.Bad:
+  on_fail JobError.Bad(code):
     echo "worker"
+    echo code
     reply -1
 
 domain Caller:
@@ -16,8 +17,9 @@ domain Caller:
     value = message worker.Run()
     reply value
 
-  on_fail JobError.Bad:
+  on_fail JobError.Bad(code):
     echo "caller"
+    echo code
     reply 42
 
 domain Split:
@@ -29,10 +31,10 @@ domain Split:
       x = x + 1
     else:
       y = y + 1
-    raise JobError.Bad
+    raise JobError.Bad(code: 3)
 
-  on_fail JobError.Bad:
-    x = 10
+  on_fail JobError.Bad(code):
+    x = code + 7
 
   fn ReadX() -> Int:
     reply x
@@ -42,10 +44,11 @@ domain Split:
 
 domain AsyncWorker:
   fn Run():
-    raise JobError.Bad
+    raise JobError.Bad(code: 5)
 
-  on_fail JobError.Bad:
+  on_fail JobError.Bad(code):
     echo "async"
+    echo code
 
 fn main():
   worker = Worker()

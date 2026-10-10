@@ -1,0 +1,12 @@
+module service
+
+export enum ServiceError:
+  Bad(code: Int)
+
+export domain Worker:
+  fn Run() -> Int:
+    raise ServiceError.Bad(code: 4)
+
+  on_fail ServiceError.Bad(code):
+    echo code
+    reply code + 1

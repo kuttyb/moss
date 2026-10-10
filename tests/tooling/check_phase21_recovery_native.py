@@ -32,6 +32,6 @@ assert compiled.returncode == 0, (compiled.stdout, compiled.stderr)
 
 executed = run(executable)
 assert executed.returncode == 0, (executed.stdout, executed.stderr)
-assert executed.stdout == "10\n20\nreraised\n", executed.stdout
+assert executed.stdout == "10\n20\n30\nreraised\n", executed.stdout
 
 print("Phase 21 native local recovery probes passed.")

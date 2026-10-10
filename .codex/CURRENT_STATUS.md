@@ -1,5 +1,57 @@
 # Moss current status
 
+## Phase 21.A typed recovery continuation — 2026-10-10
+
+Continued `phase-21-a-recovery` from checkpoint `620b567` in
+`tmp/moss-worktrees/21-a`. The current worktree has uncommitted implementation
+and regression changes; no push or integration merge was performed.
+
+This continuation closes several native/checker gaps after the first tagged
+outcome checkpoint:
+
+- path-sensitive handlers now retain their generated Root `on_fail` wrapper;
+- explicit-module rewriting covers typed failure patterns and arm bodies;
+- fixed-point raise inference suppresses provisional warnings and performs one
+  final authoritative annotation/diagnostic pass, so method raises no longer
+  leave false unreachable-arm warnings and `main` totality sees transitive
+  function/method/handler effects;
+- handler trailers are checked for typed pattern validity, overlap/order,
+  exhaustiveness, empty escaping raise sets, and reply totality; their bodies
+  now receive normal type, ownership, and FileIO lifecycle checking;
+- payload patterns introduce checked immutable field bindings in `recover` and
+  `on_fail`, and native lowering projects their owned values;
+- Root-total messages in `main` account for a validated exhaustive trailer;
+- source provider failure patterns are converted to ABI identities correctly;
+  application/provider crates now receive stable-identity conversions between
+  their internal raised enums, allowing an exported handler to raise in a
+  provider crate and execute its Root trailer in the application crate.
+
+Permanent coverage now includes method propagation, payload binding use,
+path-sensitive normal/failure lock plans, nested-versus-Root dispatch,
+value-returning and asynchronous Roots, explicit two-module provider lowering,
+and negative diagnostics for non-exhaustive trailers, escaping trailer raises,
+missing failure replies, and ambiguous multi-enum catch-all bindings.
+
+Validation on the current uncommitted revision:
+
+- strict C++17 `-Wall -Wextra -Werror -pedantic` compiler build: PASS;
+- all four focused Phase 21 recovery/native/source-free scripts: PASS;
+- the real two-module provider fixture compiles and runs through Margo, printing
+  the payload `4` and failure reply `5`: PASS;
+- Phase 20C executor regression suite: 54/54 PASS;
+- `git diff --check`: PASS.
+
+The repository-wide `tests/run.sh` rerun reaches the known A/B integration
+boundary: 37/40 generic-specialization probes pass, while `range_fileio`,
+`range_direct`, and `fileio_direct` fail native Rust compilation because 21.A
+now carries `FileError` alternatives but the generated FileError definition and
+native FileIO tagged-result lowering remain on 21.B. No later full-suite gate
+was claimed. Remaining Phase 21.A/integration work includes true source-free
+failure-arm callable/capture materialization (not merely same-project separate
+crates), D7 capture joins, complete exceptional-CFG consumer wiring, provider
+path-split ABI visibility, and A/B Root FileIO quiescence/teardown sequencing.
+This remains a checkpoint, not Phase 21.A completion.
+
 ## Phase 21.D settled parity and borrowed-view checkpoint — 2026-10-10
 
 The transferred `ed8374f` WIP now builds and has a follow-up repair. Native

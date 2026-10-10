@@ -45,6 +45,19 @@ invalid_json = json.loads(invalid.stdout)
 assert not invalid_json["ok"], invalid_json
 assert invalid_json["error"]["code"] == "BARE_RAISE_OUTSIDE_RECOVER", invalid_json
 
+invalid_on_fail = {
+    "phase21_on_fail_nonexhaustive.moss": "NONEXHAUSTIVE_ON_FAIL",
+    "phase21_on_fail_escape.moss": "ON_FAIL_MUST_HANDLE_ERRORS",
+    "phase21_on_fail_reply_missing.moss": "ON_FAIL_REPLY_REQUIRED",
+    "phase21_on_fail_ambiguous_binding.moss": "AMBIGUOUS_RECOVERY_BINDING",
+}
+for filename, code in invalid_on_fail.items():
+    failure_source = repo / "tests/tooling/fixtures" / filename
+    failure = run(compiler, "check", failure_source, "--json")
+    assert failure.returncode != 0, (filename, failure.stdout)
+    failure_json = json.loads(failure.stdout)
+    assert failure_json["error"]["code"] == code, (filename, failure_json)
+
 for name in ("range_fileio", "range_direct", "fileio_direct"):
     fileio_source = repo / "tests/tooling/fixtures/generic_specialization" / f"{name}.moss"
     fileio_check = run(compiler, "check", fileio_source, "--json")

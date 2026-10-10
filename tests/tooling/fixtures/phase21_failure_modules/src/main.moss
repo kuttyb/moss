@@ -1,0 +1,6 @@
+module app
+import service
+
+fn main():
+  worker = service.Worker()
+  echo message worker.Run()
