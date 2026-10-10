@@ -68,6 +68,47 @@ def run_two_crate_rust_abi_fixture():
         "phase21 two-crate source-free Rust ABI fixture passed")
 
 
+def run_source_free_raised_handler_fixture():
+    """Exercise a real raised provider result after its Moss source is removed."""
+    raised_out = out / "raised-handler"
+    (raised_out / "src").mkdir(parents=True)
+    (raised_out / "moss.toml").write_text(
+        '[project]\nname="phase21_raised_provider"\nversion="0.1.0"\n')
+    provider = raised_out / "src/service.moss"
+    provider.write_text('''module service
+export enum ServiceError:
+  Bad(code: Int)
+export domain Worker:
+  fn Run() -> Int:
+    raise ServiceError.Bad(code: 4)
+''')
+    main = raised_out / "src/main.moss"
+    main.write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  try:
+    echo message worker.Run()
+  recover service.ServiceError.Bad(code):
+    echo code
+''')
+    first = json.loads(run([compiler, "build", "--json"], cwd=raised_out).stdout)
+    assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
+    interface_path = raised_out / "build/debug/service.mossi"
+    assert 'handler_raise_tags "Run" 1' in interface_path.read_text()
+    provider.rename(provider.with_suffix(".removed"))
+    rebuilt = json.loads(run([compiler, "build", "--json"], cwd=raised_out).stdout)
+    assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
+    main.write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  echo message worker.Run()
+''')
+    unhandled = run([compiler, "--check", main], cwd=raised_out, expected=1)
+    assert "main may not let typed errors escape" in unhandled.stderr
+
+
 if out.exists():
     shutil.rmtree(out)
 (out / "src").mkdir(parents=True)
@@ -123,9 +164,9 @@ for required in (
 ):
     assert required in original, required
 
-# Freeze a nonempty provider contract as if Agent A had produced it. The
-# checked provider source is then removed. The consumer must load the arm,
-# owned capture, reply and exceptional-CFG records from .mossi alone.
+# Forge a nonempty provider contract to validate the loader's arm, owned
+# capture, reply and exceptional-CFG checks with provider source removed.
+# The forged contract cannot be linked to the nonraising provider binary.
 synthetic = original.replace(
     'raise_set=-;may_diverge=0;unresolved=0\n'
     '  handler_state_effects "Bump"',
@@ -195,8 +236,6 @@ assert synthetic != original
 interface_path.write_text(synthetic)
 provider.rename(provider.with_suffix(".removed"))
 run([compiler, "--check", main], cwd=out)
-rebuilt = json.loads(run([compiler, "build", "--json"], cwd=out).stdout)
-assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
@@ -330,6 +369,7 @@ run([compiler, "--check", main], cwd=out)
 
 interface_path.write_text(synthetic)
 run_two_crate_rust_abi_fixture()
+run_source_free_raised_handler_fixture()
 print(
     "Phase 21.0 source-free ABI-v8 metadata, fail-closed loader, and "
-    "two-crate Rust ABI checks passed.")
+    "native raised-handler checks passed.")

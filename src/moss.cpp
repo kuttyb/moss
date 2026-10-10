@@ -8610,7 +8610,8 @@ class Checker {
         method.observable_effects = no_observable_effects();
     for (auto& domain : p_.domains)
       for (auto& handler : domain.handlers)
-        handler.observable_effects = no_observable_effects();
+        if (!handler.provider_abi)
+          handler.observable_effects = no_observable_effects();
 
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
@@ -8671,6 +8672,10 @@ class Checker {
         for (const auto& field : domain.state)
           domain_fields.insert(field.name);
         for (auto& handler : domain.handlers) {
+          // A compiled provider's body is not available here. Its ABI-v8
+          // checked summary is authoritative; the synthetic reply statement
+          // in the interface is only a shape placeholder for old passes.
+          if (handler.provider_abi) continue;
           TypeEnv env;
           std::set<string> parameters;
           env["self"] = domain.name;

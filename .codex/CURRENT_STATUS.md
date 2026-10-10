@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 21.I source-free handler effect checkpoint — 2026-10-10
+
+The integration checker now preserves the checked observable effects from an
+ABI-v8 `.mossi` handler instead of inferring an empty raise set from its
+synthetic placeholder body. A real two-crate fixture builds a raising provider,
+removes its Moss source, rebuilds the consumer, and verifies both native typed
+recovery (`4`) and rejection of an unhandled raised call in `main`. The older
+loader fixture still checks forged nonempty metadata, but no longer attempts
+to link those records to a deliberately nonraising provider binary.
+
+Validation after these edits: focused source-free ABI suite PASS; complete
+`make check` PASS (`all Moss v0.1 tests passed`); `make examples` PASS; strict
+C++17 `-Wall -Wextra -Werror -pedantic` compiler build PASS. No merge to
+`main` has occurred.
+
+The remaining A blocker is concrete: source-free `.mossi` files declare
+`on_fail` callable symbols, but provider codegen does not export those bodies;
+the imported handler also has no source `failure_arms` for Root wrapper
+generation or totality. An actual source-free Root with a trailer therefore
+cannot execute that trailer. This remains open alongside A's owned D7 captures
+and exceptional-CFG consumer proof, B's final review, C's O9/read-fault
+matrix review, and D's numeric parser/formatter/documentation work. The A–D
+branches are clean committed checkpoints, not Phase 21 acceptance.
+
+For D's still-pending finite `parse_float` grammar, the user approved accepting
+`.5`, `1.`, and uppercase `E` (for example `1E3`) on 2026-10-10. This decision
+has not yet been implemented or incorporated into the normative numeric text.
+
 ## Phase 21.I ordered Branch raises and source-free view proof — 2026-10-10
 
 The green integration base now has an actual native Root/Executor fixture for
