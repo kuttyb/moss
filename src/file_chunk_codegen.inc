@@ -161,7 +161,8 @@ string gen_chunk_pipeline_sequential(
 // ChunkParallelPlan, never from the environment.
 string gen_chunk_pipeline_bounded_k(
     const FunctionalPipeline::ChunkParallelPlan& plan, const Domain* domain,
-    const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
+    const std::set<string>& locals, const std::unordered_map<string,string>* types,
+    bool combine_raises) const {
   size_t id = fileio_chunk_temp_++;
   const string n = std::to_string(id);
   const string size_var = "__moss_chunk_size_" + n;
@@ -181,6 +182,7 @@ string gen_chunk_pipeline_bounded_k(
   const string label = "'moss_chunk_commit_" + n;
   const string k = std::to_string(plan.window_k);
   const string outcome_type = chunk_outcome + "<" + rust_type(plan.mapped_type) + ">";
+  const bool map_raises = !plan.map_invocation_effects.raise_set.empty();
 
   std::ostringstream out;
   out << "{\n";
@@ -192,7 +194,7 @@ string gen_chunk_pipeline_bounded_k(
   out << "        let mut " << acc << " = "
       << expr(plan.initial_expression, domain, locals, types) << ";\n";
   out << "        let mut " << next << ": i64 = 0;\n";
-  out << "        enum " << chunk_outcome << "<T> { Value { index: i64, value: T, len: i64, short: bool }, Raised { index: i64, error: MossFileError }, Eof { index: i64 } }\n";
+  out << "        enum " << chunk_outcome << "<T> { Value { index: i64, value: T, len: i64, short: bool }, Raised { index: i64, error: __MossRaised }, Eof { index: i64 } }\n";
   out << "        " << label << ": loop {\n";
   out << "            // The scope belongs to the currently executing Root; the runtime,\n";
   out << "            // not compiler output, supplies that Root's identity.\n";
@@ -210,16 +212,26 @@ string gen_chunk_pipeline_bounded_k(
       << " = match " << borrow << ".read_checked(" << index << " * " << size_var
       << ", " << size_var << ") {\n";
   out << "                        Err(error) => " << chunk_outcome
-      << "::Raised { index: " << index << ", error },\n";
+      << "::Raised { index: " << index
+      << ", error: __moss_raise_fileio(error) },\n";
   out << "                        Ok(" << bytes << ") => { let " << len << " = "
       << bytes << ".len(); if " << len << " == 0 { " << chunk_outcome
-      << "::Eof { index: " << index << " } } else { " << chunk_outcome
-      << "::Value { index: " << index << ", value: "
-      << render_functional_callable(
-             plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-             locals, types)
-      << ", len: " << len << ", short: " << len << " < " << size_var
-      << " } } }\n";
+      << "::Eof { index: " << index << " } } else { ";
+  const string mapped = render_functional_callable(
+      plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
+      locals, types);
+  if (map_raises) {
+    out << "match " << mapped << " { Ok(value) => " << chunk_outcome
+        << "::Value { index: " << index << ", value, len: " << len
+        << ", short: " << len << " < " << size_var << " }, "
+        << "Err(error) => " << chunk_outcome << "::Raised { index: "
+        << index << ", error } }";
+  } else {
+    out << chunk_outcome << "::Value { index: " << index << ", value: "
+        << mapped << ", len: " << len << ", short: " << len << " < "
+        << size_var << " }";
+  }
+  out << " } }\n";
   out << "                    };\n";
   out << "                    *" << out_slot
       << ".lock().unwrap_or_else(|_| std::process::abort()) = Some(" << outcome << ");\n";
@@ -240,7 +252,7 @@ string gen_chunk_pipeline_bounded_k(
       << lane << " as i64 { std::process::abort(); }\n";
   out << "                match " << outcome << " {\n";
   out << "                    " << chunk_outcome
-      << "::Raised { error, .. } => return Err(__moss_raise_fileio(error)),\n";
+      << "::Raised { error, .. } => return Err(error),\n";
   out << "                    " << chunk_outcome << "::Eof { .. } => break "
       << label << ",\n";
   out << "                    " << chunk_outcome
@@ -250,8 +262,9 @@ string gen_chunk_pipeline_bounded_k(
              plan.combine_callable,
              {FunctionalValue{acc, plan.accumulator_type, false},
               FunctionalValue{"value", plan.mapped_type, false}},
-             domain, locals, types)
-      << ";\n";
+             domain, locals, types);
+  if (combine_raises) out << "?";
+  out << ";\n";
   out << "                        if short { break " << label << "; }\n";
   out << "                    }\n                }\n";
   out << "            }\n";
@@ -288,7 +301,8 @@ std::optional<string> gen_fileio_chunk_pipeline(
   // scopes. Select at runtime so the same helper preserves source semantics
   // when called from main and uses bounded Branches when called from a Root.
   return "if current_root_id().is_some() { " +
-      gen_chunk_pipeline_bounded_k(plan, domain, locals, types) +
+      gen_chunk_pipeline_bounded_k(plan, domain, locals, types,
+                                   combine_raises) +
       " } else { " +
       gen_chunk_pipeline_sequential(
           plan, domain, locals, types, combine_raises) + " }";

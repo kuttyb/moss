@@ -84,6 +84,8 @@ ObservableEffects chunk_mapper_invocation_effects(
     ObservableEffects effects = observable_expression_effects(
         map_node.callable_expression, env, domain_fields, implicit_object, {},
         &proven);
+    effects.raise_set = raise_set_union(
+        std::move(effects.raise_set), map_node.effects.raise_set);
     used_nonempty_proof = map_node.effects.may_panic && !effects.may_panic;
     return effects;
   }
@@ -119,6 +121,10 @@ ObservableEffects chunk_mapper_invocation_effects(
   if (mapper.result_expression)
     effects.merge(observable_expression_effects(
         *mapper.result_expression, env, {}, nullptr, parameters, &proven));
+  // The invocation-local index proof can remove a panic, but it cannot
+  // discharge a typed raise from the mapper's checked callable summary.
+  effects.raise_set = raise_set_union(
+      std::move(effects.raise_set), map_node.effects.raise_set);
   used_nonempty_proof = map_node.effects.may_panic && !effects.may_panic;
   return effects;
 }

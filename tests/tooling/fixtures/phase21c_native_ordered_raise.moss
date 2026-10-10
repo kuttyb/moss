@@ -1,0 +1,64 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum MapError:
+  Early
+  Late
+
+enum FoldError:
+  First
+
+fn mark(chunk: Range) -> Int:
+  value = chunk[0]
+  if value == 66:
+    raise MapError.Early
+  if value == 67:
+    raise MapError.Late
+  return value
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+fn first_fold(total: Int, value: Int) -> Int:
+  if value == 65:
+    raise FoldError.First
+  return total + value
+
+domain Worker:
+  fn MapOrder() -> Int:
+    file = FileIO.open("tmp/phase21c-native-ordered-raise.data", ro)
+    total = file.chunks(1) |> map(mark) |> reduce(0, add)
+    file.close()
+    reply total
+
+  fn FoldOrder() -> Int:
+    file = FileIO.open("tmp/phase21c-native-ordered-raise.data", ro)
+    total = file.chunks(1) |> map(mark) |> reduce(0, first_fold)
+    file.close()
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(4).start()
+  try:
+    echo message worker.MapOrder()
+  recover MapError.Early:
+    echo 11
+  recover MapError.Late:
+    echo 12
+  recover:
+    echo 13
+  try:
+    echo message worker.FoldOrder()
+  recover FoldError.First:
+    echo 21
+  recover MapError.Early:
+    echo 22
+  recover:
+    echo 23
+  executor.join()

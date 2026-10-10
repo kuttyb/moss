@@ -330,4 +330,27 @@ fixture_bin = OUT / "phase21c_ordered_outcomes"
 run(["rustc", "-D", "warnings", fixture_rs, "-o", fixture_bin])
 assert run([fixture_bin]).stdout == "phase21c ordered outcomes passed\n"
 
+# Compile the actual bounded-K lowering with a mapper that raises at two
+# indices and a parent fold that raises before either mapper error commits.
+# This catches an accidental Result<T, E> value in a Branch slot or parent
+# fold, which a handwritten outcome harness cannot detect.
+native_source = REPO / "tests/tooling/fixtures/phase21c_native_ordered_raise.moss"
+native_data = REPO / "tmp/phase21c-native-ordered-raise.data"
+native_data.write_bytes(b"ABCD")
+run([COMPILER, "check", native_source, "--json"])
+native_rust = OUT / "phase21c_native_ordered_raise.rs"
+native_ir = run([COMPILER, native_source, "--dump-functional-ir", "-o",
+                 native_rust]).stdout
+assert native_ir.count("chunk-plan:") == 2 and \
+    native_ir.count("eligible=yes") >= 2, native_ir
+native_text = native_rust.read_text()
+assert "match mark(&(" in native_text and "Err(error) =>" in native_text
+assert "return Err(error)" in native_text
+assert re.search(r"first_fold\([^\n]+\)\?;", native_text), native_text
+native_bin = OUT / "phase21c_native_ordered_raise"
+run(["rustc", "--edition=2021", "-D", "warnings", native_rust,
+     "-o", native_bin])
+for _ in range(32):
+    assert run([native_bin]).stdout == "11\n21\n"
+
 print("phase21c branch-error checks passed")

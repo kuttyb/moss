@@ -1,5 +1,30 @@
 # Moss current status
 
+## Phase 21.I ordered Branch raises and source-free view proof — 2026-10-10
+
+The green integration base now has an actual native Root/Executor fixture for
+ordered chunk failures. The bounded-K Branch code stores both checked FileIO
+read failures and typed mapper failures as owned `__MossRaised` outcomes,
+commits them only after joining the window, and propagates a raising parent
+fold. The invocation-local nonempty `chunk[0]` proof retains the mapper's
+typed raise set; it removes only the proven index panic. The native fixture
+repeats both ordering cases 32 times: the earlier mapper error wins over a
+later mapper error, and a parent fold error wins over a later mapper error.
+
+The borrowed-view regression now builds a generic WRITE helper as a provider,
+removes its source, and checks that source-free `Range` and `RangeBatch` calls
+are rejected while an `Int` specialization builds and runs. This verifies
+fail-closed behavior across the `.mossi` boundary; the specific source-free
+diagnostic is currently `FILEIO_PINNED_OWNERSHIP` rather than the direct
+formal's `FILEIO_VIEW_PARAMETER_WRITE`.
+
+Validation after these edits: focused Phase 21.C and borrowed-view suites
+PASS; complete `make check` PASS (`all Moss v0.1 tests passed`); `make
+examples` PASS; strict C++17 `-Werror` build PASS. Phase 21 still needs A's
+source-free failure-arm/capture and exceptional-CFG work, B's final proof
+review, C's remaining O9/read-fault matrix review, and D's numeric
+parsing/formatting/docs work. No merge to `main` has occurred.
+
 ## Phase 21.I integration gate restored — 2026-10-10
 
 The integration branch now passes the complete `make check` suite, `make
