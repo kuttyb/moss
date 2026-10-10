@@ -18,7 +18,7 @@ Updated: 2026-10-09 (America/Los_Angeles)
 | Workstream | Branch | Absolute worktree | Base | State |
 |---|---|---|---|---|
 | Coordinator | `phase-21-planning` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-planning` | `ed0b3d2` | active, clean before this register |
-| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | ready, clean |
+| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | checkpoint `d33e3be`; reviewed and validated |
 | 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | pending approved 21.0 SHA | not created |
 | 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | pending approved 21.0 SHA | not created |
 | 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | pending approved 21.0 SHA | not created |
@@ -38,34 +38,43 @@ A-D remain uncreated until user approval of the reviewed 21.0 commit. They must 
 - Focused tooling fixtures/tests: concrete native signature assertions, ABI v6 rejection/rebuild behavior, and a source-free provider whose source is removed before the consumer build.
 - Contract documentation: explicit C++/Rust signatures, ownership rules, error identity, provider-private payload/capture handling, exceptional CFG consumers, and the corrected class-repartition rule from the independent handoff.
 
-The current ABI entry points are `kNativeAbiVersion = 6`, `load_module_interface`, `interface_effects`, `interface_effects_text`, and `write_module_interfaces` in `src/moss.cpp`. Existing source-free handler/body precedents live in `tests/tooling/check_phase106f1.py`, `check_handler_2pl.py`, `check_synchronization_plan.py`, and `check_phase15_9_cross_package_specialization.py`.
+The recovered implementation sets `kNativeAbiVersion` from
+`kErrorHandlingAbiVersion = 7`; its interface entry points remain
+`load_module_interface`, `interface_effects`, `interface_effects_text`, and
+`write_module_interfaces` in `src/moss.cpp`. Existing source-free handler/body
+precedents live in `tests/tooling/check_phase106f1.py`,
+`check_handler_2pl.py`, `check_synchronization_plan.py`, and
+`check_phase15_9_cross_package_specialization.py`.
 
 ## Phase 21.0 acceptance checklist
 
-- [ ] Exact `ObservableEffects` contract with `may_panic` and normalized `raise_set`
-- [ ] `fusion_safe()` stays a typed-raise ordering barrier
-- [ ] Separate context-specific `chunk_speculation_safe()` contract
-- [ ] Concrete tagged normal/raised Rust representation and owned payload ABI
-- [ ] Stable multi-error identity without a source-level cross-enum union
-- [ ] Separate exported handler and `on_fail` bodies with capture/reply metadata
-- [ ] Application-generated nested and Root wrapper signatures
-- [ ] Root order: join/quiesce, close Root-local FileIO, drop old guards, acquire fresh cleanup plan, dispatch arm, complete reply
-- [ ] Exceptional CFG schema and named consumers: D7, ownership, guard cancellation, early acquisition/2PL, cleanup, codegen
-- [ ] ABI v7 serialization, semantic hash identity, v6 rejection and rebuild rule
-- [ ] Source-free provider fixture with provider source removed
-- [ ] Focused tests pass
-- [ ] Full `make check` and `make examples` pass or any unrelated blocker is documented
-- [ ] Worker checkpoint commit includes title and concise body
-- [ ] Coordinator independent review completed; worker fixes review defects in `21-0`
+- [x] Exact `ObservableEffects` contract with `may_panic` and normalized `raise_set`
+- [x] `fusion_safe()` stays a typed-raise ordering barrier
+- [x] Separate context-specific `chunk_speculation_safe()` contract
+- [x] Concrete tagged normal/raised Rust representation and owned payload ABI
+- [x] Stable multi-error identity without a source-level cross-enum union
+- [x] Separate exported handler and `on_fail` bodies with capture/reply metadata
+- [x] Application-generated nested and Root wrapper signatures
+- [x] Root order: join/quiesce, close Root-local FileIO, drop old guards, acquire fresh cleanup plan, dispatch arm, complete reply
+- [x] Exceptional CFG schema and named consumers: D7, ownership, guard cancellation, early acquisition/2PL, cleanup, codegen
+- [x] ABI v7 serialization, semantic hash identity, v6 rejection and rebuild rule
+- [x] Source-free provider fixture with provider source removed
+- [x] Focused tests pass
+- [x] Full `make check` and `make examples` pass or any unrelated blocker is documented
+- [x] Worker checkpoint commit includes title and concise body
+- [x] Coordinator independent review completed; worker fixes review defects in `21-0`
 
 ## Agent checkpoints
 
 | Agent | Initial report | Checkpoint SHA | Review | Tests / blockers |
 |---|---|---|---|---|
-| 21.0 | pending | pending | pending | pending |
+| 21.0 | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; base `ed0b3d2`; clean at launch | `d33e3be434a1e899e95590c80b12bce4a070b53b` | complete; qualified-identity and fail-closed loader defects repaired | Focused ABI/source-free strict PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
 
 ## Decisions and blockers
 
 - The independent handoff clarifies that adding `h_fail` may repartition synchronization classes and change normal-handler lock counts, including exclusive acquisitions, while it does not add new normal-path per-leaf WRITE requirements. 21.0 must encode this corrected contract rather than the older shorthand in Part II §3/P10.
 - Numeric token grammar and Float tie-breaking are Stage 21.D contract decisions and are outside 21.0.
-- No unresolved preparation blocker. Native Codex subagent messaging is available.
+- No unresolved implementation or validation blocker. The earlier command-runner
+  interruption was recovered without losing the isolated worktree. Phase 21.0 is
+  has checkpoint `d33e3be` and awaits user approval before A-D are created from
+  that SHA.
