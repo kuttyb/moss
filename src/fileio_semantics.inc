@@ -89,6 +89,26 @@
     return std::nullopt;
   }
 
+  // Audited Phase 21 origin sets. These are intentionally operation-precise:
+  // programmer misuse (closed owners, invalid bounds/modes) stays on the fatal
+  // panic channel and is not represented here.
+  static RaiseSet fileio_operation_raise_set(const string& method) {
+    auto variant = [](const char* name) {
+      return RaisedIdentity::enum_variant("FileError", name);
+    };
+    if (method == "open")
+      return {variant("NotFound"), variant("PermissionDenied"),
+              variant("NotRegularFile"), variant("InUse"),
+              variant("Full"), variant("IO")};
+    if (method == "read" || method == "chunks")
+      return {variant("IO")};
+    if (method == "write" || method == "sync")
+      return {variant("Full"), variant("IO")};
+    if (method == "close")
+      return {variant("IO")};
+    return {};
+  }
+
   static std::optional<string> fileio_method_requirement_result(
       const string& type, const string& method, size_t arity) {
     string concrete = canonical_type_name(type);
