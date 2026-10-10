@@ -1,5 +1,30 @@
 # Moss current status
 
+## Phase 21.D numeric grammar and Float text checkpoint — 2026-10-10
+
+The approved §13.3 finite decimal grammar now explicitly accepts `.5`,
+`1.`, uppercase `E`, leading zeros, and explicit exponent signs, while
+retaining the exact ASCII trim, underscore, and nonfinite-token rules.
+`parse_int`/`parse_float` raising builtins themselves are still unimplemented.
+
+Source exponent signs such as `1e-4` and `1e+3` now remain part of the Float
+literal in both checker and native codegen, and exponent literals receive
+Float typing instead of Rust's plain integer/Display path. Fast Debug Float
+display now uses shortest-roundtrip digits and the Phase 21 plain/scientific
+thresholds. The focused native/Fast Debug golden gate covers signed zero,
+nonfinite results, `0.1 + 0.2`, both notation boundaries, and binary64
+subnormal/minimum-normal/maximum-finite values. The native path still relies
+on Rust Debug for shortest digits; the general Rust-independent tie-break
+implementation and wider cross-toolchain pins remain open, along with
+`parse_int`, `parse_float`, `to_int`, predicates, and documentation migration.
+
+After the A, C, and D checkpoints were integrated, complete `make check`
+(`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check`
+passed. Phase 21 is not accepted or merged to `main`. A's executable
+source-free `on_fail` and owned capture frame, B's final FileIO/proof audit,
+C's final O9 review, and D's remaining numeric operations are open.
+
 ## Phase 21.C native Branch read-fault checkpoint — 2026-10-10
 
 The ordered-Branch focused gate now runs generated native Rust with a real
