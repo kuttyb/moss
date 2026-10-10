@@ -1,0 +1,26 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+domain Worker:
+  value = 0
+
+  fn Fail(path: String) -> Int:
+    value = value + 1
+    file = FileIO.open(path, create)
+    raise FileError.Full
+
+  on_fail FileError.Full:
+    value = value + 10
+    reopened = FileIO.open(path, rw)
+    reopened.close()
+    reply value
+
+fn main():
+  worker = Worker()
+  result = message worker.Fail("tmp/phase21-fileio-root-cleanup.dat")
+  echo result
