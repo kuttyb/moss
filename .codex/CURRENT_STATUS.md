@@ -1,5 +1,73 @@
 # Moss current status
 
+## Phase 21.0 shared effects/error ABI recovery — 2026-10-09
+
+Worktree: `tmp/moss-worktrees/21-0`, branch
+`phase-21-0-effects-abi`, base `ed0b3d23596e189dec7c259319dd3d570a2120b0`.
+Startup skills were loaded and the worktree-local bootstrap confirms
+`moss-0.1`. The implementation was recovered after the earlier command-runner
+failure, independently reviewed, tightened, rebuilt, and fully validated. It
+is recorded by the `Freeze Phase 21.0 effects and error ABI` checkpoint commit;
+the Phase 21 A-D worktrees remain intentionally uncreated pending user approval.
+
+The shared contract now has a compiling schema in
+`src/error_handling_abi.hpp` and a normative implementation handoff in
+`docs/PHASE_21_SHARED_ABI.md`. `ObservableEffects` separates fatal
+`may_panic` from a normalized, variant-precise `RaiseSet`; merge, handled-set
+subtraction, exact re-raise, JSON, fingerprints, diagnostics, and `.mossi`
+serialization all use the same representation. Ordinary `fusion_safe()`
+continues to reject typed raises. The distinct `chunk_speculation_safe()`
+permits ordered typed outcomes but rejects panic, mutation, domain/message/I/O,
+FileIO/unknown FileIO, and unresolved work.
+
+Native/provider ABI v7 freezes owned tagged normal/raised outcomes, stable
+specialization-local tags, scalar/enum payload constraints, opaque
+provider-private failure frames, exported body/failure-arm records, owned D7
+captures, reply totality, application-owned nested/Root wrappers, separate
+`h_fail` footprints, and the Root failure order: join/quiesce, close Root-local
+FileIO, release attempt guards, acquire fresh failure locks, execute the selected
+arm, fulfill the reply. The class-repartition clarification is covered: adding
+the pseudo-handler column can split normal-handler exclusive classes without
+changing the normal handler's per-leaf WRITE requirements.
+
+Exceptional CFG records cover raising nodes, typed alternatives and all six
+consumers: D7, ownership, guard cancellation, early acquisition/2PL, cleanup,
+and codegen. The ABI-v7 loader requires every effect and handler record,
+validates exact counts, normalized module-qualified identities, owned/bounded
+payloads, legal unique captures and arms, reply contracts, exceptional edges,
+and the complete consumer mask. Missing/corrupt records fail closed; ABI v6
+requires a full rebuild. Recovery review fixed a stale module-qualified Rust
+symbol expectation, last-colon parsing for qualified enum identities, missing
+reply/raising-node fail-closed checks, permissive effect flags, and lowercase or
+container payload escapes.
+
+Final validation after those fixes:
+
+- `./moss agent bootstrap --json`: passed; `moss-0.1` confirmed.
+- `python3 tests/tooling/check_phase21_shared_abi.py ...`: passed.
+- `python3 tests/tooling/check_phase21_source_free_abi.py ./moss ...`: passed,
+  including provider-source removal, qualified error identity, v6 rejection,
+  missing-record/effect rejection, and native execution.
+- `make check`: passed all Moss v0.1 tests, including 40 generic
+  specialization probes, 129 builtin/generic typing probes, all 61 editor ERT
+  tests, and all 54 Phase 20 Executor runtime probes.
+- `make examples`: passed; the intentional negative example was skipped.
+- Strict `g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic
+  src/moss.cpp -o tmp/phase21-moss-strict-recovery`: passed.
+- The source-free ABI-v7 fixture rerun with that strict compiler: passed.
+- `git diff --check`: passed before this status-only update.
+
+No implementation or validation blocker remains. The checkpoint must still be
+approved before Phase 21.0 is used as the common base for A-D. Compiler-agent
+self-report: bootstrap and the existing source-free
+provider infrastructure established the live baseline; the new focused ABI
+fixtures exposed one stale name expectation and made the fail-closed review
+concrete. Two significant recovery cycles were needed (rebuild the stale local
+compiler, then tighten loader/schema validation). No semantic query or affected
+test could replace the mandatory ABI/full-suite gates. The most useful future
+improvement would be a first-class `.mossi` schema validator/fuzzer so counted
+record corruption does not require hand-authored interface mutations.
+
 ## Non-Copy vector-literal ownership repair — closeout 2026-10-08
 
 Implementation: `dbe62d3c88aad7a052a856a8deb1f695f54b1c76` (`changes`),

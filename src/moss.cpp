@@ -61,7 +61,7 @@ class CompilerStageTimer {
 };
 
 static constexpr const char* kCompilerVersion = "0.1.0";
-static constexpr int kNativeAbiVersion = 6;
+static constexpr int kNativeAbiVersion = kErrorHandlingAbiVersion;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -225,7 +225,7 @@ struct BuiltinOperationDescriptor {
   Effect receiver_effect;
   vector<Effect> argument_effects;
   vector<string> argument_types;
-  bool may_fail = false;
+  bool may_panic = false;
 };
 
 // Authoritative compiler-owned surface for receiver builtins.  Type checking
@@ -2702,7 +2702,8 @@ class Checker {
         if (initializer_effects.message ||
             initializer_effects.domain_read || initializer_effects.domain_write ||
             initializer_effects.local_mutation || initializer_effects.external_io ||
-            initializer_effects.may_fail || initializer_effects.may_diverge ||
+            initializer_effects.may_panic || !initializer_effects.raise_set.empty() ||
+            initializer_effects.may_diverge ||
             initializer_effects.unresolved) {
           err(f_source, f.line,
               "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
@@ -2936,7 +2937,8 @@ class Checker {
             if (initializer_effects.message ||
                 initializer_effects.domain_read || initializer_effects.domain_write ||
                 initializer_effects.local_mutation || initializer_effects.external_io ||
-                initializer_effects.may_fail || initializer_effects.may_diverge ||
+                initializer_effects.may_panic || !initializer_effects.raise_set.empty() ||
+                initializer_effects.may_diverge ||
                 initializer_effects.unresolved)
               fail_at(statement,
                       "domain state initializers must be side-effect-free and cannot perform message, domain, I/O, failing, or divergent work");
@@ -3615,10 +3617,10 @@ class Checker {
   struct BuiltinCallSemantics {
     string result_type;
     ObservableEffects observable_effects;
-    BuiltinCallSemantics(string result, bool may_fail)
+    BuiltinCallSemantics(string result, bool may_panic)
         : result_type(std::move(result)) {
       observable_effects.unresolved = false;
-      observable_effects.may_fail = may_fail;
+      observable_effects.may_panic = may_panic;
     }
     bool pure() const { return observable_effects.fusion_safe(); }
   };
@@ -7282,7 +7284,8 @@ class Checker {
         left.external_io == right.external_io &&
         left.fileio == right.fileio &&
         left.fileio_unknown == right.fileio_unknown &&
-        left.may_fail == right.may_fail &&
+        left.may_panic == right.may_panic &&
+        left.raise_set == right.raise_set &&
         left.may_diverge == right.may_diverge &&
         left.unresolved == right.unresolved;
   }
@@ -7397,14 +7400,14 @@ class Checker {
         effects.merge(observable_expression_effects(
             binary->second, env, domain_fields, implicit_object));
         if (operators.front() == "*") {
-          if (split_binary(value, {"/", "%"})) effects.may_fail = true;
+          if (split_binary(value, {"/", "%"})) effects.may_panic = true;
         }
         return effects;
       }
     }
     string index_base, index_expression;
     if (parse_index(value, index_base, index_expression)) {
-      effects.may_fail = true;
+      effects.may_panic = true;
       effects.merge(observable_expression_effects(
           index_base, env, domain_fields, implicit_object));
       effects.merge(observable_expression_effects(
@@ -7455,7 +7458,7 @@ class Checker {
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO")) {
         effects.external_io = true;
-        effects.may_fail = true;
+        effects.may_panic = true;
         if (domain_fields.count(receiver)) {
           if (fileio_operation_effect(method) == Effect::Read)
             effects.domain_read = true;
@@ -7466,7 +7469,7 @@ class Checker {
       if (receiver_type) {
         if (const auto* builtin = builtin_operation(*receiver_type, method);
             builtin && builtin->argument_effects.size() == arguments.size()) {
-          effects.may_fail = effects.may_fail || builtin->may_fail;
+          effects.may_panic = effects.may_panic || builtin->may_panic;
           auto mark_write = [&](const string& expression) {
             auto location = storage_location(expression, env);
             if (location && domain_fields.count(location->root)) effects.domain_write = true;
@@ -7612,7 +7615,8 @@ class Checker {
 
     // Bound must be invariant and side-effect-free
     ObservableEffects bound_effects = observable_expression_effects(bound_expr, env);
-    if (bound_effects.may_diverge || bound_effects.may_fail ||
+    if (bound_effects.may_diverge || bound_effects.may_panic ||
+        !bound_effects.raise_set.empty() ||
         bound_effects.message || bound_effects.external_io ||
         bound_effects.domain_write || bound_effects.local_mutation ||
         bound_effects.unresolved)
@@ -7729,7 +7733,7 @@ class Checker {
         string root = trim(statement.a);
         bool mutating = statement.b == "push" || statement.b == "pop" || statement.b == "pop_front";
         if (statement.b == "pop" || statement.b == "pop_front") {
-          effects.may_fail = true;
+          effects.may_panic = true;
         }
         if (mutating) {
           if (domain_fields.count(root)) effects.domain_write = true;
@@ -7886,7 +7890,8 @@ class Checker {
     if (effects.message) return "message send";
     if (effects.external_io) return "external/I/O effect";
     if (effects.local_mutation) return "observable local mutation";
-    if (effects.may_fail) return "possible failure ordering";
+    if (effects.may_panic) return "possible panic ordering";
+    if (!effects.raise_set.empty()) return "possible typed-raise ordering";
     if (effects.unresolved) return "unresolved effect";
     return "none";
   }
@@ -11234,7 +11239,8 @@ class FunctionalOptimizer {
       if (effects.message) return "message send";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
-      if (effects.may_fail) return "callback may fail";
+      if (effects.may_panic) return "callback may panic";
+      if (!effects.raise_set.empty()) return "callback may raise";
       if (effects.unresolved) return "unresolved callback effect";
     }
     return "eager semantics required";
@@ -11251,7 +11257,8 @@ class FunctionalOptimizer {
         if (effects.message) return "message send";
         if (effects.external_io) return "observable callback effect";
         if (effects.local_mutation) return "observable local mutation";
-        if (effects.may_fail) return "callback may fail";
+        if (effects.may_panic) return "callback may panic";
+        if (!effects.raise_set.empty()) return "callback may raise";
         if (effects.may_diverge) return "skipped callback may diverge";
         if (effects.unresolved) return "unresolved callback effect";
       }
@@ -11354,7 +11361,8 @@ class FunctionalOptimizer {
       if (effects.message) return "message send";
       if (effects.external_io) return "observable callback effect";
       if (effects.local_mutation) return "observable local mutation";
-      if (effects.may_fail) return "callback may fail";
+      if (effects.may_panic) return "callback may panic";
+      if (!effects.raise_set.empty()) return "callback may raise";
       if (effects.may_diverge) return "callback may diverge";
       if (effects.unresolved) return "unresolved callback effect";
     }
@@ -12049,7 +12057,9 @@ static string observable_effect_label(const ObservableEffects& effects) {
   if (effects.domain_write) labels.push_back("DOMAIN_WRITE");
   if (effects.message) labels.push_back("MESSAGE");
   if (effects.external_io) labels.push_back("IO");
-  if (effects.may_fail) labels.push_back("MAY_FAIL");
+  if (effects.may_panic) labels.push_back("MAY_PANIC");
+  for (const auto& raised : effects.raise_set)
+    labels.push_back("RAISE(" + raised.canonical() + ")");
   if (effects.may_diverge) labels.push_back("MAY_DIVERGE");
   if (effects.unresolved) labels.push_back("UNRESOLVED");
   std::ostringstream out;
@@ -17004,15 +17014,20 @@ static string compact_semantic_text(const string& text) {
 }
 
 static string observable_effect_fingerprint(const ObservableEffects& effects) {
-  return string(effects.local_capture_read ? "1" : "0") +
+  string result = string(effects.local_capture_read ? "1" : "0") +
       (effects.local_mutation ? "1" : "0") +
       (effects.domain_read ? "1" : "0") +
       (effects.domain_write ? "1" : "0") +
       (effects.message ? "1" : "0") +
       (effects.external_io ? "1" : "0") +
-      (effects.may_fail ? "1" : "0") +
+      (effects.fileio ? "1" : "0") +
+      (effects.fileio_unknown ? "1" : "0") +
+      (effects.may_panic ? "1" : "0") +
       (effects.may_diverge ? "1" : "0") +
       (effects.unresolved ? "1" : "0");
+  for (const auto& raised : effects.raise_set)
+    result += "|" + raised.canonical();
+  return result;
 }
 
 static string statement_fingerprint_text(const Stmt& statement) {
@@ -18267,7 +18282,15 @@ static void write_observable_effects_json(
       << ", \"message\": " << (effects.message ? "true" : "false")
       << ", \"external_io\": "
       << (effects.external_io ? "true" : "false")
-      << ", \"may_fail\": " << (effects.may_fail ? "true" : "false")
+      << ", \"may_panic\": " << (effects.may_panic ? "true" : "false")
+      << ", \"raise_set\": [";
+  bool first_raise = true;
+  for (const auto& raised : effects.raise_set) {
+    if (!first_raise) out << ", ";
+    write_debug_json_string(out, raised.canonical());
+    first_raise = false;
+  }
+  out << "]"
       << ", \"may_diverge\": "
       << (effects.may_diverge ? "true" : "false")
       << ", \"unresolved\": "
@@ -22268,14 +22291,41 @@ static string interface_field(const string& text, const string& key) {
     size_t end = text.find('"', begin + 1);
     return end == string::npos ? string() : text.substr(begin + 1, end - begin - 1);
   }
-  size_t end = text.find_first_of(" \t\r\n", begin);
+  size_t end = text.find_first_of("; \t\r\n", begin);
   return text.substr(begin, end == string::npos ? string::npos : end - begin);
+}
+
+static RaisedIdentity parse_interface_raise_identity(const string& value) {
+  if (starts_with(value, "scalar:")) {
+    RaisedIdentity identity = RaisedIdentity::scalar(value.substr(7));
+    if (identity.valid()) return identity;
+  }
+  if (starts_with(value, "enum:")) {
+    size_t separator = value.rfind(':');
+    if (separator != string::npos && separator > 5) {
+      RaisedIdentity identity = RaisedIdentity::enum_variant(
+          value.substr(5, separator - 5), value.substr(separator + 1));
+      if (identity.valid()) return identity;
+    }
+  }
+  throw CompileError(0, "invalid raised identity in module interface");
 }
 
 static ObservableEffects interface_effects(const string& text) {
   ObservableEffects effects;
+  static const vector<string> required_fields = {
+      "local_capture_read", "local_mutation", "domain_read", "domain_write",
+      "message", "external_io", "fileio", "fileio_unknown", "may_panic",
+      "raise_set", "may_diverge", "unresolved"};
+  for (const auto& key : required_fields)
+    if (interface_field(text, key).empty())
+      throw CompileError(0,
+          "compiled provider lacks Phase 21 observable effects; rebuild its .mossi provider");
   auto flag = [&](const string& key) {
-    return interface_field(text, key) == "1";
+    string value = interface_field(text, key);
+    if (value != "0" && value != "1")
+      throw CompileError(0, "invalid observable effect flag in module interface");
+    return value == "1";
   };
   effects.local_capture_read = flag("local_capture_read");
   effects.local_mutation = flag("local_mutation");
@@ -22283,12 +22333,31 @@ static ObservableEffects interface_effects(const string& text) {
   effects.domain_write = flag("domain_write");
   effects.message = flag("message");
   effects.external_io = flag("external_io");
-  effects.may_fail = flag("may_fail");
+  effects.fileio = flag("fileio");
+  effects.fileio_unknown = flag("fileio_unknown");
+  effects.may_panic = flag("may_panic");
+  string serialized_raises = interface_field(text, "raise_set");
+  if (serialized_raises != "-") {
+    size_t begin = 0;
+    std::optional<RaisedIdentity> previous;
+    while (begin <= serialized_raises.size()) {
+      size_t end = serialized_raises.find(',', begin);
+      string identity = serialized_raises.substr(
+          begin, end == string::npos ? string::npos : end - begin);
+      RaisedIdentity parsed = parse_interface_raise_identity(identity);
+      if (!parsed.valid())
+        throw CompileError(0, "invalid raised identity in module interface");
+      if (previous && !(previous.value() < parsed))
+        throw CompileError(0,
+            "raise set is not normalized in module interface");
+      previous = parsed;
+      effects.raise_set.insert(std::move(parsed));
+      if (end == string::npos) break;
+      begin = end + 1;
+    }
+  }
   effects.may_diverge = flag("may_diverge");
   effects.unresolved = flag("unresolved");
-  // The source-free .mossi format has no FileIO effect bit. Keep imported
-  // callables conservative until the provider interface can state one.
-  effects.fileio_unknown = true;
   return effects;
 }
 
@@ -22350,6 +22419,8 @@ static void parse_generic_ir_line(const string& line, Function& function) {
   }
 }
 
+static FailurePatternAbi parse_failure_pattern_text(const string& text);
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
@@ -22371,6 +22442,17 @@ static ParsedModuleUnit load_module_interface(
   EnumType* current_enum = nullptr;
   Domain* current_domain = nullptr;
   Trait* current_trait = nullptr;
+  std::map<string, size_t> expected_failure_arms;
+  std::map<string, size_t> expected_raise_tags;
+  std::map<string, size_t> seen_raise_tags;
+  std::map<string, size_t> expected_exceptional_edges;
+  std::map<std::pair<string, std::uint32_t>, size_t> expected_failure_captures;
+  std::map<std::pair<string, std::uint32_t>, size_t> expected_payload_fields;
+  std::set<string> outcome_contracts;
+  std::set<string> wrapper_contracts;
+  std::set<string> reply_contracts;
+  std::set<string> raising_node_contracts;
+  std::set<string> exceptional_consumer_contracts;
   bool in_semantic_exports = false;
   bool in_imports = false;
   while (std::getline(lines, line)) {
@@ -22578,6 +22660,302 @@ static ParsedModuleUnit load_module_interface(
       handler->params.push_back(std::move(parameter));
       continue;
     }
+    if (starts_with(line, "handler_abi ") && current_domain) {
+      std::istringstream fields(line.substr(12));
+      ProviderHandlerAbi abi;
+      int nested_owner = 0, root_owner = 0;
+      fields >> std::quoted(abi.handler) >> std::quoted(abi.body_symbol)
+             >> std::quoted(abi.opaque_failure_frame_type)
+             >> nested_owner >> root_owner;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == abi.handler;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          handler->provider_abi)
+        throw CompileError(0, "invalid or duplicate handler ABI in module interface");
+      abi.application_owns_nested_wrapper = nested_owner == 1;
+      abi.application_owns_root_wrapper = root_owner == 1;
+      handler->provider_abi = std::move(abi);
+      continue;
+    }
+    if (starts_with(line, "handler_outcome_contract ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      TaggedOutcomeAbi outcome;
+      fields >> std::quoted(handler_name) >> std::quoted(outcome.rust_type)
+             >> std::quoted(outcome.normal_type);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !outcome_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid tagged-outcome contract in module interface");
+      handler->provider_abi->outcome = std::move(outcome);
+      continue;
+    }
+    if (starts_with(line, "handler_wrapper_contract ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, nested, root;
+      fields >> std::quoted(handler_name) >> nested >> root;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !wrapper_contracts.insert(record_key).second ||
+          nested != "nested=propagate" ||
+          root != "root=join,close_fileio,release_guards,acquire_failure_locks,execute_arm,fulfill_reply")
+        throw CompileError(0, "invalid application wrapper contract in module interface");
+      continue;
+    }
+    if (starts_with(line, "handler_reply_contract ") && current_domain) {
+      std::istringstream fields(line.substr(23));
+      string handler_name;
+      FailureReplyAbi reply;
+      int one_way = 0, all_reply = 0;
+      fields >> std::quoted(handler_name) >> std::quoted(reply.moss_type)
+             >> one_way >> all_reply;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !reply_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid handler reply contract in module interface");
+      reply.one_way = one_way == 1;
+      reply.every_normal_arm_replies = all_reply == 1;
+      handler->provider_abi->reply = std::move(reply);
+      continue;
+    }
+    if (starts_with(line, "handler_raise_tags ") && current_domain) {
+      std::istringstream fields(line.substr(19));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_tags.count(record_key))
+        throw CompileError(0, "invalid handler raise-tag count in module interface");
+      expected_raise_tags[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_tag ") && current_domain) {
+      std::istringstream fields(line.substr(18));
+      string handler_name, identity_text;
+      std::uint32_t tag = 0;
+      size_t payload_count = 0;
+      fields >> std::quoted(handler_name) >> tag >> std::quoted(identity_text)
+             >> payload_count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      RaisedIdentity identity = parse_interface_raise_identity(identity_text);
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !outcome_contracts.count(record_key) ||
+          !handler->observable_effects.raise_set.count(identity) ||
+          tag != seen_raise_tags[record_key]++ ||
+          expected_payload_fields.count({record_key, tag}))
+        throw CompileError(0, "invalid handler raise tag in module interface");
+      expected_payload_fields[{record_key, tag}] = payload_count;
+      handler->provider_abi->outcome.raised.push_back(
+          {std::move(identity), tag, {}});
+      continue;
+    }
+    if (starts_with(line, "handler_raise_payload ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      std::uint32_t tag = 0;
+      OwnedPayloadFieldAbi payload;
+      unsigned kind = 0;
+      int owned = 0, bounded = 0;
+      fields >> std::quoted(handler_name) >> tag >> std::quoted(payload.name)
+             >> std::quoted(payload.moss_type) >> kind >> owned >> bounded;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (kind > static_cast<unsigned>(OwnedPayloadFieldAbi::Kind::ErrorEnum) ||
+          !fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid raised payload in module interface");
+      auto& raised = handler->provider_abi->outcome.raised;
+      auto value = std::find_if(raised.begin(), raised.end(),
+          [tag](const RaisedValueAbi& candidate) {
+            return candidate.stable_tag == tag;
+          });
+      payload.kind = static_cast<OwnedPayloadFieldAbi::Kind>(kind);
+      payload.owned = owned == 1;
+      payload.bounded = bounded == 1;
+      if (value == raised.end() || !owned_payload_field_allowed(payload))
+        throw CompileError(0, "illegal raised payload in module interface");
+      value->payload.push_back(std::move(payload));
+      continue;
+    }
+    if (starts_with(line, "handler_failure_arms ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_failure_arms.count(record_key))
+        throw CompileError(0, "invalid handler failure-arm count in module interface");
+      expected_failure_arms[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_failure_arm ") && current_domain) {
+      std::istringstream fields(line.substr(20));
+      string handler_name, pattern;
+      FailureArmAbi arm;
+      size_t capture_count = 0;
+      int escaping_empty = 0;
+      fields >> std::quoted(handler_name) >> arm.source_order
+             >> std::quoted(pattern) >> std::quoted(arm.callable_symbol)
+             >> capture_count >> escaping_empty;
+      arm.pattern = parse_failure_pattern_text(pattern);
+      arm.escaping_raise_set_empty = escaping_empty == 1;
+      for (auto* leaves : {&arm.state_reads, &arm.state_writes,
+                           &arm.state_consumes}) {
+        size_t count = 0;
+        if (!(fields >> count))
+          throw CompileError(0, "incomplete failure-arm effects in module interface");
+        for (size_t index = 0; index < count; ++index) {
+          string leaf;
+          if (!(fields >> std::quoted(leaf)))
+            throw CompileError(0, "invalid failure-arm effect in module interface");
+          leaves->push_back(std::move(leaf));
+        }
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          capture_count > static_cast<size_t>(1000000))
+        throw CompileError(0, "invalid handler failure arm in module interface");
+      // Reserve communicates the declared capture count; exactness is checked
+      // after all following capture records are parsed.
+      arm.captures.reserve(capture_count);
+      auto capture_key = std::make_pair(
+          current_domain->name + "::" + handler_name, arm.source_order);
+      if (expected_failure_captures.count(capture_key))
+        throw CompileError(0, "duplicate failure-arm order in module interface");
+      expected_failure_captures[capture_key] = capture_count;
+      handler->provider_abi->failure_arms.push_back(std::move(arm));
+      continue;
+    }
+    if (starts_with(line, "handler_failure_capture ") && current_domain) {
+      std::istringstream fields(line.substr(24));
+      string handler_name;
+      std::uint32_t arm_order = 0;
+      FailureCaptureAbi capture;
+      int owned = 0, initialized = 0;
+      fields >> std::quoted(handler_name) >> arm_order
+             >> std::quoted(capture.name) >> std::quoted(capture.moss_type)
+             >> std::quoted(capture.provider_rust_field) >> owned >> initialized;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid handler failure capture in module interface");
+      auto arm = std::find_if(handler->provider_abi->failure_arms.begin(),
+          handler->provider_abi->failure_arms.end(),
+          [arm_order](const FailureArmAbi& candidate) {
+            return candidate.source_order == arm_order;
+          });
+      capture.owned = owned == 1;
+      capture.definitely_initialized = initialized == 1;
+      if (arm == handler->provider_abi->failure_arms.end() ||
+          !failure_capture_allowed(capture))
+        throw CompileError(0, "illegal failure capture in module interface");
+      arm->captures.push_back(std::move(capture));
+      continue;
+    }
+    if (starts_with(line, "handler_raising_nodes ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          !raising_node_contracts.insert(record_key).second)
+        throw CompileError(0, "invalid raising-node record in module interface");
+      for (size_t index = 0; index < count; ++index) {
+        std::uint32_t node = 0;
+        if (!(fields >> node))
+          throw CompileError(0, "incomplete raising-node record in module interface");
+        handler->provider_abi->raising_nodes.push_back(node);
+      }
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_edges ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_exceptional_edges.count(record_key))
+        throw CompileError(0, "invalid exceptional-edge count in module interface");
+      expected_exceptional_edges[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_edge ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      ExceptionalCfgEdgeAbi edge;
+      unsigned kind = 0;
+      size_t alternatives = 0;
+      fields >> std::quoted(handler_name) >> edge.source_node
+             >> edge.destination_node >> kind >> edge.consumers >> alternatives;
+      if (kind > static_cast<unsigned>(ExceptionalEdgeKind::ReRaiseToOuter))
+        throw CompileError(0, "invalid exceptional-edge kind in module interface");
+      edge.kind = static_cast<ExceptionalEdgeKind>(kind);
+      for (size_t index = 0; index < alternatives; ++index) {
+        string identity;
+        if (!(fields >> std::quoted(identity)))
+          throw CompileError(0, "incomplete exceptional edge in module interface");
+        edge.alternatives.insert(parse_interface_raise_identity(identity));
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid exceptional edge in module interface");
+      handler->provider_abi->exceptional_edges.push_back(std::move(edge));
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_consumers ") && current_domain) {
+      std::istringstream fields(line.substr(30));
+      string handler_name;
+      std::uint32_t consumers = 0;
+      fields >> std::quoted(handler_name) >> consumers;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          !exceptional_consumer_contracts.insert(record_key).second ||
+          consumers != kAllExceptionalCfgConsumers)
+        throw CompileError(0, "incomplete exceptional-CFG consumers in module interface");
+      continue;
+    }
     if (starts_with(line, "export trait ")) {
       std::istringstream header(line.substr(13));
       string name;
@@ -22738,6 +23116,50 @@ static ParsedModuleUnit load_module_interface(
         starts_with(line, "generic_result")) {
       if (current) parse_generic_ir_line(line, *current);
       continue;
+    }
+  }
+  for (const auto& domain : provider.domains) {
+    for (const auto& handler : domain.handlers) {
+      string record_key = domain.name + "::" + handler.name;
+      if (!handler.provider_abi || !wrapper_contracts.count(record_key) ||
+          !outcome_contracts.count(record_key) ||
+          !reply_contracts.count(record_key) ||
+          !raising_node_contracts.count(record_key) ||
+          !exceptional_consumer_contracts.count(record_key) ||
+          !expected_raise_tags.count(record_key) ||
+          !expected_failure_arms.count(record_key) ||
+          !expected_exceptional_edges.count(record_key))
+        throw CompileError(0,
+            "compiled provider lacks ABI-v7 handler metadata; rebuild its .mossi provider");
+      const auto& abi = *handler.provider_abi;
+      if (expected_raise_tags.at(record_key) != handler.observable_effects.raise_set.size() ||
+          seen_raise_tags[record_key] != expected_raise_tags.at(record_key) ||
+          expected_failure_arms.at(record_key) != abi.failure_arms.size() ||
+          expected_exceptional_edges.at(record_key) != abi.exceptional_edges.size())
+        throw CompileError(0,
+            "compiled provider has inconsistent ABI-v7 handler metadata");
+      for (const auto& arm : abi.failure_arms) {
+        auto capture_key = std::make_pair(record_key, arm.source_order);
+        if (!expected_failure_captures.count(capture_key) ||
+            expected_failure_captures.at(capture_key) != arm.captures.size())
+          throw CompileError(0,
+              "compiled provider has incomplete failure captures");
+      }
+      for (const auto& raised : abi.outcome.raised) {
+        auto payload_key = std::make_pair(record_key, raised.stable_tag);
+        if (!expected_payload_fields.count(payload_key) ||
+            expected_payload_fields.at(payload_key) != raised.payload.size())
+          throw CompileError(0,
+              "compiled provider has incomplete raised payload metadata");
+      }
+      if (abi.reply.moss_type != handler.reply_type.value_or("unit") ||
+          abi.reply.one_way != !handler.reply_type.has_value() ||
+          abi.outcome.normal_type != handler.reply_type.value_or("unit") ||
+          !tagged_outcome_matches_raise_set(
+              abi.outcome, handler.observable_effects.raise_set) ||
+          !provider_handler_abi_valid(abi))
+        throw CompileError(0,
+            "compiled provider has invalid ABI-v7 handler contract");
     }
   }
   for (auto& function : provider.functions) {
@@ -23635,10 +24057,153 @@ static string interface_effects_text(const ObservableEffects& effects) {
       << ";domain_write=" << (effects.domain_write ? 1 : 0)
       << ";message=" << (effects.message ? 1 : 0)
       << ";external_io=" << (effects.external_io ? 1 : 0)
-      << ";may_fail=" << (effects.may_fail ? 1 : 0)
+      << ";fileio=" << (effects.fileio ? 1 : 0)
+      << ";fileio_unknown=" << (effects.fileio_unknown ? 1 : 0)
+      << ";may_panic=" << (effects.may_panic ? 1 : 0)
+      << ";raise_set=";
+  if (effects.raise_set.empty()) out << "-";
+  else {
+    bool first = true;
+    for (const auto& raised : effects.raise_set) {
+      if (!first) out << ",";
+      out << raised.canonical();
+      first = false;
+    }
+  }
+  out
       << ";may_diverge=" << (effects.may_diverge ? 1 : 0)
       << ";unresolved=" << (effects.unresolved ? 1 : 0);
   return out.str();
+}
+
+static string failure_pattern_text(const FailurePatternAbi& pattern) {
+  if (pattern.kind == FailurePatternKind::CatchAll) return "*";
+  std::ostringstream out;
+  bool first = true;
+  for (const auto& identity : pattern.variants) {
+    if (!first) out << ",";
+    out << identity.canonical();
+    first = false;
+  }
+  return out.str();
+}
+
+static FailurePatternAbi parse_failure_pattern_text(const string& text) {
+  FailurePatternAbi pattern;
+  if (text == "*") {
+    pattern.kind = FailurePatternKind::CatchAll;
+    return pattern;
+  }
+  pattern.kind = FailurePatternKind::Variant;
+  size_t begin = 0;
+  while (begin <= text.size()) {
+    size_t end = text.find(',', begin);
+    string identity = text.substr(
+        begin, end == string::npos ? string::npos : end - begin);
+    RaisedIdentity parsed = parse_interface_raise_identity(identity);
+    if (!parsed.valid())
+      throw CompileError(0, "invalid failure pattern in module interface");
+    pattern.variants.insert(std::move(parsed));
+    if (end == string::npos) break;
+    begin = end + 1;
+  }
+  if (pattern.variants.empty())
+    throw CompileError(0, "empty failure pattern in module interface");
+  return pattern;
+}
+
+static ProviderHandlerAbi source_provider_handler_abi(
+    const Domain& domain, const Handler& handler) {
+  if (handler.provider_abi) return *handler.provider_abi;
+  ProviderHandlerAbi abi;
+  abi.handler = handler.name;
+  abi.body_symbol = "__moss_body_" + domain.name + "_" + handler.name;
+  abi.opaque_failure_frame_type =
+      "__MossFailureFrame_" + domain.name + "_" + handler.name;
+  abi.outcome.rust_type =
+      "__MossBodyOutcome_" + domain.name + "_" + handler.name;
+  abi.outcome.normal_type = handler.reply_type.value_or("unit");
+  std::uint32_t tag = 0;
+  for (const auto& identity : handler.observable_effects.raise_set)
+    abi.outcome.raised.push_back({identity, tag++, {}});
+  abi.reply.moss_type = handler.reply_type.value_or("unit");
+  abi.reply.one_way = !handler.reply_type.has_value();
+  abi.reply.every_normal_arm_replies = true;
+  return abi;
+}
+
+static void write_provider_handler_abi(std::ostream& out,
+                                       const ProviderHandlerAbi& abi) {
+  out << "  handler_abi " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.body_symbol) << " "
+      << std::quoted(abi.opaque_failure_frame_type) << " "
+      << (abi.application_owns_nested_wrapper ? 1 : 0) << " "
+      << (abi.application_owns_root_wrapper ? 1 : 0) << "\n";
+  out << "  handler_outcome_contract " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.outcome.rust_type) << " "
+      << std::quoted(abi.outcome.normal_type) << "\n";
+  out << "  handler_wrapper_contract " << std::quoted(abi.handler)
+      << " nested=propagate root=join,close_fileio,release_guards,"
+         "acquire_failure_locks,execute_arm,fulfill_reply\n";
+  out << "  handler_reply_contract " << std::quoted(abi.handler) << " "
+      << std::quoted(abi.reply.moss_type) << " "
+      << (abi.reply.one_way ? 1 : 0) << " "
+      << (abi.reply.every_normal_arm_replies ? 1 : 0) << "\n";
+  out << "  handler_raise_tags " << std::quoted(abi.handler) << " "
+      << abi.outcome.raised.size() << "\n";
+  for (const auto& raised : abi.outcome.raised) {
+    out << "  handler_raise_tag " << std::quoted(abi.handler) << " "
+        << raised.stable_tag << " "
+        << std::quoted(raised.identity.canonical()) << " "
+        << raised.payload.size() << "\n";
+    for (const auto& payload : raised.payload)
+      out << "  handler_raise_payload " << std::quoted(abi.handler) << " "
+          << raised.stable_tag << " " << std::quoted(payload.name) << " "
+          << std::quoted(payload.moss_type) << " "
+          << static_cast<unsigned>(payload.kind) << " "
+          << (payload.owned ? 1 : 0) << " "
+          << (payload.bounded ? 1 : 0) << "\n";
+  }
+  out << "  handler_failure_arms " << std::quoted(abi.handler) << " "
+      << abi.failure_arms.size() << "\n";
+  for (const auto& arm : abi.failure_arms) {
+    out << "  handler_failure_arm " << std::quoted(abi.handler) << " "
+        << arm.source_order << " "
+        << std::quoted(failure_pattern_text(arm.pattern)) << " "
+        << std::quoted(arm.callable_symbol) << " "
+        << arm.captures.size() << " "
+        << (arm.escaping_raise_set_empty ? 1 : 0);
+    for (const auto* leaves : {&arm.state_reads, &arm.state_writes,
+                               &arm.state_consumes}) {
+      out << " " << leaves->size();
+      for (const auto& leaf : *leaves) out << " " << std::quoted(leaf);
+    }
+    out << "\n";
+    for (const auto& capture : arm.captures)
+      out << "  handler_failure_capture " << std::quoted(abi.handler) << " "
+          << arm.source_order << " " << std::quoted(capture.name) << " "
+          << std::quoted(capture.moss_type) << " "
+          << std::quoted(capture.provider_rust_field) << " "
+          << (capture.owned ? 1 : 0) << " "
+          << (capture.definitely_initialized ? 1 : 0) << "\n";
+  }
+  out << "  handler_raising_nodes " << std::quoted(abi.handler) << " "
+      << abi.raising_nodes.size();
+  for (std::uint32_t node : abi.raising_nodes) out << " " << node;
+  out << "\n";
+  out << "  handler_exceptional_edges " << std::quoted(abi.handler) << " "
+      << abi.exceptional_edges.size() << "\n";
+  for (const auto& edge : abi.exceptional_edges) {
+    out << "  handler_exceptional_edge " << std::quoted(abi.handler) << " "
+        << edge.source_node << " " << edge.destination_node << " "
+        << static_cast<unsigned>(edge.kind) << " " << edge.consumers << " "
+        << edge.alternatives.size();
+    for (const auto& identity : edge.alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
+  out << "  handler_exceptional_consumers " << std::quoted(abi.handler)
+      << " " << kAllExceptionalCfgConsumers << "\n";
 }
 
 static vector<std::filesystem::path> write_module_interfaces(
@@ -23942,7 +24507,18 @@ static vector<std::filesystem::path> write_module_interfaces(
         interface_contents[module] << slot.str();
         out << slot.str();
       }
-
+      ProviderHandlerAbi provider_abi =
+          source_provider_handler_abi(domain, handler);
+      synchronization_require(provider_handler_abi_valid(provider_abi),
+                              "invalid exported handler ABI-v7 contract");
+      synchronization_require(tagged_outcome_matches_raise_set(
+                                  provider_abi.outcome,
+                                  handler.observable_effects.raise_set),
+                              "handler outcome tags disagree with raise set");
+      std::ostringstream handler_abi;
+      write_provider_handler_abi(handler_abi, provider_abi);
+      out << handler_abi.str();
+      interface_contents[module] << handler_abi.str();
     }
   }
   vector<std::filesystem::path> result;

@@ -929,7 +929,8 @@ effects cannot be statically established; it does not mean ordinary local
 computation, local bindings, multi-statement pure helpers, or normal value
 allocation. To check a helper before using it as an initializer, run
 `moss effects fn:<name> --source <file> --json`. It reports the same
-`may_fail`, `may_diverge`, and `unresolved` facts the checker uses.
+separate `may_panic`, variant-precise `raise_set`, `may_diverge`, and
+`unresolved` facts the checker uses.
 
 ### Messages have value semantics
 

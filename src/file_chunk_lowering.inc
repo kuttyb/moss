@@ -22,15 +22,15 @@
 //
 // `map`/`combine` eligibility for the bounded-K Branch lowering
 // (file_chunk_codegen.inc) reuses the existing per-stage purity/effect
-// analysis (ObservableEffects::fusion_safe) plus the explicit
+// analysis (ObservableEffects::chunk_speculation_safe) plus the explicit
 // ObservableEffects::fileio fact, set for every FileIO operation directly or
 // transitively through helpers (a helper may legally borrow a FileIO
 // parameter or open its own root-local FileIO). A FileIO-reaching map or
 // combine is still valid Moss; it simply lowers sequentially.
 //
-// A source-free provider function's .mossi interface carries no FileIO fact,
-// so it is marked ObservableEffects::fileio_unknown and never assumed
-// FileIO-free: a map or combine reaching one lowers sequentially.
+// ABI-v7 source-free providers carry explicit FileIO, panic, typed-raise, and
+// unresolved facts. Missing metadata fails closed while loading the .mossi;
+// an explicitly unknown FileIO fact still forces sequential lowering.
 //
 // This FileIO recognition is provisional and not authoritative. It only
 // chooses between Branch and sequential lowering and must never short-circuit
@@ -90,7 +90,9 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
   const ObservableEffects& combine_effects = pipeline.nodes[2].effects;
   // Eligibility is purely static, never a function of whether an Executor
   // happens to be active in `main` (corrective-pass item 23):
-  //  - map must be pure w.r.t. Moss/domain state (fusion_safe) and must not
+  //  - map must be pure w.r.t. Moss/domain state (chunk_speculation_safe)
+  //    and must not panic; typed raises remain legal indexed outcomes and do
+  //    not weaken ordinary fusion_safe();
   //    reach FileIO (the explicit ObservableEffects::fileio fact, which
   //    fusion_safe also excludes);
   //  - map must capture nothing: a Branch body is `FnOnce() + Send +
@@ -105,7 +107,7 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
     reason = "map stage reaches a FileIO operation";
   else if (map_effects.fileio_unknown)
     reason = "map callable FileIO effect unavailable for compiled provider";
-  else if (!map_effects.fusion_safe())
+  else if (!map_effects.chunk_speculation_safe())
     reason = "map stage is not pure: " + observable_barrier(map_effects);
   else if (!map_node.captures.empty() ||
            (!starts_with(map_node.callable_identity, "placeholder:") &&

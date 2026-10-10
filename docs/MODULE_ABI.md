@@ -111,10 +111,18 @@ final application emits its own class structs, locks, and synchronized entries.
 Provider bodies can call private helpers through their compiled Rust crate.
 Bodies over aggregate access traits or route contracts use static Rust generics,
 not trait objects. Providers need no concrete domain instance at build time.
-Phase 15.9 uses **version 6**: interfaces preserve statically dispatched export
+Phase 15.9 used **version 6**: interfaces preserved statically dispatched export
 IR and exported trait method contracts required by source-free specialization.
-Old providers must be rebuilt. No physical descriptor is passed at construction. `.mossi` continues to export semantic handler/formal leaf effects only;
-class IDs, ranks, ClassSets, and lock storage are not serialized as provider ABI.
+Phase 21.0 uses **version 7**: observable effects split fatal `may_panic` from a
+normalized variant-precise typed `raise_set`; exported handlers carry counted
+body/failure-arm symbols, opaque owned failure-frame and capture contracts,
+reply totality, application wrapper roles, and exceptional-CFG metadata for D7,
+ownership, guard cancellation, early acquisition/2PL, cleanup, and codegen.
+Version 6 providers must be fully rebuilt; there is no compatibility adapter.
+Missing v7 records fail closed. See [Phase 21 shared ABI](PHASE_21_SHARED_ABI.md).
+No physical descriptor is passed at construction. `.mossi` continues to export
+semantic handler/formal leaf effects; class IDs, ranks, ClassSets, and lock
+storage are not serialized as provider ABI.
 
 Borrowed views and Rust lifetimes remain backend policy and are not serialized
 in `.mossi`. Existing public type representation and semantic parameter/handler

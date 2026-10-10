@@ -10,6 +10,8 @@ python3 tests/tooling/check_retired_syntax.py --self-test
 
 # Repository-local agent skills carry current source guidance and a checked example.
 python3 tests/tooling/check_agent_skills.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_shared_abi.py "$test_build/phase21-shared-abi"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py "$compiler" "$test_build/phase21-source-free"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tools/check_swarm_feedback.py --self-test
@@ -772,7 +774,7 @@ grep -F 'short-circuit all enabled' \
 "$compiler" -O --dump-functional-ir --check \
   tests/phase45_short_circuit_failure_barrier.moss \
   >"$test_build/phase45_short_circuit_failure_barrier.ir"
-grep -F 'short-circuit any disabled; reason: callback may fail' \
+grep -F 'short-circuit any disabled; reason: callback may panic' \
   "$test_build/phase45_short_circuit_failure_barrier.ir" >/dev/null ||
   fail 'functional explanation omitted the failure short-circuit barrier'
 "$compiler" -O --dump-functional-ir --check \
@@ -1001,7 +1003,7 @@ grep -F 'fusion stopped: external/I/O effect' \
   fail 'fusion explanation omitted the I/O barrier'
 "$compiler" -O --explain-fusion --check tests/phase4_failure_barrier.moss \
   >"$test_build/phase4_failure.explain"
-grep -F 'fusion stopped: possible failure ordering' \
+grep -F 'fusion stopped: possible panic ordering' \
   "$test_build/phase4_failure.explain" >/dev/null ||
   fail 'fusion explanation omitted the possible-failure barrier'
 "$compiler" -O --explain-fusion --check tests/phase4_domain_barrier.moss \

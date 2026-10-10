@@ -528,7 +528,8 @@ only when the checker can prove it bounded. The accepted shape is a counting loo
 - The loop contains no nested `while`.
 
 `for` traversal of a `Vector` is accepted as bounded. `moss effects` reports the same
-`may_fail`, `may_diverge`, and `unresolved` facts the initializer check uses.
+separate `may_panic`, variant-precise `raise_set`, `may_diverge`, and
+`unresolved` facts the initializer check uses.
 
 ### Closed routing capabilities (Phase 10.6B.1)
 

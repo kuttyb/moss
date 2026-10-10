@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "constraints.hpp"
+#include "error_handling_abi.hpp"
 
 namespace moss {
 
@@ -52,12 +53,16 @@ struct ObservableEffects {
   // (which also covers console I/O): chunk-pipeline Branch eligibility
   // forbids FileIO specifically in map and combine (sec. 13.2).
   bool fileio = false;
-  // Phase 20: effects came from a source-free provider (.mossi) whose
-  // metadata does not record `fileio`, so absence of FileIO is unproven.
-  // Not part of fusion_safe (provider fusion is unchanged); chunk-pipeline
+  // A source-free provider may explicitly report that its FileIO fact is
+  // unavailable. ABI v7 serializes this bit; missing metadata fails closed.
+  // Not part of fusion_safe (ordinary fusion is unchanged); chunk-pipeline
   // Branch eligibility treats it as "may reach FileIO".
   bool fileio_unknown = false;
-  bool may_fail = false;
+  // Phase 21 keeps fatal/non-catchable panic potential separate from typed,
+  // catchable raises. RaiseSet's std::set representation is normalized and
+  // deterministic by construction.
+  bool may_panic = false;
+  RaiseSet raise_set;
   // Termination is independent of failure and externally visible effects.
   // Phase 4.5 currently treats any reachable Moss `while` as potentially
   // divergent; ordinary fusion may preserve it, but work-skipping transforms
@@ -67,7 +72,17 @@ struct ObservableEffects {
 
   bool fusion_safe() const {
     return !local_mutation && !domain_read && !domain_write && !message &&
-           !external_io && !fileio && !may_fail && !unresolved;
+           !external_io && !fileio && !may_panic && raise_set.empty() &&
+           !unresolved;
+  }
+
+  // FileIO chunk speculation commits typed raised values in logical index
+  // order, so a nonempty raise_set is permitted. A possible panic is never
+  // speculated, and missing provider/FileIO facts fail closed.
+  bool chunk_speculation_safe() const {
+    return !local_mutation && !domain_read && !domain_write && !message &&
+           !external_io && !fileio && !fileio_unknown && !may_panic &&
+           !unresolved;
   }
 
   bool deterministic() const {
@@ -87,9 +102,19 @@ struct ObservableEffects {
     external_io = external_io || other.external_io;
     fileio = fileio || other.fileio;
     fileio_unknown = fileio_unknown || other.fileio_unknown;
-    may_fail = may_fail || other.may_fail;
+    may_panic = may_panic || other.may_panic;
+    raise_set.insert(other.raise_set.begin(), other.raise_set.end());
     may_diverge = may_diverge || other.may_diverge;
     unresolved = unresolved || other.unresolved;
+  }
+
+
+  void remove_handled(const RaiseSet& handled) {
+    for (const auto& identity : handled) raise_set.erase(identity);
+  }
+
+  void re_raise(const RaisedIdentity& selected) {
+    raise_set.insert(selected);
   }
 };
 
