@@ -31,7 +31,15 @@ def run(args, *, expected=0):
     return result
 
 
-SOURCE = r'''fn first(chunk: Range) -> Int:
+SOURCE = r'''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn first(chunk: Range) -> Int:
   return chunk[0]
 
 fn second(chunk: Range) -> Int:
@@ -90,7 +98,10 @@ domain Worker:
 fn main():
   worker = Worker()
   executor = Executor().threads(2).start()
-  echo message worker.Check("tmp/phase21c-branch-errors.data")
+  try:
+    message worker.Check("tmp/phase21c-branch-errors.data")
+  recover:
+    pass
   executor.join()
 '''
 
