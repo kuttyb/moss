@@ -65,12 +65,72 @@ bool build_fileio_chunk_parallel_plan(
   return true;
 }
 
+// P21-10A is a call-site proof, not a rewrite of a callable's exported effect
+// summary. Recheck only this chunk-map invocation under `len(parameter) >= 1`.
+// A named mapper gets the fact only when its Range parameter is never rebound
+// or replaced. Placeholder `_` is intrinsically the unchanged invocation
+// argument. Delegation remains conservative until a concrete interprocedural
+// specialization carries an equivalent fact.
+ObservableEffects chunk_mapper_invocation_effects(
+    const FunctionalNode& map_node, const TypeEnv& caller_env,
+    const std::set<string>& domain_fields,
+    const ObjectType* implicit_object,
+    bool& used_nonempty_proof) const {
+  used_nonempty_proof = false;
+  if (starts_with(map_node.callable_identity, "placeholder:")) {
+    TypeEnv env = caller_env;
+    env["_"] = "Range";
+    ProvenIndexAccesses proven{{"_", "0"}};
+    ObservableEffects effects = observable_expression_effects(
+        map_node.callable_expression, env, domain_fields, implicit_object, {},
+        &proven);
+    used_nonempty_proof = map_node.effects.may_panic && !effects.may_panic;
+    return effects;
+  }
+
+  auto function = functions_.find(map_node.callable_identity);
+  if (function == functions_.end() || function->second->params.size() != 1)
+    return map_node.effects;
+  const Function& mapper = *function->second;
+  const string parameter = mapper.params.front().name;
+  for (const Stmt& statement : mapper.body) {
+    if (statement.kind == Stmt::Kind::Assign ||
+        statement.kind == Stmt::Kind::Let ||
+        statement.kind == Stmt::Kind::Var) {
+      if (extract_root_identifier(statement.a) == parameter)
+        return map_node.effects;
+    }
+    for (const auto& expression : statement_expressions(statement)) {
+      string callee;
+      vector<string> arguments;
+      if (parse_simple_call(expression, callee, arguments) &&
+          callee == "replace" && !arguments.empty() &&
+          extract_root_identifier(arguments.front()) == parameter)
+        return map_node.effects;
+    }
+  }
+
+  TypeEnv env;
+  env[parameter] = "Range";
+  std::set<string> parameters{parameter};
+  ProvenIndexAccesses proven{{parameter, "0"}};
+  ObservableEffects effects = observable_body_effects(
+      mapper.body, env, parameters, {}, nullptr, &proven);
+  if (mapper.result_expression)
+    effects.merge(observable_expression_effects(
+        *mapper.result_expression, env, {}, nullptr, parameters, &proven));
+  used_nonempty_proof = map_node.effects.may_panic && !effects.may_panic;
+  return effects;
+}
+
 // Validates and annotates a FileIO chunk pipeline in place once the generic
 // FunctionalPipeline/FunctionalNode IR has been built for it. A no-op for
 // any pipeline whose source is not `<fileio-local>.chunks(size)`.
 void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
                                     const ParsedFunctionalPipeline& parsed,
-                                    const TypeEnv& env) const {
+                                    const TypeEnv& env,
+                                    const std::set<string>& domain_fields,
+                                    const ObjectType* implicit_object) const {
   if (!build_fileio_chunk_parallel_plan(pipeline.chunk_plan, parsed, env)) return;
   if (parsed.stages.size() != 2 ||
       parsed.stages[0].kind != FunctionalNodeKind::Map ||
@@ -80,13 +140,31 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
         "a FileIO chunk pipeline must be exactly "
         "'file.chunks(size) |> map(f) |> reduce(initial, combine)'",
         "FILEIO_CHUNK_PIPELINE_SHAPE");
+  if (starts_with(pipeline.context, "handler:")) {
+    const string handler = pipeline.context.substr(8);
+    const size_t separator = handler.find('.');
+    if (separator != string::npos && separator > 0 &&
+        separator + 1 < handler.size()) {
+      const string owner = handler.substr(0, separator);
+      const string operation = handler.substr(separator + 1);
+      pipeline.chunk_plan.failure_converter =
+          "__moss_raise_fileio_" + owner + "_" + operation;
+      pipeline.chunk_plan.body_outcome_type =
+          "__MossBodyOutcome_" + owner + "_" + operation;
+    }
+  }
   // This is not an ordinary materializable-vector pipeline: it has its own
   // lowering (file_chunk_codegen.inc), never the generic fused/eager vector
   // lowering.
   pipeline.fusion_eligible = false;
   pipeline.element_independent = false;
   pipeline.deterministic = false;
-  const ObservableEffects& map_effects = pipeline.nodes[1].effects;
+  bool used_nonempty_proof = false;
+  ObservableEffects map_effects = chunk_mapper_invocation_effects(
+      pipeline.nodes[1], env, domain_fields, implicit_object,
+      used_nonempty_proof);
+  pipeline.chunk_plan.map_invocation_effects = map_effects;
+  pipeline.chunk_plan.used_nonempty_chunk_index_proof = used_nonempty_proof;
   const ObservableEffects& combine_effects = pipeline.nodes[2].effects;
   // Eligibility is purely static, never a function of whether an Executor
   // happens to be active in `main` (corrective-pass item 23):
@@ -129,6 +207,9 @@ void annotate_fileio_chunk_pipeline(FunctionalPipeline& pipeline,
   } else {
     pipeline.chunk_plan.eligibility_reason =
         "pure map, no FileIO call in map or combine, combine runs parent-only";
+    if (used_nonempty_proof)
+      pipeline.chunk_plan.eligibility_reason +=
+          ", contextual nonempty chunk[0] proof";
     pipeline.decision =
         "eligible: bounded K=" + std::to_string(pipeline.chunk_plan.window_k) +
         " read/map Branch lowering (branch_scope_new_current/branch_publish/branch_join), "
