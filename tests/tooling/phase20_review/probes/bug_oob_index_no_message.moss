@@ -1,9 +1,23 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Out-of-bounds RangeBatch index now fails closed (fixed), but aborts with no
 # diagnostic. Range::get has the same silent abort.
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   batch = file.read([(0, 4), (4, 4)])
   i = 5
   missing = batch[i]
   echo missing.length()
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §13: an eligible pipeline in a helper called from main.
 fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
@@ -11,5 +19,11 @@ fn count(path: String) -> Int:
   file.close()
   return total
 
-fn main():
+fn phase20_probe():
   echo count("tmp/phase20-review/input.txt")
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

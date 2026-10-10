@@ -1,9 +1,23 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Checked-in §12.7: a Range inherits the bound of the read that produced it.
 # A batch entry's read is bounded. Today: FILEIO_UNBOUNDED_REQUEST.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/copy3.txt", create)
   batch = src.read([(0, 4), (4, 4)])
   dst.write(0, batch[0])
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

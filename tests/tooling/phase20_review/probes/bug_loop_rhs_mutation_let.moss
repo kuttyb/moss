@@ -14,5 +14,11 @@ fn exercise(n: Int):
     let k = grow(reqs, n)
   src.close()
 
-fn main():
+fn phase20_probe():
   exercise(40)
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

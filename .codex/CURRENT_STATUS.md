@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 21.I integration gate restored — 2026-10-10
+
+The integration branch now passes the complete `make check` suite, `make
+examples`, and a strict C++17 compiler build (`-Wall -Wextra -Werror
+-pedantic`). This supersedes the earlier `make check` failures below. The
+strict Phase 20 review suite passes 36 bug probes, 30 guards, and 2
+pre-existing probes; its 8 design cases remain informational.
+
+The Phase 20 FileIO semantics suite and 59 older review sources were migrated
+to the Phase 21 rule that `main` handles typed errors. The compiler now counts
+raising message expressions in effect inference, while preserving exhaustive
+Root `on_fail` handling. Native enum display uses debug formatting for payload
+types without `Display`, fixing the EXPRESS-005 vector-payload case.
+
+This is an integration checkpoint, not Phase 21 completion. Agent A's
+source-free failure-arm/capture and exceptional-CFG proof, Agent B's remaining
+integration/proof review, Agent C's ordered-error/O9 proof, and Agent D's
+numeric parsing/formatter contract, documentation, and source-free view
+proof remain open. No merge to `main` or Phase 21 acceptance claim has been
+made. Next, complete the outstanding agent acceptance matrix on this green
+integration base, then review the combined result before merging to `main`.
+
 ## Phase 21.I checked chunk FileIO follow-up — 2026-10-10
 
 After pushed integration checkpoint `0614399`, migrated the older Phase 20

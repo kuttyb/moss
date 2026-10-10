@@ -2,6 +2,7 @@
 """Phase 20 FileIO source legality, effects, and synchronization regression."""
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -25,11 +26,28 @@ def check(name, source, code=None):
 
 
 def main(body):
-    return 'fn main():\n' + ''.join('  ' + line + '\n' for line in body.splitlines())
+    lines = body.splitlines()
+    composition = []
+    while lines and re.match(r'^[A-Za-z_]\w* = [A-Z][A-Za-z_0-9]*\(', lines[0]):
+        composition.append(lines.pop(0))
+    source = 'fn main():\n' + ''.join('  ' + line + '\n' for line in composition)
+    if lines:
+        source += ('  try:\n' +
+                   ''.join('    ' + line + '\n' for line in lines) +
+                   '  recover:\n    pass\n')
+    return source
 
 
 def proc_main(body):
-    return 'proc main():\n' + ''.join('  ' + line + '\n' for line in body.splitlines())
+    return ('proc main():\n  try:\n' +
+            ''.join('    ' + line + '\n' for line in body.splitlines()) +
+            '  recover:\n    pass\n')
+
+
+def helper_main(body):
+    return ('fn exercise():\n' +
+            ''.join('  ' + line + '\n' for line in body.splitlines()) +
+            '\n' + main('exercise()'))
 
 
 read, _ = check('root_read', main('file = FileIO.open("input", ro)\n'
@@ -39,7 +57,7 @@ check('root_write', main('file = FileIO.open("output", create)\n'
 check('byte_vector_write_rejected', main('file = FileIO.open("output", create)\n'
     'file.write(0, [65, 66, 67, 68])\nfile.close()'),
     'FILEIO_INVALID_PAYLOAD')
-check('range_write', main('src = FileIO.open("input", ro)\n'
+check('range_write', helper_main('src = FileIO.open("input", ro)\n'
     'dst = FileIO.open("output", create)\ndata = src.read(0, 4096)\n'
     'dst.write(0, data)\nsrc.close()\ndst.close()'))
 check('range_byte_surface', main('file = FileIO.open("input", ro)\n'
@@ -131,7 +149,10 @@ domain Store:
 
 fn main():
   store = Store()
-  echo message store.Read()
+  try:
+    echo message store.Read()
+  recover:
+    pass
 '''
 domain_path, diagnostics = check('domain_effects', domain)
 assert any('FILEIO_BLOCKING_WITH_SHARED_WRITE' in str(d) and 'table' in str(d)
@@ -325,10 +346,10 @@ check('dynamic_write_offset', 'fn write_at(file: FileIO, offset: Int):\n'
     main('file = FileIO.open("input", rw)\nwrite_at(file, 20)\nfile.close()'))
 check('constant_expression_size', main('file = FileIO.open("input", ro)\n'
     'data = file.read(0, 1024 * 1024)\nfile.close()'))
-check('bound_local_size_and_payload', main('file = FileIO.open("input", rw)\n'
+check('bound_local_size_and_payload', helper_main('file = FileIO.open("input", rw)\n'
     'size = 1024 * 2\npayload = "abcd"\n'
     'data = file.read(0, size)\nfile.write(1, payload)\nfile.close()'))
-check('computed_bounded_string_payload', main(
+check('computed_bounded_string_payload', helper_main(
     'payload = "ab" + "cd"\nfile = FileIO.open("output", create)\n'
     'file.write(0, payload)\nfile.close()'))
 check('bound_helper_final_expression', 'fn writer(file: FileIO):\n'
@@ -340,7 +361,7 @@ check('anonymous_fileio', 'fn consume(file: FileIO):\n  file.close()\n\n' +
     main('consume(FileIO.open("input", ro))'), 'FILEIO')
 check('parenthesized_fileio_owner', main('file = (FileIO.open("input", ro))\n'
     'data = file.read(0, 4)\nfile.close()'))
-check('parenthesized_fileio_owner_static_write_bound', main(
+check('parenthesized_fileio_owner_static_write_bound', helper_main(
     'payload = "abcd"\nfile = (FileIO.open("output", create))\n'
     'file.write(0, payload)\nfile.close()'))
 check('parenthesized_fileio_owner_chunk_bound', main(
@@ -441,7 +462,7 @@ check('echo_second_arg_mutates_batch', request_type +
          'file.close()'), 'FILEIO_UNBOUNDED_REQUEST')
 check('echo_second_arg_nonmutating_preserves_bound', request_type +
     'fn value() -> Int:\n  return 2\n\n' +
-    main('file = FileIO.open("input", ro)\n'
+    helper_main('file = FileIO.open("input", ro)\n'
          'requests = [Request(offset: 0, size: 4)]\n'
          'echo 1, value()\nbatch = file.read(requests)\nfile.close()'))
 check('echo_mutation_through_local_alias_loses_bound', request_type +

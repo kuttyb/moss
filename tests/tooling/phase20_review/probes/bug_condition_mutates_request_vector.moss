@@ -7,10 +7,16 @@ fn grow(requests: Vector[Request]) -> Bool:
   requests.push(Request(offset: 4, size: 40))
   return true
 
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   requests = [Request(offset: 0, size: 4)]
   if grow(requests):
     pass
   batch = src.read(requests)
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §13: an eligible chunk pipeline in main (not a Root) must run, not panic.
 fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
@@ -6,7 +14,10 @@ fn add(a: Int, b: Int) -> Int:
   return a + b
 
 fn main():
-  file = FileIO.open("tmp/phase20-review/input.txt", ro)
-  total = file.chunks(4) |> map(chunk_length) |> reduce(0, add)
-  file.close()
-  echo total
+  try:
+    file = FileIO.open("tmp/phase20-review/input.txt", ro)
+    total = file.chunks(4) |> map(chunk_length) |> reduce(0, add)
+    file.close()
+    echo total
+  recover:
+    pass

@@ -3,6 +3,12 @@ fn opener(path: String) -> FileIO:
   f = FileIO.open(path, ro)
   return f
 
-fn main():
+fn phase20_probe():
   file = opener("tmp/phase20-review/input.txt")
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,6 +1,12 @@
 # §9: pinned ownership; no alias or move.
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   other = file
   echo other.read(0, 4).length()
   other.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Front example shape: untyped map callable, expression body.
 # Today: checker assertion at moss.cpp:7867.
 fn summarize(chunk):
@@ -6,8 +14,14 @@ fn summarize(chunk):
 fn add(a: Int, b: Int) -> Int:
   return a + b
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   total = file.chunks(4) |> map(summarize) |> reduce(0, add)
   file.close()
   echo total
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Same inside a handler.
 domain Reader:
   fn Pair(path: String) -> Int:
@@ -9,4 +17,7 @@ domain Reader:
 
 fn main():
   r = Reader()
-  echo message r.Pair("tmp/phase20-review/input.txt")
+  try:
+    echo message r.Pair("tmp/phase20-review/input.txt")
+  recover:
+    pass

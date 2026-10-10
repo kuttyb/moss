@@ -1,6 +1,12 @@
 # Range equality is defined only between two Range values.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   r = src.read(0, 4)
   echo r == 5
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

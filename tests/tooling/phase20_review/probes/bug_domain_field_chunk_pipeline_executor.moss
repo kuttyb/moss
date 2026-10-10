@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §13.1 with an active executor (eligible Branch lowering in a Root).
 fn len(chunk: Range) -> Int:
   return chunk.length()
@@ -20,8 +28,17 @@ domain Store:
 
 fn main():
   store = Store()
-  message store.Open("tmp/phase20-review/input.txt")
+  try:
+    message store.Open("tmp/phase20-review/input.txt")
+  recover:
+    pass
   executor = Executor().threads(2).start()
-  echo message store.Total()
+  try:
+    echo message store.Total()
+  recover:
+    pass
   executor.join()
-  message store.Close()
+  try:
+    message store.Close()
+  recover:
+    pass

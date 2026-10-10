@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §23: one stateless domain, independent roots with root-local FileIO.
 domain Worker:
   fn Process(path: String):

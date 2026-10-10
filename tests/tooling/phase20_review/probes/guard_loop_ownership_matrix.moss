@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Read traversal is READ for typed and specialized Range/Vector helpers.
 fn typed_range(chunk: Range) -> Int:
   n = 0
@@ -26,7 +34,7 @@ fn untyped_vector(values):
 fn add(left: Int, right: Int) -> Int:
   return left + right
 
-fn main():
+fn phase20_probe():
   nested = [[1, 2], [3]]
   a = nested |> map(typed_vector) |> sum
   b = nested |> map(untyped_vector) |> sum
@@ -35,3 +43,9 @@ fn main():
   d = file.chunks(4096) |> map(untyped_range) |> reduce(0, add)
   file.close()
   echo a + b + c + d
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

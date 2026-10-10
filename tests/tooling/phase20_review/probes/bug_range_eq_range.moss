@@ -1,9 +1,23 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Two one-byte views of "l" must compare equal by bytes.
 # Today: derived PartialEq compares backing buffer/offset and prints false.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   data = src.read(0, 5)
   a = data.slice(2, 1)
   b = data.slice(3, 1)
   echo a == b
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §22: FileIO reached through a nested message while holding WRITE on table.
 domain Disk:
   fn Load(path: String) -> Int:
@@ -18,4 +26,7 @@ domain Cache:
 fn main():
   disk = Disk()
   cache = Cache(disk: disk)
-  message cache.Fill("tmp/phase20-review/input.txt")
+  try:
+    message cache.Fill("tmp/phase20-review/input.txt")
+  recover:
+    pass

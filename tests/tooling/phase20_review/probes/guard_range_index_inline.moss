@@ -1,7 +1,21 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Range byte indexing inside an expression.
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   data = file.read(0, 4)
   x = data[0] + data[1]
   echo x
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

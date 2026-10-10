@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # The proposal's exact shape: untyped summarize delegating to a library helper.
 # Today: TYPE_MISMATCH '_generic:chunk' vs 'Range'.
 fn word_summary(chunk: Range) -> Int:
@@ -23,6 +31,9 @@ domain WordCount:
 fn main():
   counter = WordCount()
   executor = Executor().threads(8).start()
-  total = message counter.Count("tmp/phase20-review/input.txt")
+  try:
+    total = message counter.Count("tmp/phase20-review/input.txt")
+    echo total
+  recover:
+    pass
   executor.join()
-  echo total

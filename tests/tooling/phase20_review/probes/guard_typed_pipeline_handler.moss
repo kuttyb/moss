@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # §13 / front example: typed pipeline inside a Root admitted by a top-level message.
 fn summarize(chunk: Range) -> Int:
   return chunk.length()
@@ -15,6 +23,9 @@ domain WordCount:
 fn main():
   counter = WordCount()
   executor = Executor().threads(8).start()
-  total = message counter.Count("tmp/phase20-review/input.txt")
+  try:
+    total = message counter.Count("tmp/phase20-review/input.txt")
+    echo total
+  recover:
+    pass
   executor.join()
-  echo total

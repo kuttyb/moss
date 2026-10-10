@@ -1,6 +1,14 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Checked-in §12.7: each chunk is bounded by its chunk size. Chunked copy.
 # Today: FILEIO_UNBOUNDED_REQUEST.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/copy6.txt", create)
   offset = 0
@@ -9,3 +17,9 @@ fn main():
     offset = offset + chunk.length()
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

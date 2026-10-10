@@ -1,8 +1,16 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 type Request:
   offset: Int
   size: Int
 
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   reqs = [Request(offset: 0, size: 4)]
   k = 0
@@ -14,3 +22,9 @@ fn main():
     batch = src.read(reqs)
     echo batch[0].length(), reqs[0].size
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

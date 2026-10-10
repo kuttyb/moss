@@ -1,6 +1,20 @@
-fn main():
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   a = src.read(0, 4)
   b = src.read(4, 4)
   echo a != b
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

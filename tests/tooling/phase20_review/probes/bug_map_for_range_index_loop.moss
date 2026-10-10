@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Typed map callable with an indexed for-range byte loop (loop is the subject).
 # Today: checker assertion at moss.cpp:7867 (root cause is pre-existing; see
 # pre_map_for_range_vector).
@@ -11,8 +19,14 @@ fn spaces(chunk: Range) -> Int:
 fn add(a: Int, b: Int) -> Int:
   return a + b
 
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/input.txt", ro)
   total = file.chunks(4096) |> map(spaces) |> reduce(0, add)
   file.close()
   echo total
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

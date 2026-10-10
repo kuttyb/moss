@@ -1,5 +1,13 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Every RangeBatch iteration element inherits the maximum request size.
-fn main():
+fn phase20_probe():
   src = FileIO.open("tmp/phase20-review/input.txt", ro)
   dst = FileIO.open("tmp/phase20-review/out/batch-iteration.txt", create)
   batch = src.read([(0, 4), (4, 8)])
@@ -9,3 +17,9 @@ fn main():
     off = off + r.length()
   dst.close()
   src.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

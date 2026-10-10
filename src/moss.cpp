@@ -7845,7 +7845,9 @@ class Checker {
       for (const auto& expression : statement_expressions(statement))
         result = raise_set_union(
             std::move(result),
-            observable_expression_effects(expression, env).raise_set);
+            observable_expression_effects(
+                expression, env, {}, nullptr, {}, nullptr,
+                statement.message_root_ingress).raise_set);
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -7991,7 +7993,8 @@ class Checker {
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr,
       const std::set<string>& parameters = {},
-      const ProvenIndexAccesses* proven_indices = nullptr) const {
+      const ProvenIndexAccesses* proven_indices = nullptr,
+      bool root_ingress = false) const {
     ObservableEffects effects = no_observable_effects();
     string original = trim(expression);
     if (original.empty()) return effects;
@@ -8008,6 +8011,16 @@ class Checker {
           effects.merge(observable_expression_effects(
               argument, env, domain_fields, implicit_object, parameters,
               proven_indices));
+        auto receiver_type = env.find(receiver);
+        if (receiver_type != env.end()) {
+          auto domain = domains_.find(canonical_type_name(receiver_type->second));
+          if (domain != domains_.end())
+            if (const Handler* target = find_handler(*domain->second, handler))
+              if (!root_ingress || target->failure_arms.empty())
+                effects.raise_set = raise_set_union(
+                    std::move(effects.raise_set),
+                    target->observable_effects.raise_set);
+        }
       } else {
         effects.unresolved = true;
       }
@@ -16178,7 +16191,12 @@ class Generator {
         o << "(";
         for (size_t index = 0; index < item.fields.size(); ++index) {
           if (index) o << ", ";
-          o << item.fields[index].name << ": {}";
+          const string field_type = canonical_type_name(item.fields[index].type);
+          const bool display_field = field_type == "int" ||
+              field_type == "float" || field_type == "bool" ||
+              field_type == "string" || enums_.count(field_type);
+          o << item.fields[index].name
+            << (display_field ? ": {}" : ": {:?}");
         }
         o << ")\"";
         for (const auto& field : item.fields)

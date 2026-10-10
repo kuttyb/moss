@@ -1,7 +1,13 @@
 # A 4-byte binary Range must not equal the empty string.
 # Today: lowers through lossy as_str() and prints true.
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/binary.dat", ro)
   data = file.read(0, 4)
   echo data == ""
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass

@@ -1,6 +1,20 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 # Binary-safe Range display (invalid UTF-8 and NUL).
-fn main():
+fn phase20_probe():
   file = FileIO.open("tmp/phase20-review/binary.dat", ro)
   data = file.read(0, 4)
   echo data
   file.close()
+
+fn main():
+  try:
+    phase20_probe()
+  recover:
+    pass
