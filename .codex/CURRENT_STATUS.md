@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 21 coordinator checked FileIO update — 2026-10-10
+
+Integration head `c6d4e32` is pushed. It fixes checked native chunk FileIO
+failures, adds an injected-read recovery regression, migrates the Phase 20
+Executor/FileIO fixtures, and passes that entire focused suite, the physical
+lock gates, `make examples`, and strict C++ compilation. Full `make check`
+now reaches `check_phase20_fileio_semantics.py`, which still contains legacy
+positive `main` sources with unhandled typed FileIO errors. The integration
+branch status records the detailed validation and remaining Phase 21 work.
+No implementation is merged to `main`; the human review gate remains open.
+
 ## Phase 21 coordinator integration update — 2026-10-10
 
 The coordination register now points to pushed A (`60aefd0`), B (`a47e639`),
