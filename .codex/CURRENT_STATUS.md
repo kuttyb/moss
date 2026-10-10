@@ -1,5 +1,29 @@
 # Moss current status
 
+## Phase 21.I A+B integration checkpoint — 2026-10-10
+
+The integration branch merged committed 21.A head `620b567` and 21.B head
+`a47e639` on the frozen ABI-v8 base. The only merge conflict was the additive
+test registration in `tests/run.sh`; both workstreams' checks are retained.
+This is an integration checkpoint, not Phase 21 completion or a merge to main.
+
+The three legacy FileIO generic-specialization fixtures now declare the
+six-variant `FileError` enum required by their native typed-error lowering.
+With 21.B's runtime included, the 40-case generic-specialization suite passes
+40/40. The 21.B deterministic FileIO typed-error test and 21.A local native
+recovery test pass. No compiler source was changed in this integration step.
+
+Two Root fixtures remain blocked at `moss check` by `main may not let typed
+errors escape`: 21.A's nested/Root failure fixture and 21.B's Root FileIO
+cleanup fixture. The current fixed-point raise walker reports the underlying
+handler's raises at a top-level message despite a handler `on_fail` trailer;
+the latter fixture's `on_fail` also performs fallible FileIO open/close that
+needs its own recovery. Do not treat this as a validated Root implementation.
+21.A has separate new uncommitted work after `620b567`; it has not been folded
+into integration. Await a reviewed checkpoint before merging that work.
+O1–O9, source-free typed failure integration, full `make check`, `make examples`,
+and the human review gate before any merge to main remain open.
+
 ## Phase 21.A native recovery checkpoint — 2026-10-10
 
 On `phase-21-a-recovery`, the in-progress native lowering now generates tagged
