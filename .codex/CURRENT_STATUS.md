@@ -1,5 +1,20 @@
 # Moss current status
 
+## Phase 21 continuation — 2026-10-10
+
+The user authorized repository-local commits and pushes for this task and
+directed removal of the old no-push rule from `AGENTS.md` before pushing.
+That rule has been updated. The historical transfer notes below that say
+Codex must not push are superseded for this task.
+
+Phase 21 implementation remains isolated in the registered worktrees.
+Workstream A advanced through native recovery and a FileIO try-scope checker
+repair; its status file records focused validation and the remaining A/B
+runtime integration blocker. B, C, and D retain their existing checkpoint
+branches. No Phase 21 integration merge or phase-complete claim has been made.
+The planning register's human review gate before merging to `main` remains
+open. The full Phase 21 O1–O9 and final validation matrix remain unfinished.
+
 ## Multi-worktree transfer correction — 2026-10-10
 
 The first machine-transfer audit inspected only the primary worktree. A

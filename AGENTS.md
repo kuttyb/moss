@@ -124,4 +124,4 @@ When working with Moss:
 - **Scratch Storage**: Use `./tmp/` for all temporary files and caches. Create `./tmp/` if it does not exist.
 - **No Elevation**: Never run `sudo` or otherwise attempt to elevate privileges.
 - **Authorized Commands**: Run in-repository Git commands, Python scripts, builds, and tests without requesting approval.
-- **Git Boundary**: You may stage files and create local git commits when explicitly directed by the user. You must NEVER run `git push`.
+- **Git Boundary**: You may stage files, create local commits, and push to the configured remote when explicitly directed by the user. Never push without that direction.
