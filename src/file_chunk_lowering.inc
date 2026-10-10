@@ -28,7 +28,7 @@
 // parameter or open its own root-local FileIO). A FileIO-reaching map or
 // combine is still valid Moss; it simply lowers sequentially.
 //
-// ABI-v7 source-free providers carry explicit FileIO, panic, typed-raise, and
+// ABI-v8 source-free providers carry explicit FileIO, panic, typed-raise, and
 // unresolved facts. Missing metadata fails closed while loading the .mossi;
 // an explicitly unknown FileIO fact still forces sequential lowering.
 //

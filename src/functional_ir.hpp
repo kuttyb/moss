@@ -54,7 +54,7 @@ struct ObservableEffects {
   // forbids FileIO specifically in map and combine (sec. 13.2).
   bool fileio = false;
   // A source-free provider may explicitly report that its FileIO fact is
-  // unavailable. ABI v7 serializes this bit; missing metadata fails closed.
+  // unavailable. ABI v8 serializes this bit; missing metadata fails closed.
   // Not part of fusion_safe (ordinary fusion is unchanged); chunk-pipeline
   // Branch eligibility treats it as "may reach FileIO".
   bool fileio_unknown = false;

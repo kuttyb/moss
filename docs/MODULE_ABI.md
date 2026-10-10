@@ -113,13 +113,18 @@ Bodies over aggregate access traits or route contracts use static Rust generics,
 not trait objects. Providers need no concrete domain instance at build time.
 Phase 15.9 used **version 6**: interfaces preserved statically dispatched export
 IR and exported trait method contracts required by source-free specialization.
-Phase 21.0 uses **version 7**: observable effects split fatal `may_panic` from a
+Phase 21.0 uses **version 8**: observable effects split fatal `may_panic` from a
 normalized variant-precise typed `raise_set`; exported handlers carry counted
 body/failure-arm symbols, opaque owned failure-frame and capture contracts,
-reply totality, application wrapper roles, and exceptional-CFG metadata for D7,
-ownership, guard cancellation, early acquisition/2PL, cleanup, and codegen.
-Version 6 providers must be fully rebuilt; there is no compatibility adapter.
-Missing v7 records fail closed. See [Phase 21 shared ABI](PHASE_21_SHARED_ABI.md).
+reply totality, caller/callee frame-bridge mappings, counted recursive owned-type
+shape declarations, application wrapper roles, and exceptional-CFG metadata for
+D7, ownership, guard cancellation, early acquisition/2PL, cleanup, and codegen.
+The loader validates each handler locally; final application linkage also checks
+every imported bridge against the resolved callee specialization, outcome,
+frame, tag, and raised identity.
+All prior providers, including tentative v7 artifacts, must be fully rebuilt;
+there is no compatibility adapter.
+Missing v8 records fail closed. See [Phase 21 shared ABI](PHASE_21_SHARED_ABI.md).
 No physical descriptor is passed at construction. `.mossi` continues to export
 semantic handler/formal leaf effects; class IDs, ranks, ClassSets, and lock
 storage are not serialized as provider ABI.

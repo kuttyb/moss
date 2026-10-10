@@ -35,6 +35,8 @@ rust.write_text(r'''#![allow(dead_code)]
 mod provider {
     struct PrivateCapture(i64);
     enum PrivateRaised { ParseInvalid, FileFull }
+    #[derive(Debug, PartialEq)]
+    pub enum Reply { Value(i64), Recovered { capture: i64 } }
 
     pub struct FailureFrame {
         tag: u32,
@@ -47,24 +49,24 @@ mod provider {
     pub enum BodyOutcome<T> { Normal(T), Raised(FailureFrame) }
     pub struct FailureState<'a> { pub repaired: &'a mut i64 }
 
-    pub fn body(fail: bool) -> BodyOutcome<i64> {
+    pub fn body(fail: bool) -> BodyOutcome<Reply> {
         if fail {
             BodyOutcome::Raised(FailureFrame {
                 tag: 1, raised: PrivateRaised::FileFull,
                 capture: PrivateCapture(9),
             })
-        } else { BodyOutcome::Normal(42) }
+        } else { BodyOutcome::Normal(Reply::Value(42)) }
     }
     pub fn on_fail_file_full(
         state: &mut FailureState<'_>, frame: FailureFrame,
-    ) -> i64 {
+    ) -> Reply {
         match frame.raised { PrivateRaised::FileFull => {}, _ => unreachable!() }
         *state.repaired = frame.capture.0;
-        -1
+        Reply::Recovered { capture: frame.capture.0 }
     }
 }
 
-fn application_root(fail: bool) -> i64 {
+fn application_root(fail: bool) -> provider::Reply {
     let outcome = provider::body(fail);
     match outcome {
         provider::BodyOutcome::Normal(value) => value,
@@ -82,13 +84,14 @@ fn application_root(fail: bool) -> i64 {
     }
 }
 
-fn application_nested(fail: bool) -> provider::BodyOutcome<i64> {
+fn application_nested(fail: bool) -> provider::BodyOutcome<provider::Reply> {
     provider::body(fail)
 }
 
 fn main() {
-    assert_eq!(application_root(false), 42);
-    assert_eq!(application_root(true), -1);
+    assert_eq!(application_root(false), provider::Reply::Value(42));
+    assert_eq!(
+        application_root(true), provider::Reply::Recovered { capture: 9 });
     assert!(matches!(application_nested(true), provider::BodyOutcome::Raised(_)));
 }
 ''')

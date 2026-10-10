@@ -43,7 +43,7 @@ Before Agents A–D integrate changes, produce a small committed, reviewable con
 2. **Tagged outcomes.** Generated Rust sum representation and stable tag + payload layout for normal values, scalar error types, and enum variants. Error payloads are bounded, owned, no capabilities/borrows. Define how a concrete specialization with several error enums encodes its internal tagged value without exposing a cross-enum source type. Define error identity and propagation across helpers, nested messages, provider callables and Root wrappers. Panics are separate and non-catchable.
 3. **Role-separated wrappers.** Provider exports handler body, plus separately materialized failure-arm bodies and metadata. Consumer application emits (i) nested wrapper, which never calls `on_fail`; (ii) Root wrapper, which quiesces, closes Root-local FileIO, releases old guards, acquires `h_fail`, dispatches typed arm, and fulfills reply contract. No panic catching/unwinding implementation.
 4. **Captures and D7.** ABI for owned, definitely initialized, legal values made available to a failure-arm body **after** the attempt's frame ends. Forbid FileIO, Range, RangeBatch, guards, protected borrowed views. Plan arm-refined D7 for variant-specific paths. Preserve provider-private types safely through provider-exported signatures and calling convention.
-5. **Semantic interfaces.** `.mossi` version, serializable effect/arm pattern/capture/reply records, canonical specialization hash, missing-record fail-closed behavior, and full ABI-v6→v7 rebuild requirement. Version number only after the representation is frozen.
+5. **Semantic interfaces.** `.mossi` version, serializable effect/arm pattern/capture/reply records, canonical specialization hash, missing-record fail-closed behavior, and full prior-ABI→v8 rebuild requirement. Version number only after the representation is frozen.
 6. **Diagnostics/CFG schema.** Identify syntactic raising nodes, exceptional-edge wiring, which analyses consume them, and how selected-error slots scope across nested `recover` arms. O4 must be checkable as an independent verifier test.
 
 **Gate 21.0 passes only if:** a design/ABI header and example native Rust signatures are reviewed, a source-free provider fixture can be planned unambiguously, owners A–D have agreed on names/paths, and there are no unexplained version/interface dependencies. Commit only this interface contract first; do not merge divergent tagged-outcome implementations.
@@ -138,7 +138,7 @@ Instructions:
           A+B: quiesce -> close -> drop -> fresh acquire -> dispatch
           B+C: scoped FileIO borrow/token lifetime and join order
           A+D: native/Fast Debug raised-effect parity and test harness
-          All: provider-source-removed ABI v7; make check; make examples
+          All: provider-source-removed ABI v8; make check; make examples
 ```
 
 Do not give multiple agents concurrent write ownership of `ObservableEffects`, ABI serialization, Rust tagged outcome types, or the same lowering entry. Land 21.0 first. Each workstream should rebase to the frozen contract instead of editing the contract in its own branch.

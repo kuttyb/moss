@@ -22421,6 +22421,141 @@ static void parse_generic_ir_line(const string& line, Function& function) {
 
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
 
+static ResolvedTypeAbi resolve_phase21_owned_type(
+    const Program& provider, const string& spelling,
+    std::set<string>& resolving) {
+  ResolvedTypeAbi result;
+  result.canonical_type = trim(spelling);
+  const string concrete = canonical_type_name(result.canonical_type);
+  if (concrete.empty()) return result;
+  if (concrete.front() == '&') {
+    result.kind = ResolvedTypeKind::Borrowed;
+    return result;
+  }
+  const auto is_named = [&](const string& candidate, const string& name) {
+    const string normalized = canonical_type_name(name);
+    if (candidate == normalized) return true;
+    const auto name_separator = normalized.rfind("::");
+    if (name_separator != string::npos &&
+        candidate == normalized.substr(name_separator + 2))
+      return true;
+    const auto candidate_separator = candidate.rfind("::");
+    return candidate_separator != string::npos &&
+           candidate.substr(candidate_separator + 2) == normalized;
+  };
+  static const std::set<string> intrinsic_capabilities = {
+      "FileIO", "Range", "RangeBatch", "MossGuard", "ProtectedRead",
+      "ProtectedWrite"};
+  if (intrinsic_capabilities.count(result.canonical_type) ||
+      starts_with(concrete, "DomainHandle[") ||
+      starts_with(concrete, "domainhandle[") ||
+      concrete.find("MossGuard") != string::npos ||
+      concrete.find("ProtectedRead") != string::npos ||
+      concrete.find("ProtectedWrite") != string::npos) {
+    result.kind = ResolvedTypeKind::Capability;
+    return result;
+  }
+  for (const auto& domain : provider.domains)
+    if (is_named(concrete, domain.name)) {
+      result.kind = ResolvedTypeKind::Capability;
+      return result;
+    }
+  if (concrete == "int" || concrete == "float" || concrete == "bool" ||
+      concrete == "unit") {
+    result.kind = ResolvedTypeKind::Scalar;
+    return result;
+  }
+  const auto bracket = concrete.find('[');
+  if (concrete == "string" || starts_with(concrete, "vector[") ||
+      starts_with(concrete, "map[") || starts_with(concrete, "queue[")) {
+    result.kind = ResolvedTypeKind::OwnedUnbounded;
+    if (bracket != string::npos && ends_with(concrete, "]"))
+      for (const auto& argument : split_top_level(
+               concrete.substr(bracket + 1, concrete.size() - bracket - 2),
+               ','))
+        result.children.push_back(
+            resolve_phase21_owned_type(provider, argument, resolving));
+    return result;
+  }
+  if ((starts_with(concrete, "option[") ||
+       starts_with(concrete, "result[")) &&
+      ends_with(concrete, "]")) {
+    result.kind = ResolvedTypeKind::ErrorEnum;
+    for (const auto& argument : split_top_level(
+             concrete.substr(bracket + 1, concrete.size() - bracket - 2),
+             ','))
+      result.children.push_back(
+          resolve_phase21_owned_type(provider, argument, resolving));
+    return result;
+  }
+  if (!resolving.insert(concrete).second) return result;
+  const auto finish = [&]() { resolving.erase(concrete); };
+  for (const auto& enumeration : provider.enums) {
+    if (!is_named(concrete, enumeration.name)) continue;
+    result.kind = ResolvedTypeKind::ErrorEnum;
+    for (const auto& item : enumeration.cases)
+      for (const auto& field : item.fields)
+        result.children.push_back(
+            resolve_phase21_owned_type(provider, field.type, resolving));
+    finish();
+    return result;
+  }
+  for (const auto& object : provider.objects) {
+    if (!is_named(concrete, object.name)) continue;
+    result.kind = ResolvedTypeKind::Aggregate;
+    for (const auto& field : object.fields)
+      result.children.push_back(
+          resolve_phase21_owned_type(provider, field.type, resolving));
+    finish();
+    return result;
+  }
+  finish();
+  return result;
+}
+
+static ResolvedTypeAbi resolve_phase21_owned_type(
+    const Program& provider, const string& spelling) {
+  std::set<string> resolving;
+  return resolve_phase21_owned_type(provider, spelling, resolving);
+}
+
+static bool phase21_declared_type_shape_valid(
+    const Program& provider,
+    const std::map<string, ResolvedTypeAbi>& declarations,
+    const ResolvedTypeAbi& declared,
+    std::set<string>& checking) {
+  auto entry = declarations.find(declared.canonical_type);
+  if (entry == declarations.end() || !(entry->second == declared) ||
+      declared.kind == ResolvedTypeKind::Unknown)
+    return false;
+  ResolvedTypeAbi resolved =
+      resolve_phase21_owned_type(provider, declared.canonical_type);
+  if (resolved.kind != ResolvedTypeKind::Unknown && !(resolved == declared))
+    return false;
+  if (resolved.kind == ResolvedTypeKind::Unknown &&
+      declared.kind != ResolvedTypeKind::Aggregate &&
+      declared.kind != ResolvedTypeKind::ErrorEnum)
+    return false;
+  if (!checking.insert(declared.canonical_type).second) return false;
+  for (const auto& child : declared.children)
+    if (!phase21_declared_type_shape_valid(
+            provider, declarations, child, checking)) {
+      checking.erase(declared.canonical_type);
+      return false;
+    }
+  checking.erase(declared.canonical_type);
+  return true;
+}
+
+static bool phase21_declared_type_shape_valid(
+    const Program& provider,
+    const std::map<string, ResolvedTypeAbi>& declarations,
+    const ResolvedTypeAbi& declared) {
+  std::set<string> checking;
+  return phase21_declared_type_shape_valid(
+      provider, declarations, declared, checking);
+}
+
 static ParsedModuleUnit load_module_interface(
     const std::filesystem::path& file) {
   std::ifstream input(file, std::ios::binary);
@@ -22445,7 +22580,15 @@ static ParsedModuleUnit load_module_interface(
   std::map<string, size_t> expected_failure_arms;
   std::map<string, size_t> expected_raise_tags;
   std::map<string, size_t> seen_raise_tags;
+  std::map<string, size_t> expected_raise_projections;
+  std::map<string, size_t> seen_raise_projections;
+  std::map<string, size_t> expected_raise_bridges;
+  std::map<string, size_t> expected_owned_type_shapes;
+  std::map<std::pair<string, std::uint32_t>, size_t>
+      expected_bridge_translations;
   std::map<string, size_t> expected_exceptional_edges;
+  std::map<string, size_t> expected_exceptional_destinations;
+  std::map<string, size_t> expected_raising_nodes;
   std::map<std::pair<string, std::uint32_t>, size_t> expected_failure_captures;
   std::map<std::pair<string, std::uint32_t>, size_t> expected_payload_fields;
   std::set<string> outcome_contracts;
@@ -22666,6 +22809,7 @@ static ParsedModuleUnit load_module_interface(
       int nested_owner = 0, root_owner = 0;
       fields >> std::quoted(abi.handler) >> std::quoted(abi.body_symbol)
              >> std::quoted(abi.opaque_failure_frame_type)
+             >> std::quoted(abi.raised_carrier_rust_type)
              >> nested_owner >> root_owner;
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
@@ -22713,7 +22857,7 @@ static ParsedModuleUnit load_module_interface(
       continue;
     }
     if (starts_with(line, "handler_reply_contract ") && current_domain) {
-      std::istringstream fields(line.substr(23));
+      std::istringstream fields(line.substr(22));
       string handler_name;
       FailureReplyAbi reply;
       int one_way = 0, all_reply = 0;
@@ -22730,6 +22874,36 @@ static ParsedModuleUnit load_module_interface(
       reply.one_way = one_way == 1;
       reply.every_normal_arm_replies = all_reply == 1;
       handler->provider_abi->reply = std::move(reply);
+      continue;
+    }
+    if (starts_with(line, "handler_owned_type_shapes ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_owned_type_shapes.count(record_key))
+        throw CompileError(0,
+            "invalid handler owned-type-shape count in module interface");
+      expected_owned_type_shapes[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_owned_type_shape ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, canonical_type, fingerprint;
+      fields >> std::quoted(handler_name) >> std::quoted(canonical_type)
+             >> std::quoted(fingerprint);
+      auto shape = parse_resolved_type_fingerprint(fingerprint);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || !shape || shape->canonical_type != canonical_type ||
+          handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0,
+            "invalid handler owned-type shape in module interface");
+      handler->provider_abi->owned_type_shapes.push_back(std::move(*shape));
       continue;
     }
     if (starts_with(line, "handler_raise_tags ") && current_domain) {
@@ -22764,25 +22938,28 @@ static ParsedModuleUnit load_module_interface(
         throw CompileError(0, "invalid handler raise tag in module interface");
       expected_payload_fields[{record_key, tag}] = payload_count;
       handler->provider_abi->outcome.raised.push_back(
-          {std::move(identity), tag, {}});
+          {std::move(identity), tag, {}, {}});
       continue;
     }
     if (starts_with(line, "handler_raise_payload ") && current_domain) {
-      std::istringstream fields(line.substr(22));
+      std::istringstream fields(line.substr(21));
       string handler_name;
       std::uint32_t tag = 0;
       OwnedPayloadFieldAbi payload;
+      string type_fingerprint;
       unsigned kind = 0;
       int owned = 0, bounded = 0;
       fields >> std::quoted(handler_name) >> tag >> std::quoted(payload.name)
-             >> std::quoted(payload.moss_type) >> kind >> owned >> bounded;
+             >> std::quoted(payload.moss_type) >> kind >> owned >> bounded
+             >> std::quoted(type_fingerprint);
+      auto resolved_type = parse_resolved_type_fingerprint(type_fingerprint);
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
             return candidate.name == handler_name;
           });
       if (kind > static_cast<unsigned>(OwnedPayloadFieldAbi::Kind::ErrorEnum) ||
           !fields || handler == current_domain->handlers.end() ||
-          !handler->provider_abi)
+          !handler->provider_abi || !resolved_type)
         throw CompileError(0, "invalid raised payload in module interface");
       auto& raised = handler->provider_abi->outcome.raised;
       auto value = std::find_if(raised.begin(), raised.end(),
@@ -22792,9 +22969,113 @@ static ParsedModuleUnit load_module_interface(
       payload.kind = static_cast<OwnedPayloadFieldAbi::Kind>(kind);
       payload.owned = owned == 1;
       payload.bounded = bounded == 1;
-      if (value == raised.end() || !owned_payload_field_allowed(payload))
+      payload.resolved_type = std::move(*resolved_type);
+      if (value == raised.end())
         throw CompileError(0, "illegal raised payload in module interface");
       value->payload.push_back(std::move(payload));
+      continue;
+    }
+    if (starts_with(line, "handler_raise_projections ") && current_domain) {
+      std::istringstream fields(line.substr(26));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_projections.count(record_key))
+        throw CompileError(0,
+            "invalid handler raise-projection count in module interface");
+      expected_raise_projections[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_projection ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name;
+      std::uint32_t tag = 0;
+      RaisedProjectionAbi projection;
+      fields >> std::quoted(handler_name) >> tag
+             >> std::quoted(projection.payload_rust_type)
+             >> std::quoted(projection.residual_rust_type)
+             >> std::quoted(projection.projection_rust_type)
+             >> std::quoted(projection.project_symbol)
+             >> std::quoted(projection.rebuild_symbol);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi || !projection.valid())
+        throw CompileError(0, "invalid raised projection in module interface");
+      auto& raised = handler->provider_abi->outcome.raised;
+      auto value = std::find_if(raised.begin(), raised.end(),
+          [tag](const RaisedValueAbi& candidate) {
+            return candidate.stable_tag == tag;
+          });
+      if (value == raised.end() || value->projection.valid() ||
+          tag != seen_raise_projections[record_key]++)
+        throw CompileError(0, "invalid raised projection in module interface");
+      value->projection = std::move(projection);
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridges ") && current_domain) {
+      std::istringstream fields(line.substr(22));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_raise_bridges.count(record_key))
+        throw CompileError(0,
+            "invalid handler raise-bridge count in module interface");
+      expected_raise_bridges[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridge ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      ImportedRaiseBridgeAbi bridge;
+      size_t translation_count = 0;
+      fields >> std::quoted(handler_name) >> bridge.source_order
+             >> std::quoted(bridge.callee_specialization)
+             >> std::quoted(bridge.callee_outcome_rust_type)
+             >> std::quoted(bridge.callee_frame_rust_type)
+             >> std::quoted(bridge.caller_carrier_variant)
+             >> std::quoted(bridge.bridge_symbol) >> translation_count;
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      string record_key = current_domain->name + "::" + handler_name;
+      auto translation_key = std::make_pair(record_key, bridge.source_order);
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          bridge.source_order != handler->provider_abi->imported_raise_bridges.size() ||
+          expected_bridge_translations.count(translation_key))
+        throw CompileError(0, "invalid raised bridge in module interface");
+      expected_bridge_translations[translation_key] = translation_count;
+      handler->provider_abi->imported_raise_bridges.push_back(
+          std::move(bridge));
+      continue;
+    }
+    if (starts_with(line, "handler_raise_bridge_tag ") && current_domain) {
+      std::istringstream fields(line.substr(25));
+      string handler_name, identity_text;
+      std::uint32_t bridge_order = 0;
+      RaisedTagTranslationAbi translation;
+      fields >> std::quoted(handler_name) >> bridge_order
+             >> translation.callee_tag >> translation.caller_tag
+             >> std::quoted(identity_text);
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi ||
+          bridge_order >= handler->provider_abi->imported_raise_bridges.size())
+        throw CompileError(0,
+            "invalid raised bridge translation in module interface");
+      translation.identity = parse_interface_raise_identity(identity_text);
+      handler->provider_abi->imported_raise_bridges[bridge_order]
+          .translations.push_back(std::move(translation));
       continue;
     }
     if (starts_with(line, "handler_failure_arms ") && current_domain) {
@@ -22855,10 +23136,13 @@ static ParsedModuleUnit load_module_interface(
       string handler_name;
       std::uint32_t arm_order = 0;
       FailureCaptureAbi capture;
+      string type_fingerprint;
       int owned = 0, initialized = 0;
       fields >> std::quoted(handler_name) >> arm_order
              >> std::quoted(capture.name) >> std::quoted(capture.moss_type)
-             >> std::quoted(capture.provider_rust_field) >> owned >> initialized;
+             >> std::quoted(capture.provider_rust_field) >> owned >> initialized
+             >> std::quoted(type_fingerprint);
+      auto resolved_type = parse_resolved_type_fingerprint(type_fingerprint);
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
             return candidate.name == handler_name;
@@ -22873,8 +23157,11 @@ static ParsedModuleUnit load_module_interface(
           });
       capture.owned = owned == 1;
       capture.definitely_initialized = initialized == 1;
-      if (arm == handler->provider_abi->failure_arms.end() ||
-          !failure_capture_allowed(capture))
+      if (!resolved_type)
+        throw CompileError(0,
+            "invalid failure capture type shape in module interface");
+      capture.resolved_type = std::move(*resolved_type);
+      if (arm == handler->provider_abi->failure_arms.end())
         throw CompileError(0, "illegal failure capture in module interface");
       arm->captures.push_back(std::move(capture));
       continue;
@@ -22893,12 +23180,92 @@ static ParsedModuleUnit load_module_interface(
           !handler->provider_abi ||
           !raising_node_contracts.insert(record_key).second)
         throw CompileError(0, "invalid raising-node record in module interface");
-      for (size_t index = 0; index < count; ++index) {
-        std::uint32_t node = 0;
-        if (!(fields >> node))
-          throw CompileError(0, "incomplete raising-node record in module interface");
-        handler->provider_abi->raising_nodes.push_back(node);
+      handler->provider_abi->raising_nodes.reserve(count);
+      expected_raising_nodes[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_raising_node ") && current_domain) {
+      std::istringstream fields(line.substr(21));
+      string handler_name;
+      RaisingNodeAbi node;
+      int selected = 0;
+      size_t scope_count = 0, alternative_count = 0;
+      fields >> std::quoted(handler_name) >> node.node >> selected
+             >> node.selected_error_scope >> node.outer_scope >> scope_count;
+      for (size_t index = 0; index < scope_count; ++index) {
+        std::uint32_t scope = 0;
+        if (!(fields >> scope))
+          throw CompileError(0,
+              "incomplete raising-node scope chain in module interface");
+        node.recovery_scope_chain.push_back(scope);
       }
+      fields >> alternative_count;
+      for (size_t index = 0; index < alternative_count; ++index) {
+        string identity_text;
+        if (!(fields >> std::quoted(identity_text)) ||
+            !node.possible_alternatives.insert(
+                parse_interface_raise_identity(identity_text)).second)
+          throw CompileError(0,
+              "duplicate or invalid raising-node alternative in module interface");
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || selected < 0 || selected > 1 ||
+          handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0, "invalid raising node in module interface");
+      node.selected_error_slot = selected == 1;
+      handler->provider_abi->raising_nodes.push_back(std::move(node));
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_destinations ") &&
+        current_domain) {
+      std::istringstream fields(line.substr(33));
+      string handler_name;
+      size_t count = 0;
+      fields >> std::quoted(handler_name) >> count;
+      string record_key = current_domain->name + "::" + handler_name;
+      if (!fields || expected_exceptional_destinations.count(record_key))
+        throw CompileError(0,
+            "invalid exceptional-destination count in module interface");
+      expected_exceptional_destinations[record_key] = count;
+      continue;
+    }
+    if (starts_with(line, "handler_exceptional_destination ") &&
+        current_domain) {
+      std::istringstream fields(line.substr(32));
+      string handler_name;
+      ExceptionalDestinationAbi destination;
+      unsigned kind = 0;
+      size_t alternative_count = 0;
+      fields >> std::quoted(handler_name) >> destination.node >> kind
+             >> destination.lexical_scope >> destination.match_order
+             >> alternative_count;
+      if (kind > static_cast<unsigned>(
+                     ExceptionalDestinationKind::OuterRecoveryOrExit))
+        throw CompileError(0,
+            "invalid exceptional destination kind in module interface");
+      destination.kind = static_cast<ExceptionalDestinationKind>(kind);
+      for (size_t index = 0; index < alternative_count; ++index) {
+        string identity_text;
+        if (!(fields >> std::quoted(identity_text)) ||
+            !destination.accepted_alternatives.insert(
+                parse_interface_raise_identity(identity_text)).second)
+          throw CompileError(0,
+              "duplicate exceptional destination alternative in module interface");
+      }
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& candidate) {
+            return candidate.name == handler_name;
+          });
+      if (!fields || handler == current_domain->handlers.end() ||
+          !handler->provider_abi)
+        throw CompileError(0,
+            "invalid exceptional destination in module interface");
+      handler->provider_abi->exceptional_destinations.push_back(
+          std::move(destination));
       continue;
     }
     if (starts_with(line, "handler_exceptional_edges ") && current_domain) {
@@ -22925,9 +23292,11 @@ static ParsedModuleUnit load_module_interface(
       edge.kind = static_cast<ExceptionalEdgeKind>(kind);
       for (size_t index = 0; index < alternatives; ++index) {
         string identity;
-        if (!(fields >> std::quoted(identity)))
-          throw CompileError(0, "incomplete exceptional edge in module interface");
-        edge.alternatives.insert(parse_interface_raise_identity(identity));
+        if (!(fields >> std::quoted(identity)) ||
+            !edge.alternatives.insert(
+                parse_interface_raise_identity(identity)).second)
+          throw CompileError(0,
+              "duplicate or incomplete exceptional edge in module interface");
       }
       auto handler = std::find_if(current_domain->handlers.begin(),
           current_domain->handlers.end(), [&](const Handler& candidate) {
@@ -23118,8 +23487,8 @@ static ParsedModuleUnit load_module_interface(
       continue;
     }
   }
-  for (const auto& domain : provider.domains) {
-    for (const auto& handler : domain.handlers) {
+  for (auto& domain : provider.domains) {
+    for (auto& handler : domain.handlers) {
       string record_key = domain.name + "::" + handler.name;
       if (!handler.provider_abi || !wrapper_contracts.count(record_key) ||
           !outcome_contracts.count(record_key) ||
@@ -23127,17 +23496,32 @@ static ParsedModuleUnit load_module_interface(
           !raising_node_contracts.count(record_key) ||
           !exceptional_consumer_contracts.count(record_key) ||
           !expected_raise_tags.count(record_key) ||
+          !expected_raise_projections.count(record_key) ||
+          !expected_raise_bridges.count(record_key) ||
+          !expected_owned_type_shapes.count(record_key) ||
           !expected_failure_arms.count(record_key) ||
+          !expected_exceptional_destinations.count(record_key) ||
           !expected_exceptional_edges.count(record_key))
         throw CompileError(0,
-            "compiled provider lacks ABI-v7 handler metadata; rebuild its .mossi provider");
+            "compiled provider lacks ABI-v8 handler metadata; rebuild its .mossi provider");
       const auto& abi = *handler.provider_abi;
       if (expected_raise_tags.at(record_key) != handler.observable_effects.raise_set.size() ||
           seen_raise_tags[record_key] != expected_raise_tags.at(record_key) ||
+          expected_raise_projections.at(record_key) !=
+              abi.outcome.raised.size() ||
+          seen_raise_projections[record_key] !=
+              expected_raise_projections.at(record_key) ||
+          expected_raise_bridges.at(record_key) !=
+              abi.imported_raise_bridges.size() ||
+          expected_owned_type_shapes.at(record_key) !=
+              abi.owned_type_shapes.size() ||
           expected_failure_arms.at(record_key) != abi.failure_arms.size() ||
+          expected_raising_nodes.at(record_key) != abi.raising_nodes.size() ||
+          expected_exceptional_destinations.at(record_key) !=
+              abi.exceptional_destinations.size() ||
           expected_exceptional_edges.at(record_key) != abi.exceptional_edges.size())
         throw CompileError(0,
-            "compiled provider has inconsistent ABI-v7 handler metadata");
+            "compiled provider has inconsistent ABI-v8 handler metadata");
       for (const auto& arm : abi.failure_arms) {
         auto capture_key = std::make_pair(record_key, arm.source_order);
         if (!expected_failure_captures.count(capture_key) ||
@@ -23152,6 +23536,70 @@ static ParsedModuleUnit load_module_interface(
           throw CompileError(0,
               "compiled provider has incomplete raised payload metadata");
       }
+      for (const auto& bridge : abi.imported_raise_bridges) {
+        auto translation_key = std::make_pair(record_key, bridge.source_order);
+        if (!expected_bridge_translations.count(translation_key) ||
+            expected_bridge_translations.at(translation_key) !=
+                bridge.translations.size())
+          throw CompileError(0,
+              "compiled provider has incomplete raised bridge metadata");
+      }
+      std::map<string, ResolvedTypeAbi> declared_type_shapes;
+      for (const auto& shape : abi.owned_type_shapes)
+        if (!declared_type_shapes.emplace(shape.canonical_type, shape).second)
+          throw CompileError(0,
+              "compiled provider has duplicate owned-type shapes");
+      for (auto& raised : handler.provider_abi->outcome.raised)
+        for (auto& payload : raised.payload) {
+          auto declaration = declared_type_shapes.find(payload.moss_type);
+          if (declaration == declared_type_shapes.end() ||
+              !(declaration->second == payload.resolved_type) ||
+              !phase21_declared_type_shape_valid(
+                  provider, declared_type_shapes, payload.resolved_type))
+            throw CompileError(0,
+                "compiled provider raised payload type shape disagrees with its resolved type");
+        }
+      for (const auto& raised : handler.provider_abi->outcome.raised) {
+        if (raised.identity.kind != RaisedIdentityKind::EnumVariant) continue;
+        const string identity_type = canonical_type_name(raised.identity.type);
+        const EnumType* resolved_enum = nullptr;
+        for (const auto& enumeration : provider.enums) {
+          const string candidate = canonical_type_name(enumeration.name);
+          const auto separator = identity_type.rfind("::");
+          if (identity_type == candidate ||
+              (separator != string::npos &&
+               identity_type.substr(separator + 2) == candidate)) {
+            resolved_enum = &enumeration;
+            break;
+          }
+        }
+        if (!resolved_enum) continue;  // imported identity; field types still resolve
+        auto variant = std::find_if(
+            resolved_enum->cases.begin(), resolved_enum->cases.end(),
+            [&](const EnumCase& item) {
+              return item.name == raised.identity.variant;
+            });
+        if (variant == resolved_enum->cases.end() ||
+            variant->fields.size() != raised.payload.size())
+          throw CompileError(0,
+              "compiled provider raised payload disagrees with its enum variant");
+        for (size_t index = 0; index < variant->fields.size(); ++index)
+          if (variant->fields[index].name != raised.payload[index].name ||
+              canonical_type_name(variant->fields[index].type) !=
+                  canonical_type_name(raised.payload[index].moss_type))
+            throw CompileError(0,
+                "compiled provider raised payload disagrees with its enum variant");
+      }
+      for (auto& arm : handler.provider_abi->failure_arms)
+        for (auto& capture : arm.captures) {
+          auto declaration = declared_type_shapes.find(capture.moss_type);
+          if (declaration == declared_type_shapes.end() ||
+              !(declaration->second == capture.resolved_type) ||
+              !phase21_declared_type_shape_valid(
+                  provider, declared_type_shapes, capture.resolved_type))
+            throw CompileError(0,
+                "compiled provider failure capture type shape disagrees with its resolved type");
+        }
       if (abi.reply.moss_type != handler.reply_type.value_or("unit") ||
           abi.reply.one_way != !handler.reply_type.has_value() ||
           abi.outcome.normal_type != handler.reply_type.value_or("unit") ||
@@ -23159,7 +23607,7 @@ static ParsedModuleUnit load_module_interface(
               abi.outcome, handler.observable_effects.raise_set) ||
           !provider_handler_abi_valid(abi))
         throw CompileError(0,
-            "compiled provider has invalid ABI-v7 handler contract");
+            "compiled provider has invalid ABI-v8 handler contract");
     }
   }
   for (auto& function : provider.functions) {
@@ -24112,23 +24560,64 @@ static FailurePatternAbi parse_failure_pattern_text(const string& text) {
   return pattern;
 }
 
+static void collect_phase21_owned_type_shape(
+    const ResolvedTypeAbi& shape,
+    std::map<string, ResolvedTypeAbi>& shapes) {
+  auto [entry, inserted] = shapes.emplace(shape.canonical_type, shape);
+  synchronization_require(inserted || entry->second == shape,
+                          "inconsistent Phase 21 owned type shape");
+  for (const auto& child : shape.children)
+    collect_phase21_owned_type_shape(child, shapes);
+}
+
+static void complete_phase21_owned_type_shapes(ProviderHandlerAbi& abi) {
+  std::map<string, ResolvedTypeAbi> shapes;
+  for (const auto& raised : abi.outcome.raised)
+    for (const auto& payload : raised.payload)
+      collect_phase21_owned_type_shape(payload.resolved_type, shapes);
+  for (const auto& arm : abi.failure_arms)
+    for (const auto& capture : arm.captures)
+      collect_phase21_owned_type_shape(capture.resolved_type, shapes);
+  abi.owned_type_shapes.clear();
+  for (auto& entry : shapes)
+    abi.owned_type_shapes.push_back(std::move(entry.second));
+}
+
 static ProviderHandlerAbi source_provider_handler_abi(
     const Domain& domain, const Handler& handler) {
-  if (handler.provider_abi) return *handler.provider_abi;
+  if (handler.provider_abi) {
+    ProviderHandlerAbi abi = *handler.provider_abi;
+    complete_phase21_owned_type_shapes(abi);
+    return abi;
+  }
   ProviderHandlerAbi abi;
   abi.handler = handler.name;
   abi.body_symbol = "__moss_body_" + domain.name + "_" + handler.name;
   abi.opaque_failure_frame_type =
       "__MossFailureFrame_" + domain.name + "_" + handler.name;
+  abi.raised_carrier_rust_type =
+      "__MossRaisedCarrier_" + domain.name + "_" + handler.name;
   abi.outcome.rust_type =
       "__MossBodyOutcome_" + domain.name + "_" + handler.name;
   abi.outcome.normal_type = handler.reply_type.value_or("unit");
   std::uint32_t tag = 0;
-  for (const auto& identity : handler.observable_effects.raise_set)
-    abi.outcome.raised.push_back({identity, tag++, {}});
+  for (const auto& identity : handler.observable_effects.raise_set) {
+    const string suffix = domain.name + "_" + handler.name + "_" +
+        std::to_string(tag);
+    RaisedProjectionAbi projection{
+        "__MossPayload_" + suffix,
+        "__MossResidual_" + suffix,
+        "__MossProjection_" + suffix,
+        "__moss_project_" + suffix,
+        "__moss_rebuild_" + suffix,
+    };
+    abi.outcome.raised.push_back(
+        {identity, tag++, {}, std::move(projection)});
+  }
   abi.reply.moss_type = handler.reply_type.value_or("unit");
   abi.reply.one_way = !handler.reply_type.has_value();
   abi.reply.every_normal_arm_replies = true;
+  complete_phase21_owned_type_shapes(abi);
   return abi;
 }
 
@@ -24137,6 +24626,7 @@ static void write_provider_handler_abi(std::ostream& out,
   out << "  handler_abi " << std::quoted(abi.handler) << " "
       << std::quoted(abi.body_symbol) << " "
       << std::quoted(abi.opaque_failure_frame_type) << " "
+      << std::quoted(abi.raised_carrier_rust_type) << " "
       << (abi.application_owns_nested_wrapper ? 1 : 0) << " "
       << (abi.application_owns_root_wrapper ? 1 : 0) << "\n";
   out << "  handler_outcome_contract " << std::quoted(abi.handler) << " "
@@ -24149,6 +24639,12 @@ static void write_provider_handler_abi(std::ostream& out,
       << std::quoted(abi.reply.moss_type) << " "
       << (abi.reply.one_way ? 1 : 0) << " "
       << (abi.reply.every_normal_arm_replies ? 1 : 0) << "\n";
+  out << "  handler_owned_type_shapes " << std::quoted(abi.handler) << " "
+      << abi.owned_type_shapes.size() << "\n";
+  for (const auto& shape : abi.owned_type_shapes)
+    out << "  handler_owned_type_shape " << std::quoted(abi.handler) << " "
+        << std::quoted(shape.canonical_type) << " "
+        << std::quoted(resolved_type_fingerprint(shape)) << "\n";
   out << "  handler_raise_tags " << std::quoted(abi.handler) << " "
       << abi.outcome.raised.size() << "\n";
   for (const auto& raised : abi.outcome.raised) {
@@ -24162,7 +24658,36 @@ static void write_provider_handler_abi(std::ostream& out,
           << std::quoted(payload.moss_type) << " "
           << static_cast<unsigned>(payload.kind) << " "
           << (payload.owned ? 1 : 0) << " "
-          << (payload.bounded ? 1 : 0) << "\n";
+          << (payload.bounded ? 1 : 0) << " "
+          << std::quoted(resolved_type_fingerprint(payload.resolved_type))
+          << "\n";
+  }
+  out << "  handler_raise_projections " << std::quoted(abi.handler) << " "
+      << abi.outcome.raised.size() << "\n";
+  for (const auto& raised : abi.outcome.raised)
+    out << "  handler_raise_projection " << std::quoted(abi.handler) << " "
+        << raised.stable_tag << " "
+        << std::quoted(raised.projection.payload_rust_type) << " "
+        << std::quoted(raised.projection.residual_rust_type) << " "
+        << std::quoted(raised.projection.projection_rust_type) << " "
+        << std::quoted(raised.projection.project_symbol) << " "
+        << std::quoted(raised.projection.rebuild_symbol) << "\n";
+  out << "  handler_raise_bridges " << std::quoted(abi.handler) << " "
+      << abi.imported_raise_bridges.size() << "\n";
+  for (const auto& bridge : abi.imported_raise_bridges) {
+    out << "  handler_raise_bridge " << std::quoted(abi.handler) << " "
+        << bridge.source_order << " "
+        << std::quoted(bridge.callee_specialization) << " "
+        << std::quoted(bridge.callee_outcome_rust_type) << " "
+        << std::quoted(bridge.callee_frame_rust_type) << " "
+        << std::quoted(bridge.caller_carrier_variant) << " "
+        << std::quoted(bridge.bridge_symbol) << " "
+        << bridge.translations.size() << "\n";
+    for (const auto& translation : bridge.translations)
+      out << "  handler_raise_bridge_tag " << std::quoted(abi.handler) << " "
+          << bridge.source_order << " " << translation.callee_tag << " "
+          << translation.caller_tag << " "
+          << std::quoted(translation.identity.canonical()) << "\n";
   }
   out << "  handler_failure_arms " << std::quoted(abi.handler) << " "
       << abi.failure_arms.size() << "\n";
@@ -24185,12 +24710,35 @@ static void write_provider_handler_abi(std::ostream& out,
           << std::quoted(capture.moss_type) << " "
           << std::quoted(capture.provider_rust_field) << " "
           << (capture.owned ? 1 : 0) << " "
-          << (capture.definitely_initialized ? 1 : 0) << "\n";
+          << (capture.definitely_initialized ? 1 : 0) << " "
+          << std::quoted(resolved_type_fingerprint(capture.resolved_type))
+          << "\n";
   }
   out << "  handler_raising_nodes " << std::quoted(abi.handler) << " "
-      << abi.raising_nodes.size();
-  for (std::uint32_t node : abi.raising_nodes) out << " " << node;
-  out << "\n";
+      << abi.raising_nodes.size() << "\n";
+  for (const auto& node : abi.raising_nodes) {
+    out << "  handler_raising_node " << std::quoted(abi.handler) << " "
+        << node.node << " " << (node.selected_error_slot ? 1 : 0) << " "
+        << node.selected_error_scope << " " << node.outer_scope << " "
+        << node.recovery_scope_chain.size();
+    for (const auto scope : node.recovery_scope_chain) out << " " << scope;
+    out << " " << node.possible_alternatives.size();
+    for (const auto& identity : node.possible_alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
+  out << "  handler_exceptional_destinations " << std::quoted(abi.handler)
+      << " " << abi.exceptional_destinations.size() << "\n";
+  for (const auto& destination : abi.exceptional_destinations) {
+    out << "  handler_exceptional_destination " << std::quoted(abi.handler)
+        << " " << destination.node << " "
+        << static_cast<unsigned>(destination.kind) << " "
+        << destination.lexical_scope << " " << destination.match_order << " "
+        << destination.accepted_alternatives.size();
+    for (const auto& identity : destination.accepted_alternatives)
+      out << " " << std::quoted(identity.canonical());
+    out << "\n";
+  }
   out << "  handler_exceptional_edges " << std::quoted(abi.handler) << " "
       << abi.exceptional_edges.size() << "\n";
   for (const auto& edge : abi.exceptional_edges) {
@@ -24510,7 +25058,7 @@ static vector<std::filesystem::path> write_module_interfaces(
       ProviderHandlerAbi provider_abi =
           source_provider_handler_abi(domain, handler);
       synchronization_require(provider_handler_abi_valid(provider_abi),
-                              "invalid exported handler ABI-v7 contract");
+                              "invalid exported handler ABI-v8 contract");
       synchronization_require(tagged_outcome_matches_raise_set(
                                   provider_abi.outcome,
                                   handler.observable_effects.raise_set),

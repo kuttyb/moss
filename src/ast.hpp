@@ -126,7 +126,7 @@ struct Handler {
   string source_file;
   // Checked semantic state effects, also carried by compiled providers.
   std::optional<StateLeafEffects> state_effects;
-  // ABI-v7 provider metadata. Source handlers receive a deterministic empty
+  // ABI-v8 provider metadata. Source handlers receive a deterministic empty
   // contract during interface emission; source-free handlers must carry the
   // complete record or loading fails closed.
   std::optional<ProviderHandlerAbi> provider_abi;
