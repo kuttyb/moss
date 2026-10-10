@@ -16,12 +16,14 @@ Updated: 2026-10-10 (America/Los_Angeles)
 - Continuation: the user authorized repository-local commits and pushes and
   directed removal of the old no-push rule. `main` has that rule update at
   `d15e968`; no Phase 21 implementation has been merged to `main`.
-- Current integration checkpoint: `c6d4e32` combines the pushed A–D work and
-  checked chunk FileIO follow-up. Focused Phase 21, the full Phase 20
-  Executor/FileIO suite, physical lock gates, `make examples`, and strict C++
-  pass. `make check` reaches the older Phase 20 FileIO semantics script, whose
-  first positive `main` still leaves typed errors unhandled. The Phase 21
-  human review gate remains open.
+- Current integration checkpoint: `8dab9d5` combines the pushed A–D work,
+  checked chunk FileIO follow-up, and older source migration. The complete
+  `make check` suite, `make examples`, strict C++17 `-Werror` build, and strict
+  Phase 20 review probes pass. This is a green integration base, not Phase 21
+  acceptance: A's source-free arm/capture and exceptional-CFG proof, B's
+  remaining integration/proof review, C's ordered-error/O9 proof, and D's
+  numeric parsing/formatter/docs/source-free view work remain. The Phase 21
+  human review gate remains open; no merge to `main` has occurred.
 
 ## Frozen preparation baseline
 
@@ -44,7 +46,7 @@ Updated: 2026-10-10 (America/Los_Angeles)
 | 21.B FileIO | `phase-21-b-fileio-errors` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-b` | `f27b2629` + `f7c769c` | checkpoints `9c3a16c`, `a47e639`; independent interior-NUL finding fixed as `IO`; focused FileIO and Phase 20 runtime gates pass; generated Root fixture awaits A wrapper |
 | 21.C Branch errors | `phase-21-c-branch-errors` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-c` | `f27b2629` + B dependency checkpoint | checkpoint `f0c0464` pushed; corrected C fixture `529ef0b` is on integration and focused C gate passes |
 | 21.D language parity | `phase-21-d-language-parity` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-d` | `f27b2629` | parity/view checkpoint `a20d250` pushed and merged; numeric grammar/tie-break and parsing remain open |
-| Integration | `phase-21-integration` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | A+B+C+D follow-up `c6d4e32` pushed; focused A/B/C/D, Phase 20 Executor/FileIO, physical locks, examples, strict C++ pass; full check blocked by Phase 20 FileIO semantics fixtures; no merge to main |
+| Integration | `phase-21-integration` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | A+B+C+D follow-up `8dab9d5` pushed; full `make check`, examples, strict C++, and strict Phase 20 review pass; A–D acceptance and human review remain; no merge to main |
 
 A–D must all branch from the exact approved commit
 `f27b2629efa2c321bef953e62ca73d230e56f96f`.
