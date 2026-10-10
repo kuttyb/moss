@@ -21,3 +21,10 @@ fn handled(flag: Bool):
 
 test "local typed recovery":
   handled(true)
+
+domain FailureOwner:
+  fn Run():
+    raise WorkError.Missing
+
+  on_fail WorkError.Missing:
+    echo "handled at Root"
