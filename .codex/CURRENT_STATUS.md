@@ -1,5 +1,26 @@
 # Moss current status
 
+## Phase 21.I A+B+C integration continuation — 2026-10-10
+
+The integration branch also merged committed 21.C head `f0c0464` after the
+A+B checkpoint. Four small conflicts were resolved: keep B's catchable
+interior-NUL `FileError.IO` mapping and its regression, retain A's external-I/O
+effect while passing C's proven-index context, and register all A/B/C tests.
+The combined compiler builds with `make`. The 40-case generic specialization
+suite passes 40/40; B's typed FileIO test and A's local native recovery test
+pass after the merge.
+
+The C focused gate fails during native lowering with `checked raising Root
+message lacks a Phase 21 outcome context`. Its original fixture sends a
+potentially raising handler message from `main` without a recovery arm; simply
+adding a try/recover in the fixture does not fix current checked/lowered
+message-effect agreement, so that experiment was reverted. A's separate Root
+fixtures remain blocked as recorded below. The 21.A worktree contains newer
+uncommitted Root/checker edits that have not been integrated. The branch is a
+durable partial integration checkpoint; full `make check`, `make examples`,
+O1–O9, source-free typed failures, and review before merging to main remain
+open. No Phase 21 completion is claimed.
+
 ## Phase 21.I A+B integration checkpoint — 2026-10-10
 
 The integration branch merged committed 21.A head `620b567` and 21.B head
