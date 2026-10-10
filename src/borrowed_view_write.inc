@@ -2,8 +2,8 @@
     auto reject = [&](int line, const string& callable,
                       const string& parameter, const string& type,
                       Effect effect, bool writes) {
-      if (canonical_type_name(type) != "range" &&
-          canonical_type_name(type) != "rangebatch") return;
+      if (canonical_type_name(type) != "Range" &&
+          canonical_type_name(type) != "RangeBatch") return;
       if (effect != Effect::Write && !writes) return;
       err(line, "parameter '" + parameter + "' of type '" + type +
           "' is a borrowed FileIO view and cannot have WRITE access in " +

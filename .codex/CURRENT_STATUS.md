@@ -1,5 +1,39 @@
 # Moss current status
 
+## Phase 21.D settled parity and borrowed-view checkpoint — 2026-10-10
+
+The transferred `ed8374f` WIP now builds and has a follow-up repair. Native
+Float echo lowering gives its temporary an explicit `f64` type, avoiding Rust
+E0689, and uses Debug formatting as an interim shortest-roundtrip mechanism.
+Fast Debug no longer rejects Float division by zero and renders signed zero,
+infinity, NaN, and integral Float values in the tested Phase 21 forms. The
+focused native/Fast Debug test runs generated Rust under `-D warnings` and
+passes for `inf`, `-inf`, `NaN`, and `-0.0`. Legacy test goldens for integral
+Float output changed from `3`/`0`/`8` to `3.0`/`0.0`/`8.0` where the normative
+Phase 21 text requires a fractional digit.
+
+The borrowed-view WRITE validator originally compared canonical types against
+lowercase `range`/`rangebatch` and never rejected them. It now compares
+`Range`/`RangeBatch`. The new focused gate proves direct `moss check --json`
+rejects WRITE through both formal types with `FILEIO_VIEW_PARAMETER_WRITE`,
+including the documented `RangeBatch` retargeting source, while an ordinary
+`Int` formal retains inferred WRITE. It does not yet prove the source-free
+`.mossi` specialization path; that remains required by V4-03.
+
+Final validation for this checkpoint: `make`, focused Float and borrowed-view
+scripts, `make check` (all Moss v0.1 tests, 40 generic probes, 129 builtin
+probes, and 54 Executor runtime probes), `make examples`, strict C++17
+`-Werror` compilation, and `git diff --check` passed. Earlier full-gate runs
+that stopped at old Float goldens are superseded by the final passing run.
+
+Phase 21.D is not complete. The normative general shortest-roundtrip formatter
+and tie-break algorithm are not frozen or implemented; current Debug/
+`setprecision(15)` formatting is interim and does not establish all §13.2
+goldens. The accepted finite decimal grammar, raising parse operations,
+`to_int` error cases, predicates, source-free view specialization test,
+supported Fast Debug `for` parity, and remaining documentation migration are
+open. Do not merge this WIP checkpoint as full Phase 21.D acceptance.
+
 ## Phase 21.0 corrective shared effects/error ABI checkpoint — 2026-10-10
 
 Worktree: `tmp/moss-worktrees/21-0`, branch

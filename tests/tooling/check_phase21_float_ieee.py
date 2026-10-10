@@ -21,7 +21,7 @@ SOURCE.write_text("""fn main():
 """)
 
 subprocess.run([str(COMPILER), str(SOURCE), "-o", str(RUST)], check=True)
-subprocess.run(["rustc", str(RUST), "-o", str(NATIVE)], check=True)
+subprocess.run(["rustc", "-D", "warnings", str(RUST), "-o", str(NATIVE)], check=True)
 native = subprocess.run([str(NATIVE)], check=True, capture_output=True, text=True).stdout
 debug = subprocess.run([str(COMPILER), "run", "--interp", str(SOURCE)],
                        check=True, capture_output=True, text=True).stdout

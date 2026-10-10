@@ -16037,11 +16037,11 @@ class Generator {
                                                    argument));
               auto type = generated_expr_type(s.args[argument], &types);
               if (type && canonical_type_name(*type) == "float")
-                rendered = "{ let __moss_echo_float = (" + rendered +
-                    "); if __moss_echo_float == 0.0 && "
+                rendered = "{ let __moss_echo_float: f64 = " + rendered +
+                    "; if __moss_echo_float == 0.0 && "
                     "__moss_echo_float.is_sign_negative() { "
                     "\"-0.0\".to_string() } else { "
-                    "__moss_echo_float.to_string() } }";
+                    "format!(\"{:?}\", __moss_echo_float) } }";
               o << ", " << rendered;
             }
             o << ");\n";
