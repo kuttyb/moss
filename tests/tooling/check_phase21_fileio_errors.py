@@ -116,6 +116,8 @@ fn test_open_mapping_and_cleanup(dir: &str) {
     let missing = format!("{}/missing/child", dir);
     require_error(FileIO::open_checked(&missing, "ro"), MossFileError::NotFound,
                   "missing path maps to NotFound");
+    require_error(FileIO::open_checked("invalid\0path", "ro"), MossFileError::IO,
+                  "interior-NUL path is a catchable generic IO cause");
     require_error(FileIO::open_checked(dir, "ro"), MossFileError::NotRegularFile,
                   "directory maps to NotRegularFile");
 

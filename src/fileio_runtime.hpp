@@ -695,10 +695,10 @@ pub mod moss_fileio {
         }
 
         pub fn open_checked(path: &str, mode: &str) -> Result<Self, MossFileError> {
-            let c_path = CString::new(path).unwrap_or_else(|_| {
-                eprintln!("[moss-fileio] error: invalid null byte in path: '{}'", path);
-                std::process::abort();
-            });
+            // An interior NUL is a caller-supplied path that cannot be passed
+            // to POSIX. It is not runtime misuse: keep it on FileIO's generic
+            // cause-based IO channel rather than turning it into a panic.
+            let c_path = CString::new(path).map_err(|_| MossFileError::IO)?;
             if let Some((cause, _)) = take_fileio_fault(MossFileIoFaultSite::OpenBefore) {
                 return Err(cause);
             }
