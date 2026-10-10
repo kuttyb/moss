@@ -132,6 +132,22 @@ fn test_open_mapping_and_cleanup(dir: &str) {
     let reopened = FileIO::open_checked(&path, "rw").unwrap();
     reopened.close_checked().unwrap();
 
+    let flag_path = format!("{}/flag-clear-cleanup.dat", dir);
+    *CLOSE_COUNT.lock().unwrap() = 0;
+    moss_set_close_override(counting_close);
+    moss_inject_fileio_fault(
+        MossFileIoFaultSite::OpenFlagClear,
+        MossFileError::IO,
+        0,
+    );
+    require_error(FileIO::open_checked(&flag_path, "create"), MossFileError::IO,
+                  "descriptor flag setup failure maps to IO and closes descriptor");
+    require(*CLOSE_COUNT.lock().unwrap() == 1,
+            "failed descriptor flag setup closes the new descriptor exactly once");
+    moss_clear_close_override();
+    let reopened_after_flag = FileIO::open_checked(&flag_path, "rw").unwrap();
+    reopened_after_flag.close_checked().unwrap();
+
     let parent_path = format!("{}/parent-open-cleanup.dat", dir);
     moss_inject_fileio_fault(
         MossFileIoFaultSite::ParentDirectoryOpen,

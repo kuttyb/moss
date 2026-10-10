@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 21.B FileIO open flag failure audit — 2026-10-10
+
+The native FileIO OS-site review found that `open_checked` ignored failures
+from `fcntl(F_GETFL)` and `fcntl(F_SETFL)` when clearing `O_NONBLOCK`. It could
+return an owner whose descriptor had different blocking behavior from the
+FileIO contract. Both failures now close the descriptor before any inode
+registry claim and return typed `FileError.IO`. A test-only `OpenFlagClear`
+fault proves the error is catchable, exactly one descriptor close occurs,
+and the same path can be reopened, so no claim/descriptor is left live. The
+focused typed FileIO test, full `make check` (`all Moss v0.1 tests passed`),
+`make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic` compilation,
+and `git diff --check` pass after the edit.
+
+The reviewed OS sites are open/reopen, descriptor metadata, flag setup,
+parent-directory open, `pread`, `pwrite`, file/parent `fsync` and `fdatasync`,
+and file/parent close. `fstatfs` is diagnostic-only. Invalid offsets, modes,
+bounds, and closed-resource use remain programmer-misuse panic paths; the
+runtime `is_open()` helper exists, while the Moss source API does not expose
+it. Final B proof and source API review remain open.
+
 ## Phase 21.A source-free Root trailer execution checkpoint — 2026-10-10
 
 Provider codegen now exports each checked `on_fail` arm as a typed callable

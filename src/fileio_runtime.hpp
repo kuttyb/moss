@@ -210,6 +210,7 @@ pub mod moss_fileio {
     pub enum MossFileIoFaultSite {
         OpenBefore,
         OpenAfterDescriptor,
+        OpenFlagClear,
         ParentDirectoryOpen,
         ReadBefore,
         ReadAfterPrefix,
@@ -239,6 +240,7 @@ pub mod moss_fileio {
         use self::MossFileIoFaultSite::*;
         match site {
             OpenBefore | OpenAfterDescriptor => true,
+            OpenFlagClear => cause == IO,
             ParentDirectoryOpen => matches!(cause, NotFound | PermissionDenied | NotRegularFile | IO),
             ReadBefore | ReadAfterPrefix => cause == IO,
             WriteBefore | WriteAfterPrefix | FileSync | ParentDirectorySync =>
@@ -826,10 +828,22 @@ pub mod moss_fileio {
                 }
             };
 
-            // Clear O_NONBLOCK to operate as standard blocking descriptor.
-            let flags = unsafe{ posix::fcntl(fd, posix::F_GETFL) };
-            if flags >= 0 {
-                unsafe{ posix::fcntl(fd, posix::F_SETFL, flags & !posix::O_NONBLOCK); }
+            // Clear O_NONBLOCK before exposing the owner. A failure here is
+            // an open failure, not permission to return a descriptor with
+            // different blocking behavior. No inode claim exists yet.
+            let injected_flag_error = take_fileio_fault(MossFileIoFaultSite::OpenFlagClear);
+            let flags = if injected_flag_error.is_some() {
+                -1
+            } else {
+                unsafe{ posix::fcntl(fd, posix::F_GETFL) }
+            };
+            let flag_clear_failed = flags < 0 ||
+                unsafe{ posix::fcntl(fd, posix::F_SETFL, flags & !posix::O_NONBLOCK) } < 0;
+            if flag_clear_failed {
+                let cguard = SoloGuard::new("cleanup_close");
+                let _ = unsafe{ sys_close(fd) };
+                drop(cguard);
+                return Err(MossFileError::IO);
             }
 
             // Check filesystem diagnostic
