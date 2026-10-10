@@ -1,5 +1,42 @@
 # Moss current status
 
+## Multi-worktree transfer correction — 2026-10-10
+
+The first machine-transfer audit inspected only the primary worktree. A
+follow-up `git worktree list --porcelain` audit found active Phase 21 work in
+repository-local worktrees under `tmp/moss-worktrees/`. The earlier statement
+below that implementation had not started is superseded by this section.
+
+All registered Phase 21 worktrees are now clean. Their transfer heads are:
+
+- `phase-21-0-effects-abi` at `f27b2629efa2c321bef953e62ca73d230e56f96f`;
+  this branch already matches `origin/phase-21-0-effects-abi`.
+- `phase-21-a-recovery` at `299fdf3fdfe9f81c225a92b1ec065e46140ede43`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-b-fileio-errors` at `a47e6393737dc14f80778e2199383dc89a09a2e8`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-c-branch-errors` at `f0c04648cc74a303a71345063128dc863fa4bc76`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-d-language-parity` at
+  `ed8374f` (`Checkpoint Phase 21 language parity work`); this explicit WIP
+  commit preserves the five files that were uncommitted when the audit began.
+  It has no configured upstream and is not contained in `main`. Only
+  `git diff --check` was run for that WIP on this resource-constrained laptop.
+- `phase-21-integration` at
+  `f27b2629efa2c321bef953e62ca73d230e56f96f`; it currently has no unique
+  integration commit beyond the Phase 21.0 head.
+- `phase-21-planning` at `458fa52a66adae45ebefc94dca62152c194fae86`;
+  it is ten commits ahead of `origin/phase-21-planning`. Its
+  `.codex/PHASE_21_TASK_REGISTER.md` is the authoritative detailed coordinator
+  record, including current integration blockers.
+
+These workstream commits are intentionally not merged into `main`: the Phase
+21 handoff requires contract-aware integration and lists unresolved blockers.
+To transfer them through the remote, the user must push `main` plus the local
+workstream/planning branch heads. Codex must not run `git push`. A pull/fetch on
+the stronger machine can then recover the branch refs and recreate worktrees;
+do not rely on the disposable `tmp/moss-worktrees/` directories themselves.
+
 ## Machine-transfer checkpoint — 2026-10-10
 
 This checkpoint was requested so work can resume on a more powerful machine.
@@ -19,14 +56,14 @@ are already committed:
 - `ed0b3d23596e189dec7c259319dd3d570a2120b0` adds the independent review and
   implementation plan, `docs/MOSS_PHASE_21_IMPLEMENTATION_HANDOFF.md`.
 
-Implementation has **not** started. Resume with the repository startup
-sequence (load both Moss skills, run `./moss agent bootstrap --json`, and
-confirm `moss-0.1`), then read the two Phase 21 documents above. The first
-implementation milestone is the hard dependency **Phase 21.0 shared
-representation/ABI contract**: freeze the concrete `ObservableEffects`
-raise-set representation, tagged outcomes, Root/nested wrapper roles, failure
-arm capture/D7 ABI, `.mossi` records/versioning, and exceptional-CFG schema.
-Commit and review 21.0 before starting or integrating workstreams 21.A–21.D.
+At the time of this first note, the primary worktree showed no implementation
+changes. That was not a complete repository-wide conclusion: the active
+worktrees and implementation heads are recorded in the correction above.
+Resume with the repository startup sequence (load both Moss skills, run
+`./moss agent bootstrap --json`, and confirm `moss-0.1`), then read the two
+Phase 21 documents and the planning branch's task register. Phase 21.0 has
+since been committed, and workstreams 21.A–21.D have work in progress; use the
+recorded branch heads and blocker register rather than restarting Phase 21.0.
 Do not claim the phase complete from design-level proofs; the handoff's O1–O9
 and integration matrix require implementation evidence.
 
