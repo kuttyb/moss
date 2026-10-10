@@ -1,3 +1,11 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 domain Store:
   file: FileIO
   value = 0
@@ -28,10 +36,13 @@ domain Store:
 
 fn main():
   store = Store()
-  message store.Open()
-  message store.Update()
-  echo message store.Verify()
-  message store.Flush()
-  message store.Chunks()
-  echo message store.Total()
-  message store.Close()
+  try:
+    message store.Open()
+    message store.Update()
+    echo message store.Verify()
+    message store.Flush()
+    message store.Chunks()
+    echo message store.Total()
+    message store.Close()
+  recover:
+    echo "unexpected FileIO error"

@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 21.I checked chunk FileIO follow-up — 2026-10-10
+
+After pushed integration checkpoint `0614399`, migrated the older Phase 20
+Executor/FileIO sources to declare the six `FileError` variants and make Root
+handlers or `main` total under typed failure. The range-copy fixture keeps
+its bounded read/write in a helper because a direct `try` wrapper lost the
+checker proof of its finite write payload. The physical Rust lock observer
+now unwraps the generated typed outcomes instead of assuming bare values.
+
+Native chunk lowering no longer emits undefined failure placeholders. It
+returns `Err(__moss_raise_fileio(error))` from a checked outcome context,
+mapping `MossFileError` to the existing `__MossRaised` tags. Sequential
+pipelines now propagate raising map and combine calls; explicit-module code
+gets a `FileError` alias for its qualified enum when needed. A permanent
+native regression compiles and runs an ordinary read (`4`) and an injected
+read error recovered through an ordinary helper (`99`). The complete Phase
+20 Executor/FileIO suite passes, including its source-free package case;
+the focused 21.C Branch-error and physical lock gates also pass.
+
+The latest `make check` passes all gates through Phase 15.9, including 40/40
+generic and 129/129 builtin typing probes, then fails in
+`tests/tooling/check_phase20_fileio_semantics.py`: its first positive source,
+`root_read`, lets typed FileIO errors escape `main`. This is the next legacy
+source migration gate. `make examples` and strict C++17 `-Werror` compilation
+pass on the latest source. Phase 21 proof gates remain open, notably native
+speculative mapper raised-outcome coverage, source-free failure-arm capture,
+and the numeric parsing/formatting contract.
+
 ## Phase 21.I combined A+B+C+D integration checkpoint — 2026-10-10
 
 The integration branch merged the current 21.D checkpoint (`a20d250`) and

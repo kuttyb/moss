@@ -166,8 +166,7 @@ assert "::Value { index:" in text
 assert ".read_checked(" in text
 assert ".read(" not in text[scope_match.start():join_at]
 raise_at = text.index(
-    "return __MossBodyOutcome_Worker_Check::Raised("
-    "__moss_raise_fileio_Worker_Check(error))",
+    "return Err(__moss_raise_fileio(error))",
     observe_at,
 )
 assert raise_at > join_at

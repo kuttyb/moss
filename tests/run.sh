@@ -29,6 +29,7 @@ python3 tests/tooling/check_agent_baseline_analysis.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase22_3_ab.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_executor_fileio.py "$compiler" "$test_build"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21c_branch_errors.py "$compiler" "$test_build"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_chunk_fileio_raise.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_domain_field_physical.py "$compiler" "$test_build/phase20_domain_physical"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_r5_fair.py "$test_build/phase20_r5_fair"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_teaching_diagnostics.py "$compiler"

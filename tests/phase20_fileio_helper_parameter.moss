@@ -1,9 +1,20 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 fn inspect(file: FileIO) -> Int:
   data = file.read(0, 64)
   return data.length()
 
 fn main():
-  file = FileIO.open("tests/phase20_fileio_helper_parameter.moss", ro)
-  result = inspect(file)
-  file.close()
-  echo result
+  try:
+    file = FileIO.open("tests/phase20_fileio_helper_parameter.moss", ro)
+    result = inspect(file)
+    file.close()
+    echo result
+  recover:
+    echo "unexpected FileIO error"

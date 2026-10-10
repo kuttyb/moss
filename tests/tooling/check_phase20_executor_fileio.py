@@ -466,7 +466,15 @@ assert '.bytes()' in range_iteration_rust.read_text()
 assert run_binary(range_iteration_binary).stdout == '294\n'
 
 # Agent A also accepts bounded computed local Vector[record] request batches.
-computed_batch_source = write_source('phase20_fileio_computed_batch', '''type ReadRequest:
+computed_batch_source = write_source('phase20_fileio_computed_batch', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+type ReadRequest:
   offset: Int
   size: Int
 
@@ -481,12 +489,15 @@ fn inspect(file: FileIO, offset: Int) -> Int:
   return second.length() + total
 
 fn main():
-  file = FileIO.open("%s", create)
-  file.write(0, "abcdefgh")
-  result = inspect(file, 1)
-  file.sync()
-  file.close()
-  echo result
+  try:
+    file = FileIO.open("%s", create)
+    file.write(0, "abcdefgh")
+    result = inspect(file, 1)
+    file.sync()
+    file.close()
+    echo result
+  recover:
+    echo "unexpected FileIO error"
 ''' % (out / 'phase20_fileio_computed_batch.data'))
 computed_data = out / 'phase20_fileio_computed_batch.data'
 if computed_data.exists():
@@ -507,7 +518,15 @@ assert run_binary(binary).stdout == '64\n'
 # ---------------------------------------------------------------------------
 # FileIO chunk pipelines.
 # ---------------------------------------------------------------------------
-CHUNK_SOURCE = '''fn chunk_length(chunk: Range) -> Int:
+CHUNK_SOURCE = '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
 fn positional(acc: Int, len: Int) -> Int:
@@ -523,6 +542,9 @@ domain Counter:
     total = file.chunks({size}) |> map(chunk_length) |> reduce(start_acc(), positional)
     file.close()
     reply total
+
+  on_fail:
+    reply -1
 
 fn main():
   counter = Counter()
@@ -600,7 +622,15 @@ chunk_data.write_bytes(b'0123456789abc')
 
 # FileIO reached (transitively, through a helper) from map, and from combine:
 # both remain valid Moss and lower sequentially.
-ineligible_case('phase20_chunk_fileio_map', write_source('phase20_chunk_fileio_map', '''fn chunk_len_io(chunk: Range) -> Int:
+ineligible_case('phase20_chunk_fileio_map', write_source('phase20_chunk_fileio_map', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_len_io(chunk: Range) -> Int:
   side = FileIO.open("%s", ro)
   extra = side.read(0, 1).length()
   side.close()
@@ -610,13 +640,24 @@ fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
 fn main():
-  file = FileIO.open("%s", ro)
-  total = file.chunks(2) |> map(chunk_len_io) |> reduce(0, positional)
-  file.close()
-  echo total
+  try:
+    file = FileIO.open("%s", ro)
+    total = file.chunks(2) |> map(chunk_len_io) |> reduce(0, positional)
+    file.close()
+    echo total
+  recover:
+    echo "unexpected FileIO error"
 ''' % (side, chunk_data)), '2222221\n', 'map stage reaches a FileIO operation')
 
-ineligible_case('phase20_chunk_fileio_combine', write_source('phase20_chunk_fileio_combine', '''fn chunk_length(chunk: Range) -> Int:
+ineligible_case('phase20_chunk_fileio_combine', write_source('phase20_chunk_fileio_combine', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
 fn positional_io(acc: Int, len: Int) -> Int:
@@ -626,10 +667,13 @@ fn positional_io(acc: Int, len: Int) -> Int:
   return acc * 10 + len + extra * 0
 
 fn main():
-  file = FileIO.open("%s", ro)
-  total = file.chunks(2) |> map(chunk_length) |> reduce(0, positional_io)
-  file.close()
-  echo total
+  try:
+    file = FileIO.open("%s", ro)
+    total = file.chunks(2) |> map(chunk_length) |> reduce(0, positional_io)
+    file.close()
+    echo total
+  recover:
+    echo "unexpected FileIO error"
 ''' % (side, chunk_data)), '2222221\n', 'combine stage reaches a FileIO operation')
 
 # Inside a handler: a capture-free placeholder map is eligible (and its
@@ -637,7 +681,15 @@ fn main():
 # is ineligible and lowers sequentially, still producing the right result.
 handler_data = out / 'phase20_chunk_handler.data'
 handler_data.write_bytes(b'123456')
-handler_source = write_source('phase20_chunk_handler', '''fn positional(acc: Int, len: Int) -> Int:
+handler_source = write_source('phase20_chunk_handler', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn positional(acc: Int, len: Int) -> Int:
   return acc * 10 + len
 
 domain Counter:
@@ -649,11 +701,17 @@ domain Counter:
     file.close()
     reply total
 
+  on_fail:
+    reply -1
+
   fn Bonus(path: String) -> Int:
     file = FileIO.open(path, ro)
     total = file.chunks(3) |> map(_.length() + bonus) |> reduce(0, positional)
     file.close()
     reply total
+
+  on_fail:
+    reply -1
 
 fn main():
   counter = Counter()
@@ -723,6 +781,14 @@ provider_data.write_bytes(b'123456')
 (consumer / 'src/main.moss').write_text("""module app
 import folds
 
+export enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 fn chunk_length(chunk: Range) -> Int:
   return chunk.length()
 
@@ -739,6 +805,9 @@ domain Counter:
     provider_total = file.chunks(3) |> map(chunk_length) |> reduce(0, provider_positional)
     file.close()
     reply local_total * 100 + provider_total
+
+  on_fail:
+    reply -1
 
 fn main():
   counter = Counter()
@@ -769,7 +838,15 @@ e2e_data = out / 'phase20_e2e.data'
 e2e_data.write_bytes(bytes(range(256)) * 400 + b'tail')
 for suffix in ('a', 'b'):
     (out / ('phase20_e2e.data.' + suffix)).write_bytes(e2e_data.read_bytes())
-e2e_source = write_source('phase20_e2e_executor_fileio', '''fn add_length(acc: Int, len: Int) -> Int:
+e2e_source = write_source('phase20_e2e_executor_fileio', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn add_length(acc: Int, len: Int) -> Int:
   return acc + len
 
 domain Count:
@@ -779,6 +856,9 @@ domain Count:
     file.close()
     reply total
 
+  on_fail:
+    reply -1
+
 domain Reader:
   seen = 0
 
@@ -787,6 +867,9 @@ domain Reader:
     data = file.read(0, 64)
     seen = seen + data.length()
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Seen() -> Int:
     reply seen
@@ -822,25 +905,42 @@ for _ in range(5):
     assert any(position > solo_positions[0] for position in worker_positions), stdout
 
 # Sequential `for` over the scoped chunk source iterates Agent B's MossChunks.
-for_chunks_source = write_source('phase20_for_chunks', '''fn main():
-  file = FileIO.open("%s", ro)
-  for chunk in file.chunks(3):
-    echo chunk.length()
-  file.close()
+for_chunks_source = write_source('phase20_for_chunks', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn main():
+  try:
+    file = FileIO.open("%s", ro)
+    for chunk in file.chunks(3):
+      echo chunk.length()
+    file.close()
+  recover:
+    echo "unexpected FileIO error"
 ''' % (out / 'phase20_chunk_short_final.data'))
 _, binary = native_build('phase20_for_chunks', for_chunks_source)
 assert run_binary(binary).stdout == '3\n3\n1\n'
 
 # The chunk source is a scoped seq[Range], not a materializable collection.
 expect_rejected(write_source('phase20_chunks_materialize', '''fn main():
-  file = FileIO.open("%s", ro)
-  c = file.chunks(4)
-  file.close()
+  try:
+    file = FileIO.open("%s", ro)
+    c = file.chunks(4)
+    file.close()
+  recover:
+    pass
 ''' % chunk_data), 'not a materializable collection', code='FILEIO_CHUNKS_NOT_MATERIALIZABLE')
 expect_rejected(write_source('phase20_chunks_shape', '''fn main():
-  file = FileIO.open("%s", ro)
-  n = file.chunks(4) |> count
-  file.close()
+  try:
+    file = FileIO.open("%s", ro)
+    n = file.chunks(4) |> count
+    file.close()
+  recover:
+    pass
 ''' % chunk_data), "must be exactly 'file.chunks(size) |> map(f) |> reduce(initial, combine)'",
     code='FILEIO_CHUNK_PIPELINE_SHAPE')
 

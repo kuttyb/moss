@@ -13413,6 +13413,22 @@ class Generator {
   void gen_phase21_raised_type(std::ostringstream& o) const {
     const RaiseSet raised = phase21_program_raise_set();
     if (raised.empty()) return;
+    bool has_file_error = enums_.count("FileError") != 0;
+    if (program_uses_fileio(p_) && !has_file_error) {
+      string qualified_file_error;
+      for (const auto& entry : enums_)
+        if (ends_with(entry.first, "__FileError")) {
+          if (!qualified_file_error.empty()) {
+            qualified_file_error.clear();
+            break;
+          }
+          qualified_file_error = entry.first;
+        }
+      if (!qualified_file_error.empty()) {
+        o << "use " << qualified_file_error << " as FileError;\n\n";
+        has_file_error = true;
+      }
+    }
     o << "#[derive(Clone, Debug)]\n";
     if (p_.explicit_module) o << "pub ";
     o << "enum __MossRaised {\n";
@@ -13422,6 +13438,23 @@ class Generator {
       o << "),\n";
     }
     o << "}\n\n";
+    if (program_uses_fileio(p_) && has_file_error) {
+      o << "#[allow(dead_code)]\n"
+        << "fn __moss_raise_fileio(error: MossFileError) -> __MossRaised {\n"
+        << "    match error {\n";
+      for (const char* name : {"NotFound", "PermissionDenied",
+                               "NotRegularFile", "InUse", "Full", "IO"}) {
+        const RaisedIdentity identity =
+            RaisedIdentity::enum_variant("FileError", name);
+        o << "        MossFileError::" << name << " => ";
+        if (raised.count(identity))
+          o << "__MossRaised::" << phase21_rust_variant(identity)
+            << "(FileError::" << name << "),\n";
+        else
+          o << "std::process::abort(),\n";
+      }
+      o << "    }\n}\n\n";
+    }
   }
 
   std::optional<string> phase21_external_module_for_symbol(
