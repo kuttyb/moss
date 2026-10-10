@@ -19,6 +19,18 @@ fn handled(flag: Bool):
   recover:
     echo "failed"
 
+fn reraised():
+  try:
+    raise WorkError.Missing
+  recover WorkError.Missing:
+    raise
+
+fn handle_reraised():
+  try:
+    reraised()
+  recover err:
+    echo err
+
 test "local typed recovery":
   handled(true)
 
@@ -28,3 +40,8 @@ domain FailureOwner:
 
   on_fail WorkError.Missing:
     echo "handled at Root"
+
+fn main():
+  handled(true)
+  handled(false)
+  handle_reraised()

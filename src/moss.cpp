@@ -4437,6 +4437,9 @@ class Checker {
             err(arm.line, "recover requires a statement body",
                 "EMPTY_RECOVER_BODY");
           TypeEnv recovered = incoming;
+          if (!arm.a.empty() && arm.a.find('.') == string::npos &&
+              arm.a.find(',') == string::npos)
+            recovered[arm.a] = "_selected_error";
           walk_type_environment_block(statements, index, level + 1, recovered,
                                       visitor, reject_conflicts,
                                       record_join_types, record_semantic_types,

@@ -45,4 +45,14 @@ invalid_json = json.loads(invalid.stdout)
 assert not invalid_json["ok"], invalid_json
 assert invalid_json["error"]["code"] == "BARE_RAISE_OUTSIDE_RECOVER", invalid_json
 
-print("Phase 21 recovery checker and variant-precise effect probes passed.")
+interpreted = run(compiler, "run", "--interp", source)
+assert interpreted.returncode == 0, (interpreted.stdout, interpreted.stderr)
+assert interpreted.stdout == "missing\nfailed\nWorkError.Missing\n", interpreted.stdout
+
+traced = run(compiler, "run", "--interp", "--trace", source)
+assert traced.returncode == 0, (traced.stdout, traced.stderr)
+events = [json.loads(line) for line in traced.stderr.splitlines() if line.strip()]
+assert sum(item.get("event") == "raise" for item in events) == 4, events
+assert sum(item.get("event") == "recover" for item in events) == 4, events
+
+print("Phase 21 recovery checker, effects, and Fast Debug probes passed.")

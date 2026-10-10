@@ -1,5 +1,44 @@
 # Moss current status
 
+## Phase 21.A restart checkpoint — 2026-10-10
+
+Work resumed on `phase-21-a-recovery` in
+`tmp/moss-worktrees/21-a` from transferred head
+`299fdf3fdfe9f81c225a92b1ec065e46140ede43`. All seven Phase 21 worktrees were
+recreated locally at the exact remote heads recorded by the Phase 21 planning
+register. This checkpoint is intentionally limited to the 21.A worktree; no
+integration merge or push was performed.
+
+In-flight implementation adds checked Fast Debug execution for Phase 21
+`try`/`recover`/`raise`: typed raised values propagate through ordinary helper
+calls, qualified and catch-all recovery arms select the originating error, bare
+`raise` preserves the selected typed value through an outer recovery, bound
+catch-all errors are installed and restored lexically, and structured traces
+emit `raise`/`recover` events. The primary type-environment walker now also
+introduces the already-supported `recover err:` binding, matching the effect and
+ownership walkers. Focused coverage exercises variant-precise effects, both
+normal variants, a bound catch-all, bare re-raise, outer recovery, stdout, and
+trace counts.
+
+Completed validation on the current source revision:
+
+- Branch compiler rebuilt successfully with `make`.
+- `python3 tests/tooling/check_phase21_recovery_semantics.py ./moss`: PASS
+  (`Phase 21 recovery checker, effects, and Fast Debug probes passed`).
+- `python3 tests/tooling/check_phase21_shared_abi.py
+  tmp/resume-phase21-shared-abi-1`: PASS.
+
+Known next issue: `check_phase21_source_free_abi.py` now reaches the synthetic
+provider stage and fails because 21.A correctly enforces `main` totality after
+the test rewrites provider `Bump` metadata to raise
+`provider::FileError.Full`, while the fixture's `main` still sends `Bump`
+without `try`/`recover`. Update that fixture to include a valid recovery arm
+that is merely unreachable before the metadata rewrite, rerun the source-free
+gate, then run strict compilation. Native generator lowering remains the major
+21.A blocker: its statement switch still warns that `Try`, `Recover`, and
+`Raise` are unhandled. Do not claim 21.A or Phase 21 complete from this Fast
+Debug checkpoint.
+
 ## Phase 21.0 corrective shared effects/error ABI checkpoint — 2026-10-10
 
 Worktree: `tmp/moss-worktrees/21-0`, branch
