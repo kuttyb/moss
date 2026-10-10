@@ -126,6 +126,9 @@ struct FailureArm {
   // raise set. Populated by the checker; code generation must not reconstruct
   // reachability from source spelling.
   RaiseSet exceptional_alternatives;
+  // Checked pseudo-handler footprint exported for a compiled provider's
+  // fresh Root failure interval. This is distinct from the normal handler.
+  std::optional<StateLeafEffects> state_effects;
   vector<Stmt> body;
 };
 struct Method {

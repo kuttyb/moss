@@ -125,27 +125,36 @@ def run_source_free_on_fail_gap_fixture():
 export enum ServiceError:
   Bad(code: Int)
 export domain Worker:
+  count: Int
   fn Run() -> Int:
     raise ServiceError.Bad(code: 4)
   on_fail ServiceError.Bad(code):
+    count = count + 1
     echo code
-    reply code + 1
+    reply count
 ''')
+    provider_only = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
+    assert provider_only["result"]["artifacts"]["module_rlibs"]
+    interface = (trailer_out / "build/debug/service.mossi").read_text()
+    assert '  handler_state_effects "Run" 0 0 0' in interface
+    arm_record = next(line for line in interface.splitlines()
+                      if line.startswith('  handler_failure_arm "Run" 0 '))
+    assert ' 1 "count" 1 "count" 0' in arm_record, arm_record
     main = trailer_out / "src/main.moss"
     main.write_text('''module app
 import service
 fn main():
-  worker = service.Worker()
+  worker = service.Worker(count: 3)
   echo message worker.Run()
 ''')
     source_backed = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
-    assert run([source_backed["result"]["artifacts"]["executable"]]).stdout == "4\n5\n"
+    assert run([source_backed["result"]["artifacts"]["executable"]]).stdout == "4\n4\n"
     provider.rename(provider.with_suffix(".removed"))
     assert_unmaterialized_on_fail(main, trailer_out)
     main.write_text('''module app
 import service
 fn main():
-  worker = service.Worker()
+  worker = service.Worker(count: 3)
   try:
     echo message worker.Run()
   recover service.ServiceError.Bad(code):

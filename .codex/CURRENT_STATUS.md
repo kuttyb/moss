@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 21.A source-free failure-arm state effects — 2026-10-10
+
+In isolated branch `phase-21-a-source-free`, each checked source `on_fail`
+arm now retains its own inferred state-leaf footprint, and `.mossi` exports
+those reads/writes/consumes in the arm's ABI-v8 record. A real provider
+fixture has a normal handler with no state effects and a trailer that reads
+and writes `count`; the interface records `handler_state_effects` as empty
+for the normal path and `count` as both read and write for the trailer. The
+source-backed executable prints the typed payload `4` and reply `4`.
+
+The user also approved D's remaining finite `parse_float` spellings on
+2026-10-10: accept leading zeros (`00.5`) and explicit exponent signs
+(`1e+3`, `1e-3`), in addition to the previously approved `.5`, `1.`, and
+uppercase `E`. These decisions await a separate numeric spec/parser change.
+
+The focused source-free ABI suite, full `make check` (`all Moss v0.1 tests
+passed`), `make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic`
+build, and `git diff --check` pass after these edits. The existing source-free
+`on_fail` fail-closed diagnostic remains
+until callable bodies, owned capture frames, and application Root dispatch
+are materialized. No integration merge or Phase 21 acceptance is claimed.
+
 ## Phase 21.I source-free `on_fail` fail-closed guard — 2026-10-10
 
 A real provider with a typed `on_fail` trailer builds and runs when its Moss

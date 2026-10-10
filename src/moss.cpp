@@ -6077,8 +6077,12 @@ class Checker {
     // Source declarations retain semantic observations for .mossi export only
     // after instance plans have consumed their exact specialization contexts.
     for (auto& domain : p_.domains)
-      for (auto& handler : domain.handlers)
+      for (auto& handler : domain.handlers) {
         handler.state_effects = specialized_handler_effects(domain, handler, nullptr);
+        for (auto& arm : handler.failure_arms)
+          arm.state_effects = specialized_handler_body_effects(
+              domain, handler, arm.body, nullptr);
+      }
   }
 
   static bool storage_locations_overlap(const StorageLocation& left,
@@ -26156,6 +26160,14 @@ static ProviderHandlerAbi source_provider_handler_abi(
     }
     arm.callable_symbol = "__moss_on_fail_" + domain.name + "_" +
         handler.name + "_" + std::to_string(arm.source_order);
+    synchronization_require(
+        source_arm.state_effects.has_value(),
+        "checked on_fail arm lacks its state-effect footprint");
+    const auto& effects = *source_arm.state_effects;
+    arm.state_reads.assign(effects.reads.begin(), effects.reads.end());
+    arm.state_writes.assign(effects.writes.begin(), effects.writes.end());
+    arm.state_consumes.assign(effects.consumes.begin(),
+                              effects.consumes.end());
     abi.failure_arms.push_back(std::move(arm));
   }
   abi.reply.moss_type = handler.reply_type.value_or("unit");
