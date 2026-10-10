@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 21.D Float predicates checkpoint — 2026-10-10
+
+`is_nan(Float) -> Bool` and `is_finite(Float) -> Bool` are implemented as
+nonraising pure builtins in the checker, native Rust lowering, Fast Debug,
+module rewriting, and live `source_surface` discovery. The practical guide
+documents them. The focused gate checks NaN, infinities, finite and signed
+zero values in both engines; rejects Int arguments and wrong arity with
+structured diagnostics; verifies resolved effect summaries without raises or
+panics; and builds/runs a generic explicit-module call in both engines.
+
+After integration, the focused gate, full `make check` (`all Moss v0.1 tests
+passed`), `make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic`
+build, and `git diff --check` pass. D still needs raising `parse_int` and
+`parse_float`, checked `to_int`, the general Rust-independent native Float
+formatter/tie-break, wider toolchain pins, and remaining documentation
+migration. A's executable source-free `on_fail` and capture frame, B's final
+FileIO/proof audit, and C's final O9 review also remain open. No Phase 21
+acceptance or merge to `main` is claimed.
+
 ## Phase 21.D numeric grammar and Float text checkpoint — 2026-10-10
 
 The approved §13.3 finite decimal grammar now explicitly accepts `.5`,
@@ -16,7 +35,7 @@ nonfinite results, `0.1 + 0.2`, both notation boundaries, and binary64
 subnormal/minimum-normal/maximum-finite values. The native path still relies
 on Rust Debug for shortest digits; the general Rust-independent tie-break
 implementation and wider cross-toolchain pins remain open, along with
-`parse_int`, `parse_float`, `to_int`, predicates, and documentation migration.
+`parse_int`, `parse_float`, `to_int`, and documentation migration.
 
 After the A, C, and D checkpoints were integrated, complete `make check`
 (`all Moss v0.1 tests passed`), `make examples`, strict C++17
@@ -52,7 +71,7 @@ source-backed executable prints the typed payload `4` and reply `4`.
 The user also approved D's remaining finite `parse_float` spellings on
 2026-10-10: accept leading zeros (`00.5`) and explicit exponent signs
 (`1e+3`, `1e-3`), in addition to the previously approved `.5`, `1.`, and
-uppercase `E`. These decisions await a separate numeric spec/parser change.
+uppercase `E`. The grammar is now documented; the parser remains pending.
 
 The focused source-free ABI suite, full `make check` (`all Moss v0.1 tests
 passed`), `make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic`
