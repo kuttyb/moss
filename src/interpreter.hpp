@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cmath>
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
-#include <iomanip>
 #include <limits>
 #include <memory>
 #include <map>
@@ -1556,6 +1556,42 @@ inline bool FastInterpreter::Value::truthy() const {
   if (kind == Kind::Map) return map && !map->empty();
   return kind != Kind::Unit;
 }
+inline std::string moss_canonical_float_text(double value) {
+  if (std::isnan(value)) return "NaN";
+  if (std::isinf(value)) return std::signbit(value) ? "-inf" : "inf";
+  if (value == 0.0) return std::signbit(value) ? "-0.0" : "0.0";
+
+  char buffer[128];
+  auto converted = std::to_chars(buffer, buffer + sizeof(buffer),
+                                 std::fabs(value), std::chars_format::scientific);
+  if (converted.ec != std::errc{})
+    throw std::runtime_error("failed to format Float");
+  std::string scientific(buffer, converted.ptr);
+  size_t exponent_at = scientific.find('e');
+  if (exponent_at == std::string::npos)
+    throw std::runtime_error("scientific Float format lacks exponent");
+  int exponent = std::stoi(scientific.substr(exponent_at + 1));
+  std::string digits;
+  for (size_t index = 0; index < exponent_at; ++index)
+    if (scientific[index] != '.') digits += scientific[index];
+
+  std::string result;
+  if (exponent >= -4 && exponent < 16) {
+    int decimal_at = exponent + 1;
+    if (decimal_at <= 0)
+      result = "0." + std::string(static_cast<size_t>(-decimal_at), '0') + digits;
+    else if (static_cast<size_t>(decimal_at) >= digits.size())
+      result = digits + std::string(static_cast<size_t>(decimal_at) - digits.size(), '0') + ".0";
+    else
+      result = digits.substr(0, static_cast<size_t>(decimal_at)) + "." +
+          digits.substr(static_cast<size_t>(decimal_at));
+  } else {
+    result = digits.substr(0, 1);
+    if (digits.size() > 1) result += "." + digits.substr(1);
+    result += "e" + std::to_string(exponent);
+  }
+  return std::signbit(value) ? "-" + result : result;
+}
 inline std::string FastInterpreter::Value::display() const {
   std::ostringstream out;
   switch (kind) {
@@ -1563,14 +1599,7 @@ inline std::string FastInterpreter::Value::display() const {
     case Kind::Unit: return "()";
     case Kind::Bool: return boolean ? "true" : "false";
     case Kind::Int: return std::to_string(integer);
-    case Kind::Float:
-      if (std::isnan(floating)) return "NaN";
-      if (std::isinf(floating)) return std::signbit(floating) ? "-inf" : "inf";
-      if (floating == 0.0 && std::signbit(floating)) return "-0.0";
-      out << std::setprecision(15) << floating;
-      if (out.str().find_first_of(".eE") == std::string::npos)
-        out << ".0";
-      return out.str();
+    case Kind::Float: return moss_canonical_float_text(floating);
     case Kind::String: return string;
     case Kind::Callable: return "<callable:" + string + ">";
     case Kind::Struct:

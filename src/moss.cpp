@@ -81,6 +81,36 @@ static bool ends_with(const string& s, const string& p) {
   return s.size() >= p.size() && s.compare(s.size() - p.size(), p.size(), p) == 0;
 }
 
+static bool decimal_float_literal(const string& value) {
+  size_t index = 0;
+  if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+    ++index;
+  auto digits = [&] {
+    size_t start = index;
+    while (index < value.size() &&
+           std::isdigit(static_cast<unsigned char>(value[index])))
+      ++index;
+    return index != start;
+  };
+  bool before_point = digits();
+  bool point = index < value.size() && value[index] == '.';
+  bool after_point = false;
+  if (point) {
+    ++index;
+    after_point = digits();
+  }
+  if (!before_point && !after_point) return false;
+  bool exponent = index < value.size() &&
+      (value[index] == 'e' || value[index] == 'E');
+  if (exponent) {
+    ++index;
+    if (index < value.size() && (value[index] == '+' || value[index] == '-'))
+      ++index;
+    if (!digits()) return false;
+  }
+  return index == value.size() && (point || exponent);
+}
+
 static string stable_hash(const string& value) {
   std::uint64_t hash = 14695981039346656037ULL;
   for (unsigned char byte : value) {
@@ -3297,12 +3327,7 @@ class Checker {
     if (start < e.size() && std::all_of(e.begin() + static_cast<std::ptrdiff_t>(start), e.end(), [](char c) {
           return std::isdigit(static_cast<unsigned char>(c));
         })) return "int";
-    bool dot = false, digit = start < e.size();
-    for (size_t i = start; digit && i < e.size(); ++i) {
-      if (e[i] == '.' && !dot) dot = true;
-      else if (!std::isdigit(static_cast<unsigned char>(e[i]))) digit = false;
-    }
-    if (digit && dot) return "float";
+    if (decimal_float_literal(e)) return "float";
     return std::nullopt;
   }
 
@@ -3702,6 +3727,11 @@ class Checker {
                 --before;
               if (before == 0) return true;
               char prior = expression[before - 1];
+              if ((prior == 'e' || prior == 'E') && before >= 2 &&
+                  std::isdigit(static_cast<unsigned char>(expression[before - 2])) &&
+                  i + 1 < expression.size() &&
+                  std::isdigit(static_cast<unsigned char>(expression[i + 1])))
+                return true;
               return prior == '(' || prior == '[' || prior == '{' || prior == ',' ||
                   prior == ':' || prior == '+' || prior == '-' || prior == '*' ||
                   prior == '/' || prior == '%' || prior == '=' || prior == '<' ||
@@ -13971,6 +14001,11 @@ class Generator {
             --before;
           if (before == 0) continue;
           char previous = expression[before - 1];
+          if ((previous == 'e' || previous == 'E') && before >= 2 &&
+              std::isdigit(static_cast<unsigned char>(expression[before - 2])) &&
+              index + 1 < expression.size() &&
+              std::isdigit(static_cast<unsigned char>(expression[index + 1])))
+            continue;
           if (previous == '(' || previous == '[' || previous == '{' ||
               previous == ',' || previous == '+' || previous == '-' ||
               previous == '*' || previous == '/' || previous == '%' || previous == '<' ||
@@ -14173,16 +14208,9 @@ class Generator {
     if (plain_identifier(value) && functions_.count(value))
       return "callable:" + value;
     if (auto typed_vector = typed_empty_vector_constructor(value)) return *typed_vector;
-    size_t start = !value.empty() && (value.front() == '+' || value.front() == '-') ? 1 : 0;
     if (generated_integer_literal(value))
       return string("int");
-    bool dot = false;
-    bool numeric = start < value.size();
-    for (size_t index = start; numeric && index < value.size(); ++index) {
-      if (value[index] == '.' && !dot) dot = true;
-      else if (!std::isdigit(static_cast<unsigned char>(value[index]))) numeric = false;
-    }
-    if (numeric && dot) return string("float");
+    if (decimal_float_literal(value)) return string("float");
     if (value.size() >= 2 && value.front() == '[' && value.back() == ']') {
       auto elements = split_top_level(value.substr(1, value.size() - 2), ',');
       if (elements.size() == 1 && elements.front().empty()) return std::nullopt;
