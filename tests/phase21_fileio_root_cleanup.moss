@@ -16,9 +16,15 @@ domain Worker:
 
   on_fail FileError.Full:
     value = value + 10
-    reopened = FileIO.open(path, rw)
-    reopened.close()
+    try:
+      reopened = FileIO.open(path, rw)
+      reopened.close()
+    recover:
+      reply -1
     reply value
+
+  on_fail:
+    reply -1
 
 fn main():
   worker = Worker()

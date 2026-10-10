@@ -5,7 +5,10 @@ domain Worker:
 fn main():
   worker = Worker()
   executor = Executor().threads(1).start()
-  file = FileIO.open("tests/phase20_fileio_basic.moss", ro)
-  executor.invoke(worker.Process(file))
-  file.close()
+  try:
+    file = FileIO.open("tests/phase20_fileio_basic.moss", ro)
+    executor.invoke(worker.Process(file))
+    file.close()
+  recover:
+    pass
   executor.join()

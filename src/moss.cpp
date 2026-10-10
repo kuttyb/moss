@@ -7894,6 +7894,7 @@ class Checker {
       const ProvenIndexAccesses* proven, const string& base,
       const string& index) {
     return proven && proven->count({trim(base), trim(index)}) != 0;
+  }
 
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
     if (handler.failure_arms.empty()) return;

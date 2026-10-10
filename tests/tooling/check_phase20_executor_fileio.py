@@ -382,17 +382,28 @@ read_data.write_bytes(b'hello world')
 write_target = out / 'phase20_fileio_write.data'
 if write_target.exists():
     write_target.unlink()
-fileio_source = write_source('phase20_fileio_basic', '''fn main():
-  file = FileIO.open("%s", ro)
-  data = file.read(0, 5)
-  echo data.length()
-  file.close()
+fileio_source = write_source('phase20_fileio_basic', '''enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
 
-  out = FileIO.open("%s", create)
-  out.write(0, "written bytes")
-  out.sync()
-  out.sync(dataonly)
-  out.close()
+fn main():
+  try:
+    file = FileIO.open("%s", ro)
+    data = file.read(0, 5)
+    echo data.length()
+    file.close()
+
+    out = FileIO.open("%s", create)
+    out.write(0, "written bytes")
+    out.sync()
+    out.sync(dataonly)
+    out.close()
+  recover:
+    echo "unexpected FileIO error"
 ''' % (read_data, write_target))
 rust, binary = native_build('phase20_fileio_basic', fileio_source)
 text = code_only(rust.read_text())

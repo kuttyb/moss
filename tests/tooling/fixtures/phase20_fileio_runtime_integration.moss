@@ -4,6 +4,14 @@
 # indexing, and explicit close. This fixture does not prove executor
 # compensation; deterministic A+B+C compensation coverage is separate.
 
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
 fn exercise(file: FileIO, offset: Int):
   file.write(offset, "abcdefgh")
   data = file.read(offset, 4)
@@ -17,7 +25,10 @@ fn exercise(file: FileIO, offset: Int):
   echo data.length(), first.length(), second.length(), total
 
 fn main():
-  file = FileIO.open("tmp/phase20-fileio-integration.tmp", create)
-  exercise(file, 0)
-  file.sync()
-  file.close()
+  try:
+    file = FileIO.open("tmp/phase20-fileio-integration.tmp", create)
+    exercise(file, 0)
+    file.sync()
+    file.close()
+  recover:
+    echo "unexpected FileIO error"

@@ -1,5 +1,35 @@
 # Moss current status
 
+## Phase 21.I combined A+B+C+D integration checkpoint — 2026-10-10
+
+The integration branch merged the current 21.D checkpoint (`a20d250`) and
+21.A failure-trailer checkpoint (`60aefd0`) with the earlier A+B+C base and
+the corrected 21.C fixture (`529ef0b`). The merge needed one missing closing
+brace after `proven_index_access` in `src/moss.cpp`; the combined compiler now
+builds. The Root FileIO cleanup witness now catches all handler failures,
+handles cleanup's own FileIO errors inside `on_fail`, and still proves the
+successful path returns `11` after reopening the file. Two older Phase 20
+Executor negative fixtures now handle FileIO raises so they continue to test
+their intended capability-boundary diagnostics. The generated basic FileIO
+fixture in the Phase 20 Executor suite now declares `FileError` and handles
+typed failure. The direct FileIO integration fixture also now declares that
+enum and catches its `main` error set.
+
+Validated on this combined tree: `make` PASS; focused A native Root,
+21.B typed FileIO and Root cleanup, 21.C Branch error, 21.D Float and view
+WRITE checks PASS; 40/40 generic specialization and 129/129 builtin typing
+probes PASS; `make examples` PASS; strict C++17 `-Werror` compiler build PASS.
+The full `make check` gate advances beyond
+the two corrected negative Executor fixtures but is **not yet green**: the
+Phase 20 Executor/FileIO suite next fails compiling
+`tests/tooling/fixtures/phase20_domain_fileio_native.moss` because its
+`main` leaves typed FileIO errors unhandled. Other older positive FileIO
+fixtures in that suite need a source migration audit. This result
+supersedes the earlier integration notes below that predate the current A/C/D
+merges. No O1–O9 or Phase 21 completion is claimed;
+source-free typed failure capture/arm materialization, full fixture migration,
+numeric parsing/formatter contracts, documentation, and review remain open.
+
 ## Phase 21.A typed recovery continuation — 2026-10-10
 
 Continued `phase-21-a-recovery` from checkpoint `620b567` in
