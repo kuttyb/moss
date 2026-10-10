@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 21 coordinator integration update — 2026-10-10
+
+The coordination register now points to pushed A (`60aefd0`), B (`a47e639`),
+C (`f0c0464`, with corrected fixture on integration at `529ef0b`), D
+(`a20d250`), and combined integration (`0614399`). The integration branch
+passes its focused Phase 21 gates, 40 generic and 129 builtin typing probes,
+`make examples`, and a strict C++ build. Full `make check` remains blocked at
+the next legacy Phase 20 FileIO fixture with an unhandled typed error. The
+integration branch status has exact evidence and remaining work. Phase 21 is
+not complete, and the human review gate before merging to `main` remains open.
+
 ## Phase 21 coordinator continuation — 2026-10-10
 
 The authoritative `PHASE_21_TASK_REGISTER.md` now records pushed heads for
