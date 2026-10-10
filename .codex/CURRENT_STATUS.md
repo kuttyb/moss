@@ -1,5 +1,16 @@
 # Moss current status
 
+## Phase 21 coordinator continuation — 2026-10-10
+
+The authoritative `PHASE_21_TASK_REGISTER.md` now records pushed heads for
+21.A (`620b567`), 21.B (`a47e639`), 21.C (`f0c0464`), 21.D (`ed8374f`),
+and partial A+B+C integration (`78da3d4`). It also corrects transferred
+worktree paths for this checkout. The integration branch builds and its
+generic specialization suite passes 40/40, but Root/checker lowering prevents
+the Root and C focused gates from passing. A contains newer uncommitted work;
+do not overwrite it. The human review gate before merging any integrated
+Phase 21 implementation to `main` remains open.
+
 ## Non-Copy vector-literal ownership repair — closeout 2026-10-08
 
 Implementation: `dbe62d3c88aad7a052a856a8deb1f695f54b1c76` (`changes`),

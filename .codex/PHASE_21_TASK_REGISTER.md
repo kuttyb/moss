@@ -13,6 +13,9 @@ Updated: 2026-10-10 (America/Los_Angeles)
 - Integration disposition: workstreams remain isolated and use checkpoint commits;
   integration stops for human approval at the Phase 21 checkpoint before any merge
   to `main`.
+- Continuation: the user authorized repository-local commits and pushes and
+  directed removal of the old no-push rule. `main` has that rule update at
+  `3836f12`; no Phase 21 implementation has been merged to `main`.
 - Continuity recovery: the coordinator resumed the existing worktrees after an
   interrupted session. A–C's in-progress, uncommitted changes were preserved and
   their native subagents relaunched in place; D remains queued for the first
@@ -33,13 +36,13 @@ Updated: 2026-10-10 (America/Los_Angeles)
 
 | Workstream | Branch | Absolute worktree | Base | State |
 |---|---|---|---|---|
-| Coordinator | `phase-21-planning` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-planning` | `ed0b3d2` | active, clean before this register |
-| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | ABI v8 checkpoint `f27b2629`; independently approved and frozen |
-| 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | `f27b2629` + shared FileIO-origin checkpoint `f7c769c` | checkpoints `29d13c4`, `cd9b26c`, `299fdf3`; focused semantics/trailer/bare-raise tests pass; generated outcome, imported bridge and Root cleanup remain open |
-| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | `f27b2629` + `f7c769c` | checkpoints `9c3a16c`, `a47e639`; independent interior-NUL finding fixed as `IO`; focused FileIO and Phase 20 runtime gates pass; generated Root fixture awaits A wrapper |
-| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | `f27b2629` + B dependency checkpoint | checkpoint `c0b395f`; focused test passes; B's independent review found typed mapper/fold and non-handler propagation blockers plus production Rust test gap; remediation active |
-| 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | `f27b2629` | active; settled Float IEEE parity underway; numeric grammar/tie-break left unresolved for explicit decision |
-| Integration | `phase-21-integration` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | created clean; accepts reviewed checkpoints only |
+| Coordinator | `phase-21-planning` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-planning` | `ed0b3d2` | active, clean before this register |
+| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | ABI v8 checkpoint `f27b2629`; independently approved and frozen |
+| 21.A recovery | `phase-21-a-recovery` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-a` | `f27b2629` + shared FileIO-origin checkpoint `f7c769c` | native recovery checkpoint `620b567` pushed; focused native/Fast Debug/source-free tests pass; new uncommitted Root/checker work remains isolated; full gate needs integration |
+| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-b` | `f27b2629` + `f7c769c` | checkpoints `9c3a16c`, `a47e639`; independent interior-NUL finding fixed as `IO`; focused FileIO and Phase 20 runtime gates pass; generated Root fixture awaits A wrapper |
+| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-c` | `f27b2629` + B dependency checkpoint | checkpoint `f0c0464` pushed; A+B+C integration builds but C focused gate reaches Root outcome-context error |
+| 21.D language parity | `phase-21-d-language-parity` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-d` | `f27b2629` | WIP checkpoint `ed8374f` pushed; numeric grammar/tie-break remain unresolved for explicit decision |
+| Integration | `phase-21-integration` | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | partial A+B+C integration `78da3d4` pushed; 40/40 generic probes and focused FileIO/local recovery pass; Root fixtures and C focused gate blocked; no merge to main |
 
 A–D must all branch from the exact approved commit
 `f27b2629efa2c321bef953e62ca73d230e56f96f`.
@@ -90,11 +93,11 @@ precedents live in `tests/tooling/check_phase106f1.py`,
 
 | Agent | Initial report | Checkpoint SHA | Review | Tests / blockers |
 |---|---|---|---|---|
-| 21.0 | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; corrective base `d33e3be`; clean at review | `f27b2629efa2c321bef953e62ca73d230e56f96f` | complete; independent architectural review approved ABI v8 and froze shared contracts | Focused ABI/source-free strict PASS; real two-crate/source-removed bridge PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
-| 21.A | `tmp/moss-worktrees/21-a`; `phase-21-a-recovery`; exact base `f27b2629`; clean at launch | `29d13c4`, `cd9b26c`, `299fdf3` | independent peer review pending | Focused checker tests pass; native outcome lowering, actual exceptional-CFG consumers, Root sequencing and imported specialization bridge remain required |
+| 21.0 | `/home/owner/daji/code/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; corrective base `d33e3be`; clean at review | `f27b2629efa2c321bef953e62ca73d230e56f96f` | complete; independent architectural review approved ABI v8 and froze shared contracts | Focused ABI/source-free strict PASS; real two-crate/source-removed bridge PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
+| 21.A | `tmp/moss-worktrees/21-a`; `phase-21-a-recovery`; exact base `f27b2629`; clean at launch | `620b567` (after `29d13c4`, `cd9b26c`, `299fdf3`) | independent peer review pending | Native local recovery, Root/class fixture on A's prior compiler, Fast Debug, source-free ABI, and strict C++ pass; 37/40 generic probes pass alone; B runtime integration and new uncommitted A Root/checker work remain |
 | 21.B | `tmp/moss-worktrees/21-b`; `phase-21-b-fileio-errors`; exact base `f27b2629`; clean at launch | `9c3a16c`, follow-up `a47e639` | independent review by C found/fixed NUL-path mapping; C review of Branch workstream complete | FileIO error/fault gates pass; Root cleanup runner is genuine but pending A syntax/lowering |
-| 21.C | `tmp/moss-worktrees/21-c`; `phase-21-c-branch-errors`; exact base `f27b2629`; clean at launch | `c0b395f` | independent review by B: two high findings, one medium production-test gap | Read path join/order assertions pass; mapper/fold typed raises, non-handler errors, real generated Rust execution remain blockers under remediation |
-| 21.D | `tmp/moss-worktrees/21-d`; `phase-21-d-language-parity`; exact base `f27b2629`; clean and verified | pending | independent peer review pending | Settled IEEE Float work started; unresolved numeric spelling/tie choice is escalated, not inferred |
+| 21.C | `tmp/moss-worktrees/21-c`; `phase-21-c-branch-errors`; exact base `f27b2629`; clean at launch | `f0c0464` (after `c0b395f`) | independent review by B identified blockers; integration review ongoing | A+B+C compiles; merged C focused gate reaches Root outcome-context error before Rust assertions; native generated fixture remains an open integration gate |
+| 21.D | `tmp/moss-worktrees/21-d`; `phase-21-d-language-parity`; exact base `f27b2629`; clean and verified | `ed8374f` WIP | independent peer review pending | Settled IEEE Float work checkpointed; unresolved numeric spelling/tie choice is escalated, not inferred |
 
 ## Decisions and blockers
 
@@ -105,3 +108,8 @@ precedents live in `tests/tooling/check_phase106f1.py`,
   listed in each workstream row above and must pass before integration. The
   integrated Phase 21 checkpoint still requires human approval before any merge
   to `main`.
+- Partial A+B+C integration on `phase-21-integration` is permitted checkpoint
+  work and is not the final Phase 21 approval checkpoint. The current branch
+  builds and passes 40 generic specialization probes, but Root totality and
+  C's Root outcome context block its focused gates. Its status file gives the
+  exact tests and conflicts. Do not merge it to `main` as complete.
