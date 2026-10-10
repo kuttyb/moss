@@ -35,10 +35,10 @@ Updated: 2026-10-10 (America/Los_Angeles)
 |---|---|---|---|---|
 | Coordinator | `phase-21-planning` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-planning` | `ed0b3d2` | active, clean before this register |
 | 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | ABI v8 checkpoint `f27b2629`; independently approved and frozen |
-| 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | `f27b2629` + shared FileIO-origin checkpoint `f7c769c` | active; syntax/analysis and provider metadata underway; generated outcome/Root cleanup and cross-specialization bridge gates remain open |
-| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | `f27b2629` + `f7c769c` | checkpoint `9c3a16c`; focused FileIO and Phase 20 runtime gates pass; independent review pending; generated Root cleanup fixture awaits A wrapper |
-| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | `f27b2629` + B dependency checkpoint | checkpoint `c0b395f`; focused tests and make pass; after-join conversion asserted in generated bounded-K; production Root execution awaits A; independent B review in progress |
-| 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | `f27b2629` | created, verified; native subagent active |
+| 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | `f27b2629` + shared FileIO-origin checkpoint `f7c769c` | active; syntax/analysis and provider metadata underway; implementing ABI-v8 `Normal | Raised` outcome; Root cleanup and cross-specialization bridge gates remain open |
+| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | `f27b2629` + `f7c769c` | checkpoint `9c3a16c`; focused FileIO and Phase 20 runtime gates pass; independent review found interior-NUL path abort gap, follow-up underway; generated Root fixture awaits A wrapper |
+| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | `f27b2629` + B dependency checkpoint | checkpoint `c0b395f`; focused tests and make pass; indexed checked outcomes join before observation and convert after join; production generated Root execution awaits A |
+| 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | `f27b2629` | active; settled Float IEEE parity underway; numeric grammar/tie-break left unresolved for explicit decision |
 | Integration | `phase-21-integration` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-integration` | `f27b2629` | created clean; accepts reviewed checkpoints only |
 
 A–D must all branch from the exact approved commit
@@ -91,10 +91,10 @@ precedents live in `tests/tooling/check_phase106f1.py`,
 | Agent | Initial report | Checkpoint SHA | Review | Tests / blockers |
 |---|---|---|---|---|
 | 21.0 | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; corrective base `d33e3be`; clean at review | `f27b2629efa2c321bef953e62ca73d230e56f96f` | complete; independent architectural review approved ABI v8 and froze shared contracts | Focused ABI/source-free strict PASS; real two-crate/source-removed bridge PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
-| 21.A | `tmp/moss-worktrees/21-a`; `phase-21-a-recovery`; exact base `f27b2629`; clean at launch | pending | independent peer review pending | Active; cross-specialization bridge verification, exceptional CFG consumers, and generated Root sequencing explicitly required |
-| 21.B | `tmp/moss-worktrees/21-b`; `phase-21-b-fileio-errors`; exact base `f27b2629`; clean at launch | `9c3a16c` | independent peer review pending | FileIO error/fault gates pass; real generated Root fixture is wired but awaits A wrapper and injected secondary-close gate |
-| 21.C | `tmp/moss-worktrees/21-c`; `phase-21-c-branch-errors`; exact base `f27b2629`; clean at launch | `c0b395f` | independent peer review pending | Indexed Value/Raised/EOF codegen, checked reads, join-before-observe and post-join conversion assertions; token lifetime fixture passes; production Root execution awaits A |
-| 21.D | `tmp/moss-worktrees/21-d`; `phase-21-d-language-parity`; exact base `f27b2629`; clean and verified | pending | independent peer review pending | Native worker launched after B released slot |
+| 21.A | `tmp/moss-worktrees/21-a`; `phase-21-a-recovery`; exact base `f27b2629`; clean at launch | pending | independent peer review pending | Semantic fixture underway; generated outcome, actual exceptional-CFG consumers, Root sequencing and imported specialization bridge remain required |
+| 21.B | `tmp/moss-worktrees/21-b`; `phase-21-b-fileio-errors`; exact base `f27b2629`; clean at launch | `9c3a16c` | independent review by C: one medium NUL-path mapping gap | FileIO error/fault gates pass; Root cleanup runner is genuine but pending A syntax/lowering |
+| 21.C | `tmp/moss-worktrees/21-c`; `phase-21-c-branch-errors`; exact base `f27b2629`; clean at launch | `c0b395f` | independent peer review pending | Focused tests and make pass; generated bounded-K has indexed checked outcomes, join-before-observe and post-join conversion assertions; production generated Root execution awaits A |
+| 21.D | `tmp/moss-worktrees/21-d`; `phase-21-d-language-parity`; exact base `f27b2629`; clean and verified | pending | independent peer review pending | Settled IEEE Float work started; unresolved numeric spelling/tie choice is escalated, not inferred |
 
 ## Decisions and blockers
 
