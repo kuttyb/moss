@@ -92,14 +92,27 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
   }
   o << pad << "    " << s.a << ".enqueue_root(MossRootDescriptor::with_target(next_root_id(), "
     << rust_string_literal(plan.handler_semantic_identity) << ", move || {\n";
-  // Forward each owned snapshot to the handler's `_shared` entry exactly as
-  // the route contract's owned `__moss_message_<Handler>` impl does (lend a
-  // borrowed-payload type, pass a copy type by value); this also works for
-  // per-instance specialized domain refs, which carry no route-contract impl.
-  o << pad << "        let _ = " << domain_temp << "." << plan.handler_name << "_shared(";
+  auto domain_type = types.find(plan.target_domain_binding);
+  if (domain_type == types.end() ||
+      !domains_.count(canonical_type_name(domain_type->second)))
+    throw std::runtime_error(
+        "internal error: Executor Root target lost its checked domain type");
+  const Domain& target_domain =
+      *domains_.at(canonical_type_name(domain_type->second));
+  const Handler* target_handler = find_handler(target_domain, plan.handler_name);
+  if (!target_handler)
+    throw std::runtime_error(
+        "internal error: Executor Root target lost its checked handler");
+  const bool root_handles_failure = !target_handler->failure_arms.empty();
+  o << pad << "        let _ = " << domain_temp << "." << plan.handler_name
+    << (root_handles_failure ? "_root(" : "_shared(");
   for (size_t index = 0; index < argument_locals.size(); ++index) {
     if (index) o << ", ";
-    o << shared_message_forward_argument(Param{argument_locals[index], plan.argument_types[index], false}, true);
+    if (root_handles_failure)
+      o << argument_locals[index];
+    else
+      o << shared_message_forward_argument(
+          Param{argument_locals[index], plan.argument_types[index], false}, true);
   }
   o << ");\n" << pad << "    }));\n" << pad << "}\n";
 }
@@ -183,7 +196,18 @@ string root_ingress_message(const string& receiver, const string& handler,
     argument_locals.push_back(temp);
   }
   rendered << "runtime_invoke(move || ";
-  if (target_domain.exported && !exported_domain_bridge_body_) {
+  const bool root_handles_failure = !target_handler.failure_arms.empty();
+  const bool raises = !target_handler.observable_effects.raise_set.empty() &&
+      !root_handles_failure;
+  if (raises && !phase21_result_context_)
+    throw std::runtime_error(
+        "internal error: checked raising Root message lacks a Phase 21 outcome context");
+  if (root_handles_failure && !exported_domain_bridge_body_) {
+    rendered << domain_temp << "." << handler << "_root(";
+    for (size_t index = 0; index < argument_locals.size(); ++index)
+      rendered << (index ? ", " : "") << argument_locals[index];
+    rendered << ")";
+  } else if (target_domain.exported && !exported_domain_bridge_body_) {
     rendered << domain_temp << ".__moss_message_" << handler << "(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
       rendered << (index ? ", " : "") << argument_locals[index];
@@ -196,8 +220,15 @@ string root_ingress_message(const string& receiver, const string& handler,
                       Param{argument_locals[index], target_handler.params.at(index).type, false},
                       true);
     rendered << ")";
-    if (target_handler.reply_type) rendered << ".unwrap_or_else(|| std::process::abort())";
+    if (target_handler.reply_type) {
+      if (raises)
+        rendered << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+      else
+        rendered << ".unwrap_or_else(|| std::process::abort())";
+    }
   }
-  rendered << ") }";
+  rendered << ")";
+  if (raises) rendered << "?";
+  rendered << " }";
   return rendered.str();
 }

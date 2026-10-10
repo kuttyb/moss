@@ -107,7 +107,12 @@
   void typed_event(std::ostringstream& o, const string& event, const HandlerSynchronizationPlan& h,
                    const string& rank = "usize::MAX", bool exclusive = false) const {
     o << "        #[cfg(any(test, moss_perf))] moss_lock_event(" << rust_string_literal(event)
-      << ", self.state.identity, self.state.handler_" << h.name
+      << ", self.state.identity, ";
+    if (ends_with(h.name, "$fail"))
+      o << rust_string_literal(h.handler_identity);
+    else
+      o << "self.state.handler_" << h.name;
+    o
       << ", self.state.rank, " << rank << ", " << (exclusive ? "true" : "false") << ");\n";
   }
 
@@ -190,10 +195,12 @@
       bodyargs += ", impl " + access_trait(f.type);
     for (const auto& r : d.routes)
       bodyargs += ", impl " + canonical_type_name(r.type) + "Messages";
+    if (!h.observable_effects.raise_set.empty())
+      o << "#[allow(unreachable_code)]\n";
     o << "fn __moss_body_" << d.name << "_" << h.name << "_" << tag
       << "(state: &mut " << state_type << "<" << bodyargs << ">";
     for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
-    o << ") -> " << (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") << " {\n";
+    o << ") -> " << handler_internal_return_type(h) << " {\n";
     string result = reply_binding(d, h);
     if (h.reply_type) o << "    let mut " << result << " = None;\n";
     o << "    " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
@@ -207,12 +214,19 @@
       borrowed_message_parameters_.insert(p.name);
       if (view_object_type(p.type)) view_parameters_.insert(p.name);
     }
+    const bool saved_phase21_result_context = phase21_result_context_;
+    phase21_result_context_ = !h.observable_effects.raise_set.empty();
     gen_stmts(o, body, &d, &h, result, locals, types, 2, true, false,
               functional_handler_context(d, h));
+    phase21_result_context_ = saved_phase21_result_context;
     view_domain_ = false; view_domain_access_ = false; borrowed_message_parameters_.clear();
     view_parameters_.clear(); write_through_parameters_.clear();
     o << "    }\n";
-    if (h.reply_type) o << "    " << result << "\n";
+    if (!h.observable_effects.raise_set.empty()) {
+      o << "    Ok(" << (h.reply_type ? result : "()") << ")\n";
+    } else if (h.reply_type) {
+      o << "    " << result << "\n";
+    }
     o << "}\n";
   }
 
@@ -317,7 +331,12 @@
     o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Then(&mut state";
     for (const auto& p : h.params) o << ", " << p.name;
     o << ");\n";
-    if (h.reply_type) o << "        if result.is_none() { std::process::abort(); }\n";
+    if (h.reply_type) {
+      if (h.observable_effects.raise_set.empty())
+        o << "        if result.is_none() { std::process::abort(); }\n";
+      else
+        o << "        if matches!(&result, Ok(None)) { std::process::abort(); }\n";
+    }
     o << "        result\n        };\n";
     typed_event(o, "handler_complete", hp);
     emit_path_release(o, hp, plan, placement.then_modes);
@@ -336,7 +355,12 @@
     o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Else(&mut state";
     for (const auto& p : h.params) o << ", " << p.name;
     o << ");\n";
-    if (h.reply_type) o << "        if result.is_none() { std::process::abort(); }\n";
+    if (h.reply_type) {
+      if (h.observable_effects.raise_set.empty())
+        o << "        if result.is_none() { std::process::abort(); }\n";
+      else
+        o << "        if matches!(&result, Ok(None)) { std::process::abort(); }\n";
+    }
     o << "        result\n        };\n";
     typed_event(o, "handler_complete", hp);
     emit_path_release(o, hp, plan, placement.else_modes);
@@ -345,6 +369,142 @@
     o << "        };\n";
     typed_event(o, "handler_exit", hp);
     o << "        result\n";
+  }
+
+  RaisedIdentity generated_failure_pattern_identity(string pattern) const {
+    pattern = trim(std::move(pattern));
+    const auto open = pattern.find('(');
+    if (open != string::npos) pattern = trim(pattern.substr(0, open));
+    const auto dot = pattern.rfind('.');
+    if (dot == string::npos)
+      throw std::runtime_error(
+          "internal error: checked on_fail pattern lost its enum variant");
+    return RaisedIdentity::enum_variant(
+        canonical_type_name(trim(pattern.substr(0, dot))),
+        trim(pattern.substr(dot + 1)));
+  }
+
+  void emit_failure_root_wrapper(
+      std::ostringstream& o, const Domain& d, const Handler& h,
+      const DomainSynchronizationPlan& plan,
+      const HandlerSynchronizationPlan& failure) {
+    const string state_type = d.name + h.name + "FailState";
+    emit_path_state_definition(o, d, failure, state_type);
+    o << "impl " << d.name << "Ref {\n"
+      << "    fn " << h.name << "_root(&self";
+    for (const auto& parameter : h.params)
+      o << ", " << parameter.name << ": " << rust_type(parameter.type);
+    o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n"
+      << "        let __moss_attempt = self." << h.name << "_shared(";
+    for (const auto& parameter : h.params)
+      o << shared_message_forward_argument(parameter, true) << ", ";
+    o << ");\n"
+      << "        match __moss_attempt {\n"
+      << "            Ok(__moss_normal) => ";
+    if (h.reply_type)
+      o << "__moss_normal.unwrap_or_else(|| std::process::abort()),\n";
+    else
+      o << "__moss_normal,\n";
+    o << "            Err(__moss_error) => {\n";
+
+    emit_path_acquire(o, failure, plan, failure.class_modes, 16);
+    emit_path_values_and_state(o, d, failure, plan, state_type);
+    if (h.reply_type)
+      o << "                let mut __moss_failure_reply = None;\n";
+    o << "                #[allow(unreachable_patterns)]\n"
+      << "                let __moss_failure_result = match __moss_error {\n";
+
+    RaiseSet remaining = h.observable_effects.raise_set;
+    for (size_t arm_index = 0; arm_index < h.failure_arms.size(); ++arm_index) {
+      const auto& arm = h.failure_arms[arm_index];
+      RaiseSet matched;
+      if (arm.patterns.empty()) {
+        matched = remaining;
+      } else {
+        for (const auto& pattern : arm.patterns)
+          matched.insert(generated_failure_pattern_identity(pattern));
+      }
+      for (const auto& identity : matched) remaining.erase(identity);
+      for (const auto& identity : matched) {
+        const string variant = phase21_rust_variant(identity);
+        const string inner = "__moss_failure_value";
+        o << "                    __MossRaised::" << variant << "("
+          << inner << " @ " << phase21_rust_error_type(identity) << "::"
+          << rust_identifier(identity.variant);
+        string enum_key = canonical_type_name(identity.type);
+        if (!enums_.count(enum_key)) {
+          for (size_t separator = enum_key.find("::");
+               separator != string::npos;
+               separator = enum_key.find("::"))
+            enum_key.replace(separator, 2, "__");
+        }
+        auto declaration = enums_.find(enum_key);
+        if (declaration != enums_.end()) {
+          auto item = std::find_if(
+              declaration->second->cases.begin(),
+              declaration->second->cases.end(),
+              [&](const EnumCase& candidate) {
+                return candidate.name == identity.variant;
+              });
+          if (item != declaration->second->cases.end() && !item->fields.empty())
+            o << " { .. }";
+        }
+        o << ") => {\n";
+
+        std::set<string> locals;
+        std::unordered_map<string, string> types{{"self", d.name}};
+        for (const auto& field : d.state) types[field.name] = field.type;
+        for (const auto& route : d.routes) types[route.name] = route.type;
+        for (const auto& parameter : h.params) {
+          locals.insert(parameter.name);
+          types[parameter.name] = parameter.type;
+        }
+        if (!arm.binding.empty()) {
+          o << "                        let " << arm.binding << " = "
+            << inner << ";\n";
+          locals.insert(arm.binding);
+          types[arm.binding] = identity.type;
+        }
+        view_domain_ = true;
+        view_domain_access_ = true;
+        write_through_parameters_.clear();
+        view_parameters_.clear();
+        borrowed_message_parameters_.clear();
+        const string saved_selected_error = phase21_selected_error_;
+        phase21_selected_error_ = "__moss_error";
+        const bool needs_label = std::any_of(
+            arm.body.begin(), arm.body.end(), [](const Stmt& statement) {
+              return statement.kind == Stmt::Kind::Reply ||
+                  statement.kind == Stmt::Kind::Return;
+            });
+        if (needs_label) o << "                        'handler: {\n";
+        gen_stmts(o, arm.body, &d, &h,
+                  h.reply_type ? "__moss_failure_reply" : string(),
+                  locals, types, needs_label ? 7 : 6, true, false,
+                  functional_handler_context(d, h) + ":on_fail:" +
+                      std::to_string(arm_index));
+        if (needs_label) o << "                        }\n";
+        phase21_selected_error_ = saved_selected_error;
+        view_domain_ = false;
+        view_domain_access_ = false;
+        borrowed_message_parameters_.clear();
+        view_parameters_.clear();
+        write_through_parameters_.clear();
+        if (h.reply_type)
+          o << "                        __moss_failure_reply.unwrap_or_else(|| std::process::abort())\n";
+        else
+          o << "                        ()\n";
+        o << "                    },\n";
+      }
+    }
+    o << "                    _ => std::process::abort(),\n"
+      << "                };\n";
+    emit_path_release(o, failure, plan, failure.class_modes);
+    o << "                __moss_failure_result\n"
+      << "            },\n"
+      << "        }\n"
+      << "    }\n"
+      << "}\n";
   }
 
   void gen_planned_domain(std::ostringstream& o, const Domain& d) {
@@ -383,13 +543,22 @@
       string state_type = d.name + h.name + "State";
       o << "impl " << d.name << "Ref {\n    #[inline]\n    fn " << h.name << "_shared(&self";
       for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
-      string ret = h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()";
+      string ret = handler_internal_return_type(h);
       o << ") -> " << ret << " {\n";
       if (!hp) { o << "        std::process::abort() // Uninstantiated source template.\n    }\n}\n"; continue; }
       if (hp->path_placement.enabled) {
         emit_path_sensitive_wrapper(o, d, h, *plan, *hp);
         o << "    }\n";
         o << "}\n";
+        if (!h.failure_arms.empty()) {
+          const HandlerSynchronizationPlan* failure = nullptr;
+          for (const auto& candidate : plan->handlers)
+            if (candidate.name == h.name + "$fail") failure = &candidate;
+          if (!failure)
+            throw std::runtime_error(
+                "internal error: checked on_fail handler lacks its failure plan");
+          emit_failure_root_wrapper(o, d, h, *plan, *failure);
+        }
         continue;
       }
       typed_event(o, "handler_enter", *hp);
@@ -420,7 +589,12 @@
       o << "            __lifetime: std::marker::PhantomData,\n        };\n        let result = __moss_body_" << d.name << "_" << h.name << "(&mut state";
       for (const auto& p : h.params) o << ", " << p.name;
       o << ");\n";
-      if (h.reply_type) o << "        if result.is_none() { std::process::abort(); }\n";
+      if (h.reply_type) {
+        if (h.observable_effects.raise_set.empty())
+          o << "        if result.is_none() { std::process::abort(); }\n";
+        else
+          o << "        if matches!(&result, Ok(None)) { std::process::abort(); }\n";
+      }
       typed_event(o, "handler_complete", *hp);
       for (auto entry = hp->class_modes.rbegin(); entry != hp->class_modes.rend(); ++entry) {
         string rank = std::to_string(plan->classes.at(entry->first).class_rank);
@@ -432,6 +606,16 @@
       typed_event(o, "handler_exit", *hp);
       o << "        result\n    }\n";
       o << "}\n";
+      if (!h.failure_arms.empty()) {
+        const HandlerSynchronizationPlan* failure = nullptr;
+        if (plan)
+          for (const auto& candidate : plan->handlers)
+            if (candidate.name == h.name + "$fail") failure = &candidate;
+        if (!failure)
+          throw std::runtime_error(
+              "internal error: checked on_fail handler lacks its failure plan");
+        emit_failure_root_wrapper(o, d, h, *plan, *failure);
+      }
     }
     o << (d.exported ? "pub " : "") << "fn construct_" << snake_case(d.name) << "(";
     for (const auto& r : d.routes) o << r.name << ": " << rust_type(r.type) << ", ";
@@ -473,7 +657,9 @@
         for (const auto& p : h.params)
           o << ", " << (shared ? shared_message_parameter(p)
                                  : p.name + ": " + rust_type(p.type));
-        o << ") -> " << (prefix.empty() ? (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") : rust_type(h.reply_type.value_or("unit"))) << ";\n";
+        o << ") -> " << (prefix.empty() ? handler_internal_return_type(h)
+                                         : handler_message_return_type(h))
+          << ";\n";
       }
     }
     o << "}\n";
@@ -521,11 +707,13 @@
                 view_object_type(parameter.type);
           });
       if (plan && hp->path_placement.enabled) o << "#[allow(dead_code)]\n";
+      if (!h.observable_effects.raise_set.empty())
+        o << "#[allow(unreachable_code)]\n";
       debug_symbol_attributes(o, 0, native, !generic_body);
       o << ((d.exported || p_.explicit_module) ? "pub " : "") << "fn __moss_body_" << d.name << "_" << h.name
         << "(state: &mut " << state_type << "<" << bodyargs << ">";
       for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
-      o << ") -> " << (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") << " {\n";
+      o << ") -> " << handler_internal_return_type(h) << " {\n";
       string result = reply_binding(d, h);
       if (h.reply_type) o << "    let mut " << result << " = None;\n";
       o << "    " << (handler_needs_label(h) ? "'handler: " : "") << "{\n";
@@ -542,12 +730,19 @@
         borrowed_message_parameters_.insert(p.name);
         if (view_object_type(p.type)) view_parameters_.insert(p.name);
       }
+      const bool saved_phase21_result_context = phase21_result_context_;
+      phase21_result_context_ = !h.observable_effects.raise_set.empty();
       gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, functional_handler_context(d, h));
+      phase21_result_context_ = saved_phase21_result_context;
       view_domain_ = false; view_domain_access_ = false;
       borrowed_message_parameters_.clear(); view_parameters_.clear();
       write_through_parameters_.clear();
       o << "    }\n";
-      if (h.reply_type) o << "    " << result << "\n";
+      if (!h.observable_effects.raise_set.empty()) {
+        o << "    Ok(" << (h.reply_type ? result : "()") << ")\n";
+      } else if (h.reply_type) {
+        o << "    " << result << "\n";
+      }
       o << "}\n"; tooling_end(o, 0, semantic_identity);
       // The wrapper below selects one statically typed continuation.  The
       // duplicated suffix is intentional: it keeps a path-touched guard live
@@ -580,14 +775,20 @@
         for (const auto& p : h.params)
           o << ", " << (shared ? shared_message_parameter(p)
                                  : p.name + ": " + rust_type(p.type));
-        o << ") -> " << (prefix.empty() ? (h.reply_type ? "Option<" + rust_type(*h.reply_type) + ">" : "()") : rust_type(h.reply_type.value_or("unit")))
+        o << ") -> " << (prefix.empty() ? handler_internal_return_type(h)
+                                         : handler_message_return_type(h))
           << " { ";
         if (!compatible) { o << "std::process::abort() }\n"; continue; }
         o << "self." << h.name << "_shared(";
         for (const auto& p : h.params)
           o << shared_message_forward_argument(p, !shared) << ", ";
         o << ")";
-        if (!prefix.empty() && h.reply_type) o << ".unwrap_or_else(|| std::process::abort())";
+        if (!prefix.empty() && h.reply_type) {
+          if (h.observable_effects.raise_set.empty())
+            o << ".unwrap_or_else(|| std::process::abort())";
+          else
+            o << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+        }
         o << " }\n";
       }
     }

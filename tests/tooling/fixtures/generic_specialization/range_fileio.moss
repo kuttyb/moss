@@ -5,6 +5,9 @@ fn read_size(f):
   return size(f.read(0, 4))
 
 fn main():
-  f = FileIO.open("tmp/generic-specialization/input.txt", ro)
-  echo read_size(f)
-  f.close()
+  try:
+    f = FileIO.open("tmp/generic-specialization/input.txt", ro)
+    echo read_size(f)
+    f.close()
+  recover:
+    echo -1

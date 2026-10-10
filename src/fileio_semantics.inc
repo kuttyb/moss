@@ -576,10 +576,31 @@
       }
       if (s.kind == Stmt::Kind::Try) {
         FileIOFlow incoming = flow;
+        auto leave_arm_scope = [&](FileIOFlow& arm) {
+          if (!arm.continuing) return;
+          for (auto owner = arm.local_owners.begin();
+               owner != arm.local_owners.end();) {
+            if (incoming.local_owners.count(*owner)) {
+              ++owner;
+              continue;
+            }
+            if (arm.state[*owner] != 0)
+              err(s.line, "root-local FileIO '" + *owner +
+                  "' must be explicitly closed before normal exit",
+                  "FILEIO_MUST_CLOSE");
+            arm.state.erase(*owner);
+            arm.mode.erase(*owner);
+            arm.types.erase(*owner);
+            arm.uncertain_state.erase(*owner);
+            arm.may_be_read_only.erase(*owner);
+            owner = arm.local_owners.erase(owner);
+          }
+        };
         ++index;
         FileIOFlow normal = incoming;
         check_fileio_lifecycle_block(body, index, indent + 1, normal,
                                      normal_exits);
+        leave_arm_scope(normal);
         FileIOFlow joined = normal;
         bool saw_recover = false;
         while (index < body.size() && body[index].indent == indent &&
@@ -592,6 +613,7 @@
           FileIOFlow recovered = incoming;
           check_fileio_lifecycle_block(body, index, indent + 1, recovered,
                                        normal_exits);
+          leave_arm_scope(recovered);
           joined = fileio_join_flow(joined, recovered);
         }
         if (!saw_recover)

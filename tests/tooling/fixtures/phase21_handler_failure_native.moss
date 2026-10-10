@@ -1,0 +1,61 @@
+enum JobError:
+  Bad
+
+domain Worker:
+  fn Run() -> Int:
+    raise JobError.Bad
+
+  on_fail JobError.Bad:
+    echo "worker"
+    reply -1
+
+domain Caller:
+  domainroutes(worker: Worker)
+
+  fn Run() -> Int:
+    value = message worker.Run()
+    reply value
+
+  on_fail JobError.Bad:
+    echo "caller"
+    reply 42
+
+domain Split:
+  x = 0
+  y = 0
+
+  fn Run(use_x: Bool):
+    if use_x:
+      x = x + 1
+    else:
+      y = y + 1
+    raise JobError.Bad
+
+  on_fail JobError.Bad:
+    x = 10
+
+  fn ReadX() -> Int:
+    reply x
+
+  fn ReadY() -> Int:
+    reply y
+
+domain AsyncWorker:
+  fn Run():
+    raise JobError.Bad
+
+  on_fail JobError.Bad:
+    echo "async"
+
+fn main():
+  worker = Worker()
+  caller = Caller(worker: worker)
+  split = Split()
+  async_worker = AsyncWorker()
+  echo message caller.Run()
+  echo message worker.Run()
+  message split.Run(true)
+  echo message split.ReadX(), message split.ReadY()
+  executor = Executor().threads(2).start()
+  executor.invoke(async_worker.Run())
+  executor.join()

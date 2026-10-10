@@ -93,7 +93,10 @@ main.write_text('''module app
 import provider
 fn main():
   worker = provider.Worker(value: 3)
-  message worker.Bump()
+  try:
+    message worker.Bump()
+  recover:
+    pass
   echo message worker.Read()
 ''')
 

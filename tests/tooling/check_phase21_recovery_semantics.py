@@ -45,6 +45,26 @@ invalid_json = json.loads(invalid.stdout)
 assert not invalid_json["ok"], invalid_json
 assert invalid_json["error"]["code"] == "BARE_RAISE_OUTSIDE_RECOVER", invalid_json
 
+for name in ("range_fileio", "range_direct", "fileio_direct"):
+    fileio_source = repo / "tests/tooling/fixtures/generic_specialization" / f"{name}.moss"
+    fileio_check = run(compiler, "check", fileio_source, "--json")
+    assert fileio_check.returncode == 0, (name, fileio_check.stdout,
+                                          fileio_check.stderr)
+
+unclosed_source = repo / "tmp/phase21-unclosed-try-file.moss"
+unclosed_source.parent.mkdir(parents=True, exist_ok=True)
+unclosed_source.write_text('''fn main():
+  try:
+    f = FileIO.open("tmp/phase21-unclosed-try-file.txt", create)
+    pass
+  recover:
+    pass
+''')
+unclosed = run(compiler, "check", unclosed_source, "--json")
+assert unclosed.returncode != 0, unclosed.stdout
+unclosed_json = json.loads(unclosed.stdout)
+assert unclosed_json["error"]["code"] == "FILEIO_MUST_CLOSE", unclosed_json
+
 interpreted = run(compiler, "run", "--interp", source)
 assert interpreted.returncode == 0, (interpreted.stdout, interpreted.stderr)
 assert interpreted.stdout == "missing\nfailed\nWorkError.Missing\n", interpreted.stdout
