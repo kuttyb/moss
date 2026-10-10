@@ -7771,11 +7771,26 @@ class Checker {
         left.unresolved == right.unresolved;
   }
 
+  // A proved-safe index fact is deliberately local to one analysis context.
+  // It never mutates the ordinary callable summary: P21-10A supplies
+  // (chunk_parameter, "0") only while rechecking one chunk-map invocation,
+  // while P21-10B supplies (range_binding, induction_binding) only inside a
+  // verified stable loop body.
+  using ProvenIndexAccesses =
+      std::set<std::pair<std::string, std::string>>;
+
+  static bool proven_index_access(
+      const ProvenIndexAccesses* proven, const string& base,
+      const string& index) {
+    return proven && proven->count({trim(base), trim(index)}) != 0;
+  }
+
   ObservableEffects observable_expression_effects(
       const string& expression, const TypeEnv& env,
       const std::set<string>& domain_fields = {},
       const ObjectType* implicit_object = nullptr,
-      const std::set<string>& parameters = {}) const {
+      const std::set<string>& parameters = {},
+      const ProvenIndexAccesses* proven_indices = nullptr) const {
     ObservableEffects effects = no_observable_effects();
     string original = trim(expression);
     if (original.empty()) return effects;
@@ -7786,10 +7801,12 @@ class Checker {
       vector<string> arguments;
       if (parse_member_call(trim(original.substr(8)), receiver, handler, arguments)) {
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object));
+            receiver, env, domain_fields, implicit_object, parameters,
+            proven_indices));
         for (const auto& argument : arguments)
           effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object));
+              argument, env, domain_fields, implicit_object, parameters,
+              proven_indices));
       } else {
         effects.unresolved = true;
       }
@@ -7798,7 +7815,8 @@ class Checker {
 
     if (auto pipeline = parse_functional_pipeline(original)) {
       effects.merge(observable_expression_effects(
-          pipeline->source, env, domain_fields, implicit_object));
+          pipeline->source, env, domain_fields, implicit_object, parameters,
+          proven_indices));
       auto source_type = inferred_expr_type(pipeline->source, env);
       string element = source_type
           ? functional_element_type(*source_type, pipeline->source).value_or("")
@@ -7807,7 +7825,8 @@ class Checker {
         if (stage.kind == FunctionalNodeKind::Reduce &&
             !stage.arguments.empty())
           effects.merge(observable_expression_effects(
-              stage.arguments.front(), env, domain_fields, implicit_object));
+              stage.arguments.front(), env, domain_fields, implicit_object,
+              parameters, proven_indices));
         string callable;
         if ((stage.kind == FunctionalNodeKind::Map ||
              stage.kind == FunctionalNodeKind::Filter ||
@@ -7823,7 +7842,8 @@ class Checker {
           TypeEnv placeholder_env = env;
           placeholder_env["_"] = element;
           effects.merge(observable_expression_effects(
-              callable, placeholder_env, domain_fields, implicit_object));
+              callable, placeholder_env, domain_fields, implicit_object,
+              parameters, proven_indices));
         } else {
           string identity = trim(callable);
           string bound_receiver, bound_method;
@@ -7877,9 +7897,11 @@ class Checker {
                                 {"+", "-"}, {"*", "/", "%"}}) {
       if (auto binary = split_binary(value, operators)) {
         effects.merge(observable_expression_effects(
-            binary->first, env, domain_fields, implicit_object));
+            binary->first, env, domain_fields, implicit_object, parameters,
+            proven_indices));
         effects.merge(observable_expression_effects(
-            binary->second, env, domain_fields, implicit_object));
+            binary->second, env, domain_fields, implicit_object, parameters,
+            proven_indices));
         if (operators.front() == "*") {
           if (split_binary(value, {"/", "%"})) effects.may_panic = true;
         }
@@ -7888,11 +7910,14 @@ class Checker {
     }
     string index_base, index_expression;
     if (parse_index(value, index_base, index_expression)) {
-      effects.may_panic = true;
+      effects.may_panic =
+          !proven_index_access(proven_indices, index_base, index_expression);
       effects.merge(observable_expression_effects(
-          index_base, env, domain_fields, implicit_object));
+          index_base, env, domain_fields, implicit_object, parameters,
+          proven_indices));
       effects.merge(observable_expression_effects(
-          index_expression, env, domain_fields, implicit_object));
+          index_expression, env, domain_fields, implicit_object, parameters,
+          proven_indices));
       return effects;
     }
     string receiver, method;
@@ -7909,7 +7934,7 @@ class Checker {
           string field, field_value;
           effects.merge(observable_expression_effects(
               parse_named_argument(argument, field, field_value) ? field_value : argument,
-              env, domain_fields, implicit_object, parameters));
+              env, domain_fields, implicit_object, parameters, proven_indices));
         }
         return effects;
       }
@@ -7919,7 +7944,8 @@ class Checker {
       if (parse_fileio_open(value, open_arguments)) {
         for (const auto& argument : open_arguments)
           effects.merge(observable_expression_effects(
-              argument, env, domain_fields, implicit_object, parameters));
+              argument, env, domain_fields, implicit_object, parameters,
+              proven_indices));
         effects.external_io = true;
         effects.fileio = true;
         effects.may_panic = true;  // invalid resource/mode use remains fatal.
@@ -7931,10 +7957,12 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       if (receiver != "FileIO")
         effects.merge(observable_expression_effects(
-            receiver, env, domain_fields, implicit_object, parameters));
+            receiver, env, domain_fields, implicit_object, parameters,
+            proven_indices));
       for (const auto& argument : arguments)
         effects.merge(observable_expression_effects(
-            argument, env, domain_fields, implicit_object, parameters));
+            argument, env, domain_fields, implicit_object, parameters,
+            proven_indices));
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type &&
           (canonical_type_name(*receiver_type) == "Range" ||
@@ -8001,14 +8029,15 @@ class Checker {
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
         else effects.local_mutation = true;
         effects.merge(observable_expression_effects(
-            arguments_call[1], env, domain_fields, implicit_object, parameters));
+            arguments_call[1], env, domain_fields, implicit_object, parameters,
+            proven_indices));
         return effects;
       }
       for (const auto& argument : arguments_call) {
         string field, field_value;
         effects.merge(observable_expression_effects(
             parse_named_argument(argument, field, field_value) ? field_value : argument,
-            env, domain_fields, implicit_object));
+            env, domain_fields, implicit_object, parameters, proven_indices));
       }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
@@ -8049,6 +8078,21 @@ class Checker {
     }
     try {
       return std::stoll(s) > 0;
+    } catch (...) {
+      return false;
+    }
+  }
+
+  static bool is_nonnegative_integer_literal(const string& text) {
+    string s = trim(text);
+    if (s.empty()) return false;
+    size_t start = (s.front() == '+') ? 1 : 0;
+    if (start >= s.size()) return false;
+    for (size_t i = start; i < s.size(); ++i) {
+      if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    try {
+      return std::stoll(s) >= 0;
     } catch (...) {
       return false;
     }
@@ -8162,15 +8206,109 @@ class Checker {
     return progress_steps == 1;
   }
 
+  static size_t nested_block_end(const vector<Stmt>& body,
+                                 size_t header_index) {
+    size_t end = header_index + 1;
+    while (end < body.size() &&
+           body[end].indent > body[header_index].indent)
+      ++end;
+    return end;
+  }
+
+  // P21-10B is intentionally a narrow reaching-definition proof.  Accept
+  // only `for i in range(start, r.length()[, positive_step])` where start is
+  // a nonnegative literal, r is a Range, and neither the Range binding nor
+  // induction binding is replaced anywhere in the loop.
+  // Shifted indices, a different Range, changed bounds, and shadow/rebinding
+  // all remain ordinary potentially panicking index operations.
+  std::optional<std::pair<string, string>> stable_range_loop_index_fact(
+      const vector<Stmt>& body, size_t for_index, const TypeEnv& env) const {
+    const Stmt& loop = body[for_index];
+    if (loop.kind != Stmt::Kind::For) return std::nullopt;
+    string callee;
+    vector<string> arguments;
+    if (!parse_simple_call(trim(loop.b), callee, arguments) ||
+        callee != "range" ||
+        (arguments.size() != 2 && arguments.size() != 3) ||
+        !is_nonnegative_integer_literal(arguments[0]) ||
+        (arguments.size() == 3 &&
+         !is_positive_integer_literal(arguments[2])))
+      return std::nullopt;
+    string range_binding, method;
+    vector<string> method_arguments;
+    if (!parse_member_call(trim(arguments[1]), range_binding, method,
+                           method_arguments) ||
+        method != "length" || !method_arguments.empty() ||
+        !plain_identifier(range_binding))
+      return std::nullopt;
+    auto range_type = env.find(range_binding);
+    if (range_type == env.end() ||
+        canonical_type_name(range_type->second) != "Range")
+      return std::nullopt;
+
+    const string induction = trim(loop.a);
+    const size_t end = nested_block_end(body, for_index);
+    for (size_t index = for_index + 1; index < end; ++index) {
+      const Stmt& statement = body[index];
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        const string root = extract_root_identifier(statement.a);
+        if (root == range_binding || root == induction) return std::nullopt;
+      }
+      if (statement.kind == Stmt::Kind::For &&
+          (trim(statement.a) == range_binding ||
+           trim(statement.a) == induction))
+        return std::nullopt;
+      for (const auto& expression : statement_expressions(statement)) {
+        string replace_callee;
+        vector<string> replace_arguments;
+        if (parse_simple_call(expression, replace_callee, replace_arguments) &&
+            replace_callee == "replace" && !replace_arguments.empty() &&
+            extract_root_identifier(replace_arguments.front()) == range_binding)
+          return std::nullopt;
+      }
+    }
+    return std::make_pair(range_binding, induction);
+  }
+
+  vector<ProvenIndexAccesses> stable_range_loop_index_facts(
+      const vector<Stmt>& body, TypeEnv env) const {
+    vector<ProvenIndexAccesses> facts(body.size());
+    for (size_t index = 0; index < body.size(); ++index) {
+      auto fact = stable_range_loop_index_fact(body, index, env);
+      if (fact) {
+        const size_t end = nested_block_end(body, index);
+        for (size_t nested = index + 1; nested < end; ++nested)
+          facts[nested].insert(*fact);
+      }
+      if (body[index].kind == Stmt::Kind::Assign ||
+          body[index].kind == Stmt::Kind::Let ||
+          body[index].kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(body[index].b, env))
+          env[body[index].a] = *type;
+      }
+    }
+    return facts;
+  }
+
   ObservableEffects observable_body_effects(
       const vector<Stmt>& body, TypeEnv env,
       const std::set<string>& parameters,
       const std::set<string>& domain_fields = {},
-      const ObjectType* implicit_object = nullptr) const {
+      const ObjectType* implicit_object = nullptr,
+      const ProvenIndexAccesses* invocation_proven_indices = nullptr) const {
     ObservableEffects effects = no_observable_effects();
     std::set<string> locals = parameters;
+    const auto loop_index_facts = stable_range_loop_index_facts(body, env);
     for (size_t stmt_idx = 0; stmt_idx < body.size(); ++stmt_idx) {
       const auto& statement = body[stmt_idx];
+      ProvenIndexAccesses statement_indices = loop_index_facts[stmt_idx];
+      if (invocation_proven_indices)
+        statement_indices.insert(invocation_proven_indices->begin(),
+                                 invocation_proven_indices->end());
+      const ProvenIndexAccesses* proven_indices =
+          statement_indices.empty() ? nullptr : &statement_indices;
       if (statement.kind == Stmt::Kind::While) {
         if (!is_bounded_while_loop(body, stmt_idx, env))
           effects.may_diverge = true;
@@ -8237,7 +8375,8 @@ class Checker {
       }
       for (const auto& expression_value : statement_expressions(statement))
         effects.merge(observable_expression_effects(
-            expression_value, env, domain_fields, implicit_object, parameters));
+            expression_value, env, domain_fields, implicit_object, parameters,
+            proven_indices));
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -8708,7 +8847,8 @@ class Checker {
     pipeline.output_type = current_value_type;
     if (pipeline.decision.empty())
       pipeline.decision = "fusion eligible: ordered element-independent stages";
-    annotate_fileio_chunk_pipeline(pipeline, *parsed, env);
+    annotate_fileio_chunk_pipeline(
+        pipeline, *parsed, env, domain_fields, implicit_object);
     size_t pipeline_id = pipeline.transient_id;
     p_.functional_pipelines.push_back(std::move(pipeline));
     return pipeline_id;

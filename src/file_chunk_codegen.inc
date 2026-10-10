@@ -103,6 +103,10 @@ string gen_chunk_pipeline_sequential(
   const string acc = "__moss_chunk_acc_" + std::to_string(id);
   const string bytes = "__moss_chunk_bytes_" + std::to_string(id);
   const string mapped = "__moss_chunk_mapped_" + std::to_string(id);
+  const string body_outcome = plan.body_outcome_type.empty()
+      ? "__MossBodyOutcome_UnhandledFileIO" : plan.body_outcome_type;
+  const string raise_fileio = plan.failure_converter.empty()
+      ? "__moss_raise_fileio_unhandled" : plan.failure_converter;
 
   std::ostringstream out;
   out << "{\n";
@@ -116,9 +120,18 @@ string gen_chunk_pipeline_sequential(
   string receiver_place = method_receiver_place(
       plan.fileio_receiver, "read", {offset, size_var}, domain, locals, types);
   out << "        loop {\n";
-  out << "            let " << bytes << " = "
-      << receiver_place << ".read("
-      << offset << ", " << size_var << ");\n";
+  if (!plan.failure_converter.empty()) {
+    out << "            let " << bytes << " = match " << receiver_place
+        << ".read_checked(" << offset << ", " << size_var << ") {\n";
+    out << "                Ok(bytes) => bytes,\n";
+    out << "                Err(error) => return " << body_outcome
+        << "::Raised(" << raise_fileio << "(error)),\n";
+    out << "            };\n";
+  } else {
+    out << "            let " << bytes << " = " << receiver_place
+        << ".read_checked(" << offset << ", " << size_var
+        << ").unwrap_or_else(|_| std::process::abort());\n";
+  }
   out << "            let __moss_chunk_len_" << id << " = " << bytes
       << ".len();\n";
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
@@ -146,7 +159,8 @@ string gen_chunk_pipeline_sequential(
 // Bounded-K read/map Branch lowering for an eligible pipeline (corrective
 // items 1-7). Each window opens one Branch join scope, publishes K Branches
 // (chunk indices next..next+K-1) *before* joining, joins the scope once, then
-// commits the K result slots strictly in index order: a zero-length outcome
+// commits the K explicitly indexed result slots strictly in index order: a
+// zero-length outcome
 // terminates without map/fold, a short nonzero outcome folds exactly once and
 // terminates, a full outcome folds and continues. Any later slots in the
 // window -- speculative reads/maps past the first terminal -- are discarded.
@@ -171,9 +185,14 @@ string gen_chunk_pipeline_bounded_k(
   const string bytes = "__moss_chunk_bytes_" + n;
   const string len = "__moss_chunk_len_" + n;
   const string outcome = "__moss_chunk_outcome_" + n;
+  const string chunk_outcome = "__MossChunkOutcome_" + n;
+  const string body_outcome = plan.body_outcome_type.empty()
+      ? "__MossBodyOutcome_UnhandledFileIO" : plan.body_outcome_type;
+  const string raise_fileio = plan.failure_converter.empty()
+      ? "__moss_raise_fileio_unhandled" : plan.failure_converter;
   const string label = "'moss_chunk_commit_" + n;
   const string k = std::to_string(plan.window_k);
-  const string outcome_type = "(Option<" + rust_type(plan.mapped_type) + ">, i64, bool)";
+  const string outcome_type = chunk_outcome + "<" + rust_type(plan.mapped_type) + ">";
 
   std::ostringstream out;
   out << "{\n";
@@ -185,6 +204,7 @@ string gen_chunk_pipeline_bounded_k(
   out << "        let mut " << acc << " = "
       << expr(plan.initial_expression, domain, locals, types) << ";\n";
   out << "        let mut " << next << ": i64 = 0;\n";
+  out << "        enum " << chunk_outcome << "<T> { Value { index: i64, value: T, len: i64, short: bool }, Raised { index: i64, error: MossFileError }, Eof { index: i64 } }\n";
   out << "        " << label << ": loop {\n";
   out << "            // The scope belongs to the currently executing Root; the runtime,\n";
   out << "            // not compiler output, supplies that Root's identity.\n";
@@ -198,16 +218,20 @@ string gen_chunk_pipeline_bounded_k(
   out << "                let " << borrow << " = moss_fileio_branch_read_borrow(&("
       << method_receiver_place(plan.fileio_receiver, "read", {size_var}, domain, locals, types) << "));\n";
   out << "                branch_publish(&" << scope << ", move || {\n";
-  out << "                    let " << bytes << " = " << borrow << ".read(" << index
-      << " * " << size_var << ", " << size_var << ");\n";
-  out << "                    let " << len << " = " << bytes << ".len();\n";
-  out << "                    let " << outcome << ": " << outcome_type << " = if " << len
-      << " == 0 { (None, 0i64, true) } else {\n";
-  out << "                        (Some("
+  out << "                    let " << outcome << ": " << outcome_type
+      << " = match " << borrow << ".read_checked(" << index << " * " << size_var
+      << ", " << size_var << ") {\n";
+  out << "                        Err(error) => " << chunk_outcome
+      << "::Raised { index: " << index << ", error },\n";
+  out << "                        Ok(" << bytes << ") => { let " << len << " = "
+      << bytes << ".len(); if " << len << " == 0 { " << chunk_outcome
+      << "::Eof { index: " << index << " } } else { " << chunk_outcome
+      << "::Value { index: " << index << ", value: "
       << render_functional_callable(
              plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
              locals, types)
-      << "), " << len << ", " << len << " < " << size_var << ")\n";
+      << ", len: " << len << ", short: " << len << " < " << size_var
+      << " } } }\n";
   out << "                    };\n";
   out << "                    *" << out_slot
       << ".lock().unwrap_or_else(|_| std::process::abort()) = Some(" << outcome << ");\n";
@@ -215,20 +239,34 @@ string gen_chunk_pipeline_bounded_k(
   out << "                " << slots << ".push(" << slot << ");\n";
   out << "            }\n";
   out << "            branch_join(" << scope << ");\n";
-  out << "            for " << slot << " in " << slots << " {\n";
+  out << "            for (" << lane << ", " << slot << ") in " << slots
+      << ".into_iter().enumerate() {\n";
   out << "                let " << outcome << " = " << slot
       << ".lock().unwrap_or_else(|_| std::process::abort()).take()"
       << ".unwrap_or_else(|| std::process::abort());\n";
-  out << "                if let Some(__moss_chunk_value) = " << outcome << ".0 {\n";
-  out << "                    " << acc << " = "
+  out << "                let __moss_chunk_outcome_index = match &" << outcome
+      << " { " << chunk_outcome << "::Value { index, .. } | " << chunk_outcome
+      << "::Raised { index, .. } | " << chunk_outcome
+      << "::Eof { index } => *index };\n";
+  out << "                if __moss_chunk_outcome_index != " << next << " + "
+      << lane << " as i64 { std::process::abort(); }\n";
+  out << "                match " << outcome << " {\n";
+  out << "                    " << chunk_outcome
+      << "::Raised { error, .. } => return " << body_outcome
+      << "::Raised(" << raise_fileio << "(error)),\n";
+  out << "                    " << chunk_outcome << "::Eof { .. } => break "
+      << label << ",\n";
+  out << "                    " << chunk_outcome
+      << "::Value { value, short, .. } => {\n";
+  out << "                        " << acc << " = "
       << render_functional_callable(
              plan.combine_callable,
              {FunctionalValue{acc, plan.accumulator_type, false},
-              FunctionalValue{"__moss_chunk_value", plan.mapped_type, false}},
+              FunctionalValue{"value", plan.mapped_type, false}},
              domain, locals, types)
       << ";\n";
-  out << "                }\n";
-  out << "                if " << outcome << ".2 { break " << label << "; }\n";
+  out << "                        if short { break " << label << "; }\n";
+  out << "                    }\n                }\n";
   out << "            }\n";
   out << "            " << next << " += " << k << ";\n";
   out << "        }\n";

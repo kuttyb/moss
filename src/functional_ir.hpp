@@ -232,6 +232,16 @@ struct FunctionalPipeline {
     std::string combine_callable;
     std::string accumulator_type;
     std::string mapped_type;
+    // Handler-scoped ABI-v8 conversion seam for checked FileIO failures.
+    // The mapper Branch keeps MossFileError raw through join; generated parent
+    // code calls this only for the first Raised slot in logical order.
+    std::string failure_converter;
+    std::string body_outcome_type;
+    // Effects of the mapper at this exact nonempty-chunk invocation.  This
+    // may discharge only the contextual `chunk[0]` panic proof; the callable's
+    // ordinary/global effect summary remains unchanged.
+    ObservableEffects map_invocation_effects;
+    bool used_nonempty_chunk_index_proof = false;
     // Eligible for the bounded-K read/map Branch lowering (file_chunk_codegen.inc).
     // Static only: never depends on whether an Executor happens to be active.
     bool eligible = false;
