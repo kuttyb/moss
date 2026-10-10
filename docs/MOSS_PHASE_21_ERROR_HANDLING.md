@@ -750,7 +750,18 @@ The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behav
 - Lexical digits are **ASCII `0`–`9` only**. Do not silently accept Unicode decimal digits (e.g. Arabic-Indic digits).
 - Leading/trailing whitespace accepts **exactly** these ASCII characters: horizontal tab U+0009 (`\t`), line feed U+000A (`\n`), vertical tab U+000B (`\v`), form feed U+000C (`\f`), carriage return U+000D (`\r`), and space U+0020. No other whitespace (including Unicode nonbreaking space) is accepted, and none is allowed inside the numeric token. A leading `+` or `-` is accepted for ordinary decimal numeric text.
 - Underscores are permitted **only between ASCII digits** (including exponent digits when present); no leading/trailing, repeated, or punctuation-adjacent underscores. Examples: `1_000` accepted, `1__000` rejected.
-- Decimal exponent notation is accepted for Float. For nonfinite **literal tokens**, accept **exactly** `inf`, `-inf`, and `NaN` after the permitted surrounding ASCII whitespace is removed. Reject **every other nonfinite spelling**, including `+inf`, `-nan`, `+NaN`, `nan`, `INF`, `Infinity`, and mixed-case aliases. The `+` sign allowed on ordinary decimal numbers is **not** an alias for `+inf`; syntactically valid finite-decimal input that overflows to infinity remains valid under the separate overflow rule below. Native must perform lexical validation rather than exposing the broader accepted spellings of Rust `parse::<f64>()` as Moss behavior.
+- After trimming that exact surrounding whitespace, finite decimal text uses this grammar (`digit` is ASCII `0`–`9`; `digits` is `digit` followed by zero or more repetitions of an optional single `_` and a `digit`):
+
+  ```text
+  sign       := "+" | "-"
+  int_text   := sign? digits
+  mantissa   := digits ("." digits?)? | "." digits
+  exponent   := ("e" | "E") sign? digits
+  float_text := sign? mantissa exponent?
+  ```
+
+  `parse_int` accepts `int_text`; `parse_float` accepts `float_text`. Decimal text may have leading zeros (`00.5`), a leading decimal point (`.5`), a trailing decimal point (`1.`), uppercase `E` (`1E3`), and an explicit exponent sign (`1e+3`, `1e-3`). Both parsers accept an ordinary leading `+` or `-`; a negative zero retains its sign when parsed as Float. An exponent always has at least one digit. Underscores are legal only inside `digits`, so `1_.0`, `1._0`, `1e_3`, and `1e+_3` are invalid. Hexadecimal, locale separators, and additional numeric spellings are invalid.
+- For nonfinite **literal tokens**, accept **exactly** `inf`, `-inf`, and `NaN` after the permitted surrounding ASCII whitespace is removed. Reject **every other nonfinite spelling**, including `+inf`, `-nan`, `+NaN`, `nan`, `INF`, `Infinity`, and mixed-case aliases. The `+` sign allowed on ordinary decimal numbers is **not** an alias for `+inf`; syntactically valid finite-decimal input that overflows to infinity remains valid under the separate overflow rule below. Native must perform lexical validation rather than exposing the broader accepted spellings of Rust `parse::<f64>()` as Moss behavior.
 - `parse_int` raises `ParseError.Invalid` for malformed text or `ParseError.Overflow` for values outside Moss Int range. It never silently defaults, wraps, or saturates malformed/out-of-range input.
 - `parse_float` raises `ParseError.Invalid` for malformed lexical input. Syntactically valid decimal magnitude overflow produces IEEE infinity, and underflow follows IEEE binary64 rounding. Infinity is a Float value, not a parsing error.
 - Formatting followed by parsing is **bit-exact for finite values**, including negative zero, subject to the stated IEEE representation; NaN sign/payload preservation is not required.
