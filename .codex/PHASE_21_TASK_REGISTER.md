@@ -1,6 +1,18 @@
 # Phase 21 coordination register
 
-Updated: 2026-10-09 (America/Los_Angeles)
+Updated: 2026-10-10 (America/Los_Angeles)
+
+## Phase 21.0 approval and release
+
+- Approved checkpoint: `f27b2629efa2c321bef953e62ca73d230e56f96f`
+- Review disposition: independent architectural review approved Phase 21.0;
+  native/provider ABI v8 and all associated shared contracts are frozen.
+- Release disposition: Agents 21.A–D are authorized to implement from this exact
+  checkpoint. No workstream may independently alter shared representations,
+  `.mossi` records, tagged-outcome layouts, or native/provider ABI signatures.
+- Integration disposition: workstreams remain isolated and use checkpoint commits;
+  integration stops for human approval at the Phase 21 checkpoint before any merge
+  to `main`.
 
 ## Frozen preparation baseline
 
@@ -18,14 +30,15 @@ Updated: 2026-10-09 (America/Los_Angeles)
 | Workstream | Branch | Absolute worktree | Base | State |
 |---|---|---|---|---|
 | Coordinator | `phase-21-planning` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-planning` | `ed0b3d2` | active, clean before this register |
-| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | checkpoint `d33e3be`; reviewed and validated |
-| 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | pending approved 21.0 SHA | not created |
-| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | pending approved 21.0 SHA | not created |
-| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | pending approved 21.0 SHA | not created |
-| 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | pending approved 21.0 SHA | not created |
+| 21.0 shared contracts | `phase-21-0-effects-abi` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0` | `ed0b3d2` | ABI v8 checkpoint `f27b2629`; independently approved and frozen |
+| 21.A recovery | `phase-21-a-recovery` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-a` | `f27b2629` | released; creation pending |
+| 21.B FileIO | `phase-21-b-fileio-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-b` | `f27b2629` | released; creation pending |
+| 21.C Branch errors | `phase-21-c-branch-errors` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-c` | `f27b2629` | released; creation pending |
+| 21.D language parity | `phase-21-d-language-parity` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-d` | `f27b2629` | released; creation pending |
 | Integration | `phase-21-integration` | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-integration` | pending approved integration base | not created |
 
-A-D remain uncreated until user approval of the reviewed 21.0 commit. They must all branch from that same approved commit.
+A–D must all branch from the exact approved commit
+`f27b2629efa2c321bef953e62ca73d230e56f96f`.
 
 ## Shared interface ownership map
 
@@ -33,13 +46,13 @@ A-D remain uncreated until user approval of the reviewed 21.0 commit. They must 
 
 - `src/functional_ir.hpp`: replace the coarse `may_fail` bit with `may_panic`, normalized variant-precise `raise_set`, merge/removal semantics, unchanged ordinary `fusion_safe()`, and separate `chunk_speculation_safe()` contract.
 - `src/ast.hpp` and semantic records in `src/moss.cpp`: carry concrete raise alternatives, tagged outcomes, failure-arm metadata, captures, reply contract, and exceptional-CFG records without implementing the full Phase 21 grammar.
-- `.mossi` parsing/emission and semantic identity in `src/moss.cpp`: ABI v7 fail-closed schema, deterministic serialization/hashing, provider body/failure-body records, and missing-metadata rejection.
+- `.mossi` parsing/emission and semantic identity in `src/moss.cpp`: ABI v8 fail-closed schema, deterministic serialization/hashing, provider body/failure-body records, imported frame bridges, and missing-metadata rejection.
 - `src/handler_lowering.inc`, `src/handler_runtime.hpp`, and synchronization interfaces: concrete application-owned nested/Root wrapper signatures and ordered failure transition contract; no broad recovery semantics implementation in 21.0.
 - Focused tooling fixtures/tests: concrete native signature assertions, ABI v6 rejection/rebuild behavior, and a source-free provider whose source is removed before the consumer build.
 - Contract documentation: explicit C++/Rust signatures, ownership rules, error identity, provider-private payload/capture handling, exceptional CFG consumers, and the corrected class-repartition rule from the independent handoff.
 
-The recovered implementation sets `kNativeAbiVersion` from
-`kErrorHandlingAbiVersion = 7`; its interface entry points remain
+The approved implementation sets `kNativeAbiVersion` from
+`kErrorHandlingAbiVersion = 8`; its interface entry points remain
 `load_module_interface`, `interface_effects`, `interface_effects_text`, and
 `write_module_interfaces` in `src/moss.cpp`. Existing source-free handler/body
 precedents live in `tests/tooling/check_phase106f1.py`,
@@ -57,7 +70,7 @@ precedents live in `tests/tooling/check_phase106f1.py`,
 - [x] Application-generated nested and Root wrapper signatures
 - [x] Root order: join/quiesce, close Root-local FileIO, drop old guards, acquire fresh cleanup plan, dispatch arm, complete reply
 - [x] Exceptional CFG schema and named consumers: D7, ownership, guard cancellation, early acquisition/2PL, cleanup, codegen
-- [x] ABI v7 serialization, semantic hash identity, v6 rejection and rebuild rule
+- [x] ABI v8 serialization, semantic hash identity, pre-v8 rejection and rebuild rule
 - [x] Source-free provider fixture with provider source removed
 - [x] Focused tests pass
 - [x] Full `make check` and `make examples` pass or any unrelated blocker is documented
@@ -68,13 +81,12 @@ precedents live in `tests/tooling/check_phase106f1.py`,
 
 | Agent | Initial report | Checkpoint SHA | Review | Tests / blockers |
 |---|---|---|---|---|
-| 21.0 | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; base `ed0b3d2`; clean at launch | `d33e3be434a1e899e95590c80b12bce4a070b53b` | complete; qualified-identity and fail-closed loader defects repaired | Focused ABI/source-free strict PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
+| 21.0 | `/home/kuttybanerjee/daji/moss/tmp/moss-worktrees/21-0`; `phase-21-0-effects-abi`; corrective base `d33e3be`; clean at review | `f27b2629efa2c321bef953e62ca73d230e56f96f` | complete; independent architectural review approved ABI v8 and froze shared contracts | Focused ABI/source-free strict PASS; real two-crate/source-removed bridge PASS; `make check` PASS; `make examples` PASS; strict `-Werror` build PASS |
 
 ## Decisions and blockers
 
 - The independent handoff clarifies that adding `h_fail` may repartition synchronization classes and change normal-handler lock counts, including exclusive acquisitions, while it does not add new normal-path per-leaf WRITE requirements. 21.0 must encode this corrected contract rather than the older shorthand in Part II §3/P10.
 - Numeric token grammar and Float tie-breaking are Stage 21.D contract decisions and are outside 21.0.
-- No unresolved implementation or validation blocker. The earlier command-runner
-  interruption was recovered without losing the isolated worktree. Phase 21.0 is
-  has checkpoint `d33e3be` and awaits user approval before A-D are created from
-  that SHA.
+- No unresolved implementation or validation blocker. Phase 21.0 checkpoint
+  `f27b2629efa2c321bef953e62ca73d230e56f96f` is approved; ABI v8 is frozen and
+  Agents A–D are released from that exact SHA.
