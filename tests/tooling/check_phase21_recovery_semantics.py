@@ -10,6 +10,7 @@ import sys
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1] if len(sys.argv) > 1 else repo / "moss").resolve()
 source = repo / "tests/tooling/fixtures/phase21_recovery_semantics.moss"
+invalid_source = repo / "tests/tooling/fixtures/phase21_bare_raise_invalid.moss"
 
 
 def run(*args):
@@ -37,5 +38,11 @@ assert handled.returncode == 0, (handled.stdout, handled.stderr)
 handled_json = json.loads(handled.stdout)
 assert handled_json["ok"], handled_json
 assert handled_json["result"]["observable_effects"]["raise_set"] == [], handled_json
+
+invalid = run(compiler, "check", invalid_source, "--json")
+assert invalid.returncode != 0, invalid.stdout
+invalid_json = json.loads(invalid.stdout)
+assert not invalid_json["ok"], invalid_json
+assert invalid_json["error"]["code"] == "BARE_RAISE_OUTSIDE_RECOVER", invalid_json
 
 print("Phase 21 recovery checker and variant-precise effect probes passed.")
