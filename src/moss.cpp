@@ -5855,8 +5855,10 @@ class Checker {
       const DomainSpecialization* specialization) const {
     StateLeafEffects result;
     for (const auto& arm : handler.failure_arms) {
-      auto arm_effects = specialized_handler_body_effects(
-          domain, handler, arm.body, specialization);
+      auto arm_effects = handler.provider_abi
+          ? arm.state_effects.value_or(StateLeafEffects{})
+          : specialized_handler_body_effects(
+                domain, handler, arm.body, specialization);
       result.reads.insert(arm_effects.reads.begin(), arm_effects.reads.end());
       result.writes.insert(arm_effects.writes.begin(), arm_effects.writes.end());
       result.consumes.insert(arm_effects.consumes.begin(),
@@ -5928,6 +5930,15 @@ class Checker {
                              const DomainSpecialization& specialization,
                              DomainSynchronizationPlan& planned,
                              HandlerSynchronizationPlan& whole) const {
+    // A compiled provider exports its regular typed handler body, not the
+    // application's path-specific Then/Else continuations. Retain the exact
+    // full-entry plan for a domain owned by another module.
+    if (p_.explicit_module && !p_.main_module.empty() &&
+        !starts_with(domain.name, p_.main_module + "__")) {
+      whole.path_placement.reason =
+          "conservative entry placement: external provider body ABI";
+      return;
+    }
     // Continuation splitting is intentionally bounded to a handler whose
     // first executable statement is a top-level if.  This is the shape in
     // which the condition has no predecessor-local bindings to transport and
@@ -6111,6 +6122,7 @@ class Checker {
     for (auto& domain : p_.domains)
       for (auto& handler : domain.handlers) {
         handler.state_effects = specialized_handler_effects(domain, handler, nullptr);
+        if (handler.provider_abi) continue;
         for (auto& arm : handler.failure_arms)
           arm.state_effects = specialized_handler_body_effects(
               domain, handler, arm.body, nullptr);
@@ -7937,13 +7949,18 @@ class Checker {
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
     if (handler.provider_abi &&
         !handler.provider_abi->failure_arms.empty()) {
-      // The v8 loader validates these records, but provider codegen does not
-      // yet export their callable bodies. Accepting them would let a Root
-      // caller recover the raised outcome without executing on_fail.
-      err(handler.line,
-          "compiled provider on_fail callable bodies are not yet available "
-          "for source-free Root dispatch",
-          "SOURCE_FREE_ON_FAIL_UNMATERIALIZED");
+      const auto totality = verify_root_totality(
+          *handler.provider_abi, handler.observable_effects.raise_set);
+      if (!totality.ok)
+        err(handler.line,
+            "compiled provider on_fail does not cover every Root error",
+            "NONEXHAUSTIVE_ON_FAIL");
+      for (const auto& arm : handler.provider_abi->failure_arms)
+        if (!arm.captures.empty())
+          err(handler.line,
+              "compiled provider on_fail captures require a materialized "
+              "Root capture frame",
+              "SOURCE_FREE_ON_FAIL_UNMATERIALIZED");
       return;
     }
     if (handler.failure_arms.empty()) return;
@@ -23648,6 +23665,33 @@ static void rewrite_module_program(
         auto arm_locals = initial_locals;
         if (!arm.binding.empty()) arm_locals.insert(arm.binding);
         body(arm.body, arm_locals);
+      }
+      if (handler.provider_abi) {
+        RaiseSet remaining = handler.observable_effects.raise_set;
+        for (const auto& record : handler.provider_abi->failure_arms) {
+          FailureArm arm;
+          arm.line = handler.line;
+          arm.source_file = handler.source_file;
+          if (record.pattern.kind == FailurePatternKind::CatchAll) {
+            arm.exceptional_alternatives = remaining;
+            remaining.clear();
+          } else {
+            for (const auto& identity : record.pattern.variants) {
+              arm.patterns.push_back(identity.type + "." + identity.variant);
+              if (remaining.erase(identity))
+                arm.exceptional_alternatives.insert(identity);
+            }
+          }
+          StateLeafEffects effects;
+          effects.reads.insert(record.state_reads.begin(),
+                               record.state_reads.end());
+          effects.writes.insert(record.state_writes.begin(),
+                                record.state_writes.end());
+          effects.consumes.insert(record.state_consumes.begin(),
+                                  record.state_consumes.end());
+          arm.state_effects = std::move(effects);
+          handler.failure_arms.push_back(std::move(arm));
+        }
       }
     }
   }

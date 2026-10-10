@@ -111,15 +111,15 @@ fn main():
 
 def assert_unmaterialized_on_fail(main, cwd):
     checked = run([compiler, "--check", main], cwd=cwd, expected=1)
-    assert "compiled provider on_fail callable bodies are not yet available" in checked.stderr
+    assert "compiled provider on_fail captures require a materialized" in checked.stderr
 
 
-def run_source_free_on_fail_gap_fixture():
-    """Reject a real trailer whose provider callable is absent from the rlib."""
-    trailer_out = out / "on-fail-gap"
+def run_source_free_on_fail_trailer_fixture():
+    """Execute a real provider trailer with only its .mossi and rlib present."""
+    trailer_out = out / "on-fail-trailer"
     (trailer_out / "src").mkdir(parents=True)
     (trailer_out / "moss.toml").write_text(
-        '[project]\nname="phase21_on_fail_gap"\nversion="0.1.0"\n')
+        '[project]\nname="phase21_on_fail_trailer"\nversion="0.1.0"\n')
     provider = trailer_out / "src/service.moss"
     provider.write_text('''module service
 export enum ServiceError:
@@ -150,7 +150,39 @@ fn main():
     source_backed = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
     assert run([source_backed["result"]["artifacts"]["executable"]]).stdout == "4\n4\n"
     provider.rename(provider.with_suffix(".removed"))
-    assert_unmaterialized_on_fail(main, trailer_out)
+    # The provider artifact exports a real typed arm body independently of
+    # its Moss source.
+    arm_probe = trailer_out / "arm_probe.rs"
+    arm_probe.write_text('''extern crate moss_service;
+fn main() {
+    let mut body_state = moss_service::service__WorkerRunState {
+        __lifetime: std::marker::PhantomData,
+    };
+    let error = match moss_service::__moss_body_service__Worker_Run(&mut body_state) {
+        Err(error) => error,
+        Ok(_) => std::process::abort(),
+    };
+    let mut count = 3_i64;
+    let mut failure_state = moss_service::service__WorkerRunProviderFailState {
+        count: &mut count,
+        __lifetime: std::marker::PhantomData,
+    };
+    let result = moss_service::__moss_on_fail_service__Worker_Run_0(
+        &mut failure_state, error,
+    );
+    println!("{}", result);
+}
+''')
+    arm_executable = trailer_out / "arm_probe"
+    run([
+        shutil.which("rustc"), "--edition=2021", "-Cpanic=abort", "-Dwarnings",
+        arm_probe, "--extern",
+        f"moss_service={trailer_out / 'build/debug/libmoss_service.rlib'}",
+        "-o", arm_executable,
+    ], cwd=trailer_out)
+    assert run([arm_executable], cwd=trailer_out).stdout == "4\n4\n"
+    source_free = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
+    assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "4\n4\n"
     main.write_text('''module app
 import service
 fn main():
@@ -160,7 +192,102 @@ fn main():
   recover service.ServiceError.Bad(code):
     echo code
 ''')
-    assert_unmaterialized_on_fail(main, trailer_out)
+    source_free_recovered = json.loads(run(
+        [compiler, "build", "--json"], cwd=trailer_out).stdout)
+    assert run([source_free_recovered["result"]["artifacts"]["executable"]]).stdout == "4\n4\n"
+    main.write_text('''module app
+import service
+domain Caller:
+  domainroutes(worker: service.Worker)
+  fn Run() -> Int:
+    result = 0
+    try:
+      result = message worker.Run()
+    recover service.ServiceError.Bad(code):
+      result = code
+    reply result
+fn main():
+  worker = service.Worker(count: 3)
+  caller = Caller(worker: worker)
+  echo message caller.Run()
+''')
+    nested = json.loads(run([compiler, "build", "--json"], cwd=trailer_out).stdout)
+    assert run([nested["result"]["artifacts"]["executable"]]).stdout == "4\n"
+
+
+def run_source_free_reporting_route_fixture():
+    route_out = out / "reporting-route"
+    (route_out / "src").mkdir(parents=True)
+    (route_out / "moss.toml").write_text(
+        '[project]\nname="phase21_reporting_route"\nversion="0.1.0"\n')
+    provider = route_out / "src/service.moss"
+    provider.write_text('''module service
+export enum E:
+  Bad
+export domain Reporter:
+  count: Int
+  fn Record():
+    count = count + 1
+  fn Count() -> Int:
+    reply count
+export domain Worker:
+  domainroutes(reporter: Reporter)
+  fn Run():
+    raise E.Bad
+  on_fail E.Bad:
+    message reporter.Record()
+''')
+    (route_out / "src/main.moss").write_text('''module app
+import service
+fn main():
+  reporter = service.Reporter(count: 0)
+  worker = service.Worker(reporter: reporter)
+  message worker.Run()
+  echo message reporter.Count()
+''')
+    backed = json.loads(run([compiler, "build", "--json"], cwd=route_out).stdout)
+    assert run([backed["result"]["artifacts"]["executable"]]).stdout == "1\n"
+    provider.rename(provider.with_suffix(".removed"))
+    source_free = json.loads(run([compiler, "build", "--json"], cwd=route_out).stdout)
+    assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n"
+
+
+def run_source_free_multi_enum_fixture():
+    multi_out = out / "multi-enum"
+    (multi_out / "src").mkdir(parents=True)
+    (multi_out / "moss.toml").write_text(
+        '[project]\nname="phase21_multi_enum"\nversion="0.1.0"\n')
+    provider = multi_out / "src/service.moss"
+    provider.write_text('''module service
+export enum E:
+  A
+export enum F:
+  B
+export domain Worker:
+  count: Int
+  fn Run(which: Int) -> Int:
+    if which == 1:
+      raise E.A
+    raise F.B
+  on_fail E.A:
+    count = count + 1
+    reply count
+  on_fail F.B:
+    count = count + 2
+    reply count
+''')
+    (multi_out / "src/main.moss").write_text('''module app
+import service
+fn main():
+  worker = service.Worker(count: 0)
+  echo message worker.Run(1)
+  echo message worker.Run(2)
+''')
+    backed = json.loads(run([compiler, "build", "--json"], cwd=multi_out).stdout)
+    assert run([backed["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
+    provider.rename(provider.with_suffix(".removed"))
+    source_free = json.loads(run([compiler, "build", "--json"], cwd=multi_out).stdout)
+    assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
 
 
 if out.exists():
@@ -424,7 +551,9 @@ assert_unmaterialized_on_fail(main, out)
 interface_path.write_text(synthetic)
 run_two_crate_rust_abi_fixture()
 run_source_free_raised_handler_fixture()
-run_source_free_on_fail_gap_fixture()
+run_source_free_on_fail_trailer_fixture()
+run_source_free_reporting_route_fixture()
+run_source_free_multi_enum_fixture()
 print(
-    "Phase 21.0 source-free ABI-v8 metadata, fail-closed trailer, and "
-    "native raised-handler checks passed.")
+    "Phase 21.0 source-free ABI-v8 metadata, Root trailer dispatch, "
+    "nested propagation, and native raised-handler checks passed.")

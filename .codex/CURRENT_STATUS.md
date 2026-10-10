@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 21.A source-free Root trailer execution checkpoint — 2026-10-10
+
+Provider codegen now exports each checked `on_fail` arm as a typed callable
+over a public provider failure-state view. The application reconstructs the
+fresh failure pseudo-handler plan from validated ABI-v8 arm state effects and
+dispatches source-free Root errors into the provider callable after the normal
+attempt releases its guards. Nested calls continue to propagate typed errors
+without executing the trailer. A provider's external handler uses the
+conservative full-entry plan because its `.rlib` exports the regular body,
+not application-specific path-split continuations.
+
+Real `.mossi`/`.rlib` regressions remove provider Moss source and verify a
+state-writing reply trailer, caller-side `recover` not bypassing that trailer,
+nested propagation, a routed reporting-domain message, and two enum-specific
+failure arms. A separate Rust consumer links directly to the exported arm
+callable after source removal. The focused source-free gate, full `make check`
+(`all Moss v0.1 tests passed`), `make examples`, strict C++17
+`-Wall -Wextra -Werror -pedantic` compilation, and `git diff --check` pass
+after the final edits.
+
+This is not A acceptance. Handler-local owned D7 capture frames and their
+exceptional-path definite-initialization proof remain absent; the checker
+currently rejects such local references in `on_fail`. Source-free ABI records
+claiming captures still fail closed. Final O1–O9 review, B's FileIO audit,
+C's remaining speculative allocation/panic review, and D's numeric
+parsing/conversion/formatter work remain open. No Phase 21 acceptance or
+merge to `main` is claimed.
+
 ## Phase 21.C bounded Branch offset arithmetic checkpoint — 2026-10-10
 
 An eligible FileIO chunk pipeline could generate raw signed `next + lane`,

@@ -161,7 +161,8 @@
 
   void emit_path_state_definition(std::ostringstream& o, const Domain& d,
                                   const HandlerSynchronizationPlan& hp,
-                                  const string& state_type) {
+                                  const string& state_type,
+                                  bool exported = false) {
     string generic = "'a", bodyargs = "'_";
     for (const auto& f : d.state) if (typed_field_used(f, hp) && view_object_type(f.type)) {
       generic += ", F_" + f.name + ": " + access_trait(f.type);
@@ -171,18 +172,21 @@
       generic += ", R_" + r.name + ": " + canonical_type_name(r.type) + "Messages";
       bodyargs += ", impl " + canonical_type_name(r.type) + "Messages";
     }
-    o << "struct " << state_type << "<" << generic << "> {\n";
+    o << (exported ? "pub " : "") << "struct " << state_type << "<" << generic << "> {\n";
     for (const auto& f : d.state) if (typed_field_used(f, hp)) {
       bool writes = false;
       for (const auto* set : {&hp.effects.writes, &hp.effects.consumes})
         for (const auto& leaf : *set) writes |= leaf == f.name || starts_with(leaf, f.name + ".");
-      o << "    " << f.name << ": ";
+      o << "    " << (exported ? "pub " : "") << f.name << ": ";
       if (view_object_type(f.type)) o << "F_" << f.name;
       else o << "&'a " << (writes ? "mut " : "") << rust_type(f.type);
       o << ",\n";
     }
-    for (const auto& r : d.routes) o << "    " << r.name << ": &'a R_" << r.name << ",\n";
-    o << "    __lifetime: std::marker::PhantomData<&'a ()>,\n}\n";
+    for (const auto& r : d.routes)
+      o << "    " << (exported ? "pub " : "") << r.name
+        << ": &'a R_" << r.name << ",\n";
+    o << "    " << (exported ? "pub " : "")
+      << "__lifetime: std::marker::PhantomData<&'a ()>,\n}\n";
   }
 
   void emit_path_body(std::ostringstream& o, const Domain& d, const Handler& h,
@@ -445,8 +449,15 @@
       std::ostringstream& o, const Domain& d, const Handler& h,
       const DomainSynchronizationPlan& plan,
       const HandlerSynchronizationPlan& failure) {
-    const string state_type = d.name + h.name + "FailState";
-    emit_path_state_definition(o, d, failure, state_type);
+    const auto external_module = phase21_external_module_for_symbol(d.name);
+    const bool compiled_provider = h.provider_abi && external_module;
+    const string provider_crate = compiled_provider
+        ? tooling_name("moss_" + *external_module) : string();
+    const string state_type = compiled_provider
+        ? provider_crate + "::" + d.name + h.name + "ProviderFailState"
+        : d.name + h.name + "FailState";
+    if (!compiled_provider)
+      emit_path_state_definition(o, d, failure, state_type);
     o << "impl " << d.name << "Ref {\n"
       << "    fn " << h.name << "_root(&self";
     for (const auto& parameter : h.params)
@@ -466,7 +477,7 @@
 
     emit_path_acquire(o, failure, plan, failure.class_modes, 16);
     emit_path_values_and_state(o, d, failure, plan, state_type);
-    if (h.reply_type)
+    if (h.reply_type && !compiled_provider)
       o << "                let mut __moss_failure_reply = None;\n";
     o << "                #[allow(unreachable_patterns)]\n"
       << "                let __moss_failure_result = match __moss_error {\n";
@@ -501,6 +512,19 @@
             o << " { .. }";
         }
         o << ") => {\n";
+
+        if (compiled_provider) {
+          synchronization_require(arm_index < h.provider_abi->failure_arms.size(),
+                                  "source-free on_fail arm lost its ABI record");
+          const auto& record = h.provider_abi->failure_arms[arm_index];
+          o << "                        " << provider_crate << "::"
+            << record.callable_symbol << "(&mut state, __MossRaised::"
+            << variant << "(" << inner << ").into()";
+          for (const auto& parameter : h.params)
+            o << ", " << shared_message_forward_argument(parameter, true);
+          o << ")\n                    },\n";
+          continue;
+        }
 
         std::set<string> locals;
         std::unordered_map<string, string> types{{"self", d.name}};
@@ -562,6 +586,127 @@
       << "        }\n"
       << "    }\n"
       << "}\n";
+  }
+
+  // Provider bodies are compiled without the application's concrete domain
+  // graph. Export the checked failure arm as a typed callable over a view of
+  // exactly the arm group's state footprint; the application supplies that
+  // view only after the fresh Root failure locks have been acquired.
+  void emit_provider_failure_arms(std::ostringstream& o, const Domain& d,
+                                  const Handler& h) {
+    if (h.failure_arms.empty()) return;
+    HandlerSynchronizationPlan failure;
+    failure.name = h.name + "$fail";
+    for (const auto& arm : h.failure_arms) {
+      synchronization_require(arm.state_effects.has_value(),
+                              "checked on_fail arm lacks state effects");
+      failure.effects.reads.insert(arm.state_effects->reads.begin(),
+                                   arm.state_effects->reads.end());
+      failure.effects.writes.insert(arm.state_effects->writes.begin(),
+                                    arm.state_effects->writes.end());
+      failure.effects.consumes.insert(arm.state_effects->consumes.begin(),
+                                      arm.state_effects->consumes.end());
+    }
+    const string state_type = d.name + h.name + "ProviderFailState";
+    emit_path_state_definition(o, d, failure, state_type, d.exported);
+    string bodyargs = "'_";
+    for (const auto& field : d.state)
+      if (typed_field_used(field, failure) && view_object_type(field.type))
+        bodyargs += ", impl " + access_trait(field.type);
+    for (const auto& route : d.routes)
+      bodyargs += ", impl " + canonical_type_name(route.type) + "Messages";
+    for (size_t arm_index = 0; arm_index < h.failure_arms.size(); ++arm_index) {
+      const auto& arm = h.failure_arms[arm_index];
+      o << "#[allow(unreachable_patterns)]\n";
+      o << (d.exported ? "pub " : "") << "fn __moss_on_fail_"
+        << d.name << "_" << h.name << "_"
+        << arm_index << "(state: &mut " << state_type << "<" << bodyargs
+        << ">, __moss_error: __MossRaised";
+      for (const auto& parameter : h.params)
+        o << ", " << shared_message_parameter(parameter);
+      o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n"
+        << "    match __moss_error {\n";
+      for (const auto& identity : arm.exceptional_alternatives) {
+        const string variant = phase21_rust_variant(identity);
+        const string inner = "__moss_failure_value";
+        o << "        __MossRaised::" << variant << "("
+          << inner << " @ " << phase21_rust_error_type(identity) << "::"
+          << rust_identifier(identity.variant);
+        string enum_key = canonical_type_name(identity.type);
+        if (!enums_.count(enum_key)) {
+          for (size_t separator = enum_key.find("::");
+               separator != string::npos;
+               separator = enum_key.find("::"))
+            enum_key.replace(separator, 2, "__");
+        }
+        auto declaration = enums_.find(enum_key);
+        if (declaration != enums_.end()) {
+          auto item = std::find_if(
+              declaration->second->cases.begin(),
+              declaration->second->cases.end(),
+              [&](const EnumCase& candidate) {
+                return candidate.name == identity.variant;
+              });
+          if (item != declaration->second->cases.end() &&
+              !item->fields.empty())
+            o << " { .. }";
+        }
+        o << ") => {\n";
+        if (h.reply_type)
+          o << "            let mut __moss_failure_reply = None;\n";
+        std::set<string> locals;
+        std::unordered_map<string, string> types{{"self", d.name}};
+        for (const auto& field : d.state) types[field.name] = field.type;
+        for (const auto& route : d.routes) types[route.name] = route.type;
+        for (const auto& parameter : h.params) {
+          locals.insert(parameter.name);
+          types[parameter.name] = parameter.type;
+        }
+        if (!arm.binding.empty()) {
+          o << "            let " << arm.binding << " = " << inner << ";\n";
+          locals.insert(arm.binding);
+          types[arm.binding] = identity.type;
+        }
+        if (arm.patterns.size() == 1)
+          emit_generated_error_payload_bindings(
+              o, 12, inner, identity,
+              generated_error_pattern_bindings(
+                  arm.patterns.front(), identity),
+              locals, types);
+        view_domain_ = true;
+        view_domain_access_ = true;
+        write_through_parameters_.clear();
+        view_parameters_.clear();
+        borrowed_message_parameters_.clear();
+        const string saved_selected_error = phase21_selected_error_;
+        phase21_selected_error_ = "__moss_error";
+        const bool needs_label = std::any_of(
+            arm.body.begin(), arm.body.end(), [](const Stmt& statement) {
+              return statement.kind == Stmt::Kind::Reply ||
+                  statement.kind == Stmt::Kind::Return;
+            });
+        if (needs_label) o << "            'handler: {\n";
+        gen_stmts(o, arm.body, &d, &h,
+                  h.reply_type ? "__moss_failure_reply" : string(),
+                  locals, types, needs_label ? 4 : 3, true, false,
+                  functional_handler_context(d, h) + ":on_fail:" +
+                      std::to_string(arm_index));
+        if (needs_label) o << "            }\n";
+        phase21_selected_error_ = saved_selected_error;
+        view_domain_ = false;
+        view_domain_access_ = false;
+        borrowed_message_parameters_.clear();
+        view_parameters_.clear();
+        write_through_parameters_.clear();
+        if (h.reply_type)
+          o << "            __moss_failure_reply.unwrap_or_else(|| std::process::abort())\n";
+        else
+          o << "            ()\n";
+        o << "        },\n";
+      }
+      o << "        _ => std::process::abort(),\n"
+        << "    }\n}\n";
+    }
   }
 
   void gen_planned_domain(std::ostringstream& o, const Domain& d) {
@@ -816,6 +961,7 @@
         emit_path_body(o, d, h, then_fragment, "Then", path_branch_body(h, true));
         emit_path_body(o, d, h, else_fragment, "Else", path_branch_body(h, false));
       }
+      emit_provider_failure_arms(o, d, h);
     }
   }
 
