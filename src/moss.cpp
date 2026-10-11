@@ -1902,6 +1902,7 @@ class Checker {
   mutable vector<bool>* parameter_mutation_capture_ = nullptr;
   mutable string current_source_file_;
   string current_semantic_context_;
+  mutable const Stmt* ownership_current_stmt_ = nullptr;
   vector<Warning> warnings_;
   bool phase21_warnings_enabled_ = true;
 
@@ -2878,8 +2879,12 @@ class Checker {
       for (const auto& f : d.state) ownership.state_fields.insert(f.name);
       for (const auto& parameter : h.params)
         ownership.message_payloads.insert(parameter.name);
-      check_ownership(h.body, std::move(ownership), &d, &h);
+      vector<ExceptionalOwnershipExit> escaping_exits;
+      check_ownership(h.body, std::move(ownership), &d, &h,
+                      &escaping_exits);
       check_fileio_lifecycle(h.body, env, &d, h.line);
+      const TypeEnv local_candidates =
+          phase21_handler_local_candidates(h, env);
       for (const auto& arm : h.failure_arms) {
         SourceFileScope arm_source(current_source_file_, arm.source_file);
         TypeEnv arm_env = env;
@@ -2897,6 +2902,62 @@ class Checker {
           for (const auto& binding :
                phase21_pattern_bindings(arm.line, arm.patterns.front()))
             arm_env[binding.first] = binding.second;
+        arm.captures.clear();
+        for (const auto& name :
+             phase21_failure_capture_reads(arm, arm_env, local_candidates)) {
+          const string& candidate_type = local_candidates.at(name);
+          if (candidate_type == "_ambiguous_capture_type")
+            err(arm.line, "on_fail capture '" + name +
+                "' has incompatible handler-local types",
+                "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+          if (arm.exceptional_alternatives.empty()) {
+            // The checked warning-only arm can never be selected. Its body
+            // remains typechecked, but no value crosses a Root boundary.
+            arm_env[name] = candidate_type;
+            continue;
+          }
+          std::optional<string> binding_identity;
+          for (const auto& exit : escaping_exits) {
+            bool reaches_arm = false;
+            for (const auto& identity : arm.exceptional_alternatives)
+              reaches_arm |= exit.alternatives.count(identity) != 0;
+            if (!reaches_arm) continue;
+            const auto type = exit.ownership.types.find(name);
+            const auto binding =
+                exit.ownership.binding_identities.find(name);
+            if (type == exit.ownership.types.end() ||
+                binding == exit.ownership.binding_identities.end())
+              err(arm.line, "on_fail capture '" + name +
+                  "' is not initialized on every selected raise path",
+                  "ON_FAIL_CAPTURE_NOT_INITIALIZED");
+            if (!same_type(type->second, candidate_type))
+              err(arm.line, "on_fail capture '" + name +
+                  "' has different types on selected raise paths",
+                  "ON_FAIL_CAPTURE_TYPE_MISMATCH");
+            if (exit.ownership.moved.count(name))
+              err(arm.line, "on_fail capture '" + name +
+                  "' was consumed before a selected raise",
+                  "ON_FAIL_CAPTURE_CONSUMED");
+            if (exit.ownership.borrowed_enum_payloads.count(name) ||
+                fileio_contains_scoped_type(type->second) ||
+                domains_.count(canonical_type_name(type->second)))
+              err(arm.line, "on_fail capture '" + name +
+                  "' must be an owned non-capability value",
+                  "ON_FAIL_CAPTURE_NOT_OWNED");
+            if (binding_identity && *binding_identity != binding->second)
+              err(arm.line, "on_fail capture '" + name +
+                  "' resolves to different bindings on selected raise paths",
+                  "ON_FAIL_CAPTURE_BINDING_MISMATCH");
+            binding_identity = binding->second;
+          }
+          if (!binding_identity)
+            err(arm.line, "on_fail capture '" + name +
+                "' has no proved incoming exceptional ownership edge",
+                "ON_FAIL_CAPTURE_UNPROVEN");
+          arm.captures.push_back(
+              {name, candidate_type, *binding_identity});
+          arm_env[name] = candidate_type;
+        }
         check_stmts(arm.body, arm_env, &d, &h);
         OwnershipEnv arm_ownership;
         arm_ownership.types = arm_env;
@@ -2907,6 +2968,11 @@ class Checker {
         check_ownership(arm.body, std::move(arm_ownership), &d, &h);
         check_fileio_lifecycle(arm.body, arm_env, &d, arm.line);
       }
+      const bool has_captures = std::any_of(
+          h.failure_arms.begin(), h.failure_arms.end(),
+          [](const FailureArm& arm) { return !arm.captures.empty(); });
+      const_cast<Handler&>(h).phase21_capture_carrier_type = has_captures
+          ? "__MossRaisedCarrier_" + d.name + "_" + h.name : string();
     }
   }
 
@@ -3542,6 +3608,7 @@ class Checker {
   struct ExceptionalOwnershipExit {
     RaiseSet alternatives;
     OwnershipEnv ownership;
+    const Stmt* source = nullptr;
   };
 
   void retain_semantic_use(const string& target_identity, const string& kind,
@@ -7872,9 +7939,11 @@ class Checker {
           statement.kind == Stmt::Kind::Match) {
         const string expression = statement.kind == Stmt::Kind::For
             ? statement.b : statement.a;
+        const RaiseSet direct =
+            observable_expression_effects(expression, env).raise_set;
+        const_cast<Stmt&>(statement).exceptional_alternatives = direct;
         result = raise_set_union(
-            std::move(result),
-            observable_expression_effects(expression, env).raise_set);
+            std::move(result), direct);
         const auto parent_kind = statement.kind;
         ++index;
         if (parent_kind == Stmt::Kind::Match) {
@@ -7900,6 +7969,7 @@ class Checker {
         }
         continue;
       }
+      RaiseSet direct;
       if (statement.kind == Stmt::Kind::Message) {
         auto receiver = env.find(statement.a);
         if (receiver != env.end() && domains_.count(receiver->second))
@@ -7910,16 +7980,18 @@ class Checker {
             // nested messages never do.
             if (!(statement.message_root_ingress &&
                   !target->failure_arms.empty()))
-              result = raise_set_union(
-                  std::move(result), target->observable_effects.raise_set);
+              direct = raise_set_union(
+                  std::move(direct), target->observable_effects.raise_set);
           }
       }
       for (const auto& expression : statement_expressions(statement))
-        result = raise_set_union(
-            std::move(result),
+        direct = raise_set_union(
+            std::move(direct),
             observable_expression_effects(
                 expression, env, {}, nullptr, {}, nullptr,
                 statement.message_root_ingress).raise_set);
+      const_cast<Stmt&>(statement).exceptional_alternatives = direct;
+      result = raise_set_union(std::move(result), direct);
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
@@ -7970,6 +8042,85 @@ class Checker {
     return proven && proven->count({trim(base), trim(index)}) != 0;
   }
 
+  TypeEnv phase21_handler_local_candidates(const Handler& handler,
+                                            const TypeEnv& entry) const {
+    TypeEnv candidates;
+    const TypeEnvVisitor visit = [&](const Stmt& statement,
+                                     const TypeEnv& current) {
+      if (statement.kind == Stmt::Kind::Message &&
+          !statement.message_result.empty() &&
+          !entry.count(statement.message_result)) {
+        const auto receiver = current.find(statement.a);
+        const auto domain = receiver == current.end() ? domains_.end()
+            : domains_.find(canonical_type_name(receiver->second));
+        if (domain != domains_.end())
+          if (const Handler* target =
+                  find_handler(*domain->second, statement.b))
+            if (target->reply_type)
+              candidates.emplace(statement.message_result,
+                                 *target->reply_type);
+      }
+      if (statement.kind == Stmt::Kind::Match) {
+        const auto type = inferred_expr_type(statement.a, current);
+        const auto declaration = type
+            ? enums_.find(canonical_type_name(*type)) : enums_.end();
+        if (declaration != enums_.end()) {
+          size_t index = static_cast<size_t>(
+              &statement - handler.body.data()) + 1;
+          while (index < handler.body.size() &&
+                 handler.body[index].indent == statement.indent + 1 &&
+                 handler.body[index].kind == Stmt::Kind::Case) {
+            const Stmt& arm = handler.body[index];
+            auto variant = std::find_if(
+                declaration->second->cases.begin(),
+                declaration->second->cases.end(),
+                [&](const EnumCase& item) { return item.name == arm.a; });
+            if (variant != declaration->second->cases.end())
+              for (size_t field = 0;
+                   field < arm.args.size() && field < variant->fields.size();
+                   ++field)
+                if (!entry.count(arm.args[field]))
+                  candidates.emplace(arm.args[field],
+                                     variant->fields[field].type);
+            ++index;
+            while (index < handler.body.size() &&
+                   handler.body[index].indent > statement.indent + 1)
+              ++index;
+          }
+        }
+      }
+      if (statement.kind != Stmt::Kind::Let &&
+          statement.kind != Stmt::Kind::Var &&
+          statement.kind != Stmt::Kind::Assign) return;
+      if (!plain_identifier(statement.a) || entry.count(statement.a)) return;
+      auto type = inferred_expr_type(statement.b, current);
+      if (!type || contains_internal_placeholder(*type)) return;
+      auto [item, inserted] = candidates.emplace(statement.a, *type);
+      if (!inserted && !same_type(item->second, *type))
+        item->second = "_ambiguous_capture_type";
+    };
+    (void)walk_type_environment(handler.body, entry, visit, false);
+    return candidates;
+  }
+
+  std::set<string> phase21_failure_capture_reads(
+      const FailureArm& arm, const TypeEnv& arm_entry,
+      const TypeEnv& candidates) const {
+    std::set<string> result;
+    const TypeEnvVisitor visit = [&](const Stmt& statement,
+                                     const TypeEnv& current) {
+      for (const auto& expression : statement_expressions(statement)) {
+        if (statement.kind == Stmt::Kind::Assign &&
+            plain_identifier(expression) && expression == statement.a)
+          continue;
+        for (const auto& name : functional_captures(expression, candidates))
+          if (!current.count(name)) result.insert(name);
+      }
+    };
+    (void)walk_type_environment(arm.body, arm_entry, visit, false);
+    return result;
+  }
+
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
     if (handler.provider_abi &&
         !handler.provider_abi->failure_arms.empty()) {
@@ -7979,15 +8130,18 @@ class Checker {
         err(handler.line,
             "compiled provider on_fail does not cover every Root error",
             "NONEXHAUSTIVE_ON_FAIL");
-      for (const auto& arm : handler.provider_abi->failure_arms)
-        if (!arm.captures.empty())
-          err(handler.line,
-              "compiled provider on_fail captures require a materialized "
-              "Root capture frame",
-              "SOURCE_FREE_ON_FAIL_UNMATERIALIZED");
       return;
     }
     if (handler.failure_arms.empty()) return;
+    TypeEnv handler_entry{{"self", domain.name}};
+    for (const auto& field : domain.state)
+      handler_entry[field.name] = field.type;
+    for (const auto& route : domain.routes)
+      handler_entry[route.name] = route.type;
+    for (const auto& parameter : handler.params)
+      handler_entry[parameter.name] = parameter.type;
+    const TypeEnv local_candidates =
+        phase21_handler_local_candidates(handler, handler_entry);
     RaiseSet remaining = handler.observable_effects.raise_set;
     std::set<RaisedIdentity> named;
     bool saw_catch_all = false;
@@ -8048,6 +8202,9 @@ class Checker {
         for (const auto& binding :
              phase21_pattern_bindings(arm.line, arm.patterns.front()))
           env[binding.first] = binding.second;
+      for (const auto& name :
+           phase21_failure_capture_reads(arm, env, local_candidates))
+        env[name] = local_candidates.at(name);
       RaiseSet escaping = phase21_raise_set(arm.body, std::move(env));
       if (!escaping.empty())
         err(arm.line, "on_fail arm may not let typed errors escape",
@@ -9418,6 +9575,8 @@ class Checker {
     }
     if (env.state_fields.count(name))
       err(line, "domain state '" + name + "' cannot be consumed into '" + destination + "'");
+    if (ownership_current_stmt_)
+      ownership_current_stmt_->ownership_consumed_bindings.insert(name);
     const_cast<OwnershipEnv&>(env).moved[name] = MoveInfo{line, destination};
   }
 
@@ -9920,9 +10079,11 @@ class Checker {
 
   OwnershipEnv check_ownership(const vector<Stmt>& statements, OwnershipEnv env,
                                const Domain* current_domain,
-                               const Handler* current_handler) {
+                               const Handler* current_handler,
+                               vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
     size_t index = 0;
-    check_ownership_block(statements, index, 0, env, current_domain, current_handler);
+    check_ownership_block(statements, index, 0, env, current_domain,
+                          current_handler, exceptional);
     return env;
   }
 
@@ -9964,12 +10125,19 @@ class Checker {
       if (s.kind == Stmt::Kind::Else) return;
       if (!env.can_continue) { ++index; continue; }
       if (s.indent > level) return;
+      struct OwnershipStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        OwnershipStatementScope(const Stmt*& target, const Stmt* current)
+            : slot(target), prior(target) { slot = current; }
+        ~OwnershipStatementScope() { slot = prior; }
+      } ownership_statement_scope(ownership_current_stmt_, &s);
 
       const RaiseSet direct_raises = exceptional
           ? direct_ownership_raise_set(s, env.types) : RaiseSet{};
       auto record_direct_raise = [&] {
         if (exceptional && !direct_raises.empty())
-          exceptional->push_back({direct_raises, env});
+          exceptional->push_back({direct_raises, env, &s});
       };
 
       if (s.kind == Stmt::Kind::Match) {
@@ -10011,6 +10179,9 @@ class Checker {
             const string& name = arm.args[field_index];
             const string& field_type = item->fields[field_index].type;
             branch.types[name] = field_type;
+            branch.binding_identities[name] =
+                statement_binding_identity(current_semantic_context_, arm.line) +
+                ":" + name;
             branch.moved.erase(name);
             branch.immutable_locals.insert(name);
             branch.message_payloads.erase(name);
@@ -10024,6 +10195,10 @@ class Checker {
           for (const auto& name : arm.args) {
             if (incoming.types.count(name)) branch.types[name] = incoming.types.at(name);
             else branch.types.erase(name);
+            if (incoming.binding_identities.count(name))
+              branch.binding_identities[name] =
+                  incoming.binding_identities.at(name);
+            else branch.binding_identities.erase(name);
             if (incoming.moved.count(name)) branch.moved[name] = incoming.moved.at(name);
             else branch.moved.erase(name);
             if (incoming.borrowed_enum_payloads.count(name))
@@ -13658,18 +13833,99 @@ class Generator {
   string phase21_selected_error_;
   string phase21_try_label_;
   size_t phase21_try_temp_ = 0;
+  const Handler* phase21_capture_handler_ = nullptr;
+  const std::set<string>* phase21_capture_locals_ = nullptr;
+  const RaiseSet* phase21_capture_alternatives_ = nullptr;
+  std::set<string> phase21_option_slots_;
+  const Stmt* phase21_codegen_statement_ = nullptr;
+
+  static bool handler_has_failure_captures(const Handler& handler) {
+    if (handler.provider_abi)
+      for (const auto& arm : handler.provider_abi->failure_arms)
+        if (!arm.captures.empty()) return true;
+    for (const auto& arm : handler.failure_arms)
+      if (!arm.captures.empty()) return true;
+    return false;
+  }
+
+  string handler_capture_carrier_type(const Handler& handler) const {
+    return handler.provider_abi
+        ? handler.provider_abi->raised_carrier_rust_type
+        : handler.phase21_capture_carrier_type;
+  }
+
+  string phase21_capture_carrier(const string& error,
+                                 const RaiseSet* selected = nullptr) const {
+    if (!phase21_capture_handler_ || !phase21_capture_locals_ ||
+        !(selected ? selected : phase21_capture_alternatives_))
+      throw std::runtime_error(
+          "internal error: missing on_fail capture lowering context");
+    const Handler& handler = *phase21_capture_handler_;
+    const string carrier = handler_capture_carrier_type(handler);
+    const string frame = carrier.substr(0, carrier.find("__MossRaisedCarrier_")) +
+        "__MossFailureFrame_" +
+        carrier.substr(carrier.find("__MossRaisedCarrier_") + 20);
+    std::map<string,string> capture_types;
+    for (const auto& arm : handler.failure_arms)
+      for (const auto& capture : arm.captures)
+        capture_types.emplace(capture.name, capture.type);
+    std::ostringstream out;
+    out << "#[allow(unreachable_patterns)] match " << error << " { ";
+    const RaiseSet& possible = *(selected ? selected :
+                                phase21_capture_alternatives_);
+    for (const auto& identity : possible) {
+      const string variant = phase21_rust_variant(identity);
+      out << "__MossRaised::" << variant << "(__moss_payload) => "
+          << carrier << "(" << frame << " { error: __MossRaised::"
+          << variant << "(__moss_payload)";
+      for (const auto& capture : capture_types) {
+        bool selected = false;
+        for (const auto& arm : handler.failure_arms)
+          if (arm.exceptional_alternatives.count(identity))
+            selected |= std::any_of(arm.captures.begin(), arm.captures.end(),
+                [&](const FailureArm::Capture& item) {
+                  return item.name == capture.first;
+                });
+        if (selected && !phase21_capture_locals_->count(capture.first))
+          throw std::runtime_error(
+              "internal error: on_fail capture is unavailable at native raise site");
+        out << ", " << rust_identifier(capture.first) << ": "
+            << (selected ? "Some(" +
+                (phase21_option_slots_.count(capture.first)
+                    ? "__moss_recovery_slot_" + capture.first +
+                        ".take().unwrap_or_else(|| std::process::abort())"
+                    : rust_identifier(capture.first)) + ")"
+                         : "None");
+      }
+      out << " }), ";
+    }
+    out << "_ => std::process::abort() }";
+    return out.str();
+  }
 
   string phase21_propagate(const string& fallible) const {
-    if (phase21_try_label_.empty()) return "(" + fallible + ")?";
+    if (phase21_try_label_.empty()) {
+      if (phase21_capture_handler_)
+        return "match " + fallible + " { Ok(__moss_value) => "
+            "__moss_value, Err(__moss_error) => return Err(" +
+            phase21_capture_carrier("__moss_error.into()") + ") }";
+      return "(" + fallible + ")?";
+    }
     return "match " + fallible + " { Ok(__moss_value) => __moss_value, "
         "Err(__moss_error) => break '" + phase21_try_label_ +
-        " Err(__moss_error.into()) }";
+        " Err(" + (phase21_capture_handler_
+            ? phase21_capture_carrier("__moss_error.into()")
+            : "__moss_error.into()") + ") }";
   }
 
   string phase21_error_exit(const string& error) const {
-    return (phase21_try_label_.empty()
-        ? "return Err(" : "break '" + phase21_try_label_ + " Err(") +
-        error + ")";
+    if (phase21_try_label_.empty())
+      return "return Err(" +
+          (phase21_capture_handler_ ? phase21_capture_carrier(error) : error) +
+          ")";
+    return "break '" + phase21_try_label_ + " Err(" +
+        (phase21_capture_handler_ ? phase21_capture_carrier(error) : error) +
+        ")";
   }
 
   static string phase21_rust_variant(const RaisedIdentity& identity) {
@@ -13744,6 +14000,15 @@ class Generator {
       o << "),\n";
     }
     o << "}\n\n";
+    for (const auto& domain : p_.domains) {
+      auto module = phase21_external_module_for_symbol(domain.name);
+      if (!module) continue;
+      for (const auto& handler : domain.handlers)
+        if (handler.provider_abi &&
+            handler_has_failure_captures(handler))
+          o << "use " << tooling_name("moss_" + *module) << "::"
+            << handler.provider_abi->raised_carrier_rust_type << ";\n";
+    }
     if (program_uses_fileio(p_) && has_file_error) {
       o << "#[allow(dead_code)]\n"
         << "fn __moss_raise_fileio(error: MossFileError) -> __MossRaised {\n"
@@ -14154,13 +14419,19 @@ class Generator {
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0,
                                 const FunctionSpecialization* specialization = nullptr) const {
-    string rendered = nominal_domain_handle_argument(
-        argument, index < function.params.size() ? function.params[index].type : "",
-        d, locals, types, functional_pipeline_id);
-    if (index >= function.params.size()) return rendered;
+    if (index >= function.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
     string actual_type = generated_expr_type(argument, types).value_or("");
     auto abi = function_parameter_abi(function, index, actual_type, specialization);
     Effect effect = abi.effect;
+    if (effect == Effect::Consume &&
+        phase21_option_slots_.count(trim(argument)))
+      return "__moss_recovery_slot_" + trim(argument) +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    string rendered = nominal_domain_handle_argument(
+        argument, function.params[index].type, d, locals, types,
+        functional_pipeline_id);
     if (abi.passing == ParameterPassingMode::Value) return rendered;
     // Non-object payloads arrive through the internal handler ABI as `&T`.
     // Preserve that borrow when handing it to a READ helper. Object payloads
@@ -14178,11 +14449,17 @@ class Generator {
                               const std::set<string>& locals,
                               const std::unordered_map<string,string>* types,
                               size_t functional_pipeline_id = 0) const {
-    string rendered = nominal_domain_handle_argument(
-        argument, index < method.params.size() ? method.params[index].type : "",
-        d, locals, types, functional_pipeline_id);
-    if (index >= method.params.size()) return rendered;
+    if (index >= method.params.size())
+      return nominal_domain_handle_argument(argument, "", d, locals, types,
+                                            functional_pipeline_id);
     Effect effect = method_effect(method, index);
+    if (effect == Effect::Consume &&
+        phase21_option_slots_.count(trim(argument)))
+      return "__moss_recovery_slot_" + trim(argument) +
+          ".take().unwrap_or_else(|| std::process::abort())";
+    string rendered = nominal_domain_handle_argument(
+        argument, method.params[index].type, d, locals, types,
+        functional_pipeline_id);
     string type = method.params[index].type;
     if (effect == Effect::Consume || (effect != Effect::Write && !borrowable_type(type))) return rendered;
     if (effect == Effect::Read && borrowed_message_parameter(argument) &&
@@ -15556,6 +15833,12 @@ class Generator {
     // Remove only complete balanced outer groups before lowering. Nested groups
     // still protect precedence until their recursive expr() call reaches them.
     e = strip_redundant_outer_parentheses(std::move(e));
+    if (phase21_option_slots_.count(e))
+      return "__moss_recovery_slot_" + e +
+          (phase21_codegen_statement_ &&
+           phase21_codegen_statement_->ownership_consumed_bindings.count(e)
+              ? ".take()" : ".as_ref()") +
+          ".unwrap_or_else(|| std::process::abort())";
     if (auto place = view_place(e, d, locals, types)) return *place;
     if (write_through_parameters_.count(e) && types && types->count(e) && copy_type(types->at(e)))
       return "*" + e;
@@ -16875,7 +17158,10 @@ class Generator {
         : "()";
     return handler.observable_effects.raise_set.empty()
         ? normal
-        : "Result<" + normal + ", __MossRaised>";
+        : "Result<" + normal + ", " +
+            (handler_has_failure_captures(handler)
+                ? handler_capture_carrier_type(handler)
+                : "__MossRaised") + ">";
   }
 
   string handler_message_return_type(const Handler& handler) const {
@@ -17013,9 +17299,24 @@ class Generator {
       phase21_result_context_ = !handler.observable_effects.raise_set.empty();
       out << ") -> " << handler_message_return_type(handler) << " {\n"
           << "        ";
-      if (!handler.observable_effects.raise_set.empty()) out << "Ok(";
-      out << expr(call, nullptr, locals, &types);
-      if (!handler.observable_effects.raise_set.empty()) out << ")";
+      if (handler_has_failure_captures(handler)) {
+        out << "self." << handler.name << "_shared(";
+        for (const auto& parameter : handler.params)
+          out << parameter.name << ", ";
+        out << ")";
+        if (handler.reply_type)
+          out << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+        if (auto module = phase21_external_module_for_symbol(domain.name))
+          out << ".map_err(|carrier| __MossRaised::from("
+              << phase21_external_raised_type(*module)
+              << "::from(carrier)))";
+        else
+          out << ".map_err(__MossRaised::from)";
+      } else {
+        if (!handler.observable_effects.raise_set.empty()) out << "Ok(";
+        out << expr(call, nullptr, locals, &types);
+        if (!handler.observable_effects.raise_set.empty()) out << ")";
+      }
       out << "\n    }\n";
       phase21_result_context_ = saved_phase21_result_context;
     }
@@ -17229,6 +17530,13 @@ class Generator {
                  int base, bool in_handler, bool in_function,
                  std::set<string> join_assignments = {},
                  const string& functional_context = "") {
+    struct RecoverySlotScope {
+      std::set<string>& slot;
+      std::set<string> prior;
+      explicit RecoverySlotScope(std::set<string>& current)
+          : slot(current), prior(current) {}
+      ~RecoverySlotScope() { slot = std::move(prior); }
+    } recovery_slot_scope(phase21_option_slots_);
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
@@ -17239,6 +17547,14 @@ class Generator {
       if (s.indent > level) throw std::runtime_error("internal error: unexpected statement indentation");
       if (s.kind == Stmt::Kind::Else) return; // consumed by the preceding if
 
+      struct CodegenStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        CodegenStatementScope(const Stmt*& target, const Stmt* current)
+            : slot(target), prior(target) { slot = current; }
+        ~CodegenStatementScope() { slot = prior; }
+      } codegen_statement_scope(phase21_codegen_statement_, &s);
+
       source_comment(o, (base + level) * 4, s.line, s.text);
 
       struct RootIngressScope {
@@ -17246,6 +17562,23 @@ class Generator {
         RootIngressScope(bool& f, bool value) : flag(f), saved(f) { flag = value; }
         ~RootIngressScope() { flag = saved; }
       } root_ingress_scope(root_ingress_statement_, s.message_root_ingress);
+      struct CaptureLocalsScope {
+        const std::set<string>*& slot;
+        const std::set<string>* prior;
+        CaptureLocalsScope(const std::set<string>*& target,
+                           const std::set<string>& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~CaptureLocalsScope() { slot = prior; }
+      } capture_locals_scope(phase21_capture_locals_, locals);
+      struct CaptureAlternativesScope {
+        const RaiseSet*& slot;
+        const RaiseSet* prior;
+        CaptureAlternativesScope(const RaiseSet*& target,
+                                 const RaiseSet& current)
+            : slot(target), prior(target) { slot = &current; }
+        ~CaptureAlternativesScope() { slot = prior; }
+      } capture_alternatives_scope(phase21_capture_alternatives_,
+                                   s.exceptional_alternatives);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
           s, functional_context, 0);
@@ -17293,6 +17626,48 @@ class Generator {
 
       switch (s.kind) {
         case Stmt::Kind::Try: {
+          // Rust cannot infer that a move on one exceptional variant leaves
+          // an owned local available on another. The checker has already
+          // proved the recovery path; retain only affected locals in slots.
+          size_t attempt_end = i + 1;
+          while (attempt_end < ss.size() && ss[attempt_end].indent > level)
+            ++attempt_end;
+          size_t recover_end = attempt_end;
+          while (recover_end < ss.size() && ss[recover_end].indent == level &&
+                 ss[recover_end].kind == Stmt::Kind::Recover) {
+            ++recover_end;
+            while (recover_end < ss.size() && ss[recover_end].indent > level)
+              ++recover_end;
+          }
+          std::set<string> recovery_slots;
+          for (size_t candidate = i + 1; candidate < attempt_end; ++candidate) {
+            const Stmt& consumed = ss[candidate];
+            for (const auto& binding : consumed.ownership_consumed_bindings) {
+              if (!types.count(binding) || copy_type(types.at(binding)) ||
+                  phase21_option_slots_.count(binding))
+                continue;
+              for (size_t read = attempt_end; read < recover_end; ++read) {
+                const Stmt& recovered = ss[read];
+                bool mentions = expression_mentions_identifier(
+                    recovered.b, binding);
+                if (recovered.kind != Stmt::Kind::Assign)
+                  mentions |= expression_mentions_identifier(
+                      recovered.a, binding);
+                for (const auto& argument : recovered.args)
+                  mentions |= expression_mentions_identifier(
+                      argument, binding);
+                if (mentions) {
+                  recovery_slots.insert(binding);
+                  break;
+                }
+              }
+            }
+          }
+          for (const auto& binding : recovery_slots) {
+            o << indent(level) << "let mut __moss_recovery_slot_" << binding
+              << " = Some(" << rust_identifier(binding) << ");\n";
+            phase21_option_slots_.insert(binding);
+          }
           const auto exact_join =
               s.joined_types_by_context.find(functional_context);
           const auto& joined_types = exact_join ==
@@ -17336,8 +17711,17 @@ class Generator {
           o << indent(level) << "#[allow(unreachable_code)]\n";
           const string try_label = "__moss_try_" +
               std::to_string(phase21_try_temp_++);
+          const bool captured_try = phase21_capture_handler_ != nullptr;
+          const string carrier = captured_try
+              ? handler_capture_carrier_type(*phase21_capture_handler_) : "";
+          const string frame = captured_try
+              ? carrier.substr(0, carrier.find("__MossRaisedCarrier_")) +
+                    "__MossFailureFrame_" +
+                    carrier.substr(carrier.find("__MossRaisedCarrier_") + 20)
+              : "";
           o << indent(level) << "let " << outcome
-            << ": Result<(), __MossRaised> = '" << try_label << ": {\n";
+            << ": Result<(), " << (captured_try ? carrier : "__MossRaised")
+            << "> = '" << try_label << ": {\n";
           ++i;
           auto attempt_locals = locals;
           auto attempt_types = types;
@@ -17376,7 +17760,9 @@ class Generator {
               handled.insert(identity);
               const string variant = phase21_rust_variant(identity);
               const string inner = "__moss_selected_value";
-              o << indent(level + 1) << "Err(__MossRaised::" << variant
+              o << indent(level + 1) << "Err(";
+              if (captured_try) o << carrier << "(" << frame << " { error: ";
+              o << "__MossRaised::" << variant
                 << "(" << inner << " @ ";
               if (identity.kind == RaisedIdentityKind::EnumVariant) {
                 o << phase21_rust_error_type(identity) << "::"
@@ -17404,7 +17790,9 @@ class Generator {
               } else {
                 o << "_";
               }
-              o << ")) => {\n";
+              o << ")";
+              if (captured_try) o << ", .. })";
+              o << ") => {\n";
               const string selected = "__moss_selected_error";
               o << indent(level + 2) << "let " << selected
                 << " = __MossRaised::" << variant << "(" << inner
@@ -17457,7 +17845,8 @@ class Generator {
               o << "break '" << saved_try_label
                 << " Err(__moss_unhandled_error),\n";
             else if (saved_result_context)
-              o << "return Err(__moss_unhandled_error),\n";
+              o << "return Err(" <<
+                  "__moss_unhandled_error" << "),\n";
             else
               o << "std::process::abort(),\n";
           } else {
@@ -17529,9 +17918,14 @@ class Generator {
             }
           }
           o << indent(level) << "match ";
-          if (s.b != "consume") o << "&";
+          const bool recovery_slot = phase21_option_slots_.count(s.a) != 0;
+          if (s.b != "consume" && !recovery_slot) o << "&";
           if (struct_literal) o << "(";
-          o << expr(s.a, d, locals, &types);
+          if (recovery_slot && s.b == "consume")
+            o << "__moss_recovery_slot_" << s.a
+              << ".take().unwrap_or_else(|| std::process::abort())";
+          else
+            o << expr(s.a, d, locals, &types);
           if (struct_literal) o << ")";
           o << " {\n";
           ++i;
@@ -17824,6 +18218,14 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          if (phase21_option_slots_.count(s.a)) {
+            o << indent(level) << "__moss_recovery_slot_" << s.a
+              << " = Some(" << expr(s.b, d, locals, &types,
+                     statement_functional_pipeline_id(
+                         s, functional_context, 0)) << ");\n";
+            ++i;
+            break;
+          }
           if (auto sd = domain_construction(s.b)) {
             const string source_domain = *sd;
             construction_binding_ = s.a;
@@ -26461,6 +26863,115 @@ static void complete_phase21_owned_type_shapes(ProviderHandlerAbi& abi) {
     abi.owned_type_shapes.push_back(std::move(entry.second));
 }
 
+// Serialize the checked source CFG, rather than one synthetic node per raised
+// identity.  Two sites that raise the same variant can have different D7 and
+// guard-lifetime facts, so merging them would erase an incoming edge.
+static void populate_phase21_source_exceptional_cfg(
+    const Handler& handler, ProviderHandlerAbi& abi) {
+  struct Scope {
+    std::uint32_t id = 0;
+    std::vector<std::pair<RaiseSet, std::uint32_t>> arms;
+  };
+  std::uint32_t next_node = 1;
+  std::uint32_t next_scope = 1;
+  std::uint32_t handler_exit = 0;
+  if (!handler.observable_effects.raise_set.empty()) {
+    handler_exit = next_node++;
+    abi.exceptional_destinations.push_back(
+        {handler_exit, ExceptionalDestinationKind::HandlerExit, 0, 0,
+         handler.observable_effects.raise_set});
+  }
+  std::function<void(size_t, size_t, std::vector<Scope>, std::uint32_t)> walk;
+  walk = [&](size_t begin, size_t end, std::vector<Scope> scopes,
+             std::uint32_t selected_scope) {
+    for (size_t index = begin; index < end;) {
+      const Stmt& statement = handler.body[index];
+      if (statement.kind == Stmt::Kind::Try) {
+        const int indent = statement.indent;
+        const size_t attempt_begin = index + 1;
+        size_t attempt_end = attempt_begin;
+        while (attempt_end < end &&
+               handler.body[attempt_end].indent > indent)
+          ++attempt_end;
+        Scope scope;
+        scope.id = next_scope++;
+        std::vector<std::pair<size_t, size_t>> arm_bodies;
+        size_t after = attempt_end;
+        std::uint32_t order = 0;
+        while (after < end && handler.body[after].indent == indent &&
+               handler.body[after].kind == Stmt::Kind::Recover) {
+          const Stmt& arm = handler.body[after];
+          const size_t arm_begin = ++after;
+          while (after < end && handler.body[after].indent > indent) ++after;
+          const std::uint32_t destination = next_node++;
+          abi.exceptional_destinations.push_back(
+              {destination, ExceptionalDestinationKind::RecoveryArm,
+               scope.id, order++, arm.exceptional_alternatives});
+          scope.arms.push_back({arm.exceptional_alternatives, destination});
+          arm_bodies.push_back({arm_begin, after});
+        }
+        auto attempt_scopes = scopes;
+        attempt_scopes.insert(attempt_scopes.begin(), scope);
+        walk(attempt_begin, attempt_end, std::move(attempt_scopes), 0);
+        for (const auto& bounds : arm_bodies)
+          walk(bounds.first, bounds.second, scopes, scope.id);
+        index = after;
+        continue;
+      }
+      const RaiseSet& alternatives = statement.exceptional_alternatives;
+      if (!alternatives.empty() &&
+          statement.kind != Stmt::Kind::Recover) {
+        RaisingNodeAbi raising;
+        raising.node = next_node++;
+        raising.possible_alternatives = alternatives;
+        for (const auto& scope : scopes)
+          raising.recovery_scope_chain.push_back(scope.id);
+        raising.selected_error_slot =
+            statement.kind == Stmt::Kind::Raise && statement.a.empty();
+        if (raising.selected_error_slot) {
+          raising.selected_error_scope = selected_scope;
+          raising.outer_scope = scopes.empty() ? 0 : scopes.front().id;
+        }
+        const_cast<Stmt&>(statement).exceptional_node = raising.node;
+        const_cast<Stmt&>(statement).exceptional_scope =
+            scopes.empty() ? 0 : scopes.front().id;
+        abi.raising_nodes.push_back(raising);
+        for (const auto& alternative : alternatives) {
+          std::uint32_t destination = handler_exit;
+          ExceptionalEdgeKind kind =
+              ExceptionalEdgeKind::RaiseToHandlerExit;
+          if (raising.selected_error_slot) {
+            destination = next_node++;
+            abi.exceptional_destinations.push_back(
+                {destination, ExceptionalDestinationKind::OuterRecoveryOrExit,
+                 raising.outer_scope, 0, RaiseSet{alternative}});
+            kind = ExceptionalEdgeKind::ReRaiseToOuter;
+          } else {
+            for (const auto& scope : scopes) {
+              auto arm = std::find_if(scope.arms.begin(), scope.arms.end(),
+                  [&](const auto& candidate) {
+                    return candidate.first.count(alternative) != 0;
+                  });
+              if (arm == scope.arms.end()) continue;
+              destination = arm->second;
+              kind = ExceptionalEdgeKind::RaiseToRecover;
+              break;
+            }
+            if (kind == ExceptionalEdgeKind::RaiseToHandlerExit)
+              synchronization_require(handler_exit != 0,
+                  "checked exceptional exit missing from handler raise set");
+          }
+          abi.exceptional_edges.push_back(
+              {raising.node, destination, kind, RaiseSet{alternative},
+               kAllExceptionalCfgConsumers});
+        }
+      }
+      ++index;
+    }
+  };
+  walk(0, handler.body.size(), {}, 0);
+}
+
 static ProviderHandlerAbi source_provider_handler_abi(
     const Program& provider, const Domain& domain, const Handler& handler) {
   if (handler.provider_abi) {
@@ -26526,24 +27037,7 @@ static ProviderHandlerAbi source_provider_handler_abi(
     abi.outcome.raised.push_back(
         {identity, tag++, std::move(payload), std::move(projection)});
   }
-  std::uint32_t node = 1;
-  std::uint32_t destination = 1;
-  for (const auto& identity : handler.observable_effects.raise_set) {
-    const std::uint32_t node_id = node++;
-    const std::uint32_t destination_id = destination++;
-    RaisingNodeAbi raising;
-    raising.node = node_id;
-    raising.possible_alternatives.insert(identity);
-    abi.raising_nodes.push_back(std::move(raising));
-    ExceptionalDestinationAbi exit;
-    exit.node = destination_id;
-    exit.kind = ExceptionalDestinationKind::HandlerExit;
-    exit.accepted_alternatives.insert(identity);
-    abi.exceptional_destinations.push_back(std::move(exit));
-    abi.exceptional_edges.push_back(
-        {node_id, destination_id, ExceptionalEdgeKind::RaiseToHandlerExit,
-         RaiseSet{identity}, kAllExceptionalCfgConsumers});
-  }
+  populate_phase21_source_exceptional_cfg(handler, abi);
   std::uint32_t arm_order = 0;
   for (const auto& source_arm : handler.failure_arms) {
     FailureArmAbi arm;
@@ -26565,6 +27059,19 @@ static ProviderHandlerAbi source_provider_handler_abi(
     }
     arm.callable_symbol = "__moss_on_fail_" + domain.name + "_" +
         handler.name + "_" + std::to_string(arm.source_order);
+    for (const auto& checked : source_arm.captures) {
+      FailureCaptureAbi capture;
+      capture.name = checked.name;
+      capture.moss_type = canonical_type_name(checked.type);
+      capture.provider_rust_field = checked.name;
+      capture.owned = true;
+      capture.definitely_initialized = true;
+      capture.resolved_type =
+          resolve_phase21_owned_type(provider, capture.moss_type);
+      synchronization_require(failure_capture_allowed(capture),
+          "checked on_fail capture lacks an owned ABI-v8 type shape");
+      arm.captures.push_back(std::move(capture));
+    }
     synchronization_require(
         source_arm.state_effects.has_value(),
         "checked on_fail arm lacks its state-effect footprint");

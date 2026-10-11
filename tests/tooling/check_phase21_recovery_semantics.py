@@ -142,9 +142,8 @@ compiled = run("rustc", "-D", "warnings", reinitialized_rust, "-o",
 assert compiled.returncode == 0, compiled.stderr
 assert run(reinitialized_native).stdout == "new\n"
 
-# D7 is variant-specific: this checker-positive path raises Failure.Second
-# without consuming item. Native closure capture for that shape is tracked
-# separately as an unfinished lowering gate.
+# D7 is variant-specific: the Other edge retains item even though the Bad
+# edge consumed it. Compile and run both paths through the native slot.
 variant_source = ownership_scratch / "variant_specific.moss"
 variant_source.write_text(ownership_header + '''fn main():
   var item = Data.Have(value: "seven")
@@ -164,6 +163,135 @@ variant_source.write_text(ownership_header + '''fn main():
 ''')
 variant_checked = run(compiler, "check", variant_source, "--json")
 assert variant_checked.returncode == 0, variant_checked.stdout
+for branch, expected in (("true", ""), ("false", "seven\n")):
+    source_text = variant_source.read_text().replace("if true:", f"if {branch}:")
+    variant_source.write_text(source_text)
+    native_rust = ownership_scratch / f"variant_specific_{branch}.rs"
+    native_binary = ownership_scratch / f"variant_specific_{branch}"
+    assert run(compiler, variant_source, "-o", native_rust).returncode == 0
+    compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                   native_rust, "-o", native_binary)
+    assert compiled.returncode == 0, compiled.stderr
+    assert run(native_binary).stdout == expected
+
+# A recovery READ through a helper, reassignment after a consumed branch,
+# and post-try use all follow the same checked ownership path.
+slot_source = ownership_scratch / "variant_slot_reassign.moss"
+slot_source.write_text(ownership_header + '''fn show(data: Data):
+  match data:
+    case Have(value):
+      echo value
+fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    if true:
+      match consume item:
+        case Have(value):
+          raise Failure.Bad
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    item = Data.Have(value: "new")
+  recover Failure.Other:
+    show(item)
+  match item:
+    case Have(value):
+      echo value
+''')
+for branch, expected in (("true", "new\n"),
+                         ("false", "seven\nseven\n")):
+    slot_source.write_text(slot_source.read_text().replace(
+        "if true:" if branch == "false" else "if false:", f"if {branch}:"))
+    assert run(compiler, "check", slot_source, "--json").returncode == 0
+    native_rust = ownership_scratch / f"variant_slot_{branch}.rs"
+    native_binary = ownership_scratch / f"variant_slot_{branch}"
+    assert run(compiler, slot_source, "-o", native_rust).returncode == 0
+    compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                   native_rust, "-o", native_binary)
+    assert compiled.returncode == 0, compiled.stderr
+    assert run(native_binary).stdout == expected
+
+branch_assign_source = ownership_scratch / "variant_branch_reassign.moss"
+branch_assign_source.write_text(ownership_header + '''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    if true:
+      match consume item:
+        case Have(value):
+          raise Failure.Bad
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    pass
+  recover Failure.Other:
+    match item:
+      case Have(value):
+        echo value
+  if true:
+    item = Data.Have(value: "newer")
+  else:
+    item = Data.Have(value: "other")
+  match item:
+    case Have(value):
+      echo value
+''')
+assert run(compiler, "check", branch_assign_source, "--json").returncode == 0
+native_rust = ownership_scratch / "branch_assign.rs"
+native_binary = ownership_scratch / "branch_assign"
+assert run(compiler, branch_assign_source, "-o", native_rust).returncode == 0
+compiled = run("rustc", "--edition=2021", "-D", "warnings",
+               native_rust, "-o", native_binary)
+assert compiled.returncode == 0, compiled.stderr
+assert run(native_binary).stdout == "newer\n"
+
+post_assign_source = ownership_scratch / "variant_post_try_reassign.moss"
+for branch, expected in (("true", "new\n"),
+                         ("false", "seven\nnew\n")):
+    post_assign_source.write_text(ownership_header + f'''fn main():
+  var item = Data.Have(value: "seven")
+  try:
+    if {branch}:
+      match consume item:
+        case Have(value):
+          raise Failure.Bad
+    else:
+      raise Failure.Other
+  recover Failure.Bad:
+    pass
+  recover Failure.Other:
+    match item:
+      case Have(value):
+        echo value
+  item = Data.Have(value: "new")
+  match item:
+    case Have(value):
+      echo value
+''')
+    assert run(compiler, "check", post_assign_source, "--json").returncode == 0
+    native_rust = ownership_scratch / f"post_assign_{branch}.rs"
+    native_binary = ownership_scratch / f"post_assign_{branch}"
+    assert run(compiler, post_assign_source, "-o", native_rust).returncode == 0
+    compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                   native_rust, "-o", native_binary)
+    assert compiled.returncode == 0, compiled.stderr
+    assert run(native_binary).stdout == expected
+
+for fixture_name, recovered_output in (
+        ("phase21_helper_consume_variant", "seven\n"),
+        ("phase21_string_method_variant", "5\n")):
+    fixture = repo / "tests/tooling/fixtures" / f"{fixture_name}.moss"
+    for branch, expected in (("true", ""), ("false", recovered_output)):
+        case_source = ownership_scratch / f"{fixture_name}_{branch}.moss"
+        case_source.write_text(fixture.read_text().replace(
+            "if true:", f"if {branch}:"))
+        assert run(compiler, "check", case_source, "--json").returncode == 0
+        native_rust = case_source.with_suffix(".rs")
+        native_binary = case_source.with_suffix("")
+        assert run(compiler, case_source, "-o", native_rust).returncode == 0
+        compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                       native_rust, "-o", native_binary)
+        assert compiled.returncode == 0, compiled.stderr
+        assert run(native_binary).stdout == expected
 
 for name in ("range_fileio", "range_direct", "fileio_direct"):
     fileio_source = repo / "tests/tooling/fixtures/generic_specialization" / f"{name}.moss"

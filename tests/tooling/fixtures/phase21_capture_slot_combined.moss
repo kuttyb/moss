@@ -1,0 +1,28 @@
+enum Failure:
+  Bad
+  Other
+  Third
+fn take(data: String) -> String:
+  return data
+domain Worker:
+  fn Run() -> String:
+    var item = "seven"
+    try:
+      if false:
+        discarded = take(item)
+        raise Failure.Bad
+      else:
+        if false:
+          raise Failure.Other
+        else:
+          raise Failure.Third
+    recover Failure.Bad:
+      pass
+    recover Failure.Other:
+      echo item.length()
+    reply "ok"
+  on_fail Failure.Third:
+    reply item
+fn main():
+  worker = Worker()
+  echo message worker.Run()

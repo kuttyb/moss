@@ -1,0 +1,16 @@
+enum Failure:
+  Bad
+domain Worker:
+  fn Run():
+    f = FileIO.open("tmp/capture_fileio.data", create)
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    try:
+      f.close()
+    recover:
+      pass
+  on_fail error:
+    pass
+fn main():
+  worker = Worker()
+  message worker.Run()

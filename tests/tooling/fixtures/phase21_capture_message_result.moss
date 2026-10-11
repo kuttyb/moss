@@ -1,0 +1,16 @@
+enum Failure:
+  Bad
+domain Provider:
+  fn Get() -> String:
+    reply "hello"
+domain Caller:
+  domainroutes(provider: Provider)
+  fn Run() -> String:
+    result = message provider.Get()
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    reply result
+fn main():
+  provider = Provider()
+  caller = Caller(provider: provider)
+  echo message caller.Run()

@@ -109,9 +109,36 @@ fn main():
     assert "main may not let typed errors escape" in unhandled.stderr
 
 
-def assert_unmaterialized_on_fail(main, cwd):
-    checked = run([compiler, "--check", main], cwd=cwd, expected=1)
-    assert "compiled provider on_fail captures require a materialized" in checked.stderr
+def run_source_free_owned_capture_fixture():
+    """A provider-owned frame carries a non-Copy local without provider source."""
+    capture_out = out / "owned-capture"
+    (capture_out / "src").mkdir(parents=True)
+    (capture_out / "moss.toml").write_text(
+        '[project]\nname="phase21_owned_capture"\nversion="0.1.0"\n')
+    provider = capture_out / "src/service.moss"
+    provider.write_text('''module service
+export enum ServiceError:
+  Bad
+export domain Worker:
+  fn Run() -> String:
+    attempt = "hello"
+    raise ServiceError.Bad
+  on_fail ServiceError.Bad:
+    reply attempt
+''')
+    (capture_out / "src/main.moss").write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  echo message worker.Run()
+''')
+    built = json.loads(run([compiler, "build", "--json"], cwd=capture_out).stdout)
+    assert run([built["result"]["artifacts"]["executable"]]).stdout == "hello\n"
+    interface = (capture_out / "build/debug/service.mossi").read_text()
+    assert 'handler_failure_capture "Run" 0 "attempt" "string"' in interface
+    provider.rename(provider.with_suffix(".removed"))
+    rebuilt = json.loads(run([compiler, "build", "--json"], cwd=capture_out).stdout)
+    assert run([rebuilt["result"]["artifacts"]["executable"]]).stdout == "hello\n"
 
 
 def run_source_free_on_fail_trailer_fixture():
@@ -290,6 +317,50 @@ fn main():
     assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
 
 
+def run_actual_exceptional_site_fixture():
+    graph_out = out / "actual-cfg"
+    (graph_out / "src").mkdir(parents=True)
+    (graph_out / "moss.toml").write_text(
+        '[project]\nname="phase21_actual_cfg"\nversion="0.1.0"\n')
+    (graph_out / "src/service.moss").write_text('''module service
+export enum E:
+  Bad
+export domain Worker:
+  fn Run(which: Int):
+    if which == 0:
+      raise E.Bad
+    attempt = 7
+    try:
+      if which == 1:
+        raise E.Bad
+    recover E.Bad:
+      pass
+    raise E.Bad
+  on_fail E.Bad:
+    pass
+''')
+    (graph_out / "src/main.moss").write_text('''module app
+import service
+fn main():
+  worker = service.Worker()
+  message worker.Run(2)
+''')
+    built = json.loads(run([compiler, "build", "--json"], cwd=graph_out).stdout)
+    assert run([built["result"]["artifacts"]["executable"]]).stdout == ""
+    interface = (graph_out / "build/debug/service.mossi").read_text()
+    assert 'handler_raising_nodes "Run" 3' in interface, interface
+    assert 'handler_exceptional_edges "Run" 3' in interface, interface
+    assert 'handler_exceptional_destinations "Run" 2' in interface, interface
+    # The two handler exits have the same identity but different source nodes:
+    # one occurs before `attempt` is initialized, one after it. The middle
+    # site routes to its lexical recover arm.
+    edges = sorted({line for line in interface.splitlines()
+                    if line.startswith('  handler_exceptional_edge "Run" ')})
+    assert len(edges) == 3, edges
+    assert sum(' 0 63 1 ' in line for line in edges) == 1, edges
+    assert sum(' 1 63 1 ' in line for line in edges) == 2, edges
+
+
 if out.exists():
     shutil.rmtree(out)
 (out / "src").mkdir(parents=True)
@@ -416,7 +487,10 @@ synthetic = synthetic.replace(
 assert synthetic != original
 interface_path.write_text(synthetic)
 provider.rename(provider.with_suffix(".removed"))
-assert_unmaterialized_on_fail(main, out)
+# A forged interface is structurally parseable but has no matching provider
+# symbols. Native linking remains the materialization boundary.
+forged = run([compiler, "build", "--json"], cwd=out, expected=1)
+assert "error" in forged.stdout or forged.stderr, forged
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
@@ -449,7 +523,7 @@ missing_effect = run([compiler, "--check", main], cwd=out, expected=1)
 assert "lacks Phase 21 observable effects" in missing_effect.stderr
 
 interface_path.write_text(synthetic)
-assert_unmaterialized_on_fail(main, out)
+run([compiler, "--check", main], cwd=out)
 
 invalid_destination = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1',
@@ -528,7 +602,7 @@ owned_string_capture = owned_string_capture.replace(
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 interface_path.write_text(owned_string_capture)
-assert_unmaterialized_on_fail(main, out)
+run([compiler, "--check", main], cwd=out)
 
 # A provider-private aggregate remains legal source-free when its complete,
 # counted declaration includes every dependency. The loader independently
@@ -546,14 +620,16 @@ private_capture = private_capture.replace(
     '"2:15:ProviderPrivate:2:0:3:Int:0:3:6:String:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
 interface_path.write_text(private_capture)
-assert_unmaterialized_on_fail(main, out)
+run([compiler, "--check", main], cwd=out)
 
 interface_path.write_text(synthetic)
 run_two_crate_rust_abi_fixture()
 run_source_free_raised_handler_fixture()
+run_source_free_owned_capture_fixture()
 run_source_free_on_fail_trailer_fixture()
 run_source_free_reporting_route_fixture()
 run_source_free_multi_enum_fixture()
+run_actual_exceptional_site_fixture()
 print(
     "Phase 21.0 source-free ABI-v8 metadata, Root trailer dispatch, "
     "nested propagation, and native raised-handler checks passed.")
