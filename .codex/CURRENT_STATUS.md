@@ -16,6 +16,12 @@ with a typed raise passes Moss checking and has the correct effect summary,
 but path-sensitive native lowering lacks an outcome context. An equivalent
 full-entry control compiles and runs. The gate remains enabled; the planned
 conservative placement fix and renewed broader validation have not yet run.
+The `check_phase21_recover_reinit.py` gate also confirms an O4/D7 false
+rejection: a consumed outer `var` reinitialized on every selected exceptional
+exit is still reported consumed in `recover`; its sibling-path negative remains
+required to reject. The new standard-error namespace gate fails at
+`UNKNOWN_ERROR_TYPE` for declaration-free `ParseError`, while the absolute
+Root boundary gate passes its current native/Fast Debug/source-free matrix.
 Earlier `make check` and Float matrix results below apply only to the prior
 implementation SHA and do not validate the eventual ABI v9 tree.
 
