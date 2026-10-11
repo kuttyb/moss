@@ -5,10 +5,10 @@
 **Provisional integration retest:** `53f11363e2f973e30b1e9a869407b6ecb6eef166`
 with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
 
-**Reconstructed peer-addendum A/C repair:** `b7a7ead`, `5b2cbf7` and a
-subsequent ownership-join correction on `phase-21-a-c-fixes` (base `6a08830`).
-The source fixes and focused gate pass;
-the exact combined integration SHA and full-suite rerun remain pending.
+**Combined-source engineering retest:** `c1ef3eb` on
+`phase-21-integration`, independently built with strict GCC C++17 and tested
+from the proof worktree. This is the latest exact source SHA audited here;
+the final release-candidate SHA may advance for documents or validation.
 
 **Status at this audit base:** open. The counterexamples below are accepted by
 `moss check` at this SHA or reveal a false D7 rejection. Post-base engineering
@@ -38,10 +38,10 @@ Moss diagnostic.
 
 | Area | Implementation invariant needed | Engineering audit status |
 | --- | --- | --- |
-| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls and a later reconstructed final-expression method call. Iterator and source-free gates pass on provisional integration. The local/generic trailing-method and reachable grouped-recovery gates pass on the repair branch. ABI-v9 warm-cache repair passes its targeted gate. Exact final-SHA proof review remains **OPEN**. |
-| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The standard WRITE argument-order bridge passes its targeted gate after repair. A/C Root and native gates pass on the repair branch. Exact final-SHA proof review remains **OPEN**. |
-| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local and source-removed method-capture cases pass on provisional integration. ABI-v9 warm-cache and source-free capture gates pass after repair. Final artifact-bound contract and exact-SHA review remain **OPEN**. |
-| Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan and raising-condition fallback pass on provisional integration. The proof covers the implemented bounded placement and conservative full-entry fallback, conditional on complete effects and final-SHA code review. |
+| O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls and later reconstructed final-expression method calls. **Engineering-closed at `c1ef3eb`** under the accepted/fail-closed surface, using the recursive transfer audit, ABI-v9 artifact gate, and exact focused retest below. Independent Architect acceptance remains pending. |
+| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. **Engineering-closed at `c1ef3eb`** under the selected-edge and lowering argument below; reconstructed reachable-arm ownership joins, native parity and focused D7 gates pass. Independent Architect acceptance remains pending. |
+| O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | **Engineering-closed at `c1ef3eb`** under recursive capability exclusion, selected-edge capture checks, ABI-v9 binding and source-removed execution. Independent Architect acceptance remains pending. |
+| Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | **Engineering-closed at `c1ef3eb`** for the implemented bounded leading-conditional split and conservative full-entry fallback, using a safe superset of state footprints. No minimal-lock claim or machine proof is made. Independent Architect acceptance remains pending. |
 
 ## O1: effect completeness
 
@@ -474,8 +474,9 @@ The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
 falsification tests, complete `make check`/`make examples` results, and the
 independent Architect L6 assessment separately. The targeted repairs above
-are green in their stated worktrees, but the quantified O1/O4/O8 claims
-remain **open** until exact combined-SHA validation and independent review.
+pass an exact combined-source retest at `c1ef3eb` and support engineering
+closure under the accepted/fail-closed surface. Independent Architect
+acceptance and the final release-candidate SHA are separate gates.
 
 ### Audit-worktree validation before integration
 
@@ -512,5 +513,54 @@ then stopped at `tests/tooling/check_synchronization_plan.py:202`: after a
 deliberate `.mossi` edit, ABI v9 correctly reports
 `SOURCE_FREE_CONTRACT_MISMATCH`, whereas this older test expects the word
 `rebuild`. This is a test expectation migration, not an A/C compiler failure.
-The exact combined-SHA full run, proof review and independent Architect
-assessment remain outstanding.
+The exact combined-SHA full run and independent Architect assessment remain
+outstanding at this historical branch checkpoint.
+
+### Exact combined-source engineering conclusion at `c1ef3eb`
+
+I compiled the exact integration source at `c1ef3eb` with
+`g++ -std=c++17 -O0 -Wall -Wextra -pedantic` and independently ran these
+thirteen focused gates against that executable:
+
+| Gate | Result |
+| --- | --- |
+| `check_phase21_addendum_a_c.py` | PASS: reconstructed local/generic method effects, A/B/both and unreachable recovery, D7 positive/negative, Root plans; native O0/O3 and Fast Debug. |
+| `check_phase21_recover_reinit.py` | PASS: selected exceptional ownership joins. |
+| `check_phase21_expression_ownership_edges.py` | PASS: left-to-right child/callee snapshots and D7 negatives. |
+| `check_phase21_early_placement_proof.py` | PASS: ranked bounded split and untouched cancellation witnesses. |
+| `check_phase21_early_condition_raise.py` | PASS: checked full-entry fallback for raising condition. |
+| `check_phase21_on_fail_capture.py` | PASS: owned capture transport and exclusions. |
+| `check_phase21_raising_iterators.py` | PASS: typed-raising iterators fail closed; panic effect stays distinct. |
+| `check_phase21_source_free_proof_edges.py` | PASS: source-removed iterator method and owned String trailer capture. |
+| `check_phase21_source_free_cache_binding.py` | PASS: warm external provider forgery/deletion rejected. |
+| `check_phase21_source_free_standard_write_recovery.py` | PASS: imported WRITE and typed raise retained across Root recovery. |
+| `check_phase21_standard_write_order.py` | PASS: source-order bridge with native and Fast Debug parity. |
+| `check_phase21_recovery_semantics.py` | PASS: lexical recovery and precise variant behavior. |
+| `check_phase21_root_totality.py` | PASS: synchronous and Executor typed-error boundaries. |
+
+The implementation-level argument is structural. For O1, accepted expression
+operators, constructors, collections, field bases, calls, pipelines, and
+implicit iterator methods feed variant-precise observable summaries; concrete
+generic calls are reanalyzed with specialized types, and source-free methods
+retain artifact-bound ABI-v9 effects. Unknown concrete methods/callbacks or
+typed-raising custom iterators fail at Moss checking rather than acquire an
+empty effect. Panic is tracked separately. For O4, each typed-raising child
+records ownership before later siblings, a direct callee outcome records it
+after arguments, and recovery joins only selected incoming edges; unreachable
+arms contribute no successor. Native tagged-outcome lowering follows that
+evaluation order. For O8, each reachable `on_fail` capture is checked against
+every selected escape snapshot for identity, type, initialization, movement
+and recursive capability exclusion before the typed failure frame is built.
+ABI-v9 validation binds imported contracts to selected provider artifacts.
+For early release, path placement uses a conservative state-effect superset,
+hoists rank-conflicting acquisitions, cancels only statically untouched
+entry guards, and keeps touched guards through completion before Root failure
+locking. Observable or raising leading conditions use full-entry placement.
+
+These arguments assume the accepted parser/checker surface and the validated
+provider artifact contract. They are not a machine-checked proof and do not
+cover a future syntax form unless its transfer rule and lowering are audited.
+The O1/O4/O8 and bounded early-release obligations are **engineering-closed
+at this source SHA** under those assumptions. The full combined release suite
+and independent Architect L6 acceptance must be recorded separately before
+release approval; the lock plan does not promise a minimal footprint.
