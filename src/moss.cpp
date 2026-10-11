@@ -1169,7 +1169,8 @@ class Parser {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "on"));
       } else if (starts_with(L.text, "fn ")) {
         d.handlers.push_back(parse_handler(head.indent + indent_unit_, "fn"));
-      } else if (starts_with(L.text, "on_fail")) {
+      } else if (L.text == "on_fail" || L.text == "on_fail:" ||
+                 starts_with(L.text, "on_fail ")) {
         fail(L, "on_fail must immediately follow the handler it attaches to");
       } else {
         // Julia-like state declarations omit both the var keyword and, when
@@ -1281,7 +1282,9 @@ class Parser {
     h.body = parse_stmt_block(member_indent + indent_unit_);
     if (h.body.empty()) fail(head, "handler body may not be empty");
     while (i_ < lines_.size() && lines_[i_].indent == member_indent &&
-           starts_with(lines_[i_].text, "on_fail")) {
+           (lines_[i_].text == "on_fail" ||
+            lines_[i_].text == "on_fail:" ||
+            starts_with(lines_[i_].text, "on_fail "))) {
       Line arm_head = lines_[i_++];
       if (!ends_with(arm_head.text, ":"))
         fail(arm_head, "on_fail arm must end with ':'");
@@ -1444,7 +1447,8 @@ class Parser {
       s.kind = Stmt::Kind::Try;
       return s;
     }
-    if (starts_with(L.text, "recover")) {
+    if (L.text == "recover" || L.text == "recover:" ||
+        starts_with(L.text, "recover ")) {
       if (!ends_with(L.text, ":")) fail(L, "recover arm must end with ':'");
       s.kind = Stmt::Kind::Recover;
       s.a = trim(L.text.substr(std::string("recover").size(),
@@ -4484,7 +4488,9 @@ class Checker {
       if (statement.kind == Stmt::Kind::Match) {
         visitor(statement, env);
         auto scrutinee_type = inferred_expr_type(statement.a, env);
-        bool deferred = (scrutinee_type && starts_with(*scrutinee_type, "_generic:")) ||
+        bool deferred = (scrutinee_type &&
+            (starts_with(*scrutinee_type, "_generic:") ||
+             *scrutinee_type == "_selected_error")) ||
             (!scrutinee_type && env.count(statement.a) && env.at(statement.a).empty());
         if (!deferred && (!scrutinee_type ||
             !enums_.count(canonical_type_name(*scrutinee_type))))
@@ -4595,8 +4601,13 @@ class Checker {
                 "EMPTY_RECOVER_BODY");
           TypeEnv recovered = incoming;
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos)
-            recovered[arm.a] = "_selected_error";
+              arm.a.find(',') == string::npos) {
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
+          }
           else if (!arm.a.empty()) {
             auto alternatives = split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
@@ -6856,8 +6867,13 @@ class Checker {
           const Stmt& arm = statements[index++];
           auto recovered = env;
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
-              arm.a.find(',') == string::npos)
-            recovered[arm.a] = "_selected_error";
+              arm.a.find(',') == string::npos) {
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
+          }
           else if (!arm.a.empty()) {
             auto alternatives = split_top_level(arm.a, ',');
             if (alternatives.size() == 1)
@@ -7775,15 +7791,15 @@ class Checker {
     return {RaisedIdentityKind::EnumVariant, type, variant};
   }
 
-  RaisedIdentity phase21_raised_identity(int line, const string& expression,
-                                         const TypeEnv& env) const {
+  RaiseSet phase21_raised_identities(int line, const string& expression,
+                                    const TypeEnv& env) const {
     string enum_name, case_name;
     vector<string> fields;
     bool called = false;
     if (parse_enum_case_expression(expression, enum_name, case_name, fields,
                                    called) &&
         enums_.count(canonical_type_name(enum_name)))
-      return phase21_pattern_identity(line, enum_name + "." + case_name);
+      return {phase21_pattern_identity(line, enum_name + "." + case_name)};
     auto type = inferred_expr_type(expression, env);
     if (!type || contains_internal_placeholder(*type))
       err(line, "raise requires a statically typed error value",
@@ -7792,7 +7808,15 @@ class Checker {
     if (!phase21_bounded_error_type(concrete))
       err(line, "raised values must be owned bounded scalar or enum values",
           "RAISE_PAYLOAD_NOT_OWNED_BOUNDED");
-    return {RaisedIdentityKind::ScalarType, concrete, {}};
+    auto declaration = enums_.find(concrete);
+    if (declaration != enums_.end()) {
+      RaiseSet alternatives;
+      for (const auto& item : declaration->second->cases)
+        alternatives.insert(phase21_pattern_identity(
+            line, concrete + "." + item.name));
+      return alternatives;
+    }
+    return {{RaisedIdentityKind::ScalarType, concrete, {}}};
   }
 
   RaiseSet phase21_recovery_pattern(int line, const string& selector,
@@ -7834,7 +7858,8 @@ class Checker {
 
   RaiseSet phase21_raise_set_block(const vector<Stmt>& body, size_t& index,
                                    int level, TypeEnv env,
-                                   const RaiseSet& selected = {}) {
+                                   const RaiseSet& selected = {},
+                                   string selected_binding = {}) {
     RaiseSet result;
     while (index < body.size()) {
       const Stmt& statement = body[index];
@@ -7846,7 +7871,7 @@ class Checker {
       if (statement.kind == Stmt::Kind::Try) {
         ++index;
         RaiseSet attempted = phase21_raise_set_block(
-            body, index, level + 1, env);
+            body, index, level + 1, env, selected, selected_binding);
         const_cast<Stmt&>(statement).exceptional_alternatives = attempted;
         RaiseSet remaining = attempted;
         RaiseSet recovered_raises;
@@ -7915,7 +7940,8 @@ class Checker {
                 arm_env[binding.first] = binding.second;
           }
           RaiseSet arm_raises = phase21_raise_set_block(
-              body, index, level + 1, std::move(arm_env), matched);
+              body, index, level + 1, std::move(arm_env), matched,
+              plain_identifier(trim(arm.a)) ? trim(arm.a) : string());
           recovered_raises = raise_set_union(
               std::move(recovered_raises), arm_raises);
         }
@@ -7934,8 +7960,18 @@ class Checker {
                 "BARE_RAISE_OUTSIDE_RECOVER");
           alternatives = selected;
         } else {
-          alternatives.insert(
-              phase21_raised_identity(statement.line, statement.a, env));
+          alternatives = phase21_raised_identities(
+              statement.line, statement.a, env);
+          if (!selected_binding.empty() &&
+              trim(statement.a) == selected_binding) {
+            std::set<string> selected_types;
+            for (const auto& identity : selected)
+              selected_types.insert(identity.type);
+            auto binding = env.find(selected_binding);
+            if (binding != env.end() && selected_types.size() == 1 &&
+                selected_types.count(canonical_type_name(binding->second)))
+              alternatives = selected;
+          }
           auto expression = observable_expression_effects(statement.a, env);
           alternatives = raise_set_union(
               std::move(alternatives), expression.raise_set);
@@ -7964,19 +8000,22 @@ class Checker {
             ++index;
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
-                    body, index, level + 2, env, selected));
+                    body, index, level + 2, env, selected,
+                    selected_binding));
           }
         } else {
           result = raise_set_union(
               std::move(result), phase21_raise_set_block(
-                  body, index, level + 1, env, selected));
+                  body, index, level + 1, env, selected,
+                  selected_binding));
           if (parent_kind == Stmt::Kind::If && index < body.size() &&
               body[index].indent == level &&
               body[index].kind == Stmt::Kind::Else) {
             ++index;
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
-                    body, index, level + 1, env, selected));
+                    body, index, level + 1, env, selected,
+                    selected_binding));
           }
         }
         continue;
@@ -8007,6 +8046,7 @@ class Checker {
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var) {
+        if (statement.a == selected_binding) selected_binding.clear();
         if (auto type = inferred_expr_type(statement.b, env))
           env[statement.a] = *type;
       }
@@ -10395,7 +10435,11 @@ class Checker {
                          arm.exceptional_alternatives.end());
           if (!arm.a.empty() && arm.a.find('.') == string::npos &&
               arm.a.find(',') == string::npos) {
-            recovered.types[arm.a] = "_selected_error";
+            std::set<string> selected_types;
+            for (const auto& identity : arm.exceptional_alternatives)
+              selected_types.insert(identity.type);
+            recovered.types[arm.a] = selected_types.size() == 1
+                ? *selected_types.begin() : "_selected_error";
             recovered.immutable_locals.insert(arm.a);
             recovered.moved.erase(arm.a);
           } else if (!arm.a.empty()) {
@@ -17591,17 +17635,26 @@ class Generator {
 
   void gen_test_harness(std::ostringstream& o) {
     gen_protocol_hex_helper(o);
+    const RaiseSet raised = phase21_program_raise_set();
+    const bool typed_outcomes = !raised.empty();
     for (const auto& test : p_.tests) {
       string function_name = test_or_benchmark_function_name(
           "test", test.semantic_identity);
       tooling_begin(o, 0, "test", test.semantic_identity, function_name);
       source_comment(o, 0, test.line, test.header);
-      o << "#[inline(never)]\nfn " << function_name << "() {\n";
+      o << "#[inline(never)]\n#[allow(unreachable_code)]\nfn "
+        << function_name << "()";
+      if (typed_outcomes) o << " -> Result<(), __MossRaised>";
+      o << " {\n";
       std::set<string> locals;
       std::unordered_map<string,string> types;
+      const bool saved_result_context = phase21_result_context_;
+      phase21_result_context_ = typed_outcomes;
       gen_stmts(o, test.body, nullptr, nullptr, "", locals, types, 1,
                 false, false,
                 "test:" + test.name);
+      phase21_result_context_ = saved_result_context;
+      if (typed_outcomes) o << "    Ok(())\n";
       o << "}\n";
       tooling_end(o, 0, test.semantic_identity);
       o << "\n";
@@ -17611,16 +17664,35 @@ class Generator {
     o << "    let previous_hook = std::panic::take_hook();\n";
     o << "    std::panic::set_hook(Box::new(|_| {}));\n";
     o << "    let mut failures = 0_usize;\n";
+    if (typed_outcomes) {
+      o << "    fn __moss_test_error_identity(error: &__MossRaised) -> &'static str {\n"
+        << "        match error {\n";
+      for (const auto& identity : raised)
+        o << "            __MossRaised::" << phase21_rust_variant(identity)
+          << "(_) => " << rust_string_literal(identity.canonical()) << ",\n";
+      o << "        }\n    }\n";
+    }
     for (const auto& test : p_.tests) {
       string function_name = test_or_benchmark_function_name(
           "test", test.semantic_identity);
       o << "    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| "
         << function_name << "()));\n";
       o << "    match outcome {\n";
-      o << "        Ok(()) => println!(\"MOSS_TEST|PASS|{}|{}|\", "
+      o << "        " << (typed_outcomes ? "Ok(Ok(()))" : "Ok(())")
+        << " => println!(\"MOSS_TEST|PASS|{}|{}|\", "
         << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
         << "), __moss_protocol_hex(" << rust_string_literal(test.name)
         << ")),\n";
+      if (typed_outcomes) {
+        o << "        Ok(Err(error)) => {\n"
+          << "            failures += 1;\n"
+          << "            let detail = format!(\"unhandled typed raise {}\", __moss_test_error_identity(&error));\n"
+          << "            println!(\"MOSS_TEST|FAIL|{}|{}|{}\", "
+          << "__moss_protocol_hex(" << rust_string_literal(test.semantic_identity)
+          << "), __moss_protocol_hex(" << rust_string_literal(test.name)
+          << "), __moss_protocol_hex(&detail));\n"
+          << "        }\n";
+      }
       o << "        Err(payload) => {\n";
       o << "            failures += 1;\n";
       o << "            let detail = if let Some(value) = payload.downcast_ref::<String>() { value.clone() } else if let Some(value) = payload.downcast_ref::<&str>() { (*value).to_string() } else { \"test panicked without a Moss assertion message\".to_string() };\n";
@@ -18133,15 +18205,56 @@ class Generator {
                 << " Err(" << phase21_selected_carrier_ << ");\n";
             }
           } else {
-            if (s.exceptional_alternatives.size() != 1)
+            auto type = generated_expr_type(s.a, &types);
+            if (!type)
               throw std::runtime_error(
-                  "internal error: raise lacks one checked error identity");
-            const auto& identity = *s.exceptional_alternatives.begin();
-            o << indent(level) << phase21_error_exit(
-              "__MossRaised::" + phase21_rust_variant(identity) + "(" +
-              expr(s.a, d, locals, &types,
-                   statement_functional_pipeline_id(
-                       s, functional_context, 0)) + ")") << ";\n";
+                  "internal error: raise lacks a checked error value type");
+            const string concrete = canonical_type_name(*type);
+            const string value = expr(s.a, d, locals, &types,
+                statement_functional_pipeline_id(
+                    s, functional_context, 0));
+            if (enums_.count(concrete)) {
+              const string raised_value = "__moss_error_value_" +
+                  std::to_string(phase21_try_temp_++);
+              const string temporary = "__moss_raised_value_" +
+                  std::to_string(phase21_try_temp_++);
+              o << indent(level) << "let " << raised_value << " = "
+                << value << ";\n"
+                << indent(level) << "#[allow(unreachable_patterns)]\n"
+                << indent(level) << "let " << temporary << " = match "
+                << raised_value << " {\n";
+              for (const auto& identity : s.exceptional_alternatives) {
+                if (identity.kind != RaisedIdentityKind::EnumVariant ||
+                    canonical_type_name(identity.type) != concrete)
+                  continue;
+                const auto& declaration = *enums_.at(concrete);
+                auto item = std::find_if(declaration.cases.begin(),
+                    declaration.cases.end(), [&](const EnumCase& candidate) {
+                      return candidate.name == identity.variant;
+                    });
+                if (item == declaration.cases.end()) continue;
+                o << indent(level + 1) << "value @ "
+                  << phase21_rust_error_type(identity) << "::"
+                  << rust_identifier(identity.variant);
+                if (!item->fields.empty()) o << " { .. }";
+                o << " => __MossRaised::"
+                  << phase21_rust_variant(identity) << "(value),\n";
+              }
+              o << indent(level + 1)
+                << "_ => std::process::abort(),\n"
+                << indent(level) << "};\n"
+                << indent(level)
+                << phase21_error_exit(temporary) << ";\n";
+            } else {
+              const RaisedIdentity identity{
+                  RaisedIdentityKind::ScalarType, concrete, {}};
+              if (!s.exceptional_alternatives.count(identity))
+                throw std::runtime_error(
+                    "internal error: raise lacks its checked scalar identity");
+              o << indent(level) << phase21_error_exit(
+                  "__MossRaised::" + phase21_rust_variant(identity) +
+                  "(" + value + ")") << ";\n";
+            }
           }
           ++i;
           while (i < ss.size() && ss[i].indent >= level) ++i;

@@ -1,0 +1,27 @@
+enum Failure:
+  First
+  Second
+
+fn choose(first: Bool):
+  if first:
+    raise Failure.First
+  else:
+    raise Failure.Second
+
+fn relay(first: Bool):
+  try:
+    choose(first)
+  recover err:
+    raise err
+
+fn route(first: Bool):
+  try:
+    relay(first)
+  recover Failure.First:
+    echo "first"
+  recover Failure.Second:
+    echo "second"
+
+fn main():
+  route(true)
+  route(false)

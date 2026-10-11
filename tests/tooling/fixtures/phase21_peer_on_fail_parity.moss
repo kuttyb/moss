@@ -1,0 +1,20 @@
+enum Failure:
+  First(code: Int)
+  Second(code: Int)
+
+domain Worker:
+  fn Run(first: Bool):
+    if first:
+      raise Failure.First(code: 7)
+    else:
+      raise Failure.Second(code: 9)
+
+  on_fail Failure.First(code):
+    echo "first", code
+  on_fail Failure.Second(code):
+    echo "second", code
+
+fn main():
+  worker = Worker()
+  message worker.Run(true)
+  message worker.Run(false)

@@ -1,0 +1,15 @@
+enum Failure:
+  First
+  Second
+
+fn relay():
+  try:
+    raise Failure.First
+  recover err:
+    raise err
+
+fn main():
+  try:
+    relay()
+  recover Failure.First:
+    echo "first"

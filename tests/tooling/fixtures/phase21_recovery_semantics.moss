@@ -29,7 +29,13 @@ fn handle_reraised():
   try:
     reraised()
   recover err:
-    echo err
+    match err:
+      case Missing:
+        echo "WorkError.Missing"
+      case Failed(code):
+        echo "WorkError.Failed"
+      case Unused:
+        echo "WorkError.Unused"
 
 test "local typed recovery":
   handled(true)
