@@ -1,0 +1,31 @@
+enum Failure:
+  Bad
+
+type Counter:
+  current: Int
+
+  fn next() -> option[Int]:
+    if current == 1:
+      raise Failure.Bad
+    if current <= 0:
+      return None
+    value = current
+    current = current - 1
+    Some(value)
+
+fn consume(items):
+  var total = 0
+  for value in items:
+    total = total + value
+  return total
+
+domain Worker:
+  fn Run() -> Int:
+    counter = Counter(current = 2)
+    reply consume(counter)
+  on_fail Failure.Bad:
+    reply 7
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()
