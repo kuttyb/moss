@@ -1,0 +1,39 @@
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum MapFault:
+  Early
+
+fn mapper(chunk: Range) -> Bool:
+  if chunk[0] == 0:
+    raise MapFault.Early
+  return not (chunk[1] == 0)
+
+fn count_true(total: Int, value: Bool) -> Int:
+  if value:
+    return total + 1
+  return total
+
+domain Worker:
+  fn Run(path: String):
+    file = FileIO.open(path, ro)
+    total = file.chunks(4096) |> map(mapper) |> reduce(0, count_true)
+    file.close()
+    echo total
+
+  on_fail MapFault.Early:
+    echo "early"
+
+  on_fail:
+    echo "other"
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(4).start()
+  message worker.Run("tmp/phase21-unary-not-speculation.data")
+  executor.join()
