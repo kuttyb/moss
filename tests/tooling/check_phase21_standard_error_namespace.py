@@ -249,6 +249,15 @@ export type Carrier:
   fn Reset(error: std.ParseError) -> Int:
     error = std.ParseError.Overflow
     return 7
+  fn ResetAndRaise(error: std.ParseError) -> Int:
+    error = std.ParseError.Overflow
+    raise std.ParseError.Invalid
+export fn ResetFunction(error: std.ParseError) -> Int:
+  error = std.ParseError.Overflow
+  return 11
+export fn ResetFunctionAndRaise(error: std.ParseError) -> Int:
+  error = std.ParseError.Overflow
+  raise std.ParseError.Invalid
 export domain Worker:
   fn Echo(error: std.ParseError) -> std.ParseError:
     reply error
@@ -265,6 +274,54 @@ fn main():
     case Overflow:
       echo 2
   echo carrier.Code(std.ParseError.Invalid)
+  error = std.ParseError.Invalid
+  echo carrier.Reset(error)
+  match error:
+    case Invalid:
+      echo 0
+    case Overflow:
+      echo 8
+  error = std.ParseError.Invalid
+  try:
+    echo carrier.ResetAndRaise(error)
+  recover std.ParseError.Invalid:
+    match error:
+      case Invalid:
+        echo 0
+      case Overflow:
+        echo 9
+  error = std.ParseError.Invalid
+  carrier.Reset(error)
+  match error:
+    case Invalid:
+      echo 0
+    case Overflow:
+      echo 10
+  error = std.ParseError.Invalid
+  try:
+    carrier.ResetAndRaise(error)
+  recover std.ParseError.Invalid:
+    match error:
+      case Invalid:
+        echo 0
+      case Overflow:
+        echo 12
+  error = std.ParseError.Invalid
+  echo provider.ResetFunction(error)
+  match error:
+    case Invalid:
+      echo 0
+    case Overflow:
+      echo 13
+  error = std.ParseError.Invalid
+  try:
+    provider.ResetFunctionAndRaise(error)
+  recover std.ParseError.Invalid:
+    match error:
+      case Invalid:
+        echo 0
+      case Overflow:
+        echo 14
   result = message worker.Echo(std.ParseError.Overflow)
   match result:
     case Invalid:
@@ -278,23 +335,13 @@ def build_transport():
     check(transport_consumer)
     built = json.loads(run(MARGO, "build", "--json", cwd=transport).stdout)
     executable = Path(built["artifacts"]["artifacts"]["executable"])
-    assert run(executable, cwd=transport).stdout == "1\n5\n4\n"
+    assert run(executable, cwd=transport).stdout == (
+        "1\n5\n7\n8\n9\n10\n12\n11\n13\n14\n4\n")
 
 
 build_transport()
-# READ and CONSUME arguments bridge through the provider's Rust enum. WRITE
-# requires a mutable owner across two crate-local enum types, so it is rejected
-# at Moss checking while the identical local operation remains supported.
-positive_transport = transport_consumer.read_text()
-transport_consumer.write_text('''module app
-import provider
-fn main():
-  carrier = provider.Carrier()
-  error = std.ParseError.Invalid
-  echo carrier.Reset(error)
-''')
-check(transport_consumer, "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED")
-transport_consumer.write_text(positive_transport)
+assert run(MARGO, "debug", cwd=transport).stdout == (
+    "1\n5\n7\n8\n9\n10\n12\n11\n13\n14\n4\n")
 
 local_write = SCRATCH / "local_standard_write.moss"
 local_write.write_text('''type Carrier:
@@ -318,17 +365,9 @@ run(COMPILER, local_write, "-O0", "-o", local_write_rust)
 run("rustc", "--edition=2021", "-Dwarnings", local_write_rust,
     "-o", local_write_executable)
 assert run(local_write_executable).stdout == "7\n1\n"
+assert run(COMPILER, "run", "--interp", local_write).stdout == "7\n1\n"
 
 transport_provider.rename(transport_provider.with_suffix(".removed"))
 build_transport()
-transport_consumer.write_text('''module app
-import provider
-fn main():
-  carrier = provider.Carrier()
-  error = std.ParseError.Invalid
-  echo carrier.Reset(error)
-''')
-check(transport_consumer, "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED")
-transport_consumer.write_text(positive_transport)
 
 print("Phase 21 standard error namespace and source-free identity passed")

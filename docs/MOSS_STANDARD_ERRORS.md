@@ -4,9 +4,8 @@ Phase 21 defines three closed, nominal error enums in the compiler-owned
 `std` namespace. Applications can use `std.FileError`, `std.ParseError`, and
 `std.ConversionError` directly, without an import or declaration. Their
 unqualified names are shorthand when the source module has no declaration of
-the same name. The exact tag-only variants are:
-
-`import std` is accepted for clarity and does not load a provider artifact.
+the same name. `import std` is accepted for clarity and does not load a
+provider artifact. The exact tag-only variants are:
 
 | Type | Variants |
 | --- | --- |
@@ -37,3 +36,11 @@ contain the same closed standard definitions; source-free raised outcomes
 translate tag-only values at crate boundaries while preserving the canonical
 Moss identity. The provider `.mossi` carries raised identities but does not
 export a synthetic `std` module.
+
+Native provider and consumer crates have separate Rust declarations for each
+standard enum. The compiler converts values at imported function, object
+method, and handler boundaries. READ parameters use a temporary provider value,
+CONSUME parameters transfer an owned converted value, and WRITE parameters
+copy the final provider value back to the caller before either normal return
+or typed-raise propagation. This preserves the caller's observable mutation
+through recovery.
