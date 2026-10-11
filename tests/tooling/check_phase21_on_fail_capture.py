@@ -28,7 +28,9 @@ for name, output in (
         ("if_join", "yes\nno\n"),
         ("try_join", "no\nyes\n"),
         ("loop_reinit", "after\n"),
-        ("nested_reraise", "4\nkept\n")):
+        ("nested_reraise", "4\nkept\n"),
+        ("method_local", "5\n"),
+        ("method_early_raise", "3\n")):
     source = fixtures / f"phase21_capture_{name}.moss"
     checked = run(compiler, "check", source, "--json")
     assert checked.returncode == 0, (name, checked.stdout, checked.stderr)
@@ -36,12 +38,14 @@ for name, output in (
     executable = scratch / name
     lowered = run(compiler, source, "-o", generated)
     assert lowered.returncode == 0, (name, lowered.stdout, lowered.stderr)
-    compiled = run("rustc", "--edition=2021", "-D", "warnings",
-                   generated, "-o", executable)
-    assert compiled.returncode == 0, (name, compiled.stderr)
-    executed = run(executable)
-    assert executed.returncode == 0 and executed.stdout == output, (
-        name, executed.returncode, executed.stdout, executed.stderr)
+    options = ("0", "3") if name.startswith("method_") else ("0",)
+    for opt in options:
+        compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                       f"-Copt-level={opt}", generated, "-o", executable)
+        assert compiled.returncode == 0, (name, opt, compiled.stderr)
+        executed = run(executable)
+        assert executed.returncode == 0 and executed.stdout == output, (
+            name, opt, executed.returncode, executed.stdout, executed.stderr)
     interpreted = run(compiler, "run", "--interp", source)
     assert interpreted.returncode == 0 and interpreted.stdout == output, (
         name, interpreted.returncode, interpreted.stdout, interpreted.stderr)
