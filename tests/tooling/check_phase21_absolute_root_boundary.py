@@ -145,6 +145,9 @@ export domain Leaf:
     raise E.Bad
   on_fail E.Bad:
     reply 99
+export domain Bare:
+  fn Fail() -> Int:
+    raise E.Bad
 export fn generic(value) -> Int:
   if value == 0:
     raise E.Bad
@@ -180,6 +183,19 @@ project_check()
 built = json.loads(run(MARGO, "build", "--json", cwd=project).stdout)
 assert run(built["artifacts"]["artifacts"]["executable"],
            cwd=project).stdout == "99\n"
+
+# The provider's handler has no trailer. A consumer-side lexical recover is
+# not a Root-level exception channel, even after the provider source is gone.
+consumer.write_text('''module app
+import provider
+fn main():
+  bare = provider.Bare()
+  try:
+    echo message bare.Fail()
+  recover provider.E.Bad:
+    echo 88
+''')
+project_check("ROOT_UNHANDLED_RAISE")
 
 # A handler that calls a source-free generic function must cover its precise
 # imported raise. This is a Root check, rather than a rustc/linker failure.

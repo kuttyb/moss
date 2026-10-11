@@ -58,6 +58,18 @@ standalone.write_text('''fn main():
     raise FileError.Full
   recover FileError.Full:
     echo 3
+  try:
+    echo parse_int("bad")
+  recover std.ParseError.Invalid:
+    echo 4
+  try:
+    echo to_int(0.0 / 0.0)
+  recover std.ConversionError.NonFinite:
+    echo 5
+  try:
+    raise std.FileError.Full
+  recover std.FileError.Full:
+    echo 6
 ''')
 check(standalone)
 for profile, moss_flag, rust_flag in (
@@ -68,8 +80,9 @@ for profile, moss_flag, rust_flag in (
     run(COMPILER, standalone, moss_flag, "-o", rust)
     run("rustc", "--edition=2021", "-Dwarnings", rust_flag, rust,
         "-o", executable)
-    assert run(executable).stdout == "1\n2\n3\n"
-assert run(COMPILER, "run", "--interp", standalone).stdout == "1\n2\n3\n"
+    assert run(executable).stdout == "1\n2\n3\n4\n5\n6\n"
+assert run(COMPILER, "run", "--interp", standalone).stdout == (
+    "1\n2\n3\n4\n5\n6\n")
 
 
 # Exact legacy declarations migrate to the canonical types, keeping old
@@ -133,23 +146,23 @@ fn main():
   try:
     file = FileIO.open("tmp/phase21-standard-error-no-such-file", ro)
     file.close()
-  recover FileError.NotFound:
+  recover std.FileError.NotFound:
     echo 3
   try:
     echo provider.file_error()
-  recover FileError.Full:
+  recover std.FileError.Full:
     echo 99
   recover provider.FileError.Full(code):
     echo code
   try:
     echo provider.parse_error()
-  recover ParseError.Invalid:
+  recover std.ParseError.Invalid:
     echo 98
   recover provider.ParseError.Invalid(code):
     echo code
   try:
     echo provider.conversion_error()
-  recover ConversionError.NonFinite:
+  recover std.ConversionError.NonFinite:
     echo 97
   recover provider.ConversionError.NonFinite(code):
     echo code

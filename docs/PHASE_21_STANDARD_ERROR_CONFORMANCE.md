@@ -6,13 +6,15 @@ specification and the ABI v9 specification.
 
 ## Standard namespace and migration rule
 
-The compiler owns three stable nominal identities: `FileError`, `ParseError`,
-and `ConversionError`. Their variants are the exact tag-only sets already
+The compiler owns three stable nominal identities: `std.FileError`,
+`std.ParseError`, and `std.ConversionError`. The reserved `std` namespace
+provides the qualified spellings; `FileError`, `ParseError`, and
+`ConversionError` are convenient unqualified spellings when unambiguous.
+Their variants are the exact tag-only sets already
 approved in `MOSS_PHASE_21_ERROR_HANDLING.md`: six FileIO causes,
 `Invalid|Overflow`, and `NonFinite|Overflow`, respectively. Unqualified use
 resolves to the standard identity when there is no conflicting local binding.
-The implementation may expose a compiler-defined qualified standard namespace;
-its spelling must be documented and covered by a source test once chosen.
+No ordinary provider may redefine the reserved `std` namespace.
 
 An exact legacy local declaration of one of these enums is an alias for the
 corresponding standard identity. This keeps existing Phase 20/21 programs and
@@ -26,7 +28,8 @@ remains distinct even when its variant spelling is identical. This separation
 must survive source removal and `.mossi` loading.
 
 `check_phase21_standard_error_namespace.py` exercises direct construction,
-numeric and FileIO origins, native O0/O3, Fast Debug where FileIO is absent,
+qualified and unqualified selectors, numeric and FileIO origins, native O0/O3,
+Fast Debug where FileIO is absent,
 legacy migration, malformed substitutes, three imported namesakes with
 identical variant spellings, and source-removed provider execution. The
 `7775049` baseline fails the first declaration-free numeric case with
