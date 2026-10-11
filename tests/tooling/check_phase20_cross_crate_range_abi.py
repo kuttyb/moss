@@ -69,4 +69,29 @@ main = main.replace("enum FileError:\n", "fn first(chunk: Range) -> Int:\n  retu
 result = run([margo, "run"], same_module)
 assert result.stdout == "65\n", result
 
-print("Phase 20 cross-crate Range ABI fail-closed and same-crate control passed")
+# A generic provider body specializes in the consumer's crate, where the
+# actual borrowed Range has the same nominal Rust type. This remains valid
+# both with provider source available and with only semantic .mossi IR.
+generic_backed = scratch / "generic-backed"
+shutil.copytree(fixture / "consumer", generic_backed)
+(generic_backed / "tmp").mkdir()
+generic_source = "module mapper\nexport fn first(chunk):\n  return chunk.length()\n"
+(generic_backed / "src/mapper.moss").write_text(generic_source)
+backed_result = run([margo, "run"], generic_backed)
+assert backed_result.stdout == "1\n", backed_result
+
+generic_provider = scratch / "generic-provider"
+shutil.copytree(fixture / "provider", generic_provider)
+(generic_provider / "src/mapper.moss").write_text(generic_source)
+run([margo, "build"], generic_provider)
+(generic_provider / "src/mapper.moss").rename(
+    generic_provider / "src/mapper.removed")
+generic_consumer = scratch / "generic-consumer"
+shutil.copytree(fixture / "consumer", generic_consumer)
+(generic_consumer / "tmp").mkdir()
+generic_env = os.environ.copy()
+generic_env["MOSS_MODULE_PATH"] = str(generic_provider / "build/debug")
+free_result = run([margo, "run"], generic_consumer, env=generic_env)
+assert free_result.stdout == "1\n", free_result
+
+print("Phase 20 cross-crate Range ABI fail-closed and generic/same-crate controls passed")
