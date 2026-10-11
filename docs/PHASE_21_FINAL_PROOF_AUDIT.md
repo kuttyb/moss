@@ -34,7 +34,7 @@ Moss diagnostic.
 | Area | Implementation invariant needed | Engineering audit status |
 | --- | --- | --- |
 | O1 | Every executed effect and possible typed variant is included in the concrete handler/callable summary; panic remains separate. | **FAIL at base SHA** for implicit iterator calls. Direct, factory, generic and panic iterator gates pass on provisional integration. Source-removed imported `next()` retains its typed effect and fails closed. The external-provider warm build cache still bypasses ABI-v9 artifact validation after provider mutation; the public build guarantee remains **OPEN**. |
-| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The general claim remains conditional on O1 completeness, ABI-v9 validity and final-SHA transfer coverage. |
+| O4 | Every possible raise site has a selected-variant edge to its first matching recovery arm or the handler exit, carrying the ownership state at that site. | **FAIL at base SHA** for reinitialization and expression order. Selected-exit, early condition, expression order and capture gates pass on provisional integration. The later cross-crate standard WRITE bridge introduces an accepted argument-order case that fails rustc E0499 at `c2793ce`; general closure is **OPEN**. |
 | O8 | Every body-to-trailer capture is an owned, initialized value with one binding identity on every selected exceptional edge; its type contains no capability or protected view. | Checked local and source-removed method-capture cases pass on provisional integration. The external-provider warm cache is an open source-free artifact-authenticity defect; the general source-free claim remains **OPEN**. |
 | Early release | Every touched guard lasts until completion; only a statically untouched guard can cancel, and all later acquisitions remain ranked and precede the first externally observable action. | Bounded leading-conditional plan and raising-condition fallback pass on provisional integration. The proof covers the implemented bounded placement and conservative full-entry fallback, conditional on complete effects and final-SHA code review. |
 
@@ -257,6 +257,21 @@ expression-edge recorder captures children in left-to-right order and a
 direct callee outcome after its arguments. These transfer rules close the
 identified counterexamples, subject to O1 finding every implicit raise.
 
+The later standard-error cross-crate WRITE bridge adds another O4 lowering
+premise. At integration `c2793ce`, a provider method with a later WRITE
+`std.ParseError` argument emits its mutable borrow and copy-in **before**
+an earlier argument expression is evaluated. A consumer call
+`carrier.Flip(set_overflow(error), error)` is accepted by `moss check`, while
+native Rust fails E0499 because the bridge borrows `error` before
+`set_overflow` writes it. The equivalent same-module program prints `1`
+under native O0/O3 and Fast Debug: the first argument changes the enum to
+`Overflow`, then `Flip` observes that value and writes `Invalid`. The
+permanent `check_phase21_standard_write_order.py` gate requires that result
+through source-backed and source-removed provider builds. A bridge may stage
+earlier argument values in source order before constructing the later WRITE
+temporary, or reject a shape it cannot lower safely at Moss checking. The
+general expression-order proof cannot close while this gate is red.
+
 Existing D7 gates exercise preinitialization, conditional joins, loop
 reinitialization, loop consumption, shadowed bindings, nested recovery,
 re-raise and variant-specific ownership. They remain behavioral witnesses.
@@ -379,6 +394,7 @@ made.
 | `check_phase21_source_free_proof_edges.py` | Added after ABI-v9 method metadata; no base-SHA result. | Source-removed imported `next()` rejects with `RAISING_ITERATOR_UNSUPPORTED`; source-removed owned String capture and method call run and print `3\n3\n`. Provisional integration passes. |
 | `check_phase21_source_free_cache_binding.py` | Added after ABI-v9 provider binding; no base-SHA result. | Warm consumer build must reject forged metadata with recomputed digest and deleted provider rlib before cache reuse. Provisional `b4a0087` fails; post-repair `4711a47` passes with a fresh compiler build. |
 | `check_phase21_source_free_standard_write_recovery.py` | Added after ABI-v9 standard errors; no base-SHA result. | Source-backed and source-removed provider method must retain `WRITE` and exact typed variant; Root recovery must see the mutated standard enum. Provisional integration rejects the valid source-backed call, and source-removed metadata lost `WRITE` then failed rustc E0308. ABI `4711a47` restores the imported effect; the bridge remains under repair. |
+| `check_phase21_standard_write_order.py` | Added after cross-crate WRITE bridge; no base-SHA result. | Same-module and cross-crate argument order must agree. At `c2793ce`, same-module O0/O3 and Fast Debug print `1`; cross-crate check accepts but native build fails rustc E0499 because the later WRITE borrow is hoisted before an earlier mutating argument. |
 
 The final engineering closeout must record the exact implementation SHA,
 compiler and Rust toolchain versions, ABI-v9 source-free executions and
