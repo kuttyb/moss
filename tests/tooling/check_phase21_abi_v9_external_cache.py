@@ -25,16 +25,21 @@ for project in (provider_project, consumer_project):
 export fn answer() -> Int:
   return 42
 ''')
-(provider_project / "src/main.moss").write_text('''module app
+(provider_project / "src/bridge.moss").write_text('''module bridge
 import provider
+export fn answer() -> Int:
+  return provider.answer()
+''')
+(provider_project / "src/main.moss").write_text('''module app
+import bridge
 fn main():
-  echo provider.answer()
+  echo bridge.answer()
 ''')
 consumer = consumer_project / "src/main.moss"
 consumer.write_text('''module app
-import provider
+import bridge
 fn main():
-  echo provider.answer()
+  echo bridge.answer()
 ''')
 
 
@@ -58,6 +63,8 @@ interface = external / "provider.mossi"
 rlib = external / "libprovider.rlib"
 shutil.copy2(build / "provider.mossi", interface)
 shutil.copy2(build / "libprovider.rlib", rlib)
+shutil.copy2(build / "bridge.mossi", external / "bridge.mossi")
+shutil.copy2(build / "libbridge.rlib", external / "libbridge.rlib")
 provider_source = provider_project / "src/provider.moss"
 provider_source.rename(provider_source.with_suffix(".removed"))
 
@@ -67,8 +74,9 @@ for _ in range(2):
     executable = built["artifacts"]["artifacts"]["executable"]
     assert run(consumer_project, executable).stdout == "42\n"
 
-# Keep consumer source/cache unchanged, then edit only external metadata and
-# recompute its editable digest. The unchanged object binding must reject it.
+# Keep consumer source/cache unchanged, then edit only the transitively
+# selected provider metadata and recompute its editable digest. The unchanged
+# object binding must reject it before consumer native execution.
 original = interface.read_text()
 forged = original.replace("return=int", "return=bool", 1)
 assert forged != original
@@ -89,4 +97,4 @@ rejected = json.loads(run(consumer_project, MARGO, "build", "--json",
                           provider_path=external, expected=1).stdout)
 assert not rejected["ok"], rejected
 
-print("ABI-v9 external-provider warm-cache revalidation passed")
+print("ABI-v9 transitive external-provider warm-cache revalidation passed")

@@ -79,6 +79,10 @@ fn main():
   faulty = provider.Faulty()
   message sample.Run()
   message faulty.Run()
+  local = 1
+  provider.swallow(local)
+  local_box = provider.Box(value = 1)
+  local_box.swallow()
 ''')
 
 
@@ -94,7 +98,7 @@ def warning_codes():
             json.loads(result.stdout)["result"]["diagnostics"]]
 
 
-assert warning_codes().count("RECOVER_EMPTY_AFTER_STATE_WRITE") >= 4
+assert warning_codes().count("RECOVER_EMPTY_AFTER_STATE_WRITE") == 4
 assert "ON_FAIL_EMPTY_AFTER_STATE_WRITE" in warning_codes()
 source_build = run(MARGO, "build", "--json")
 assert source_build.returncode == 0, (source_build.stdout, source_build.stderr)
@@ -113,7 +117,7 @@ sourcefree_exe = json.loads(sourcefree_build.stdout)["artifacts"]["artifacts"][
 sourcefree_run = run(sourcefree_exe)
 assert (sourcefree_run.returncode, sourcefree_run.stdout) == (
     0, "2\n3\n9\n5\nrebuilt\n"), sourcefree_run
-assert warning_codes().count("RECOVER_EMPTY_AFTER_STATE_WRITE") >= 4, warning_codes()
+assert warning_codes().count("RECOVER_EMPTY_AFTER_STATE_WRITE") == 4, warning_codes()
 assert "ON_FAIL_EMPTY_AFTER_STATE_WRITE" in warning_codes(), warning_codes()
 
 print("Phase 21 source-free imported no-op recovery warning passed.")
