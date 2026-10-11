@@ -138,6 +138,15 @@ struct FailureArm {
   std::optional<StateLeafEffects> state_effects;
   vector<Stmt> body;
 };
+// ABI-v9 diagnostic provenance. A witness is emitted only for a checked
+// no-op catch-all whose selected raise can follow these formal WRITE leaves.
+// The consumer maps formal leaves to protected actual storage at a call site.
+struct RecoveryWarningWitness {
+  int line = 0;
+  bool on_fail = false;
+  RaiseSet selected;
+  StateLeafSet formal_writes;
+};
 struct Method {
   string owner, name;
   vector<Param> params;
@@ -152,6 +161,7 @@ struct Method {
   Effect receiver_effect = Effect::Read;
   vector<Effect> parameter_effects;
   ObservableEffects observable_effects;
+  vector<RecoveryWarningWitness> recovery_warning_witnesses;
   int line = 0;
   string source_file;
 };
@@ -163,6 +173,7 @@ struct Handler {
   vector<Stmt> body;
   vector<FailureArm> failure_arms;
   ObservableEffects observable_effects;
+  mutable vector<RecoveryWarningWitness> recovery_warning_witnesses;
   int line = 0;
   string source_file;
   // Checked semantic state effects, also carried by compiled providers.
@@ -238,6 +249,7 @@ struct Function {
   vector<string> callable_dependencies;
   bool exported = false;
   ObservableEffects observable_effects;
+  vector<RecoveryWarningWitness> recovery_warning_witnesses;
   // Inferred parameter effects, parallel to `params`.
   vector<Effect> parameter_effects;
   // A parameter may be both written and consumed. The joined effect is

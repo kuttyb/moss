@@ -3089,7 +3089,7 @@ class Checker {
       if (has_reply && !h.reply_type)
         err(h_source, h.line, "cannot infer reply type for handler '" + d.name + "." + h.name +
             "'; add an annotation or use a statically typed reply expression");
-      if (h.reply_type) {
+      if (h.reply_type && !h.provider_abi) {
         size_t reply_index = 0;
         if (!every_handler_path_replies(h.body, reply_index, 0))
           err(h_source, h.line, "reply handler '" + d.name + "." + h.name +
@@ -6100,6 +6100,20 @@ class Checker {
     for (const auto& item : leaves) capture.effects.observe(item, effect);
   }
 
+  StateLeafEffects conservative_method_formal_effects(
+      const Method& method) const {
+    StateLeafEffects effects;
+    auto observe = [&](const string& formal, Effect effect) {
+      if (effect == Effect::Read) effects.reads.insert(formal);
+      else if (effect == Effect::Write) effects.writes.insert(formal);
+      else effects.consumes.insert(formal);
+    };
+    observe("self", method.receiver_effect);
+    for (size_t index = 0; index < method.params.size(); ++index)
+      observe(method.params[index].name, method_parameter_effect(method, index));
+    return effects;
+  }
+
   // Reuse the same effect walker with concrete parameter/receiver types. Its
   // formal access paths are substituted onto the caller's checked locations.
   void capture_callable_effects(
@@ -6662,10 +6676,231 @@ class Checker {
     return prior;
   }
 
+  struct LocalCallSite {
+    string target;
+    vector<string> arguments;
+    vector<string> argument_types;
+    string receiver = "";
+  };
+
+  vector<RecoveryWarningWitness> phase21_callable_warning_witnesses(
+      const vector<Stmt>& body,
+      const vector<std::pair<string, string>>& formals) {
+    Domain formal_domain;
+    formal_domain.name = "_phase21_provider_warning";
+    Handler formal_handler;
+    formal_handler.name = "_phase21_provider_warning";
+    formal_handler.body = body;
+    DomainSpecialization specialization;
+    specialization.source_domain = formal_domain.name;
+    for (const auto& formal : formals) {
+      Field field;
+      field.name = formal.first;
+      field.type = formal.second;
+      formal_domain.state.push_back(field);
+      specialization.state_types[field.name] = field.type;
+    }
+    vector<RecoveryWarningWitness> witnesses;
+    for (size_t index = 0; index < body.size(); ++index) {
+      const auto& statement = body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      const size_t attempt_end = statement_subtree_end(body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < body.size() &&
+             body[arm_index].indent == statement.indent &&
+             body[arm_index].kind == Stmt::Kind::Recover) {
+        const auto& arm = body[arm_index];
+        const size_t arm_end = statement_subtree_end(body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(body, arm_index + 1, arm_end)) {
+          StateLeafSet written;
+          (void)phase21_writes_before_selected_raise(
+              formal_domain, formal_handler, specialization, body,
+              index + 1, attempt_end, statement.indent + 1, {},
+              arm.exceptional_alternatives, written,
+              phase21_local_types_before(
+                  formal_domain, formal_handler, specialization, index));
+          if (!written.empty())
+            witnesses.push_back({arm.line, false,
+                                 arm.exceptional_alternatives,
+                                 std::move(written)});
+        }
+        arm_index = arm_end;
+      }
+    }
+    return witnesses;
+  }
+
+  void phase21_propagate_callable_warning_witnesses() {
+    auto same_witness = [](const RecoveryWarningWitness& left,
+                           const RecoveryWarningWitness& right) {
+      return left.line == right.line && left.on_fail == right.on_fail &&
+             left.selected == right.selected &&
+             left.formal_writes == right.formal_writes;
+    };
+    auto forward = [&](const vector<Stmt>& body,
+                       const std::optional<string>& result_expression,
+                       int result_line,
+                       const vector<std::pair<string, string>>& formals,
+                       vector<RecoveryWarningWitness>& output) {
+      if (body.empty() && !result_expression) return false;
+      vector<Stmt> scan_body = body;
+      if (result_expression) {
+        Stmt result;
+        result.kind = Stmt::Kind::Raw;
+        result.line = result_line;
+        result.text = *result_expression;
+        scan_body.push_back(std::move(result));
+      }
+      Domain formal_domain;
+      formal_domain.name = "_phase21_warning_forward";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_warning_forward";
+      formal_handler.body = scan_body;
+      DomainSpecialization specialization;
+      specialization.source_domain = formal_domain.name;
+      std::set<string> formal_roots;
+      for (const auto& formal : formals) {
+        Field field;
+        field.name = formal.first;
+        field.type = formal.second;
+        formal_domain.state.push_back(field);
+        specialization.state_types[field.name] = field.type;
+        formal_roots.insert(field.name);
+      }
+      bool changed = false;
+      for (size_t index = 0; index < scan_body.size(); ++index) {
+        const auto& statement = scan_body[index];
+        TypeEnv env = phase21_local_types_before(
+            formal_domain, formal_handler, specialization, index);
+        vector<LocalCallSite> calls;
+        for (const auto& expression : statement_expressions(statement))
+          collect_local_call_sites(statement.line, expression, env,
+                                   nullptr, calls);
+        for (const auto& site : calls) {
+          const Function* target_function = nullptr;
+          const Method* target_method = nullptr;
+          const ObjectType* target_owner = nullptr;
+          if (starts_with(site.target, "fn:")) {
+            auto found = functions_.find(site.target.substr(3));
+            if (found != functions_.end()) target_function = found->second;
+          } else if (starts_with(site.target, "method:")) {
+            target_method = callable_method(site.target, &target_owner);
+          }
+          const auto* witnesses = target_function
+              ? &target_function->recovery_warning_witnesses
+              : target_method ? &target_method->recovery_warning_witnesses
+                              : nullptr;
+          if (!witnesses) continue;
+          for (const auto& witness : *witnesses) {
+            RecoveryWarningWitness mapped = witness;
+            mapped.formal_writes.clear();
+            for (const auto& leaf : witness.formal_writes) {
+              const size_t dot = leaf.find('.');
+              const string root = leaf.substr(0, dot);
+              const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+              string expression;
+              string appended = suffix;
+              if (target_function) {
+                for (size_t slot = 0; slot < target_function->params.size() &&
+                                      slot < site.arguments.size(); ++slot)
+                  if (target_function->params[slot].name == root)
+                    expression = site.arguments[slot];
+              } else if (target_method) {
+                if (root == "self")
+                  expression = site.receiver;
+                else if (target_owner && std::any_of(
+                             target_owner->fields.begin(),
+                             target_owner->fields.end(),
+                             [&](const Field& field) {
+                               return field.name == root;
+                             })) {
+                  expression = site.receiver;
+                  appended = "." + leaf;
+                } else
+                  for (size_t slot = 0;
+                       slot < target_method->params.size() &&
+                       slot < site.arguments.size(); ++slot)
+                    if (target_method->params[slot].name == root)
+                      expression = site.arguments[slot];
+              }
+              auto location = storage_location(expression, env);
+              if (!location || !formal_roots.count(location->root)) continue;
+              string actual = location->root;
+              bool indexed = false;
+              for (const auto& member : location->path) {
+                if (member == "[]") { indexed = true; break; }
+                actual += "." + member;
+              }
+              if (!indexed) mapped.formal_writes.insert(actual + appended);
+            }
+            if (mapped.formal_writes.empty() ||
+                std::any_of(output.begin(), output.end(),
+                            [&](const RecoveryWarningWitness& prior) {
+                              return same_witness(prior, mapped);
+                            }))
+              continue;
+            output.push_back(std::move(mapped));
+            changed = true;
+          }
+        }
+      }
+      return changed;
+    };
+    const size_t limit = p_.functions.size() + p_.objects.size() + 1;
+    for (size_t round = 0; round < limit; ++round) {
+      bool changed = false;
+      for (auto& function : p_.functions) {
+        if (std::filesystem::path(function.source_file).extension() == ".mossi" ||
+            std::any_of(function.params.begin(), function.params.end(),
+                [](const Param& parameter) { return parameter.type.empty(); }))
+          continue;
+        vector<std::pair<string, string>> formals;
+        for (const auto& parameter : function.params)
+          formals.emplace_back(parameter.name, parameter.type);
+        changed |= forward(function.body, function.result_expression,
+                           function.result_line, formals,
+                           function.recovery_warning_witnesses);
+      }
+      for (auto& object : p_.objects) {
+        if (std::filesystem::path(object.source_file).extension() == ".mossi")
+          continue;
+        for (auto& method : object.methods) {
+          if (std::any_of(method.params.begin(), method.params.end(),
+                  [](const Param& parameter) { return parameter.type.empty(); }))
+            continue;
+          vector<std::pair<string, string>> formals{{"self", object.name}};
+          for (const auto& field : object.fields)
+            formals.emplace_back(field.name, field.type);
+          for (const auto& parameter : method.params)
+            formals.emplace_back(parameter.name, parameter.type);
+          changed |= forward(method.body, method.result_expression,
+                             method.result_line, formals,
+                             method.recovery_warning_witnesses);
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
   void phase21_warn_empty_catch_alls(
       const Domain& domain, const Handler& source,
       const DomainSpecialization& specialization) {
-    if (source.provider_abi) return;
+    if (source.provider_abi) {
+      for (const auto& witness : source.recovery_warning_witnesses)
+        phase21_warning(
+            witness.line, source.source_file,
+            witness.on_fail ? "ON_FAIL_EMPTY_AFTER_STATE_WRITE"
+                            : "RECOVER_EMPTY_AFTER_STATE_WRITE",
+            string("source-free ") +
+                (witness.on_fail ? "on_fail" : "recover") +
+                " no-op catch-all may leave protected domain-state writes (" +
+                phase21_leaf_names(witness.formal_writes) + ")");
+      return;
+    }
     for (size_t index = 0; index < source.body.size(); ++index) {
       const Stmt& statement = source.body[index];
       if (statement.kind != Stmt::Kind::Try) continue;
@@ -6690,13 +6925,25 @@ class Checker {
                                           index));
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(source.body, arm_index + 1, arm_end) &&
-            !writes.empty())
+            !writes.empty()) {
+          RecoveryWarningWitness witness{arm.line, false,
+                                         arm.exceptional_alternatives, writes};
+          if (std::none_of(source.recovery_warning_witnesses.begin(),
+                           source.recovery_warning_witnesses.end(),
+                           [&](const RecoveryWarningWitness& prior) {
+                             return prior.line == witness.line &&
+                                    !prior.on_fail &&
+                                    prior.selected == witness.selected &&
+                                    prior.formal_writes == witness.formal_writes;
+                           }))
+            source.recovery_warning_witnesses.push_back(std::move(witness));
           phase21_warning(
               arm.line, arm.source_file, "RECOVER_EMPTY_AFTER_STATE_WRITE",
               "no-op recover catch-all may swallow an error after protected "
               "domain-state writes in try at line " +
                   std::to_string(statement.line) + " (" +
                   phase21_leaf_names(writes) + ")");
+        }
         arm_index = arm_end;
       }
     }
@@ -6708,21 +6955,26 @@ class Checker {
             domain, source, specialization, source.body, 0,
             source.body.size(), 0, {}, arm.exceptional_alternatives,
             writes);
-        if (!writes.empty())
+        if (!writes.empty()) {
+          RecoveryWarningWitness witness{arm.line, true,
+                                         arm.exceptional_alternatives, writes};
+          if (std::none_of(source.recovery_warning_witnesses.begin(),
+                           source.recovery_warning_witnesses.end(),
+                           [&](const RecoveryWarningWitness& prior) {
+                             return prior.line == witness.line &&
+                                    prior.on_fail &&
+                                    prior.selected == witness.selected &&
+                                    prior.formal_writes == witness.formal_writes;
+                           }))
+            source.recovery_warning_witnesses.push_back(std::move(witness));
           phase21_warning(
               arm.line, arm.source_file, "ON_FAIL_EMPTY_AFTER_STATE_WRITE",
               "no-op on_fail catch-all may leave protected domain-state "
               "writes from the abandoned Root attempt (" +
                   phase21_leaf_names(writes) + ")");
+        }
       }
   }
-
-  struct LocalCallSite {
-    string target;
-    vector<string> arguments;
-    vector<string> argument_types;
-    string receiver = "";
-  };
 
   void phase21_warn_method_catch_alls(
       const Domain& domain, const Handler& source,
@@ -6731,11 +6983,10 @@ class Checker {
     const ObjectType* owner = nullptr;
     const Method* method = callable_method(site.target, &owner);
     if (!method || !owner || site.arguments.size() != method->params.size() ||
-        method->body.empty() || site.receiver.empty()) return;
+        site.receiver.empty()) return;
     bool imported = false;
     for (const auto& module : p_.external_modules)
       imported |= starts_with(owner->name, module + "__");
-    if (imported) return;
     Domain formal_domain;
     formal_domain.name = "_phase21_method_warning";
     Handler formal_handler;
@@ -6771,6 +7022,40 @@ class Checker {
       }
       return mapped + suffix;
     };
+    if (imported) {
+      for (const auto& witness : method->recovery_warning_witnesses) {
+        StateLeafSet protected_writes;
+        for (const auto& leaf : witness.formal_writes) {
+          const size_t dot = leaf.find('.');
+          const string root = leaf.substr(0, dot);
+          const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+          string actual;
+          if (root == "self")
+            actual = mapped_actual(site.receiver, suffix);
+          else if (std::any_of(owner->fields.begin(), owner->fields.end(),
+                               [&](const Field& field) {
+                                 return field.name == root;
+                               }))
+            actual = mapped_actual(site.receiver, "." + leaf);
+          else
+            for (size_t slot = 0; slot < method->params.size(); ++slot)
+              if (method->params[slot].name == root)
+                actual = mapped_actual(site.arguments[slot], suffix);
+          if (planned.state_leaves.count(actual))
+            protected_writes.insert(actual);
+        }
+        if (!protected_writes.empty())
+          phase21_warning(
+              call_line, source.source_file,
+              "RECOVER_EMPTY_AFTER_STATE_WRITE",
+              "no-op recover catch-all in source-free method '" +
+                  owner->name + "." + method->name +
+                  "' may swallow an error after protected domain-state "
+                  "writes (" + phase21_leaf_names(protected_writes) + ")");
+      }
+      return;
+    }
+    if (method->body.empty()) return;
     for (size_t index = 0; index < method->body.size(); ++index) {
       const Stmt& statement = method->body[index];
       if (statement.kind != Stmt::Kind::Try) continue;
@@ -6864,14 +7149,49 @@ class Checker {
       const vector<string>& arguments = site.arguments;
       auto target = functions_.find(callee);
       if (target == functions_.end() ||
-          target->second->params.size() != arguments.size() ||
-          target->second->body.empty())
+          target->second->params.size() != arguments.size())
         continue;
       const Function& function = *target->second;
       bool imported = false;
       for (const auto& module : p_.external_modules)
         imported |= starts_with(function.name, module + "__");
-      if (imported) continue;
+      // Static/generic exports carry checked semantic IR in the interface.
+      // Re-evaluate their warning condition with the consumer's concrete
+      // argument types; only bodyless concrete imports need a witness.
+      if (imported && (function.body.empty() || !function.static_dispatch)) {
+        for (const auto& witness : function.recovery_warning_witnesses) {
+          StateLeafSet protected_writes;
+          for (const auto& leaf : witness.formal_writes) {
+            const size_t dot = leaf.find('.');
+            const string formal = leaf.substr(0, dot);
+            for (size_t slot = 0; slot < function.params.size(); ++slot) {
+              if (function.params[slot].name != formal) continue;
+              auto location = storage_location(arguments[slot], caller_types);
+              if (!location) continue;
+              string actual = location->root;
+              bool indexed = false;
+              for (const auto& member : location->path) {
+                if (member == "[]") { indexed = true; break; }
+                actual += "." + member;
+              }
+              if (indexed) continue;
+              if (dot != string::npos) actual += leaf.substr(dot);
+              if (planned.state_leaves.count(actual))
+                protected_writes.insert(actual);
+            }
+          }
+          if (!protected_writes.empty())
+            phase21_warning(
+                call.line, call.source_file,
+                "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                "no-op recover catch-all in source-free helper '" +
+                    function.name +
+                    "' may swallow an error after protected domain-state "
+                    "writes (" + phase21_leaf_names(protected_writes) + ")");
+        }
+        continue;
+      }
+      if (function.body.empty()) continue;
       Domain formal_domain;
       formal_domain.name = "_phase21_helper_warning";
       Handler formal_handler;
@@ -7306,6 +7626,39 @@ class Checker {
                                   receiver, {}, Effect::Consume);
       function.parameter_leaf_effects = std::move(capture.effects);
     }
+    // A concrete source-free callable does not export its Moss body. Preserve
+    // the minimal checked warning witnesses in ABI v9 so a consumer can map
+    // formal writes onto its own protected state without reading provider IR.
+    for (auto& function : p_.functions) {
+      if (std::filesystem::path(function.source_file).extension() == ".mossi" ||
+          function.body.empty() ||
+          std::any_of(function.params.begin(), function.params.end(),
+              [](const Param& parameter) { return parameter.type.empty(); }))
+        continue;
+      vector<std::pair<string, string>> formals;
+      for (const auto& parameter : function.params)
+        formals.emplace_back(parameter.name, parameter.type);
+      function.recovery_warning_witnesses =
+          phase21_callable_warning_witnesses(function.body, formals);
+    }
+    for (auto& object : p_.objects) {
+      if (std::filesystem::path(object.source_file).extension() == ".mossi")
+        continue;
+      for (auto& method : object.methods) {
+        if (method.body.empty() ||
+            std::any_of(method.params.begin(), method.params.end(),
+                [](const Param& parameter) { return parameter.type.empty(); }))
+          continue;
+        vector<std::pair<string, string>> formals{{"self", object.name}};
+        for (const auto& field : object.fields)
+          formals.emplace_back(field.name, field.type);
+        for (const auto& parameter : method.params)
+          formals.emplace_back(parameter.name, parameter.type);
+        method.recovery_warning_witnesses =
+            phase21_callable_warning_witnesses(method.body, formals);
+      }
+    }
+    phase21_propagate_callable_warning_witnesses();
     // Source declarations retain semantic observations for .mossi export only
     // after instance plans have consumed their exact specialization contexts.
     for (auto& domain : p_.domains)
@@ -7696,9 +8049,15 @@ class Checker {
             concrete_arguments.push_back(inferred_expr_type(argument, env).value_or(""));
         if (auto object_method = resolve_method(concrete, method, concrete_arguments, true, nullptr)) {
           if (leaf_effect_capture_) {
+            const StateLeafEffects coarse =
+                conservative_method_formal_effects(*object_method);
+            const StateLeafEffects* recorded =
+                object_method->body.empty() && !object_method->result_expression
+                    ? &coarse : nullptr;
             capture_callable_effects(object_method->body, object_method->result_expression,
                 object_method->params, arguments, env, params, parameter_effects,
-                receiver_effect, receiver_fields, objects_.at(concrete), receiver);
+                receiver_effect, receiver_fields, objects_.at(concrete), receiver,
+                recorded);
             return;
           }
           analyze_effect_expression(receiver, env, params, parameter_effects,
@@ -7810,9 +8169,15 @@ class Checker {
                 canonical_type_name(self->second), callee, argument_types,
                 true, nullptr)) {
           if (leaf_effect_capture_) {
+            const StateLeafEffects coarse =
+                conservative_method_formal_effects(*object_method);
+            const StateLeafEffects* recorded =
+                object_method->body.empty() && !object_method->result_expression
+                    ? &coarse : nullptr;
             capture_callable_effects(object_method->body, object_method->result_expression,
                 object_method->params, call_arguments, env, params, parameter_effects,
-                receiver_effect, receiver_fields, objects_.at(canonical_type_name(self->second)), "self");
+                receiver_effect, receiver_fields, objects_.at(canonical_type_name(self->second)), "self",
+                recorded);
             return;
           }
           analyze_effect_expression("self", env, params, parameter_effects,
@@ -8697,11 +9062,12 @@ class Checker {
 
   void infer_effects() {
     for (auto& function : p_.functions)
-      if (!function.body.empty() || function.result_expression || !function.parameter_leaf_effects)
+      if (std::filesystem::path(function.source_file).extension() != ".mossi")
         function.parameter_effects.assign(function.params.size(), Effect::Read);
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
-        method.parameter_effects.assign(method.params.size(), Effect::Read);
+        if (std::filesystem::path(method.source_file).extension() != ".mossi")
+          method.parameter_effects.assign(method.params.size(), Effect::Read);
 
     size_t entities = p_.functions.size();
     for (const auto& object : p_.objects) entities += object.methods.size();
@@ -8709,6 +9075,8 @@ class Checker {
     for (size_t round = 0; round < rounds; ++round) {
       bool changed = false;
       for (auto& function : p_.functions) {
+        if (std::filesystem::path(function.source_file).extension() == ".mossi")
+          continue;
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
@@ -8739,6 +9107,8 @@ class Checker {
       }
       for (auto& object : p_.objects) {
         for (auto& method : object.methods) {
+          if (std::filesystem::path(method.source_file).extension() == ".mossi")
+            continue;
           std::unordered_map<string,string> env;
           std::set<string> fields;
           for (const auto& field : object.fields) {
@@ -10195,7 +10565,7 @@ class Checker {
           domain_fields.insert(field.name);
         for (auto& handler : domain.handlers) {
           SourceFileScope source(current_source_file_, handler.source_file);
-          // A compiled provider's body is not available here. Its ABI-v8
+          // A compiled provider's body is not available here. Its ABI-v9
           // checked summary is authoritative; the synthetic reply statement
           // in the interface is only a shape placeholder for old passes.
           if (handler.provider_abi) continue;
@@ -11281,7 +11651,7 @@ class Checker {
           if (std::filesystem::path(object_method->source_file).extension() == ".mossi" &&
               object_method->observable_effects.unresolved)
             err(line, "source-free method '" + concrete + "." + method +
-                "' has no checked observable-effect summary in ABI v8; rebuild with provider source or await an approved interface revision",
+                "' has unknown checked observable effects; rebuild its ABI-v9 provider",
                 "IMPORTED_METHOD_EFFECTS_UNAVAILABLE");
           if (p_.explicit_module) {
             auto module_of = [](const string& symbol) {
@@ -26382,6 +26752,57 @@ static RaisedIdentity parse_interface_raise_identity(const string& value) {
   throw CompileError(0, "invalid raised identity in module interface");
 }
 
+static RecoveryWarningWitness parse_interface_warning_witness(
+    const string& record) {
+  std::istringstream input(record);
+  RecoveryWarningWitness witness;
+  int on_fail = -1;
+  size_t alternatives = 0;
+  if (!(input >> witness.line >> on_fail >> alternatives) ||
+      witness.line < 0 || (on_fail != 0 && on_fail != 1) ||
+      alternatives == 0 || alternatives > 1024)
+    throw CompileError(0, "invalid ABI-v9 warning witness header",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  witness.on_fail = on_fail == 1;
+  for (size_t index = 0; index < alternatives; ++index) {
+    string identity;
+    if (!(input >> std::quoted(identity)) ||
+        !witness.selected.insert(
+            parse_interface_raise_identity(identity)).second)
+      throw CompileError(0, "invalid ABI-v9 warning witness alternatives",
+                         "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  }
+  size_t leaves = 0;
+  if (!(input >> leaves) || leaves == 0 || leaves > 4096)
+    throw CompileError(0, "invalid ABI-v9 warning witness leaf count",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  for (size_t index = 0; index < leaves; ++index) {
+    string leaf;
+    if (!(input >> std::quoted(leaf)) || leaf.empty() ||
+        !witness.formal_writes.insert(leaf).second)
+      throw CompileError(0, "invalid ABI-v9 warning witness leaf",
+                         "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  }
+  string trailing;
+  if (input >> trailing)
+    throw CompileError(0, "trailing data in ABI-v9 warning witness",
+                       "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+  return witness;
+}
+
+static void write_interface_warning_witness(
+    std::ostream& out, const string& prefix,
+    const RecoveryWarningWitness& witness) {
+  out << prefix << " " << witness.line << " " << (witness.on_fail ? 1 : 0)
+      << " " << witness.selected.size();
+  for (const auto& identity : witness.selected)
+    out << " " << std::quoted(identity.canonical());
+  out << " " << witness.formal_writes.size();
+  for (const auto& leaf : witness.formal_writes)
+    out << " " << std::quoted(leaf);
+  out << "\n";
+}
+
 static ObservableEffects interface_effects(const string& text) {
   ObservableEffects effects;
   static const vector<string> required_fields = {
@@ -26889,6 +27310,52 @@ static ParsedModuleUnit load_module_interface(
     }
     if (starts_with(line, "  ")) line = trim(line);
     if (starts_with(line, "  ")) continue;
+    if (starts_with(line, "function_warning ")) {
+      if (!current)
+        throw CompileError(0, "orphan ABI-v9 function warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      current->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(line.substr(17)));
+      continue;
+    }
+    if (starts_with(line, "object_method_warning ")) {
+      std::istringstream record(line.substr(22));
+      string name;
+      if (!(record >> std::quoted(name)) || !current_object)
+        throw CompileError(0, "orphan ABI-v9 method warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      auto method = std::find_if(current_object->methods.begin(),
+          current_object->methods.end(), [&](const Method& item) {
+            return item.name == name;
+          });
+      if (method == current_object->methods.end())
+        throw CompileError(0, "unknown ABI-v9 method warning owner",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      string remainder;
+      std::getline(record, remainder);
+      method->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(remainder));
+      continue;
+    }
+    if (starts_with(line, "handler_warning ")) {
+      std::istringstream record(line.substr(16));
+      string name;
+      if (!(record >> std::quoted(name)) || !current_domain)
+        throw CompileError(0, "orphan ABI-v9 handler warning witness",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      auto handler = std::find_if(current_domain->handlers.begin(),
+          current_domain->handlers.end(), [&](const Handler& item) {
+            return item.name == name;
+          });
+      if (handler == current_domain->handlers.end())
+        throw CompileError(0, "unknown ABI-v9 handler warning owner",
+                           "SOURCE_FREE_WARNING_CONTRACT_INVALID");
+      string remainder;
+      std::getline(record, remainder);
+      handler->recovery_warning_witnesses.push_back(
+          parse_interface_warning_witness(remainder));
+      continue;
+    }
     if (starts_with(line, "export fn ")) {
       std::istringstream header(line.substr(10));
       string name, kind;
@@ -27619,6 +28086,9 @@ static ParsedModuleUnit load_module_interface(
                            "SOURCE_FREE_METHOD_CONTRACT_INVALID");
       method.receiver_effect = *receiver_effect;
       method.observable_effects = interface_effects(rest);
+      if (method.observable_effects.unresolved)
+        throw CompileError(0, "unresolved effects in ABI-v9 object method",
+                           "SOURCE_FREE_METHOD_CONTRACT_INVALID");
       string count_text = interface_field(rest, "params");
       size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
       size_t parameters = rest.find("params=");
@@ -27656,19 +28126,10 @@ static ParsedModuleUnit load_module_interface(
       handler_line >> name;
       Handler handler;
       handler.name = name;
+      handler.source_file = file.string();
       string reply = interface_field(line, "reply");
       if (!reply.empty() && reply != "unit") handler.reply_type = std::move(reply);
       handler.observable_effects = interface_effects(line);
-      if (handler.reply_type) {
-        Stmt reply_statement;
-        reply_statement.kind = Stmt::Kind::Reply;
-        reply_statement.line = 0;
-        string type = canonical_type_name(*handler.reply_type);
-        reply_statement.a = type == "bool" ? "false"
-            : type == "float" ? "0.0"
-            : type == "string" ? "\"\"" : "0";
-        handler.body.push_back(std::move(reply_statement));
-      }
       current_domain->handlers.push_back(std::move(handler));
       continue;
     }
@@ -27745,7 +28206,7 @@ static ParsedModuleUnit load_module_interface(
           !expected_exceptional_destinations.count(record_key) ||
           !expected_exceptional_edges.count(record_key))
         throw CompileError(0,
-            "compiled provider lacks ABI-v8 handler metadata; rebuild its .mossi provider");
+            "compiled provider lacks ABI-v9 handler metadata; rebuild its .mossi provider");
       const auto& abi = *handler.provider_abi;
       if (expected_raise_tags.at(record_key) != handler.observable_effects.raise_set.size() ||
           seen_raise_tags[record_key] != expected_raise_tags.at(record_key) ||
@@ -27763,7 +28224,7 @@ static ParsedModuleUnit load_module_interface(
               abi.exceptional_destinations.size() ||
           expected_exceptional_edges.at(record_key) != abi.exceptional_edges.size())
         throw CompileError(0,
-            "compiled provider has inconsistent ABI-v8 handler metadata");
+            "compiled provider has inconsistent ABI-v9 handler metadata");
       for (const auto& arm : abi.failure_arms) {
         auto capture_key = std::make_pair(record_key, arm.source_order);
         if (!expected_failure_captures.count(capture_key) ||
@@ -27775,7 +28236,7 @@ static ParsedModuleUnit load_module_interface(
             std::to_string(arm.source_order);
         if (arm.callable_symbol != expected_symbol)
           throw CompileError(0,
-              "compiled provider has invalid ABI-v8 failure-arm symbol");
+              "compiled provider has invalid ABI-v9 failure-arm symbol");
       }
       for (const auto& raised : abi.outcome.raised) {
         auto payload_key = std::make_pair(record_key, raised.stable_tag);
@@ -27855,7 +28316,7 @@ static ParsedModuleUnit load_module_interface(
               abi.outcome, handler.observable_effects.raise_set) ||
           !provider_handler_abi_valid(abi))
         throw CompileError(0,
-            "compiled provider has invalid ABI-v8 handler contract");
+            "compiled provider has invalid ABI-v9 handler contract");
     }
   }
   for (auto& function : provider.functions) {
@@ -29070,7 +29531,7 @@ static ProviderHandlerAbi source_provider_handler_abi(
       capture.resolved_type =
           resolve_phase21_owned_type(provider, capture.moss_type);
       synchronization_require(failure_capture_allowed(capture),
-          "checked on_fail capture lacks an owned ABI-v8 type shape");
+          "checked on_fail capture lacks an owned ABI-v9 type shape");
       arm.captures.push_back(std::move(capture));
     }
     synchronization_require(
@@ -29239,8 +29700,7 @@ static vector<std::filesystem::path> write_module_interfaces(
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (enumeration.source_file != "<moss-std>" &&
-        !module_name_from_symbol(enumeration.name).empty() &&
+    if (!module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
@@ -29333,6 +29793,8 @@ static vector<std::filesystem::path> write_module_interfaces(
           << " mode=" << ownership_effect_name(effect)
           << " name=" << std::quoted(function.params[index].name) << "\n";
     }
+    for (const auto& witness : function.recovery_warning_witnesses)
+      write_interface_warning_witness(out, "  function_warning", witness);
     if (function.static_dispatch) {
       if (function.generic) {
         out << "  open_parameters";
@@ -29447,6 +29909,11 @@ static vector<std::filesystem::path> write_module_interfaces(
             << " " << ownership_effect_name(effect);
       }
       out << "\n";
+      for (const auto& witness : method.recovery_warning_witnesses) {
+        std::ostringstream prefix;
+        prefix << "  object_method_warning " << std::quoted(method.name);
+        write_interface_warning_witness(out, prefix.str(), witness);
+      }
     }
   }
   for (const auto& enumeration : program.enums) {
@@ -29529,7 +29996,7 @@ static vector<std::filesystem::path> write_module_interfaces(
       ProviderHandlerAbi provider_abi =
           source_provider_handler_abi(program, domain, handler);
       synchronization_require(provider_handler_abi_valid(provider_abi),
-                              "invalid exported handler ABI-v8 contract");
+                              "invalid exported handler ABI-v9 contract");
       synchronization_require(tagged_outcome_matches_raise_set(
                                   provider_abi.outcome,
                                   handler.observable_effects.raise_set),
@@ -29538,6 +30005,11 @@ static vector<std::filesystem::path> write_module_interfaces(
       write_provider_handler_abi(handler_abi, provider_abi);
       out << handler_abi.str();
       interface_contents[module] << handler_abi.str();
+      for (const auto& witness : handler.recovery_warning_witnesses) {
+        std::ostringstream prefix;
+        prefix << "  handler_warning " << std::quoted(handler.name);
+        write_interface_warning_witness(out, prefix.str(), witness);
+      }
     }
   }
   vector<std::filesystem::path> result;
@@ -29641,26 +30113,51 @@ static NativeArtifact compile_native_artifact(
             entry.path().extension() == ".mossi")
           artifact.module_interfaces.push_back(entry.path());
       std::sort(artifact.module_interfaces.begin(), artifact.module_interfaces.end());
-      for (const auto& interface_file : artifact.module_interfaces) {
-        std::filesystem::path rlib = interface_file;
-        rlib.replace_extension(".rlib");
-        if (!std::filesystem::is_regular_file(rlib, interface_error)) {
-          rlib = interface_file.parent_path() /
-              ("lib" + interface_file.stem().string() + ".rlib");
-        }
-        if (std::filesystem::is_regular_file(rlib, interface_error))
-          artifact.module_rlibs.push_back(std::move(rlib));
-      }
     }
   }
   artifact.backend_toolchain = inspect_backend_toolchain(
       optimized, debug_build, mode);
   std::ostringstream source_key;
   source_key << "sources\n";
-  for (const auto& source : sources)
+  std::set<string> local_source_modules;
+  bool source_has_import = false;
+  for (const auto& source : sources) {
+    const string source_text = read_text_file(source, "PROJECT_SOURCE_NOT_FOUND");
     source_key << project_relative_path(manifest, source) << "\n"
-               << stable_hash(read_text_file(source, "PROJECT_SOURCE_NOT_FOUND"))
+               << stable_hash(source_text)
                << "\n";
+    std::istringstream lines(source_text);
+    string line;
+    while (std::getline(lines, line)) {
+      line = trim(line);
+      if (starts_with(line, "module ")) {
+        std::istringstream declaration(line.substr(7));
+        string module;
+        if (declaration >> module) local_source_modules.insert(module);
+      } else if (starts_with(line, "import ")) {
+        source_has_import = true;
+      }
+    }
+  }
+  // Previous local interfaces in the output directory are not providers for
+  // this build. In particular, a stale v8 app.mossi must not enter its cache
+  // key, extern set or provider-contract marker selection.
+  artifact.module_interfaces.erase(std::remove_if(
+      artifact.module_interfaces.begin(), artifact.module_interfaces.end(),
+      [&](const std::filesystem::path& file) {
+        return local_source_modules.empty() ||
+               local_source_modules.count(file.stem().string()) != 0;
+      }), artifact.module_interfaces.end());
+  for (const auto& interface_file : artifact.module_interfaces) {
+    std::error_code provider_error;
+    auto rlib = interface_file;
+    rlib.replace_extension(".rlib");
+    if (!std::filesystem::is_regular_file(rlib, provider_error))
+      rlib = interface_file.parent_path() /
+          ("lib" + interface_file.stem().string() + ".rlib");
+    if (std::filesystem::is_regular_file(rlib, provider_error))
+      artifact.module_rlibs.push_back(std::move(rlib));
+  }
   // Compiled providers are semantic inputs too.  Their .mossi contract (and
   // backend fingerprint below) must invalidate a consumer even when the
   // consumer's Moss source is unchanged.
@@ -29696,7 +30193,12 @@ static NativeArtifact compile_native_artifact(
   std::ifstream early_cache(artifact.cache_metadata, std::ios::binary);
   std::ostringstream early_cache_stream;
   if (early_cache) early_cache_stream << early_cache.rdbuf();
-  if (mode == ProgramGenerationMode::Application && early_cache &&
+  // An explicit module can resolve providers through MOSS_MODULE_PATH or a
+  // package dependency, outside this output directory. Re-run selection and
+  // v9 binding validation before any warm-cache return. Legacy unmodular
+  // sources retain the fast path when they have no import declaration.
+  if (local_source_modules.empty() && !source_has_import &&
+      mode == ProgramGenerationMode::Application && early_cache &&
       early_cache_stream.str() == cache_text &&
       std::filesystem::is_regular_file(artifact.rust) &&
       std::filesystem::is_regular_file(artifact.debug_map) &&
@@ -29710,10 +30212,26 @@ static NativeArtifact compile_native_artifact(
   CompiledProjectUnit unit = analyze_project_sources(
       manifest, sources, optimized, debug_build, mode, declaration_filter,
       declaration_ids);
+  for (const auto& selected : unit.external_module_interfaces) {
+    const auto& interface_file = selected.second;
+    const auto provider_rlib = selected_provider_rlib(interface_file);
+    source_key << "selected-provider " << selected.first << "\n"
+               << interface_file.string() << "\n"
+               << stable_hash(read_text_file(interface_file, "MOSS_INTERFACE_ERROR"))
+               << "\n" << provider_rlib.string() << "\n";
+    std::ifstream rlib_input(provider_rlib, std::ios::binary);
+    std::ostringstream rlib_text;
+    rlib_text << rlib_input.rdbuf();
+    source_key << stable_hash(rlib_text.str()) << "\n";
+  }
+  source_fingerprint = stable_hash(source_key.str());
+  cache_text = backend_cache_metadata(
+      artifact.backend_toolchain, source_fingerprint);
   vector<std::filesystem::path> preexisting_interfaces = artifact.module_interfaces;
   vector<string> local_module_names = module_names_for_program(unit.program);
-  artifact.module_interfaces = write_module_interfaces(
+  const auto emitted_interfaces = write_module_interfaces(
       manifest, unit.program, directory, artifact.backend_toolchain);
+  artifact.module_interfaces = emitted_interfaces;
   for (const auto& interface_file : preexisting_interfaces) {
     string module = interface_file.stem().string();
     if (std::find(local_module_names.begin(), local_module_names.end(), module) ==
@@ -29772,7 +30290,8 @@ static NativeArtifact compile_native_artifact(
                                    mode, dependencies, &unit.program).generate();
       const auto provider_interface = directory /
           (tooling_name(module) + ".mossi");
-      if (std::filesystem::is_regular_file(provider_interface)) {
+      if (std::find(emitted_interfaces.begin(), emitted_interfaces.end(),
+                    provider_interface) != emitted_interfaces.end()) {
         const string interface_text = read_text_file(
             provider_interface, "MOSS_INTERFACE_ERROR");
         const string digest = source_free_declared_digest(interface_text);
