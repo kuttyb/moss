@@ -97,9 +97,13 @@ def native(source, case, expected_output, data=None):
             case, moss_optimization, executed.stdout, executed.stderr)
 
 
-def fast_debug(source, case, expected_output=None, fileio_unsupported=False):
+def fast_debug(source, case, expected_output=None, fileio_unsupported=False, data=None):
     cwd = SCRATCH / case / "fast-debug"
     cwd.mkdir(parents=True, exist_ok=True)
+    if data:
+        name, contents = data
+        (cwd / name).write_bytes(contents)
+        assert (cwd / name).read_bytes() == contents
     debug = run(cwd, COMPILER, "run", "--interp", source)
     if fileio_unsupported:
         expect_exit(debug, 1, f"Fast Debug FileIO {case}")
@@ -169,7 +173,7 @@ for case, filename, handler, helper, failure, data in (
     effects(source, handler, cwd, FILE_ERRORS | {failure})
     effects(source, helper, cwd, {failure})
     native(source, case, "-1\n", data)
-    fast_debug(source, case, fileio_unsupported=True)
+    fast_debug(source, case, fileio_unsupported=True, data=data)
 
 f = FIXTURES / "F_sqrt_float_local.moss"
 f_cwd = SCRATCH / "F"
