@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The declared Phase 21 built-in error enums have exact, tag-only shapes."""
+"""Compiler-owned Phase 21 standard errors and legacy declarations agree."""
 
 import json
 import subprocess
@@ -101,21 +101,24 @@ for malformed in (
     check_error(valid.replace(conversion_error, malformed),
                 "BUILTIN_ERROR_TYPE_SHAPE")
 
-check_error(valid.replace(file_error + "\n", ""), "UNKNOWN_ERROR_TYPE")
-check_error(valid.replace(parse_error + "\n", ""), "UNKNOWN_ERROR_TYPE")
-check_error(valid.replace(conversion_error + "\n", ""), "UNKNOWN_ERROR_TYPE")
-
-# An enum with the same name can be a distinct user type when no built-in
-# operation uses that error family. Source-free providers rely on this.
-SOURCE.write_text("enum FileError:\n  Full(code: Int)\nfn main():\n  pass\n")
+for declaration in (file_error, parse_error, conversion_error):
+    SOURCE.write_text(valid.replace(declaration + "\n", ""))
+    subprocess.run([str(COMPILER), "check", str(SOURCE), "--json"],
+                   check=True, capture_output=True, text=True)
+SOURCE.write_text(body)
 subprocess.run([str(COMPILER), "check", str(SOURCE), "--json"],
                check=True, capture_output=True, text=True)
+
+# A local malformed substitute cannot silently change the standard contract.
+# Exported provider-owned namesakes remain nominal across package boundaries.
+check_error("enum FileError:\n  Full(code: Int)\nfn main():\n  pass\n",
+            "BUILTIN_ERROR_TYPE_SHAPE")
 SOURCE.write_text('fn main():\n  echo "FileIO.open( parse_int( to_int("\n')
 subprocess.run([str(COMPILER), "check", str(SOURCE), "--json"],
                check=True, capture_output=True, text=True)
 
-# A provider may export a distinct user-defined FileError. Until FileIO error
-# identity is resolved across qualified modules, this ambiguity fails closed.
+# An exported provider-owned namesake stays nominal. Unqualified FileError in
+# the consumer continues to select the compiler-owned standard contract.
 package = SCRATCH / "unrelated_import"
 (package / "src").mkdir(parents=True, exist_ok=True)
 (package / "Moss.toml").write_text(
@@ -132,8 +135,8 @@ package = SCRATCH / "unrelated_import"
 checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=package,
                          capture_output=True, text=True)
 diagnostic = json.loads(checked.stdout)
-if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "FILEIO_ERROR_IDENTITY_UNSUPPORTED":
-    raise SystemExit(f"ambiguous module FileError identity accepted: {diagnostic}")
+if checked.returncode != 0 or not diagnostic.get("ok"):
+    raise SystemExit(f"standard FileError masked by imported namesake: {diagnostic}")
 
 (package / "src/main.moss").write_text(
     'module app\nimport provider\nfn main():\n'
@@ -142,8 +145,8 @@ if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "FILEIO
 checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=package,
                          capture_output=True, text=True)
 diagnostic = json.loads(checked.stdout)
-if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "BUILTIN_ERROR_TYPE_SHAPE":
-    raise SystemExit(f"imported payload FileError accepted for FileIO: {diagnostic}")
+if checked.returncode != 0 or not diagnostic.get("ok"):
+    raise SystemExit(f"standard FileError missing beside imported namesake: {diagnostic}")
 
 qualified = SCRATCH / "qualified_recovery"
 (qualified / "src").mkdir(parents=True, exist_ok=True)

@@ -226,4 +226,53 @@ build_and_run()
 provider.rename(provider.with_suffix(".removed"))
 build_and_run()
 
+# Standard enum values cross the native method and message contracts too.
+# A source-free consumer has its own Rust enum declaration; both boundaries
+# must convert the payload before invoking the provider's compiled symbols.
+transport = SCRATCH / "transport_project"
+transport_source = transport / "src"
+transport_source.mkdir(parents=True, exist_ok=True)
+(transport / "Moss.toml").write_text(
+    '[project]\nname = "phase21_standard_error_transport"\nversion = "0.1.0"\n')
+transport_provider = transport_source / "provider.moss"
+transport_consumer = transport_source / "main.moss"
+transport_provider.write_text('''module provider
+export type Carrier:
+  fn Echo(error: std.ParseError) -> std.ParseError:
+    return error
+export domain Worker:
+  fn Echo(error: std.ParseError) -> std.ParseError:
+    reply error
+''')
+transport_consumer.write_text('''module app
+import provider
+fn main():
+  worker = provider.Worker()
+  carrier = provider.Carrier()
+  value = carrier.Echo(std.ParseError.Invalid)
+  match value:
+    case Invalid:
+      echo 1
+    case Overflow:
+      echo 2
+  result = message worker.Echo(std.ParseError.Overflow)
+  match result:
+    case Invalid:
+      echo 3
+    case Overflow:
+      echo 4
+''')
+
+
+def build_transport():
+    check(transport_consumer)
+    built = json.loads(run(MARGO, "build", "--json", cwd=transport).stdout)
+    executable = Path(built["artifacts"]["artifacts"]["executable"])
+    assert run(executable, cwd=transport).stdout == "1\n4\n"
+
+
+build_transport()
+transport_provider.rename(transport_provider.with_suffix(".removed"))
+build_transport()
+
 print("Phase 21 standard error namespace and source-free identity passed")

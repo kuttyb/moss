@@ -17718,6 +17718,8 @@ class Generator {
                                                     result.push_back(generated_expr_type(argument, types).value_or(""));
                                                   return result;
                                                 }(), true, nullptr)) {
+          const auto external_method_module =
+              phase21_external_module_for_symbol(concrete);
           // A consuming concrete method cannot be invoked through either a
           // field-only access view or an ordinary borrowed function parameter.
           // The former has no method surface at all; the latter must retain
@@ -17745,13 +17747,29 @@ class Generator {
           rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
-            rendered << method_call_argument(*method, index,
+            string argument = method_call_argument(*method, index,
                 argument_temporaries[index].empty() ? member_arguments[index]
                                                     : argument_temporaries[index],
                 d, locals, types);
+            if (external_method_module && index < method->params.size() &&
+                !standard_error_variants(canonical_type_name(
+                    method->params[index].type)).empty()) {
+              const string external_type = tooling_name("moss_" +
+                  *external_method_module) + "::" +
+                  canonical_type_name(method->params[index].type);
+              argument = external_type + "::from(" + argument + ")";
+            }
+            rendered << argument;
           }
           rendered << ")";
           string result = rendered.str();
+          const string return_type = method->return_type.value_or("");
+          const bool standard_return = external_method_module &&
+              !standard_error_variants(canonical_type_name(return_type)).empty();
+          if (standard_return)
+            result = method->observable_effects.raise_set.empty()
+                ? return_type + "::from(" + result + ")"
+                : "(" + result + ").map(" + return_type + "::from)";
           if (!method->observable_effects.raise_set.empty()) {
             if (!phase21_result_context_)
               throw std::runtime_error(
