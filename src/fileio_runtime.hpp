@@ -1356,6 +1356,23 @@ pub mod moss_fileio {
         inner: Arc<MossFairMutex<Option<FileIOInner>>>,
     }
 
+    #[cfg(any(test, moss_perf))]
+    static MOSS_LIVE_FILEIO_BRANCH_READ_BORROWS: std::sync::atomic::AtomicI64 =
+        std::sync::atomic::AtomicI64::new(0);
+
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_live_fileio_branch_read_borrows() -> i64 {
+        MOSS_LIVE_FILEIO_BRANCH_READ_BORROWS.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    impl Drop for MossFileIOReadBorrow {
+        fn drop(&mut self) {
+            #[cfg(any(test, moss_perf))]
+            MOSS_LIVE_FILEIO_BRANCH_READ_BORROWS.fetch_sub(
+                1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
     impl MossFileIOReadBorrow {
         pub fn read(&self, offset: i64, size: i64) -> Range {
             self.read_checked(offset, size)
@@ -1368,7 +1385,11 @@ pub mod moss_fileio {
     }
 
     pub fn moss_fileio_branch_read_borrow(file: &FileIO) -> MossFileIOReadBorrow {
-        MossFileIOReadBorrow { inner: Arc::clone(&file.inner) }
+        let inner = Arc::clone(&file.inner);
+        #[cfg(any(test, moss_perf))]
+        MOSS_LIVE_FILEIO_BRANCH_READ_BORROWS.fetch_add(
+            1, std::sync::atomic::Ordering::SeqCst);
+        MossFileIOReadBorrow { inner }
     }
 
     impl Drop for FileIO {
@@ -1447,6 +1468,8 @@ pub mod moss_fileio {
 }
 
 pub use moss_fileio::{FileIO, Range, RangeBatch, MossChunks, MossFileError, MossFileIoFaultSite, MossFileIOReadBorrow, moss_fileio_branch_read_borrow, moss_fileio_registry_claim, moss_fileio_registry_release};
+#[cfg(any(test, moss_perf))]
+pub use moss_fileio::moss_live_fileio_branch_read_borrows;
 #[cfg(any(test, moss_perf))]
 pub use moss_fileio::{moss_set_sync_hook, moss_clear_sync_hook, moss_set_close_override, moss_clear_close_override, moss_fileio_registry_contains, moss_fileio_registry_reset, moss_inject_fileio_fault, moss_clear_fileio_fault, moss_fileio_map_open_errno_for_test, moss_fileio_map_data_errno_for_test};
 )RUST";

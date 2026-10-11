@@ -1,5 +1,40 @@
 # Moss current status
 
+## Phase 21.C final O9 review and adjacent ABI finding — 2026-10-10
+
+The bounded-K chunk lowering still joins each complete Branch window before
+reading an outcome slot, commits indexed Value/Raised/EOF outcomes in logical
+order, and publishes no later window after a terminal event. A new `moss_perf`
+counter in the production FileIO read-borrow type confirms zero live Branch
+read tokens at the terminal Root boundaries in the injected read-fault native
+test. A generated-code mutation panics immediately after its first Branch
+publication and requires process `SIGABRT` with no typed recovery output;
+the Root fail-closed guard does not convert a panic into a typed raise.
+
+A source-free exported generic mapper whose provider `.mossi` says
+`may_panic=1` correctly uses the sequential chunk path and runs natively.
+Removing that effect fact from the interface causes a structured rejection,
+so an unknown provider panic fact cannot silently authorize speculation.
+These checks supplement the existing ordered fold/mapper/EOF native matrix.
+The Phase 21.C O9 paths reviewed here are complete, subject to final
+all-phase integration review.
+
+An adjacent Phase 20 cross-crate Range ABI gap remains open. A minimal
+source-free provider with `export fn first(chunk: Range) -> Int` and a consumer
+calling it on a normal `FileIO.read` result passes `./moss check --json` with
+no diagnostics, but `./moss build` fails rustc E0308: it expects
+`moss_mapper::Range` and receives consumer `moss_fileio::Range`. The saved
+reproducer and exact outputs are in `tmp/phase21c-typed-range-repro/` in this
+worktree. It does not involve Branch lowering and is not repaired by this C
+closeout; resolving the shared Range ABI or rejecting that invalid native
+path is a separate Phase 20 follow-up and an integration acceptance risk.
+
+Validation after the edits: the focused C gate, full `make check` (`all Moss
+v0.1 tests passed`), `make examples`, strict C++17 warnings-as-errors syntax
+compilation, and `git diff --check` passed. The typed-Range reproducer is a
+separate failing native probe and does not pass the Phase 20 ABI acceptance
+check; no Phase 21 acceptance or merge to `main` is claimed here.
+
 ## Phase 21.D documentation wording review — 2026-10-10
 
 The active v0.1 syntax and roadmap pages now describe implemented numeric
