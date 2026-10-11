@@ -1,0 +1,29 @@
+enum Failure:
+  A
+  B
+
+fn source_both(a: Bool):
+  if a:
+    raise Failure.A
+  else:
+    raise Failure.B
+
+fn regroup_both(a: Bool):
+  try:
+    source_both(a)
+  recover Failure.A, Failure.B:
+    raise
+
+fn main():
+  try:
+    regroup_both(true)
+  recover Failure.A:
+    echo "A"
+  recover Failure.B:
+    echo "wrong B"
+  try:
+    regroup_both(false)
+  recover Failure.A:
+    echo "wrong A"
+  recover Failure.B:
+    echo "B"
