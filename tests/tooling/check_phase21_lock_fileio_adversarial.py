@@ -210,10 +210,31 @@ export domain Worker:
     reply 1
   on_fail:
     reply -2
+
+  fn ReadWrite(path: String) -> Int:
+    try:
+      file = FileIO.open(path, rw)
+      chunk = file.read(0, 1)
+      size = chunk.length()
+      file.write(0, "y")
+      file.sync()
+      file.close()
+      reply size
+    recover FileError.NotFound:
+      reply -1
+    recover:
+      reply -2
 ''')
-missing = SCRATCH / "absent-sourcefree.dat"
+provider_check = json.loads(run(COMPILER, "check", provider, "--json").stdout)
+assert provider_check["ok"] and not any(
+    item["code"] == "RECOVER_UNREACHABLE_VARIANT"
+    for item in provider_check["result"]["diagnostics"]), provider_check
+missing = PROJECT / "tmp/phase21-lock-fileio-adversarial/absent-sourcefree.dat"
 if missing.exists():
     missing.unlink()
+present = PROJECT / "tmp/phase21-lock-fileio-adversarial/present-sourcefree.dat"
+present.parent.mkdir(parents=True, exist_ok=True)
+present.write_bytes(b"x")
 driver = ROOT / "margo"
 project_env = {**os.environ, "MOSS": str(COMPILER), "TMPDIR": str(SCRATCH)}
 
@@ -227,6 +248,7 @@ def margo(*args):
     return result
 
 
+margo("clean")
 margo("build")
 consumer = PROJECT / "src/main.moss"
 consumer.write_text('''module app
@@ -234,8 +256,11 @@ import service
 fn main():
   worker = service.Worker()
   echo message worker.Run("tmp/phase21-lock-fileio-adversarial/absent-sourcefree.dat")
+  echo message worker.ReadWrite("tmp/phase21-lock-fileio-adversarial/present-sourcefree.dat")
+  echo message worker.ReadWrite("tmp/phase21-lock-fileio-adversarial/absent-sourcefree.dat")
 ''')
-assert margo("run").stdout == "-1\n"
+assert margo("run").stdout == "-1\n1\n-1\n"
 provider.rename(provider.with_suffix(".removed"))
-assert margo("run").stdout == "-1\n"
+assert margo("run").stdout == "-1\n1\n-1\n"
+assert present.read_bytes() == b"y"
 print("Phase 21 adversarial Root lock/FileIO native test passed")

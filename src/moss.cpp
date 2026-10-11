@@ -8967,6 +8967,7 @@ class Checker {
         // IR is only a specialization template for a static export.  Neither
         // can replace the checked provider summary from the interface.
         if (imported(function.name)) continue;
+        SourceFileScope source(current_source_file_, function.source_file);
         TypeEnv env;
         std::set<string> parameters;
         for (const auto& parameter : function.params) {
@@ -8988,6 +8989,7 @@ class Checker {
       for (auto& object : p_.objects) {
         if (imported(object.name)) continue;
         for (auto& method : object.methods) {
+          SourceFileScope source(current_source_file_, method.source_file);
           TypeEnv env;
           std::set<string> parameters;
           env["self"] = object.name;
@@ -9013,6 +9015,7 @@ class Checker {
         for (const auto& field : domain.state)
           domain_fields.insert(field.name);
         for (auto& handler : domain.handlers) {
+          SourceFileScope source(current_source_file_, handler.source_file);
           // A compiled provider's body is not available here. Its ABI-v8
           // checked summary is authoritative; the synthetic reply statement
           // in the interface is only a shape placeholder for old passes.
@@ -14140,6 +14143,7 @@ class Generator {
     const RaiseSet raised = phase21_program_raise_set();
     if (raised.empty()) return;
     bool has_file_error = enums_.count("FileError") != 0;
+    string file_error_type = "FileError";
     if (program_uses_fileio(p_) && !has_file_error) {
       string qualified_file_error;
       for (const auto& entry : enums_)
@@ -14153,6 +14157,7 @@ class Generator {
       if (!qualified_file_error.empty()) {
         o << "use " << qualified_file_error << " as FileError;\n\n";
         has_file_error = true;
+        file_error_type = qualified_file_error;
       }
     }
     o << "#[derive(Clone, Debug)]\n";
@@ -14180,7 +14185,7 @@ class Generator {
       for (const char* name : {"NotFound", "PermissionDenied",
                                "NotRegularFile", "InUse", "Full", "IO"}) {
         const RaisedIdentity identity =
-            RaisedIdentity::enum_variant("FileError", name);
+            RaisedIdentity::enum_variant(file_error_type, name);
         o << "        MossFileError::" << name << " => ";
         if (raised.count(identity))
           o << "__MossRaised::" << phase21_rust_variant(identity)
