@@ -195,6 +195,10 @@ struct FunctionSpecialization {
   string generated_name;
   vector<string> parameter_types;
   string return_type;
+  // Concrete observable effects drive the native Result ABI of this static
+  // specialization. A duck-typed method may raise even when the unspecialized
+  // function body cannot resolve that method's exact variant.
+  ObservableEffects observable_effects;
   // Ownership is checked in this complete concrete parameter environment.
   vector<Effect> parameter_effects;
   vector<bool> parameter_mutations;

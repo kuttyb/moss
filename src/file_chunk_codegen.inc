@@ -153,7 +153,7 @@ string gen_chunk_pipeline_sequential(
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
   string mapped_call = render_functional_callable(
       plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-      locals, types);
+      locals, types, false);
   if (!plan.map_invocation_effects.raise_set.empty())
     mapped_call = phase21_propagate(mapped_call);
   out << "            let " << mapped << " = " << mapped_call;
@@ -162,7 +162,7 @@ string gen_chunk_pipeline_sequential(
       plan.combine_callable,
       {FunctionalValue{acc, plan.accumulator_type, false},
        FunctionalValue{mapped, plan.mapped_type, false}},
-      domain, locals, types);
+      domain, locals, types, false);
   if (combine_raises) combined_call = phase21_propagate(combined_call);
   out << "            " << acc << " = " << combined_call;
   out << ";\n";
@@ -254,7 +254,7 @@ string gen_chunk_pipeline_bounded_k(
       << "::Eof { index: " << index << " } } else { ";
   const string mapped = render_functional_callable(
       plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-      locals, types);
+      locals, types, false);
   if (map_raises) {
     out << "match " << mapped << " { Ok(value) => " << chunk_outcome
         << "::Value { index: " << index << ", value, len: " << len
@@ -299,7 +299,7 @@ string gen_chunk_pipeline_bounded_k(
       plan.combine_callable,
       {FunctionalValue{acc, plan.accumulator_type, false},
        FunctionalValue{"value", plan.mapped_type, false}},
-      domain, locals, types);
+      domain, locals, types, false);
   if (combine_raises) combined_call = phase21_propagate(combined_call);
   out << "                        " << acc << " = " << combined_call;
   out << ";\n";
