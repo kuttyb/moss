@@ -15,6 +15,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_abi.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_cache_binding.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_proof_edges.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_source_free_standard_write_recovery.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_standard_write_order.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_imported_effects.py "$compiler" "$test_build/phase21-imported-effects"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_cross_crate_range_abi.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_on_fail_capture.py "$compiler"

@@ -11,7 +11,7 @@ import sys
 
 repo = Path(__file__).resolve().parents[2]
 compiler = Path(sys.argv[1]).resolve()
-margo = compiler.with_name("margo")
+margo = repo / "margo"
 project = repo / "tmp/phase21-source-free-proof-edges"
 if project.exists():
     shutil.rmtree(project)
@@ -48,8 +48,10 @@ consumer = project / "src/main.moss"
 
 
 def run(*args, expected=0):
+    environment = os.environ.copy()
+    environment["MOSS"] = str(compiler)
     result = subprocess.run([str(arg) for arg in args], cwd=project,
-                            env=os.environ.copy(), text=True,
+                            env=environment, text=True,
                             capture_output=True, timeout=180)
     assert result.returncode == expected, (
         args, result.returncode, result.stdout, result.stderr)
