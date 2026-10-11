@@ -2,6 +2,7 @@
 """Source-free Phase 21 effects: preserve provider summaries and fail closed."""
 
 import json
+import hashlib
 from pathlib import Path
 import re
 import subprocess
@@ -140,17 +141,22 @@ fn main():
     assert not rejected["ok"] and "main may not let typed errors escape" in (
         rejected["error"]["message"]), rejected
 
-# ABI v8 has no observable-effect record for object methods. Until an
-# approved interface revision, a source-free consumer must fail at Moss check.
+# ABI v9 carries the exact checked method effect summary across the source-free
+# boundary, including typed variants and separate panic potential.
 consumer.write_text('''module app
 import provider
 fn main():
   g = provider.Gauge(value: 19)
-  echo g.fail()
+  try:
+    echo g.fail()
+  recover provider.Fault.Bad(code):
+    echo code
 ''')
-rejected = json.loads(run([compiler, "check", consumer, "--json"],
-                          expected=1).stdout)
-assert rejected["error"]["code"] == "IMPORTED_METHOD_EFFECTS_UNAVAILABLE"
+assert check()["ok"]
+assert effects("entity-v1:method:provider__Gauge.fail")["raise_set"] == [
+    "enum:provider__Fault:Bad"]
+assert effects("entity-v1:method:provider__Gauge.panic")["may_panic"]
+build_and_run("19\n")
 
 consumer.write_text('''module app
 import provider
@@ -158,16 +164,12 @@ fn main():
   g = provider.Gauge(value: 19)
   echo [1, 2] |> map(g.panic_map) |> sum
 ''')
-rejected = json.loads(run([compiler, "check", consumer, "--json"],
-                          expected=1).stdout)
-assert rejected["error"]["code"] in (
-    "IMPORTED_METHOD_EFFECTS_UNAVAILABLE", "FUNCTIONAL_CALLABLE_UNRESOLVED"), rejected
+assert check()["ok"]
 
 interface = project / "build/debug/provider.mossi"
 original = interface.read_text()
 assert "object_method fail" in original
-assert "object_method fail" in original and not re.search(
-    r"object_method fail[^\n]*effects=", original)
+assert re.search(r"object_method fail[^\n]*effects=", original)
 
 # A missing required concrete-function record is rejected even when a forged
 # interface rehashes its own sections. The rlib remains present and unchanged.
@@ -188,11 +190,16 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
                      ("generic_semantic_hash", semantic)):
     tampered = re.sub(rf"(?m)^{key} [0-9a-f]{{16}}$",
                       f"{key} {stable_hash(section)}", tampered)
+material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n",
+                  "", tampered, count=1)
+tampered = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
+                  "provider_contract_digest sha256:" +
+                  hashlib.sha256(material.encode()).hexdigest(), tampered)
 interface.write_text(tampered)
 consumer.write_text(source_free)
 rejected = json.loads(run([compiler, "check", consumer, "--json"],
                           expected=1).stdout)
-assert "lacks Phase 21 observable effects" in rejected["error"]["message"]
+assert rejected["error"]["code"] == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"
 interface.write_text(original)
 
-print("Phase 21 imported function effects and method fail-closed checks passed")
+print("Phase 21 ABI-v9 imported function/method effects and artifact binding passed")

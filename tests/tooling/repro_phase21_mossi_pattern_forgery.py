@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Reproduce the unresolved ABI-v8 provider/interface authenticity defect.
+"""ABI-v9 negative gate: self-consistent forged metadata must fail checking."""
 
-This is a known-issue reproducer, not a green acceptance gate. It exits zero
-only when an edited, self-consistent .mossi builds against the old rlib and
-the resulting program aborts. Source-free acceptance requires this behavior
-to become a checker rejection under an approved provider-bound contract.
-"""
-
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -94,12 +89,18 @@ for key, section in (("concrete_interface_hash", contract + "\n"),
     text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
                           f"{key} {hash_section(section)}", text)
     assert count == 1, (key, count)
+material, count = re.subn(
+    r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
+assert count == 1
+text, count = re.subn(
+    r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
+    "provider_contract_digest sha256:" + hashlib.sha256(
+        material.encode()).hexdigest(), text)
+assert count == 1
 interface.write_text(text)
 
-rebuilt = json.loads(run(COMPILER, "build", "--json").stdout)
-assert rebuilt["ok"], rebuilt
-outcome = subprocess.run(
-    [str(Path(rebuilt["result"]["artifacts"]["executable"]))],
-    cwd=OUT, capture_output=True, text=True, timeout=30)
-assert outcome.returncode != 0 and not outcome.stdout, outcome
-print(f"REPRODUCED NO-GO: forged ABI-v8 pattern builds, then exits {outcome.returncode}")
+for command in (("check", main, "--json"), ("build", "--json")):
+    rejected = json.loads(run(COMPILER, *command, expected=1).stdout)
+    assert rejected["error"]["code"] == (
+        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"), rejected
+print("ABI-v9 forged failure-arm metadata rejected before native execution")
