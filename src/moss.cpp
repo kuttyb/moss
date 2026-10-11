@@ -39,6 +39,7 @@
 #include "float_format_runtime.hpp"
 #include "executor_runtime.hpp"
 #include "synchronization_lowering.hpp"
+#include "source_free_abi_v9.hpp"
 
 using std::string;
 using std::vector;
@@ -62,7 +63,9 @@ class CompilerStageTimer {
 };
 
 static constexpr const char* kCompilerVersion = "0.1.0";
-static constexpr int kNativeAbiVersion = kErrorHandlingAbiVersion;
+// ABI v8's raised-value layout is retained, while v9 adds an artifact-bound
+// source-free contract. A v8 interface must be rebuilt before source-free use.
+static constexpr int kNativeAbiVersion = 9;
 static constexpr const char* kMossLanguageVersion = "moss-0.1";
 static constexpr int kAgentProtocolVersion = 1;
 static constexpr const char* kAgentSchemaVersion = "moss-agent-1";
@@ -26609,12 +26612,129 @@ static ParsedModuleUnit load_module_interface(
             return candidate.name == handler_name;
           });
       if (!fields || !shape || shape->canonical_type != canonical_type ||
+static std::filesystem::path selected_provider_rlib(
+    const std::filesystem::path& interface_file) {
+  std::error_code error;
+  auto rlib = interface_file;
+  rlib.replace_extension(".rlib");
+  if (std::filesystem::is_regular_file(rlib, error)) return rlib;
+  rlib = interface_file.parent_path() /
+      ("lib" + interface_file.stem().string() + ".rlib");
+  if (std::filesystem::is_regular_file(rlib, error)) return rlib;
+  throw CompileError(0, "compiled provider artifact is missing for '" +
+      interface_file.string() + "'; rebuild the ABI-v9 provider",
+      "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING");
+}
+
+static string source_free_contract_marker(const string& module,
+                                          const string& digest) {
+  return "MOSS_ABI_V9_CONTRACT::" + tooling_name(module) + "::" + digest +
+         "::END";
+}
+
+static string source_free_contract_material(const string& text) {
+  static const string prefix = "provider_contract_digest sha256:";
+  if (!starts_with(text, "moss-module-interface-v2\n"))
+    throw CompileError(0, "source-free provider uses an older module interface; rebuild it for ABI v9",
+                       "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  const size_t begin = text.find("\n" + prefix);
+  if (begin == string::npos ||
+      text.find("\n" + prefix, begin + 1) != string::npos)
+    throw CompileError(0, "ABI-v9 provider contract digest is missing or repeated",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  const size_t end = text.find('\n', begin + 1);
+  if (end == string::npos)
+    throw CompileError(0, "ABI-v9 provider contract digest is incomplete",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  const string declared = text.substr(begin + 1 + prefix.size(),
+                                      end - begin - 1 - prefix.size());
+  if (declared.size() != 64 ||
+      !std::all_of(declared.begin(), declared.end(), [](unsigned char ch) {
+        return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f');
+      }))
+    throw CompileError(0, "ABI-v9 provider contract digest is malformed",
+                       "SOURCE_FREE_CONTRACT_INVALID");
+  return text.substr(0, begin + 1) + text.substr(end + 1);
+}
+
+static string source_free_declared_digest(const string& text) {
+  const string marker = "\nprovider_contract_digest sha256:";
+  const size_t begin = text.find(marker);
+  if (begin == string::npos) return {};
+  return text.substr(begin + marker.size(), 64);
+}
+
+static void verify_source_free_provider_binding(
+    const std::filesystem::path& interface_file, const string& text) {
+  const string material = source_free_contract_material(text);
+  const string declared = source_free_declared_digest(text);
+  if (source_free_contract_sha256(material) != declared)
+    throw CompileError(0, "ABI-v9 provider metadata does not match its declared contract digest",
+                       "SOURCE_FREE_CONTRACT_MISMATCH");
+  const auto rlib = selected_provider_rlib(interface_file);
+  std::ifstream input(rlib, std::ios::binary);
+  std::ostringstream archive;
+  archive << input.rdbuf();
+  if (!input && !input.eof())
+    throw CompileError(0, "cannot read selected ABI-v9 provider artifact '" +
+        rlib.string() + "'", "SOURCE_FREE_PROVIDER_ARTIFACT_MISSING");
+  const string bytes = archive.str();
+  const string prefix = "MOSS_ABI_V9_CONTRACT::" +
+      tooling_name(interface_file.stem().string()) + "::";
+  // rustc rlibs contain an .rmeta copy of the static initializer as well as
+  // native object bytes. Only the compiled object is the provider-owned
+  // binding; metadata copies are not evidence that the selected code matches.
+  if (!starts_with(bytes, "!<arch>\n"))
+    throw CompileError(0, "selected provider artifact is not a Rust rlib archive",
+                       "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  std::size_t count = 0;
+  string embedded;
+  for (std::size_t cursor = 8; cursor < bytes.size();) {
+    if (bytes.size() - cursor < 60 || bytes.compare(cursor + 58, 2, "`\n") != 0)
+      throw CompileError(0, "selected provider rlib has malformed archive records",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    const string name = trim(bytes.substr(cursor, 16));
+    const string size_text = trim(bytes.substr(cursor + 48, 10));
+    if (size_text.empty() || !std::all_of(size_text.begin(), size_text.end(),
+        [](unsigned char ch) { return ch >= '0' && ch <= '9'; }))
+      throw CompileError(0, "selected provider rlib has an invalid archive member",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    const auto member_size = static_cast<std::size_t>(std::stoull(size_text));
+    const std::size_t member_begin = cursor + 60;
+    if (member_size > bytes.size() - member_begin)
+      throw CompileError(0, "selected provider rlib has a truncated archive member",
+                         "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+    if (name.find(".rmeta") == string::npos && name != "/" && name != "//") {
+      const size_t found = bytes.find(prefix, member_begin);
+      if (found != string::npos && found < member_begin + member_size) {
+        ++count;
+        embedded = bytes.substr(found, prefix.size() + 64 + string("::END").size());
+        const size_t repeated = bytes.find(prefix, found + 1);
+        if (repeated != string::npos && repeated < member_begin + member_size)
+          ++count;
+      }
+    }
+    cursor = member_begin + member_size + (member_size & 1);
+  }
+  if (count != 1)
+    throw CompileError(0,
+        "selected provider artifact has missing or ambiguous ABI-v9 contract binding",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_INVALID");
+  const string expected = source_free_contract_marker(
+      interface_file.stem().string(), declared);
+  if (embedded != expected)
+    throw CompileError(0,
+        "ABI-v9 provider metadata does not match the selected compiled artifact",
+        "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH");
+}
+
           handler == current_domain->handlers.end() ||
           !handler->provider_abi)
         throw CompileError(0,
             "invalid handler owned-type shape in module interface");
       handler->provider_abi->owned_type_shapes.push_back(std::move(*shape));
       continue;
+  verify_source_free_provider_binding(file, text);
     }
     if (starts_with(line, "handler_raise_tags ") && current_domain) {
       std::istringstream fields(line.substr(19));
@@ -27089,7 +27209,12 @@ static ParsedModuleUnit load_module_interface(
       if (!return_type.empty() && return_type != "unit")
         method.return_type = std::move(return_type);
       string receiver = interface_field(rest, "receiver");
-      if (auto effect = interface_effect(receiver)) method.receiver_effect = *effect;
+      auto receiver_effect = interface_effect(receiver);
+      if (!receiver_effect)
+        throw CompileError(0, "invalid receiver effect in ABI-v9 object method",
+                           "SOURCE_FREE_METHOD_CONTRACT_INVALID");
+      method.receiver_effect = *receiver_effect;
+      method.observable_effects = interface_effects(rest);
       string count_text = interface_field(rest, "params");
       size_t count = count_text.empty() ? 0 : static_cast<size_t>(std::stoul(count_text));
       size_t parameters = rest.find("params=");
@@ -27103,8 +27228,11 @@ static ParsedModuleUnit load_module_interface(
                     >> effect_name))
           throw CompileError(0, "incomplete object method in module interface");
         method.params.push_back(std::move(parameter));
-        method.parameter_effects.push_back(
-            interface_effect(effect_name).value_or(Effect::Read));
+        auto parameter_effect = interface_effect(effect_name);
+        if (!parameter_effect)
+          throw CompileError(0, "invalid parameter effect in ABI-v9 object method",
+                             "SOURCE_FREE_METHOD_CONTRACT_INVALID");
+        method.parameter_effects.push_back(*parameter_effect);
       }
       if (method.name.empty())
         throw CompileError(0, "invalid object method in module interface");
@@ -28674,7 +28802,8 @@ static vector<std::filesystem::path> write_module_interfaces(
         !program.external_modules.count(module_name_from_symbol(object.name)))
       module_names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (!module_name_from_symbol(enumeration.name).empty() &&
+    if (enumeration.source_file != "<moss-std>" &&
+        !module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       module_names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)
@@ -28870,7 +28999,8 @@ static vector<std::filesystem::path> write_module_interfaces(
     for (const auto& method : object.methods) {
       out << "  object_method " << method.name << " return="
           << method.return_type.value_or("unit") << " receiver="
-          << ownership_effect_name(method.receiver_effect) << " params="
+          << ownership_effect_name(method.receiver_effect) << " effects="
+          << interface_effects_text(method.observable_effects) << " params="
           << method.params.size();
       for (size_t index = 0; index < method.params.size(); ++index) {
         Effect effect = index < method.parameter_effects.size()
@@ -28883,7 +29013,7 @@ static vector<std::filesystem::path> write_module_interfaces(
     }
   }
   for (const auto& enumeration : program.enums) {
-    if (!enumeration.exported) continue;
+    if (!enumeration.exported || enumeration.source_file == "<moss-std>") continue;
     string module = module_name_from_symbol(enumeration.name);
     if (module.empty() || program.external_modules.count(module)) continue;
     string name = enumeration.name.substr(module.size() + 2);
@@ -28976,7 +29106,7 @@ static vector<std::filesystem::path> write_module_interfaces(
   vector<std::filesystem::path> result;
   for (auto& entry : contents) {
     std::ostringstream header;
-    header << "moss-module-interface-v1\n"
+    header << "moss-module-interface-v2\n"
            << "module_id " << manifest.name << "::" << entry.first << "\n"
            << "compiler " << kCompilerVersion << "\n"
            << "native_abi " << kNativeAbiVersion << "\n"
@@ -28998,7 +29128,14 @@ static vector<std::filesystem::path> write_module_interfaces(
     std::ifstream prior(file, std::ios::binary);
     std::ostringstream prior_text;
     if (prior) prior_text << prior.rdbuf();
-    string text = header.str();
+    const string material = header.str();
+    const size_t first_line = material.find('\n');
+    synchronization_require(first_line != string::npos,
+                            "ABI-v9 interface header is incomplete");
+    const string digest = source_free_contract_sha256(material);
+    const string text = material.substr(0, first_line + 1) +
+        "provider_contract_digest sha256:" + digest + "\n" +
+        material.substr(first_line + 1);
     if (!prior || prior_text.str() != text) {
       std::ofstream output(file, std::ios::binary);
       if (!output)
@@ -29209,11 +29346,7 @@ static NativeArtifact compile_native_artifact(
         throw ProjectError("MODULE_PROVIDER_NOT_FOUND",
                            "no selected provider for imported module '" + external + "'");
       const auto& interface_file = selected->second;
-      std::filesystem::path rlib = interface_file;
-      rlib.replace_extension(".rlib");
-      if (!std::filesystem::is_regular_file(rlib))
-        rlib = interface_file.parent_path() /
-            ("lib" + interface_file.stem().string() + ".rlib");
+      std::filesystem::path rlib = selected_provider_rlib(interface_file);
       if (std::filesystem::is_regular_file(rlib)) {
         module_rlib[external] = rlib;
         // Source-free providers need the same transitive rustc discovery
@@ -29630,6 +29763,23 @@ static int run_project_build(const ProjectManifest& manifest, bool release,
   string current_source_hash = source_set_content_hash(manifest, sources);
   size_t units_analyzed = 0;
   size_t units_reused = 0;
+      const auto provider_interface = directory /
+          (tooling_name(module) + ".mossi");
+      if (std::filesystem::is_regular_file(provider_interface)) {
+        const string interface_text = read_text_file(
+            provider_interface, "MOSS_INTERFACE_ERROR");
+        const string digest = source_free_declared_digest(interface_text);
+        if (digest.size() != 64 ||
+            source_free_contract_sha256(
+                source_free_contract_material(interface_text)) != digest)
+          throw ProjectError("MOSS_INTERFACE_ERROR",
+              "generated ABI-v9 provider interface has an invalid digest",
+              provider_interface.string());
+        const string marker = source_free_contract_marker(module, digest);
+        generated += "\n#[used]\n#[no_mangle]\npub static __moss_abi_v9_contract_" +
+            tooling_name(module) + ": [u8; " +
+            std::to_string(marker.size()) + "] = *b\"" + marker + "\";\n";
+      }
   if (previous_snapshot &&
       previous_snapshot->source_hash == current_source_hash) {
     units_reused = previous_snapshot->units.size();

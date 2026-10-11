@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Exercise the ABI-v8 .mossi loader with provider source removed."""
+"""Exercise ABI-v9 .mossi loading with provider source removed."""
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -24,7 +25,24 @@ def run(args, *, cwd=None, expected=0):
 
 
 def write_interface(path, text):
-    """Keep generated section hashes valid while probing deeper ABI checks."""
+    """Rebind a test-only artifact copy to probe parser checks past the v9 seal.
+
+    Ordinary consumers never rewrite the artifact. This helper deliberately
+    edits both metadata and its paired test rlib so legacy structural-invalid
+    records can still reach the loader after the artifact-bound check.
+    """
+    if not hasattr(write_interface, "baselines"):
+        write_interface.baselines = {}
+    if path not in write_interface.baselines:
+        rlib = path.with_suffix(".rlib")
+        if not rlib.exists():
+            rlib = path.with_name("lib" + path.stem + ".rlib")
+        original_bytes = rlib.read_bytes()
+        original_digest = re.search(
+            r"(?m)^provider_contract_digest sha256:([0-9a-f]{64})$",
+            path.read_text()).group(1)
+        write_interface.baselines[path] = (rlib, original_bytes, original_digest)
+    rlib, original_bytes, original_digest = write_interface.baselines[path]
     contract, semantic = text.split("\ncontract\n", 1)[1].split(
         "\nsemantic_exports\n", 1)
     def hash_section(section):
@@ -38,7 +56,18 @@ def write_interface(path, text):
         text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
                               f"{key} {hash_section(section)}", text)
         assert count == 1, (key, count)
+    material, count = re.subn(
+        r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n", "", text)
+    assert count == 1
+    digest = hashlib.sha256(material.encode()).hexdigest()
+    text, count = re.subn(
+        r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
+        "provider_contract_digest sha256:" + digest, text)
+    assert count == 1
     path.write_text(text)
+    sealed = original_bytes.replace(original_digest.encode(), digest.encode())
+    assert sealed != original_bytes or digest == original_digest
+    rlib.write_bytes(sealed)
 
 
 def run_two_crate_rust_abi_fixture():
@@ -368,7 +397,7 @@ fn main():
     # A same-shape symbol swap previously compiled and aborted at runtime.
     interface_path.write_text(switched)
     tampered = run([compiler, "--check", main], cwd=multi_out, expected=1)
-    assert "module interface hash mismatch" in tampered.stderr
+    assert "provider metadata does not match its declared contract digest" in tampered.stderr
     # Recomputing the stored hashes must still fail the canonical symbol check.
     write_interface(interface_path, switched)
     forged = run([compiler, "--check", main], cwd=multi_out, expected=1)
@@ -456,7 +485,7 @@ first = json.loads(run([compiler, "build", "--json"], cwd=out).stdout)
 assert run([first["result"]["artifacts"]["executable"]]).stdout.strip() == "4"
 interface_path = out / "build/debug/provider.mossi"
 original = interface_path.read_text()
-assert "native_abi 8\n" in original
+assert "native_abi 9\n" in original
 for required in (
     'handler_abi "Bump"',
     'handler_outcome_contract "Bump" "__MossBodyOutcome_provider__Worker_Bump" "unit"',
@@ -553,7 +582,7 @@ assert "error" in forged.stdout or forged.stderr, forged
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
-write_interface(interface_path, synthetic.replace("native_abi 8\n", "native_abi 7\n"))
+write_interface(interface_path, synthetic.replace("native_abi 9\n", "native_abi 7\n"))
 v7 = run([compiler, "--check", main], cwd=out, expected=1)
 assert "incompatible native calling convention" in v7.stderr
 assert "rebuild its .mossi provider" in v7.stderr
