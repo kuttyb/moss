@@ -1,0 +1,17 @@
+enum Error:
+  Bad
+
+type Box:
+  value: Int
+
+fn fail() -> Box:
+  raise Error.Bad
+
+fn projected() -> Int:
+  return fail().value
+
+fn main():
+  try:
+    echo projected()
+  recover Error.Bad:
+    echo "caught"
