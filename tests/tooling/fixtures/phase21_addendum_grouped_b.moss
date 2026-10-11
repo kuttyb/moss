@@ -1,0 +1,18 @@
+enum Failure:
+  A
+  B
+
+fn source_b():
+  raise Failure.B
+
+fn regroup_b():
+  try:
+    source_b()
+  recover Failure.A, Failure.B:
+    raise
+
+fn main():
+  try:
+    regroup_b()
+  recover Failure.B:
+    echo "B"

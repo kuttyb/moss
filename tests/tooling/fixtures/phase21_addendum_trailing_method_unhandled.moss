@@ -1,0 +1,13 @@
+enum Failure:
+  Bad
+
+type Holder:
+  fn poke() -> Int:
+    raise Failure.Bad
+
+fn via_local() -> Int:
+  item = Holder()
+  item.poke()
+
+fn main():
+  echo via_local()
