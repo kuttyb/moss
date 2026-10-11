@@ -8854,11 +8854,18 @@ class Checker {
 
   void infer_observable_effects() {
     phase21_warnings_enabled_ = false;
+    auto imported = [&](const string& name) {
+      for (const auto& module : p_.external_modules)
+        if (starts_with(name, module + "__")) return true;
+      return false;
+    };
     for (auto& function : p_.functions)
-      function.observable_effects = no_observable_effects();
+      if (!imported(function.name))
+        function.observable_effects = no_observable_effects();
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
-        method.observable_effects = no_observable_effects();
+        if (!imported(object.name))
+          method.observable_effects = no_observable_effects();
     for (auto& domain : p_.domains)
       for (auto& handler : domain.handlers)
         if (!handler.provider_abi)
@@ -8873,6 +8880,10 @@ class Checker {
     for (size_t round = 0; round < entities * 3 + 3; ++round) {
       bool changed = false;
       for (auto& function : p_.functions) {
+        // An imported body is absent for a concrete export and its semantic
+        // IR is only a specialization template for a static export.  Neither
+        // can replace the checked provider summary from the interface.
+        if (imported(function.name)) continue;
         TypeEnv env;
         std::set<string> parameters;
         for (const auto& parameter : function.params) {
@@ -8886,17 +8897,13 @@ class Checker {
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
               *function.result_expression, env));
-        // Source-free provider interfaces do not publish a FileIO effect bit,
-        // so absence of FileIO cannot be proven for imported callables.
-        for (const auto& module : p_.external_modules)
-          if (starts_with(function.name, module + "__"))
-            inferred.fileio_unknown = true;
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
         }
       }
       for (auto& object : p_.objects) {
+        if (imported(object.name)) continue;
         for (auto& method : object.methods) {
           TypeEnv env;
           std::set<string> parameters;
@@ -8963,6 +8970,7 @@ class Checker {
       (void)phase21_raise_set(function.body, std::move(env));
     }
     for (auto& object : p_.objects) {
+      if (imported(object.name)) continue;
       for (auto& method : object.methods) {
         SourceFileScope source(current_source_file_, method.source_file);
         TypeEnv env;
@@ -9914,6 +9922,11 @@ class Checker {
         for (const auto& argument : arguments)
           argument_types.push_back(inferred_expr_type(argument, env.types).value_or(""));
         if (auto object_method = resolve_method(concrete, method, argument_types, true, nullptr)) {
+          if (std::filesystem::path(object_method->source_file).extension() == ".mossi" &&
+              object_method->observable_effects.unresolved)
+            err(line, "source-free method '" + concrete + "." + method +
+                "' has no checked observable-effect summary in ABI v8; rebuild with provider source or await an approved interface revision",
+                "IMPORTED_METHOD_EFFECTS_UNAVAILABLE");
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{object_method->receiver_effect};
           for (size_t index = 0; index < arguments.size(); ++index) {

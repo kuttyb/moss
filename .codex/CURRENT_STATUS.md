@@ -1,5 +1,25 @@
 # Moss current status
 
+## Phase 21 peer review EXT-05 engineering checkpoint — 2026-10-11
+
+The isolated `phase-21-peer-imported-effects` branch preserves checked `.mossi`
+observable effects for source-free ordinary and generic functions. A permanent
+gate tests variant-precise raises, panic summaries, native source-free execution,
+Root recovery, Moss rejection of unhandled raises, and rehashed missing effect
+metadata. Source-backed raising object methods now compile through their
+`MossAccess_*` trait defaults and pass native/Fast Debug parity. Source-free
+object methods remain unsupported under frozen ABI v8 because `object_method`
+records contain no observable-effect summary; such calls fail at Moss checking
+with `IMPORTED_METHOD_EFFECTS_UNAVAILABLE`, including mapper callbacks. This is
+an interim safety restriction, not semantic acceptance. An approved `.mossi`
+contract revision is required for full EXT-05 closure; no ABI record was changed.
+
+Completed local validation: `check_phase21_imported_effects.py`,
+`check_phase21_source_free_abi.py`, `check_borrowed_reads.py`, strict C++17
+syntax compilation, and `git diff --check` all passed after the last compiler
+edit. Full integration `make check` and `make examples` have not run on this
+isolated branch; L7 must run them after cherry-picking the fix.
+
 ## Phase 21 final independent review candidate — 2026-10-11
 
 The Phase 21 implementation checkpoint `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
