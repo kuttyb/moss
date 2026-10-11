@@ -254,4 +254,73 @@ assert (helper_native.returncode, helper_native.stdout) == (0, "")
 helper_debug = run(COMPILER, "run", "--interp", helper_source)
 assert (helper_debug.returncode, helper_debug.stdout) == (0, "")
 
+chain_source = SCRATCH / "helper_chain.moss"
+chain_source.write_text('''enum Error:
+  Bad
+fn swallow(target: Int):
+  try:
+    target = 2
+    raise Error.Bad
+  recover:
+    pass
+fn outer(item: Int) = swallow(item)
+domain Sample:
+  value = 1
+  fn Run():
+    outer(value)
+fn main():
+  sample = Sample()
+  message sample.Run()
+''')
+chain_warning = warning(checked(chain_source),
+                        "RECOVER_EMPTY_AFTER_STATE_WRITE")
+assert "helper 'swallow'" in chain_warning["message"], chain_warning
+assert "(value)" in chain_warning["message"], chain_warning
+chain_rust = SCRATCH / "helper_chain.rs"
+chain_binary = SCRATCH / "helper_chain"
+assert run(COMPILER, chain_source, "-o", chain_rust).returncode == 0
+chain_compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                     chain_rust, "-o", chain_binary)
+assert chain_compiled.returncode == 0, chain_compiled.stderr
+chain_native = run(chain_binary)
+chain_debug = run(COMPILER, "run", "--interp", chain_source)
+assert (chain_native.returncode, chain_native.stdout) == (0, "")
+assert (chain_debug.returncode, chain_debug.stdout) == (0, "")
+
+nested_source = SCRATCH / "nested_helper_call.moss"
+nested_source.write_text('''enum Error:
+  Bad
+fn swallow(target: Int) -> Int:
+  try:
+    target = 2
+    raise Error.Bad
+  recover:
+    pass
+  return 7
+fn choose(left: Int, right: Int) -> Int:
+  return right
+domain Sample:
+  value = 1
+  fn Run():
+    result = choose(0, swallow(value))
+    echo result
+fn main():
+  sample = Sample()
+  message sample.Run()
+''')
+nested_warning = warning(checked(nested_source),
+                         "RECOVER_EMPTY_AFTER_STATE_WRITE")
+assert "Sample.Run' call at line 15 (value)" in (
+    nested_warning["message"]), nested_warning
+nested_rust = SCRATCH / "nested_helper_call.rs"
+nested_binary = SCRATCH / "nested_helper_call"
+assert run(COMPILER, nested_source, "-o", nested_rust).returncode == 0
+nested_compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                      nested_rust, "-o", nested_binary)
+assert nested_compiled.returncode == 0, nested_compiled.stderr
+nested_native = run(nested_binary)
+nested_debug = run(COMPILER, "run", "--interp", nested_source)
+assert (nested_native.returncode, nested_native.stdout) == (0, "7\n")
+assert (nested_debug.returncode, nested_debug.stdout) == (0, "7\n")
+
 print("Phase 21 EXT-07 warning regressions passed.")

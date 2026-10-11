@@ -6541,17 +6541,18 @@ class Checker {
     if (source.provider_abi) return;
     for (size_t call_index = 0; call_index < source.body.size(); ++call_index) {
       const Stmt& call = source.body[call_index];
-      string callee;
-      vector<string> arguments;
-      if (call.kind == Stmt::Kind::Call && call.b.empty()) {
-        callee = call.a;
-        arguments = call.args;
-      } else {
-        for (const auto& expression : statement_expressions(call))
-          if (parse_simple_call(strip_expression_parens(expression), callee,
-                                arguments))
-            break;
-      }
+      TypeEnv caller_types = phase21_local_types_before(
+          domain, source, specialization, call_index);
+      for (const auto& route : domain.routes)
+        caller_types[route.name] = route.type;
+      vector<LocalCallSite> call_sites;
+      for (const auto& expression : statement_expressions(call))
+        collect_local_call_sites(call.line, expression, caller_types,
+                                 nullptr, call_sites);
+      for (const auto& site : call_sites) {
+      if (!starts_with(site.target, "fn:")) continue;
+      const string callee = site.target.substr(3);
+      const vector<string>& arguments = site.arguments;
       auto target = functions_.find(callee);
       if (target == functions_.end() ||
           target->second->params.size() != arguments.size() ||
@@ -6562,10 +6563,6 @@ class Checker {
       for (const auto& module : p_.external_modules)
         imported |= starts_with(function.name, module + "__");
       if (imported) continue;
-      TypeEnv caller_types = phase21_local_types_before(
-          domain, source, specialization, call_index);
-      for (const auto& route : domain.routes)
-        caller_types[route.name] = route.type;
       Domain formal_domain;
       formal_domain.name = "_phase21_helper_warning";
       Handler formal_handler;
@@ -6647,6 +6644,116 @@ class Checker {
           }
           arm_index = arm_end;
         }
+      }
+      }
+    }
+  }
+
+  void phase21_warn_nested_helper_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization,
+      const DomainSynchronizationPlan& planned) {
+    if (source.provider_abi) return;
+    std::function<void(const Function&, const vector<string>&,
+                       const TypeEnv&, std::set<string>)> visit;
+    visit = [&](const Function& function, const vector<string>& actuals,
+                const TypeEnv& handler_env, std::set<string> stack) {
+      if (!stack.insert(function.name).second ||
+          function.params.size() != actuals.size()) return;
+      vector<Stmt> body = function.body;
+      if (function.result_expression) {
+        Stmt result;
+        result.kind = Stmt::Kind::Return;
+        result.a = *function.result_expression;
+        result.line = function.result_line;
+        body.push_back(std::move(result));
+      }
+      Domain formal_domain;
+      formal_domain.name = "_phase21_nested_helper_warning";
+      Handler formal_handler;
+      formal_handler.name = "_phase21_nested_helper_warning";
+      formal_handler.body = body;
+      DomainSpecialization formal_specialization;
+      formal_specialization.source_domain = formal_domain.name;
+      for (size_t parameter = 0; parameter < function.params.size();
+           ++parameter) {
+        auto type = inferred_expr_type(actuals[parameter], handler_env);
+        if (!type) return;
+        Field field;
+        field.name = function.params[parameter].name;
+        field.type = *type;
+        formal_domain.state.push_back(field);
+        formal_specialization.state_types[field.name] = *type;
+      }
+      for (size_t index = 0; index < body.size(); ++index) {
+        const Stmt& statement = body[index];
+        TypeEnv formal_env = phase21_local_types_before(
+            formal_domain, formal_handler, formal_specialization, index);
+        vector<LocalCallSite> calls;
+        for (const auto& expression : statement_expressions(statement))
+          collect_local_call_sites(statement.line, expression, formal_env,
+                                   nullptr, calls);
+        for (const auto& call : calls) {
+          if (!starts_with(call.target, "fn:")) continue;
+          const string nested_name = call.target.substr(3);
+          auto nested = functions_.find(nested_name);
+          if (nested == functions_.end() ||
+              nested->second->params.size() != call.arguments.size() ||
+              (nested->second->body.empty() &&
+               !nested->second->result_expression)) continue;
+          bool imported = false;
+          for (const auto& module : p_.external_modules)
+            imported |= starts_with(nested_name, module + "__");
+          if (imported) continue;
+          vector<string> mapped;
+          for (const auto& argument : call.arguments) {
+            string actual = argument;
+            auto location = storage_location(argument, formal_env);
+            if (location) {
+              auto formal = std::find_if(
+                  function.params.begin(), function.params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == location->root;
+                  });
+              if (formal != function.params.end()) {
+                const size_t slot = static_cast<size_t>(
+                    formal - function.params.begin());
+                actual = actuals[slot];
+                for (const auto& member : location->path)
+                  actual += member == "[]" ? "[]" : "." + member;
+              }
+            }
+            mapped.push_back(std::move(actual));
+          }
+          Stmt forwarded;
+          forwarded.kind = Stmt::Kind::Call;
+          forwarded.a = nested_name;
+          forwarded.args = mapped;
+          forwarded.line = statement.line;
+          forwarded.source_file = statement.source_file;
+          Handler projected = source;
+          projected.body = {forwarded};
+          phase21_warn_helper_catch_alls(domain, projected, specialization,
+                                         planned);
+          visit(*nested->second, mapped, handler_env, stack);
+        }
+      }
+    };
+    for (size_t index = 0; index < source.body.size(); ++index) {
+      const Stmt& statement = source.body[index];
+      TypeEnv handler_env = phase21_local_types_before(
+          domain, source, specialization, index);
+      vector<LocalCallSite> calls;
+      for (const auto& expression : statement_expressions(statement))
+        collect_local_call_sites(statement.line, expression, handler_env,
+                                 nullptr, calls);
+      for (const auto& call : calls) {
+        if (!starts_with(call.target, "fn:")) continue;
+        auto function = functions_.find(call.target.substr(3));
+        if (function != functions_.end() &&
+            (!function->second->body.empty() ||
+             function->second->result_expression))
+          visit(*function->second, call.arguments, handler_env, {});
       }
     }
   }
@@ -6837,6 +6944,8 @@ class Checker {
         phase21_warn_empty_catch_alls(domain, source, specialization);
         phase21_warn_helper_catch_alls(domain, source, specialization,
                                        planned);
+        phase21_warn_nested_helper_catch_alls(
+            domain, source, specialization, planned);
       }
       plan.domains.push_back(std::move(planned));
     }
