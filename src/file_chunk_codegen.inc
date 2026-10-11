@@ -120,24 +120,26 @@ string gen_chunk_pipeline_sequential(
   out << "            let " << bytes << " = match " << receiver_place
       << ".read_checked(" << offset << ", " << size_var << ") {\n";
   out << "                Ok(bytes) => bytes,\n";
-  out << "                Err(error) => return Err(__moss_raise_fileio(error)),\n";
+  out << "                Err(error) => "
+      << phase21_error_exit("__moss_raise_fileio(error)") << ",\n";
   out << "            };\n";
   out << "            let __moss_chunk_len_" << id << " = " << bytes
       << ".len();\n";
   out << "            if __moss_chunk_len_" << id << " == 0 { break; }\n";
-  out << "            let " << mapped << " = "
-      << render_functional_callable(
-             plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
-             locals, types);
-  if (!plan.map_invocation_effects.raise_set.empty()) out << "?";
+  string mapped_call = render_functional_callable(
+      plan.map_callable, {FunctionalValue{bytes, "Range", false}}, domain,
+      locals, types);
+  if (!plan.map_invocation_effects.raise_set.empty())
+    mapped_call = phase21_propagate(mapped_call);
+  out << "            let " << mapped << " = " << mapped_call;
   out << ";\n";
-  out << "            " << acc << " = "
-      << render_functional_callable(
-             plan.combine_callable,
-             {FunctionalValue{acc, plan.accumulator_type, false},
-              FunctionalValue{mapped, plan.mapped_type, false}},
-             domain, locals, types);
-  if (combine_raises) out << "?";
+  string combined_call = render_functional_callable(
+      plan.combine_callable,
+      {FunctionalValue{acc, plan.accumulator_type, false},
+       FunctionalValue{mapped, plan.mapped_type, false}},
+      domain, locals, types);
+  if (combine_raises) combined_call = phase21_propagate(combined_call);
+  out << "            " << acc << " = " << combined_call;
   out << ";\n";
   out << "            " << offset << " += __moss_chunk_len_" << id << ";\n";
   out << "            if __moss_chunk_len_" << id << " < " << size_var
@@ -262,18 +264,19 @@ string gen_chunk_pipeline_bounded_k(
       << " as i64).unwrap_or(i64::MAX) { std::process::abort(); }\n";
   out << "                match " << outcome << " {\n";
   out << "                    " << chunk_outcome
-      << "::Raised { error, .. } => return Err(error),\n";
+      << "::Raised { error, .. } => "
+      << phase21_error_exit("error") << ",\n";
   out << "                    " << chunk_outcome << "::Eof { .. } => break "
       << label << ",\n";
   out << "                    " << chunk_outcome
       << "::Value { value, short, .. } => {\n";
-  out << "                        " << acc << " = "
-      << render_functional_callable(
-             plan.combine_callable,
-             {FunctionalValue{acc, plan.accumulator_type, false},
-              FunctionalValue{"value", plan.mapped_type, false}},
-             domain, locals, types);
-  if (combine_raises) out << "?";
+  string combined_call = render_functional_callable(
+      plan.combine_callable,
+      {FunctionalValue{acc, plan.accumulator_type, false},
+       FunctionalValue{"value", plan.mapped_type, false}},
+      domain, locals, types);
+  if (combine_raises) combined_call = phase21_propagate(combined_call);
+  out << "                        " << acc << " = " << combined_call;
   out << ";\n";
   out << "                        if short { break " << label << "; }\n";
   out << "                    }\n                }\n";

@@ -1,0 +1,14 @@
+enum Failure:
+  Bad
+
+fn choose(flag: bool) -> int:
+  try:
+    if flag:
+      return 7
+    raise Failure.Bad
+  recover Failure.Bad:
+    return 9
+
+fn main():
+  echo choose(true)
+  echo choose(false)

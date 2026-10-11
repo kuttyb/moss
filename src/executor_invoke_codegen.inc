@@ -195,7 +195,8 @@ string root_ingress_message(const string& receiver, const string& handler,
              << "; ";
     argument_locals.push_back(temp);
   }
-  rendered << "runtime_invoke(move || ";
+  std::ostringstream invocation;
+  invocation << "runtime_invoke(move || ";
   const bool root_handles_failure = !target_handler.failure_arms.empty();
   const bool raises = !target_handler.observable_effects.raise_set.empty() &&
       !root_handles_failure;
@@ -203,32 +204,32 @@ string root_ingress_message(const string& receiver, const string& handler,
     throw std::runtime_error(
         "internal error: checked raising Root message lacks a Phase 21 outcome context");
   if (root_handles_failure && !exported_domain_bridge_body_) {
-    rendered << domain_temp << "." << handler << "_root(";
+    invocation << domain_temp << "." << handler << "_root(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
-      rendered << (index ? ", " : "") << argument_locals[index];
-    rendered << ")";
+      invocation << (index ? ", " : "") << argument_locals[index];
+    invocation << ")";
   } else if (target_domain.exported && !exported_domain_bridge_body_) {
-    rendered << domain_temp << ".__moss_message_" << handler << "(";
+    invocation << domain_temp << ".__moss_message_" << handler << "(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
-      rendered << (index ? ", " : "") << argument_locals[index];
-    rendered << ")";
+      invocation << (index ? ", " : "") << argument_locals[index];
+    invocation << ")";
   } else {
-    rendered << domain_temp << "." << handler << "_shared(";
+    invocation << domain_temp << "." << handler << "_shared(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
-      rendered << (index ? ", " : "")
+      invocation << (index ? ", " : "")
                << shared_message_forward_argument(
                       Param{argument_locals[index], target_handler.params.at(index).type, false},
                       true);
-    rendered << ")";
+    invocation << ")";
     if (target_handler.reply_type) {
       if (raises)
-        rendered << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+        invocation << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
       else
-        rendered << ".unwrap_or_else(|| std::process::abort())";
+        invocation << ".unwrap_or_else(|| std::process::abort())";
     }
   }
-  rendered << ")";
-  if (raises) rendered << "?";
+  invocation << ")";
+  rendered << (raises ? phase21_propagate(invocation.str()) : invocation.str());
   rendered << " }";
   return rendered.str();
 }

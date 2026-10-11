@@ -1,5 +1,33 @@
 # Moss current status
 
+## Phase 21.A lexical native recovery checkpoint — 2026-10-10
+
+Native `try` lowering now uses a labeled Rust block. Explicit `raise`, fallible
+calls, numeric conversion, Root ingress, and chunk-pipeline errors route to
+that block's tagged outcome; nested unmatched errors route to the outer block
+or callable. This removes the generated attempt closure and preserves Moss
+`return` from inside a `try`. A new native regression checks both the early
+return and the handled error return in a plain value-returning function.
+Cross-crate error propagation retains Rust's `Into` conversion. The generated
+callable fallback is diverging only on the checker's unreachable normal path
+when source has exhaustive explicit returns.
+
+Completed validation after these edits: focused recovery checker/native,
+numeric cross-module parsing, chunk FileIO raise, and handler Root tests;
+full `make check` (`all Moss v0.1 tests passed`); `make examples`; strict
+C++17 `-Wall -Wextra -Werror -pedantic` syntax compilation; and
+`git diff --check`.
+
+The legal variant-specific ownership probe still passes `moss check` and
+fails native rustc E0382. Removing the closure avoids eager capture, but Rust
+still sees a possible move of `item` on `Failure.First` when
+`Failure.Second` recovery reads it. The next lowering step must carry the
+owned value along the exceptional edge on which it survives, rather than
+assuming Rust can infer ownership from the error variant. The handler-local
+`on_fail` capture frame, source-free nonempty capture execution, final O1–O9
+review, and wider Float toolchain pin remain open. Phase 21 is not accepted or
+merged to `main`.
+
 ## Phase 21.A exceptional recovery ownership checkpoint — 2026-10-10
 
 The ownership checker previously entered each `recover` arm with the state

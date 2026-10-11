@@ -13654,8 +13654,23 @@ class Generator {
   mutable bool root_ingress_statement_ = false;
   mutable size_t fileio_chunk_temp_ = 0;
   bool phase21_result_context_ = false;
+  std::optional<bool> phase21_return_result_context_;
   string phase21_selected_error_;
+  string phase21_try_label_;
   size_t phase21_try_temp_ = 0;
+
+  string phase21_propagate(const string& fallible) const {
+    if (phase21_try_label_.empty()) return "(" + fallible + ")?";
+    return "match " + fallible + " { Ok(__moss_value) => __moss_value, "
+        "Err(__moss_error) => break '" + phase21_try_label_ +
+        " Err(__moss_error.into()) }";
+  }
+
+  string phase21_error_exit(const string& error) const {
+    return (phase21_try_label_.empty()
+        ? "return Err(" : "break '" + phase21_try_label_ + " Err(") +
+        error + ")";
+  }
 
   static string phase21_rust_variant(const RaisedIdentity& identity) {
     return "Raised_" + stable_hash(identity.canonical()).substr(0, 16);
@@ -14691,7 +14706,10 @@ class Generator {
       if (!phase21_result_context_)
         throw std::runtime_error(
             "internal error: checked raising function call lacks a Phase 21 outcome context");
-      call << "?";
+      const string propagated = phase21_propagate(call.str());
+      call.str("");
+      call.clear();
+      call << propagated;
     }
     if (!needs_prelude) return call.str();
 
@@ -15578,8 +15596,7 @@ class Generator {
                               d, locals, types, message_argument_plans ? message_argument_plans->at(index) : 0);
         }
         call << ")";
-        if (raises) call << "?";
-        return call.str();
+        return raises ? phase21_propagate(call.str()) : call.str();
       }
       std::ostringstream rendered;
       rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
@@ -15590,7 +15607,12 @@ class Generator {
                                        message_argument_plans ? message_argument_plans->at(index) : 0);
       }
       rendered << ")";
-      if (raises) rendered << "?";
+      if (raises) {
+        const string propagated = phase21_propagate(rendered.str());
+        rendered.str("");
+        rendered.clear();
+        rendered << propagated;
+      }
       if (target_handler->reply_type)
         rendered << ".unwrap_or_else(|| std::process::abort())";
       return rendered.str();
@@ -16002,7 +16024,7 @@ class Generator {
             if (!phase21_result_context_)
               throw std::runtime_error(
                   "internal error: checked raising method call lacks a Phase 21 outcome context");
-            result += "?";
+            result = phase21_propagate(result);
           }
           if (std::any_of(argument_temporaries.begin(),
                           argument_temporaries.end(),
@@ -16074,11 +16096,11 @@ class Generator {
         string mapping = call + ".map_err(|__moss_numeric_error| "
             "if __moss_numeric_error == 0 { __MossRaised::" + first_variant +
             "(" + error_type + "::" + invalid + ") } else { __MossRaised::" +
-            second_variant + "(" + error_type + "::" + overflow + ") })?";
+            second_variant + "(" + error_type + "::" + overflow + ") })";
         if (numeric_name == "parse_float")
           mapping = call + ".map_err(|_| __MossRaised::" +
-              first_variant + "(" + error_type + "::" + invalid + "))?";
-        return mapping;
+              first_variant + "(" + error_type + "::" + invalid + "))";
+        return phase21_propagate(mapping);
       }
       if (builtin == "sum" && builtin_args.size() == 1) {
         auto argument_type = generated_expr_type(builtin_args.front(), types);
@@ -16188,7 +16210,10 @@ class Generator {
           if (!phase21_result_context_)
             throw std::runtime_error(
                 "internal error: checked raising sibling method call lacks a Phase 21 outcome context");
-          r << "?";
+          const string propagated = phase21_propagate(r.str());
+          r.str("");
+          r.clear();
+          r << propagated;
         }
         if (std::any_of(sibling_temporaries.begin(), sibling_temporaries.end(),
                         [](const string& value) { return !value.empty(); })) {
@@ -16621,6 +16646,12 @@ class Generator {
         o << "\n";
       } else if (raises && !method.return_type) {
         o << "        Ok(())\n";
+      } else if (method.return_type &&
+                 canonical_type_name(*method.return_type) != "unit") {
+        // The checker requires every source path to return. Rust does not
+        // infer that a checked try's Ok arm is unreachable after `return`.
+        o << "        #[allow(unreachable_code)]\n"
+          << "        { std::process::abort() }\n";
       }
       phase21_result_context_ = saved_phase21_result_context;
       o << "    }\n";
@@ -16782,6 +16813,11 @@ class Generator {
       o << "\n";
     } else if (raises && return_type == "unit") {
       o << "    Ok(())\n";
+    } else if (return_type != "unit") {
+      // The checker requires every source path to return. Keep a diverging
+      // native fallback for a try whose normal outcome is unreachable.
+      o << "    #[allow(unreachable_code)]\n"
+        << "    { std::process::abort() }\n";
     }
     phase21_result_context_ = saved_phase21_result_context;
     o << "}\n\n";
@@ -17298,8 +17334,10 @@ class Generator {
           const string outcome = "__moss_try_outcome_" +
               std::to_string(phase21_try_temp_++);
           o << indent(level) << "#[allow(unreachable_code)]\n";
+          const string try_label = "__moss_try_" +
+              std::to_string(phase21_try_temp_++);
           o << indent(level) << "let " << outcome
-            << ": Result<(), __MossRaised> = (|| -> Result<(), __MossRaised> {\n";
+            << ": Result<(), __MossRaised> = '" << try_label << ": {\n";
           ++i;
           auto attempt_locals = locals;
           auto attempt_types = types;
@@ -17307,14 +17345,20 @@ class Generator {
           attempt_join_assignments.insert(joined_bindings.begin(),
                                           joined_bindings.end());
           const bool saved_result_context = phase21_result_context_;
+          const string saved_try_label = phase21_try_label_;
+          const auto saved_return_result_context = phase21_return_result_context_;
+          if (!phase21_return_result_context_)
+            phase21_return_result_context_ = saved_result_context;
           phase21_result_context_ = true;
+          phase21_try_label_ = try_label;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                     attempt_locals, attempt_types, base, in_handler,
                     in_function, attempt_join_assignments,
                     functional_context);
           phase21_result_context_ = saved_result_context;
+          phase21_try_label_ = saved_try_label;
           o << indent(level + 1) << "Ok(())\n";
-          o << indent(level) << "})();\n";
+          o << indent(level) << "};\n";
           o << indent(level) << "#[allow(unreachable_patterns)]\n";
           o << indent(level) << "match " << outcome << " {\n";
           o << indent(level + 1) << "Ok(()) => {},\n";
@@ -17409,7 +17453,10 @@ class Generator {
           if (!remaining.empty()) {
             o << indent(level + 1)
               << "Err(__moss_unhandled_error) => ";
-            if (saved_result_context)
+            if (!saved_try_label.empty())
+              o << "break '" << saved_try_label
+                << " Err(__moss_unhandled_error),\n";
+            else if (saved_result_context)
               o << "return Err(__moss_unhandled_error),\n";
             else
               o << "std::process::abort(),\n";
@@ -17418,6 +17465,7 @@ class Generator {
               << "Err(_) => std::process::abort(),\n";
           }
           o << indent(level) << "}\n";
+          phase21_return_result_context_ = saved_return_result_context;
           break;
         }
         case Stmt::Kind::Recover:
@@ -17428,19 +17476,18 @@ class Generator {
             if (phase21_selected_error_.empty())
               throw std::runtime_error(
                   "internal error: bare raise lacks a selected error");
-            o << indent(level) << "return Err("
-              << phase21_selected_error_ << ");\n";
+            o << indent(level)
+              << phase21_error_exit(phase21_selected_error_) << ";\n";
           } else {
             if (s.exceptional_alternatives.size() != 1)
               throw std::runtime_error(
                   "internal error: raise lacks one checked error identity");
             const auto& identity = *s.exceptional_alternatives.begin();
-            o << indent(level) << "return Err(__MossRaised::"
-              << phase21_rust_variant(identity) << "("
-              << expr(s.a, d, locals, &types,
-                      statement_functional_pipeline_id(
-                          s, functional_context, 0))
-              << "));\n";
+            o << indent(level) << phase21_error_exit(
+              "__MossRaised::" + phase21_rust_variant(identity) + "(" +
+              expr(s.a, d, locals, &types,
+                   statement_functional_pipeline_id(
+                       s, functional_context, 0)) + ")") << ";\n";
           }
           ++i;
           while (i < ss.size() && ss[i].indent >= level) ++i;
@@ -18013,9 +18060,8 @@ class Generator {
               types[argument_temporaries[k]] = temporary_type;
             }
           }
-          o << indent(level);
-          if (benchmark_body_) o << "std::hint::black_box(";
-          o << (implicit_method ? "self." : "")
+          std::ostringstream call_output;
+          call_output << (implicit_method ? "self." : "")
             << (s.b.empty() && known_function
                     ? viewed_function_name(function_name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
@@ -18024,21 +18070,21 @@ class Generator {
             string method = s.b;
             auto it = types.find(s.a);
             if (it != types.end() && (it->second == "queue" || starts_with(it->second, "queue["))) method = method == "push" ? "push_back" : method == "pop" ? "pop_front" : method;
-            o << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
+            call_output << "." << viewed_method_name(s.a, method, s.args, d, locals, &types);
           }
-          o << "(";
+          call_output << "(";
           size_t emitted_arguments = 0;
           for (size_t k = 0; k < s.args.size(); ++k) {
             bool compile_time_callable = known_function &&
                 starts_with(generated_expr_type(s.args[k], &types).value_or(""),
                             "callable:");
             if (compile_time_callable) continue;
-            if (emitted_arguments++) o << ", ";
-            if (benchmark_body_) o << "std::hint::black_box(";
+            if (emitted_arguments++) call_output << ", ";
+            if (benchmark_body_) call_output << "std::hint::black_box(";
             string argument_expression = argument_temporaries[k].empty()
                 ? s.args[k] : argument_temporaries[k];
             if (known_function) {
-              o << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
+              call_output << function_call_argument(*functions_.at(function_name), k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
                                               s, functional_context, k),
@@ -18046,28 +18092,32 @@ class Generator {
                                                               s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method)
-                o << method_call_argument(
+                call_output << method_call_argument(
                     *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
               else
-                o << expr(argument_expression, d, locals, &types,
+                call_output << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
             } else {
-              o << expr(s.args[k], d, locals, &types,
+              call_output << expr(s.args[k], d, locals, &types,
                         statement_functional_pipeline_id(
                             s, functional_context, k));
             }
-            if (benchmark_body_) o << ")";
+            if (benchmark_body_) call_output << ")";
           }
-          o << ")";
+          call_output << ")";
+          string lowered_call = call_output.str();
           if (call_method && !call_method->observable_effects.raise_set.empty()) {
             if (!phase21_result_context_)
               throw std::runtime_error(
                   "internal error: checked raising method statement lacks a Phase 21 outcome context");
-            o << "?";
+            lowered_call = phase21_propagate(lowered_call);
           }
+          o << indent(level);
+          if (benchmark_body_) o << "std::hint::black_box(";
+          o << lowered_call;
           auto receiver_type = !s.b.empty()
               ? generated_expr_type(s.a, &types) : std::optional<string>{};
           if (!s.b.empty() && s.b == "pop" && receiver_type &&
@@ -18178,9 +18228,11 @@ class Generator {
               rendered = "(" + rendered + ").clone()";
             }
             o << indent(level) << "return ";
-            if (phase21_result_context_) o << "Ok(";
+            const bool returns_result = phase21_return_result_context_.value_or(
+                phase21_result_context_);
+            if (returns_result) o << "Ok(";
             o << rendered;
-            if (phase21_result_context_) o << ")";
+            if (returns_result) o << ")";
             o << ";\n";
           }
           else
