@@ -1,5 +1,21 @@
 # Moss current status
 
+## Isolated Phase 21 Float B/F counterexample repair — 2026-10-11
+
+Branch `phase-21-float-repros` commit `09a70bf` repairs reconstructed external
+Float counterexamples B and F. The supplied ZIP was unavailable, so the
+tracked fixture README records source provenance and exact `7775049` baseline
+observations. The baseline accepts both at Moss checking: B prints computed
+negative Float values without canonical `.0` under native O0/O3, while F
+fails rustc E0689 for `sqrt` of inferred Float locals. Fast Debug produces
+the approved output for both. The branch now passes the pinned 270-value
+Float IEEE corpus plus B/F and direct/generic `sqrt` cases in native O0/O3
+and Fast Debug; the numeric parse/conversion suite and `git diff --check`
+also pass. This is an isolated checkpoint awaiting cherry-pick into
+`phase-21-integration`; full combined-tree checks and the GCC/Clang × Rust
+1.97/1.98 matrix after integration remain outstanding. No Architect verdict
+has been sought for this isolated commit.
+
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
 The integration branch now contains the ABI-v9 artifact digest/rlib marker
