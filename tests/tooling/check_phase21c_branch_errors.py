@@ -10,7 +10,9 @@ not define or replace the frozen provider ABI-v8 frame representation.
 
 from pathlib import Path
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
 
@@ -21,9 +23,10 @@ OUT = Path(sys.argv[2] if len(sys.argv) > 2 else REPO / "build/tests").resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 
 
-def run(args, *, expected=0):
+def run(args, *, expected=0, cwd=REPO, env=None):
     result = subprocess.run(
-        list(map(str, args)), cwd=REPO, text=True, capture_output=True, timeout=120
+        list(map(str, args)), cwd=cwd, env=env, text=True,
+        capture_output=True, timeout=120
     )
     assert result.returncode == expected, (
         args, result.returncode, result.stdout, result.stderr
@@ -387,11 +390,15 @@ fault_text = native_text.replace(
     1,
 ).replace(
     between_roots,
-    "    assert_eq!(moss_live_branch_scopes(), 0);\n" + between_roots,
+    "    assert_eq!(moss_live_branch_scopes(), 0);\n"
+    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);\n"
+    + between_roots,
     1,
 ).replace(
     before_join,
-    "    assert_eq!(moss_live_branch_scopes(), 0);\n" + before_join,
+    "    assert_eq!(moss_live_branch_scopes(), 0);\n"
+    "    assert_eq!(moss_live_fileio_branch_read_borrows(), 0);\n"
+    + before_join,
     1,
 )
 fault_rs = OUT / "phase21c_native_read_fault.rs"
@@ -401,6 +408,97 @@ run(["rustc", "--edition=2021", "-D", "warnings", "--cfg", "moss_perf",
      fault_rs, "-o", fault_bin])
 for _ in range(32):
     assert run([fault_bin]).stdout == "13\n21\n"
+
+# A runtime panic during publication after lane 0 is outstanding is outside
+# typed failure semantics. The Root's fail-closed unwind guard must abort the
+# process; no recover arm can observe it as a tagged FileError or mapper raise.
+publish_point = re.search(
+    r"(branch_publish\(&__moss_chunk_scope_\d+, move \|\| \{[\s\S]*?"
+    r"__moss_chunk_slots_\d+\.push\(__moss_chunk_slot_\d+\);\n)"
+    r"(\s*}\n\s*branch_join\()", native_text
+)
+assert publish_point, "bounded-K publication loop missing"
+lane_name = re.search(r"for (__moss_chunk_lane_\d+) in 0\.\.4usize", native_text)
+assert lane_name, native_text
+panic_text = native_text[:publish_point.end(1)] + (
+    f'                if {lane_name.group(1)} == 0 '
+    '{ panic!("phase21c injected publication panic"); }\n'
+) + native_text[publish_point.end(1):]
+panic_rs = OUT / "phase21c_native_publication_panic.rs"
+panic_rs.write_text(panic_text)
+panic_bin = OUT / "phase21c_native_publication_panic"
+run(["rustc", "--edition=2021", "-D", "warnings", panic_rs,
+     "-o", panic_bin])
+panicked = subprocess.run([str(panic_bin)], cwd=REPO, text=True,
+                          capture_output=True, timeout=120)
+assert panicked.returncode == -signal.SIGABRT, panicked
+assert "phase21c injected publication panic" in panicked.stderr
+assert panicked.stdout == "", panicked.stdout
+
+# A compiled provider's mapper panic fact must survive the source-free
+# boundary. An absent effect field is rejected when loading its .mossi rather
+# than guessed to be safe for speculative Branch execution.
+provider = OUT / "phase21c-panic-provider"
+consumer = OUT / "phase21c-panic-consumer"
+for project in (provider, consumer):
+    (project / "src").mkdir(parents=True, exist_ok=True)
+    (project / "Moss.toml").write_text(
+        f'[project]\nname="{project.name.replace("-", "_")}"\nversion="0.1.0"\n'
+        '\n[build]\nsource="src"\n'
+    )
+(provider / "src/mapper.moss").write_text('''module mapper
+export fn at_one(chunk):
+  return chunk[1]
+''')
+run([COMPILER, "build"], cwd=provider)
+interface = provider / "build/debug/mapper.mossi"
+assert interface.exists() and "may_panic=1" in interface.read_text()
+(provider / "src/mapper.moss").rename(provider / "src/mapper.removed")
+(consumer / "src/main.moss").write_text('''module app
+import mapper
+
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Worker:
+  fn Run() -> Int:
+    file = FileIO.open("tmp/phase21c-native-ordered-raise.data", ro)
+    total = file.chunks(2) |> map(mapper.at_one) |> reduce(0, add)
+    file.close()
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(2).start()
+  try:
+    echo message worker.Run()
+  recover:
+    echo -1
+  executor.join()
+''')
+provider_env = dict(os.environ, MOSS_MODULE_PATH=str(provider / "build/debug"))
+run([COMPILER, "build"], cwd=consumer, env=provider_env)
+consumer_rust = (consumer / "build/debug/app.rs").read_text()
+assert "ineligible for Branch lowering: map stage is not pure: possible panic ordering" in consumer_rust
+assert "FileIO CHUNK PIPELINE -- eligible" not in consumer_rust
+assert run([consumer / "build/debug/phase21c_panic_consumer"]).stdout == "130\n"
+
+missing_fact = interface.read_text().replace("may_panic=1", "")
+assert missing_fact != interface.read_text()
+interface.write_text(missing_fact)
+bad = subprocess.run([str(COMPILER), "check", "src/main.moss", "--json"],
+                     cwd=consumer, env=provider_env, text=True,
+                     capture_output=True, timeout=120)
+assert bad.returncode != 0, bad
+assert "lacks Phase 21 observable effects" in json.loads(bad.stdout)["error"]["message"]
 
 # A huge valid request against a tiny file must read only through EOF. The
 # speculative later lanes have unrepresentable offset+size and publish EOF
