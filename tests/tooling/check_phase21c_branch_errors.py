@@ -498,7 +498,7 @@ bad = subprocess.run([str(COMPILER), "check", "src/main.moss", "--json"],
                      cwd=consumer, env=provider_env, text=True,
                      capture_output=True, timeout=120)
 assert bad.returncode != 0, bad
-assert "lacks Phase 21 observable effects" in json.loads(bad.stdout)["error"]["message"]
+assert "module interface hash mismatch" in json.loads(bad.stdout)["error"]["message"]
 
 # A huge valid request against a tiny file must read only through EOF. The
 # speculative later lanes have unrepresentable offset+size and publish EOF

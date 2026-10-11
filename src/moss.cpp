@@ -10917,6 +10917,37 @@ class Checker {
     vector<string> actual_types;
     for (const auto& argument : args)
       actual_types.push_back(inferred_expr_type(argument, env).value_or(""));
+    // Each explicit module currently emits its own nominal FileIO runtime.
+    // A borrowed Range from one crate cannot satisfy another crate's Range
+    // parameter.  Reject this call at the Moss source boundary until Phase 20
+    // provides one shared native Range ABI, regardless of provider source.
+    if (p_.explicit_module) {
+      auto module_of = [](const string& symbol) {
+        const size_t separator = symbol.find("__");
+        return separator == string::npos ? string() : symbol.substr(0, separator);
+      };
+      string owner = current_semantic_context_;
+      if (starts_with(owner, "fn:")) owner = owner.substr(3);
+      else if (starts_with(owner, "handler:")) owner = owner.substr(8);
+      else if (starts_with(owner, "method:")) owner = owner.substr(7);
+      else owner = p_.main_module;
+      const string caller_module = module_of(owner).empty()
+          ? owner : module_of(owner);
+      const string callee_module = module_of(function->second->name);
+      if (!callee_module.empty() && callee_module != caller_module)
+        for (size_t index = 0; index < actual_types.size(); ++index) {
+          const string actual = canonical_type_name(actual_types[index]);
+          const string expected = canonical_type_name(
+              function->second->params[index].type);
+          if (actual == "Range" || actual == "RangeBatch" ||
+              expected == "Range" || expected == "RangeBatch")
+            err(line, "call to imported function '" + name +
+                "' cannot pass " + (actual == "RangeBatch" || expected == "RangeBatch"
+                    ? "RangeBatch" : "Range") +
+                " across native module crates until the Phase 20 FileIO ABI is shared",
+                "FILEIO_CROSS_CRATE_ABI");
+        }
+    }
     for (size_t index = 0; index < args.size(); ++index) {
       const auto& actual_type = actual_types[index];
       const auto& param = function->second->params[index];
@@ -24850,6 +24881,38 @@ static ParsedModuleUnit load_module_interface(
   string text = content.str();
   if (text.find("\nnative_abi " + std::to_string(kNativeAbiVersion) + "\n") == string::npos)
     throw CompileError(0, "compiled provider uses an incompatible native calling convention; rebuild its .mossi provider");
+  // The producer already records separate hashes for the native contract and
+  // semantic exports.  Validate them before trusting source-free metadata;
+  // otherwise a changed failure-arm symbol can link and abort at runtime.
+  const string contract_marker = "\ncontract\n";
+  const string semantic_marker = "\nsemantic_exports\n";
+  const size_t contract_at = text.find(contract_marker);
+  const size_t semantic_at = text.find(semantic_marker,
+      contract_at == string::npos ? 0 : contract_at + contract_marker.size());
+  if (contract_at == string::npos || semantic_at == string::npos)
+    throw CompileError(0, "compiled provider has incomplete module interface sections; rebuild its .mossi provider");
+  std::map<string, string> declared_hashes;
+  std::istringstream header(text.substr(0, contract_at));
+  string header_line;
+  while (std::getline(header, header_line)) {
+    for (const char* key : {"concrete_interface_hash", "generic_semantic_hash",
+                            "interface_hash"}) {
+      const string prefix = string(key) + " ";
+      if (starts_with(header_line, prefix) &&
+          !declared_hashes.emplace(key, header_line.substr(prefix.size())).second)
+        throw CompileError(0, "compiled provider has duplicate module interface hash; rebuild its .mossi provider");
+    }
+  }
+  const string concrete_hash = stable_hash(text.substr(
+      contract_at + contract_marker.size(),
+      semantic_at + 1 - contract_at - contract_marker.size()));
+  const string generic_hash = stable_hash(text.substr(
+      semantic_at + semantic_marker.size()));
+  if (declared_hashes.size() != 3 ||
+      declared_hashes["concrete_interface_hash"] != concrete_hash ||
+      declared_hashes["interface_hash"] != concrete_hash ||
+      declared_hashes["generic_semantic_hash"] != generic_hash)
+    throw CompileError(0, "compiled provider module interface hash mismatch; rebuild its .mossi provider");
   std::istringstream lines(text);
   ParsedModuleUnit unit;
   unit.name = interface_module_name(text, file);
@@ -25814,6 +25877,12 @@ static ParsedModuleUnit load_module_interface(
             expected_failure_captures.at(capture_key) != arm.captures.size())
           throw CompileError(0,
               "compiled provider has incomplete failure captures");
+        const string expected_symbol = "__moss_on_fail_" + unit.name +
+            "__" + domain.name + "_" + handler.name + "_" +
+            std::to_string(arm.source_order);
+        if (arm.callable_symbol != expected_symbol)
+          throw CompileError(0,
+              "compiled provider has invalid ABI-v8 failure-arm symbol");
       }
       for (const auto& raised : abi.outcome.raised) {
         auto payload_key = std::make_pair(record_key, raised.stable_tag);

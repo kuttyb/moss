@@ -144,7 +144,8 @@ fn main():
     result = json.loads(checked.stdout)
     assert checked.returncode != 0 and not result["ok"], (view_name, result)
     assert result["error"]["code"] in {
-        "FILEIO_PINNED_OWNERSHIP", "FILEIO_VIEW_PARAMETER_WRITE"
+        "FILEIO_PINNED_OWNERSHIP", "FILEIO_VIEW_PARAMETER_WRITE",
+        "FILEIO_CROSS_CRATE_ABI",
     }, (view_name, result)
 
 print("Phase 21 borrowed-view WRITE prohibition, source-free specialization, and Int WRITE control passed")

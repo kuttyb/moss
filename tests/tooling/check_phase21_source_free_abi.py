@@ -3,6 +3,7 @@
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,24 @@ def run(args, *, cwd=None, expected=0):
     assert completed.returncode == expected, (
         args, completed.returncode, completed.stdout, completed.stderr)
     return completed
+
+
+def write_interface(path, text):
+    """Keep generated section hashes valid while probing deeper ABI checks."""
+    contract, semantic = text.split("\ncontract\n", 1)[1].split(
+        "\nsemantic_exports\n", 1)
+    def hash_section(section):
+        value = 14695981039346656037
+        for byte in section.encode():
+            value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
+        return f"{value:016x}"
+    for key, section in (("concrete_interface_hash", contract + "\n"),
+                         ("interface_hash", contract + "\n"),
+                         ("generic_semantic_hash", semantic)):
+        text, count = re.subn(rf"(?m)^{key} [0-9a-f]{{16}}$",
+                              f"{key} {hash_section(section)}", text)
+        assert count == 1, (key, count)
+    path.write_text(text)
 
 
 def run_two_crate_rust_abi_fixture():
@@ -303,7 +322,8 @@ export domain Worker:
     count = count + 2
     reply count
 ''')
-    (multi_out / "src/main.moss").write_text('''module app
+    main = multi_out / "src/main.moss"
+    main.write_text('''module app
 import service
 fn main():
   worker = service.Worker(count: 0)
@@ -315,6 +335,25 @@ fn main():
     provider.rename(provider.with_suffix(".removed"))
     source_free = json.loads(run([compiler, "build", "--json"], cwd=multi_out).stdout)
     assert run([source_free["result"]["artifacts"]["executable"]]).stdout == "1\n3\n"
+    interface_path = multi_out / "build/debug/service.mossi"
+    original = interface_path.read_text()
+    switched = original.replace(
+        '"__moss_on_fail_service__Worker_Run_0"',
+        '"__moss_on_fail_service__Worker_Run_TEMP"').replace(
+        '"__moss_on_fail_service__Worker_Run_1"',
+        '"__moss_on_fail_service__Worker_Run_0"').replace(
+        '"__moss_on_fail_service__Worker_Run_TEMP"',
+        '"__moss_on_fail_service__Worker_Run_1"')
+    assert switched != original
+    # A same-shape symbol swap previously compiled and aborted at runtime.
+    interface_path.write_text(switched)
+    tampered = run([compiler, "--check", main], cwd=multi_out, expected=1)
+    assert "module interface hash mismatch" in tampered.stderr
+    # Recomputing the stored hashes must still fail the canonical symbol check.
+    write_interface(interface_path, switched)
+    forged = run([compiler, "--check", main], cwd=multi_out, expected=1)
+    assert "invalid ABI-v8 failure-arm symbol" in forged.stderr
+    interface_path.write_text(original)
 
 
 def run_actual_exceptional_site_fixture():
@@ -485,7 +524,7 @@ synthetic = synthetic.replace(
     '"enum:provider::FileError:Full"\n',
 )
 assert synthetic != original
-interface_path.write_text(synthetic)
+write_interface(interface_path, synthetic)
 provider.rename(provider.with_suffix(".removed"))
 # A forged interface is structurally parseable but has no matching provider
 # symbols. Native linking remains the materialization boundary.
@@ -494,13 +533,13 @@ assert "error" in forged.stdout or forged.stderr, forged
 
 # v7 is intentionally incompatible because projection, bridge, structural
 # type, CFG and Root contracts changed. It must request a full provider rebuild.
-interface_path.write_text(synthetic.replace("native_abi 8\n", "native_abi 7\n"))
+write_interface(interface_path, synthetic.replace("native_abi 8\n", "native_abi 7\n"))
 v7 = run([compiler, "--check", main], cwd=out, expected=1)
 assert "incompatible native calling convention" in v7.stderr
 assert "rebuild its .mossi provider" in v7.stderr
 
 # ABI-v8 with missing exceptional-consumer metadata also fails closed.
-interface_path.write_text(synthetic.replace(
+write_interface(interface_path, synthetic.replace(
     '  handler_exceptional_consumers "Bump" 63\n', ""))
 missing = run([compiler, "--check", main], cwd=out, expected=1)
 assert "lacks ABI-v8 handler metadata" in missing.stderr
@@ -513,22 +552,22 @@ for required_record in (
     '  handler_owned_type_shapes "Bump" 1\n',
     '  handler_exceptional_destinations "Bump" 1\n',
 ):
-    interface_path.write_text(synthetic.replace(required_record, ""))
+    write_interface(interface_path, synthetic.replace(required_record, ""))
     missing = run([compiler, "--check", main], cwd=out, expected=1)
     assert "lacks ABI-v8 handler metadata" in missing.stderr
 
 # Every effect fact is mandatory in v8, even when its value is false.
-interface_path.write_text(synthetic.replace(";fileio=0", "", 1))
+write_interface(interface_path, synthetic.replace(";fileio=0", "", 1))
 missing_effect = run([compiler, "--check", main], cwd=out, expected=1)
 assert "lacks Phase 21 observable effects" in missing_effect.stderr
 
-interface_path.write_text(synthetic)
+write_interface(interface_path, synthetic)
 run([compiler, "--check", main], cwd=out)
 
 invalid_destination = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1',
     'handler_exceptional_edge "Bump" 77 99 1 63 1')
-interface_path.write_text(invalid_destination)
+write_interface(interface_path, invalid_destination)
 invalid = run([compiler, "--check", main], cwd=out, expected=1)
 assert "invalid ABI-v8 handler contract" in invalid.stderr
 
@@ -536,7 +575,7 @@ impossible_route = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1 '
     '"enum:provider::FileError:Full"',
     'handler_exceptional_edge "Bump" 77 0 1 63 1 "scalar:Int"')
-interface_path.write_text(impossible_route)
+write_interface(interface_path, impossible_route)
 invalid = run([compiler, "--check", main], cwd=out, expected=1)
 assert "invalid ABI-v8 handler contract" in invalid.stderr
 
@@ -545,7 +584,7 @@ duplicate_route = synthetic.replace(
     '"enum:provider::FileError:Full"',
     'handler_exceptional_edge "Bump" 77 0 1 63 2 '
     '"enum:provider::FileError:Full" "enum:provider::FileError:Full"')
-interface_path.write_text(duplicate_route)
+write_interface(interface_path, duplicate_route)
 invalid = run([compiler, "--check", main], cwd=out, expected=1)
 assert "duplicate or incomplete exceptional edge" in invalid.stderr
 
@@ -554,13 +593,13 @@ assert "duplicate or incomplete exceptional edge" in invalid.stderr
 bad_nested_payload = synthetic.replace(
     '"code" "Int" 0 1 1',
     '"code" "provider::BadPayload" 1 1 1')
-interface_path.write_text(bad_nested_payload)
+write_interface(interface_path, bad_nested_payload)
 bad = run([compiler, "--check", main], cwd=out, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 bad_borrowed_payload = synthetic.replace(
     '"code" "Int" 0 1 1', '"code" "&Int" 0 1 1')
-interface_path.write_text(bad_borrowed_payload)
+write_interface(interface_path, bad_borrowed_payload)
 bad = run([compiler, "--check", main], cwd=out, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
@@ -573,21 +612,21 @@ unknown_scalar_payload = unknown_scalar_payload.replace(
     '  handler_owned_type_shapes "Bump" 2\n'
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "Secret" "0:6:Secret:0:"\n')
-interface_path.write_text(unknown_scalar_payload)
+write_interface(interface_path, unknown_scalar_payload)
 bad = run([compiler, "--check", main], cwd=out, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
 wrong_variant_field = synthetic.replace(
     '"code" "Int" 0 1 1 "0:3:Int:0:"',
     '"other" "Int" 0 1 1 "0:3:Int:0:"')
-interface_path.write_text(wrong_variant_field)
+write_interface(interface_path, wrong_variant_field)
 bad = run([compiler, "--check", main], cwd=out, expected=1)
 assert "disagrees with its enum variant" in bad.stderr
 
 bad_nested_capture = synthetic.replace(
     '"attempt" "Int" "attempt" 1 1',
     '"attempt" "provider::BadCapture" "attempt" 1 1')
-interface_path.write_text(bad_nested_capture)
+write_interface(interface_path, bad_nested_capture)
 bad = run([compiler, "--check", main], cwd=out, expected=1)
 assert "type shape disagrees with its resolved type" in bad.stderr
 
@@ -601,7 +640,7 @@ owned_string_capture = owned_string_capture.replace(
     '  handler_owned_type_shapes "Bump" 2\n'
     '  handler_owned_type_shape "Bump" "Int" "0:3:Int:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
-interface_path.write_text(owned_string_capture)
+write_interface(interface_path, owned_string_capture)
 run([compiler, "--check", main], cwd=out)
 
 # A provider-private aggregate remains legal source-free when its complete,
@@ -619,10 +658,10 @@ private_capture = private_capture.replace(
     '  handler_owned_type_shape "Bump" "ProviderPrivate" '
     '"2:15:ProviderPrivate:2:0:3:Int:0:3:6:String:0:"\n'
     '  handler_owned_type_shape "Bump" "String" "3:6:String:0:"\n')
-interface_path.write_text(private_capture)
+write_interface(interface_path, private_capture)
 run([compiler, "--check", main], cwd=out)
 
-interface_path.write_text(synthetic)
+write_interface(interface_path, synthetic)
 run_two_crate_rust_abi_fixture()
 run_source_free_raised_handler_fixture()
 run_source_free_owned_capture_fixture()
