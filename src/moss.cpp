@@ -8653,11 +8653,17 @@ class Checker {
         if (identity.kind == RaisedIdentityKind::EnumVariant &&
             ends_with(identity.type, "__FileError")) {
           auto declaration = enums_.find(identity.type);
-          const RaisedIdentity built_in =
-              RaisedIdentity::enum_variant("FileError", identity.variant);
+          const bool source_uses_fileio = std::any_of(
+              p_.source_lines.begin(), p_.source_lines.end(),
+              [&](const Line& source) {
+                if (source.source_file != source_file) return false;
+                const string code = source_code_only(source.text);
+                return code.find("FileIO.") != string::npos ||
+                    code.find("FileIO(") != string::npos;
+              });
           if (declaration != enums_.end() &&
               declaration->second->source_file == source_file &&
-              remaining.count(built_in))
+              source_uses_fileio)
             err(line,
                 "module-qualified FileError recovery cannot select the built-in FileIO error identity",
                 "FILEIO_ERROR_IDENTITY_UNSUPPORTED");
@@ -9179,6 +9185,13 @@ class Checker {
             proven_indices));
       return effects;
     }
+    // `not` is a value transformation, so every observable effect of its
+    // operand still occurs.  Recurse before call/identifier fallback; losing
+    // a typed raise here would also make Root totality and recovery unsound.
+    if (starts_with(original, "not "))
+      return observable_expression_effects(
+          trim(original.substr(4)), env, domain_fields, implicit_object,
+          parameters, proven_indices, root_ingress);
 
     if (starts_with(original, "message ")) {
       effects.message = true;
@@ -9325,6 +9338,29 @@ class Checker {
           index_expression, env, domain_fields, implicit_object, parameters,
           proven_indices));
       return effects;
+    }
+    // Reading a field of a computed object first evaluates its base.  A
+    // function or method producing that object may raise before projection.
+    // Confirm this is an object field so enum tags and module members keep
+    // their existing effect paths below.
+    if (auto dot = value.rfind('.'); dot != string::npos) {
+      const string base = trim(value.substr(0, dot));
+      const string field = trim(value.substr(dot + 1));
+      if (plain_identifier(field)) {
+        auto base_type = inferred_expr_type(base, env);
+        if (base_type) {
+          auto object = objects_.find(canonical_type_name(*base_type));
+          if (object != objects_.end() &&
+              std::any_of(object->second->fields.begin(),
+                          object->second->fields.end(),
+                          [&](const Field& candidate) {
+                            return candidate.name == field;
+                          }))
+            return observable_expression_effects(
+                base, env, domain_fields, implicit_object, parameters,
+                proven_indices, root_ingress);
+        }
+      }
     }
     string receiver, method;
     vector<string> arguments;

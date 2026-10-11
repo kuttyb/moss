@@ -16,4 +16,7 @@ domain Worker:
 
 fn main():
   worker = Worker()
-  message worker.Run()
+  try:
+    message worker.Run()
+  recover Error.Bad:
+    echo "unexpected"
