@@ -6552,11 +6552,17 @@ class Checker {
     if (parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
-        if ((canonical_type_name(*receiver_type) == "Range" ||
-             canonical_type_name(*receiver_type) == "RangeBatch") &&
-            method == "length") {
+        const string concrete_receiver = canonical_type_name(*receiver_type);
+        if (((concrete_receiver == "Range" ||
+              concrete_receiver == "RangeBatch") &&
+             method == "length" && arguments.empty()) ||
+            (concrete_receiver == "Range" && method == "slice" &&
+             arguments.size() == 2)) {
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
+          for (const auto& argument : arguments)
+            analyze_effect_expression(argument, env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
           return;
         }
         if (canonical_type_name(*receiver_type) == "FileIO" ||
