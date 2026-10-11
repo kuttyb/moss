@@ -1,5 +1,34 @@
 # Moss current status
 
+## Phase 21 A–D integration review — 2026-10-10
+
+Agents A, B, C, and D have completed their assigned work. Their reviewed
+changes are integrated on `phase-21-integration` through `5d60b94`. A's
+source-site capture graph, provider-owned failure frame, and lexical recovery
+fixes; B's FileIO failure cleanup and guarded flag handling; C's ordered
+Branch outcomes, quiescence and panic witnesses, and source-free panic fact
+checks; and D's Float oracle and language parity checks are present together.
+The focused A/B/C/D gates pass on this combined tree.
+
+The O1–O9 implementation review found passing evidence for entry-planned
+normal/recovery locks, separate `Run$fail` lock planning, source-site capture
+proofs, guard release before failure dispatch, Root FileIO cleanup ordering,
+nested typed-raise propagation, rejected unsafe captures, and ordered Branch
+termination with no live read-borrow tokens. The final combined `make check`
+passed with repository-local `TMPDIR` (`all Moss v0.1 tests passed`), as did
+`make examples`, strict C++17 warnings-as-errors syntax compilation, and
+`git diff --check`. Earlier individual-agent validation below remains useful
+history; this section records the final combined validation.
+
+Phase 21 is ready for human review of this integration branch, not merged to
+`main`. The design's wider Float formatter pin across other Rust/C++
+toolchains remains unverified because only Rust 1.98.1 and GCC 13.3 are
+installed here. The separate Phase 20 source-free cross-crate typed `Range`
+ABI gap has a tracked reproducer under
+`tests/tooling/fixtures/phase20_typed_range_cross_crate/`: Moss checking
+passes but native compilation fails with rustc E0308. Resolve that gap as
+a Phase 20 follow-up or explicitly disposition it at the review gate.
+
 ## Phase 21.A owned failure capture closeout — 2026-10-10
 
 The checker now proves handler-local `on_fail` captures over each selected

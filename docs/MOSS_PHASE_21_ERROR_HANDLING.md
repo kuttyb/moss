@@ -38,7 +38,7 @@
 
 ## Part I — Error handling by example
 
-Fourteen short programs that illustrate the design. Moss now accepts the core Phase 21 forms (`raise`, `try`/`recover`, and handler `on_fail` trailers), but handler-local `on_fail` captures and final conformance gates remain open. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
+Fourteen short programs that illustrate the design. Moss now accepts the Phase 21 forms (`raise`, `try`/`recover`, handler `on_fail` trailers, and handler-local `on_fail` captures) on the integration branch. Final acceptance remains subject to the review gate and the wider Float formatter toolchain pin; see `.codex/CURRENT_STATUS.md`. Everything else (`domainroutes`, `Executor`, `FileIO`, one-line pipelines, and `not`) follows current Moss syntax. A snippet without a `main` assumes a suitable enclosing function or handler.
 
 ### Example 1. Expected errors use `raise` / `recover`
 
