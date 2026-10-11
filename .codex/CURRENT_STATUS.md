@@ -1,5 +1,24 @@
 # Moss current status
 
+## Phase 21 ABI v9 isolated engineering checkpoint — 2026-10-11
+
+Branch `phase-21-abi-v9` is pushed through `f048026`. ABI v9 provider artifact
+binding, imported method effects, source-free warning provenance, stale-output
+and external-provider cache validation, and the compiler standard-enum interface
+collector repair are committed. The ABI contract is documented in
+`docs/MOSS_SOURCE_FREE_ABI_V9.md`. There is no unfinished ABI implementation
+work on this isolated branch; full Phase 21 acceptance remains the integration
+coordinator's responsibility.
+
+An independent detached review worktree built exact integrated SHA `c2793ce`
+with strict GCC C++17 flags. Source-free ABI, imported effects, warning,
+artifact forgery, direct and transitive warm-cache, built-in error, and
+standard-enum source-free cross-crate tests all passed. The `f048026` collector
+repair was also cherry-picked onto that review tree, rebuilt, and the standard
+namespace gate passed; after removing stale disposable `std.mossi` files, the
+gate did not recreate them. These focused results do not replace the full
+integration `make check` and `make examples` acceptance runs.
+
 ## Phase 21 peer-review engineering validation — 2026-10-11
 
 Integration branch `phase-21-integration` is reconciled with `origin/main`
