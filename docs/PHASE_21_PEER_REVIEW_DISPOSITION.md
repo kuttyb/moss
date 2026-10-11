@@ -1,12 +1,17 @@
 # Phase 21 peer-review findings and disposition
 
-**Exact-SHA status (2026-10-11):** Integration implementation `5941d98`
-passes the complete `make check`, examples, strict GCC/Clang C++17 builds,
-and four-combination Float matrix. The independent Architect L6 retested that
-SHA and recommends **NO-GO**. The source-free metadata forgery and
-imported-helper warning counterexamples remain live. The final disposition
-matrix below supersedes provisional "pending" labels in the engineering
-history rows.
+**Current engineering checkpoint (2026-10-11):** `phase-21-integration` at
+`4e917d601e9de162a75cabc509269cc5f992c57d` contains the approved ABI
+v9 successor, compiler-defined standard errors, source-free warning
+provenance, cross-crate standard-error WRITE transport, and reconstructed
+external addendum A–F repairs. This is **not a release candidate**: final
+combined gates and independent Architect L6 verification are pending.
+
+The independent Architect L6's **NO-GO** in
+`PHASE_21_ARCHITECT_REVIEW.md` applies to exact implementation `5941d98`,
+before L7 authorized ABI v9 and the later repairs. Its original findings and
+attribution remain intact below. No engineering retest changes that historic
+vote or constitutes a new Architect disposition.
 
 This register reconciles the external review of `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
 with the subsequent independent integration review and the remediation branch.
@@ -17,13 +22,47 @@ this review began. Reproducers named below were reconstructed independently
 from the review descriptions and are committed as permanent fixtures.
 
 **Disposition vocabulary:** FIXED, CONFIRMED, DEFERRED-APPROVED,
-DESIGN-DECISION-REQUIRED, NOT-REPRODUCIBLE. FIXED requires the original
-counterexample to pass and independent Architect L6 verification. Engineering
-results alone remain provisional until that review. The exact final SHA,
-Architect disposition, and mode-by-mode results are recorded in the final
-revision of this register.
+DESIGN-DECISION-REQUIRED, NOT-REPRODUCIBLE. FIXED on the *new* implementation
+requires a final-SHA independent Architect retest. The historic Architect
+matrix records its independent `5941d98` decisions; the table immediately
+below records later engineering evidence without relabeling those decisions.
 
-## Original release blockers
+## Post-`5941d98` engineering reconciliation
+
+Both `p21_review_repros.zip` and `p21_open_at_7775049.zip` are unavailable
+in this workspace. L7 approved reconstruction. The committed A–F programs
+retain the expressions, input bytes and expected output in the written review,
+but are not represented as byte-identical originals. The original review
+archive remains an independent verification need if obtained later. The six
+addendum cases were reported against `7775049`; baseline results independently
+observed where practical are recorded in the fixture README and gates.
+
+| Finding | Later implementation and permanent counterexample | Current engineering evidence and independent status |
+| --- | --- | --- |
+| EXT-01, EXT-18, INT-02 | Checked FileIO operations, cleanup, errno mapping, and fresh Root failure locks remain covered by `check_phase21_lock_fileio_adversarial.py`, `check_phase21_fileio_errors.py`, and `check_phase21_fileio_close_full.py`. `98391aa` introduced compiler `std.FileError`; `838aae6` migrated the adversarial identity fixture. | Focused lock/FileIO gate passed on the ABI-v9 combined tree. Final-SHA fault-injection and Architect retest pending. |
+| EXT-02, EXT-06 | Absolute Root typed-error boundary, including synchronous, Executor and source-free ingress, is covered by `check_phase21_root_totality.py`. | Focused native/Fast Debug/source-free gate passed on an earlier combined v9 checkpoint; final-SHA rerun and Architect retest pending. |
+| EXT-03, INT-11; addendum **A** | `6aa69be` repairs implicit final-expression method raises and exact local/generic specialization effects. `check_phase21_addendum_a_c.py` includes unhandled and handled trailing methods and a generic negative; preexisting unary/projection, collection and helper gates remain. | The reconstructed baseline `7775049` counterexample was accepted with a missing raise. At current HEAD the permanent gate checks rejection, exact `effects --json`, native O0/O3 and Fast Debug. General O1 closeout remains a separate proof obligation; Architect final-SHA retest pending. |
+| EXT-04, INT-03 | `check_phase21_peer_effects.py` and `check_phase21c_branch_errors.py` retain 4097-byte panic/shadowing, indexed precedence and concurrent bounded-K cases. | Earlier combined native O0/O3 and concurrent gates passed; rerun after A/D/E effect changes and Architect review pending. |
+| EXT-05, EXT-14, INT-05 | ABI v9 `09a4d2a`, `93ce266`, `4711a47`, and `4e917d6` bind canonical `.mossi` bytes to the selected provider `.rlib`, preserve method effects and reject stale v8; `check_phase21_source_free_abi.py`, `check_phase21_imported_effects.py`, `repro_phase21_mossi_pattern_forgery.py`, `check_phase21_source_free_cache_binding.py`, and `check_phase21_abi_v9_external_cache.py` are permanent gates. | Earlier combined v9 gates rejected recomputed-hash forgery and warm-cache substitution before execution and ran removed-source methods/functions. Final-SHA full suite and Architect retest pending. Historical v8 failure remains valid, not a v9 limitation. |
+| EXT-07, INT-09, INT-10, INT-12 | ABI v9 `4711a47` carries checked warning witnesses for direct/nested/generic/method/on_fail paths; `check_phase21_sourcefree_noop_warning.py` includes protected-state positives and local negative controls. | Focused source-backed and source-removed warning parity passed on the combined v9 tree. Final-SHA `check --json` warning-code retest and Architect verification pending. |
+| EXT-08, EXT-09, EXT-11, EXT-13, EXT-16, INT-01, INT-08 | Prior recovery, interpreter, parser and Root repairs and gates remain; `check_phase21_peer_recovery.py`, `check_phase21_recovery_semantics.py`, `check_phase21_on_fail_capture.py`, and Root keyword/identifier fixtures apply. | Historic Architect verified the earlier concrete cases. Post-ABI-v9 exact-SHA native/Fast Debug and Architect retests pending. |
+| EXT-10; addendum **D/E** | `4fc0936`, `36982ef`, `e37046f`, and `95e7d85` propagate checked `file.chunks(2) |> map(checked(_)) |> reduce(0, add)` and raising `reduce(seed(flag), add)` initial values. `check_phase21_peer_open_pipelines.py` writes isolated `p4.bin=ABABC` and `p6.bin=ABCD`; `check_phase21_pipeline_try_placeholder.py` covers lexical recovery and Root capture. | The reconstructed D/E cases must yield `-1` via `on_fail` and exact `FormatError.Bad`/`SetupError.Bad` effects. Focused O0/O3 native gates passed on the combined tree; final-SHA Fast Debug is supported only where the interpreter supports file chunks. Architect retest pending. |
+| EXT-12; addendum **B/F**, INT-06 | `6a08830` repairs computed Float expression formatting and concrete `sqrt` local lowering. `check_phase21_float_ieee.py` pins B/F source and output plus expression corpus digest `4a14b7bee3f4f391105be90ddda1e4c01eac629ac0f6184fc0e703c8c5e23c00`; the 270-bit-pattern corpus digest remains `91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`. | At `7775049`, B passed check but native printed noncanonical integer-like text; F passed check but rustc failed E0689. Current focused gate checks exact B/F output at native O0/O3 and Fast Debug. GCC/Clang × Rust 1.97/1.98 matrix must rerun on final code SHA. |
+| EXT-15, INT-13 | `98391aa`, `838aae6`, `ebd213a`, `c2793ce`, `60cd8ec`, `67bda5a`, and `726b987` define stable `std.FileError`/`ParseError`/`ConversionError`, preserve imported identity, and bridge cross-crate WRITE on normal and raised exits. `check_phase21_standard_error_namespace.py`, `check_phase21_source_free_standard_write_recovery.py`, and `check_phase21_standard_write_order.py` are permanent. | Focused native O0/O3, Fast Debug and source-removed provider gates passed on an earlier combined v9 SHA. Final-SHA full suite and Architect retest pending. |
+| EXT-17; addendum **C** | `6aa69be` narrows grouped bare re-raise to the actually reachable selected variant. `check_phase21_addendum_a_c.py` includes A only, B only, both, and a Root lock-plan case. | Reopen the historic NOT-REPRODUCIBLE disposition: it rested on a weaker reconstructed case. The L7-described original shape was rejected at `7775049`; current gate requires `outer A` and exact `raise_set` by path. Architect final-SHA retest pending. |
+| EXT-19, INT-04 | L7 approved narrow Phase 20 deferrals. Failed create may leave a directory entry; retry `sync()` does not prove that earlier name durable. Concrete cross-crate `Range` remains fail-closed `FILEIO_CROSS_CRATE_ABI`; legal same-module and consumer-specialized generic uses remain valid. | **DEFERRED-APPROVED** for full Range interoperability and failed-create durability expansion only. Descriptor cleanup, negative diagnostic and valid controls still require final-SHA tests. |
+| EXT-20 | Deterministic two-Root barrier in `check_phase21c_branch_errors.py` retains quiescence and zero-token assertions. | Prior 64-run native gate passed; final-SHA concurrent rerun and Architect retest pending. |
+| INT-07 | `docs/PHASE_21_FINAL_PROOF_AUDIT.md` and the final review below track O1/O4/O8 and §42 early-release implementation arguments, new expression-edge and imported capture counterexamples, and conservative iterator rejection. | Engineering proof review and final-SHA source-free/native gates pending. Historic Architect classified the general proof incomplete. |
+
+**Unverified final gate:** no `make check`, `make examples`, strict GCC/Clang
+C++17, strict Phase 20, full source-free adversarial matrix, or four-toolchain
+Float result is claimed on `4e917d6` by this document. The final review will
+record the actual freeze SHA and those results. Independent architectural
+acceptance is pending L7 coordination.
+
+## Historical issue record through `5941d98`
+
+### Original release blockers at the ABI-v8 review
 
 ### P21-EXT-01 · Blocker · Ordinary FileIO typed errors
 
@@ -63,7 +102,7 @@ revision of this register.
 - **Root cause / current engineering remedy:** preserve imported function summaries, repair native method Result lowering, and fail closed at source-free object-method calls whose effects cannot be proved. This v8-safe diagnostic is an interim compatibility restriction. Complete method metadata requires approved provider contract evolution.
 - **Status / modes / Architect:** DESIGN-DECISION-REQUIRED. The combined gate passes source-free function/generic check and native execution, source-backed method native/Fast Debug, and expected source-free method rejection `IMPORTED_METHOD_EFFECTS_UNAVAILABLE`. The independent Architect confirmed ABI-v8 method metadata absence. No ABI-v8 schema edit is authorized.
 
-## Major external findings
+### Major external findings at the ABI-v8 review
 
 | ID | Severity and original guarantee | Reproducer and checkpoint state | Current engineering disposition | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
@@ -78,7 +117,7 @@ revision of this register.
 | P21-EXT-14 | Major: missing provider symbols and falsified `.mossi` must fail closed. | `check_phase21_source_free_abi.py` covers missing/canonical symbol rejection; permanent `repro_phase21_mossi_pattern_forgery.py` reconstructs a recomputed-hash failure-pattern swap. | Narrow hash/symbol checks in `382e361`; the pattern forgery still checks/builds and exits by abort (`-6` in Python) against unchanged rlib. **DESIGN-DECISION-REQUIRED** for artifact binding; no v8 schema change made. | Architect independently reproduced the same pattern-swap class at preliminary SHA; final-SHA retest pending. |
 | P21-EXT-15 | Major: `FileError`/`ParseError` shape, availability, and nominal identity must match built-in operations. | At `8d8a9cc`, a manually declared `FileError.IO(code: Int)` with FileIO use passed `moss check` then failed rustc E0533; `check_phase21_builtin_error_contract.py` reconstructs this. A package probe gives a consumer its own `app__FileError` and an unrelated provider namesake: old checker acceptance led to rustc E0425 or a `FileError.NotFound` recovery falling into the catch-all. | `dba4daf` validates the six/two/two tag-only declarations; `16859f0` scopes shape checks by source and rejects ambiguous multiple `FileError` candidates as `FILEIO_ERROR_IDENTITY_UNSUPPORTED`. `263ad67` preserves valid single-module qualified provider recovery; the focused package gate builds and runs it with the correct arm. The ambiguous package negative fails at Moss checking, while declared-shape/native numeric/Fast Debug gates pass. Implicit built-in availability is not established by recorded approval: normative examples omit declarations while the practical guide requires them. Overall **DESIGN-DECISION-REQUIRED**; no suffix alias or ABI-v8 identity change was made. | Architect independently confirmed nominal identity risk; exact-final-SHA disposition pending. |
 
-## Minor external findings
+### Minor external findings at the ABI-v8 review
 
 | ID | Severity and original issue | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
@@ -88,7 +127,7 @@ revision of this register.
 | P21-EXT-19 | Minor: failed `create`/retry cleanup and parent-directory synchronization obligation. | `check_phase21_fileio_errors.py` injects post-descriptor and parent-open failures, then reopens the path. The independent Architect inspected `open_checked(create)` against Phase 20 §12.8/R10 and Phase 21 §6. | **CONFIRMED contract limitation:** the first failed create closes its descriptor and registry claim but can leave a name. A later `create` takes the existing-file path (`created=false`) and carries no parent-directory sync obligation. The approved contract discards that obligation at close and promises no rollback, so this is not yet an implementation violation. A successful retry plus `sync()` must not be advertised as proof that the new name is durable. An unlink or obligation-transfer remedy would change race and failure semantics and requires a separate decision. | Architect independently confirmed the code path and restricted contract; final-SHA rerun pending. |
 | P21-EXT-20 | Minor: Branch quiescence assertion may be timing-dependent. | `check_phase21c_branch_errors.py` previously gave a second Root ten million scheduler yields to publish a Branch, then panicked if it had not run. This could fail under load without a quiescence violation. | `d5976de` uses a two-Root barrier at the first distinct Branch publications. The subprocess timeout remains a deadlock witness; the test still requires both Root publications and zero live Branch scopes/read tokens after `join()`. Its 64-run native gate passes on the combined tree; final Architect retest pending. | Pending final-SHA verification. |
 
-## Later independent integration-review findings
+### Later independent integration-review findings at `5941d98`
 
 | ID | Severity and guarantee | Reproducer / checkpoint status | Current engineering disposition | Independent Architect L6 |
 | --- | --- | --- | --- | --- |
@@ -106,7 +145,7 @@ revision of this register.
 | P21-INT-12 | Major: warning provenance analysis lacked a handler local type and raised an internal synchronization invariant. | Interim full `make check` stopped at `phase21_capture_slot_combined.moss` during `check_phase21_on_fail_capture.py`: the recovery body uses `item.length()`, but the warning-only leaf-effect walk treated `item` as an unresolved concrete method target. | `5d1c194` carries checked local and selected-error binding types into recovery-arm lock-inflation analysis. D7 capture, warning, method, O9, built-in and complete `make check` gates pass on `5941d98`. | Pending independent final-SHA verification. |
 | P21-INT-13 | Major: declared `FileError` presence check rejected Phase 20 FileIO sources that use the legacy aborting API without a typed enum. | Full `make check` on `263ad67` failed `check_phase20_fileio_semantics.py` at `root_read` with `UNKNOWN_ERROR_TYPE`; the suite contains positive and negative legacy FileIO controls. | `5941d98` skips presence validation only when no FileError enum is declared. Declared malformed and ambiguous contracts still fail, and typed recovery selectors still require a declaration. The Phase 20 FileIO suite, Phase 21 built-in contract gate and complete `make check` pass on the new implementation SHA. Architect exact-SHA review pending. | Pending. |
 
-## Authoritative independent disposition at `5941d98`
+### Authoritative independent disposition at `5941d98`
 
 The independent Architect L6's exact-SHA report in
 `PHASE_21_ARCHITECT_REVIEW.md` records the individual commands and distinguishes
@@ -153,7 +192,7 @@ rerun in the architect report's final section.
 | INT-12 | FIXED | Handler-local recovery no longer trips synchronization warning invariant. |
 | INT-13 | FIXED | Architect independently reran Phase 20 FileIO semantics/runtime/executor and Phase 21 declared-error/ABI gates. |
 
-## Acceptance layers and open decisions
+### Historical acceptance layers and decisions then open
 
 This register uses two distinct layers. **Formal implementation obligations**
 are O1–O9 in the approved specification and ask whether the compiler/runtime
@@ -186,7 +225,7 @@ these choices are recorded normatively in
 `docs/MOSS_PHASE_21_ERROR_HANDLING.md` §13.2–13.3 and are exercised by the
 numeric and Float gates. No new numerical decision is proposed.
 
-## Proposed source-free provider contract decision
+### Historical ABI-v9 proposal before L7 approval
 
 The threat is modification, replacement, or accidental mismatch of a `.mossi`
 file while its provider `.rlib` remains unchanged. ABI-v8 section hashes detect
@@ -224,7 +263,7 @@ or uses an explicit, approved compatibility mode. It does not claim that the
 current fail-closed method diagnostic or section hashes fully resolve
 P21-EXT-05/P21-EXT-14/P21-INT-05.
 
-## O2 wording and proof boundary requiring approval
+### Historical O2 proposal before L7 approval
 
 Current Part III O2 says trailer effects never enter `ClassSet(h)` and P10 C1
 says a trailer never adds exclusive locks to `h`. The first statement is about
