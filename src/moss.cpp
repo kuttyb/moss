@@ -3769,6 +3769,15 @@ class Checker {
     const Stmt* source = nullptr;
   };
 
+  struct OwnershipExpressionFrame {
+    RaiseSet all_raises;
+    RaiseSet child_raises;
+    OwnershipExpressionFrame* parent = nullptr;
+  };
+  vector<ExceptionalOwnershipExit>* ownership_exceptional_sink_ = nullptr;
+  const Stmt* ownership_exceptional_source_ = nullptr;
+  OwnershipExpressionFrame* ownership_expression_frame_ = nullptr;
+
   void retain_semantic_use(const string& target_identity, const string& kind,
                            int line) {
     if (target_identity.empty() || current_semantic_context_.empty()) return;
@@ -10755,6 +10764,8 @@ class Checker {
       }
       if (callable.empty()) continue;
 
+      RaiseSet callback_raises;
+
       if (expression_uses(callable, "_")) {
         OwnershipEnv placeholder_env = env;
         placeholder_env.types["_"] = current_element;
@@ -10776,7 +10787,21 @@ class Checker {
               " access to captured binding '" + captures[index] +
               "'; captures must remain read-only");
         }
-        check_ownership_expression(line, callable, placeholder_env, Effect::Read);
+        // The placeholder is a per-element value, not a binding in the
+        // enclosing ownership environment. Record its failure at the stage
+        // boundary below, after the source and reduce initializer have run.
+        auto* saved_sink = ownership_exceptional_sink_;
+        ownership_exceptional_sink_ = nullptr;
+        try {
+          check_ownership_expression(line, callable, placeholder_env,
+                                     Effect::Read);
+        } catch (...) {
+          ownership_exceptional_sink_ = saved_sink;
+          throw;
+        }
+        ownership_exceptional_sink_ = saved_sink;
+        callback_raises = observable_expression_effects(
+            callable, placeholder_env.types).raise_set;
         if (placeholder_env.moved.count("_") && transfer_type(current_element))
           err(line, "functional placeholder requires CONSUME access to a "
               "nontrivial source element; this pipeline only reads its source; "
@@ -10799,6 +10824,7 @@ class Checker {
                                callback_inputs, true, nullptr)
               : nullptr;
           if (method) {
+            callback_raises = method->observable_effects.raise_set;
             if (method->receiver_effect != Effect::Read)
               err(line, "functional bound method '" + identity +
                   "' cannot mutate or consume captured binding '" +
@@ -10829,6 +10855,8 @@ class Checker {
             identity = local->second.substr(9);
           auto function = functions_.find(identity);
           if (function != functions_.end()) {
+            callback_raises = concrete_function_observable_effects(
+                *function->second, callback_inputs).raise_set;
             for (size_t index = 0;
                  index < callback_inputs.size() &&
                      index < function->second->params.size();
@@ -10855,6 +10883,17 @@ class Checker {
         }
       }
 
+      if (ownership_exceptional_sink_ && !callback_raises.empty()) {
+        ownership_exceptional_sink_->push_back(
+            {callback_raises, env, ownership_exceptional_source_});
+        // The enclosing expression frame has already accounted for this
+        // variant at its exact stage; do not also emit a post-pipeline edge.
+        if (ownership_expression_frame_)
+          ownership_expression_frame_->child_raises = raise_set_union(
+              std::move(ownership_expression_frame_->child_raises),
+              callback_raises);
+      }
+
       if (stage.kind == FunctionalNodeKind::Map) {
         auto result = functional_callable_result(callable, {current_element}, env.types);
         if (result) current_element = *result;
@@ -10863,8 +10902,83 @@ class Checker {
     return true;
   }
 
+  RaiseSet direct_ownership_expression_raises(
+      const string& expression, const TypeEnv& types) const {
+    const string value = strip_expression_parens(normalize_pipeline(trim(expression)));
+    vector<string> arguments;
+    if (parse_fileio_open(value, arguments))
+      return fileio_operation_raise_set("open");
+    string enum_name, case_name;
+    bool called = false;
+    if (parse_enum_case_expression(value, enum_name, case_name, arguments,
+                                   called) && enums_.count(enum_name))
+      return {};
+    string receiver, method;
+    if (parse_member_call(value, receiver, method, arguments)) {
+      auto receiver_type = inferred_expr_type(receiver, types);
+      if ((receiver == "FileIO" && method == "open") ||
+          (receiver_type && canonical_type_name(*receiver_type) == "FileIO"))
+        return fileio_operation_raise_set(method);
+      if (receiver_type) {
+        vector<string> argument_types;
+        for (const auto& argument : arguments)
+          argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
+        if (const Method* resolved = resolve_method(
+                canonical_type_name(*receiver_type), method, argument_types,
+                true, nullptr))
+          return resolved->observable_effects.raise_set;
+      }
+      return {};
+    }
+    string callee;
+    if (parse_simple_call(value, callee, arguments)) {
+      vector<string> argument_types;
+      for (const auto& argument : arguments)
+        argument_types.push_back(inferred_expr_type(argument, types).value_or(""));
+      if (auto function = functions_.find(callee); function != functions_.end())
+        return concrete_function_observable_effects(
+            *function->second, argument_types).raise_set;
+      if (current_object_)
+        if (const Method* method = resolve_method(
+                current_object_->name, callee, argument_types, true, nullptr))
+          return method->observable_effects.raise_set;
+      if (auto builtin = builtin_call_semantics(callee, arguments, types))
+        return builtin->observable_effects.raise_set;
+    }
+    return {};
+  }
+
   void check_ownership_expression(int line, const string& expression,
                                   OwnershipEnv& env, Effect requested = Effect::Read) {
+    if (!ownership_exceptional_sink_) {
+      check_ownership_expression_walk(line, expression, env, requested);
+      return;
+    }
+    OwnershipExpressionFrame frame{
+        observable_expression_effects(expression, env.types).raise_set,
+        {}, ownership_expression_frame_};
+    const RaiseSet direct = direct_ownership_expression_raises(
+        expression, env.types);
+    ownership_expression_frame_ = &frame;
+    try {
+      check_ownership_expression_walk(line, expression, env, requested);
+    } catch (...) {
+      ownership_expression_frame_ = frame.parent;
+      throw;
+    }
+    ownership_expression_frame_ = frame.parent;
+    if (frame.parent)
+      frame.parent->child_raises = raise_set_union(
+          std::move(frame.parent->child_raises), frame.all_raises);
+    RaiseSet at_this_point = raise_set_union(
+        raise_set_without(frame.all_raises, frame.child_raises), direct);
+    if (!at_this_point.empty())
+      ownership_exceptional_sink_->push_back(
+          {std::move(at_this_point), env, ownership_exceptional_source_});
+  }
+
+  void check_ownership_expression_walk(int line, const string& expression,
+                                       OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
     if (check_functional_pipeline_ownership(line, original, env)) return;
     string value = strip_expression_parens(normalize_pipeline(std::move(original)));
@@ -11269,8 +11383,11 @@ class Checker {
 
   RaiseSet direct_ownership_raise_set(const Stmt& statement,
                                       const TypeEnv& types) const {
-    RaiseSet alternatives = statement.kind == Stmt::Kind::Raise
-        ? statement.exceptional_alternatives : RaiseSet{};
+    RaiseSet alternatives;
+    if (statement.kind == Stmt::Kind::Raise)
+      alternatives = statement.a.empty()
+          ? statement.exceptional_alternatives
+          : phase21_raised_identities(statement.line, statement.a, types);
     if (statement.kind == Stmt::Kind::Message) {
       auto receiver = types.find(statement.a);
       if (receiver != types.end()) {
@@ -11285,12 +11402,6 @@ class Checker {
                   target->observable_effects.raise_set);
       }
     }
-    for (const auto& expression : statement_expressions(statement))
-      alternatives = raise_set_union(
-          std::move(alternatives),
-          observable_expression_effects(
-              expression, types, {}, nullptr, {}, nullptr,
-              statement.message_root_ingress).raise_set);
     return alternatives;
   }
 
@@ -11312,6 +11423,25 @@ class Checker {
             : slot(target), prior(target) { slot = current; }
         ~OwnershipStatementScope() { slot = prior; }
       } ownership_statement_scope(ownership_current_stmt_, &s);
+
+      struct OwnershipExceptionalScope {
+        Checker& checker;
+        vector<ExceptionalOwnershipExit>* prior_sink;
+        const Stmt* prior_source;
+        OwnershipExceptionalScope(Checker& owner,
+                                  vector<ExceptionalOwnershipExit>* sink,
+                                  const Stmt* source)
+            : checker(owner),
+              prior_sink(owner.ownership_exceptional_sink_),
+              prior_source(owner.ownership_exceptional_source_) {
+          checker.ownership_exceptional_sink_ = sink;
+          checker.ownership_exceptional_source_ = source;
+        }
+        ~OwnershipExceptionalScope() {
+          checker.ownership_exceptional_sink_ = prior_sink;
+          checker.ownership_exceptional_source_ = prior_source;
+        }
+      } ownership_exceptional_scope(*this, exceptional, &s);
 
       const RaiseSet direct_raises = exceptional
           ? direct_ownership_raise_set(s, env.types) : RaiseSet{};

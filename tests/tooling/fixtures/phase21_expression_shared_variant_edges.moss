@@ -1,0 +1,24 @@
+enum Failure:
+  Bad
+
+fn maybe_fail(flag: Bool) -> Int:
+  if flag:
+    raise Failure.Bad
+  return 1
+
+fn consume_and_fail(number: Int, data: String) -> Int:
+  discarded = data
+  raise Failure.Bad
+
+domain Worker:
+  fn Run(flag: Bool) -> Int:
+    var data = "abc"
+    try:
+      result = consume_and_fail(maybe_fail(flag), data)
+    recover Failure.Bad:
+      reply data.length()
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(true)
