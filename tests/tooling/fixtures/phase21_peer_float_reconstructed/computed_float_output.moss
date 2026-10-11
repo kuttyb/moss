@@ -1,0 +1,11 @@
+fn main():
+  a = 2.0
+  b = 0.5
+  echo -a
+  echo a * -b
+  echo 0.0 - a
+  neg = -a
+  echo neg
+  echo -1.0
+  echo -0.0
+  echo -1e16

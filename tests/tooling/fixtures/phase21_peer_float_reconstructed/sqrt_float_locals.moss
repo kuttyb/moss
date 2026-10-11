@@ -1,0 +1,7 @@
+fn sqrt_typed(x: Float) -> Float:
+  return sqrt(x)
+
+fn main():
+  v = 16.0
+  a = 16.0
+  echo sqrt(v), sqrt(a), sqrt_typed(2.0)
