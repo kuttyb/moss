@@ -11283,6 +11283,27 @@ class Checker {
             err(line, "source-free method '" + concrete + "." + method +
                 "' has no checked observable-effect summary in ABI v8; rebuild with provider source or await an approved interface revision",
                 "IMPORTED_METHOD_EFFECTS_UNAVAILABLE");
+          if (p_.explicit_module) {
+            auto module_of = [](const string& symbol) {
+              const size_t separator = symbol.find("__");
+              return separator == string::npos ? string() : symbol.substr(0, separator);
+            };
+            string owner = current_semantic_context_;
+            if (starts_with(owner, "fn:")) owner = owner.substr(3);
+            else if (starts_with(owner, "handler:")) owner = owner.substr(8);
+            else if (starts_with(owner, "method:")) owner = owner.substr(7);
+            else owner = p_.main_module;
+            const string caller_module = module_of(owner).empty()
+                ? owner : module_of(owner);
+            const string callee_module = module_of(concrete);
+            if (!callee_module.empty() && callee_module != caller_module)
+              for (size_t index = 0; index < object_method->params.size(); ++index)
+                if (!standard_error_variants(canonical_type_name(
+                        object_method->params[index].type)).empty() &&
+                    method_parameter_effect(*object_method, index) == Effect::Write)
+                  err(line, "cross-crate WRITE of standard error values requires a local owner",
+                      "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED");
+          }
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{object_method->receiver_effect};
           for (size_t index = 0; index < arguments.size(); ++index) {
@@ -17953,7 +17974,13 @@ class Generator {
               const string external_type = tooling_name("moss_" +
                   *external_method_module) + "::" +
                   canonical_type_name(method->params[index].type);
-              argument = external_type + "::from(" + argument + ")";
+              const Effect effect = method_effect(*method, index);
+              if (effect == Effect::Write)
+                throw std::runtime_error(
+                    "internal error: unchecked cross-crate WRITE of standard error");
+              argument = effect == Effect::Read
+                  ? "&" + external_type + "::from((*(" + argument + ")).clone())"
+                  : external_type + "::from(" + argument + ")";
             }
             rendered << argument;
           }
