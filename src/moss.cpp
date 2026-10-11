@@ -225,6 +225,89 @@ static string canonical_type_name(string type) {
   return type;
 }
 
+static bool standard_error_short_name(const string& name) {
+  return name == "FileError" || name == "ParseError" ||
+         name == "ConversionError";
+}
+
+static string standard_error_identity(const string& name) {
+  return "std__" + name;
+}
+
+static vector<string> standard_error_variants(const string& identity) {
+  if (identity == "std__FileError")
+    return {"NotFound", "PermissionDenied", "NotRegularFile", "InUse",
+            "Full", "IO"};
+  if (identity == "std__ParseError") return {"Invalid", "Overflow"};
+  if (identity == "std__ConversionError") return {"NonFinite", "Overflow"};
+  return {};
+}
+
+// The standard namespace is compiler-owned.  Rewrite source tokens before
+// parsing so every checker and backend path sees one nominal identity.  A
+// module's own enum retains its separate identity; a qualified provider enum
+// is never captured by the unqualified shorthand.
+static void normalize_standard_error_lines(
+    vector<Line>& lines, const std::set<string>& forced_aliases = {}) {
+  bool explicit_module = false;
+  std::set<string> local_names;
+  for (const auto& line : lines) {
+    const string code = trim(source_code_only(line.text));
+    if (starts_with(code, "module ")) explicit_module = true;
+    string declaration = starts_with(code, "export ")
+        ? trim(code.substr(7)) : code;
+    if (starts_with(declaration, "enum ")) {
+      const string name = trim(declaration.substr(5,
+          declaration.find(':') == string::npos ? string::npos :
+          declaration.find(':') - 5));
+      if (standard_error_short_name(name)) local_names.insert(name);
+    }
+  }
+  for (const auto& alias : forced_aliases) local_names.erase(alias);
+  for (auto& line : lines) {
+    string rewritten;
+    bool in_string = false;
+    const string& value = line.text;
+    for (size_t at = 0; at < value.size();) {
+      if (value[at] == '"' && (at == 0 || value[at - 1] != '\\'))
+        in_string = !in_string;
+      if (!in_string && value[at] == '#') {
+        rewritten += value.substr(at);
+        break;
+      }
+      if (in_string || !(std::isalpha(static_cast<unsigned char>(value[at])) ||
+                         value[at] == '_')) {
+        rewritten.push_back(value[at++]);
+        continue;
+      }
+      size_t end = at + 1;
+      while (end < value.size() &&
+             (std::isalnum(static_cast<unsigned char>(value[end])) ||
+              value[end] == '_')) ++end;
+      const string token = value.substr(at, end - at);
+      if (token == "std" && end < value.size() && value[end] == '.') {
+        size_t member = end + 1;
+        while (member < value.size() &&
+               (std::isalnum(static_cast<unsigned char>(value[member])) ||
+                value[member] == '_')) ++member;
+        const string name = value.substr(end + 1, member - end - 1);
+        if (standard_error_short_name(name)) {
+          rewritten += standard_error_identity(name);
+          at = member;
+          continue;
+        }
+      }
+      if (standard_error_short_name(token) &&
+          (!explicit_module || !local_names.count(token)) &&
+          (at == 0 || value[at - 1] != '.'))
+        rewritten += standard_error_identity(token);
+      else rewritten += token;
+      at = end;
+    }
+    line.text = std::move(rewritten);
+  }
+}
+
 // Iterator ownership is a concrete specialization fact. Built-in Range and
 // Vector traversal read their source; a custom Iterator uses next()'s actual
 // receiver effect. The checker and native lowering share this decision.
@@ -876,7 +959,10 @@ static string snake_case(const string& s) {
 
 class Parser {
  public:
-  explicit Parser(vector<Line> lines) : lines_(std::move(lines)) {
+  explicit Parser(vector<Line> lines,
+                  std::set<string> standard_aliases = {})
+      : lines_(std::move(lines)) {
+    normalize_standard_error_lines(lines_, standard_aliases);
     int unit = 0;
     for (const auto& line : lines_) {
       if (line.indent > 0) unit = unit == 0 ? line.indent : std::gcd(unit, line.indent);
@@ -894,6 +980,12 @@ class Parser {
       if (starts_with(L.text, "module ")) {
         string name = trim(L.text.substr(7));
         if (!plain_identifier(name)) fail(L, "module name must be an identifier");
+        if (name == "std") {
+          CompileError error(L.no, "module 'std' is reserved for compiler-defined standard types",
+                             "RESERVED_STANDARD_NAMESPACE");
+          error.source_file = L.source_file;
+          throw error;
+        }
         if (p.explicit_module && p.module_name != name)
           fail(L, "a source file may declare only one module");
         p.module_name = name;
@@ -902,7 +994,10 @@ class Parser {
       } else if (starts_with(L.text, "import ")) {
         string name = trim(L.text.substr(7));
         if (!plain_identifier(name)) fail(L, "import name must be an identifier");
-        p.imports.push_back(ModuleImport{name, {}, L.no, L.source_file});
+        // std is compiler-owned and needs no provider artifact.  Accept an
+        // explicit import for discoverability without manufacturing a module.
+        if (name != "std")
+          p.imports.push_back(ModuleImport{name, {}, L.no, L.source_file});
         ++i_;
       } else {
         bool exported = false;
@@ -1781,6 +1876,26 @@ class SourceFileScope {
 class Checker {
  public:
   explicit Checker(Program& p) : p_(p) {
+    const std::pair<const char*, vector<string>> standard_errors[] = {
+        {"FileError", {"NotFound", "PermissionDenied", "NotRegularFile",
+                       "InUse", "Full", "IO"}},
+        {"ParseError", {"Invalid", "Overflow"}},
+        {"ConversionError", {"NonFinite", "Overflow"}}};
+    for (const auto& [short_name, cases] : standard_errors) {
+      const string identity = standard_error_identity(short_name);
+      const bool present = std::any_of(p_.enums.begin(), p_.enums.end(),
+          [&](const EnumType& declaration) {
+            return declaration.name == identity;
+          });
+      if (present) continue;
+      EnumType declaration;
+      declaration.name = identity;
+      declaration.header = "compiler standard error " + string(short_name);
+      declaration.source_file = "<moss-std>";
+      for (const auto& name : cases)
+        declaration.cases.push_back(EnumCase{name, {}, 0, "<moss-std>"});
+      p_.enums.push_back(std::move(declaration));
+    }
     for (auto& f : p_.functions) {
       if (f.name == "assert" || f.name == "assertEqual")
         err(f.source_file, f.line, "function name '" + f.name +
@@ -1876,7 +1991,6 @@ class Checker {
                 function, specialization.parameter_types);
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
-    validate_fileio_error_contract_presence();
     retain_checked_type_uses();
     std::sort(p_.semantic_uses.begin(), p_.semantic_uses.end(),
               [](const SemanticUse& left, const SemanticUse& right) {
@@ -2714,51 +2828,16 @@ class Checker {
             err(field.source_file, field.line,
                 "trait types are static structural constraints and cannot be stored in enum payloads");
         }
-    auto calls_builtin = [&](const string& name, const string& source_file) {
-      for (const auto& line : p_.source_lines) {
-        if (line.source_file != source_file) continue;
-        const string code = source_code_only(line.text);
-        size_t position = 0;
-        while ((position = code.find(name, position)) != string::npos) {
-          bool boundary = position == 0 ||
-              (!std::isalnum(static_cast<unsigned char>(code[position - 1])) &&
-               code[position - 1] != '_');
-          size_t after = position + name.size();
-          while (after < code.size() &&
-                 std::isspace(static_cast<unsigned char>(code[after])))
-            ++after;
-          if (boundary && after < code.size() && code[after] == '(')
-            return true;
-          position += name.size();
-        }
-      }
-      return false;
-    };
     for (const auto& declaration : p_.enums) {
       string short_name = declaration.name;
       if (auto separator = short_name.rfind("__"); separator != string::npos)
         short_name = short_name.substr(separator + 2);
-      // Qualified imported enums can share a short name with the local error
-      // contract. Only the module using the built-in operation owns its shape.
-      const bool uses_fileio = std::any_of(
-          p_.source_lines.begin(), p_.source_lines.end(),
-          [&](const Line& line) {
-            const string code = source_code_only(line.text);
-            return line.source_file == declaration.source_file &&
-                (code.find("FileIO.") != string::npos ||
-                 code.find("FileIO(") != string::npos);
-          });
-      const bool uses_parse = calls_builtin("parse_int", declaration.source_file) ||
-                              calls_builtin("parse_float", declaration.source_file);
-      const bool uses_conversion = calls_builtin("to_int", declaration.source_file);
-      vector<string> expected;
-      if (short_name == "FileError" && uses_fileio)
-        expected = {"NotFound", "PermissionDenied", "NotRegularFile",
-                    "InUse", "Full", "IO"};
-      else if (short_name == "ParseError" && uses_parse)
-        expected = {"Invalid", "Overflow"};
-      else if (short_name == "ConversionError" && uses_conversion)
-        expected = {"NonFinite", "Overflow"};
+      // A provider-owned namesake is nominally distinct even when a built-in
+      // operation appears in the same source file.  Only the compiler's std
+      // identity must satisfy the closed standard variant contract.
+      if (declaration.name != standard_error_identity(short_name)) continue;
+      const vector<string> expected =
+          standard_error_variants(declaration.name);
       if (expected.empty()) continue;
       std::set<string> actual;
       bool tag_only = true;
@@ -12130,6 +12209,11 @@ class Checker {
                     ? "RangeBatch" : "Range") +
                 " across native module crates until the Phase 20 FileIO ABI is shared",
                 "FILEIO_CROSS_CRATE_ABI");
+          if (!standard_error_variants(expected).empty() &&
+              index < function->second->parameter_effects.size() &&
+              function->second->parameter_effects[index] == Effect::Write)
+            err(line, "cross-crate WRITE of standard error values requires a local owner",
+                "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED");
         }
     }
     for (size_t index = 0; index < args.size(); ++index) {
@@ -14904,6 +14988,7 @@ class Generator {
                 : ExecutorRuntimeRole::SelectedByExecutableBuild;
     o << executor_runtime_rust(executor_role);
     for (const auto& e : p_.enums) gen_enum(o, e);
+    gen_standard_error_external_bridges(o);
     gen_phase21_raised_type(o);
     gen_phase21_external_raised_bridges(o);
     for (const auto& t : p_.objects) gen_object(o, t);
@@ -15201,24 +15286,6 @@ class Generator {
   void gen_phase21_raised_type(std::ostringstream& o) const {
     const RaiseSet raised = phase21_program_raise_set();
     if (raised.empty()) return;
-    bool has_file_error = enums_.count("FileError") != 0;
-    string file_error_type = "FileError";
-    if (program_uses_fileio(p_) && !has_file_error) {
-      string qualified_file_error;
-      for (const auto& entry : enums_)
-        if (ends_with(entry.first, "__FileError")) {
-          if (!qualified_file_error.empty()) {
-            qualified_file_error.clear();
-            break;
-          }
-          qualified_file_error = entry.first;
-        }
-      if (!qualified_file_error.empty()) {
-        o << "use " << qualified_file_error << " as FileError;\n\n";
-        has_file_error = true;
-        file_error_type = qualified_file_error;
-      }
-    }
     o << "#[derive(Clone, Debug)]\n";
     if (p_.explicit_module) o << "pub ";
     o << "enum __MossRaised {\n";
@@ -15237,18 +15304,18 @@ class Generator {
           o << "use " << tooling_name("moss_" + *module) << "::"
             << handler.provider_abi->raised_carrier_rust_type << ";\n";
     }
-    if (program_uses_fileio(p_) && has_file_error) {
+    if (program_uses_fileio(p_)) {
       o << "#[allow(dead_code)]\n"
         << "fn __moss_raise_fileio(error: MossFileError) -> __MossRaised {\n"
         << "    match error {\n";
       for (const char* name : {"NotFound", "PermissionDenied",
                                "NotRegularFile", "InUse", "Full", "IO"}) {
         const RaisedIdentity identity =
-            RaisedIdentity::enum_variant(file_error_type, name);
+            RaisedIdentity::enum_variant("std__FileError", name);
         o << "        MossFileError::" << name << " => ";
         if (raised.count(identity))
           o << "__MossRaised::" << phase21_rust_variant(identity)
-            << "(FileError::" << name << "),\n";
+            << "(std__FileError::" << name << "),\n";
         else
           o << "std::process::abort(),\n";
       }
@@ -15269,6 +15336,31 @@ class Generator {
 
   string phase21_external_raised_type(const string& module) const {
     return tooling_name("moss_" + module) + "::__MossRaised";
+  }
+
+  void gen_standard_error_external_bridges(std::ostringstream& o) const {
+    for (const auto& module : rust_dependencies_) {
+      if (module == "__moss_specializations__") continue;
+      const string crate = tooling_name("moss_" + module);
+      for (const char* short_name :
+           {"FileError", "ParseError", "ConversionError"}) {
+        const string local = standard_error_identity(short_name);
+        const string external = crate + "::" + local;
+        const auto cases = standard_error_variants(local);
+        o << "impl From<" << external << "> for " << local << " {\n"
+          << "    fn from(value: " << external << ") -> Self { match value {\n";
+        for (const auto& name : cases)
+          o << "        " << external << "::" << name << " => "
+            << local << "::" << name << ",\n";
+        o << "    } }\n}\n";
+        o << "impl From<" << local << "> for " << external << " {\n"
+          << "    fn from(value: " << local << ") -> Self { match value {\n";
+        for (const auto& name : cases)
+          o << "        " << local << "::" << name << " => "
+            << external << "::" << name << ",\n";
+        o << "    } }\n}\n";
+      }
+    }
   }
 
   void gen_phase21_external_raised_bridges(std::ostringstream& o) const {
@@ -15295,6 +15387,20 @@ class Generator {
         if (raised.count(identity)) reachable.insert(identity);
       if (reachable.empty()) continue;
       const string provider = phase21_external_raised_type(entry.first);
+      auto bridge_payload = [&](const RaisedIdentity& identity,
+                                bool from_provider) {
+        const auto variants = standard_error_variants(identity.type);
+        if (variants.empty()) return string("payload");
+        const string external = tooling_name("moss_" + entry.first) +
+            "::" + identity.type;
+        const string source = from_provider ? external : identity.type;
+        const string target = from_provider ? identity.type : external;
+        string conversion = "match payload { ";
+        for (const auto& variant : variants)
+          conversion += source + "::" + variant + " => " + target +
+              "::" + variant + ", ";
+        return conversion + "}";
+      };
       o << "impl From<" << provider << "> for __MossRaised {\n"
         << "    fn from(value: " << provider << ") -> Self {\n"
         << "        #[allow(unreachable_patterns)]\n"
@@ -15302,7 +15408,8 @@ class Generator {
       for (const auto& identity : reachable) {
         const string variant = phase21_rust_variant(identity);
         o << "            " << provider << "::" << variant
-          << "(payload) => __MossRaised::" << variant << "(payload),\n";
+          << "(payload) => __MossRaised::" << variant << "("
+          << bridge_payload(identity, true) << "),\n";
       }
       o << "            _ => std::process::abort(),\n"
         << "        }\n    }\n}\n";
@@ -15313,7 +15420,8 @@ class Generator {
       for (const auto& identity : reachable) {
         const string variant = phase21_rust_variant(identity);
         o << "            __MossRaised::" << variant << "(payload) => "
-          << provider << "::" << variant << "(payload),\n";
+          << provider << "::" << variant << "("
+          << bridge_payload(identity, false) << "),\n";
       }
       o << "            _ => std::process::abort(),\n"
         << "        }\n    }\n}\n\n";
@@ -16154,6 +16262,9 @@ class Generator {
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types) const {
     const auto* specialization = call_specialization(function, arguments, types);
+    const auto external_module = function.static_dispatch ? std::nullopt :
+        phase21_external_module_for_symbol(name);
+    const bool cross_crate = external_module.has_value();
     vector<string> temporaries(arguments.size());
     if (domain) {
       for (size_t write_index = 0;
@@ -16199,8 +16310,26 @@ class Generator {
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
       if (!temporaries[index].empty()) call << temporaries[index];
-      else call << function_call_argument(function, index, arguments[index],
-                                          domain, locals, types, 0, specialization);
+      else {
+        string rendered = function_call_argument(function, index,
+            arguments[index], domain, locals, types, 0, specialization);
+        if (cross_crate && index < function.params.size() &&
+            !standard_error_variants(
+                canonical_type_name(function.params[index].type)).empty()) {
+          const auto abi = function_parameter_abi(function, index,
+              generated_expr_type(arguments[index], types).value_or(""),
+              specialization);
+          const string external_type = tooling_name("moss_" +
+              *external_module) + "::" +
+              canonical_type_name(function.params[index].type);
+          rendered = abi.passing == ParameterPassingMode::Value
+              ? external_type + "::from(" + rendered + ")"
+              : abi.effect == Effect::Read
+                  ? "&(" + external_type + "::from((* (" + rendered + ")).clone()))"
+                  : rendered;
+        }
+        call << rendered;
+      }
     }
     call << ")";
     bool needs_prelude = std::any_of(
@@ -16208,6 +16337,17 @@ class Generator {
         [](const string& temporary) { return !temporary.empty(); });
     const bool raises = !(specialization ? specialization->observable_effects
                                        : function.observable_effects).raise_set.empty();
+    const string result_type = specialization ? specialization->return_type :
+        function.return_type.value_or("");
+    const bool convert_result = cross_crate &&
+        !standard_error_variants(canonical_type_name(result_type)).empty();
+    if (convert_result) {
+      const string rendered = call.str();
+      call.str("");
+      call.clear();
+      call << (raises ? "(" + rendered + ").map(" + result_type + "::from)"
+                      : result_type + "::from(" + rendered + ")");
+    }
     if (raises) {
       if (!phase21_result_context_)
         throw std::runtime_error(
@@ -25363,6 +25503,12 @@ static string rewrite_module_type(string type, const string& module,
     while (end < type.size() &&
            (std::isalnum(static_cast<unsigned char>(type[end])) || type[end] == '_')) ++end;
     string token = type.substr(i, end - i);
+    if (starts_with(token, "std__") &&
+        standard_error_short_name(token.substr(5))) {
+      result += token;
+      i = end;
+      continue;
+    }
     if (starts_with(token, module + "__")) {
       result += token;
       i = end;
@@ -25426,6 +25572,12 @@ static string rewrite_module_expression(
     while (end < expression.size() &&
            (std::isalnum(static_cast<unsigned char>(expression[end])) || expression[end] == '_')) ++end;
     string token = expression.substr(i, end - i);
+    if (starts_with(token, "std__") &&
+        standard_error_short_name(token.substr(5))) {
+      result += token;
+      i = end;
+      continue;
+    }
     if (starts_with(token, module + "__")) {
       result += token;
       i = end;
@@ -27426,6 +27578,27 @@ static const CompiledModuleProvider* unique_compiled_module_provider(
   throw error;
 }
 
+static std::set<string> legacy_standard_error_aliases(const Program& program) {
+  std::set<string> aliases;
+  if (!program.explicit_module) return aliases;
+  for (const auto& declaration : program.enums) {
+    if (declaration.exported ||
+        !standard_error_short_name(declaration.name)) continue;
+    const auto expected = standard_error_variants(
+        standard_error_identity(declaration.name));
+    std::set<string> actual;
+    bool tag_only = true;
+    for (const auto& item : declaration.cases) {
+      actual.insert(item.name);
+      tag_only &= item.fields.empty();
+    }
+    if (tag_only && declaration.cases.size() == expected.size() &&
+        actual == std::set<string>(expected.begin(), expected.end()))
+      aliases.insert(declaration.name);
+  }
+  return aliases;
+}
+
 static CheckedProjectUnit check_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -27453,6 +27626,16 @@ static CheckedProjectUnit check_project_sources(
                              "cannot read Moss source '" + source.string() + "'",
                              source.string());
         parsed = Parser(lex_lines(input, source.string())).parse();
+      }
+      const auto legacy_aliases = legacy_standard_error_aliases(parsed);
+      if (!legacy_aliases.empty()) {
+        parsed = Parser(parsed.source_lines, legacy_aliases).parse();
+        parsed.enums.erase(std::remove_if(parsed.enums.begin(), parsed.enums.end(),
+            [&](const EnumType& declaration) {
+              return !declaration.exported &&
+                  starts_with(declaration.name, "std__") &&
+                  legacy_aliases.count(declaration.name.substr(5));
+            }), parsed.enums.end());
       }
       assign_project_declaration_identities(
           parsed, project_relative_path(manifest, source));
@@ -28111,7 +28294,8 @@ static Program module_program(const Program& whole, const string& module,
   for (const auto& object : whole.objects)
     if (belongs_to_module(object.name, module)) result.objects.push_back(object);
   for (const auto& enumeration : whole.enums)
-    if (belongs_to_module(enumeration.name, module))
+    if (enumeration.source_file == "<moss-std>" ||
+        belongs_to_module(enumeration.name, module))
       result.enums.push_back(enumeration);
   for (const auto& trait : whole.traits)
     if (belongs_to_module(trait.name, module)) result.traits.push_back(trait);
@@ -28149,7 +28333,8 @@ static vector<string> module_names_for_program(const Program& program) {
         !program.external_modules.count(module_name_from_symbol(object.name)))
       names.insert(module_name_from_symbol(object.name));
   for (const auto& enumeration : program.enums)
-    if (!module_name_from_symbol(enumeration.name).empty() &&
+    if (enumeration.source_file != "<moss-std>" &&
+        !module_name_from_symbol(enumeration.name).empty() &&
         !program.external_modules.count(module_name_from_symbol(enumeration.name)))
       names.insert(module_name_from_symbol(enumeration.name));
   for (const auto& domain : program.domains)

@@ -26,8 +26,7 @@ inline std::string_view numeric_builtin_base(std::string_view callee) {
 inline std::string numeric_builtin_error_type(std::string_view callee) {
   const std::string_view base = numeric_builtin_base(callee);
   if (base.empty()) return {};
-  return std::string(callee.substr(0, callee.size() - base.size())) +
-      (base == "to_int" ? "ConversionError" : "ParseError");
+  return base == "to_int" ? "std__ConversionError" : "std__ParseError";
 }
 
 inline bool numeric_ascii_space(char c) {

@@ -48,11 +48,11 @@ standalone = SCRATCH / "standalone.moss"
 standalone.write_text('''fn main():
   try:
     echo parse_int("bad")
-  recover ParseError.Invalid:
+  recover ParseError.Invalid, ParseError.Overflow:
     echo 1
   try:
     echo to_int(0.0 / 0.0)
-  recover ConversionError.NonFinite:
+  recover ConversionError.NonFinite, ConversionError.Overflow:
     echo 2
   try:
     raise FileError.Full
@@ -60,11 +60,11 @@ standalone.write_text('''fn main():
     echo 3
   try:
     echo parse_int("bad")
-  recover std.ParseError.Invalid:
+  recover std.ParseError.Invalid, std.ParseError.Overflow:
     echo 4
   try:
     echo to_int(0.0 / 0.0)
-  recover std.ConversionError.NonFinite:
+  recover std.ConversionError.NonFinite, std.ConversionError.Overflow:
     echo 5
   try:
     raise std.FileError.Full
@@ -83,6 +83,26 @@ for profile, moss_flag, rust_flag in (
     assert run(executable).stdout == "1\n2\n3\n4\n5\n6\n"
 assert run(COMPILER, "run", "--interp", standalone).stdout == (
     "1\n2\n3\n4\n5\n6\n")
+
+# A Root trailer selects the canonical variant under native and Fast Debug.
+root_source = SCRATCH / "standard_root.moss"
+root_source.write_text('''domain StandardRoot:
+  fn Run() -> Int:
+    raise std.ParseError.Invalid
+  on_fail std.ParseError.Invalid:
+    reply 9
+fn main():
+  root = StandardRoot()
+  echo message root.Run()
+''')
+check(root_source)
+root_rust = SCRATCH / "standard_root.rs"
+root_executable = SCRATCH / "standard_root"
+run(COMPILER, root_source, "-O0", "-o", root_rust)
+run("rustc", "--edition=2021", "-Dwarnings", root_rust,
+    "-o", root_executable)
+assert run(root_executable).stdout == "9\n"
+assert run(COMPILER, "run", "--interp", root_source).stdout == "9\n"
 
 
 # Exact legacy declarations migrate to the canonical types, keeping old
@@ -131,23 +151,42 @@ export fn parse_error() -> Int:
   raise ParseError.Invalid(code: 42)
 export fn conversion_error() -> Int:
   raise ConversionError.NonFinite(code: 43)
+export fn standard_raise() -> Int:
+  raise std.ParseError.Invalid
+export fn standard_value() -> std.ParseError:
+  return std.ParseError.Overflow
+export fn standard_code(error: std.ParseError) -> Int:
+  match error:
+    case Invalid:
+      return 0
+    case Overflow:
+      return 10
+export domain StandardRoot:
+  fn Run() -> Int:
+    raise std.ConversionError.NonFinite
+  on_fail std.ConversionError.NonFinite:
+    reply 8
 ''')
 consumer.write_text('''module app
 import provider
+import std
 fn main():
+  standard_root = provider.StandardRoot()
   try:
     echo parse_int("bad")
-  recover ParseError.Invalid:
+  recover ParseError.Invalid, ParseError.Overflow:
     echo 1
   try:
     echo to_int(0.0 / 0.0)
-  recover ConversionError.NonFinite:
+  recover ConversionError.NonFinite, ConversionError.Overflow:
     echo 2
   try:
     file = FileIO.open("tmp/phase21-standard-error-no-such-file", ro)
     file.close()
   recover std.FileError.NotFound:
     echo 3
+  recover:
+    echo 99
   try:
     echo provider.file_error()
   recover std.FileError.Full:
@@ -166,8 +205,14 @@ fn main():
     echo 97
   recover provider.ConversionError.NonFinite(code):
     echo code
+  try:
+    echo provider.standard_raise()
+  recover std.ParseError.Invalid:
+    echo 7
+  echo provider.standard_code(provider.standard_value())
+  echo message standard_root.Run()
 ''')
-expected = "1\n2\n3\n41\n42\n43\n"
+expected = "1\n2\n3\n41\n42\n43\n7\n10\n8\n"
 
 
 def build_and_run():

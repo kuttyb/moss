@@ -128,9 +128,9 @@ fn raw_conversion(value: Float) -> Int:
   return to_int(value)
 """)
 for name, variants in (
-    ("raw_int", ["enum:ParseError:Invalid", "enum:ParseError:Overflow"]),
-    ("raw_float", ["enum:ParseError:Invalid"]),
-    ("raw_conversion", ["enum:ConversionError:NonFinite", "enum:ConversionError:Overflow"]),
+    ("raw_int", ["enum:std__ParseError:Invalid", "enum:std__ParseError:Overflow"]),
+    ("raw_float", ["enum:std__ParseError:Invalid"]),
+    ("raw_conversion", ["enum:std__ConversionError:NonFinite", "enum:std__ConversionError:Overflow"]),
 ):
     queried = subprocess.run([str(COMPILER), "effects", name, "--source",
                               str(SOURCE), "--json"], check=True,
@@ -214,16 +214,16 @@ fn main():
   var value = 0
   try:
     value = service.read("34")
-  recover service.ParseError.Invalid:
+  recover std.ParseError.Invalid:
     value = -1
-  recover service.ParseError.Overflow:
+  recover std.ParseError.Overflow:
     value = -2
   echo value
   try:
     value = service.read("bad")
-  recover service.ParseError.Invalid:
+  recover std.ParseError.Invalid:
     value = -1
-  recover service.ParseError.Overflow:
+  recover std.ParseError.Overflow:
     value = -2
   echo value
 ''')
