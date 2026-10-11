@@ -84,6 +84,12 @@ fn main():
 
 The probe is in `tmp/architect-l6/recover_err_match.moss` in the review worktree. This reproduces EXT-13 at the pinned SHA. Treat it as an unimplemented approved type rule, not as a reason to change the pattern grammar. The coordinator reports a repair and permanent native/Fast Debug regression in progress; retest only on the frozen integration SHA.
 
+### A7. Failed `create` can leave a name without a surviving directory-sync obligation
+
+`FileIO::open_checked(path, "create")` may create the name with `O_CREAT | O_EXCL`, then fail at `OpenAfterDescriptor`, `OpenFlagClear`, or `ParentDirectoryOpen`. It closes the descriptor and does not install an inode claim, but it leaves the name. A later `create` takes the existing-file path with `created=false`, so that later handle's `sync()` does not sync the parent directory. `check_phase21_fileio_errors.py` tests that such a path can be reopened and closed; it does not assert directory durability. The runtime behavior is therefore a concrete retry hazard for an application that interprets successful retry-plus-sync as proof that the newly created **name** is durable.
+
+This is not yet an established violation of the approved contract: Phase 20 §12.8 says the parent-directory obligation belongs to the open that created the file, is discarded at close, and is not inherited by a later reopen. Phase 21 §6 retains that rule, allows partial effects and promises no rollback. The failed attempt's descriptor cleanup is analogous to closing an unsynced creator. If the intended guarantee instead covers a failed open that created a name, it needs an explicit design change; unlinking a created path or transferring an obligation across attempts has different race and durability consequences. Record the retry caveat in closeout and do not silently claim that a later `sync()` always establishes the name's durability.
+
 ## O1–O9 evidence and open proof work
 
 | Gate | Independent assessment at `f6f11c4` |
@@ -122,7 +128,7 @@ These descriptions are from the coordinator's summary, not a recovered original 
 | EXT-16 keyword-prefix identifier | No focused permanent `recovered` identifier regression was located in this review; unresolved. |
 | EXT-17 grouped recovery re-raises wrong alternative | Native recovery regression exists; not independently rerun. |
 | EXT-18 ENXIO/ENODEV and close ENOSPC mapping | FileIO error test passed; it does not explicitly enumerate ENXIO/ENODEV or close ENOSPC, so those exact mappings remain unverified here. |
-| EXT-19 failed-create cleanup and parent sync | FileIO error and Root cleanup tests passed, including injected parent-directory paths. |
+| EXT-19 failed-create cleanup and parent sync | FileIO error and Root cleanup tests passed for descriptor/claim cleanup. The directory-durability retry caveat remains (A7); the tests do not establish name durability after a failed creator. |
 | EXT-20 timing-dependent Branch quiescence | Deterministic Branch tests exist; not independently rerun. |
 
 ## Numeric and source-surface decisions
