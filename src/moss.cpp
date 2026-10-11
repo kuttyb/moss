@@ -11133,27 +11133,6 @@ class Checker {
             err(line, "source-free method '" + concrete + "." + method +
                 "' has no checked observable-effect summary in ABI v8; rebuild with provider source or await an approved interface revision",
                 "IMPORTED_METHOD_EFFECTS_UNAVAILABLE");
-          if (p_.explicit_module) {
-            auto module_of = [](const string& symbol) {
-              const size_t separator = symbol.find("__");
-              return separator == string::npos ? string() : symbol.substr(0, separator);
-            };
-            string owner = current_semantic_context_;
-            if (starts_with(owner, "fn:")) owner = owner.substr(3);
-            else if (starts_with(owner, "handler:")) owner = owner.substr(8);
-            else if (starts_with(owner, "method:")) owner = owner.substr(7);
-            else owner = p_.main_module;
-            const string caller_module = module_of(owner).empty()
-                ? owner : module_of(owner);
-            const string callee_module = module_of(concrete);
-            if (!callee_module.empty() && callee_module != caller_module)
-              for (size_t index = 0; index < object_method->params.size(); ++index)
-                if (!standard_error_variants(canonical_type_name(
-                        object_method->params[index].type)).empty() &&
-                    method_parameter_effect(*object_method, index) == Effect::Write)
-                  err(line, "cross-crate WRITE of standard error values requires a local owner",
-                      "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED");
-          }
           vector<string> access_expressions{receiver};
           vector<Effect> access_effects{object_method->receiver_effect};
           for (size_t index = 0; index < arguments.size(); ++index) {
@@ -12230,11 +12209,6 @@ class Checker {
                     ? "RangeBatch" : "Range") +
                 " across native module crates until the Phase 20 FileIO ABI is shared",
                 "FILEIO_CROSS_CRATE_ABI");
-          if (!standard_error_variants(expected).empty() &&
-              index < function->second->parameter_effects.size() &&
-              function->second->parameter_effects[index] == Effect::Write)
-            err(line, "cross-crate WRITE of standard error values requires a local owner",
-                "STANDARD_ERROR_CROSS_CRATE_WRITE_UNSUPPORTED");
         }
     }
     for (size_t index = 0; index < args.size(); ++index) {
@@ -16286,6 +16260,7 @@ class Generator {
     const auto external_module = function.static_dispatch ? std::nullopt :
         phase21_external_module_for_symbol(name);
     const bool cross_crate = external_module.has_value();
+    std::ostringstream bridge_before, bridge_after;
     vector<string> temporaries(arguments.size());
     if (domain) {
       for (size_t write_index = 0;
@@ -16330,10 +16305,11 @@ class Generator {
           .value_or("").rfind("callable:", 0) == 0;
       if (compile_time_callable) continue;
       if (emitted_arguments++) call << ", ";
-      if (!temporaries[index].empty()) call << temporaries[index];
-      else {
-        string rendered = function_call_argument(function, index,
-            arguments[index], domain, locals, types, 0, specialization);
+      {
+        string rendered = temporaries[index].empty()
+            ? function_call_argument(function, index, arguments[index], domain,
+                                     locals, types, 0, specialization)
+            : temporaries[index];
         if (cross_crate && index < function.params.size() &&
             !standard_error_variants(
                 canonical_type_name(function.params[index].type)).empty()) {
@@ -16343,16 +16319,36 @@ class Generator {
           const string external_type = tooling_name("moss_" +
               *external_module) + "::" +
               canonical_type_name(function.params[index].type);
-          rendered = abi.passing == ParameterPassingMode::Value
-              ? external_type + "::from(" + rendered + ")"
-              : abi.effect == Effect::Read
-                  ? "&(" + external_type + "::from((* (" + rendered + ")).clone()))"
-                  : rendered;
+          if (abi.effect == Effect::Write) {
+            const string prefix = "__moss_standard_write_" +
+                std::to_string(call_argument_temp_++);
+            const string local_ref = prefix + "_local";
+            const string provider_value = prefix + "_provider";
+            bridge_before << "let " << local_ref << " = " << rendered
+              << "; let mut " << provider_value << " = " << external_type
+              << "::from((*" << local_ref << ").clone()); ";
+            bridge_after << "*" << local_ref << " = "
+              << canonical_type_name(function.params[index].type)
+              << "::from(" << provider_value << "); ";
+            rendered = "&mut " + provider_value;
+          } else
+            rendered = abi.passing == ParameterPassingMode::Value
+                ? external_type + "::from(" + rendered + ")"
+                : "&(" + external_type +
+                    "::from((* (" + rendered + ")).clone()))";
         }
         call << rendered;
       }
     }
     call << ")";
+    if (!bridge_before.str().empty()) {
+      const string native_call = call.str();
+      call.str("");
+      call.clear();
+      call << "{ " << bridge_before.str() << "let __moss_bridge_result = "
+        << native_call << "; " << bridge_after.str()
+        << "__moss_bridge_result }";
+    }
     bool needs_prelude = std::any_of(
         temporaries.begin(), temporaries.end(),
         [](const string& temporary) { return !temporary.empty(); });
@@ -17764,8 +17760,20 @@ class Generator {
                     std::to_string(call_argument_temp_++);
             }
           }
-          std::ostringstream rendered;
-          rendered << receiver_expression << "." << viewed_method_name(member_receiver, member_name, member_arguments, d, locals, types) << "(";
+          const bool standard_write_bridge = external_method_module &&
+              std::any_of(method->params.begin(), method->params.end(),
+                  [&](const Param& parameter) {
+                    const size_t index = static_cast<size_t>(
+                        &parameter - method->params.data());
+                    return !standard_error_variants(canonical_type_name(
+                        parameter.type)).empty() &&
+                        method_effect(*method, index) == Effect::Write;
+                  });
+          std::ostringstream bridge_before, bridge_after, rendered;
+          rendered << (standard_write_bridge ? "__moss_bridge_receiver" :
+              receiver_expression) << "." << viewed_method_name(
+                  member_receiver, member_name, member_arguments, d, locals,
+                  types) << "(";
           for (size_t index = 0; index < member_arguments.size(); ++index) {
             if (index) rendered << ", ";
             string argument = method_call_argument(*method, index,
@@ -17779,17 +17787,36 @@ class Generator {
                   *external_method_module) + "::" +
                   canonical_type_name(method->params[index].type);
               const Effect effect = method_effect(*method, index);
-              if (effect == Effect::Write)
-                throw std::runtime_error(
-                    "internal error: unchecked cross-crate WRITE of standard error");
-              argument = effect == Effect::Read
-                  ? "&" + external_type + "::from((*(" + argument + ")).clone())"
-                  : external_type + "::from(" + argument + ")";
+              if (effect == Effect::Write) {
+                const string prefix = "__moss_standard_write_" +
+                    std::to_string(call_argument_temp_++);
+                const string local_ref = prefix + "_local";
+                const string provider_value = prefix + "_provider";
+                bridge_before << "let " << local_ref << " = " << argument
+                  << "; let mut " << provider_value << " = " << external_type
+                  << "::from((*" << local_ref << ").clone()); ";
+                bridge_after << "*" << local_ref << " = "
+                  << canonical_type_name(method->params[index].type)
+                  << "::from(" << provider_value << "); ";
+                argument = "&mut " + provider_value;
+              } else
+                argument = effect == Effect::Read
+                    ? "&" + external_type + "::from((*(" + argument + ")).clone())"
+                    : external_type + "::from(" + argument + ")";
             }
             rendered << argument;
           }
           rendered << ")";
           string result = rendered.str();
+          if (standard_write_bridge) {
+            string receiver_binding = method->receiver_effect == Effect::Consume
+                ? receiver_expression
+                : (method->receiver_effect == Effect::Write ? "&mut (" :
+                    "&(") + receiver_expression + ")";
+            result = "{ let __moss_bridge_receiver = " + receiver_binding +
+                "; " + bridge_before.str() + "let __moss_bridge_result = " +
+                result + "; " + bridge_after.str() + "__moss_bridge_result }";
+          }
           const string return_type = method->return_type.value_or("");
           const bool standard_return = external_method_module &&
               !standard_error_variants(canonical_type_name(return_type)).empty();
@@ -20007,6 +20034,19 @@ class Generator {
                         argument, generated_expr_type(argument, &types).value_or("")));
                   return result;
                 }(), true, nullptr);
+          const auto external_method_module = call_method && call_receiver_type
+              ? phase21_external_module_for_symbol(
+                    canonical_type_name(*call_receiver_type))
+              : std::optional<string>{};
+          const bool standard_write_bridge = external_method_module &&
+              std::any_of(call_method->params.begin(), call_method->params.end(),
+                  [&](const Param& parameter) {
+                    const size_t index = static_cast<size_t>(
+                        &parameter - call_method->params.data());
+                    return !standard_error_variants(canonical_type_name(
+                        parameter.type)).empty() &&
+                        method_effect(*call_method, index) == Effect::Write;
+                  });
           vector<string> argument_temporaries(s.args.size());
           if (call_method && call_method->receiver_effect != Effect::Read) {
             for (size_t k = 0; k < s.args.size(); ++k) {
@@ -20045,12 +20085,14 @@ class Generator {
               types[argument_temporaries[k]] = temporary_type;
             }
           }
-          std::ostringstream call_output;
-          call_output << (implicit_method ? "self." : "")
-            << (s.b.empty() && known_function
+          string method_receiver_expression = (implicit_method ? "self." : "") +
+            (s.b.empty() && known_function
                     ? viewed_function_name(function_name, s.args, d, locals, &types)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
+          std::ostringstream bridge_before, bridge_after, call_output;
+          call_output << (standard_write_bridge ? "__moss_bridge_receiver" :
+              method_receiver_expression);
           if (!s.b.empty()) {
             string method = s.b;
             auto it = types.find(s.a);
@@ -20076,12 +20118,39 @@ class Generator {
                                           call_specialization(*functions_.at(function_name),
                                                               s.args, &types));
             } else if (!s.b.empty() || implicit_method) {
-              if (call_method)
-                call_output << method_call_argument(
+              if (call_method) {
+                string rendered = method_call_argument(
                     *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
                         s, functional_context, k));
-              else
+                if (external_method_module && k < call_method->params.size() &&
+                    !standard_error_variants(canonical_type_name(
+                        call_method->params[k].type)).empty()) {
+                  const string local_type =
+                      canonical_type_name(call_method->params[k].type);
+                  const string external_type = tooling_name("moss_" +
+                      *external_method_module) + "::" + local_type;
+                  const Effect effect = method_effect(*call_method, k);
+                  if (effect == Effect::Write) {
+                    const string prefix = "__moss_standard_write_" +
+                        std::to_string(call_argument_temp_++);
+                    const string local_ref = prefix + "_local";
+                    const string provider_value = prefix + "_provider";
+                    bridge_before << "let " << local_ref << " = " << rendered
+                      << "; let mut " << provider_value << " = "
+                      << external_type << "::from((*" << local_ref
+                      << ").clone()); ";
+                    bridge_after << "*" << local_ref << " = " << local_type
+                      << "::from(" << provider_value << "); ";
+                    rendered = "&mut " + provider_value;
+                  } else
+                    rendered = effect == Effect::Read
+                        ? "&" + external_type + "::from((*(" + rendered +
+                            ")).clone())"
+                        : external_type + "::from(" + rendered + ")";
+                }
+                call_output << rendered;
+              } else
                 call_output << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
                               s, functional_context, k));
@@ -20094,6 +20163,16 @@ class Generator {
           }
           call_output << ")";
           string lowered_call = call_output.str();
+          if (standard_write_bridge) {
+            string receiver_binding = call_method->receiver_effect == Effect::Consume
+                ? method_receiver_expression
+                : (call_method->receiver_effect == Effect::Write ? "&mut (" :
+                    "&(") + method_receiver_expression + ")";
+            lowered_call = "{ let __moss_bridge_receiver = " +
+                receiver_binding + "; " + bridge_before.str() +
+                "let __moss_bridge_result = " + lowered_call + "; " +
+                bridge_after.str() + "__moss_bridge_result }";
+          }
           if (call_method && !call_method->observable_effects.raise_set.empty()) {
             if (!phase21_result_context_)
               throw std::runtime_error(
