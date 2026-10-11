@@ -210,6 +210,8 @@ fn test_checked_chunks_propagate_read_errors(dir: &str) {
             "checked chunk reads preserve short-final-chunk behavior");
     require(chunks.next_chunk_checked().unwrap().is_none(),
             "checked chunk iteration ends after its short final chunk");
+    require(moss_fileio::moss_test_chunk_boundary(&file),
+            "a full chunk ending at i64::MAX has no representable next request");
     file.close_checked().unwrap();
 }
 
@@ -378,8 +380,20 @@ def main() -> int:
     workspace = os.path.join(TMP_ROOT, "workspace")
     os.makedirs(workspace)
 
+    runtime = phase20.extract_fileio_runtime_rust()
+    iterator_marker = "    impl<'a> Iterator for MossChunks<'a> {"
+    assert runtime.count(iterator_marker) == 1
+    runtime = runtime.replace(iterator_marker, '''
+    #[cfg(any(test, moss_perf))]
+    pub fn moss_test_chunk_boundary(file: &FileIO) -> bool {
+        let mut chunks = file.chunks(i64::MAX);
+        chunks.offset = i64::MAX;
+        chunks.next_chunk_checked().unwrap().is_none()
+    }
+
+''' + iterator_marker, 1)
     source = RUST_HARNESS.replace(
-        "MOSS_FILEIO_RUNTIME_PLACEHOLDER", phase20.extract_fileio_runtime_rust()
+        "MOSS_FILEIO_RUNTIME_PLACEHOLDER", runtime
     ).replace(
         "MOSS_FILEIO_ROOT_RUNTIME_PLACEHOLDER", phase20.extract_fileio_root_runtime_rust()
     )

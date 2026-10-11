@@ -1,5 +1,47 @@
 # Moss current status
 
+## Phase 21.B FileIO API audit and 21.C iterator-boundary follow-up — 2026-10-10
+
+The final B source/runtime audit enumerated open and reopen, metadata,
+descriptor flag setup, parent-directory open, read, write, file and parent
+sync, and explicit close sites against the six `FileError` variants and the
+operation-specific inferred raise sets. `fstatfs` remains diagnostic only.
+Known closed-resource use is a checker error; dynamic closed-resource use
+remains a fatal programmer error. The Rust runtime's `is_open()` is internal,
+and Moss source rejects it with `FILEIO_INVALID_OPERATION`; the Phase 21
+specification now records that API disposition. B's audited failure mapping
+and source API are complete, while the all-phase O6 capture-frame proof still
+depends on A.
+
+The final C offset review found that the public checked `MossChunks` iterator
+could request an unrepresentable next range after a full chunk at
+`i64::MAX`. It now recognizes that end boundary as EOF, matching generated
+sequential and bounded Branch chunk paths. A test-only native probe sets the
+iterator to the reachable saturated-offset state without creating an
+enormous file. The C ordering review confirms full-window join before slot
+inspection, zero live read tokens at terminal commit, indexed Value/Raised/EOF
+publication, and speculative mapper rejection when `may_panic` or required
+provider facts are unresolved. Possible divergence remains under the
+specification's finite-completion assumption; process memory exhaustion is
+outside the typed-raise guarantee. C's O9 implementation evidence is complete
+for the reviewed paths, subject to final all-phase integration review.
+
+After the final source edit, focused Phase 21 FileIO, generated Root cleanup,
+Branch ordering/large-read, and Phase 20 FileIO semantics/hardening gates
+passed. Full `make check` ended with `all Moss v0.1 tests passed`;
+`make examples`, strict C++17 `-Wall -Wextra -Werror -pedantic` syntax
+compilation, and `git diff --check` passed.
+
+The remaining A blocker is concrete: handler-local names in `on_fail` are
+currently rejected as unknown; the exported provider body returns only
+`__MossRaised` on failure. The ABI validates capture metadata but explicitly
+rejects nonempty source-free capture records. Completing A requires a D7
+exceptional-path proof for each owned local, a materialized provider-owned
+capture frame that survives the attempt body, and source-free Root dispatch
+that passes that frame to the selected exported arm after cleanup and fresh
+lock acquisition. D's wider toolchain pins and final documentation review
+also remain. Phase 21 is not accepted or merged to `main`.
+
 ## Phase 21.D Float formatter and 21.C large-read checkpoint — 2026-10-10
 
 The approved Float text tie rule is now explicit in the normative spec:

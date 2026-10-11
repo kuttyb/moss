@@ -268,6 +268,9 @@ check('domain_closed_read', 'domain Store:\n  file: FileIO\n'
     '  fn Read():\n    file.open("input", ro)\n'
     '    file.close()\n    data = file.read(0, 4)\n\n' +
     main('store = Store()'), 'FILEIO_CLOSED_OPERATION')
+check('domain_is_open_not_source_api', 'domain Store:\n  file: FileIO\n'
+    '  fn Peek() -> Bool:\n    reply file.is_open()\n\n',
+    'FILEIO_INVALID_OPERATION')
 check('invalid_mode', main('file = FileIO.open("input", bad)\nfile.close()'),
       'FILEIO_INVALID_OPERATION')
 check('negative_size', main('file = FileIO.open("input", ro)\n'

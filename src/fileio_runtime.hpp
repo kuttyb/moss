@@ -1414,6 +1414,10 @@ pub mod moss_fileio {
             if self.finished {
                 return Ok(None);
             }
+            if self.offset.checked_add(self.chunk_size).is_none() {
+                self.finished = true;
+                return Ok(None);
+            }
             let range = self.file.read_checked(self.offset, self.chunk_size)?;
             if range.is_empty() {
                 self.finished = true;
@@ -1424,7 +1428,10 @@ pub mod moss_fileio {
                 eprintln!("[moss-fileio] error: offset overflow during chunks");
                 std::process::abort();
             });
-            if len < self.chunk_size {
+            // The next request must fit the same checked offset range used
+            // by direct reads and generated chunk loops. At the boundary,
+            // this full chunk is the last representable one.
+            if len < self.chunk_size || self.offset.checked_add(self.chunk_size).is_none() {
                 self.finished = true;
             }
             Ok(Some(range))
