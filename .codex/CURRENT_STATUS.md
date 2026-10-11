@@ -1,5 +1,42 @@
 # Moss current status
 
+## Phase 21 independent locking/FileIO review — 2026-10-11
+
+Reviewer 2 audited the compiler's recovery/lock plan in `src/moss.cpp`
+(`specialized_handler_effects`, `specialized_handler_failure_effects`,
+`derive_path_placement`, `build_synchronization_plan`), physical wrapper
+acquisition/release and Root failure dispatch in `src/handler_lowering.inc`,
+and FileIO abandonment/claim release in `src/fileio_runtime.hpp`. A concrete
+native defect was found: Phase 21 checked FileIO operations still lowered to
+Phase 20 panicking calls, so injected `FileSync` inside an `on_fail` `try`
+aborted instead of reaching `recover`. The repair lowers open, read (including
+batch and expression forms), write, sync, and close through checked runtime
+calls with typed propagation in Phase 21 result contexts. A source-free
+provider whose only FileIO appears in an `on_fail` arm now emits the FileIO
+runtime and all intermediate raised variants needed by that arm.
+
+The new native adversarial gate in `tests/tooling/check_phase21_lock_fileio_adversarial.py`
+checks separate attempt/failure class sets, old-guard release before new
+acquisition, inode-claim absence at the failure acquisition, injected partial
+write, abandoned-close, read, trailer-sync and expression-sync failures,
+nested re-raise, 45 concurrent failure Roots, 45 concurrent NotFound Roots,
+and provider execution after removal of its Moss source. This is behavioral
+evidence, not a general proof. Existing Phase 21 Root cleanup, nested handler,
+source-free ABI, recovery and Branch tests and strict Phase 20 FileIO suites
+also pass. On the final reviewer branch, repository-local `TMPDIR make check`
+ended with `all Moss v0.1 tests passed`; `make examples`, strict C++17
+warnings-as-errors syntax compilation, and `git diff --check` passed.
+
+O1/O2/O3/O5/O6/O7 have direct implementation and regression evidence from
+this review, subject to the effect walk, tagged-return and runtime ownership
+invariants documented in the Phase 21 specification. The distinct §16
+`2PL/early-release semantics` row remains **INCOMPLETE**: bounded Phase 15.3
+untouched-guard cancellation is visible in implementation, but the design
+explicitly leaves a general mid-execution early-release proof open. Reviewer
+2 did not claim O9's complete Branch quiescence invariant; that is Reviewer
+3's area. The release candidate still needs the coordinator's integrated
+validation and human approval before any `main` merge.
+
 ## Phase 21 A–D integration review — 2026-10-10
 
 Agents A, B, C, and D have completed their assigned work. Their reviewed

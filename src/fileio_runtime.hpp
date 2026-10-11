@@ -69,6 +69,11 @@ inline bool program_uses_fileio(const Program& p) {
       for (const auto& s : h.body) {
         if (statement_uses_fileio(s)) return true;
       }
+      for (const auto& arm : h.failure_arms) {
+        for (const auto& s : arm.body) {
+          if (statement_uses_fileio(s)) return true;
+        }
+      }
     }
   }
   for (const auto& fn : p.functions) {
