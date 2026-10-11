@@ -1,5 +1,37 @@
 # Moss current status
 
+## Phase 21 autonomous completion checkpoint — 2026-10-11
+
+Integration `phase-21-integration` is pushed through implementation/test SHA
+`5439a2578cc529ffc18eb14a6450c9c820bd78d9` and remains **NO-GO for
+`main`**. The approved ABI v9 provider-artifact binding, imported method
+effects, recovery-warning provenance, compiler-defined standard errors and
+cross-crate standard-error WRITE bridge are integrated. On this combined
+compiler, source-free ABI execution, recomputed-hash/warm-cache falsification,
+warning parity, standard-error namespace/WRITE order/Root recovery, pinned
+Float IEEE plus reconstructed B/F expression corpus, reconstructed D/E chunk
+pipeline native O0/O3, peer effects, and actual O9 Branch error gates pass.
+Those are focused results, not a final full-suite verdict.
+
+The external A–F ZIP and original peer ZIP are unavailable in this workspace;
+L7 explicitly approved reconstruction. Reconstructed A and C are now permanent
+red gates in `check_phase21_addendum_a_c.py`: A loses the raise from a trailing
+local method expression; C falsely widens grouped bare re-raise effects to an
+unreachable variant. Their isolated repairs are in progress. An independent
+pipeline reviewer found that a raising placeholder mapper inside lexical
+`try` checks but emits an invalid cross-closure recovery break; its test/fix
+is in progress. The D/E fix is not closed until that gate passes. The source-free
+WRITE argument-order defect was repaired at `60cd8ec` and its native O0/O3,
+Fast Debug and removed-source gates pass on the combined tree.
+
+The latest complete `make check`, `make examples`, strict GCC/Clang C++17,
+strict Phase 20 review and GCC/Clang × Rust 1.97/1.98 Float matrix still apply
+only to older implementation SHAs. Rerun all after the A/C and pipeline fixes,
+then update `docs/PHASE_21_PEER_REVIEW_DISPOSITION.md`,
+`docs/PHASE_21_FINAL_PROOF_AUDIT.md` and `docs/PHASE_21_FINAL_REVIEW.md` with
+the exact code SHA and results. Independent Architect L6 acceptance is pending
+L7 coordination. Do not merge into `main`.
+
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
 The integration branch now contains the ABI-v9 artifact digest/rlib marker
