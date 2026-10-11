@@ -191,17 +191,10 @@ PROJECT = SCRATCH / "source-free"
     '[project]\nname="phase21_lock_fileio_sourcefree"\nversion="0.1.0"\n')
 provider = PROJECT / "src/service.moss"
 provider.write_text('''module service
-export enum FileError:
-  NotFound
-  PermissionDenied
-  NotRegularFile
-  InUse
-  Full
-  IO
 export domain Worker:
   fn Run(path: String) -> Int:
-    raise FileError.Full
-  on_fail FileError.Full:
+    raise std.FileError.Full
+  on_fail std.FileError.Full:
     try:
       file = FileIO.open(path, ro)
       file.close()
@@ -220,7 +213,7 @@ export domain Worker:
       file.sync()
       file.close()
       reply size
-    recover FileError.NotFound:
+    recover std.FileError.NotFound:
       reply -1
     recover:
       reply -2

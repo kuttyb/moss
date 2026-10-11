@@ -302,6 +302,36 @@
       for (const auto rank : cancelled) result.erase(rank);
       return result;
     };
+    auto emit_body_call = [&](const string& suffix) {
+      const auto body_module = phase21_external_module_for_symbol(d.name);
+      o << "        let result = __moss_body_" << d.name << "_" << h.name
+        << "_" << suffix << "(&mut state";
+      for (const auto& p : h.params) {
+        o << ", ";
+        if (body_module && !standard_error_variants(
+                canonical_type_name(p.type)).empty()) {
+          const string external_type = tooling_name("moss_" +
+              *body_module) + "::" + canonical_type_name(p.type);
+          o << (borrowed_message_type(p.type) ? "&" : "")
+            << external_type << "::from("
+            << (borrowed_message_type(p.type)
+                ? "(*" + p.name + ").clone()" : p.name)
+            << ")";
+        } else o << p.name;
+      }
+      o << ")";
+      if (body_module && h.reply_type && !standard_error_variants(
+              canonical_type_name(*h.reply_type)).empty()) {
+        const string local_type = canonical_type_name(*h.reply_type);
+        o << (h.observable_effects.raise_set.empty()
+            ? ".map(" + local_type + "::from)"
+            : ".map(|value| value.map(" + local_type + "::from))");
+      }
+      if (!h.observable_effects.raise_set.empty() && body_module &&
+          !handler_has_failure_captures(h))
+        o << ".map_err(__MossRaised::from)";
+      o << ";\n";
+    };
     typed_event(o, "handler_enter", hp);
     emit_path_acquire(o, hp, plan, placement.entry_modes, 8);
     o << "        let __abort_body = MossAbortOnUnwind;\n";
@@ -335,14 +365,7 @@
     emit_path_acquire(o, hp, plan, placement.then_modes, 8);
     o << "        let __moss_then_result = {\n";
     emit_path_values_and_state(o, d, then_fragment, plan, d.name + h.name + "ThenState");
-    o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Then(&mut state";
-    for (const auto& p : h.params) o << ", " << p.name;
-    o << ")";
-    if (!h.observable_effects.raise_set.empty() &&
-        phase21_external_module_for_symbol(d.name) &&
-        !handler_has_failure_captures(h))
-      o << ".map_err(__MossRaised::from)";
-    o << ";\n";
+    emit_body_call("Then");
     if (h.reply_type) {
       if (h.observable_effects.raise_set.empty())
         o << "        if result.is_none() { std::process::abort(); }\n";
@@ -364,14 +387,7 @@
     emit_path_acquire(o, hp, plan, placement.else_modes, 8);
     o << "        let __moss_else_result = {\n";
     emit_path_values_and_state(o, d, else_fragment, plan, d.name + h.name + "ElseState");
-    o << "        let result = __moss_body_" << d.name << "_" << h.name << "_Else(&mut state";
-    for (const auto& p : h.params) o << ", " << p.name;
-    o << ")";
-    if (!h.observable_effects.raise_set.empty() &&
-        phase21_external_module_for_symbol(d.name) &&
-        !handler_has_failure_captures(h))
-      o << ".map_err(__MossRaised::from)";
-    o << ";\n";
+    emit_body_call("Else");
     if (h.reply_type) {
       if (h.observable_effects.raise_set.empty())
         o << "        if result.is_none() { std::process::abort(); }\n";
@@ -882,8 +898,28 @@
         o << "            " << f.name << ": " << typed_view(f.name, f.type, *plan, *hp, false) << ",\n";
       for (const auto& r : d.routes) o << "            " << r.name << ": &self." << r.name << ",\n";
       o << "            __lifetime: std::marker::PhantomData,\n        };\n        let result = __moss_body_" << d.name << "_" << h.name << "(&mut state";
-      for (const auto& p : h.params) o << ", " << p.name;
+      const auto body_module = phase21_external_module_for_symbol(d.name);
+      for (const auto& p : h.params) {
+        o << ", ";
+        if (body_module && !standard_error_variants(
+                canonical_type_name(p.type)).empty()) {
+          const string external_type = tooling_name("moss_" +
+              *body_module) + "::" + canonical_type_name(p.type);
+          o << (borrowed_message_type(p.type) ? "&" : "")
+            << external_type << "::from("
+            << (borrowed_message_type(p.type)
+                ? "(*" + p.name + ").clone()" : p.name)
+            << ")";
+        } else o << p.name;
+      }
       o << ")";
+      if (body_module && h.reply_type && !standard_error_variants(
+              canonical_type_name(*h.reply_type)).empty()) {
+        const string local_type = canonical_type_name(*h.reply_type);
+        o << (h.observable_effects.raise_set.empty()
+            ? ".map(" + local_type + "::from)"
+            : ".map(|value| value.map(" + local_type + "::from))");
+      }
       if (!h.observable_effects.raise_set.empty() &&
           phase21_external_module_for_symbol(d.name) &&
           !handler_has_failure_captures(h))
@@ -1078,6 +1114,14 @@
             type.replace(position, local.size(),
                          phase21_external_raised_type(*external_module));
         }
+        if (external_module && h.reply_type && !standard_error_variants(
+                canonical_type_name(*h.reply_type)).empty()) {
+          const string local = canonical_type_name(*h.reply_type);
+          const auto position = type.find(local);
+          if (position != string::npos)
+            type.replace(position, local.size(),
+                         tooling_name("moss_" + *external_module) + "::" + local);
+        }
         return type;
       };
       bool compatible = true;
@@ -1091,23 +1135,56 @@
       for (const string& prefix : {string(""), string("__moss_message_")}) {
         bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
-        for (const auto& p : h.params)
-          o << ", " << (shared ? shared_message_parameter(p)
-                                 : p.name + ": " + rust_type(p.type));
+        for (const auto& p : h.params) {
+          string parameter = shared ? shared_message_parameter(p)
+                                    : p.name + ": " + rust_type(p.type);
+          if (external_module && !standard_error_variants(
+                  canonical_type_name(p.type)).empty()) {
+            const string local = canonical_type_name(p.type);
+            const auto position = parameter.find(local);
+            if (position != string::npos)
+              parameter.replace(position, local.size(),
+                  tooling_name("moss_" + *external_module) + "::" + local);
+          }
+          o << ", " << parameter;
+        }
         o << ") -> " << contract_return_type(
             prefix.empty() ? handler_internal_return_type(h)
                            : handler_message_return_type(h))
           << " { ";
         if (!compatible) { o << "std::process::abort() }\n"; continue; }
         o << "self." << h.name << "_shared(";
-        for (const auto& p : h.params)
-          o << shared_message_forward_argument(p, !shared) << ", ";
+        for (const auto& p : h.params) {
+          if (external_module && !standard_error_variants(
+                  canonical_type_name(p.type)).empty()) {
+            const string local = canonical_type_name(p.type);
+            o << (borrowed_message_type(p.type) ? "&" : "")
+              << local << "::from("
+              << (shared ? (borrowed_message_type(p.type)
+                    ? "(*" + p.name + ").clone()" : p.name)
+                         : p.name)
+              << "), ";
+          } else o << shared_message_forward_argument(p, !shared) << ", ";
+        }
         o << ")";
         if (!prefix.empty() && h.reply_type) {
           if (h.observable_effects.raise_set.empty())
             o << ".unwrap_or_else(|| std::process::abort())";
           else
             o << ".map(|value| value.unwrap_or_else(|| std::process::abort()))";
+        }
+        if (external_module && h.reply_type && !standard_error_variants(
+                canonical_type_name(*h.reply_type)).empty()) {
+          const string external_type = tooling_name("moss_" +
+              *external_module) + "::" + canonical_type_name(*h.reply_type);
+          if (shared)
+            o << (h.observable_effects.raise_set.empty()
+                ? ".map(" + external_type + "::from)"
+                : ".map(|value| value.map(" + external_type + "::from))");
+          else
+            o << (h.observable_effects.raise_set.empty()
+                ? ".into()"
+                : ".map(" + external_type + "::from)");
         }
         if (external_raises &&
             (!prefix.empty() || !handler_has_failure_captures(h)))
