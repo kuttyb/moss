@@ -24,6 +24,9 @@ domain Worker:
   fn Open(path: String):
     file.open(path, ro)
 
+  on_fail:
+    echo -1
+
   fn Close() -> Int:
     try:
       file.close()
@@ -35,9 +38,6 @@ domain Worker:
 
 fn main():
   worker = Worker()
-  try:
-    message worker.Open("tmp/phase21-fileio-close-full/input.dat")
-  recover:
-    echo -1
+  message worker.Open("tmp/phase21-fileio-close-full/input.dat")
   echo message worker.Close()
   echo read_helper("tmp/phase21-fileio-close-full/input.dat")

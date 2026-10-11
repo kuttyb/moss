@@ -108,6 +108,8 @@
       }
     if (error_type.empty() && candidates.size() == 1)
       error_type = candidates.front();
+    if (error_type.empty() && candidates.empty())
+      error_type = "FileError";
     if (error_type.empty())
       err(1, "FileIO requires one unambiguous FileError declaration",
           "FILEIO_ERROR_TYPE_AMBIGUOUS");
