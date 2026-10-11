@@ -23,6 +23,12 @@ full suite has not yet been rerun. The standard-error namespace gate remains
 red at `UNKNOWN_ERROR_TYPE` for declaration-free `ParseError`, while the
 absolute Root boundary gate passes its current native/Fast Debug/source-free
 matrix. ABI v9 implementation and independent proof review remain active.
+The proof audit has since added a red expression-originated O4 counterexample:
+`consume_after(fail(), data)` in a `try` raises before `data` is evaluated,
+yet statement-level ownership snapshots currently mark `data` consumed at
+`recover`. The reverse argument order correctly rejects. The enabled
+`check_phase21_expression_ownership_edges.py` gate preserves both cases;
+evaluation-order exceptional-edge lowering is under repair.
 Earlier `make check` and Float matrix results below apply only to the prior
 implementation SHA and do not validate the eventual ABI v9 tree.
 
