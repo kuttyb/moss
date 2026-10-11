@@ -19,10 +19,11 @@ through Root `on_fail` in native O0/O3. The unchanged D/E Fast Debug runs
 produce the documented Phase 20 FileIO unsupported diagnostic. The original
 D/E legacy `FileError` declarations needed no ABI-v9 migration variant.
 
-Engineering GO is conditional on the new permanent original-source gate and
-full final validation being recorded. The previous `make check`, examples,
-strict GCC/Clang and four-pair Float results below apply to the same compiler
-source but were run before these original files entered the regression corpus.
+The permanent original-source gate and final `make check` rerun both pass;
+`make examples` also passes on the combined tree. Engineering recommends GO for
+independent Architect acceptance. The strict GCC/Clang and four-pair Float
+results below apply to the same compiler source and were run before these
+original files entered the regression corpus.
 The independent Architect L6 has not voted on `c1ef3eb`; the historical NO-GO
 at `5941d98` remains attributable to that earlier SHA. No merge into `main`.
 

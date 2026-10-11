@@ -4,10 +4,9 @@
 > (2026-10-11).** The exact validated implementation is
 > `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
 > `phase-21-integration`. ABI v9, standard errors and the external A–F repairs
-> are integrated. The complete engineering gates passed on this source before
-> the unchanged L7-supplied originals were imported; their focused acceptance
-> runs pass separately. The new permanent original-source gate and final full
-> rerun remain to be recorded. Independent Architect L6 review is
+> are integrated. The unchanged L7-supplied originals pass their permanent
+> focused gate, and the full `make check` rerun passes with that gate included.
+> Independent Architect L6 review is
 > pending. **NO-GO for merging into `main`.**
 
 The last *independently reviewed* implementation remains `5941d98c824f31550f520891235c8b7ac96f3992`.
@@ -115,8 +114,8 @@ independent Architect NO-GO remain separately attributable in
 
 | Gate | Exact-source result |
 | --- | --- |
-| `TMPDIR="$PWD/tmp" make check` | **PASS**, exit 0, ending `all Moss v0.1 tests passed` before import of the unchanged supplied A–F. Includes reconstructed A–F, ABI-v9 forgery/cache/migration, imported effects and warning, standard error, Root/Branch and FileIO fault gates. Rerun after the new original-source gate is integrated. |
-| `TMPDIR="$PWD/tmp" make examples` | **PASS**, exit 0; 32 positive example builds. |
+| `TMPDIR="$PWD/tmp" make check` | **PASS**, exit 0, ending `all Moss v0.1 tests passed` after import of the unchanged supplied A–F and their permanent gate. Includes ABI-v9 forgery/cache/migration, imported effects and warning, standard error, Root/Branch and FileIO fault gates; the Phase 20 Executor runtime suite passed 54/54. |
+| `TMPDIR="$PWD/tmp" make examples` | **PASS**, exit 0 on the combined tree; 32 positive example builds. |
 | Strict GCC and Clang C++17 | **PASS** under GCC 13.3.0 and Clang 18.1.3, both `-std=c++17 -O2 -Wall -Wextra -Werror -pedantic`. |
 | Strict Phase 20 review in `make check` | **PASS**: 36 bug, 30 guard and two pre-existing probes; eight design proposals remain INFO. Phase 20 Executor runtime 54/54 passes. |
 | Unchanged L7-supplied A/C | **PASS**: A is rejected at Moss checking, both native generator modes and Fast Debug for the unhandled `E.A`; a recovery-only scratch companion reports exact `via_local` raise set. C checks with only `E.A` escaping and prints `outer A` in native O0/O3 and Fast Debug. Other permanent A/C controls pass. |
@@ -147,7 +146,7 @@ subject to L7 acceptance before merging.
 
 | Owner | Recommendation | Basis |
 | --- | --- | --- |
-| Engineering L6 | **GO conditional on the final original-source gate and full rerun** | The unchanged supplied A–F pass focused acceptance and the prior full validation passed on identical compiler source. The new permanent gate and final full-suite run remain to be recorded. O1/O4/O8 and bounded early-release implementation arguments are closed under documented assumptions. |
+| Engineering L6 | **GO for independent Architect acceptance** | The unchanged supplied A–F pass their permanent gate and the full `make check` rerun passes on identical compiler source. O1/O4/O8 and bounded early-release implementation arguments are closed under documented assumptions. |
 | Independent Architect L6 | **Historic NO-GO at `5941d98`; no vote on `c1ef3eb`** | The attributable review predates approved ABI v9 and A–F repairs. L7 coordinates exact-source independent assessment. |
 | L7 | **NO-GO for merging into `main` pending review and explicit approval** | Architectural acceptance and merge authorization remain with L7. |
 

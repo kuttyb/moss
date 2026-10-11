@@ -8,9 +8,9 @@ provenance, cross-crate standard-error WRITE transport, and external addendum
 A–F repairs. The complete `make check` and examples gates,
 strict GCC/Clang C++17 builds, strict Phase 20 review, and four-pair Float
 portability matrix passed on this exact compiler source before the unchanged
-original A–F programs were imported. Those originals pass focused acceptance;
-engineering **GO for independent Architect acceptance is conditional on the
-new permanent original-source gate and full rerun**. Merging into `main`
+original A–F programs were imported. Those originals pass their permanent
+gate, and the full `make check` rerun passes with that gate included.
+Engineering recommends **GO for independent Architect acceptance**. Merging into `main`
 remains **NO-GO** until L7 approval. No independent Architect L6 vote exists
 for ABI v9.
 
@@ -65,8 +65,10 @@ was `7775049`; later engineering results do not alter that observation.
 | INT-07 | `docs/PHASE_21_FINAL_PROOF_AUDIT.md` and the final review below track O1/O4/O8 and §42 early-release implementation arguments, new expression-edge and imported capture counterexamples, and conservative iterator rejection. `a10d8bb` records that an unreachable recovery state write may still conservatively widen lock and warning footprints. | The independent engineering proof reviewer ran 13 focused O1/O4/O8/early-release/ABI gates on `c1ef3eb`; all passed. Engineering closes these claims under documented assumptions and accepted/fail-closed syntax. Historic Architect classified the earlier implementation incomplete; new Architect assessment pending. |
 
 **Exact-source engineering validation:** `TMPDIR="$PWD/tmp" make check` exited 0
-with `all Moss v0.1 tests passed` on `c1ef3eb`. It included the source-free
-ABI-v9 adversarial, reconstructed A–F, Root/Branch/FileIO, standard error, and
+with `all Moss v0.1 tests passed` on the combined test tree at `8e253ff`,
+whose compiler source matches `c1ef3eb` exactly. It included the source-free
+ABI-v9 adversarial, reconstructed and unchanged supplied A–F,
+Root/Branch/FileIO, standard error, and
 strict Phase 20 gates (36 bug, 30 guard, two pre-existing PASS; eight design
 INFO). `make examples` built 32 positive examples. Strict GCC 13.3 and Clang
 18.1 C++17 `-O2 -Wall -Wextra -Werror -pedantic` passed. GCC/Clang × Rust
