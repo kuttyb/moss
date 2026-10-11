@@ -1,5 +1,36 @@
 # Moss current status
 
+## Phase 21 final independent review candidate — 2026-10-11
+
+The Phase 21 implementation checkpoint `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a`
+was reconciled with current `main`/`origin/main`
+`d15e968778fa1cff3cd5085911c505592af54a30` by integration merge
+`7eb192b`. All four independent review areas completed. Their defect fixes
+and adversarial regressions are integrated through implementation commit
+`c89f5644785dad60c108f80609c8692364a8c190`, without changing the frozen
+Phase 21 ABI v8. The full O1–O9 matrix, implementation locations, findings,
+test evidence, assumptions, and approval gates are in
+`docs/PHASE_21_FINAL_REVIEW.md`.
+
+After all implementation edits, `TMPDIR="$PWD/tmp" make check` passed
+(`all Moss v0.1 tests passed`, including strict Phase 20 review: 36 bug and
+30 guard probes passed), `make examples` passed, and strict C++17
+warnings-as-errors compilation passed. Source-free provider execution with
+Moss source removed and native/Fast Debug parity passed the tested cases.
+Reviewer 3's concurrent O9 case passed 64 native runs; Reviewer 2's lock
+gate covered 45 concurrent failure and 45 NotFound Roots. Documentation
+edits after those results do not invalidate compiler/runtime validation.
+
+Recommendation is **NO-GO for merging into `main`**. A forged `.mossi` that
+swaps failure-arm pattern identities while recomputing its existing hashes
+still passes check/build and aborts at runtime; fixing cross-artifact
+authenticity needs an approved ABI/contract decision. The required extra
+Rust/C++ Float toolchain combination was unavailable locally. The general
+early-release proof and exhaustive O4/O8 invariant arguments remain open.
+Concrete cross-crate typed `Range` now fails closed at the Moss call site,
+pending a broader Phase 20 native ABI repair. No waiver is assumed. Stop at
+the human approval gate; do not merge into `main`.
+
 ## Phase 21 independent locking/FileIO review — 2026-10-11
 
 Reviewer 2 audited the compiler's recovery/lock plan in `src/moss.cpp`
