@@ -2,6 +2,23 @@
 
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
+The integration branch now contains the ABI-v9 artifact digest/rlib marker
+checkpoint, compiler-defined standard errors, expression-point exceptional
+ownership, and the failure-arm capture-type planner repair. The forged
+failure-pattern metadata gate, source-free ABI/imported-effects gates,
+standard-error namespace gate, absolute Root boundary gate, expression-edge
+gate, recover-reinitialization gate, and leading-condition gate pass on the
+combined compiler through `ed9ff0c` (the later proof-document commit has no
+compiler edit). This remains an engineering checkpoint: imported source-free
+method WRITE effects and warning provenance are being repaired in the ABI
+worktree; standard-error transport through imported methods/messages is being
+repaired in the standard-error worktree. The numeric package gate exposed a
+stale ABI-v8 `.mossi` in its reusable scratch build directory that the v9
+marker generator incorrectly treated as fresh. The FileIO adversarial gate
+also needs its exported user `FileError` namesake fixture migrated to the
+canonical `std.FileError` recovery selector. Neither is waived. Full `make
+check` and final toolchain validation are pending after these repairs.
+
 L7 has authorized ABI v9, compiler-recognized standard errors, absolute Root
 typed-error totality, the O2 wording correction, and general O1/O4/O8 and
 early-release proof closeout. The current `phase-21-integration` branch is an
