@@ -900,6 +900,105 @@ tentative v7 and all earlier artifacts with a full-rebuild diagnostic. The
 corrective checkpoint awaits human approval before it becomes the base for
 Agents A-D.
 
+The following main-branch transfer entries are historical; the current
+integration review above supersedes their status and Git directions.
+
+## Phase 21 continuation — 2026-10-10
+
+The user authorized repository-local commits and pushes for this task and
+directed removal of the old no-push rule from `AGENTS.md` before pushing.
+That rule has been updated. The historical transfer notes below that say
+Codex must not push are superseded for this task.
+
+Phase 21 implementation remains off `main` in the registered worktrees.
+Workstream A advanced through native recovery and a FileIO try-scope checker
+repair at `620b567`. Partial A+B+C integration is pushed on
+`phase-21-integration` at `78da3d4`; it builds and passes 40/40 generic
+specialization probes but still fails Root and C focused gates. B, C, and D
+retain their checkpoint branches. No Phase 21 implementation has been merged
+to `main` or claimed complete. The planning register's human review gate
+before merging to `main` remains open. O1–O9 and final validation are unfinished.
+
+## Multi-worktree transfer correction — 2026-10-10
+
+The first machine-transfer audit inspected only the primary worktree. A
+follow-up `git worktree list --porcelain` audit found active Phase 21 work in
+repository-local worktrees under `tmp/moss-worktrees/`. The earlier statement
+below that implementation had not started is superseded by this section.
+
+All registered Phase 21 worktrees are now clean. Their transfer heads are:
+
+- `phase-21-0-effects-abi` at `f27b2629efa2c321bef953e62ca73d230e56f96f`;
+  this branch already matches `origin/phase-21-0-effects-abi`.
+- `phase-21-a-recovery` at `299fdf3fdfe9f81c225a92b1ec065e46140ede43`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-b-fileio-errors` at `a47e6393737dc14f80778e2199383dc89a09a2e8`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-c-branch-errors` at `f0c04648cc74a303a71345063128dc863fa4bc76`;
+  it has no configured upstream and is not contained in `main`.
+- `phase-21-d-language-parity` at
+  `ed8374f` (`Checkpoint Phase 21 language parity work`); this explicit WIP
+  commit preserves the five files that were uncommitted when the audit began.
+  It has no configured upstream and is not contained in `main`. Only
+  `git diff --check` was run for that WIP on this resource-constrained laptop.
+- `phase-21-integration` at
+  `f27b2629efa2c321bef953e62ca73d230e56f96f`; it currently has no unique
+  integration commit beyond the Phase 21.0 head.
+- `phase-21-planning` at `458fa52a66adae45ebefc94dca62152c194fae86`;
+  it is ten commits ahead of `origin/phase-21-planning`. Its
+  `.codex/PHASE_21_TASK_REGISTER.md` is the authoritative detailed coordinator
+  record, including current integration blockers.
+
+These workstream commits are intentionally not merged into `main`: the Phase
+21 handoff requires contract-aware integration and lists unresolved blockers.
+To transfer them through the remote, the user must push `main` plus the local
+workstream/planning branch heads. Codex must not run `git push`. A pull/fetch on
+the stronger machine can then recover the branch refs and recreate worktrees;
+do not rely on the disposable `tmp/moss-worktrees/` directories themselves.
+
+## Machine-transfer checkpoint — 2026-10-10
+
+This checkpoint was requested so work can resume on a more powerful machine.
+Before this note was added, `main` was clean at
+`ed0b3d23596e189dec7c259319dd3d570a2120b0` and exactly matched
+`origin/main`; there were no staged, unstaged, or untracked implementation
+changes to preserve. Live startup discovery passed and confirmed
+`moss-0.1`. No build or test job was started on this laptop because the
+checkpoint is documentation-only and the transfer is specifically intended
+to move subsequent concurrent/heavy work elsewhere.
+
+The work to resume is **Moss Phase 21 error handling**. Its two durable inputs
+are already committed:
+
+- `080f6edb50ca530f7626e0d51e00e69abf4915fd` adds the consolidated normative
+  design, `docs/MOSS_PHASE_21_ERROR_HANDLING.md` (v4.5.2).
+- `ed0b3d23596e189dec7c259319dd3d570a2120b0` adds the independent review and
+  implementation plan, `docs/MOSS_PHASE_21_IMPLEMENTATION_HANDOFF.md`.
+
+At the time of this first note, the primary worktree showed no implementation
+changes. That was not a complete repository-wide conclusion: the active
+worktrees and implementation heads are recorded in the correction above.
+Resume with the repository startup sequence (load both Moss skills, run
+`./moss agent bootstrap --json`, and confirm `moss-0.1`), then read the two
+Phase 21 documents and the planning branch's task register. Phase 21.0 has
+since been committed, and workstreams 21.A–21.D have work in progress; use the
+recorded branch heads and blocker register rather than restarting Phase 21.0.
+Do not claim the phase complete from design-level proofs; the handoff's O1–O9
+and integration matrix require implementation evidence.
+
+Important open contract checks from the review must remain visible during
+21.0: synchronization-class repartitioning can change normal-handler lock
+counts without changing its per-leaf write footprint; the tutorial cross-enum
+example needs a genuinely reachable `FileError.Full` path; and Float
+shortest-roundtrip tie-breaking plus the accepted finite-decimal grammar need
+explicit freeze decisions rather than agent invention.
+
+Transfer note: the commit containing this checkpoint is local until the user
+pushes it. Repository instructions prohibit Codex from running `git push`.
+After the user pushes this commit, the other machine can pull `main`, open
+this file, and resume at Phase 21.0. No earlier validation result below should
+be treated as Phase 21 implementation validation.
+
 ## Non-Copy vector-literal ownership repair — closeout 2026-10-08
 
 Implementation: `dbe62d3c88aad7a052a856a8deb1f695f54b1c76` (`changes`),
