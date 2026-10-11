@@ -208,4 +208,50 @@ fn main():
 assert warning(checked(condition_source),
                "RECOVER_EMPTY_AFTER_STATE_WRITE")["line"] == 15
 
+# A helper's WRITE parameter can be a protected domain leaf at one concrete
+# call site while another call passes only an ordinary local.
+helper_source = SCRATCH / "helper_state_write.moss"
+helper_source.write_text('''enum Error:
+  Bad
+fn swallow(target: Int):
+  try:
+    target = 2
+    raise Error.Bad
+  recover:
+    pass
+domain Sample:
+  value = 1
+  fn StateCall():
+    swallow(value)
+  fn LocalCall():
+    var scratch = 1
+    swallow(scratch)
+fn main():
+  sample = Sample()
+  message sample.StateCall()
+  message sample.LocalCall()
+''')
+helper_warning = warning(checked(helper_source),
+                         "RECOVER_EMPTY_AFTER_STATE_WRITE")
+assert helper_warning["line"] == 7, helper_warning
+assert "Sample.StateCall' call at line 12 (value)" in (
+    helper_warning["message"]), helper_warning
+effects = run(COMPILER, "effects", "handler:Sample.StateCall", "--source",
+              helper_source, "--json")
+assert effects.returncode == 0, effects.stdout
+handlers = json.loads(effects.stdout)["result"]["synchronization"][
+    "instances"][0]["handlers"]
+assert any(item["write_set"] == ["value"] and
+           "StateCall" in item["handler_identity"] for item in handlers), handlers
+helper_rust = SCRATCH / "helper_state_write.rs"
+helper_binary = SCRATCH / "helper_state_write"
+assert run(COMPILER, helper_source, "-o", helper_rust).returncode == 0
+helper_compiled = run("rustc", "--edition=2021", "-D", "warnings",
+                      helper_rust, "-o", helper_binary)
+assert helper_compiled.returncode == 0, helper_compiled.stderr
+helper_native = run(helper_binary)
+assert (helper_native.returncode, helper_native.stdout) == (0, "")
+helper_debug = run(COMPILER, "run", "--interp", helper_source)
+assert (helper_debug.returncode, helper_debug.stdout) == (0, "")
+
 print("Phase 21 EXT-07 warning regressions passed.")
