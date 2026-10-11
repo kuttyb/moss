@@ -10,12 +10,15 @@ with Rust 1.98.1 and GCC 13.3. This is not the final candidate SHA.
 from the proof worktree. This is the latest exact source SHA audited here;
 the final release-candidate SHA may advance for documents or validation.
 
-**Status at this audit base:** open. The counterexamples below are accepted by
-`moss check` at this SHA or reveal a false D7 rejection. Post-base engineering
-repairs are identified explicitly. Every gate must be rerun on the exact final
-implementation SHA before this document can serve as a closeout. This document
-is an implementation argument and an adversarial audit; behavioral fixtures
-alone do not prove its quantified claims.
+**Historical audit-base status (`7775049`):** open. Counterexamples below
+were accepted by `moss check` there or revealed a false D7 rejection.
+**Engineering closeout (`c1ef3eb`):** the independently built exact source
+passed all 13 focused O1/O4/O8/early-release gates listed below, and the
+complete integration `make check` exited 0. `make examples`, strict GCC/Clang
+C++17, strict Phase 20 review and the four-pair Float matrix also passed on
+that source. The implementation argument is closed for accepted/fail-closed
+syntax under the stated assumptions. Behavioral fixtures alone are not a
+proof of the quantified claims. Independent Architect acceptance is pending.
 
 ## Claim boundary and proof method
 
@@ -94,8 +97,8 @@ concrete custom iterator method has a typed raise, including after generic
 specialization. This is a supported-language restriction until checked
 iterator lowering exists. A custom iterator whose `next()` can panic remains
 accepted; its enclosing handler must report `may_panic=true` and an empty
-typed `raise_set`. The coordinator reports that both parts pass on the current
-integration compiler; the exact final-SHA rerun is still required.
+typed `raise_set`. Both parts pass on exact source `c1ef3eb` in the independent engineering
+13-gate audit and complete `make check`.
 The source-free equivalent is a required ABI-v9 gate: build a provider object
 with a typed-raising `next()`, remove its Moss source, and check a consumer
 `for`. The consumer must receive the same fail-closed diagnostic before rustc.
@@ -117,10 +120,11 @@ external provider selected through `MOSS_MODULE_PATH`,
 omits the external provider from its early cache key. A warm `moss build`
 can return a prior executable with `units_analyzed=0` after the external
 `.mossi` is forged or the `.rlib` is deleted. `moss check` rejects both
-states correctly. `check_phase21_source_free_cache_binding.py` is a permanent
-red gate for this defect. The O1 imported-contract premise is not established
-for every build entrypoint until that gate passes. The defect is in cache
-invalidation, not a change to the ABI-v9 semantic contract.
+states correctly. `check_phase21_source_free_cache_binding.py` was a permanent red gate at
+`b4a0087`. ABI repair `4711a47` closed this cache entrypoint; the gate passes
+on exact source `c1ef3eb`, including edited metadata and deleted provider
+artifact after a warm build. This was a cache-invalidation defect, not a
+change to the ABI-v9 semantic contract.
 
 A separate imported-method audit found that the ABI-v9 `.mossi` record can
 contain an exact `WRITE` parameter effect while `moss effects` in the
@@ -385,12 +389,11 @@ early raising argument. `check_phase21_source_free_proof_edges.py` removes
 the provider Moss source, rebuilds the consumer, and observes `3\n3\n` from
 a Root trailer calling `data.length()` after an early expression raise.
 The provider `.rlib` and `.mossi` are present and match in this case. The
-warm-cache counterexample above keeps the quantified source-free premise
-open, and the final-SHA gate must rerun after the ABI cache repair.
-
-ABI repair `4711a47` made the warm-cache falsification gate pass with a fresh
-strict C++17 compiler build. The final implementation SHA must still rerun
-the gate before lifting the quantified source-free premise.
+warm-cache counterexample above was a historical failure at `b4a0087`.
+ABI repair `4711a47` made its falsification gate pass, and the independent
+engineering retest plus complete `make check` passed on exact source `c1ef3eb`.
+The imported-contract premise is now supported by artifact-bound validation
+and the reviewed cache path; Architect acceptance remains pending.
 
 ## General early-release guarantee
 
@@ -470,13 +473,12 @@ No guarantee of minimal class/lock count is claimed here.
 | `check_phase21_standard_write_order.py` | Added after cross-crate WRITE bridge; no base-SHA result. | Same-module and cross-crate argument order must agree. At `c2793ce`, same-module O0/O3 and Fast Debug print `1`; cross-crate check accepts but native build fails rustc E0499 because the later WRITE borrow is hoisted before an earlier mutating argument. |
 | `check_phase21_addendum_a_c.py` | Reconstructed from written peer addendum because the archive was unavailable. At `7775049`, final local method effect is omitted, and grouped bare re-raise is overapproximated. | On the repair branch: unhandled ordinary/generic callers reject; handled A output, A-only/B-only/both reachable variants, unreachable explicit arm, unreachable-arm ownership positive and reachable-arm D7 negative, Root totality and separate lock plans pass check/effects, native O0/O3 and Fast Debug. Rerun on exact final SHA. |
 
-The final engineering closeout must record the exact implementation SHA,
-compiler and Rust toolchain versions, ABI-v9 source-free executions and
-falsification tests, complete `make check`/`make examples` results, and the
-independent Architect L6 assessment separately. The targeted repairs above
-pass an exact combined-source retest at `c1ef3eb` and support engineering
-closure under the accepted/fail-closed surface. Independent Architect
-acceptance and the final release-candidate SHA are separate gates.
+The exact implementation/source SHA is `c1ef3eb`; report-only commits do not
+change compiler, runtime or test source. ABI-v9 source-free execution and
+falsification, complete `make check`, `make examples`, strict GCC/Clang C++17,
+strict Phase 20, and the four-pair Float matrix passed on that source. The
+targeted repairs support engineering closure under the accepted/fail-closed
+surface. Independent Architect acceptance remains a separate gate.
 
 ### Audit-worktree validation before integration
 
@@ -497,9 +499,8 @@ placement, on-fail-capture and iterator gates all passed. The new
 source-removed provider method/capture gate also passed. These gates include
 native O0/O3 and Fast Debug where each gate supports them. The warm external
 provider cache-binding gate failed as described above; thus the entire
-`make check` suite has **not** passed on this SHA. An ABI-v9 cache repair and
-exact-final-SHA rerun are required before engineering can claim O1/O4/O8
-closure. Independent Architect L6 acceptance is separate.
+`make check` suite has **not** passed on this SHA. This is historical `53f1136` evidence, superseded by the exact-source
+`c1ef3eb` closeout below. Independent Architect L6 acceptance is separate.
 
 ### Later A/C repair-branch validation
 

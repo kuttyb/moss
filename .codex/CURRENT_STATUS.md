@@ -1,5 +1,38 @@
 # Moss current status
 
+## Phase 21 implementation complete — ready for independent Architect acceptance (2026-10-11)
+
+Exact validated compiler/runtime/test source:
+`c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
+`phase-21-integration`. Later commits in the release packet change documents
+only. The independent engineering proof reviewer ran 13 focused O1/O4/O8 and
+bounded early-release gates on this source; all passed under the documented
+accepted/fail-closed contract. Reconstructed external A–F cases, ABI-v9
+artifact binding and migration, source-free methods/warnings, compiler-defined
+standard errors, Root totality and checked pipelines are integrated.
+
+`TMPDIR="$PWD/tmp" make check` exited 0 with `all Moss v0.1 tests passed`.
+`make examples` passed 32 positive builds. Strict GCC 13.3.0 and Clang 18.1.3
+C++17 `-O2 -Wall -Wextra -Werror -pedantic` builds passed. The strict Phase 20
+review passed 36 bug, 30 guard and two pre-existing probes; eight design
+proposals remain INFO. All four GCC/Clang × Rust 1.97.0/1.98.1 Float runs
+matched native O0/O3 and Fast Debug byte-for-byte against the pinned corpora.
+Actual source-removed providers, warm-cache and recomputed-hash falsification,
+concurrent Executor/Root/Branch, and FileIO fault/cleanup gates passed within
+`make check`. Refetched `origin/main` remains
+`d15e968778fa1cff3cd5085911c505592af54a30`, an integration ancestor.
+The external reproduction ZIPs were unavailable; L7 approved reconstructed
+permanent cases, and that provenance remains explicit in the peer register.
+
+**Engineering L6: GO for independent Architect acceptance.** The last
+independent Architect L6 vote is historical NO-GO at `5941d98`, before the
+approved ABI-v9 and A–F repairs; it is not a vote on this source. **L7: NO-GO
+for merging into `main`** until independent review and explicit authorization.
+Full evidence and limits are in `docs/PHASE_21_FINAL_REVIEW.md`,
+`docs/PHASE_21_PEER_REVIEW_DISPOSITION.md`, and
+`docs/PHASE_21_FINAL_PROOF_AUDIT.md`. Do not merge into `main`.
+
+
 ## Phase 21 autonomous completion checkpoint — 2026-10-11
 
 Integration `phase-21-integration` is pushed through implementation/test SHA
