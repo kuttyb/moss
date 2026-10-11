@@ -52,8 +52,9 @@ def check_effects():
         "enum:provider__Failure:Bad"], effects
 
 
-def build_and_run(output):
-    built = json.loads(run(margo, "build", "--json").stdout)
+def build_and_run(output, *, release=False):
+    options = ("build", "--release", "--json") if release else ("build", "--json")
+    built = json.loads(run(margo, *options).stdout)
     executable = built["artifacts"]["artifacts"]["executable"]
     assert run(executable).stdout == output
 
@@ -89,6 +90,8 @@ fn main():
 ''')
 check_effects()
 build_and_run("2\n")
+build_and_run("2\n", release=True)
+assert run(margo, "debug").stdout == "2\n"
 
 provider.rename(provider.with_suffix(".removed"))
 # Force a fresh consumer build against the paired .mossi/.rlib contract.
@@ -97,4 +100,5 @@ consumer.write_text(consumer.read_text().replace(
     "  echo message worker.Run()\n  echo message worker.Run()\n"))
 check_effects()
 build_and_run("2\n2\n")
+build_and_run("2\n2\n", release=True)
 print("Phase 21 source-free standard-error WRITE Root recovery passed.")
