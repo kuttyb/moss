@@ -19,6 +19,19 @@ also needs its exported user `FileError` namesake fixture migrated to the
 canonical `std.FileError` recovery selector. Neither is waived. Full `make
 check` and final toolchain validation are pending after these repairs.
 
+After that checkpoint, `838aae6` integrated native standard-error bridges
+and the FileIO fixture migration. The adversarial lock/FileIO gate and new
+source-free O1/O8 iterator/capture gate pass. A further independent ABI-v9
+audit proved that a warm consumer build can return its cached executable
+without revalidating a changed external `.mossi` or missing rlib; the
+permanent negative gate is `check_phase21_source_free_cache_binding.py` and
+the ABI worktree is repairing the cache path. The standard namespace
+source-free handler reply gate is also red: an imported handler's synthetic
+`reply 0` conflicts with the provider contract's `std__ParseError` reply.
+These are known live failures, not accepted limitations. The current `make
+check` run stopped at the now-migrated FileIO fixture; rerun it after ABI
+repairs.
+
 L7 has authorized ABI v9, compiler-recognized standard errors, absolute Root
 typed-error totality, the O2 wording correction, and general O1/O4/O8 and
 early-release proof closeout. The current `phase-21-integration` branch is an
