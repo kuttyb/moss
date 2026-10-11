@@ -317,8 +317,7 @@ legacy = re.sub(r'(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n', '', lega
 assert legacy != contents
 interface_path.write_text(legacy)
 old = run([compiler, 'inspect', 'main', '--source', application, '--json'], expected=1, cwd=project)
-assert json.loads(old)['error']['code'] in (
-    'SOURCE_FREE_CONTRACT_INVALID', 'SOURCE_FREE_ABI_REBUILD_REQUIRED'), old
+assert json.loads(old)['error']['code'] == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', old
 interface_path.write_text(contents)
 print('Phase 10.6D source/source-free domain and primitive WRITE ABI checks passed.')
 
