@@ -62,6 +62,16 @@ for name, code in (
     assert diagnostic["error"]["code"] == code, (name, diagnostic)
 
 
+# A protected domain String cannot be moved into a handler-local capture.
+# The rejected transfer prevents the local from outliving its state guard.
+source = fixtures / "phase21_capture_state_borrow.moss"
+checked = run(compiler, "check", source, "--json")
+assert checked.returncode != 0, (checked.stdout, checked.stderr)
+diagnostic = json.loads(checked.stdout)["error"]
+assert diagnostic["code"] == "MOSS_COMPILE_ERROR", diagnostic
+assert "domain state 'value' cannot be consumed" in diagnostic["message"], diagnostic
+
+
 # The same handler dispatches its trailer as a Root, while its nested call
 # propagates the typed payload into the caller's lexical recovery arm.
 source = fixtures / "phase21_on_fail_root_nested.moss"
