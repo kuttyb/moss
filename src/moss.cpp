@@ -5926,7 +5926,8 @@ class Checker {
   StateLeafEffects specialized_handler_effects(
       const Domain& domain, const Handler& handler,
       const DomainSpecialization* specialization,
-      bool ignore_recovery = false) const {
+      bool ignore_recovery = false,
+      const TypeEnv* local_types = nullptr) const {
     for (const auto& module : p_.external_modules)
       if (starts_with(domain.name, module + "__")) {
         if (handler.state_effects) return *handler.state_effects;
@@ -5946,6 +5947,9 @@ class Checker {
       env[handler.params[i].name] = specialization
           ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
     for (const auto& route : domain.routes) env[route.name] = route.type;
+    if (local_types)
+      for (const auto& binding : *local_types)
+        env[binding.first] = binding.second;
     LeafCaptureScope scope(leaf_effect_capture_, &capture);
     vector<Effect> unused(handler.params.size(), Effect::Read);
     Effect unused_receiver = Effect::Read;
@@ -5959,11 +5963,12 @@ class Checker {
   StateLeafEffects specialized_handler_body_effects(
       const Domain& domain, const Handler& handler, const vector<Stmt>& body,
       const DomainSpecialization* specialization,
-      bool ignore_recovery = false) const {
+      bool ignore_recovery = false,
+      const TypeEnv* local_types = nullptr) const {
     Handler fragment = handler;
     fragment.body = body;
     return specialized_handler_effects(domain, fragment, specialization,
-                                       ignore_recovery);
+                                       ignore_recovery, local_types);
   }
 
   StateLeafEffects specialized_handler_failure_effects(
@@ -5985,7 +5990,8 @@ class Checker {
 
   StateLeafEffects specialized_handler_expression_effects(
       const Domain& domain, const Handler& handler, const string& expression,
-      const DomainSpecialization* specialization) const {
+      const DomainSpecialization* specialization,
+      const TypeEnv* local_types = nullptr) const {
     LeafEffectCapture capture;
     std::unordered_map<string,string> env;
     std::set<string> fields;
@@ -5999,6 +6005,9 @@ class Checker {
       env[handler.params[i].name] = specialization
           ? specialization->handler_parameter_types.at(handler.name).at(i) : handler.params[i].type;
     for (const auto& route : domain.routes) env[route.name] = route.type;
+    if (local_types)
+      for (const auto& binding : *local_types)
+        env[binding.first] = binding.second;
     LeafCaptureScope scope(leaf_effect_capture_, &capture);
     vector<Effect> unused(handler.params.size(), Effect::Read);
     Effect unused_receiver = Effect::Read;
@@ -6199,12 +6208,35 @@ class Checker {
     return false;
   }
 
+  TypeEnv phase21_local_types_before(
+      const Domain& domain, const Handler& source,
+      const DomainSpecialization& specialization, size_t end) const {
+    TypeEnv env;
+    for (const auto& field : domain.state)
+      env[field.name] = specialization.state_types.at(field.name);
+    for (size_t index = 0; index < source.params.size(); ++index)
+      env[source.params[index].name] =
+          specialization.handler_parameter_types.at(source.name).at(index);
+    for (size_t index = 0; index < end; ++index) {
+      const Stmt& statement = source.body[index];
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        if (auto type = inferred_expr_type(statement.b, env))
+          env[statement.a] = *type;
+      }
+      for (const auto& binding : statement.joined_types)
+        env[binding.first] = binding.second;
+    }
+    return env;
+  }
+
   StateLeafSet phase21_writes_before_selected_raise(
       const Domain& domain, const Handler& source,
       const DomainSpecialization& specialization,
       const vector<Stmt>& body, size_t begin, size_t end, int level,
       StateLeafSet prior, const RaiseSet& selected,
-      StateLeafSet& witnesses) {
+      StateLeafSet& witnesses, TypeEnv locals = {}) {
     size_t index = begin;
     while (index < end) {
       const Stmt& statement = body[index];
@@ -6227,7 +6259,7 @@ class Checker {
           escaping_attempt.erase(alternative);
         StateLeafSet attempt_writes = phase21_writes_before_selected_raise(
             domain, source, specialization, body, index + 1, attempt_end,
-            level + 1, prior, escaping_attempt, witnesses);
+            level + 1, prior, escaping_attempt, witnesses, locals);
         phase21_join_leaves(prior, attempt_writes);
         arm_index = attempt_end;
         while (arm_index < end && body[arm_index].indent == level &&
@@ -6235,11 +6267,13 @@ class Checker {
           const size_t arm_end = statement_subtree_end(body, arm_index);
           StateLeafSet arm_writes = phase21_writes_before_selected_raise(
               domain, source, specialization, body, arm_index + 1, arm_end,
-              level + 1, prior, selected, witnesses);
+              level + 1, prior, selected, witnesses, locals);
           phase21_join_leaves(prior, arm_writes);
           arm_index = arm_end;
         }
         index = arm_index;
+        for (const auto& binding : statement.joined_types)
+          locals[binding.first] = binding.second;
         continue;
       }
       if (statement.kind == Stmt::Kind::If ||
@@ -6250,7 +6284,7 @@ class Checker {
             ? statement.b : statement.a;
         const StateLeafSet condition_writes = phase21_written_leaves(
             specialized_handler_expression_effects(
-                domain, source, expression, &specialization));
+                domain, source, expression, &specialization, &locals));
         if (phase21_raise_sets_intersect(
                 statement.exceptional_alternatives, selected)) {
           phase21_join_leaves(witnesses, prior);
@@ -6270,7 +6304,7 @@ class Checker {
             const size_t arm_end = statement_subtree_end(body, arm_index);
             auto arm_writes = phase21_writes_before_selected_raise(
                 domain, source, specialization, body, arm_index + 1,
-                arm_end, level + 2, before_arms, selected, witnesses);
+                arm_end, level + 2, before_arms, selected, witnesses, locals);
             phase21_join_leaves(joined_arms, arm_writes);
             arm_index = arm_end;
           }
@@ -6281,8 +6315,20 @@ class Checker {
         const StateLeafSet before_branch = prior;
         auto branch_writes = phase21_writes_before_selected_raise(
             domain, source, specialization, body, index + 1, subtree_end,
-            level + 1, before_branch, selected, witnesses);
+            level + 1, before_branch, selected, witnesses, locals);
         phase21_join_leaves(prior, branch_writes);
+        if (statement.kind == Stmt::Kind::While ||
+            statement.kind == Stmt::Kind::For) {
+          // One more abstract iteration exposes a raise that follows a
+          // successful earlier iteration's state write.
+          if (phase21_raise_sets_intersect(
+                  statement.exceptional_alternatives, selected))
+            phase21_join_leaves(witnesses, prior);
+          auto later_writes = phase21_writes_before_selected_raise(
+              domain, source, specialization, body, index + 1, subtree_end,
+              level + 1, prior, selected, witnesses, locals);
+          phase21_join_leaves(prior, later_writes);
+        }
         index = subtree_end;
         if (statement.kind == Stmt::Kind::If && index < end &&
             body[index].indent == level &&
@@ -6290,30 +6336,47 @@ class Checker {
           const size_t else_end = statement_subtree_end(body, index);
           auto else_writes = phase21_writes_before_selected_raise(
               domain, source, specialization, body, index + 1, else_end,
-              level + 1, before_branch, selected, witnesses);
+              level + 1, before_branch, selected, witnesses, locals);
           phase21_join_leaves(prior, else_writes);
           index = else_end;
         }
+        for (const auto& binding : statement.joined_types)
+          locals[binding.first] = binding.second;
         continue;
       }
       Stmt normalized = statement;
       normalized.indent = 0;
       const StateLeafSet statement_writes = phase21_written_leaves(
           specialized_handler_body_effects(
-              domain, source, vector<Stmt>{normalized}, &specialization));
+              domain, source, vector<Stmt>{normalized}, &specialization,
+              false, &locals));
       StateLeafSet before_raise = statement_writes;
       if (statement.kind == Stmt::Kind::Assign ||
           statement.kind == Stmt::Kind::Let ||
           statement.kind == Stmt::Kind::Var)
         before_raise = phase21_written_leaves(
             specialized_handler_expression_effects(
-                domain, source, statement.b, &specialization));
+                domain, source, statement.b, &specialization, &locals));
       if (phase21_raise_sets_intersect(
               statement.exceptional_alternatives, selected)) {
         phase21_join_leaves(witnesses, prior);
         phase21_join_leaves(witnesses, before_raise);
       }
       phase21_join_leaves(prior, statement_writes);
+      if (statement.kind == Stmt::Kind::Assign ||
+          statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var) {
+        TypeEnv env = locals;
+        for (const auto& field : domain.state)
+          env[field.name] = specialization.state_types.at(field.name);
+        for (size_t parameter = 0; parameter < source.params.size();
+             ++parameter)
+          env[source.params[parameter].name] =
+              specialization.handler_parameter_types.at(source.name)
+                  .at(parameter);
+        if (auto type = inferred_expr_type(statement.b, env))
+          locals[statement.a] = *type;
+      }
       if (statement.kind == Stmt::Kind::Raise ||
           statement.kind == Stmt::Kind::Return ||
           statement.kind == Stmt::Kind::Reply)
@@ -6346,7 +6409,9 @@ class Checker {
           (void)phase21_writes_before_selected_raise(
               domain, source, specialization, source.body,
               index + 1, attempt_end, statement.indent + 1, {},
-              arm.exceptional_alternatives, writes);
+              arm.exceptional_alternatives, writes,
+              phase21_local_types_before(domain, source, specialization,
+                                          index));
         if (catch_all && !arm.exceptional_alternatives.empty() &&
             phase21_noop_body(source.body, arm_index + 1, arm_end) &&
             !writes.empty())

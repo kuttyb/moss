@@ -159,4 +159,53 @@ assert not ({"RECOVER_EMPTY_AFTER_STATE_WRITE",
              "ON_FAIL_EMPTY_AFTER_STATE_WRITE"} &
             {item["code"] for item in post_failure}), post_failure
 
+# Repeated loops can raise after a write from a successful prior iteration.
+loop_source = SCRATCH / "prior_iteration_write.moss"
+loop_source.write_text('''enum Error:
+  Bad
+fn maybe_fail(flag: Bool):
+  if flag:
+    raise Error.Bad
+domain Sample:
+  value = 1
+  fn Run():
+    var index = 0
+    try:
+      while index < 2:
+        maybe_fail(index == 1)
+        value = index
+        index = index + 1
+    recover:
+      pass
+fn main():
+  sample = Sample()
+  message sample.Run()
+''')
+assert warning(checked(loop_source),
+               "RECOVER_EMPTY_AFTER_STATE_WRITE")["line"] == 15
+
+condition_source = SCRATCH / "later_condition_raise.moss"
+condition_source.write_text('''enum Error:
+  Bad
+fn keep_going(index: Int) -> Bool:
+  if index == 1:
+    raise Error.Bad
+  return index < 2
+domain Sample:
+  value = 1
+  fn Run():
+    var index = 0
+    try:
+      while keep_going(index):
+        value = index
+        index = index + 1
+    recover:
+      pass
+fn main():
+  sample = Sample()
+  message sample.Run()
+''')
+assert warning(checked(condition_source),
+               "RECOVER_EMPTY_AFTER_STATE_WRITE")["line"] == 15
+
 print("Phase 21 EXT-07 warning regressions passed.")
