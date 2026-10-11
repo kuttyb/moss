@@ -1,5 +1,27 @@
 # Moss current status
 
+## Phase 21 independent chunk-pipeline review — 2026-10-11
+
+On isolated branch `phase-21-pipeline-review`, the combined implementation
+after `4fc0936` accepted a raising `_` chunk mapper inside lexical `try` but
+generated a callback closure that broke to an inaccessible outer Rust label
+(E0767/E0267). The permanent `phase21_pipeline_try_placeholder` gate was red
+against the integration compiler before the fix. Commit `e1cf172` gives the
+callback its own checked `Result` context; the parent then commits indexed
+errors and selects lexical recovery. Test-only commits `790fc85` and `95d8159`
+also cover reduce-seed precedence and owned `on_fail` capture after a Branch
+raise. All three commits are pushed on the review branch; engineering
+integration and final combined validation remain the coordinator's work.
+
+The new gate passes `moss check`, variant-precise `moss effects`, native O0
+and native O3, including both bounded-K and forced-sequential lowering.
+Its expected output is `-1`, `-1`, `-3`, `4`. The existing reconstructed D/E
+gate and full Phase 21.C Branch error gate also pass on `e1cf172`; a scratch
+compound `checked(_) + checked(_)` placeholder passes at O3. Fast Debug
+reports the documented FileIO unsupported diagnostic for this fixture.
+These focused results do not replace the pending combined `make check`,
+`make examples`, source-free, toolchain, and independent Architect gates.
+
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
 The integration branch now contains the ABI-v9 artifact digest/rlib marker
