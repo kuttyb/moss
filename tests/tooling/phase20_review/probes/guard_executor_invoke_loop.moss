@@ -13,6 +13,9 @@ domain Worker:
     echo file.read(0, 4).length()
     file.close()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
 fn main():
   worker = Worker()
   files = ["tmp/phase20-review/input.txt", "tmp/phase20-review/input2.txt"]

@@ -20,17 +20,23 @@ domain Store:
   fn Open(path: String):
     file.open(path, ro)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Total() -> Int:
     reply file.chunks(4) |> map(len) |> reduce(0, add)
+
+  on_fail:
+    reply -1
 
   fn Close():
     file.close()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
 fn main():
   store = Store()
-  try:
-    message store.Open("tmp/phase20-review/input.txt")
-    echo message store.Total()
-    message store.Close()
-  recover:
-    pass
+  message store.Open("tmp/phase20-review/input.txt")
+  echo message store.Total()
+  message store.Close()

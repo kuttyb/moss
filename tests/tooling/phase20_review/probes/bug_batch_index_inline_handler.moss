@@ -15,9 +15,9 @@ domain Reader:
     file.close()
     reply n
 
+  on_fail:
+    reply -1
+
 fn main():
   r = Reader()
-  try:
-    echo message r.Pair("tmp/phase20-review/input.txt")
-  recover:
-    pass
+  echo message r.Pair("tmp/phase20-review/input.txt")

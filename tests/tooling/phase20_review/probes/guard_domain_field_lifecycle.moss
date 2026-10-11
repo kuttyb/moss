@@ -14,34 +14,43 @@ domain Store:
   fn Open(path: String):
     file.open(path, rw)
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Verify(offset: Int, expected: Int):
     data = file.read(offset, 4)
     assert(data.length() == expected)
     echo data.length()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Update(offset: Int):
     file.write(offset, "abcd")
+
+  on_fail:
+    echo "unexpected FileIO error"
 
   fn Flush():
     file.sync()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Close():
     file.close()
 
+  on_fail:
+    echo "unexpected FileIO error"
+
 fn main():
   store = Store()
-  try:
-    message store.Open("tmp/phase20-review/store.dat")
-    message store.Update(0)
-    message store.Update(4)
-    message store.Flush()
-  recover:
-    pass
+  message store.Open("tmp/phase20-review/store.dat")
+  message store.Update(0)
+  message store.Update(4)
+  message store.Flush()
   executor = Executor().threads(4).start()
   executor.invoke(store.Verify(0, 4))
   executor.invoke(store.Verify(4, 4))
   executor.join()
-  try:
-    message store.Close()
-  recover:
-    pass
+  message store.Close()

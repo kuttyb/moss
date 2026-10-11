@@ -23,10 +23,10 @@ domain Cache:
     n = message disk.Load(path)
     table = table + n
 
+  on_fail:
+    echo "unexpected FileIO error"
+
 fn main():
   disk = Disk()
   cache = Cache(disk: disk)
-  try:
-    message cache.Fill("tmp/phase20-review/input.txt")
-  recover:
-    pass
+  message cache.Fill("tmp/phase20-review/input.txt")
