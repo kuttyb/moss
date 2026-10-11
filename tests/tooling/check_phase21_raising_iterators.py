@@ -19,7 +19,7 @@ def run(*args):
                           capture_output=True, text=True, timeout=180)
 
 
-for kind in ("next", "factory"):
+for kind in ("next", "factory", "generic"):
     source = fixtures / f"phase21_iterator_{kind}_raise.moss"
     checked = run(compiler, "check", source, "--json")
     result = json.loads(checked.stdout)
