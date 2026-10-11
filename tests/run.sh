@@ -59,6 +59,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_executor_fileio.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21c_branch_errors.py "$compiler" "$test_build"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_effects.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_peer_open_pipelines.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_pipeline_try_placeholder.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_unary_not_speculation.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_chunk_fileio_raise.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase20_domain_field_physical.py "$compiler" "$test_build/phase20_domain_physical"

@@ -1,0 +1,45 @@
+# A checked placeholder mapper must return its error to the chunk plan before
+# lexical recovery chooses the arm. The callback cannot jump to a Rust label
+# in the enclosing handler. The first map is eligible for bounded-K Branches;
+# the captured local makes the second map sequential.
+enum FormatError:
+  Bad
+
+fn checked(chunk: Range) -> Int:
+  if chunk.length() < 2:
+    raise FormatError.Bad
+  return chunk.length()
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Reader:
+  fn Eligible() -> Int:
+    file = FileIO.open("tmp/phase21-pipeline-try-placeholder/p4.bin", ro)
+    var total = 0
+    try:
+      total = file.chunks(2) |> map(checked(_) + 1) |> reduce(0, add)
+    recover FormatError.Bad:
+      total = -1
+    file.close()
+    reply total
+  on_fail:
+    reply -2
+
+  fn Sequential() -> Int:
+    file = FileIO.open("tmp/phase21-pipeline-try-placeholder/p4.bin", ro)
+    increment = 1
+    var total = 0
+    try:
+      total = file.chunks(2) |> map(checked(_) + increment) |> reduce(0, add)
+    recover FormatError.Bad:
+      total = -1
+    file.close()
+    reply total
+  on_fail:
+    reply -2
+
+fn main():
+  reader = Reader()
+  echo message reader.Eligible()
+  echo message reader.Sequential()

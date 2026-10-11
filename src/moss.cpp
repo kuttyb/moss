@@ -17098,12 +17098,21 @@ class Generator {
       callback_types[arguments.front().expression] = arguments.front().type;
       auto callback_locals = locals;
       callback_locals.insert(arguments.front().expression);
-      string rendered = expr(replaced, domain, callback_locals,
-                             &callback_types);
-      if (checked_placeholder_result && !propagate_raises)
+      // A checked chunk mapper runs in its own Rust callback result. Its
+      // expression must propagate into that result, then the surrounding
+      // chunk lowering decides whether to commit the indexed error. In
+      // particular, a lexical try label or Root capture exit outside this
+      // callback is not reachable from inside the generated closure.
+      if (checked_placeholder_result && !propagate_raises) {
+        Generator callback = *this;
+        callback.phase21_try_label_.clear();
+        callback.phase21_capture_handler_ = nullptr;
+        string rendered = callback.expr(replaced, domain, callback_locals,
+                                        &callback_types);
         return "(|| { let __moss_callback_value = " + rendered +
             "; Ok::<_, __MossRaised>(__moss_callback_value) })()";
-      return rendered;
+      }
+      return expr(replaced, domain, callback_locals, &callback_types);
     }
 
     string bound_receiver, bound_method;
