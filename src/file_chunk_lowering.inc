@@ -102,6 +102,16 @@ ObservableEffects chunk_mapper_invocation_effects(
       if (extract_root_identifier(statement.a) == parameter)
         return map_node.effects;
     }
+    // A `for` target and a `case` payload are fresh lexical bindings. The
+    // nonempty fact belongs to the original parameter identity, never to a
+    // later binding that happens to have the same spelling. Conservatively
+    // decline the contextual proof if any such shadow can reach the mapper.
+    if ((statement.kind == Stmt::Kind::For &&
+         trim(statement.a) == parameter) ||
+        (statement.kind == Stmt::Kind::Case &&
+         std::find(statement.args.begin(), statement.args.end(), parameter) !=
+             statement.args.end()))
+      return map_node.effects;
     for (const auto& expression : statement_expressions(statement)) {
       string callee;
       vector<string> arguments;

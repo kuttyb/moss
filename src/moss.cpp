@@ -1845,6 +1845,11 @@ class Checker {
                      << std::quoted(edge.target_instance);
     p_.concrete_domain_graph.identity = "domain-graph:" + stable_hash(graph_material.str());
     build_functional_ir();
+    for (auto& function : p_.functions)
+      for (auto& specialization : function.specializations)
+        specialization.observable_effects =
+            concrete_function_observable_effects(
+                function, specialization.parameter_types);
     { CompilerStageTimer timer("synchronization_plan"); build_synchronization_plan(p_.concrete_domain_graph); }
     warn_fileio_blocking_with_shared_write();
     retain_checked_type_uses();
@@ -8127,6 +8132,55 @@ class Checker {
     return result;
   }
 
+  ObservableEffects concrete_function_observable_effects(
+      const Function& function, const vector<string>& argument_types) const {
+    ObservableEffects summary = function.observable_effects;
+    if (!function.static_dispatch ||
+        argument_types.size() != function.params.size() ||
+        std::any_of(argument_types.begin(), argument_types.end(),
+                    [&](const string& type) {
+                      return unresolved_semantic_type(type);
+                    }))
+      return summary;
+
+    TypeEnv env;
+    std::set<string> parameters;
+    for (size_t i = 0; i < argument_types.size(); ++i) {
+      env[function.params[i].name] = canonical_type_name(argument_types[i]);
+      parameters.insert(function.params[i].name);
+    }
+    ObservableEffects concrete = observable_body_effects(
+        function.body, env, parameters);
+    // Exceptional alternatives must be re-evaluated with concrete duck-typed
+    // receivers. The general function summary can have unresolved calls or
+    // variants from other specializations. Work on a body copy because the
+    // original AST's CFG annotations belong to its ordinary check context.
+    auto body = function.body;
+    auto* compiler = const_cast<Checker*>(this);
+    const bool warnings_before = compiler->phase21_warnings_enabled_;
+    compiler->phase21_warnings_enabled_ = false;
+    try {
+      concrete.raise_set = compiler->phase21_raise_set(body, env);
+    } catch (...) {
+      compiler->phase21_warnings_enabled_ = warnings_before;
+      throw;
+    }
+    compiler->phase21_warnings_enabled_ = warnings_before;
+    if (function.result_expression)
+      concrete.merge(observable_expression_effects(
+          *function.result_expression, env));
+
+    // A compiled provider's checked .mossi effect record is authoritative.
+    // Its embedded generic IR may refine a concrete use, but must never erase
+    // the declared panic or typed-error facts from the provider contract.
+    for (const auto& module : p_.external_modules)
+      if (starts_with(function.name, module + "__")) {
+        concrete.merge(summary);
+        break;
+      }
+    return concrete;
+  }
+
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
     if (handler.provider_abi &&
         !handler.provider_abi->failure_arms.empty()) {
@@ -8247,8 +8301,19 @@ class Checker {
       const ProvenIndexAccesses* proven_indices = nullptr,
       bool root_ingress = false) const {
     ObservableEffects effects = no_observable_effects();
-    string original = trim(expression);
+    string original = strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
+
+    // Grouping and vector construction do not hide effects of their contents.
+    // In particular, a raised element must reach recovery/Root totality, and
+    // a grouped index panic must keep a chunk mapper out of Branch work.
+    if (auto elements = parse_vector_literal(original)) {
+      for (const auto& element : *elements)
+        effects.merge(observable_expression_effects(
+            element, env, domain_fields, implicit_object, parameters,
+            proven_indices));
+      return effects;
+    }
 
     if (starts_with(original, "message ")) {
       effects.message = true;
@@ -8341,9 +8406,15 @@ class Checker {
             if (local != env.end() && starts_with(local->second, "callable:"))
               identity = local->second.substr(9);
             auto function = functions_.find(identity);
-            if (function != functions_.end())
-              effects.merge(function->second->observable_effects);
-            else
+            if (function != functions_.end()) {
+              vector<string> input_types{element};
+              if (stage.kind == FunctionalNodeKind::Reduce &&
+                  stage.arguments.size() == 2)
+                input_types.insert(input_types.begin(),
+                    inferred_expr_type(stage.arguments.front(), env).value_or(""));
+              effects.merge(concrete_function_observable_effects(
+                  *function->second, input_types));
+            } else
               effects.unresolved = true;
           }
         }
@@ -8506,7 +8577,12 @@ class Checker {
       }
       auto function = functions_.find(callee);
       if (function != functions_.end()) {
-        effects.merge(function->second->observable_effects);
+        vector<string> argument_types;
+        for (const auto& argument : arguments_call)
+          argument_types.push_back(
+              inferred_expr_type(argument, env).value_or(""));
+        effects.merge(concrete_function_observable_effects(
+            *function->second, argument_types));
         return effects;
       }
       if (implicit_object) {
@@ -8724,6 +8800,12 @@ class Checker {
       if (statement.kind == Stmt::Kind::For &&
           (trim(statement.a) == range_binding ||
            trim(statement.a) == induction))
+        return std::nullopt;
+      if (statement.kind == Stmt::Kind::Case &&
+          (std::find(statement.args.begin(), statement.args.end(),
+                     range_binding) != statement.args.end() ||
+           std::find(statement.args.begin(), statement.args.end(),
+                     induction) != statement.args.end()))
         return std::nullopt;
       for (const auto& expression : statement_expressions(statement)) {
         string replace_callee;
@@ -9112,22 +9194,8 @@ class Checker {
       effects.unresolved = true;
       return effects;
     }
-    effects = function->second->observable_effects;
-    if (effects.unresolved && !input_types.empty() &&
-        input_types.size() == function->second->params.size() &&
-        std::all_of(input_types.begin(), input_types.end(),
-                    [&](const string& t) { return !unresolved_semantic_type(t); })) {
-      TypeEnv specialized_env;
-      std::set<string> params;
-      for (size_t i = 0; i < input_types.size(); ++i) {
-        specialized_env[function->second->params[i].name] = canonical_type_name(input_types[i]);
-        params.insert(function->second->params[i].name);
-      }
-      auto specialized_effects = observable_body_effects(function->second->body, specialized_env, params);
-      if (function->second->result_expression)
-        specialized_effects.merge(observable_expression_effects(*function->second->result_expression, specialized_env));
-      effects = specialized_effects;
-    }
+    effects = concrete_function_observable_effects(
+        *function->second, input_types);
     return effects;
   }
 
@@ -14033,6 +14101,8 @@ class Generator {
     };
     for (const auto& function : p_.functions) {
       merge(function.observable_effects);
+      for (const auto& specialization : function.specializations)
+        merge(specialization.observable_effects);
       statements(function.body);
     }
     for (const auto& object : p_.objects)
@@ -15058,7 +15128,8 @@ class Generator {
     bool needs_prelude = std::any_of(
         temporaries.begin(), temporaries.end(),
         [](const string& temporary) { return !temporary.empty(); });
-    const bool raises = !function.observable_effects.raise_set.empty();
+    const bool raises = !(specialization ? specialization->observable_effects
+                                       : function.observable_effects).raise_set.empty();
     if (raises) {
       if (!phase21_result_context_)
         throw std::runtime_error(
@@ -15180,7 +15251,8 @@ class Generator {
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
+      const std::unordered_map<string,string>* types,
+      bool propagate_raises = true) const {
     if (generated_expression_uses(callable, "_")) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
@@ -15229,6 +15301,13 @@ class Generator {
           rendered << argument.expression;
       }
       rendered << ")";
+      if (!method->observable_effects.raise_set.empty()) {
+        if (!phase21_result_context_)
+          throw std::runtime_error(
+              "checked raising pipeline method lacks a Phase 21 outcome context");
+        return propagate_raises ? phase21_propagate(rendered.str())
+                                : rendered.str();
+      }
       return rendered.str();
     }
 
@@ -15273,6 +15352,16 @@ class Generator {
         rendered << argument.expression;
     }
     rendered << ")";
+    const bool raises = !(concrete ? concrete->observable_effects
+                                  : function->second->observable_effects)
+                             .raise_set.empty();
+    if (raises) {
+      if (!phase21_result_context_)
+        throw std::runtime_error(
+            "checked raising pipeline callable lacks a Phase 21 outcome context");
+      return propagate_raises ? phase21_propagate(rendered.str())
+                              : rendered.str();
+    }
     return rendered.str();
   }
 
@@ -17113,7 +17202,9 @@ class Generator {
         ? "STATIC specialization: concrete local function selected before Rust generation"
         : "LOCAL function: ordinary intra-domain call; no domain dispatch");
     debug_symbol_attributes(o, 0, native_symbol, can_export);
-    if (!f.observable_effects.raise_set.empty())
+    const bool raises = !(specialization ? specialization->observable_effects
+                                       : f.observable_effects).raise_set.empty();
+    if (raises)
       o << "#[allow(unreachable_code)]\n";
     bool materialized_export = f.exported && !specialization &&
         !f.generic && !container_generic;
@@ -17167,7 +17258,6 @@ class Generator {
     }
     string return_type = specialization ? specialization->return_type
                                         : f.return_type.value_or("unit");
-    const bool raises = !f.observable_effects.raise_set.empty();
     if (return_type != "unit") {
       string rr = return_type;
       if (!specialization && starts_with(rr, "_generic:")) rr = "T_" + rr.substr(9);

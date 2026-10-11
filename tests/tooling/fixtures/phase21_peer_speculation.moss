@@ -1,0 +1,83 @@
+# Reconstructed 4097-byte P21-EXT-04 counterexamples. The first chunk raises;
+# a later one-byte chunk would panic if either mapper ran speculatively.
+enum FileError:
+  NotFound
+  PermissionDenied
+  NotRegularFile
+  InUse
+  Full
+  IO
+
+enum MapFault:
+  Early
+
+enum Chosen:
+  Index(i: Int)
+
+fn paren_panic(chunk: Range) -> Int:
+  if chunk[0] == 0:
+    raise MapFault.Early
+  return (chunk[1])
+
+fn case_shadow(chunk: Range) -> Int:
+  if chunk[0] == 0:
+    raise MapFault.Early
+  var total = 0
+  for i in range(0, chunk.length()):
+    picked = Chosen.Index(i: 4097)
+    match picked:
+      case Index(i):
+        total = total + chunk[i]
+  return total
+
+fn for_shadow(chunk: Range) -> Int:
+  if chunk[0] == 0:
+    raise MapFault.Early
+  for chunk in [1]:
+    pass
+  return chunk[0]
+
+fn add(total: Int, value: Int) -> Int:
+  return total + value
+
+domain Worker:
+  fn Paren(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(4096) |> map(paren_panic) |> reduce(0, add)
+    file.close()
+    reply total
+
+  fn Case(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(4096) |> map(case_shadow) |> reduce(0, add)
+    file.close()
+    reply total
+
+  fn For(path: String) -> Int:
+    file = FileIO.open(path, ro)
+    total = file.chunks(4096) |> map(for_shadow) |> reduce(0, add)
+    file.close()
+    reply total
+
+fn main():
+  worker = Worker()
+  executor = Executor().threads(4).start()
+  try:
+    echo message worker.Paren("tmp/phase21-peer-speculation.data")
+  recover MapFault.Early:
+    echo "paren early"
+  recover:
+    echo "other"
+  try:
+    echo message worker.Case("tmp/phase21-peer-speculation.data")
+  recover MapFault.Early:
+    echo "case early"
+  recover:
+    echo "other"
+  try:
+    echo message worker.For("tmp/phase21-peer-speculation.data")
+  recover MapFault.Early:
+    echo "for early"
+  recover:
+    echo "other"
+  executor.join()
