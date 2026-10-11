@@ -1,12 +1,12 @@
 enum Failure:
   Bad
 
-type Holder:
+type Box:
   fn poke() -> Int:
     raise Failure.Bad
 
 fn via_local() -> Int:
-  item = Holder()
+  item = Box()
   item.poke()
 
 fn via_generic(value) -> Int:
@@ -19,6 +19,6 @@ fn main():
   recover Failure.Bad:
     echo 7
   try:
-    echo via_generic(Holder())
+    echo via_generic(Box())
   recover Failure.Bad:
     echo 8

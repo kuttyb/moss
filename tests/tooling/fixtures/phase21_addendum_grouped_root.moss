@@ -1,0 +1,25 @@
+enum Failure:
+  A
+  B
+
+fn source_a():
+  raise Failure.A
+
+domain Worker:
+  left = 0
+  right = 0
+
+  fn Run() -> Int:
+    left = left + 1
+    try:
+      source_a()
+    recover Failure.A, Failure.B:
+      raise
+    reply left
+  on_fail Failure.A:
+    right = right + 1
+    reply right
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()

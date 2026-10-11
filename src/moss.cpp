@@ -9080,6 +9080,7 @@ class Checker {
         std::unordered_map<string,string> env;
         for (const auto& parameter : function.params)
           env[parameter.name] = parameter.type.empty() ? "_generic:" + parameter.name : parameter.type;
+        const TypeEnv entry_env = env;
         auto inferred = function.parameter_effects;
         vector<bool> mutations(function.params.size(), false);
         auto* previous_mutation_capture = parameter_mutation_capture_;
@@ -9089,9 +9090,13 @@ class Checker {
         size_t index = 0;
         analyze_effect_block(function.body, index, 0, env, function.params,
                              inferred, receiver, no_fields);
-        if (function.result_expression)
-          analyze_effect_expression(*function.result_expression, env, function.params,
-                                    inferred, receiver, no_fields, Effect::Consume);
+        if (function.result_expression) {
+          auto result_env = walk_type_environment(function.body, entry_env,
+              [](const Stmt&, const TypeEnv&) {}, false);
+          analyze_effect_expression(*function.result_expression, result_env,
+                                    function.params, inferred, receiver,
+                                    no_fields, Effect::Consume);
+        }
         parameter_mutation_capture_ = previous_mutation_capture;
         // Iterability alone carries no WRITE effect. analyze_effect_block
         // records the source access (READ for Range/Vector traversal, or the
@@ -9117,14 +9122,19 @@ class Checker {
           }
           env["self"] = object.name;
           for (const auto& parameter : method.params) env[parameter.name] = parameter.type;
+          const TypeEnv entry_env = env;
           auto inferred = method.parameter_effects;
           Effect receiver = Effect::Read;
           size_t index = 0;
           analyze_effect_block(method.body, index, 0, env, method.params,
                                inferred, receiver, fields);
-          if (method.result_expression)
-            analyze_effect_expression(*method.result_expression, env, method.params,
-                                      inferred, receiver, fields, Effect::Consume);
+          if (method.result_expression) {
+            auto result_env = walk_type_environment(method.body, entry_env,
+                [](const Stmt&, const TypeEnv&) {}, false);
+            analyze_effect_expression(*method.result_expression, result_env,
+                                      method.params, inferred, receiver,
+                                      fields, Effect::Consume);
+          }
           if (inferred != method.parameter_effects || receiver != method.receiver_effect) {
             method.parameter_effects = std::move(inferred);
             method.receiver_effect = receiver;
@@ -9309,7 +9319,8 @@ class Checker {
   RaiseSet phase21_raise_set_block(const vector<Stmt>& body, size_t& index,
                                    int level, TypeEnv env,
                                    const RaiseSet& selected = {},
-                                   string selected_binding = {}) {
+                                   string selected_binding = {},
+                                   bool inside_recovery_arm = false) {
     RaiseSet result;
     while (index < body.size()) {
       const Stmt& statement = body[index];
@@ -9321,7 +9332,8 @@ class Checker {
       if (statement.kind == Stmt::Kind::Try) {
         ++index;
         RaiseSet attempted = phase21_raise_set_block(
-            body, index, level + 1, env, selected, selected_binding);
+            body, index, level + 1, env, selected, selected_binding,
+            inside_recovery_arm);
         const_cast<Stmt&>(statement).exceptional_alternatives = attempted;
         RaiseSet remaining = attempted;
         RaiseSet recovered_raises;
@@ -9342,7 +9354,7 @@ class Checker {
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
           const_cast<Stmt&>(arm).exceptional_alternatives =
-              std::move(reachable_matched);
+              reachable_matched;
           const bool catch_all = arm.a.empty() ||
               (arm.a.find('.') == string::npos && arm.a.find(',') == string::npos);
           if (catch_all) saw_catch_all = true;
@@ -9390,8 +9402,8 @@ class Checker {
                 arm_env[binding.first] = binding.second;
           }
           RaiseSet arm_raises = phase21_raise_set_block(
-              body, index, level + 1, std::move(arm_env), matched,
-              plain_identifier(trim(arm.a)) ? trim(arm.a) : string());
+              body, index, level + 1, std::move(arm_env), reachable_matched,
+              plain_identifier(trim(arm.a)) ? trim(arm.a) : string(), true);
           recovered_raises = raise_set_union(
               std::move(recovered_raises), arm_raises);
         }
@@ -9405,7 +9417,7 @@ class Checker {
       if (statement.kind == Stmt::Kind::Raise) {
         RaiseSet alternatives;
         if (statement.a.empty()) {
-          if (selected.empty())
+          if (!inside_recovery_arm)
             err(statement.line, "bare raise is legal only inside an active recover arm",
                 "BARE_RAISE_OUTSIDE_RECOVER");
           alternatives = selected;
@@ -9451,13 +9463,13 @@ class Checker {
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
                     body, index, level + 2, env, selected,
-                    selected_binding));
+                    selected_binding, inside_recovery_arm));
           }
         } else {
           result = raise_set_union(
               std::move(result), phase21_raise_set_block(
                   body, index, level + 1, env, selected,
-                  selected_binding));
+                  selected_binding, inside_recovery_arm));
           if (parent_kind == Stmt::Kind::If && index < body.size() &&
               body[index].indent == level &&
               body[index].kind == Stmt::Kind::Else) {
@@ -9465,7 +9477,7 @@ class Checker {
             result = raise_set_union(
                 std::move(result), phase21_raise_set_block(
                     body, index, level + 1, env, selected,
-                    selected_binding));
+                    selected_binding, inside_recovery_arm));
           }
         }
         continue;
@@ -9659,7 +9671,9 @@ class Checker {
     compiler->phase21_warnings_enabled_ = warnings_before;
     if (function.result_expression)
       concrete.merge(observable_expression_effects(
-          *function.result_expression, env));
+          *function.result_expression,
+          walk_type_environment(function.body, env,
+              [](const Stmt&, const TypeEnv&) {}, false)));
 
     // A compiled provider's checked .mossi effect record is authoritative.
     // Its embedded generic IR may refine a concrete use, but must never erase
@@ -10529,7 +10543,9 @@ class Checker {
         inferred.raise_set = phase21_raise_set(function.body, env);
         if (function.result_expression)
           inferred.merge(observable_expression_effects(
-              *function.result_expression, env));
+              *function.result_expression,
+              walk_type_environment(function.body, env,
+                  [](const Stmt&, const TypeEnv&) {}, false)));
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
@@ -10552,7 +10568,9 @@ class Checker {
           inferred.raise_set = phase21_raise_set(method.body, env);
           if (method.result_expression)
             inferred.merge(observable_expression_effects(
-                *method.result_expression, env, {}, &object));
+                *method.result_expression,
+                walk_type_environment(method.body, env,
+                    [](const Stmt&, const TypeEnv&) {}, false), {}, &object));
           if (!same_observable_effects(inferred, method.observable_effects)) {
             method.observable_effects = inferred;
             changed = true;
