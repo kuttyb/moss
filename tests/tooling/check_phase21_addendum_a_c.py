@@ -23,19 +23,21 @@ def run(*args):
                           capture_output=True, text=True, timeout=180)
 
 
-unhandled = fixtures / "phase21_addendum_trailing_method_unhandled.moss"
-checked = run(compiler, "check", unhandled, "--json")
-assert checked.returncode != 0, (checked.stdout, checked.stderr)
-error = json.loads(checked.stdout)["error"]
-assert "main may not let typed errors escape" in error["message"], error
+for name in ("trailing_method_unhandled", "trailing_generic_unhandled"):
+    unhandled = fixtures / f"phase21_addendum_{name}.moss"
+    checked = run(compiler, "check", unhandled, "--json")
+    assert checked.returncode != 0, (name, checked.stdout, checked.stderr)
+    error = json.loads(checked.stdout)["error"]
+    assert "main may not let typed errors escape" in error["message"], (name, error)
 
 cases = (
     ("trailing_method_handled", "fn:via_local", ["enum:Failure:Bad"],
      "7\n8\n"),
-    ("grouped_a", "fn:regroup_a", ["enum:Failure:A"], "A\n"),
+    ("grouped_a", "fn:regroup_a", ["enum:Failure:A"], "outer A\n"),
     ("grouped_b", "fn:regroup_b", ["enum:Failure:B"], "B\n"),
     ("grouped_both", "fn:regroup_both",
      ["enum:Failure:A", "enum:Failure:B"], "A\nB\n"),
+    ("grouped_root", "handler:Worker.Run", ["enum:Failure:A"], "1\n"),
 )
 for name, target, variants, output in cases:
     source = fixtures / f"phase21_addendum_{name}.moss"
@@ -48,6 +50,14 @@ for name, target, variants, output in cases:
     facts = json.loads(effects.stdout)["result"]["observable_effects"]
     assert facts["raise_set"] == variants and not facts["unresolved"], (
         name, facts)
+    if name == "grouped_root":
+        plan = json.loads(effects.stdout)["result"]["synchronization_plan"]
+        handlers = plan["domains"][0]["handlers"]
+        normal = next(handler for handler in handlers if handler["name"] == "Run")
+        failure = next(handler for handler in handlers if handler["name"] == "Run$fail")
+        assert normal["write_set"] == ["left"], normal
+        assert failure["write_set"] == ["right"], failure
+        assert normal["class_set"] != failure["class_set"], (normal, failure)
     lowered = scratch / f"{name}.rs"
     generated = run(compiler, source, "-o", lowered)
     assert generated.returncode == 0, (name, generated.stdout, generated.stderr)

@@ -15,4 +15,4 @@ fn main():
   try:
     regroup_a()
   recover Failure.A:
-    echo "A"
+    echo "outer A"
