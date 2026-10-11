@@ -5,6 +5,9 @@
 enum FormatError:
   Bad
 
+enum SetupError:
+  Bad
+
 fn checked(chunk: Range) -> Int:
   if chunk.length() < 2:
     raise FormatError.Bad
@@ -12,6 +15,9 @@ fn checked(chunk: Range) -> Int:
 
 fn add(total: Int, value: Int) -> Int:
   return total + value
+
+fn seed() -> Int:
+  raise SetupError.Bad
 
 domain Reader:
   fn Eligible() -> Int:
@@ -23,6 +29,18 @@ domain Reader:
       total = -1
     file.close()
     reply total
+  on_fail:
+    reply -2
+
+  fn SeedBeforeMap() -> Int:
+    file = FileIO.open("tmp/phase21-pipeline-try-placeholder/p4.bin", ro)
+    total = file.chunks(2) |> map(checked(_) + 1) |> reduce(seed(), add)
+    file.close()
+    reply total
+  on_fail SetupError.Bad:
+    reply -3
+  on_fail FormatError.Bad:
+    reply -4
   on_fail:
     reply -2
 
@@ -43,3 +61,4 @@ fn main():
   reader = Reader()
   echo message reader.Eligible()
   echo message reader.Sequential()
+  echo message reader.SeedBeforeMap()
