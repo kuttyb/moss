@@ -5660,3 +5660,17 @@ Fast Debug frames now carry the checker-compatible functional context separately
 their human-readable trace name. Pipeline metadata lookup matches canonical context,
 line, and checked stage source, including static function specializations and multiple
 pipeline expressions on one line.
+
+## Phase 21 isolated method-warning follow-up
+
+Commit `b7e37d7` closes the source-backed direct and helper-wrapped method
+counterexamples: `moss check --json` reports `RECOVER_EMPTY_AFTER_STATE_WRITE`
+with `cell.value` provenance, and `moss effects handler:Sample.Run --json`
+reports `domain_write=true`. Native and Fast Debug both output `2` for the
+original fixtures; a local-only receiver does not warn. The permanent method
+gate is in `tests/run.sh`. Strict C++17 optimized compilation, method and
+prior warning gates, recovery and peer effects gates, imported-effects and
+source-free ABI tests, and `git diff --check` passed on the isolated branch.
+These results must be rerun after integration. ABI v8 still lacks source-free
+ordinary helper recovery-body provenance, so exact consumer-side warning
+parity remains open for architectural disposition.
