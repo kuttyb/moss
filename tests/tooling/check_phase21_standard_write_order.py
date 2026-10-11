@@ -43,9 +43,14 @@ function = '''fn FlipFn(before: Int, error: std.ParseError) -> Int:
     error = std.ParseError.Invalid
   return 0
 '''
-consumer_body = '''fn set_overflow(error: std.ParseError) -> Int:
+consumer_body = '''enum Failure:
+  Bad
+fn set_overflow(error: std.ParseError) -> Int:
   error = std.ParseError.Overflow
   return 0
+fn set_overflow_then_raise(error: std.ParseError) -> Int:
+  error = std.ParseError.Overflow
+  raise Failure.Bad
 fn main():
   carrier = CARRIER()
   var error = std.ParseError.Invalid
@@ -69,6 +74,15 @@ fn main():
       echo 5
     case Overflow:
       echo 6
+  var raised_error = std.ParseError.Invalid
+  try:
+    carrier.Flip(set_overflow_then_raise(raised_error), raised_error)
+  recover Failure.Bad:
+    match raised_error:
+      case Invalid:
+        echo 8
+      case Overflow:
+        echo 7
 '''
 
 
@@ -95,8 +109,8 @@ for optimization in ("0", "3"):
     executable = scratch / f"local-o{optimization}"
     run("rustc", "--edition=2021", "-D", "warnings",
         f"-Copt-level={optimization}", generated, "-o", executable)
-    assert run(executable).stdout == "1\n3\n5\n"
-assert run(compiler, "run", "--interp", local).stdout == "1\n3\n5\n"
+    assert run(executable).stdout == "1\n3\n5\n7\n"
+assert run(compiler, "run", "--interp", local).stdout == "1\n3\n5\n7\n"
 
 project = scratch / "project"
 (project / "src").mkdir(parents=True)
@@ -124,14 +138,14 @@ consumer.write_text("module app\nimport provider\n" +
                     consumer_body.replace("CARRIER()", "provider.Carrier()")
                                  .replace("FLIP_FUNCTION", "provider.FlipFn"))
 run(compiler, "check", consumer, "--json", cwd=project)
-build_and_run("1\n3\n5\n")
-build_and_run("1\n3\n5\n", release=True)
-assert run(margo, "debug", cwd=project).stdout == "1\n3\n5\n"
+build_and_run("1\n3\n5\n7\n")
+build_and_run("1\n3\n5\n7\n", release=True)
+assert run(margo, "debug", cwd=project).stdout == "1\n3\n5\n7\n"
 
 provider.rename(provider.with_suffix(".removed"))
 consumer.write_text(consumer.read_text().replace(
     "      echo 1\n", "      echo 1\n      echo 1\n"))
 run(compiler, "check", consumer, "--json", cwd=project)
-build_and_run("1\n1\n3\n5\n")
-build_and_run("1\n1\n3\n5\n", release=True)
+build_and_run("1\n1\n3\n5\n7\n")
+build_and_run("1\n1\n3\n5\n7\n", release=True)
 print("Phase 21 standard-error WRITE argument order passed.")
