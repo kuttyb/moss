@@ -36,6 +36,60 @@ explicitly leaves a general mid-execution early-release proof open. Reviewer
 2 did not claim O9's complete Branch quiescence invariant; that is Reviewer
 3's area. The release candidate still needs the coordinator's integrated
 validation and human approval before any `main` merge.
+## Phase 21 independent source-free/numeric review — 2026-10-11
+
+Reviewer 4's isolated branch `phase-21-review-sourcefree-numeric` was cut from
+integration `82dd956`. It found two distinct issues. First, a source-free
+provider with two tag-only raised variants accepted a `.mossi` file with its
+two `on_fail` callable symbols swapped, linked successfully, and aborted at
+runtime. The loader now checks the existing ABI-v8 concrete and semantic
+section hashes plus the canonical `on_fail` symbol derived from module,
+domain, handler, and arm index. This is a validation-only repair; the ABI-v8
+layout and emitted records are unchanged. The focused source-free gate passes
+with both unadjusted and recomputed-hash symbol-swap regressions.
+
+The stronger falsification case remains **unresolved**: swapping only the two
+failure-arm pattern identities, recomputing all existing hashes, and retaining
+canonical symbols passes `moss --check` and native build but aborts at runtime
+(SIGABRT, exit 134). Existing hashes verify file consistency, not that the
+`.mossi` contract matches the provider rlib. A general repair needs a
+provider-artifact-bound contract or provider-owned dispatch, which changes
+the frozen cross-artifact agreement and requires architectural review. Do not
+claim arbitrary falsified metadata rejection or Phase 21 release readiness
+from the narrow validation repair.
+
+Second, the Phase 20 typed `Range` cross-crate fixture is caused by each
+generated module crate defining a separate nominal FileIO `Range`. Correct
+compilation requires a shared native FileIO ABI or an equivalent owner-safe
+cross-crate transport. Pending that broader Phase 20 repair, direct calls
+passing `Range` or `RangeBatch` to another explicit module now fail at the
+Moss call site with `FILEIO_CROSS_CRATE_ABI`. The source-backed and
+source-free fixture both reject before rustc E0308; a same-module Range
+helper still builds and prints 65. This is an interim diagnostic, not a
+working cross-crate Range implementation.
+
+Independent numeric probes on rustc 1.98.1 and GCC 13.3.0 passed: 2,048
+finite binary64 patterns matched a Python shortest-decimal oracle in native
+debug, native optimized, and Fast Debug; 2,070 `parse_float` and 535
+`parse_int`/`to_int` inputs matched the same three engines. No second Rust or
+C++ toolchain is installed locally. The spec's wider formatter portability
+pin remains unverified; CI should run this corpus on at least two Rust
+toolchain versions and both GCC and Clang C++17 compiler builds. The tested
+local combination was rustc 1.98.1 (LLVM 22.1.8) and GCC 13.3.0 on
+x86_64-unknown-linux-gnu; no Clang or second rustc/GCC was available. CI
+should build Moss with GCC and Clang, then run the pinned Float and numeric
+oracles with the current pinned rustc plus an independently pinned prior or
+next supported rustc release for each C++ build. Every job should require
+native debug, native optimized, and Fast Debug output equality.
+
+Final isolated-branch validation after the code and test edits: `make check`
+PASS (`all Moss v0.1 tests passed`, including strict Phase 20 review:
+36 bug and 30 guard probes passed); `make examples` PASS; strict C++17
+`g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -fsyntax-only src/moss.cpp`
+PASS; `git diff --check` PASS. Source-free provider execution passed within
+the ABI gate. These results do not validate the unresolved recomputed-hash
+pattern swap or the untested toolchain matrix. Historical checkpoints below
+describe the earlier integration state.
 
 ## Phase 21 A–D integration review — 2026-10-10
 
