@@ -1,0 +1,19 @@
+enum Error:
+  Bad
+
+type Box:
+  value: Int
+
+fn fail() -> Box:
+  raise Error.Bad
+
+fn projected() -> Int:
+  return fail().value
+
+domain Worker:
+  fn Run():
+    echo projected()
+
+fn main():
+  worker = Worker()
+  message worker.Run()
