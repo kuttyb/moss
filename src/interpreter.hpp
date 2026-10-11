@@ -1591,12 +1591,35 @@ class FastInterpreter {
                  selected_errors_.back().identity.canonical());
             throw selected_errors_.back();
           }
-          if (statement.exceptional_alternatives.size() != 1)
+          Value value = independent(eval(statement.a, frame,
+                                         statement.line, output));
+          RaisedIdentity identity;
+          if (value.kind == Value::Kind::Struct && value.object &&
+              !value.object->case_name.empty()) {
+            identity = RaisedIdentity::enum_variant(
+                value.object->type, value.object->case_name);
+          } else {
+            std::vector<RaisedIdentity> scalar_candidates;
+            for (const auto& candidate : statement.exceptional_alternatives) {
+              if (candidate.kind != RaisedIdentityKind::ScalarType) continue;
+              const bool matches =
+                  (value.kind == Value::Kind::Int &&
+                   (candidate.type == "Int" || candidate.type == "int")) ||
+                  (value.kind == Value::Kind::Float &&
+                   (candidate.type == "Float" || candidate.type == "float")) ||
+                  (value.kind == Value::Kind::Bool &&
+                   (candidate.type == "Bool" || candidate.type == "bool"));
+              if (matches) scalar_candidates.push_back(candidate);
+            }
+            if (scalar_candidates.size() != 1)
+              throw RuntimeError(statement.line,
+                                 "checked raise lacks one concrete error identity");
+            identity = scalar_candidates.front();
+          }
+          if (!statement.exceptional_alternatives.count(identity))
             throw RuntimeError(statement.line,
-                               "checked raise lacks one concrete error identity");
-          RaisedSignal raised{*statement.exceptional_alternatives.begin(),
-                              independent(eval(statement.a, frame,
-                                               statement.line, output)),
+                               "raised error variant is outside the checked effect set");
+          RaisedSignal raised{identity, std::move(value),
                               statement.line, frame.source_file};
           emit("raise", frame, statement.line, raised.identity.canonical());
           throw raised;

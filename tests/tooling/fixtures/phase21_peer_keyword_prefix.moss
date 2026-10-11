@@ -1,0 +1,11 @@
+domain Worker:
+  on_failure = 2
+
+  fn Read() -> Int:
+    reply on_failure
+
+fn main():
+  worker = Worker()
+  recovered = 1
+  value = message worker.Read()
+  echo recovered + value

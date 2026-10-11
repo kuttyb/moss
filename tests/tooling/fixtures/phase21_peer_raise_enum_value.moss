@@ -1,0 +1,21 @@
+enum Failure:
+  First
+  Second
+
+fn forward(error: Failure):
+  raise error
+
+fn route(first: Bool):
+  try:
+    if first:
+      forward(Failure.First)
+    else:
+      forward(Failure.Second)
+  recover Failure.First:
+    echo "first"
+  recover Failure.Second:
+    echo "second"
+
+fn main():
+  route(true)
+  route(false)
