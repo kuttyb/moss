@@ -121,7 +121,7 @@ These descriptions are from the coordinator's summary, not a recovered original 
 | EXT-09 `raise e` loses enum variant | Recovery semantics and native local-recovery suites passed; exact external source was unavailable. |
 | EXT-10 raising pipeline callback Rust E0308 | Native recovery regression exists; not independently rerun. |
 | EXT-11 Fast Debug `on_fail`/payload dispatch | Interpreter/regression code exists; not independently rerun. |
-| EXT-12 Float text/division effects | `check_phase21_float_ieee.py` passed debug native, optimized native and Fast Debug at this SHA. Its independent Python corpus checks 270 finite bit patterns; wider rustc/toolchain matrix remains open. |
+| EXT-12 Float text/division effects | `check_phase21_float_ieee.py` passed debug native, optimized native and Fast Debug with rustc 1.98.1 and repo-local 1.97.0. Its independent Python corpus checks 270 finite bit patterns. |
 | EXT-13 bound `recover err` unusable in match | **Reproduced:** approved single-enum binding fails `match` with `MATCH_REQUIRES_ENUM` (A6). |
 | EXT-14 provider symbol and weak `.mossi` metadata | Shared ABI test passed, but source-free suite stops at A5 and pattern-swap authenticity fails as A1. |
 | EXT-15 unchecked FileError/ParseError shape | FileIO and numeric tests exist; `check_phase21_numeric_parse.py` passed. |
@@ -133,7 +133,7 @@ These descriptions are from the coordinator's summary, not a recovered original 
 
 ## Numeric and source-surface decisions
 
-The approved §13.3 grammar now explicitly accepts `.5`, `1.`, uppercase `E`, exponent signs and leading zeroes, and restricts nonfinite tokens to `inf`, `-inf`, and `NaN`. It also freezes ASCII digit and six-whitespace-character rules. These are approved inputs, not reviewer-invented spellings. `check_phase21_numeric_parse.py` passed. §13.2 freezes shortest-round-trip Float text and tie handling; the Float regression passed with an independent Python oracle on this toolchain. I have not run an additional rustc version, so cross-toolchain stability remains unproven in this review.
+The approved §13.3 grammar now explicitly accepts `.5`, `1.`, uppercase `E`, exponent signs and leading zeroes, and restricts nonfinite tokens to `inf`, `-inf`, and `NaN`. It also freezes ASCII digit and six-whitespace-character rules. These are approved inputs, not reviewer-invented spellings. `check_phase21_numeric_parse.py` passed. §13.2 freezes shortest-round-trip Float text and tie handling; the Float regression passed with an independent Python oracle using both rustc 1.98.1 and repo-local 1.97.0. This is a two-toolchain check on the preliminary SHA, not proof for arbitrary future rustc versions.
 
 ## Commands and exact preliminary results
 
@@ -150,6 +150,7 @@ All commands below used the isolated worktree compiler built from `f6f11c4` with
 | `check_phase21_on_fail_capture.py ./moss` | Pass. |
 | `check_phase20_cross_crate_range_abi.py ./moss` | Pass, including fail-closed cross-crate typed Range. |
 | `check_phase21_float_ieee.py ./moss` | Pass. |
+| `PATH=<repo-local rustc 1.97.0 bin>:$PATH check_phase21_float_ieee.py ./moss` | Pass, including the same independent Float corpus. |
 | `check_phase21_numeric_parse.py ./moss` | Pass. |
 | `check_phase21_fileio_errors.py` | Pass. |
 | `check_phase21_fileio_root_cleanup.py ./moss` | Pass. |
@@ -160,4 +161,4 @@ All commands below used the isolated worktree compiler built from `f6f11c4` with
 | Independent `.mossi` pattern-swap/source-free build | **Build passes; executable aborts (134)**. |
 | Independent one-enum `recover err: match err` probe | **Fail:** `MATCH_REQUIRES_ENUM`, internal `_selected_error` type. |
 
-No `make check`, `make examples`, full Branch suite or cross-toolchain Float run has been claimed for this SHA. Retest the exact frozen integration SHA after the coordinator signals code freeze; record that SHA, all gate results, and a revised GO/NO-GO here. Until A1, A6 and any approved method-contract disposition are settled, keep **NO-GO** even if general test suites pass.
+No `make check`, `make examples`, or full Branch suite has been claimed for this SHA. Retest the exact frozen integration SHA after the coordinator signals code freeze; record that SHA, all gate results, and a revised GO/NO-GO here. Until A1, A6 and any approved method-contract disposition are settled, keep **NO-GO** even if general test suites pass.
