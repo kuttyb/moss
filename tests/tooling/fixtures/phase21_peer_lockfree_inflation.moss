@@ -1,0 +1,19 @@
+enum WorkError:
+  Down
+
+fn fail():
+  raise WorkError.Down
+
+domain Cache:
+  value = 10
+
+  fn Load():
+    try:
+      echo value
+      fail()
+    recover WorkError.Down:
+      value = 0
+
+fn main():
+  cache = Cache()
+  message cache.Load()
