@@ -26,17 +26,18 @@ results below apply to the same compiler source and were run before these
 original files entered the regression corpus.
 The independent Architect L6 has not voted on `c1ef3eb`; the historical NO-GO
 at `5941d98` remains attributable to that earlier SHA. No merge into `main`.
-The final acceptance evidence is committed locally on `phase-21-integration`.
-The user-supplied AGENTS instructions for this turn prohibit `git push`, so
-these evidence commits remain ahead of the configured remote. L7 must arrange
-the independent Architect review of the exact candidate before any merge vote.
+The final acceptance evidence is committed and pushed to
+`origin/phase-21-integration` following the user's explicit push request.
+L7 must arrange independent Architect review of the exact candidate before
+any merge vote.
 
 ## Previous Phase 21 pre-original acceptance checkpoint (2026-10-11)
 
 Exact validated compiler/runtime/test source:
 `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
-`phase-21-integration`. Later commits in the release packet change documents
-only. The independent engineering proof reviewer ran 13 focused O1/O4/O8 and
+`phase-21-integration`. Later release-packet commits add unchanged original
+fixtures, a regression gate and documents without changing compiler source.
+The independent engineering proof reviewer ran 13 focused O1/O4/O8 and
 bounded early-release gates on this source; all passed under the documented
 accepted/fail-closed contract. Reconstructed external A–F cases, ABI-v9
 artifact binding and migration, source-free methods/warnings, compiler-defined
