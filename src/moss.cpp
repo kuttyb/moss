@@ -27218,6 +27218,12 @@ static string source_free_contract_material(const string& text) {
   if (!starts_with(text, "moss-module-interface-v2\n"))
     throw CompileError(0, "source-free provider uses an older module interface; rebuild it for ABI v9",
                        "SOURCE_FREE_ABI_REBUILD_REQUIRED");
+  // ABI v8 used the same interface container but had no provider-owned seal.
+  // Diagnose that version before the v9-only digest check. A v9 interface
+  // missing its digest remains a malformed v9 contract.
+  if (text.find("\nnative_abi 8\n") != string::npos)
+    throw CompileError(0, "source-free provider uses ABI v8; rebuild its .mossi and .rlib for ABI v9",
+                       "SOURCE_FREE_ABI_REBUILD_REQUIRED");
   const size_t begin = text.find("\n" + prefix);
   if (begin == string::npos ||
       text.find("\n" + prefix, begin + 1) != string::npos)

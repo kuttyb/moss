@@ -133,6 +133,6 @@ checked=subprocess.run([str(compiler),'check',str(main),'--json'],cwd=project,
                        text=True,capture_output=True,timeout=180)
 assert checked.returncode != 0, (checked.stdout,checked.stderr)
 diagnostic=json.loads(checked.stdout)['error']['code']
-assert diagnostic in ('SOURCE_FREE_CONTRACT_INVALID','SOURCE_FREE_ABI_REBUILD_REQUIRED'), diagnostic
+assert diagnostic == 'SOURCE_FREE_ABI_REBUILD_REQUIRED', diagnostic
 interface_path.write_text(interface)
 print('10.6F.1 typed class layouts, exact direct acquisitions, no metadata/heap work, optimized assembly, independent instances, source-free ABI-v9 execution, and ABI-v8 rejection passed.')
