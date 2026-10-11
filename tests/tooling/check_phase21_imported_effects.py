@@ -5,6 +5,7 @@ import json
 import hashlib
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 
@@ -13,6 +14,8 @@ compiler = Path(sys.argv[1]).resolve()
 margo = compiler.with_name("margo")
 out = Path(sys.argv[2]).resolve()
 project = out / "provider-consumer"
+if project.exists():
+    shutil.rmtree(project)
 (project / "src").mkdir(parents=True, exist_ok=True)
 (project / "moss.toml").write_text(
     '[project]\nname="phase21_imported_effects"\nversion="0.1.0"\n')
@@ -195,11 +198,26 @@ material = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}\n",
 tampered = re.sub(r"(?m)^provider_contract_digest sha256:[0-9a-f]{64}$",
                   "provider_contract_digest sha256:" +
                   hashlib.sha256(material.encode()).hexdigest(), tampered)
-interface.write_text(tampered)
 consumer.write_text(source_free)
+build_and_run("17\n23\n")
+# Keep the consumer source unchanged so this is a true warm-cache forgery.
+build_and_run("17\n23\n")
+interface.write_text(tampered)
 rejected = json.loads(run([compiler, "check", consumer, "--json"],
                           expected=1).stdout)
 assert rejected["error"]["code"] == "SOURCE_FREE_ARTIFACT_CONTRACT_MISMATCH"
+warm_rejected = json.loads(run([margo, "build", "--json"],
+                               expected=1).stdout)
+assert not warm_rejected["ok"], warm_rejected
 interface.write_text(original)
+
+# Old local output metadata must not be mistaken for a compiled provider when
+# a no-export application is rebuilt in the same directory.
+stale_app = project / "build/debug/app.mossi"
+stale_app.write_text("moss-module-interface-v1\nnative_abi 8\n")
+built = json.loads(run([margo, "build", "--json"]).stdout)
+assert stale_app.read_text().startswith(
+    "moss-module-interface-v2\nprovider_contract_digest sha256:"), built
+assert run([built["artifacts"]["artifacts"]["executable"]]).stdout == "17\n23\n"
 
 print("Phase 21 ABI-v9 imported function/method effects and artifact binding passed")

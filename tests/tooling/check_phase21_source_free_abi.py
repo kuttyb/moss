@@ -401,7 +401,7 @@ fn main():
     # Recomputing the stored hashes must still fail the canonical symbol check.
     write_interface(interface_path, switched)
     forged = run([compiler, "--check", main], cwd=multi_out, expected=1)
-    assert "invalid ABI-v8 failure-arm symbol" in forged.stderr
+    assert "invalid ABI-v9 failure-arm symbol" in forged.stderr
     interface_path.write_text(original)
 
 
@@ -587,11 +587,11 @@ v7 = run([compiler, "--check", main], cwd=out, expected=1)
 assert "incompatible native calling convention" in v7.stderr
 assert "rebuild its .mossi provider" in v7.stderr
 
-# ABI-v8 with missing exceptional-consumer metadata also fails closed.
+# ABI-v9 with missing exceptional-consumer metadata also fails closed.
 write_interface(interface_path, synthetic.replace(
     '  handler_exceptional_consumers "Bump" 63\n', ""))
 missing = run([compiler, "--check", main], cwd=out, expected=1)
-assert "lacks ABI-v8 handler metadata" in missing.stderr
+assert "lacks ABI-v9 handler metadata" in missing.stderr
 
 for required_record in (
     '  handler_reply_contract "Bump" "unit" 1 1\n',
@@ -603,7 +603,7 @@ for required_record in (
 ):
     write_interface(interface_path, synthetic.replace(required_record, ""))
     missing = run([compiler, "--check", main], cwd=out, expected=1)
-    assert "lacks ABI-v8 handler metadata" in missing.stderr
+    assert "lacks ABI-v9 handler metadata" in missing.stderr
 
 # Every effect fact is mandatory in v8, even when its value is false.
 write_interface(interface_path, synthetic.replace(";fileio=0", "", 1))
@@ -618,7 +618,7 @@ invalid_destination = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 99 1 63 1')
 write_interface(interface_path, invalid_destination)
 invalid = run([compiler, "--check", main], cwd=out, expected=1)
-assert "invalid ABI-v8 handler contract" in invalid.stderr
+assert "invalid ABI-v9 handler contract" in invalid.stderr
 
 impossible_route = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1 '
@@ -626,7 +626,7 @@ impossible_route = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1 "scalar:Int"')
 write_interface(interface_path, impossible_route)
 invalid = run([compiler, "--check", main], cwd=out, expected=1)
-assert "invalid ABI-v8 handler contract" in invalid.stderr
+assert "invalid ABI-v9 handler contract" in invalid.stderr
 
 duplicate_route = synthetic.replace(
     'handler_exceptional_edge "Bump" 77 0 1 63 1 '
@@ -719,5 +719,5 @@ run_source_free_reporting_route_fixture()
 run_source_free_multi_enum_fixture()
 run_actual_exceptional_site_fixture()
 print(
-    "Phase 21.0 source-free ABI-v8 metadata, Root trailer dispatch, "
+    "Phase 21 source-free ABI-v9 metadata, Root trailer dispatch, "
     "nested propagation, and native raised-handler checks passed.")
