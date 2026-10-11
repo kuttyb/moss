@@ -769,9 +769,9 @@ assert mutant_program == ['33', '44'], mutant_program
 assert mutant_trace == ['moss-branch publish', 'moss-branch run'] * 4, mutant_trace
 assert mutant_trace != WINDOW_TRACE, mutant_trace
 
-# A source-free .mossi provider has no authoritative FileIO effect bit. The
-# consumer runs with the real process-root runtime: its local combine is
-# eligible for Branch lowering, while the provider combine stays sequential.
+# A source-free .mossi provider retains its checked observable effects. The
+# consumer runs with the real process-root runtime; local and provider
+# combines both remain eligible when their summaries are pure.
 provider_root = out / 'phase20_provider'
 provider = provider_root / 'provider'
 consumer = provider_root / 'consumer'
@@ -835,7 +835,8 @@ consumer_rust = consumer / 'build/debug/app.rs'
 consumer_text = consumer_rust.read_text()
 consumer_lowered = lowered_rust(consumer_text)
 assert re.search(r'branch_publish\(&', consumer_lowered), consumer_lowered
-assert 'ineligible for Branch lowering: combine callable FileIO effect unavailable for compiled provider' in consumer_text
+assert consumer_text.count('FileIO CHUNK PIPELINE -- eligible') >= 2
+assert 'combine callable FileIO effect unavailable for compiled provider' not in consumer_text
 consumer_binary = consumer / 'build/debug/p20consumer'
 provider_run = subprocess.run([str(consumer_binary)], text=True, capture_output=True,
                               timeout=120, check=True)

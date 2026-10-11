@@ -24,11 +24,20 @@ domain Store:
     file.open("tmp/phase20-proposal-domain.data", create)
     file.write(0, "a a ")
 
+  on_fail:
+    echo "unexpected FileIO error"
+
   fn Measure() -> Int:
     reply measure(file)
 
+  on_fail:
+    reply -1
+
   fn Close():
     file.close()
+
+  on_fail:
+    echo "unexpected FileIO error"
 
 fn main():
   store = Store()
