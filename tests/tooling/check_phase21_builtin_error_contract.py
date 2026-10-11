@@ -159,7 +159,12 @@ qualified = SCRATCH / "qualified_recovery"
 checked = subprocess.run([str(COMPILER), "build", "--json"], cwd=qualified,
                          capture_output=True, text=True)
 diagnostic = json.loads(checked.stdout)
-if checked.returncode == 0 or diagnostic.get("error", {}).get("code") != "FILEIO_ERROR_IDENTITY_UNSUPPORTED":
-    raise SystemExit(f"module-qualified FileIO recovery accepted: {diagnostic}")
+if checked.returncode != 0 or not diagnostic.get("ok"):
+    raise SystemExit(f"single-module qualified FileIO recovery rejected: {diagnostic}")
+executable = Path(diagnostic["result"]["artifacts"]["executable"])
+executed = subprocess.run([str(executable)], cwd=qualified,
+                          capture_output=True, text=True)
+if executed.returncode != 0 or executed.stdout != "1\n":
+    raise SystemExit(f"single-module qualified FileIO recovery selected wrong arm: {executed}")
 
 print("Phase 21 declared built-in error contracts passed")

@@ -8776,8 +8776,7 @@ class Checker {
     return {{RaisedIdentityKind::ScalarType, concrete, {}}};
   }
 
-  RaiseSet phase21_recovery_pattern(int line, const string& source_file,
-                                    const string& selector,
+  RaiseSet phase21_recovery_pattern(int line, const string& selector,
                                     const RaiseSet& remaining,
                                     string* binding_type = nullptr) const {
     const string value = trim(selector);
@@ -8796,24 +8795,6 @@ class Checker {
           err(line,
               "grouped recovery alternatives must be tag-only variants",
               "GROUPED_RECOVERY_PAYLOAD_BINDING");
-        if (identity.kind == RaisedIdentityKind::EnumVariant &&
-            ends_with(identity.type, "__FileError")) {
-          auto declaration = enums_.find(identity.type);
-          const bool source_uses_fileio = std::any_of(
-              p_.source_lines.begin(), p_.source_lines.end(),
-              [&](const Line& source) {
-                if (source.source_file != source_file) return false;
-                const string code = source_code_only(source.text);
-                return code.find("FileIO.") != string::npos ||
-                    code.find("FileIO(") != string::npos;
-              });
-          if (declaration != enums_.end() &&
-              declaration->second->source_file == source_file &&
-              source_uses_fileio)
-            err(line,
-                "module-qualified FileError recovery cannot select the built-in FileIO error identity",
-                "FILEIO_ERROR_IDENTITY_UNSUPPORTED");
-        }
         if (!result.insert(identity).second)
           err(line, "duplicate error variant in recovery arm",
               "DUPLICATE_RECOVERY_VARIANT");
@@ -8863,7 +8844,7 @@ class Checker {
                 "RECOVER_AFTER_CATCH_ALL");
           string binding_type;
           RaiseSet matched = phase21_recovery_pattern(
-              arm.line, arm.source_file, arm.a, remaining, &binding_type);
+              arm.line, arm.a, remaining, &binding_type);
           RaiseSet reachable_matched;
           for (const auto& identity : matched)
             if (remaining.count(identity)) reachable_matched.insert(identity);
@@ -9238,7 +9219,7 @@ class Checker {
       }
       string binding_type;
       RaiseSet matched = phase21_recovery_pattern(
-          arm.line, arm.source_file, selector, remaining, &binding_type);
+          arm.line, selector, remaining, &binding_type);
       RaiseSet reachable;
       for (const auto& identity : matched)
         if (remaining.count(identity)) reachable.insert(identity);
