@@ -1,0 +1,21 @@
+enum Failure:
+  Bad
+
+fn fail() -> Int:
+  raise Failure.Bad
+
+fn consume_after(number: Int, data: String) -> String:
+  return data
+
+domain Worker:
+  fn Run() -> Int:
+    var data = "abc"
+    try:
+      result = consume_after(fail(), data)
+    recover Failure.Bad:
+      reply data.length()
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run()
