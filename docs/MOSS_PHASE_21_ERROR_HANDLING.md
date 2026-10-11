@@ -26,7 +26,7 @@
    - O3 and Lemma 2 are scoped to the handler's own domain;
    - Lemma Q covers raises that a Branch produces while its siblings are still running;
    - progress has moved out of Theorem B2 into Corollary B3.
-2. **§3 step 5 and §2:** writes in `on_fail` and in `recover` arms can add *shared* locks to readers of the same leaves (P10, C1). The old wording, "never causes a normal-path inflation warning", overstated this.
+2. **§3 step 5 and §2:** writes in `on_fail` and in `recover` arms can add *shared* locks to readers of the same leaves (P10, C1). An `on_fail` signature column can also repartition classes and change normal-path exclusive lock counts without increasing the original handler's per-leaf WRITE requirements. The old wording, "never causes a normal-path inflation warning", overstated the guarantee.
 3. **§7 and §15 (V4-01):** serializability now covers executions that exit by a typed raise (Theorem A2; P10, C2). The validity of the state they leave is still disclaimed.
 4. **§16:** new status column. Four rows cite their Part III proofs, and O1–O9 are named as mandatory acceptance gates. §17 and §18 are updated to match, including a new "Proof gates" test row.
 5. **Editorial:**
