@@ -3,9 +3,11 @@
 > **Implementation complete; ready for independent Architect acceptance
 > (2026-10-11).** The exact validated implementation is
 > `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
-> `phase-21-integration`. ABI v9, standard errors and the reconstructed
-> external A–F repairs are integrated. The complete engineering gates passed
-> on this source. Independent Architect L6 review of this implementation is
+> `phase-21-integration`. ABI v9, standard errors and the external A–F repairs
+> are integrated. The complete engineering gates passed on this source before
+> the unchanged L7-supplied originals were imported; their focused acceptance
+> runs pass separately. The new permanent original-source gate and final full
+> rerun remain to be recorded. Independent Architect L6 review is
 > pending. **NO-GO for merging into `main`.**
 
 The last *independently reviewed* implementation remains `5941d98c824f31550f520891235c8b7ac96f3992`.
@@ -45,11 +47,15 @@ trusted; it is not publisher authentication. See
 `docs/MOSS_SOURCE_FREE_ABI_V9.md` for exact digest, object marker, import,
 cache and migration contracts.
 
-The external `p21_review_repros.zip` and `p21_open_at_7775049.zip` were absent
-from this workspace. L7 approved reconstruction of A–F. These permanent
-fixtures preserve the reported expression, inputs and outputs, but do not
-claim byte identity with the missing archive. The full issue-by-issue history,
-including all EXT-01..20 and INT-01..13, remains in
+Both external ZIP archives were absent from this workspace. L7 subsequently
+supplied a single-text bundle described as a byte-for-byte transcription of
+the original A–F README and six programs. We imported those seven files
+unchanged and ran them against implementation `c1ef3eb`; every case met its
+README expectation on supported execution paths. The ZIP itself was not
+independently inspected. The earlier `p21_review_repros.zip` remains
+unavailable, so its coverage remains reconstructed. Source hashes, exact
+commands, exit codes and outputs are in `docs/PHASE_21_ORIGINAL_AF_RESULTS.md`;
+the full issue-by-issue history, including EXT-01..20 and INT-01..13, is in
 `docs/PHASE_21_PEER_REVIEW_DISPOSITION.md`.
 
 ## Layer 1: O1–O9 formal implementation obligations
@@ -91,12 +97,12 @@ independent Architect acceptance pending.**
 
 | Surface | Exact-source engineering evidence | Acceptance boundary |
 | --- | --- | --- |
-| Local helpers, methods, generics, collections and ordinary expressions | Exact variants and panic separation in peer-effects, unary/projection and reconstructed A/C gates; A/C covers implicit final expressions, grouped reachable re-raise, unreachable explicit raise and reachable/unreachable consume. | The O1/O4 proof closes accepted and fail-closed syntax under stated assumptions; independent Architect assessment remains pending. |
+| Local helpers, methods, generics, collections and ordinary expressions | Exact variants and panic separation in peer-effects, unary/projection and reconstructed A/C gates; the unchanged supplied A rejects unhandled `E.A`, while C checks with only `E.A` escaping and prints `outer A`. Other A/C gates cover unreachable explicit raise and reachable/unreachable consume. | The O1/O4 proof closes accepted and fail-closed syntax under stated assumptions; independent Architect assessment remains pending. |
 | Root ingress and recovery | Unhandled synchronous/Executor Roots receive `ROOT_UNHANDLED_RAISE`; source-free and positive lexical recovery/`on_fail` pass native and Fast Debug gates. | No typed raise may cross a Root; native `runtime_invoke` and bound imported effects rely on the checked Root contract. |
-| Pipelines and Branches | D/E fixtures use `p4.bin=ABABC` and `p6.bin=ABCD`, require `-1` through `on_fail`; exact effects, O0/O3 output, ordered speculative precedence and concurrent quiescence pass. | File-chunk Fast Debug has a documented interpreter limit; native ordering and resource cleanup are the required physical witnesses. |
+| Pipelines and Branches | The unchanged supplied D/E programs use `p4.bin=ABABC` and `p6.bin=ABCD`, require `-1` through `on_fail`; exact effects and O0/O3 output pass. Separate gates cover ordered speculative precedence and concurrent quiescence. | File-chunk Fast Debug has a documented interpreter limit; native ordering and resource cleanup are the required physical witnesses. |
 | Source-free packages | ABI v9 binds canonical `.mossi` to selected `.rlib`; exact-source gates reject v8, missing, stale, forged, warm-cache and valid-but-mismatched artifact pairs. Removed-source methods, warning provenance and cross-crate standard-error WRITE recovery execute. | Contract consistency assumes a trusted provider build; this is not publisher authentication. Architect review pending. |
 | FileIO, locks and errors | Typed FileIO, standard error identity, injected cleanup, fresh failure locks and concurrent Roots pass exact-source gates. | Failed `create` may leave a name; later retry `sync()` does not prove that name durable. Descriptor cleanup remains required. |
-| Numeric conversion and Float | Exact-source parse/conversion gates and B/F expression corpus pass; GCC/Clang × Rust 1.97/1.98 matches O0/O3/Fast Debug bytes. | Grammar and nearest, ties-to-even formatting remain frozen; retain pinned corpora in CI. |
+| Numeric conversion and Float | Exact-source parse/conversion gates and B/F expression corpus pass; unchanged supplied B/F also match their README output in O0/O3/Fast Debug. GCC/Clang × Rust 1.97/1.98 matches the pinned corpus bytes. | Grammar and nearest, ties-to-even formatting remain frozen; retain pinned corpora in CI. |
 | Phase 20 Range | Concrete cross-crate `Range` emits `FILEIO_CROSS_CRATE_ABI` at Moss checking; legal same-module and consumer-specialized generic forms pass strict Phase 20 review. | Full concrete interoperability is **DEFERRED-APPROVED** as Phase 20 work. |
 
 ## Validation ledger and exact environment
@@ -109,13 +115,13 @@ independent Architect NO-GO remain separately attributable in
 
 | Gate | Exact-source result |
 | --- | --- |
-| `TMPDIR="$PWD/tmp" make check` | **PASS**, exit 0, ending `all Moss v0.1 tests passed`. Includes all permanent external A–F, ABI-v9 forgery/cache/migration, imported effects and warning, standard error, Root/Branch and FileIO fault gates. |
+| `TMPDIR="$PWD/tmp" make check` | **PASS**, exit 0, ending `all Moss v0.1 tests passed` before import of the unchanged supplied A–F. Includes reconstructed A–F, ABI-v9 forgery/cache/migration, imported effects and warning, standard error, Root/Branch and FileIO fault gates. Rerun after the new original-source gate is integrated. |
 | `TMPDIR="$PWD/tmp" make examples` | **PASS**, exit 0; 32 positive example builds. |
 | Strict GCC and Clang C++17 | **PASS** under GCC 13.3.0 and Clang 18.1.3, both `-std=c++17 -O2 -Wall -Wextra -Werror -pedantic`. |
 | Strict Phase 20 review in `make check` | **PASS**: 36 bug, 30 guard and two pre-existing probes; eight design proposals remain INFO. Phase 20 Executor runtime 54/54 passes. |
-| Reconstructed A/C | **PASS**: `check --json`, exact `effects --json`, native O0/O3 and Fast Debug, including unreachable-arm effect and ownership controls. |
-| Reconstructed D/E | **PASS**: exact `FormatError.Bad`/`SetupError.Bad` effects and native O0/O3 `-1` through Root `on_fail` with isolated `ABABC`/`ABCD` input files; lexical placeholder gate passes. |
-| Reconstructed B/F and numerical parity | **PASS**: O0/O3/Fast Debug expression outputs, numeric parsing/conversion, IEEE edge and 270-pattern corpus. |
+| Unchanged L7-supplied A/C | **PASS**: A is rejected at Moss checking, both native generator modes and Fast Debug for the unhandled `E.A`; a recovery-only scratch companion reports exact `via_local` raise set. C checks with only `E.A` escaping and prints `outer A` in native O0/O3 and Fast Debug. Other permanent A/C controls pass. |
+| Unchanged L7-supplied D/E | **PASS**: exact `FormatError.Bad`/`SetupError.Bad` plus six standard FileError effects and native O0/O3 `-1` through Root `on_fail` with isolated `ABABC`/`ABCD` input files. Fast Debug reports its intentional FileIO unsupported diagnostic. |
+| Unchanged L7-supplied B/F and numerical parity | **PASS**: B/F exact README output in native O0/O3 and Fast Debug; separate numeric parsing/conversion, IEEE edge and 270-pattern corpus gates pass. |
 | ABI-v9 source-free adversarial | **PASS**: removed-source execution; recomputed-hash pattern forgery, warm-cache edited/deleted provider, valid-but-mismatched provider swap, v8 rebuild and malformed v9 contract rejected at checking/build boundary. |
 | O1/O4/O8 and early-release proof retest | **PASS**: independent engineering reviewer ran 13 focused exact-source gates and closed the implementation argument under accepted/fail-closed syntax and stated assumptions. Architect review remains separate. |
 | Concurrent and fault-injection suites | **PASS** in `make check`: actual concurrent Executor/Root/Branch, FileIO cleanup and failure injection, zero terminal Branch token witnesses. |
@@ -141,7 +147,7 @@ subject to L7 acceptance before merging.
 
 | Owner | Recommendation | Basis |
 | --- | --- | --- |
-| Engineering L6 | **GO for independent Architect acceptance** | Exact-source full validation passes; O1/O4/O8 and bounded early-release implementation arguments are closed under documented assumptions. No known unaddressed correctness failure in the supported contract. |
+| Engineering L6 | **GO conditional on the final original-source gate and full rerun** | The unchanged supplied A–F pass focused acceptance and the prior full validation passed on identical compiler source. The new permanent gate and final full-suite run remain to be recorded. O1/O4/O8 and bounded early-release implementation arguments are closed under documented assumptions. |
 | Independent Architect L6 | **Historic NO-GO at `5941d98`; no vote on `c1ef3eb`** | The attributable review predates approved ABI v9 and A–F repairs. L7 coordinates exact-source independent assessment. |
 | L7 | **NO-GO for merging into `main` pending review and explicit approval** | Architectural acceptance and merge authorization remain with L7. |
 

@@ -4,12 +4,15 @@
 `phase-21-integration` at `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`
 contains the approved ABI
 v9 successor, compiler-defined standard errors, source-free warning
-provenance, cross-crate standard-error WRITE transport, and reconstructed
-external addendum A–F repairs. The complete `make check` and examples gates,
+provenance, cross-crate standard-error WRITE transport, and external addendum
+A–F repairs. The complete `make check` and examples gates,
 strict GCC/Clang C++17 builds, strict Phase 20 review, and four-pair Float
-portability matrix passed on this exact source. Engineering recommends **GO
-for independent Architect acceptance**; merging into `main` remains **NO-GO**
-until L7 approval. No independent Architect L6 vote exists for ABI v9.
+portability matrix passed on this exact compiler source before the unchanged
+original A–F programs were imported. Those originals pass focused acceptance;
+engineering **GO for independent Architect acceptance is conditional on the
+new permanent original-source gate and full rerun**. Merging into `main`
+remains **NO-GO** until L7 approval. No independent Architect L6 vote exists
+for ABI v9.
 
 The independent Architect L6's **NO-GO** in
 `PHASE_21_ARCHITECT_REVIEW.md` applies to exact implementation `5941d98`,
@@ -33,34 +36,37 @@ below records later engineering evidence without relabeling those decisions.
 
 ## Post-`5941d98` engineering reconciliation
 
-Both `p21_review_repros.zip` and `p21_open_at_7775049.zip` are unavailable
-in this workspace. L7 approved reconstruction. The committed A–F programs
-retain the expressions, input bytes and expected output in the written review,
-but are not represented as byte-identical originals. The original review
-archive remains an independent verification need if obtained later. The six
-addendum cases were reported against `7775049`; baseline results independently
-observed where practical are recorded in the fixture README and gates.
+Both ZIP archives are unavailable in this workspace. L7 later supplied a
+single-text bundle described as a byte-for-byte transcription of the original
+`p21_open_at_7775049.zip` README and six `.moss` files. Those seven files were
+imported unchanged under `tests/tooling/fixtures/p21_open_at_7775049/` and
+their exact-source results on implementation `c1ef3eb` are recorded in
+`PHASE_21_ORIGINAL_AF_RESULTS.md`. The bundle's claimed archive fidelity
+cannot be checked without the ZIP itself. The earlier
+`p21_review_repros.zip` remains unexecuted as an archive; its cases retain
+independently reconstructed provenance. The A–F historical failure baseline
+was `7775049`; later engineering results do not alter that observation.
 
 | Finding | Later implementation and permanent counterexample | Current engineering evidence and independent status |
 | --- | --- | --- |
 | EXT-01, EXT-18, INT-02 | Checked FileIO operations, cleanup, errno mapping, and fresh Root failure locks remain covered by `check_phase21_lock_fileio_adversarial.py`, `check_phase21_fileio_errors.py`, and `check_phase21_fileio_close_full.py`. `98391aa` introduced compiler `std.FileError`; `838aae6` migrated the adversarial identity fixture. | Exact-source `make check` includes the fault-injection, cleanup and concurrent Root gates; Architect retest pending. |
 | EXT-02, EXT-06 | Absolute Root typed-error boundary, including synchronous, Executor and source-free ingress, is covered by `check_phase21_root_totality.py`. | Exact-source `make check` includes Root totality and native/Fast Debug/source-free controls; Architect retest pending. |
-| EXT-03, INT-11; addendum **A** | `6aa69be` repairs implicit final-expression method raises and exact local/generic specialization effects. `check_phase21_addendum_a_c.py` includes unhandled and handled trailing methods and a generic negative; preexisting unary/projection, collection and helper gates remain. | The reconstructed baseline `7775049` counterexample was accepted with a missing raise. The permanent gate passes rejection, exact `effects --json`, native O0/O3 and Fast Debug on `c1ef3eb`. The separate 13-gate proof audit closes engineering O1 under accepted/fail-closed syntax; Architect retest pending. |
+| EXT-03, INT-11; addendum **A** | `6aa69be` repairs implicit final-expression method raises and exact local/generic specialization effects. `check_phase21_addendum_a_c.py` includes unhandled and handled trailing methods and a generic negative; preexisting unary/projection, collection and helper gates remain. | The unchanged supplied A is rejected at `main` by check, both native generator modes and Fast Debug. Whole-program `effects` also rejects invalid A; a recovery-only scratch companion reports `via_local` exactly `enum:E:A`. The permanent gate covers check/effects/native/Debug. Engineering **FIXED** on `c1ef3eb`; Architect retest pending. |
 | EXT-04, INT-03 | `check_phase21_peer_effects.py` and `check_phase21c_branch_errors.py` retain 4097-byte panic/shadowing, indexed precedence and concurrent bounded-K cases. | Exact-source `make check` reran the native and concurrent Branch gates after A/D/E; Architect review pending. |
 | EXT-05, EXT-14, INT-05 | ABI v9 `09a4d2a`, `93ce266`, `4711a47`, and `4e917d6` bind canonical `.mossi` bytes to the selected provider `.rlib`, preserve method effects and reject stale v8; `2b6e94f` adds a swapped but individually valid provider-artifact negative. `c1ef3eb` distinguishes historical v8 rebuild diagnostics from malformed v9 digests, with a removed-source migration gate. `check_phase21_source_free_abi.py`, `check_phase21_imported_effects.py`, `repro_phase21_mossi_pattern_forgery.py`, `check_phase21_source_free_cache_binding.py`, `check_phase21_abi_v9_external_cache.py`, and `check_phase21_abi_v9_migration.py` are permanent gates. | Exact-source `make check` rejects recomputed-hash forgery, warm-cache substitution and selected-artifact mismatch before execution, runs removed-source methods/functions, and passes the v8 rebuild-versus-damaged-v9 migration gate. Architect retest pending. Historical v8 failure remains valid, not a v9 limitation. |
 | EXT-07, INT-09, INT-10, INT-12 | ABI v9 `4711a47` carries checked warning witnesses for direct/nested/generic/method/on_fail paths; `check_phase21_sourcefree_noop_warning.py` includes protected-state positives and local negative controls. | Exact-source `make check` passes source-backed and source-removed warning-code parity; Architect verification pending. |
 | EXT-08, EXT-09, EXT-11, EXT-13, EXT-16, INT-01, INT-08 | Prior recovery, interpreter, parser and Root repairs and gates remain; `check_phase21_peer_recovery.py`, `check_phase21_recovery_semantics.py`, `check_phase21_on_fail_capture.py`, and Root keyword/identifier fixtures apply. | Historic Architect verified the earlier concrete cases; exact-source `make check` reran native/Fast Debug gates after ABI v9. New Architect assessment pending. |
-| EXT-10; addendum **D/E** | `4fc0936`, `36982ef`, `e37046f`, and `95e7d85` propagate checked `file.chunks(2) |> map(checked(_)) |> reduce(0, add)` and raising `reduce(seed(flag), add)` initial values. `check_phase21_peer_open_pipelines.py` writes isolated `p4.bin=ABABC` and `p6.bin=ABCD`; `check_phase21_pipeline_try_placeholder.py` covers lexical recovery and Root capture. | The reconstructed D/E cases must yield `-1` via `on_fail` and exact `FormatError.Bad`/`SetupError.Bad` effects. Exact-source `make check` passes D/E exact effects and native O0/O3 output; file-chunk Fast Debug is outside its supported surface. Architect retest pending. |
-| EXT-12; addendum **B/F**, INT-06 | `6a08830` repairs computed Float expression formatting and concrete `sqrt` local lowering. `check_phase21_float_ieee.py` pins B/F source and output plus expression corpus digest `4a14b7bee3f4f391105be90ddda1e4c01eac629ac0f6184fc0e703c8c5e23c00`; the 270-bit-pattern corpus digest remains `91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`. | At `7775049`, B passed check but native printed noncanonical integer-like text; F passed check but rustc failed E0689. Exact-source gate checks B/F output at native O0/O3 and Fast Debug; GCC/Clang × Rust 1.97/1.98 matrix passed all four combinations byte-for-byte on `c1ef3eb`. Architect retest pending. |
+| EXT-10; addendum **D/E** | `4fc0936`, `36982ef`, `e37046f`, and `95e7d85` propagate checked `file.chunks(2) |> map(checked(_)) |> reduce(0, add)` and raising `reduce(seed(flag), add)` initial values. `check_phase21_peer_open_pipelines.py` writes isolated `p4.bin=ABABC` and `p6.bin=ABCD`; `check_phase21_pipeline_try_placeholder.py` covers lexical recovery and Root capture. | The unchanged supplied D/E both check and report their respective `FormatError.Bad`/`SetupError.Bad` plus six `std.FileError` variants. Native O0/O3 builds with `-Dwarnings` print `-1`, including E's original Executor setup. Fast Debug gives its intentional Phase 20 FileIO unsupported diagnostic. Engineering **FIXED** on `c1ef3eb`; Architect retest pending. |
+| EXT-12; addendum **B/F**, INT-06 | `6a08830` repairs computed Float expression formatting and concrete `sqrt` local lowering. `check_phase21_float_ieee.py` pins B/F source and output plus expression corpus digest `4a14b7bee3f4f391105be90ddda1e4c01eac629ac0f6184fc0e703c8c5e23c00`; the 270-bit-pattern corpus digest remains `91553f7482c35cfef6c108c429c7bdb54fba4cc8d4959c4d0a7bd3faf1ca28ef`. | The unchanged supplied B/F check; native O0/O3 and Fast Debug match their exact README output bytes. F `root` has empty raise/panic effects. GCC/Clang × Rust 1.97/1.98 matrix passed all four combinations on `c1ef3eb`. Engineering **FIXED**; Architect retest pending. |
 | EXT-15, INT-13 | `98391aa`, `838aae6`, `ebd213a`, `c2793ce`, `60cd8ec`, `67bda5a`, and `726b987` define stable `std.FileError`/`ParseError`/`ConversionError`, preserve imported identity, and bridge cross-crate WRITE on normal and raised exits. `check_phase21_standard_error_namespace.py`, `check_phase21_source_free_standard_write_recovery.py`, and `check_phase21_standard_write_order.py` are permanent. | Exact-source `make check` passes native O0/O3, Fast Debug and source-removed provider gates; Architect retest pending. |
-| EXT-17; addendum **C** | `6aa69be` narrows grouped bare re-raise to the actually reachable selected variant. `9af6d79` excludes effects of a well-formed but unreachable recovery arm; `f4519fd` excludes that arm from ownership successors while still checking its body. `check_phase21_addendum_a_c.py` includes A only, B only, both, a Root lock-plan case, unreachable-arm explicit raise and consume positives, and a reachable consume negative. | Reopen the historic NOT-REPRODUCIBLE disposition: it rested on a weaker reconstructed case. The L7-described original shape was rejected at `7775049`; focused gates now require `outer A`, exact `raise_set`, no impossible D7 consume, and rejection of the reachable consume at Moss checking. Native O0/O3 and Fast Debug pass for accepted cases in exact-source `make check`; reachable consume fails at Moss checking. Architect retest pending. |
+| EXT-17; addendum **C** | `6aa69be` narrows grouped bare re-raise to the actually reachable selected variant. `9af6d79` excludes effects of a well-formed but unreachable recovery arm; `f4519fd` excludes that arm from ownership successors while still checking its body. `check_phase21_addendum_a_c.py` includes A only, B only, both, a Root lock-plan case, unreachable-arm explicit raise and consume positives, and a reachable consume negative. | The historic NOT-REPRODUCIBLE status rested on a weaker reconstructed case and is reopened. The unchanged supplied C checks with `RECOVER_UNREACHABLE_VARIANT` for B, reports only `enum:E:A` escaping, and prints `outer A` in native O0/O3 and Fast Debug. Engineering **FIXED** on `c1ef3eb`; Architect retest pending. |
 | EXT-19, INT-04 | L7 approved narrow Phase 20 deferrals. Failed create may leave a directory entry; retry `sync()` does not prove that earlier name durable. Concrete cross-crate `Range` remains fail-closed `FILEIO_CROSS_CRATE_ABI`; legal same-module and consumer-specialized generic uses remain valid. | **DEFERRED-APPROVED** for full Range interoperability and failed-create durability expansion only. Exact-source `make check` passes descriptor cleanup, negative diagnostic and valid controls; full deferred functionality remains unimplemented by approval. |
 | EXT-20 | Deterministic two-Root barrier in `check_phase21c_branch_errors.py` retains quiescence and zero-token assertions. | Exact-source `make check` passes the 64-run concurrent native gate; Architect retest pending. |
 | INT-07 | `docs/PHASE_21_FINAL_PROOF_AUDIT.md` and the final review below track O1/O4/O8 and §42 early-release implementation arguments, new expression-edge and imported capture counterexamples, and conservative iterator rejection. `a10d8bb` records that an unreachable recovery state write may still conservatively widen lock and warning footprints. | The independent engineering proof reviewer ran 13 focused O1/O4/O8/early-release/ABI gates on `c1ef3eb`; all passed. Engineering closes these claims under documented assumptions and accepted/fail-closed syntax. Historic Architect classified the earlier implementation incomplete; new Architect assessment pending. |
 
 **Exact-source engineering validation:** `TMPDIR="$PWD/tmp" make check` exited 0
 with `all Moss v0.1 tests passed` on `c1ef3eb`. It included the source-free
-ABI-v9 adversarial, external A–F, Root/Branch/FileIO, standard error, and
+ABI-v9 adversarial, reconstructed A–F, Root/Branch/FileIO, standard error, and
 strict Phase 20 gates (36 bug, 30 guard, two pre-existing PASS; eight design
 INFO). `make examples` built 32 positive examples. Strict GCC 13.3 and Clang
 18.1 C++17 `-O2 -Wall -Wextra -Werror -pedantic` passed. GCC/Clang × Rust
@@ -159,8 +165,10 @@ The independent Architect L6's exact-SHA report in
 `PHASE_21_ARCHITECT_REVIEW.md` records the individual commands and distinguishes
 rerun tests from code/spec inspection. `FIXED` below applies to each
 reconstructed counterexample, not a claim that all accepted Moss programs
-satisfy the broader invariant. EXT-17 cannot be fully resolved without the
-unavailable original archive. INT-13 was found after the architect's matrix
+satisfy the broader invariant. At that historic SHA, EXT-17 lacked its
+original counterexample and was classified NOT-REPRODUCIBLE; the later
+L7-supplied original transcription reopens and resolves it in engineering
+review as recorded above. INT-13 was found after the architect's matrix
 was drafted; its exact-SHA Phase 20 and Phase 21 gates were independently
 rerun in the architect report's final section.
 

@@ -1,6 +1,32 @@
 # Moss current status
 
-## Phase 21 implementation complete — ready for independent Architect acceptance (2026-10-11)
+## Phase 21 original A–F final acceptance handoff — 2026-10-11
+
+L7 supplied a single-text bundle described as a byte-for-byte transcription
+of the original A–F README and six `.moss` programs. Those files were imported
+unchanged into `tests/tooling/fixtures/p21_open_at_7775049/`; the actual ZIP
+was unavailable for independent byte comparison. The earlier original
+`p21_review_repros.zip` is still unavailable, and its cases retain
+reconstructed provenance. Source hashes, command forms, exact exits and output
+are in `docs/PHASE_21_ORIGINAL_AF_RESULTS.md`.
+
+On compiler implementation `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`
+(pre-evidence worktree HEAD `c59ede0`), all six supplied original cases met
+their README expectations: A rejects unhandled `E.A`; B and F print exact
+canonical Float text in O0/O3/Fast Debug; C checks with only `E.A` escaping
+and prints `outer A`; D/E check, report exact typed effects and print `-1`
+through Root `on_fail` in native O0/O3. The unchanged D/E Fast Debug runs
+produce the documented Phase 20 FileIO unsupported diagnostic. The original
+D/E legacy `FileError` declarations needed no ABI-v9 migration variant.
+
+Engineering GO is conditional on the new permanent original-source gate and
+full final validation being recorded. The previous `make check`, examples,
+strict GCC/Clang and four-pair Float results below apply to the same compiler
+source but were run before these original files entered the regression corpus.
+The independent Architect L6 has not voted on `c1ef3eb`; the historical NO-GO
+at `5941d98` remains attributable to that earlier SHA. No merge into `main`.
+
+## Previous Phase 21 pre-original acceptance checkpoint (2026-10-11)
 
 Exact validated compiler/runtime/test source:
 `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
