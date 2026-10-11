@@ -1,0 +1,3 @@
+module mapper
+export fn first(chunk: Range) -> Int:
+  return chunk[0]

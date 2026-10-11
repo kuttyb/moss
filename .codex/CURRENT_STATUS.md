@@ -48,9 +48,11 @@ An adjacent Phase 20 cross-crate Range ABI gap remains open. A minimal
 source-free provider with `export fn first(chunk: Range) -> Int` and a consumer
 calling it on a normal `FileIO.read` result passes `./moss check --json` with
 no diagnostics, but `./moss build` fails rustc E0308: it expects
-`moss_mapper::Range` and receives consumer `moss_fileio::Range`. The saved
-reproducer and exact outputs are in `tmp/phase21c-typed-range-repro/` in this
-worktree. It does not involve Branch lowering and is not repaired by this C
+`moss_mapper::Range` and receives consumer `moss_fileio::Range`. A durable
+source reproducer is in
+`tests/tooling/fixtures/phase20_typed_range_cross_crate/`; the observed
+checker result and rustc error are recorded there. It does not involve Branch
+lowering and is not repaired by this C
 closeout; resolving the shared Range ABI or rejecting that invalid native
 path is a separate Phase 20 follow-up and an integration acceptance risk.
 
