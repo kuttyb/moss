@@ -1,0 +1,32 @@
+type Counter:
+  value: Int
+
+  fn advance(flag: Bool) -> Bool:
+    value = value + 1
+    return flag
+
+domain Worker:
+  a_low = 0
+  b_condition = Counter(value = 0)
+  c_high = 0
+
+  fn Run(flag: Bool) -> Int:
+    if b_condition.advance(flag):
+      a_low = a_low + 1
+    else:
+      c_high = c_high + 1
+    reply b_condition.value
+
+  fn TouchLow():
+    a_low = a_low + 1
+
+  fn TouchCondition():
+    b_condition.value = b_condition.value + 1
+
+  fn TouchHigh():
+    c_high = c_high + 1
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(false)
+  echo message worker.Run(true)

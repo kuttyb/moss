@@ -23,6 +23,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_field_projection_e
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_early_condition_raise.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recover_reinit.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_raising_iterators.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_early_placement_proof.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_method_noop_warning.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_recovery_native.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_root_totality.py "$compiler"
