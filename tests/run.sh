@@ -25,6 +25,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_fileio_root_cleanu
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_lock_fileio_adversarial.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_float_ieee.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_numeric_parse.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_builtin_error_contract.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase21_borrowed_view_write.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_generic_specialization.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_builtin_generic_typing.py "$compiler"
