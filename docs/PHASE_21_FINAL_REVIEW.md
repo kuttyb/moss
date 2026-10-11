@@ -1,8 +1,9 @@
 # Phase 21 unified engineering release review
 
-> **Engineering checkpoint, not release approval (2026-10-11).** The latest
-> implementation considered here is `4e917d601e9de162a75cabc509269cc5f992c57d`
-> on `phase-21-integration`. ABI v9, standard errors and the reconstructed
+> **Engineering code-freeze checkpoint pending validation, not release approval
+> (2026-10-11).** The latest implementation considered here is
+> `c1ef3ebb13d7c74c3ed86a45d45e536d527161da` on
+> `phase-21-integration`. ABI v9, standard errors and the reconstructed
 > external A–F repairs are integrated. Final combined validation and independent
 > Architect L6 review of this implementation have not finished. **NO-GO for
 > merging into `main`.**
@@ -22,10 +23,10 @@ reported here without representing it as Architect acceptance.
 | Original implementation-complete checkpoint | `8d8a9cc6f842e11701dbedc56e3d2d2d3da9852a` |
 | External addendum failing baseline | `7775049` |
 | Independent Architect L6 implementation | `5941d98c824f31550f520891235c8b7ac96f3992` |
-| Current engineering implementation snapshot | `4e917d601e9de162a75cabc509269cc5f992c57d` |
+| Engineering code-freeze checkpoint | `c1ef3ebb13d7c74c3ed86a45d45e536d527161da`; validation in progress |
 | Reconciled `origin/main` baseline | `d15e968778fa1cff3cd5085911c505592af54a30`, integrated at `7eb192b`; recheck before final freeze |
 | Branch and merge gate | `phase-21-integration`; **do not merge into `main`** without explicit L7 approval |
-| Final implementation SHA | **Pending** later fixes and full engineering validation; use the exact commit from the final gate run |
+| Final validated implementation SHA | **Pending** complete engineering gates; if validation requires another code edit, record and retest the new exact SHA |
 
 The language now provides variant-precise typed `raise`, lexical
 `try`/`recover`, exhaustive Root-level `on_fail`, owned failure captures,
@@ -61,10 +62,10 @@ it is subject to final-SHA gate reruns and independent Architect review.
 
 | Obligation and guarantee | Compiler/runtime locations and argument | Behavioral and adversarial evidence | Assumption, limit and current status |
 | --- | --- | --- | --- |
-| **O1:** Every accepted expression and call preserves variant-precise typed raises, separate panic, and observable effects through recovery and imports. | `src/moss.cpp`: `observable_expression_effects`, `analyze_effect_block`, specialized handler effects, imported callable records; `src/file_chunk_lowering.inc` uses their summaries. | `check_phase21_peer_effects.py`, unary/projection gates, A/C addendum exact `check --json`/`effects --json`, imported-effects and source-free method gates. `6aa69be` repairs trailing method expression and concrete generic specialization. | Imported ABI-v9 effects must be bound to the selected artifact; unknown effects fail closed. The proof audit must confirm every accepted expression form and downstream Root/Branch/lock consumer. **INCOMPLETE pending final proof and retest.** |
+| **O1:** Every accepted expression and call preserves variant-precise typed raises, separate panic, and observable effects through recovery and imports. | `src/moss.cpp`: `observable_expression_effects`, `analyze_effect_block`, specialized handler effects, imported callable records; `src/file_chunk_lowering.inc` uses their summaries. | `check_phase21_peer_effects.py`, unary/projection gates, A/C addendum exact `check --json`/`effects --json`, imported-effects and source-free method gates. `6aa69be` repairs trailing method expression and concrete generic specialization; `9af6d79` excludes the raised effect of a well-formed recovery arm no variant can enter. | Imported ABI-v9 effects must be bound to the selected artifact; unknown effects fail closed. The proof audit must confirm every accepted expression form and downstream Root/Branch/lock consumer. **INCOMPLETE pending final proof and retest.** |
 | **O2:** `h` and `h$fail` have independent lock plans. The trailer adds no per-leaf WRITE requirement to `h`, but its signature column can repartition classes and change normal exclusive lock count. | `src/moss.cpp`: `specialized_handler_failure_effects`, `build_synchronization_plan`; `src/handler_lowering.inc`: failure wrapper. | `check_phase21_handler_failure_native.py`, `check_phase21_peer_warnings.py`, A/C grouped Root plan check. | Uses the final class partition and ranked acquisition; no assumption of invariant class count. L7 approved wording correction; normative text updated. **PASS conditional on O1 and final plan rerun.** |
 | **O3:** Required recovery locks are planned and acquired in rank order before the relevant `try`/first observable action; no dynamic upgrade. | `src/moss.cpp`: `derive_path_placement`; `src/handler_lowering.inc`: path wrapper. | Recovery-plan, lock inflation warning, `check_phase21_early_placement_proof.py`, concurrent Root gate. | Closed static routes and complete effect/remaining-path sets are required. **PASS for implemented placement, conditional on O1/O4 and final tests.** |
-| **O4:** Exceptional edges, definite initialization, moves and D7 recovery ownership agree at the expression evaluation point, including loops, nested recovery and re-raise. | `src/moss.cpp`: `check_ownership_block` and exceptional effect/CFG walkers; `src/handler_lowering.inc`: tagged carrier and `Option<T>` capture slots. | `check_phase21_expression_ownership_edges.py`, `check_phase21_recover_reinit.py`, `check_phase21_early_condition_raise.py`, `check_phase21_on_fail_capture.py`; A/C grouped reachable-variant gate. | Source order and variant selection must agree in checker, lowering and Fast Debug. Additional proof and final-SHA adversarial retest needed. **INCOMPLETE.** |
+| **O4:** Exceptional edges, definite initialization, moves and D7 recovery ownership agree at the expression evaluation point, including loops, nested recovery and re-raise. | `src/moss.cpp`: `check_ownership_block` and exceptional effect/CFG walkers; `src/handler_lowering.inc`: tagged carrier and `Option<T>` capture slots. | `check_phase21_expression_ownership_edges.py`, `check_phase21_recover_reinit.py`, `check_phase21_early_condition_raise.py`, `check_phase21_on_fail_capture.py`; A/C grouped reachable-variant gate. `f4519fd` still checks unreachable arm bodies but excludes their impossible ownership successors; the gate includes unreachable consume positive and reachable consume negative. | Source order and variant selection must agree in checker, lowering and Fast Debug. Additional proof and final-SHA adversarial retest needed. **INCOMPLETE.** |
 | **O5:** A raise materializes an owned payload and releases exactly acquired old guards after their last protected access. | `src/handler_lowering.inc`: typed wrapper result and guard drops. | Native Root failure, capture and lock-hook gates, including source-free provider frames. | Assumes Rust RAII and no hidden guard in owned carrier; depends on O8. **PASS conditional.** |
 | **O6:** Root failure sequence is join/quiesce, abandon Root-local FileIO, release old guards, acquire fresh failure locks, dispatch `on_fail`, fulfill reply, release. | `src/handler_lowering.inc`: Root wrapper; `src/fileio_runtime.hpp`: abandon; `src/file_chunk_codegen.inc` and `src/executor_runtime.hpp`: Branch join. | `check_phase21_fileio_root_cleanup.py`, `check_phase21_lock_fileio_adversarial.py`, `check_phase21_chunk_fileio_raise.py`, concurrent Roots and injected cleanup failures. | Finite OS work and complete O1/O4/O9 summaries required. **PASS conditional on final native stress/fault rerun.** |
 | **O7:** Nested handlers propagate tagged raises without Root trailer dispatch; static routes preserve Root totality. | `src/handler_lowering.inc`: `_shared` versus Root dispatch; `src/moss.cpp`: post-inference totality and route closure. | `check_phase21_root_totality.py`, `check_phase21_source_free_abi.py`, ordinary/nested/source-free handlers. | Absolute Root boundary must hold uniformly at synchronous, Executor and `runtime_invoke` ingress, including trailer body. **PASS on focused cases, final cross-ingress retest pending.** |
@@ -77,17 +78,21 @@ classes, cancels only classes untouched by the chosen complete path, and
 never releases a touched class before the path completes. Condition effects
 that can externally observe work force full entry. The source-backed witness
 in `check_phase21_early_placement_proof.py` is positive behavioral evidence;
-full acceptance depends on the O1/O4 transfer-function audit and final proof
+`a10d8bb` clarifies that unreachable recovery state writes may conservatively
+widen a normal handler's lock and warning footprint. Safety requires a sound
+superset with rank ordering and no touched-guard cancellation, not a minimal
+lock count. This does not reintroduce unreachable typed raises or ownership
+successors into O1/O4. Full acceptance depends on the O1/O4 transfer-function audit and final proof
 review. **Engineering proof status: INCOMPLETE at this checkpoint.**
 
 ## Layer 2: public language semantics
 
-| Surface | Engineering evidence at or before `4e917d6` | Acceptance boundary |
+| Surface | Engineering evidence at or before `c1ef3eb` | Acceptance boundary |
 | --- | --- | --- |
-| Local helpers, methods, generics, collections and ordinary expressions | Exact variants and panic separation checked by peer-effects, unary/projection and reconstructed A/C gates; A/C now cover implicit final expressions and grouped reachable re-raise. | Final proof must establish O1 across all accepted syntax and prevent `moss check` acceptance followed by rustc failure. |
+| Local helpers, methods, generics, collections and ordinary expressions | Exact variants and panic separation checked by peer-effects, unary/projection and reconstructed A/C gates; A/C now cover implicit final expressions, grouped reachable re-raise, unreachable explicit raise and unreachable/reachable consume distinctions. | Final proof must establish O1/O4 across all accepted syntax and prevent `moss check` acceptance followed by rustc failure. |
 | Root ingress and recovery | Unhandled synchronous/Executor Roots receive `ROOT_UNHANDLED_RAISE`; positive lexical recovery and `on_fail` run native/Fast Debug. | No typed raise may cross any Root, including source-free and Rust `runtime_invoke`; final cross-ingress retest pending. |
 | Pipelines and Branches | D/E fixtures use exact `p4.bin=ABABC` and `p6.bin=ABCD`, require `-1` through `on_fail`; source order and typed callback Result bridges have focused O0/O3 gates. | Fast Debug parity where file chunks are supported; ordered speculative precedence and terminal cleanup must be rerun after effect changes. |
-| Source-free packages | ABI v9 binds canonical `.mossi` to selected `.rlib` object, carries method effects and warning witnesses, and rejects v8/missing/forged/stale pairs. Cross-crate standard-error WRITE mutation and recovery gates exist. | Final source-removed provider execution, warm-cache falsification and independent Architect review are required. This is contract consistency, not publisher authentication. |
+| Source-free packages | ABI v9 binds canonical `.mossi` to selected `.rlib` object, carries method effects and warning witnesses, and rejects v8/missing/forged/stale pairs. `2b6e94f` adds a valid but mismatched provider-artifact swap to the warm-cache gate. Cross-crate standard-error WRITE mutation and recovery gates exist. | Final source-removed provider execution, warm-cache falsification and independent Architect review are required. This is contract consistency, not publisher authentication. |
 | FileIO, locks and errors | Typed FileIO, standard error identity, cleanup injection, fresh failure locks and concurrent Roots have focused gates. | Failed `create` can leave a name; later retry `sync()` does not prove that name durable. Descriptor cleanup remains required. |
 | Numeric conversion and Float | 270-pattern corpus and B/F expression fixtures pin O0/O3/Fast Debug output; grammar and tie rule frozen. | Repeat GCC/Clang × Rust 1.97/1.98 matrix after the final compiler edit. |
 | Phase 20 Range | Concrete cross-crate `Range` emits `FILEIO_CROSS_CRATE_ABI` at Moss checking; legal same-module and consumer-specialized generic forms remain valid. | Full concrete interoperability is **DEFERRED-APPROVED** as Phase 20 work; no claim of ABI support. |
@@ -103,10 +108,10 @@ missing warning provenance. Its full record remains in
 
 | Gate on current implementation | Recorded engineering result | Final freeze requirement |
 | --- | --- | --- |
-| Reconstructed A/C `check_phase21_addendum_a_c.py` | Focused check/effects, O0/O3 native and Fast Debug pass after `6aa69be` on current integration. | Rerun at exact final SHA; archive baseline `7775049` versus fixed output. |
+| Reconstructed A/C `check_phase21_addendum_a_c.py` | Focused check/effects, O0/O3 native and Fast Debug passed after `6aa69be`; follow-ups `9af6d79` and `f4519fd` add unreachable explicit raise, unreachable consume and reachable consume negative. Their commit-time focused gates passed; this is not the final combined suite result. | Rerun at exact final SHA; archive baseline `7775049` versus fixed output. |
 | Reconstructed D/E `check_phase21_peer_open_pipelines.py` and lexical `check_phase21_pipeline_try_placeholder.py` | Focused exact raise sets and O0/O3 native pass after `95e7d85`. | Rerun at final SHA; state Fast Debug file-chunk support explicitly. |
 | Reconstructed B/F via `check_phase21_float_ieee.py` | Focused O0/O3/Fast Debug pass after `6a08830`. | Four-toolchain matrix and byte comparison at final SHA. |
-| ABI-v9 source-free, imported methods/warnings, standard errors, cache and forgery | Focused removed-source and falsification gates passed at earlier combined v9 checkpoints; later `4e917d6` migrated physical ABI gates. | Rerun *all* ABI-v9 and source-removed gates at final SHA; inspect selected artifact and cache path. |
+| ABI-v9 source-free, imported methods/warnings, standard errors, cache and forgery | Focused removed-source and falsification gates passed at earlier combined v9 checkpoints; `4e917d6` migrated physical ABI gates, `2b6e94f` added a valid-provider swap negative, and `c1ef3eb` added a v8 rebuild-versus-damaged-v9 diagnostic gate that passed at its commit. | Rerun *all* ABI-v9 and source-removed gates at final SHA; inspect selected artifact and cache path. |
 | O1/O4/O8, Root, concurrent Branch/FileIO | Focused gates passed at varying combined checkpoints; A/C/D/E changed effect and pipeline paths later. | Rerun targeted plus full native/optimized/Fast Debug/concurrency/fault-injection suites at final SHA. |
 | `TMPDIR="$PWD/tmp" make check` | **PENDING** on current implementation. | Complete pass, including every external/addendum permanent gate. |
 | `TMPDIR="$PWD/tmp" make examples` | **PENDING** on current implementation. | Complete pass. |
