@@ -27,6 +27,7 @@ for name, output in (
         ("slot_combined", "seven\n"),
         ("if_join", "yes\nno\n"),
         ("try_join", "no\nyes\n"),
+        ("loop_reinit", "after\n"),
         ("nested_reraise", "4\nkept\n")):
     source = fixtures / f"phase21_capture_{name}.moss"
     checked = run(compiler, "check", source, "--json")
@@ -50,6 +51,8 @@ for name, code in (
         ("preinit", "ON_FAIL_CAPTURE_NOT_INITIALIZED"),
         ("consumed", "ON_FAIL_CAPTURE_CONSUMED"),
         ("branch_mismatch", "ON_FAIL_CAPTURE_BINDING_MISMATCH"),
+        ("loop_consumed", "ON_FAIL_CAPTURE_CONSUMED"),
+        ("loop_uninit", "ON_FAIL_CAPTURE_NOT_INITIALIZED"),
         ("fileio", "ON_FAIL_CAPTURE_NOT_OWNED"),
         ("borrowed_payload", "ON_FAIL_CAPTURE_NOT_OWNED")):
     source = fixtures / f"phase21_capture_{name}.moss"

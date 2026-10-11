@@ -1,0 +1,20 @@
+enum Failure:
+  Bad
+fn take(data: String) -> Int:
+  moved = data
+  return moved.length()
+domain Worker:
+  fn Run() -> String:
+    var item = "before"
+    var i = 0
+    while i < 1:
+      used = take(item)
+      raise Failure.Bad
+      item = "after"
+      i = i + used
+    raise Failure.Bad
+  on_fail Failure.Bad:
+    reply item
+fn main():
+  worker = Worker()
+  echo message worker.Run()
