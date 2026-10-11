@@ -6596,6 +6596,127 @@ class Checker {
       }
   }
 
+  struct LocalCallSite {
+    string target;
+    vector<string> arguments;
+    vector<string> argument_types;
+    string receiver = "";
+  };
+
+  void phase21_warn_method_catch_alls(
+      const Domain& domain, const Handler& source,
+      const DomainSynchronizationPlan& planned, const LocalCallSite& site,
+      const TypeEnv& caller_types, int call_line) {
+    const ObjectType* owner = nullptr;
+    const Method* method = callable_method(site.target, &owner);
+    if (!method || !owner || site.arguments.size() != method->params.size() ||
+        method->body.empty() || site.receiver.empty()) return;
+    bool imported = false;
+    for (const auto& module : p_.external_modules)
+      imported |= starts_with(owner->name, module + "__");
+    if (imported) return;
+    Domain formal_domain;
+    formal_domain.name = "_phase21_method_warning";
+    Handler formal_handler;
+    formal_handler.name = "_phase21_method_warning";
+    formal_handler.body = method->body;
+    DomainSpecialization formal_specialization;
+    formal_specialization.source_domain = formal_domain.name;
+    auto add_field = [&](const string& name, const string& type) {
+      Field field;
+      field.name = name;
+      field.type = type;
+      formal_domain.state.push_back(field);
+      formal_specialization.state_types[name] = type;
+    };
+    add_field("self", owner->name);
+    for (const auto& field : owner->fields)
+      add_field(field.name, field.type);
+    for (size_t index = 0; index < method->params.size(); ++index) {
+      auto type = inferred_expr_type(site.arguments[index], caller_types);
+      if (!type) return;
+      add_field(method->params[index].name, *type);
+    }
+    auto receiver_location = storage_location(site.receiver, caller_types);
+    if (!receiver_location) return;
+    auto mapped_actual = [&](const string& expression,
+                             const string& suffix) -> string {
+      auto location = storage_location(expression, caller_types);
+      if (!location) return "";
+      string mapped = location->root;
+      for (const auto& member : location->path) {
+        if (member == "[]") return "";
+        mapped += "." + member;
+      }
+      return mapped + suffix;
+    };
+    for (size_t index = 0; index < method->body.size(); ++index) {
+      const Stmt& statement = method->body[index];
+      if (statement.kind != Stmt::Kind::Try) continue;
+      const size_t attempt_end = statement_subtree_end(method->body, index);
+      size_t arm_index = attempt_end;
+      while (arm_index < method->body.size() &&
+             method->body[arm_index].indent == statement.indent &&
+             method->body[arm_index].kind == Stmt::Kind::Recover) {
+        const Stmt& arm = method->body[arm_index];
+        const size_t arm_end = statement_subtree_end(method->body, arm_index);
+        const bool catch_all = arm.a.empty() ||
+            (arm.a.find('.') == string::npos &&
+             arm.a.find(',') == string::npos);
+        if (catch_all && !arm.exceptional_alternatives.empty() &&
+            phase21_noop_body(method->body, arm_index + 1, arm_end)) {
+          StateLeafSet written;
+          (void)phase21_writes_before_selected_raise(
+              formal_domain, formal_handler, formal_specialization,
+              method->body, index + 1, attempt_end,
+              statement.indent + 1, {}, arm.exceptional_alternatives,
+              written, phase21_local_types_before(
+                  formal_domain, formal_handler, formal_specialization,
+                  index));
+          StateLeafSet protected_writes;
+          for (const auto& leaf : written) {
+            const size_t dot = leaf.find('.');
+            const string root = leaf.substr(0, dot);
+            const string suffix = dot == string::npos ? "" : leaf.substr(dot);
+            string actual;
+            if (root == "self")
+              actual = mapped_actual(site.receiver, suffix);
+            else if (std::any_of(owner->fields.begin(), owner->fields.end(),
+                                 [&](const Field& field) {
+                                   return field.name == root;
+                                 }))
+              actual = mapped_actual(site.receiver, "." + leaf);
+            else {
+              auto parameter = std::find_if(
+                  method->params.begin(), method->params.end(),
+                  [&](const Param& candidate) {
+                    return candidate.name == root;
+                  });
+              if (parameter != method->params.end()) {
+                const size_t slot = static_cast<size_t>(
+                    parameter - method->params.begin());
+                actual = mapped_actual(site.arguments[slot], suffix);
+              }
+            }
+            if (planned.state_leaves.count(actual))
+              protected_writes.insert(actual);
+          }
+          if (!protected_writes.empty())
+            phase21_warning(
+                arm.line, arm.source_file,
+                "RECOVER_EMPTY_AFTER_STATE_WRITE",
+                "no-op recover catch-all in method '" + owner->name +
+                    "." + method->name +
+                    "' may swallow an error after protected domain-state "
+                    "writes from '" + domain.name + "." + source.name +
+                    "' call at line " + std::to_string(call_line) +
+                    " (" + phase21_leaf_names(protected_writes) + ")");
+        }
+        arm_index = arm_end;
+      }
+    }
+  }
+
   void phase21_warn_helper_catch_alls(
       const Domain& domain, const Handler& source,
       const DomainSpecialization& specialization,
@@ -6612,6 +6733,11 @@ class Checker {
         collect_local_call_sites(call.line, expression, caller_types,
                                  nullptr, call_sites);
       for (const auto& site : call_sites) {
+      if (starts_with(site.target, "method:")) {
+        phase21_warn_method_catch_alls(domain, source, planned, site,
+                                      caller_types, call.line);
+        continue;
+      }
       if (!starts_with(site.target, "fn:")) continue;
       const string callee = site.target.substr(3);
       const vector<string>& arguments = site.arguments;
@@ -6756,21 +6882,9 @@ class Checker {
           collect_local_call_sites(statement.line, expression, formal_env,
                                    nullptr, calls);
         for (const auto& call : calls) {
-          if (!starts_with(call.target, "fn:")) continue;
-          const string nested_name = call.target.substr(3);
-          auto nested = functions_.find(nested_name);
-          if (nested == functions_.end() ||
-              nested->second->params.size() != call.arguments.size() ||
-              (nested->second->body.empty() &&
-               !nested->second->result_expression)) continue;
-          bool imported = false;
-          for (const auto& module : p_.external_modules)
-            imported |= starts_with(nested_name, module + "__");
-          if (imported) continue;
-          vector<string> mapped;
-          for (const auto& argument : call.arguments) {
-            string actual = argument;
-            auto location = storage_location(argument, formal_env);
+          auto map_to_handler = [&](const string& expression) {
+            string actual = expression;
+            auto location = storage_location(expression, formal_env);
             if (location) {
               auto formal = std::find_if(
                   function.params.begin(), function.params.end(),
@@ -6785,8 +6899,31 @@ class Checker {
                   actual += member == "[]" ? "[]" : "." + member;
               }
             }
-            mapped.push_back(std::move(actual));
+            return actual;
+          };
+          if (starts_with(call.target, "method:")) {
+            LocalCallSite mapped = call;
+            mapped.receiver = map_to_handler(call.receiver);
+            for (auto& argument : mapped.arguments)
+              argument = map_to_handler(argument);
+            phase21_warn_method_catch_alls(domain, source, planned, mapped,
+                                          handler_env, statement.line);
+            continue;
           }
+          if (!starts_with(call.target, "fn:")) continue;
+          const string nested_name = call.target.substr(3);
+          auto nested = functions_.find(nested_name);
+          if (nested == functions_.end() ||
+              nested->second->params.size() != call.arguments.size() ||
+              (nested->second->body.empty() &&
+               !nested->second->result_expression)) continue;
+          bool imported = false;
+          for (const auto& module : p_.external_modules)
+            imported |= starts_with(nested_name, module + "__");
+          if (imported) continue;
+          vector<string> mapped;
+          for (const auto& argument : call.arguments)
+            mapped.push_back(map_to_handler(argument));
           Stmt forwarded;
           forwarded.kind = Stmt::Kind::Call;
           forwarded.a = nested_name;
@@ -7887,12 +8024,6 @@ class Checker {
     return out.str();
   }
 
-  struct LocalCallSite {
-    string target;
-    vector<string> arguments;
-    vector<string> argument_types;
-  };
-
   string callable_label(const string& id) const {
     if (starts_with(id, "fn:")) return id.substr(3);
     if (starts_with(id, "method:")) return id.substr(7);
@@ -7967,7 +8098,7 @@ class Checker {
                       concrete, bound_method, argument_types, true, nullptr))
                 calls.push_back(LocalCallSite{
                     "method:" + concrete + "." + method->name, {},
-                    argument_types});
+                    argument_types, bound_receiver});
             }
           } else {
             auto local = env.find(identity);
@@ -8004,7 +8135,7 @@ class Checker {
                                                     true, nullptr)) {
             calls.push_back(LocalCallSite{
                 "method:" + type + "." + method->name, arguments,
-                argument_types});
+                argument_types, receiver});
           }
         } else if (traits_.count(type) || contains_internal_placeholder(type)) {
           for (const auto& object : p_.objects) {
@@ -8013,7 +8144,7 @@ class Checker {
               if (method.name == method_name && method.params.size() == arguments.size()) {
                 calls.push_back(LocalCallSite{
                     "method:" + object.name + "." + method.name, arguments,
-                    argument_types});
+                    argument_types, receiver});
               }
           }
         }
@@ -8055,7 +8186,7 @@ class Checker {
                                                   argument_types, true, nullptr))
           calls.push_back(LocalCallSite{
               "method:" + implicit_owner->name + "." + method->name,
-              call_arguments, argument_types});
+              call_arguments, argument_types, "self"});
       }
       for (const auto& argument : call_arguments) {
         string field, field_value;
@@ -9172,6 +9303,11 @@ class Checker {
       const ProvenIndexAccesses* proven_indices = nullptr,
       bool root_ingress = false) const {
     ObservableEffects effects = no_observable_effects();
+    auto mark_mutated_storage = [&](const string& actual) {
+      auto location = storage_location(actual, env);
+      if (location && domain_fields.count(location->root))
+        effects.domain_write = true;
+    };
     string original = strip_redundant_outer_parentheses(expression);
     if (original.empty()) return effects;
 
@@ -9274,8 +9410,10 @@ class Checker {
               effects.merge(method->observable_effects);
               effects.local_capture_read = true;
               if (domain_fields.count(bound_receiver)) effects.domain_read = true;
-              if (method->receiver_effect != Effect::Read)
+              if (method->receiver_effect != Effect::Read) {
                 effects.local_mutation = true;
+                mark_mutated_storage(bound_receiver);
+              }
             } else {
               effects.unresolved = true;
             }
@@ -9453,6 +9591,11 @@ class Checker {
                 canonical_type_name(*receiver_type), method, argument_types,
                 true, nullptr)) {
           effects.merge(resolved->observable_effects);
+          if (resolved->receiver_effect != Effect::Read)
+            mark_mutated_storage(receiver);
+          for (size_t index = 0; index < arguments.size(); ++index)
+            if (method_parameter_effect(*resolved, index) != Effect::Read)
+              mark_mutated_storage(arguments[index]);
           return effects;
         }
         if (domains_.count(canonical_type_name(*receiver_type))) {
@@ -9489,6 +9632,13 @@ class Checker {
               inferred_expr_type(argument, env).value_or(""));
         effects.merge(concrete_function_observable_effects(
             *function->second, argument_types));
+        auto parameter_effects = concrete_function_effects(
+            *function->second, argument_types);
+        for (size_t index = 0;
+             index < arguments_call.size() && index < parameter_effects.size();
+             ++index)
+          if (parameter_effects[index] != Effect::Read)
+            mark_mutated_storage(arguments_call[index]);
         return effects;
       }
       if (implicit_object) {

@@ -51,4 +51,36 @@ for stem in ("phase21_method_noop_warning",
     assert (native.returncode, native.stdout) == (0, "2\n"), (stem, native)
     assert (debug.returncode, debug.stdout) == (0, "2\n"), (stem, debug)
 
+local_source = OUT / "method_local_receiver.moss"
+local_source.write_text('''enum Error:
+  Bad
+type Box:
+  value: Int
+  fn swallow():
+    try:
+      value = 2
+      raise Error.Bad
+    recover:
+      pass
+domain Sample:
+  unrelated = 0
+  fn Run():
+    local = Box(value = 1)
+    local.swallow()
+    echo local.value
+fn main():
+  sample = Sample()
+  message sample.Run()
+''')
+local_check = run(MOSS, "check", local_source, "--json")
+assert local_check.returncode == 0, local_check.stderr
+local_diagnostics = json.loads(local_check.stdout)["result"]["diagnostics"]
+assert not [item for item in local_diagnostics if item["code"] ==
+            "RECOVER_EMPTY_AFTER_STATE_WRITE"], local_diagnostics
+local_effects = run(MOSS, "effects", "handler:Sample.Run", "--source",
+                    local_source, "--json")
+assert local_effects.returncode == 0, local_effects.stderr
+assert not json.loads(local_effects.stdout)["result"]["observable_effects"][
+    "domain_write"]
+
 print("Phase 21 method no-op recovery warning regression passed.")
