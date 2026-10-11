@@ -1,0 +1,23 @@
+enum Failure:
+  Bad
+
+fn source(flag: Bool) -> Vector[Int]:
+  if flag:
+    raise Failure.Bad
+  return [1]
+
+fn fold(accumulator: String, item: Int) -> String:
+  raise Failure.Bad
+
+domain Worker:
+  fn Run(flag: Bool) -> Int:
+    var data = "abc"
+    try:
+      result = source(flag) |> reduce(data, fold)
+    recover Failure.Bad:
+      reply data.length()
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(true)
