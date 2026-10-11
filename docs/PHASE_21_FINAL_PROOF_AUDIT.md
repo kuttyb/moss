@@ -442,6 +442,18 @@ The rank and untouched-cancellation argument uses the **final** partition
 and the actual per-path class modes. No assumption of a fixed class count is
 made.
 
+The state-footprint analysis is conservative across unreachable recovery
+arms. In a checked A-only `try`, an unreachable `recover B` that writes
+`dead` still places `dead` in the normal handler's `write_set` along with a
+reachable write to `live`. This is a safe lock superset, not a path-minimal
+semantic footprint. It may increase lock count or trigger a conservative
+inflation warning. The early-placement proof needs the subset direction:
+every possible touched leaf is present in the planned footprint. An extra
+leaf can only add an entry/branch guard or prevent a cancellation; the
+algorithm still acquires ranks in order, releases no touched guard before
+completion, and starts Root failure locking after all old guards are gone.
+No guarantee of minimal class/lock count is claimed here.
+
 ## Exact regression ledger at audit base
 
 | Gate | Base-SHA result | What the final SHA must show |
