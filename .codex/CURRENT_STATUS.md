@@ -1,5 +1,25 @@
 # Moss current status
 
+## Proof-audit worktree checkpoint — 2026-10-11
+
+The isolated `phase-21-a-c-fixes` branch contains reconstructed peer-addendum
+A/C repairs and proof audit documentation through `e3333b3`. Its source fixes
+are integrated into `phase-21-integration` through `c1ef3eb`. An independent
+strict GCC C++17 build of that exact integration source passed thirteen focused
+O1/O4/O8/early-release gates, including native O0/O3 and Fast Debug where
+supported, ABI-v9 source removal, warm-cache provider falsification, Root
+totality, D7 ownership and reconstructed A/C cases. The proof document
+records engineering closure under accepted/fail-closed syntax with explicit
+assumptions. Unreachable recovery arms can conservatively enlarge state lock
+footprints; they cannot introduce a missing guard or rank violation.
+
+The integration-wide final suite and independent Architect L6 acceptance are
+still pending and are not implied by these focused results. Do not merge into
+`main` without L7 approval. This branch's earlier broad `make check` run
+reached late Phase 10.6C then stopped on a stale test expectation for ABI-v9
+`SOURCE_FREE_CONTRACT_MISMATCH`; the compatibility test was subsequently
+migrated on integration.
+
 ## Phase 21 ABI v9 remediation in progress — 2026-10-11
 
 The integration branch now contains the ABI-v9 artifact digest/rlib marker
