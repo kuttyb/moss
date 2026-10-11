@@ -38,7 +38,11 @@ for case, letter, data_name, contents, variant in cases:
     assert checked["ok"], checked
     facts = json.loads(run(COMPILER, "effects", "Reader.Run", "--source",
                            source, "--json").stdout)["result"]["observable_effects"]
-    assert variant in facts["raise_set"] and not facts["unresolved"], facts
+    file_errors = {f"enum:std__FileError:{name}" for name in (
+        "NotFound", "PermissionDenied", "NotRegularFile", "InUse",
+        "Full", "IO")}
+    assert set(facts["raise_set"]) == file_errors | {variant}, facts
+    assert not facts["unresolved"], facts
 
     rust = OUT / f"{case}.rs"
     run(COMPILER, source, "-o", rust)
