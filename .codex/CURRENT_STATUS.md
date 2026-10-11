@@ -10,18 +10,19 @@ are implementing the ABI, constructing standard-error/Root conformance gates,
 and auditing exceptional control flow and ownership. The integration branch
 now includes the approved O2 correction and failed-create durability caveat.
 
-The new `check_phase21_early_condition_raise.py` gate records a confirmed
-red counterexample on the pre-fix compiler: a leading handler `if` condition
-with a typed raise passes Moss checking and has the correct effect summary,
-but path-sensitive native lowering lacks an outcome context. An equivalent
-full-entry control compiles and runs. The gate remains enabled; the planned
-conservative placement fix and renewed broader validation have not yet run.
-The `check_phase21_recover_reinit.py` gate also confirms an O4/D7 false
-rejection: a consumed outer `var` reinitialized on every selected exceptional
-exit is still reported consumed in `recover`; its sibling-path negative remains
-required to reject. The new standard-error namespace gate fails at
-`UNKNOWN_ERROR_TYPE` for declaration-free `ParseError`, while the absolute
-Root boundary gate passes its current native/Fast Debug/source-free matrix.
+The leading-condition typed-raise and recover-after-reinitialization
+counterexamples are repaired in `184a3b1`. Their focused native O0/O3/Fast
+Debug gates pass; on_fail capture, recovery semantics and synchronization
+plan gates also pass. `c5d7e08` closes an O1 hole by rejecting implicit
+typed-raising custom iterator `iter()`/`next()` calls at Moss checking with
+`RAISING_ITERATOR_UNSUPPORTED`, including generic specialization, until
+checked iterator lowering is implemented. It also includes implicit method
+observable summaries, including panic. The bounded early-placement and O8
+protected-state capture gates pass. These are targeted results; the combined
+full suite has not yet been rerun. The standard-error namespace gate remains
+red at `UNKNOWN_ERROR_TYPE` for declaration-free `ParseError`, while the
+absolute Root boundary gate passes its current native/Fast Debug/source-free
+matrix. ABI v9 implementation and independent proof review remain active.
 Earlier `make check` and Float matrix results below apply only to the prior
 implementation SHA and do not validate the eventual ABI v9 tree.
 
