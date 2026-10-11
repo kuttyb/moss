@@ -82,6 +82,52 @@ if native_optimized != expected:
 if debug != expected:
     raise SystemExit(f"Fast Debug output mismatch: {debug!r} != {expected!r}")
 
+# These original-like external peer-review cases pin expression typing and
+# formatting, which the literal bit-pattern corpus alone cannot exercise.
+PEER_FLOAT = ROOT / "tests" / "tooling" / "fixtures" / "phase21_peer_float_reconstructed"
+PEER_CASES = (
+    ("computed_float_output", "-2.0\n-1.0\n-2.0\n-2.0\n-1.0\n-0.0\n-1e16\n"),
+    ("sqrt_float_locals", "4.0 4.0 1.4142135623730951\n"),
+    ("sqrt_float_forms", "4.0 3.0\n"),
+)
+peer_material = b"".join(
+    (name + "\n").encode() + (PEER_FLOAT / f"{name}.moss").read_bytes() +
+    b"\0" + peer_expected.encode() + b"\0"
+    for name, peer_expected in PEER_CASES
+)
+peer_digest = hashlib.sha256(peer_material).hexdigest()
+if peer_digest != "4a14b7bee3f4f391105be90ddda1e4c01eac629ac0f6184fc0e703c8c5e23c00":
+    raise SystemExit(f"pinned Float expression corpus changed: {peer_digest}")
+for name, peer_expected in PEER_CASES:
+    peer_source = PEER_FLOAT / f"{name}.moss"
+    checked = subprocess.run([str(COMPILER), "check", str(peer_source), "--json"],
+                             check=True, capture_output=True, text=True)
+    if not json.loads(checked.stdout).get("ok"):
+        raise SystemExit(f"{name} did not pass moss check: {checked.stdout}")
+    peer_rust = SCRATCH / f"{name}.rs"
+    subprocess.run([str(COMPILER), str(peer_source), "-o", str(peer_rust)], check=True)
+    for optimization in ("O0", "O3"):
+        peer_native = SCRATCH / f"{name}_{optimization}"
+        subprocess.run(["rustc", "-C", f"opt-level={optimization[-1]}",
+                        "-D", "warnings", "--check-cfg", "cfg(moss_perf)",
+                        "--check-cfg", "cfg(test)", str(peer_rust), "-o",
+                        str(peer_native)], check=True)
+        peer_output = subprocess.run([str(peer_native)], check=True,
+                                     capture_output=True, text=True).stdout
+        if peer_output != peer_expected:
+            raise SystemExit(f"{name} native {optimization} mismatch: {peer_output!r}")
+    peer_debug = subprocess.run([str(COMPILER), "run", "--interp", str(peer_source)],
+                                check=True, capture_output=True, text=True).stdout
+    if peer_debug != peer_expected:
+        raise SystemExit(f"{name} Fast Debug mismatch: {peer_debug!r}")
+    if name == "sqrt_float_locals":
+        queried = subprocess.run([str(COMPILER), "effects", "sqrt_typed", "--source",
+                                  str(peer_source), "--json"], check=True,
+                                 capture_output=True, text=True)
+        effects = json.loads(queried.stdout)["result"]["observable_effects"]
+        if effects["unresolved"] or effects["may_panic"] or effects["raise_set"]:
+            raise SystemExit(f"sqrt_typed must be effect-free: {effects}")
+
 # Python's shortest-round-trip conversion is independent of both the pinned
 # native Ryū core and Fast Debug's C++ to_chars implementation. Freeze the
 # resulting corpus digest as well, so a change in the Python oracle cannot

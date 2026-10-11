@@ -16688,6 +16688,11 @@ class Generator {
     vector<string> call_args;
     if (parse_simple_call(value, callee, call_args)) {
       if (objects_.count(callee)) return callee;
+      if (callee == "sqrt" && call_args.size() == 1) {
+        auto argument = generated_expr_type(call_args.front(), types);
+        return argument && canonical_type_name(*argument) == "float"
+            ? std::optional<string>("float") : std::nullopt;
+      }
       if (callee == "Some" && call_args.size() == 1) {
         auto value_type = generated_expr_type(call_args.front(), types);
         return value_type ? "option[" + *value_type + "]" : "option[_]";
@@ -16767,6 +16772,12 @@ class Generator {
             (*right == "int" || *right == "float"))
           return (*left == "float" || *right == "float") ? "float" : "int";
       }
+    }
+    if (value.size() > 1 && (value.front() == '-' || value.front() == '+')) {
+      auto operand = generated_expr_type(trim(value.substr(1)), types);
+      if (operand && (canonical_type_name(*operand) == "int" ||
+                      canonical_type_name(*operand) == "float"))
+        return operand;
     }
     return std::nullopt;
   }
@@ -18473,7 +18484,9 @@ class Generator {
       if (builtin == "Some" && builtin_args.size() == 1)
         return "Some(" + expr(builtin_args.front(), d, locals, types) + ")";
       if (builtin == "sqrt" && builtin_args.size() == 1)
-        return "(" + expr(builtin_args.front(), d, locals, types) + ").sqrt()";
+        return "{ let __moss_sqrt_value: f64 = " +
+            expr(builtin_args.front(), d, locals, types) +
+            "; __moss_sqrt_value.sqrt() }";
       if ((builtin == "is_nan" || builtin == "is_finite") &&
           builtin_args.size() == 1)
         return "{ let __moss_float_value: f64 = " +
@@ -20487,6 +20500,9 @@ class Generator {
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
             if (starts_with(statement_type, "map[") && ends_with(statement_type, "]")) annotation = rust_type(statement_type);
+            else if (canonical_type_name(statement_type) == "float" ||
+                     canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float")
+              annotation = "f64";
             o << indent(level) << "let mut " << s.a;
             if (!annotation.empty()) o << ": " << annotation;
             o << " = "
@@ -20820,7 +20836,12 @@ class Generator {
             o << indent(level);
             if (!joined_assignment)
               o << "let " << (s.kind == Stmt::Kind::Var ? "mut " : "");
-            o << s.a << " = "
+            o << s.a;
+            if (!joined_assignment && !domain_capability &&
+                (canonical_type_name(statement_type) == "float" ||
+                 canonical_type_name(generated_expr_type(s.b, &types).value_or("")) == "float"))
+              o << ": f64";
+            o << " = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
                           s, functional_context, 0));
