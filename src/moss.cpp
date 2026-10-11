@@ -13966,6 +13966,8 @@ class Generator {
       for (const auto& handler : domain.handlers) {
         merge(handler.observable_effects);
         statements(handler.body);
+        for (const auto& arm : handler.failure_arms)
+          statements(arm.body);
       }
     if (p_.main) statements(p_.main->body);
     for (const auto& test : p_.tests) statements(test.body);
@@ -16098,6 +16100,57 @@ class Generator {
       auto receiver_type = generated_expr_type(member_receiver, types);
       if (receiver_type) {
         string concrete = canonical_type_name(*receiver_type);
+        if (concrete == "FileIO" && member_name == "read" &&
+            member_arguments.size() == 2) {
+          string read = receiver_expression +
+              (phase21_result_context_ ? ".read_checked(" : ".read(") +
+              expr(member_arguments[0], d, locals, types) + ", " +
+              expr(member_arguments[1], d, locals, types) + ")";
+          return phase21_result_context_
+              ? phase21_propagate(read + ".map_err(__moss_raise_fileio)")
+              : read;
+        }
+        if (concrete == "FileIO" && member_name == "write" &&
+            member_arguments.size() == 2) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".write_checked(" : ".write(") +
+              expr(member_arguments[0], d, locals, types) + ", &( " +
+              expr(member_arguments[1], d, locals, types) + " ))";
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "open" &&
+            member_arguments.size() == 2) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".open_in_place_checked(&( "
+                                       : ".open_in_place(&( ") +
+              expr(member_arguments[0], d, locals, types) + " ), " +
+              rust_string_literal(trim(member_arguments[1])) + ")";
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "sync" &&
+            member_arguments.size() <= 1) {
+          bool dataonly = !member_arguments.empty() &&
+              trim(member_arguments[0]) == "dataonly";
+          string call = receiver_expression +
+              (phase21_result_context_
+                  ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
+                  : dataonly ? ".sync_dataonly()" : ".sync()");
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
+        if (concrete == "FileIO" && member_name == "close" &&
+            member_arguments.empty()) {
+          string call = receiver_expression +
+              (phase21_result_context_ ? ".close_checked()" : ".close()");
+          return phase21_result_context_
+              ? phase21_propagate(call + ".map_err(__moss_raise_fileio)")
+              : call;
+        }
         // Agent A checks the one-argument read form as a bounded RangeBatch.
         // This branch only adapts that checked form to Agent B's read_batch
         // ABI; it deliberately does not repeat request legality or bound
@@ -16152,8 +16205,14 @@ class Generator {
                     << ", __moss_request."
                     << rust_identifier(size_field->name)
                     << ")).collect::<std::vec::Vec<_>>(); "
-                    << receiver_temp << ".read_batch(&" << pairs_temp << ") }";
-            return lowered.str();
+                    << receiver_temp
+                    << (phase21_result_context_ ? ".read_batch_checked(&"
+                                                : ".read_batch(&")
+                    << pairs_temp << ") }";
+            return phase21_result_context_
+                ? phase21_propagate("(" + lowered.str() +
+                    ").map_err(__moss_raise_fileio)")
+                : lowered.str();
           }
 
           string entries_source = trim(
@@ -16199,14 +16258,19 @@ class Generator {
             coordinate_temps.emplace_back(std::move(offset_temp),
                                           std::move(size_temp));
           }
-          lowered << receiver_temp << ".read_batch(&[";
+          lowered << receiver_temp
+                  << (phase21_result_context_ ? ".read_batch_checked(&["
+                                              : ".read_batch(&[");
           for (size_t index = 0; index < coordinate_temps.size(); ++index) {
             if (index) lowered << ", ";
             lowered << "(" << coordinate_temps[index].first << ", "
                     << coordinate_temps[index].second << ")";
           }
           lowered << "]) }";
-          return lowered.str();
+          return phase21_result_context_
+              ? phase21_propagate("(" + lowered.str() +
+                  ").map_err(__moss_raise_fileio)")
+              : lowered.str();
         }
         // Phase 20: Moss `range.length()` lowers to Agent B's runtime
         // `Range::len() -> i64`; Agent B need not expose a `.length()` alias.

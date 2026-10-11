@@ -415,7 +415,9 @@ fn main():
 rust, binary = native_build('phase20_fileio_basic', fileio_source)
 text = code_only(rust.read_text())
 assert_owned_runtime(text, 'phase20_fileio_basic', fileio=True)
-assert 'out.sync();' in text and 'out.sync_dataonly();' in text
+assert 'out.sync_checked(false)' in text and 'out.sync_checked(true)' in text
+assert 'out.sync_checked(false).map_err(__moss_raise_fileio)' in text
+assert 'out.sync_checked(true).map_err(__moss_raise_fileio)' in text
 assert 'data.len()' in text and 'data.length()' not in text
 assert run_binary(binary).stdout == '5\n'
 assert write_target.read_text() == 'written bytes', write_target.read_text()
@@ -430,7 +432,8 @@ integration_fixture = 'tests/tooling/fixtures/phase20_fileio_runtime_integration
 fixture_rust, fixture_binary = native_build(
     'phase20_fileio_runtime_integration', integration_fixture)
 fixture_text = fixture_rust.read_text()
-assert '.read_batch(&[' in fixture_text, fixture_text
+assert '.read_batch_checked(&[' in fixture_text
+assert ').map_err(__moss_raise_fileio)' in fixture_text
 assert '(batch).get(0_i64)' in fixture_text, fixture_text
 assert '(batch).get(index)' in fixture_text, fixture_text
 assert 'in (batch).ranges()' in fixture_text, fixture_text
@@ -441,7 +444,8 @@ assert run_binary(fixture_binary).stdout == '4 4 4 8\n'
 domain_fileio_rust, domain_fileio_binary = native_build(
     'phase20_domain_fileio_native',
     'tests/tooling/fixtures/phase20_domain_fileio_native.moss')
-assert '.open_in_place(' in domain_fileio_rust.read_text()
+assert '.open_in_place_checked(' in domain_fileio_rust.read_text()
+assert '.map_err(__moss_raise_fileio)' in domain_fileio_rust.read_text()
 assert run_binary(domain_fileio_binary).stdout == '100\n4\n'
 
 # The proposal's untyped callback and actual byte indexing exercise all
@@ -512,7 +516,8 @@ if computed_data.exists():
 computed_rust, computed_binary = native_build(
     'phase20_fileio_computed_batch', computed_batch_source)
 computed_text = computed_rust.read_text()
-assert 'read_batch(&__moss_fileio_batch_pairs_' in computed_text, computed_text
+assert 'read_batch_checked(&__moss_fileio_batch_pairs_' in computed_text
+assert ').map_err(__moss_raise_fileio)' in computed_text
 assert '.iter().map(|__moss_request| (__moss_request.offset, __moss_request.size))' in computed_text
 assert '(batch).get(index)' in computed_text, computed_text
 assert 'in (batch).ranges()' in computed_text, computed_text

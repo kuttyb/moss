@@ -34,9 +34,13 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
       s.kind == Stmt::Kind::Var) {
     vector<string> open_arguments;
     if (parse_fileio_open(s.b, open_arguments)) {
-      o << pad << "let mut " << s.a << " = FileIO::open(&("
-        << expr(open_arguments[0], d, locals, &types) << "), "
-        << rust_string_literal(trim(open_arguments[1])) << ");\n";
+      string opened = "FileIO::" + string(phase21_result_context_
+          ? "open_checked" : "open") + "(&(" +
+          expr(open_arguments[0], d, locals, &types) + "), " +
+          rust_string_literal(trim(open_arguments[1])) + ")";
+      if (phase21_result_context_)
+        opened = phase21_propagate(opened + ".map_err(__moss_raise_fileio)");
+      o << pad << "let mut " << s.a << " = " << opened << ";\n";
       locals.insert(s.a);
       types[s.a] = "FileIO";
       return true;
@@ -46,10 +50,14 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
     if (parse_member_call(s.b, receiver, method, arguments) &&
         fileio_typed(types, receiver) && method == "read" &&
         arguments.size() == 2) {
-      o << pad << "let " << s.a << " = "
-        << method_receiver_place(receiver, "read", arguments, d, locals, &types)
-        << ".read(" << expr(arguments[0], d, locals, &types) << ", "
-        << expr(arguments[1], d, locals, &types) << ");\n";
+      string read = method_receiver_place(
+          receiver, "read", arguments, d, locals, &types) +
+          (phase21_result_context_ ? ".read_checked(" : ".read(") +
+          expr(arguments[0], d, locals, &types) + ", " +
+          expr(arguments[1], d, locals, &types) + ")";
+      if (phase21_result_context_)
+        read = phase21_propagate(read + ".map_err(__moss_raise_fileio)");
+      o << pad << "let " << s.a << " = " << read << ";\n";
       locals.insert(s.a);
       types[s.a] = "Range";
       return true;
@@ -60,24 +68,41 @@ bool gen_fileio_statement(std::ostringstream& o, const Stmt& s, int spaces,
   string receiver_expr = method_receiver_place(
       s.a, s.b, s.args, d, locals, &types);
   if (s.b == "write" && s.args.size() == 2) {
-    o << pad << receiver_expr << ".write("
-      << expr(s.args[0], d, locals, &types) << ", &("
-      << expr(s.args[1], d, locals, &types) << "));\n";
+    string call = receiver_expr + (phase21_result_context_
+        ? ".write_checked(" : ".write(") +
+        expr(s.args[0], d, locals, &types) + ", &( " +
+        expr(s.args[1], d, locals, &types) + " ))";
+    if (phase21_result_context_)
+      call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
+    o << pad << call << ";\n";
     return true;
   }
   if (s.b == "open" && s.args.size() == 2) {
-    o << pad << receiver_expr << ".open_in_place(&("
-      << expr(s.args[0], d, locals, &types) << "), "
-      << rust_string_literal(trim(s.args[1])) << ");\n";
+    string call = receiver_expr + (phase21_result_context_
+        ? ".open_in_place_checked(&( " : ".open_in_place(&( ") +
+        expr(s.args[0], d, locals, &types) + " ), " +
+        rust_string_literal(trim(s.args[1])) + ")";
+    if (phase21_result_context_)
+      call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
+    o << pad << call << ";\n";
     return true;
   }
   if (s.b == "sync" && s.args.size() <= 1) {
     bool dataonly = !s.args.empty() && trim(s.args[0]) == "dataonly";
-    o << pad << receiver_expr << (dataonly ? ".sync_dataonly();\n" : ".sync();\n");
+    string call = receiver_expr + (phase21_result_context_
+        ? ".sync_checked(" + string(dataonly ? "true" : "false") + ")"
+        : dataonly ? ".sync_dataonly()" : ".sync()");
+    if (phase21_result_context_)
+      call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
+    o << pad << call << ";\n";
     return true;
   }
   if (s.b == "close" && s.args.empty()) {
-    o << pad << receiver_expr << ".close();\n";
+    string call = receiver_expr + (phase21_result_context_
+        ? ".close_checked()" : ".close()");
+    if (phase21_result_context_)
+      call = phase21_propagate(call + ".map_err(__moss_raise_fileio)");
+    o << pad << call << ";\n";
     return true;
   }
   throw std::runtime_error("internal error: unchecked FileIO operation '" + s.b + "'");

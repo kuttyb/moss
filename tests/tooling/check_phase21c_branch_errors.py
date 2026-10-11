@@ -190,8 +190,9 @@ raise_at = text.index(
     observe_at,
 )
 assert raise_at > join_at
-close_at = text.find(".close();", observe_at)
+close_at = text.find(".close_checked()", observe_at)
 assert close_at > observe_at, (join_at, observe_at, close_at)
+assert ".close_checked().map_err(__moss_raise_fileio)" in text[close_at:]
 
 
 def runtime_preamble(generated):
