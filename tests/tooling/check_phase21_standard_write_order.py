@@ -30,6 +30,19 @@ method = '''  fn Flip(before: Int, error: std.ParseError) -> Int:
       error = std.ParseError.Invalid
     return 0
 '''
+function = '''fn FlipFn(before: Int, error: std.ParseError) -> Int:
+  var invalid = false
+  match error:
+    case Invalid:
+      invalid = true
+    case Overflow:
+      pass
+  if invalid:
+    error = std.ParseError.Overflow
+  else:
+    error = std.ParseError.Invalid
+  return 0
+'''
 consumer_body = '''fn set_overflow(error: std.ParseError) -> Int:
   error = std.ParseError.Overflow
   return 0
@@ -42,6 +55,20 @@ fn main():
       echo 1
     case Overflow:
       echo 2
+  var function_error = std.ParseError.Invalid
+  function_result = FLIP_FUNCTION(set_overflow(function_error), function_error)
+  match function_error:
+    case Invalid:
+      echo 3
+    case Overflow:
+      echo 4
+  var statement_error = std.ParseError.Invalid
+  carrier.Flip(set_overflow(statement_error), statement_error)
+  match statement_error:
+    case Invalid:
+      echo 5
+    case Overflow:
+      echo 6
 '''
 
 
@@ -58,8 +85,9 @@ def run(*args, cwd=scratch):
 # The same-module result is the semantic oracle: first set Overflow, then
 # Flip observes it and writes Invalid. The final match must therefore print 1.
 local = scratch / "local.moss"
-local.write_text("type Carrier:\n" + method +
-                 consumer_body.replace("CARRIER()", "Carrier()"))
+local.write_text("type Carrier:\n" + method + function +
+                 consumer_body.replace("CARRIER()", "Carrier()")
+                              .replace("FLIP_FUNCTION", "FlipFn"))
 run(compiler, "check", local, "--json")
 generated = scratch / "local.rs"
 run(compiler, local, "-o", generated)
@@ -67,15 +95,16 @@ for optimization in ("0", "3"):
     executable = scratch / f"local-o{optimization}"
     run("rustc", "--edition=2021", "-D", "warnings",
         f"-Copt-level={optimization}", generated, "-o", executable)
-    assert run(executable).stdout == "1\n"
-assert run(compiler, "run", "--interp", local).stdout == "1\n"
+    assert run(executable).stdout == "1\n3\n5\n"
+assert run(compiler, "run", "--interp", local).stdout == "1\n3\n5\n"
 
 project = scratch / "project"
 (project / "src").mkdir(parents=True)
 (project / "moss.toml").write_text(
     '[project]\nname="phase21_standard_write_order"\nversion="0.1.0"\n')
 provider = project / "src/provider.moss"
-provider.write_text("module provider\nexport type Carrier:\n" + method)
+provider.write_text("module provider\nexport type Carrier:\n" + method +
+                    "export " + function)
 consumer = project / "src/main.moss"
 consumer.write_text("module app\nimport provider\nfn main():\n  echo 0\n")
 
@@ -92,16 +121,17 @@ def build_and_run(expected, *, release=False):
 build_and_run("0\n")
 build_and_run("0\n", release=True)
 consumer.write_text("module app\nimport provider\n" +
-                    consumer_body.replace("CARRIER()", "provider.Carrier()"))
+                    consumer_body.replace("CARRIER()", "provider.Carrier()")
+                                 .replace("FLIP_FUNCTION", "provider.FlipFn"))
 run(compiler, "check", consumer, "--json", cwd=project)
-build_and_run("1\n")
-build_and_run("1\n", release=True)
-assert run(margo, "debug", cwd=project).stdout == "1\n"
+build_and_run("1\n3\n5\n")
+build_and_run("1\n3\n5\n", release=True)
+assert run(margo, "debug", cwd=project).stdout == "1\n3\n5\n"
 
 provider.rename(provider.with_suffix(".removed"))
 consumer.write_text(consumer.read_text().replace(
     "      echo 1\n", "      echo 1\n      echo 1\n"))
 run(compiler, "check", consumer, "--json", cwd=project)
-build_and_run("1\n1\n")
-build_and_run("1\n1\n", release=True)
+build_and_run("1\n1\n3\n5\n")
+build_and_run("1\n1\n3\n5\n", release=True)
 print("Phase 21 standard-error WRITE argument order passed.")
