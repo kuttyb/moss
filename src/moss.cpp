@@ -9941,6 +9941,11 @@ class Checker {
           }
         }
         if (!bounded) effects.may_diverge = true;
+        // A custom `for` invokes iter() and/or next() implicitly. Their
+        // panic and other observable effects belong to the loop even though
+        // neither call appears in its source expression.
+        for (const Method* method : implicit_iterator_methods(iter_expr, env))
+          effects.merge(method->observable_effects);
       }
       if (statement.kind == Stmt::Kind::Echo) effects.external_io = true;
       if (statement.kind == Stmt::Kind::Message) effects.message = true;
@@ -13003,6 +13008,24 @@ class Checker {
     return std::nullopt;
   }
 
+  vector<const Method*> implicit_iterator_methods(
+      const string& source, const TypeEnv& env) const {
+    auto source_type = inferred_expr_type(source, env);
+    if (!source_type) return {};
+    const string concrete = canonical_type_name(*source_type);
+    if (!objects_.count(concrete)) return {};
+    if (const Method* next = resolve_method(
+            concrete, "next", {}, true, nullptr))
+      return {next};
+    const Method* factory = resolve_method(
+        concrete, "iter", {}, true, nullptr);
+    if (!factory || !factory->return_type) return {};
+    const Method* next = resolve_method(
+        canonical_type_name(*factory->return_type), "next", {}, true, nullptr);
+    return next ? vector<const Method*>{factory, next}
+                : vector<const Method*>{factory};
+  }
+
   void check_for_source(int line, const string& source, const TypeEnv& env) {
     string callee;
     vector<string> arguments;
@@ -13013,6 +13036,11 @@ class Checker {
       check_expression(line, source, env);
     }
     (void)iterator_element_type(line, source, env);
+    for (const Method* method : implicit_iterator_methods(source, env))
+      if (method->observable_effects.unresolved ||
+          !method->observable_effects.raise_set.empty())
+        err(line, "custom iterator iter()/next() has unresolved or typed-raising effects; checked propagation through for is unsupported",
+            "RAISING_ITERATOR_UNSUPPORTED");
   }
 
   TypeEnv check_stmts(const vector<Stmt>& statements, TypeEnv env,
