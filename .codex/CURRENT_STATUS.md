@@ -1,5 +1,19 @@
 # Moss current status
 
+## Phase 21.D documentation wording review — 2026-10-10
+
+The active v0.1 syntax and roadmap pages now describe implemented numeric
+parsing, checked conversion, Phase 20 support, and Phase 21's current name and
+remaining gates. The consolidated Phase 21 specification now marks the old
+Fast Debug Float division mismatch, Float golden migration, borrowed-view
+WRITE hole, and fusion-only chunk eligibility as historical implementation
+motivations. Its normative Float spelling and tie rules remain unchanged.
+The shared ABI document and README already distinguish available source-free
+typed failure arms from the unmaterialized handler-local capture frame.
+The wider cross-toolchain Float formatter pin remains unverified in this
+workspace; final Phase 21 acceptance still depends on A's capture frame and
+the O1–O9 integration review.
+
 ## Phase 21.A lexical native recovery checkpoint — 2026-10-10
 
 Native `try` lowering now uses a labeled Rust block. Explicit `raise`, fallible

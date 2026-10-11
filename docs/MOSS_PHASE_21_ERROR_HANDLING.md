@@ -634,7 +634,7 @@ The notation is conceptual, not a new source-visible type or specific C++ data s
 
 Implement a **dedicated chunk eligibility predicate** (illustratively `chunk_speculation_safe`) that tests purity, absence of `may_panic` **after justified proofs**, legal capture/ownership, and the existing no-FileIO-in-map restrictions. It must not use `fusion_safe()` as a substitute for those independent requirements and must not change the normal fusion contract. The parent-only left fold keeps its sequential callback/error order and may have its existing allowed domain effects; it must not be moved into Branches.
 
-This intentionally expands today's Phase 20 eligibility: the current `fusion_safe()` use rejects index-based mappers because their general `may_fail` bit is nonempty. Under Phase 21, an index-based mapper may become eligible **at a proven-safe invocation site** without globally changing the function's error summary.
+This intentionally expands Phase 20 eligibility: its `fusion_safe()` check rejected index-based mappers because their general `may_fail` bit was nonempty. Under Phase 21, an index-based mapper may become eligible **at a proven-safe invocation site** without globally changing the function's error summary.
 
 ### 10. Compiler Branch errors: commit, quiescence, and panic exclusion
 
@@ -715,7 +715,7 @@ Fast Debug must implement general language-level `raise`, nested `recover`, Root
 
 #### 13.1 Arithmetic and predicates
 
-`Float` uses **IEEE-754 binary64**, including signed zero, infinity, and NaN. Division by `0.0` returns the IEEE result (`1.0 / 0.0` → `inf`, `-1.0 / 0.0` → `-inf`, `0.0 / 0.0` → `NaN`) rather than panicking. This aligns with existing `sqrt(-1.0)` producing NaN and requires correcting Fast Debug's current explicit floating-point division-by-zero error. **Int** division by zero remains a panic; ordinary integer wrapping behavior is unchanged.
+`Float` uses **IEEE-754 binary64**, including signed zero, infinity, and NaN. Division by `0.0` returns the IEEE result (`1.0 / 0.0` → `inf`, `-1.0 / 0.0` → `-inf`, `0.0 / 0.0` → `NaN`) rather than panicking. This aligns with `sqrt(-1.0)` producing NaN. Fast Debug's former explicit floating-point division-by-zero error has been corrected. **Int** division by zero remains a panic; ordinary integer wrapping behavior is unchanged.
 
 Provide pure non-raising Float predicates `is_nan(x)` and `is_finite(x)`. `NaN != NaN` remains true by IEEE equality rules; the predicates are the supported way to test for NaN and finite values. After concrete numeric type inference, **Float division does not contribute divide-by-zero `may_panic`**, whereas Int division retains it. Other possible faults in the expression are not dismissed by this fact.
 
@@ -743,7 +743,7 @@ Moss's canonical formatter is defined by the following rules, **not** by the evo
 | negative infinity | `-inf` |
 | NaN | `NaN` |
 
-The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behavior at the time of design, but **the Moss text contract is frozen independently** so a rustc upgrade cannot change a Moss program's visible output. **Both** native and Fast Debug must use it. This will change previously recorded golden output in both engines (for example `1.0` previously echoing as `1`), and the test corpus must be updated explicitly.
+The agreed thresholds and spellings deliberately resemble Rust `f64` Debug behavior at the time of design, but **the Moss text contract is frozen independently** so a rustc upgrade cannot change a Moss program's visible output. **Both** native and Fast Debug use it. The golden corpus records the resulting change in both engines (for example `1.0` had previously echoed as `1`). Wider cross-toolchain pinning remains an acceptance gate.
 
 #### 13.3 Numeric parsing
 
@@ -790,7 +790,7 @@ Moss parameters are **not generally immutable**. Phase 10.6D deliberately suppor
 
 **New exception:** A formal parameter whose type is **`Range` or `RangeBatch`** must **never** infer WRITE mode. A helper attempting whole-binding reassignment/replacement of either such parameter must fail **`moss check`**, before generating Rust. Merely emitting the caller's binding as `mut` is the **wrong fix**.
 
-**Rationale:** `Range`/`RangeBatch` are pinned or borrowed FileIO views subject to Phase 20 non-escape rules. A WRITE-through formal lets a helper **replace the caller's view** with a view created inside the helper, bypassing the restriction that such borrowed capabilities cannot be moved/returned or outlive their intended scope. `RangeBatch` demonstrates the concrete hole: the current compiler can accept a helper that assigns `b = file.read([(0,2),(2,2)])` to a `RangeBatch` parameter; the caller's batch binding then reflects the helper's newly created batch after return. Unlike the analogous `Range` example, the RangeBatch case can currently **compile and run**, making this a real semantic ownership escape, not merely an E0596 backend mismatch.
+**Rationale:** `Range`/`RangeBatch` are pinned or borrowed FileIO views subject to Phase 20 non-escape rules. A WRITE-through formal lets a helper **replace the caller's view** with a view created inside the helper, bypassing the restriction that such borrowed capabilities cannot be moved/returned or outlive their intended scope. `RangeBatch` exposed this hole before the Phase 21 checker prohibition: a helper assigning `b = file.read([(0,2),(2,2)])` to a `RangeBatch` parameter could compile and run, replacing the caller's batch after return. The prohibition now rejects that source at `moss check`.
 
 **Mandatory negative checks (illustrative source):**
 
@@ -958,9 +958,9 @@ The design consolidates earlier decisions and deferred backlogs. Primary reposit
 - [`examples/swarm/ISSUES.jsonl`](https://github.com/kuttyb/moss/blob/main/examples/swarm/ISSUES.jsonl) and [`examples/swarm/FINDINGS.md`](https://github.com/kuttyb/moss/blob/main/examples/swarm/FINDINGS.md) — SWARM-040, EXPRESS-007, EXPRESS-009.
 - [`src/fileio_runtime.hpp`](https://github.com/kuttyb/moss/blob/main/src/fileio_runtime.hpp) — `Drop for FileIO`, close/read/write/sync error paths, Range and RangeBatch.
 - [`src/fileio_semantics.inc`](https://github.com/kuttyb/moss/blob/main/src/fileio_semantics.inc) — pinned capability checker and normal-path `FILEIO_MUST_CLOSE`.
-- [`src/file_chunk_lowering.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_lowering.inc) — current `fusion_safe()`-based chunk eligibility; requires independent predicate.
+- [`src/file_chunk_lowering.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_lowering.inc) — chunk eligibility and its independent speculation predicate.
 - [`src/file_chunk_codegen.inc`](https://github.com/kuttyb/moss/blob/main/src/file_chunk_codegen.inc) — the actual zero-length-before-map and `branch_join`-before-commit lowering.
-- [`src/interpreter.hpp`](https://github.com/kuttyb/moss/blob/main/src/interpreter.hpp) and [`src/interpreter_phase20.inc`](https://github.com/kuttyb/moss/blob/main/src/interpreter_phase20.inc) — current Float division mismatch and Fast Debug/Executor boundary.
+- [`src/interpreter.hpp`](https://github.com/kuttyb/moss/blob/main/src/interpreter.hpp) and [`src/interpreter_phase20.inc`](https://github.com/kuttyb/moss/blob/main/src/interpreter_phase20.inc) — Float parity and the Fast Debug/Executor boundary.
 - [`docs/MODULE_ABI.md`](https://github.com/kuttyb/moss/blob/main/docs/MODULE_ABI.md) — existing exported effect and provider ABI versioning contract.
 
 **Repository checkpoint used in the discussion:** main at `395b4c0` (October 8, 2026), with additional compiler/runtime reproducibility evidence supplied by peer review. Recheck current `main` when implementing or formally accepting this document. Those peer-reported reproducers are proposed regression requirements here; the act of drafting v4 does **not** independently certify running each reproduction or all repository tests.

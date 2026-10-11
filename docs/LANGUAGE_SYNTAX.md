@@ -312,8 +312,10 @@ The read-only String methods are `length() -> Int`, `char_at(Int) -> String`,
 `chars() -> Vector[String]`, `split(String) -> Vector[String]`, and
 `join(Vector[String]) -> String` (called on the separator). Character positions
 are zero-based Unicode code-point positions. `char_at` fails on an invalid
-position, and `split` fails on an empty separator. String numeric parsing and
-recoverable invalid-input behavior are deferred to Phase 21.
+position, and `split` fails on an empty separator. Numeric text uses the
+raising built-ins `parse_int(text)` and `parse_float(text)`; checked Float to Int
+conversion uses `to_int(value)`. Their accepted spellings and typed errors are
+specified in [Phase 21 §13](MOSS_PHASE_21_ERROR_HANDLING.md#13-float-numeric-parsing-and-conversion-p21-12).
 Lexicographic ordering is intentionally not a v0.1 operator surface:
 `String < String`, `<=`, `>`, and `>=` are rejected by the frontend.
 
