@@ -1,0 +1,21 @@
+enum Failure:
+  Bad
+
+fn take(item: String) -> String:
+  return item
+
+domain Worker:
+  fn Run(reinitialize: Bool) -> Int:
+    var value = "old"
+    discarded = take(value)
+    try:
+      if reinitialize:
+        value = "new"
+      raise Failure.Bad
+    recover Failure.Bad:
+      reply value.length()
+    reply 0
+
+fn main():
+  worker = Worker()
+  echo message worker.Run(true)
