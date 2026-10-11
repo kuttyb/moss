@@ -30,7 +30,13 @@ returning an error.
 
 The Phase 21 design, handoff, shared ABI, README roadmap, and v0.1 language
 design now distinguish the implemented checkpoints from the unmaterialized
-capture contract. `git diff --check` passed for these documentation edits.
+capture contract. The Part I Example 10 and Part II §21 cross-enum snippets now
+use dynamic input and a bounded write/sync path. A standalone probe with the
+required enum/reporter declarations passes `moss check --json`; `moss effects`
+reports both `ParseError.Invalid` and `FileError.Full` among the handler's
+raise alternatives. The Float golden gate now compares default and
+`-C opt-level=3` native builds with Fast Debug; its focused run passes after
+the follow-up edit. The follow-up `git diff --check` also passes.
 Only Rust 1.98.1 and GCC 13.3 are installed in this workspace; the wider
 cross-toolchain Float-format pin remains unverified. Phase 21 is still open.
 

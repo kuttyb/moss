@@ -18,7 +18,7 @@ Add class-partition regression: with one handler writing two leaves, show adding
 
 ### Tutorial/spec example correction — avoid a misleading unreachable-arm warning
 
-Part I Example 10 and the corresponding Part II §21 cross-enum example open and close a file without writing it, yet include `on_fail FileError.Full`. Because Phase 21 requires **operation-precise** inferred failure sets and warns on well-formed unreachable arm patterns, `Full` may be unreachable in that specific program, defeating the example's purpose. Part II §21 additionally parses the constant literal `"bad"`, which may be statically known to raise before any FileIO operation. Replace these examples with a dynamic parse input and a bounded file **write/sync** path so both `ParseError` and `FileError.Full` are plausibly reachable. Keep this as an example repair, not a change to the six-variant FileError taxonomy. Validate the actual inferred effects, rather than asserting open/close always exclude `Full` without an OS-site audit.
+Part I Example 10 and the corresponding Part II §21 cross-enum example now use a dynamic parse input and a bounded file write/sync path. Both `ParseError` and `FileError.Full` remain plausible without treating open/close as `Full` sites. This is an example repair, not a change to the six-variant FileError taxonomy. Validate the actual inferred effects rather than asserting open/close always exclude `Full` without an OS-site audit.
 
 ### Numeric contract freeze checks (not design redesign)
 

@@ -265,6 +265,8 @@ domain Worker:
   fn Work(text: String):
     number = parse_int(text)         # ParseError
     file = FileIO.open("out.txt", rw) # FileError
+    file.write(0, "ok")             # bounded write can raise FileError.Full
+    file.sync()                      # delayed allocation can also report Full
     file.close()
 
   on_fail ParseError.Invalid:
@@ -401,7 +403,7 @@ A Moss operation may either return an ordinary result or terminate that attempt 
 
 #### Illustrative surface spelling
 
-New grammar remains subject to compiler/parser integration; examples demonstrate agreed **behavior**, not evidence that v4 syntax is already accepted by the current parser.
+The core grammar is implemented, while the full Phase 21 acceptance gates remain open. These examples specify agreed **behavior**; individual snippets may omit surrounding declarations.
 
 ```moss
 enum FileError:
@@ -1022,9 +1024,11 @@ fn main():
 domain Worker:
   domainroutes(reporter: Reporter)
 
-  fn Run():
-    parse_int("bad")               # can raise ParseError.Invalid
+  fn Run(text: String):
+    number = parse_int(text)        # dynamic input can raise ParseError.Invalid
     file = FileIO.open("out", rw)  # can raise FileError variants
+    file.write(0, "ok")            # bounded write can raise FileError.Full
+    file.sync()                     # delayed allocation can also report Full
     file.close()
 
   on_fail ParseError.Invalid:

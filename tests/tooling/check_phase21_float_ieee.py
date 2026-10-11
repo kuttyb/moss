@@ -13,6 +13,7 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 SOURCE = SCRATCH / "float_ieee.moss"
 RUST = SCRATCH / "float_ieee.rs"
 NATIVE = SCRATCH / "float_ieee"
+NATIVE_OPT = SCRATCH / "float_ieee_optimized"
 
 # The final three finite cases are exact binary64 halfway values. Their
 # shortest decimal candidates differ in the last digit, so ties choose even.
@@ -53,6 +54,11 @@ subprocess.run([str(COMPILER), str(SOURCE), "-o", str(RUST)], check=True)
 subprocess.run(["rustc", "-D", "warnings", "--check-cfg", "cfg(moss_perf)",
                 "--check-cfg", "cfg(test)", str(RUST), "-o", str(NATIVE)], check=True)
 native = subprocess.run([str(NATIVE)], check=True, capture_output=True, text=True).stdout
+subprocess.run(["rustc", "-C", "opt-level=3", "-D", "warnings",
+                "--check-cfg", "cfg(moss_perf)", "--check-cfg", "cfg(test)",
+                str(RUST), "-o", str(NATIVE_OPT)], check=True)
+native_optimized = subprocess.run(
+    [str(NATIVE_OPT)], check=True, capture_output=True, text=True).stdout
 debug = subprocess.run([str(COMPILER), "run", "--interp", str(SOURCE)],
                        check=True, capture_output=True, text=True).stdout
 expected = ("inf\n-inf\nNaN\n-0.0\n1.0\n0.30000000000000004\n"
@@ -66,6 +72,9 @@ expected = ("inf\n-inf\nNaN\n-0.0\n1.0\n0.30000000000000004\n"
             "true\nfalse\ntrue\nfalse\ntrue\n")
 if native != expected:
     raise SystemExit(f"native output mismatch: {native!r} != {expected!r}")
+if native_optimized != expected:
+    raise SystemExit(
+        f"optimized native output mismatch: {native_optimized!r} != {expected!r}")
 if debug != expected:
     raise SystemExit(f"Fast Debug output mismatch: {debug!r} != {expected!r}")
 
