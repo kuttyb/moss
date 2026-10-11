@@ -1,0 +1,14 @@
+enum Error:
+  Bad
+
+fn fail() -> Bool:
+  raise Error.Bad
+
+fn wrapped() -> Bool:
+  return not fail()
+
+fn main():
+  try:
+    echo wrapped()
+  recover Error.Bad:
+    echo "caught"

@@ -30,7 +30,9 @@ assert "cell.value" in warnings[0]["message"], warnings
 effects = run(MOSS, "effects", "handler:Sample.Run", "--source", SOURCE,
               "--json")
 assert effects.returncode == 0, effects.stderr
-handlers = json.loads(effects.stdout)["result"]["synchronization"][
+facts = json.loads(effects.stdout)["result"]
+assert facts["observable_effects"]["domain_write"], facts["observable_effects"]
+handlers = facts["synchronization"][
     "instances"][0]["handlers"]
 assert any(handler["write_set"] == ["cell.value"] for handler in handlers), handlers
 
